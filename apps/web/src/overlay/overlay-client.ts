@@ -1,6 +1,8 @@
-import { overlayCompositionSchema, surfaceLayersSchema, type SurfaceLayer } from "@stream-jams/core";
+import { serializeException, overlayInstructionSchema, overlayCompositionSchema, surfaceLayersSchema, type SurfaceLayer } from "@stream-jams/core";
 import type {
   OverlayPlaybackFailure,
+  PlaybackTimingDiagnostics,
+  PlaybackTimingMilestone,
   OverlayComposition,
   OverlayInstruction,
   OverlayPurpose,
@@ -20,9 +22,10 @@ export interface ParsedOverlayRoute {
 }
 
 export interface OverlayPlaybackReporter {
-  reportStarted(instructionId: string): void;
-  reportCompleted(instructionId: string): void;
-  reportFailed(instructionId: string, failure: OverlayPlaybackFailure): void;
+  reportReady(instructionId: string): void;
+  reportStarted(instructionId: string, diagnostics?: PlaybackTimingMilestone): void;
+  reportCompleted(instructionId: string, diagnostics?: PlaybackTimingDiagnostics): void;
+  reportFailed(instructionId: string, failure: OverlayPlaybackFailure, diagnostics?: PlaybackTimingDiagnostics): void;
 }
 
 export interface OverlaySocketLike {
@@ -31,6 +34,8 @@ export interface OverlaySocketLike {
 }
 
 export type OverlayClientMessage =
+  | { readonly type: "prepare"; readonly instruction: OverlayInstruction }
+  | { readonly type: "start"; readonly instructionId: string; readonly startsAtEpochMs: number }
   | { readonly type: "surface-layers"; readonly layers: readonly SurfaceLayer[] }
   | {
       readonly type: "composition";
@@ -138,23 +143,27 @@ export function createOverlayAssetUrl(route: ParsedOverlayRoute, assetId: string
 
 export function createOverlayPlaybackReporter(socket: OverlaySocketLike): OverlayPlaybackReporter {
   return {
-    reportStarted(instructionId: string) {
+    reportReady(instructionId: string) { sendIfOpen(socket, { type: "overlay.playback.ready", instructionId }); },
+    reportStarted(instructionId: string, diagnostics?: PlaybackTimingMilestone) {
       sendIfOpen(socket, {
         type: "overlay.playback.started",
-        instructionId
+        instructionId,
+        ...(diagnostics === undefined ? {} : { diagnostics })
       });
     },
-    reportCompleted(instructionId: string) {
+    reportCompleted(instructionId: string, diagnostics?: PlaybackTimingDiagnostics) {
       sendIfOpen(socket, {
         type: "overlay.playback.completed",
-        instructionId
+        instructionId,
+        ...(diagnostics === undefined ? {} : { diagnostics })
       });
     },
-    reportFailed(instructionId: string, failure: OverlayPlaybackFailure) {
+    reportFailed(instructionId: string, failure: OverlayPlaybackFailure, diagnostics?: PlaybackTimingDiagnostics) {
       sendIfOpen(socket, {
         type: "overlay.playback.failed",
         instructionId,
-        ...failure
+        ...failure,
+        ...(diagnostics === undefined ? {} : { diagnostics })
       });
     }
   };
@@ -168,8 +177,8 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
   let reconnectDelayMs = 1_000;
   let reconnectTimer: number | null = null;
   let socket: WebSocket | null = null;
-  let initialCompositionSettled = false;
-  let pendingSocketComposition: Extract<OverlayClientMessage, { type: "composition" }> | null = null;
+  let connectionGeneration = 0;
+  let settledCompositionGeneration = 0;
   const reporter = createOverlayPlaybackReporter({
     get readyState() {
       return socket?.readyState ?? WebSocket.CLOSED;
@@ -185,30 +194,48 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
     }
 
     const nextSocket = new WebSocketCtor(webSocketUrl);
+    let generation = 0;
     socket = nextSocket;
     nextSocket.addEventListener("open", () => {
-      if (socket === nextSocket) reconnectDelayMs = 1_000;
+      if (socket !== nextSocket) return;
+      reconnectDelayMs = 1_000;
+      generation = ++connectionGeneration;
+      void fetcher(options.route.compositionPath)
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`Overlay composition request failed with ${response.status}`);
+          return overlayCompositionSchema.parse(await response.json()) as OverlayComposition;
+        })
+        .then((composition) => {
+          if (disposed || socket !== nextSocket || settledCompositionGeneration >= generation) return;
+          settledCompositionGeneration = generation;
+          options.onMessage({ type: "composition", composition });
+        })
+        .catch((error: unknown) => {
+          if (disposed || socket !== nextSocket || settledCompositionGeneration >= generation) return;
+          options.onMessage({ type: "error", message: error instanceof Error ? error.message : "Overlay composition request failed" });
+          nextSocket.close();
+        });
     });
     nextSocket.addEventListener("message", (event) => {
-      const message = parseOverlaySocketMessage(event.data);
-      if (message?.type === "composition" && !initialCompositionSettled) pendingSocketComposition = message;
-      else if (message !== null) options.onMessage(message);
+      const message = parseOverlaySocketMessage(event.data, (instructionId, failure) => reporter.reportFailed(instructionId, failure));
+      if (message?.type === "composition" && generation > 0) settledCompositionGeneration = Math.max(settledCompositionGeneration, generation);
+      if (message !== null) options.onMessage(message);
     });
-    nextSocket.addEventListener("error", () =>
-      options.onMessage({
-        type: "error",
-        message: "Overlay transport connection failed"
-      })
-    );
+    // Browsers expose no cause on WebSocket error; close carries the diagnostic
+    // and follows a failed connection, so report that boundary once.
+    nextSocket.addEventListener("error", () => undefined);
     nextSocket.addEventListener("close", (event) => {
       if (disposed || socket !== nextSocket) {
         return;
       }
 
       socket = null;
+      const closeCode = Number.isInteger(event.code) ? event.code : 1006;
+      const closeReason = (event.reason ?? "").replaceAll(options.route.rawKey, "[redacted]")
+        .replace(/(?:https?|wss?):\/\/[^\s]+/giu, "[redacted-url]").slice(0, 512);
       options.onMessage({
         type: "error",
-        message: "Overlay transport connection closed"
+        message: `Overlay transport connection closed (${closeCode})${closeReason === "" ? "" : `: ${closeReason}`}. ${closeCode === 1008 ? "Reconnection stopped." : `Reconnecting in ${reconnectDelayMs}ms.`}`
       });
       if (event.code === 1008) {
         return;
@@ -225,32 +252,6 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
 
   openSocket();
 
-  void fetcher(options.route.compositionPath)
-    .then(async (response) => {
-      if (!response.ok) {
-        throw new Error(`Overlay composition request failed with ${response.status}`);
-      }
-
-      return (await response.json()) as OverlayComposition;
-    })
-    .then((composition) => {
-      options.onMessage({
-        type: "composition",
-        composition
-      });
-    })
-    .catch((error: unknown) =>
-      options.onMessage({
-        type: "error",
-        message: error instanceof Error ? error.message : "Overlay composition request failed"
-      })
-    )
-    .finally(() => {
-      initialCompositionSettled = true;
-      if (pendingSocketComposition !== null) options.onMessage(pendingSocketComposition);
-      pendingSocketComposition = null;
-    });
-
   return {
     reporter,
     close() {
@@ -265,7 +266,7 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
   };
 }
 
-function parseOverlaySocketMessage(data: unknown): OverlayClientMessage | null {
+function parseOverlaySocketMessage(data: unknown, reportInvalid: (instructionId: string, failure: OverlayPlaybackFailure) => void): OverlayClientMessage | null {
   if (typeof data !== "string") {
     return null;
   }
@@ -286,6 +287,8 @@ function parseOverlaySocketMessage(data: unknown): OverlayClientMessage | null {
   const candidate = parsed as {
     readonly type?: unknown;
     readonly instruction?: unknown;
+    readonly instructionId?: unknown;
+    readonly startsAtEpochMs?: unknown;
     readonly muted?: unknown;
     readonly instructionIds?: unknown;
     readonly message?: unknown;
@@ -300,11 +303,18 @@ function parseOverlaySocketMessage(data: unknown): OverlayClientMessage | null {
     const composition = overlayCompositionSchema.safeParse(candidate.composition);
     return composition.success ? { type: "composition", composition: composition.data as OverlayComposition } : null;
   }
-  if (candidate.type === "overlay.playback" && typeof candidate.instruction === "object" && candidate.instruction !== null) {
-    return {
-      type: "playback",
-      instruction: candidate.instruction as OverlayInstruction
-    };
+  if (candidate.type === "overlay.playback.start" && typeof candidate.instructionId === "string" && typeof candidate.startsAtEpochMs === "number" && Number.isFinite(candidate.startsAtEpochMs)) {
+    return { type: "start", instructionId: candidate.instructionId, startsAtEpochMs: candidate.startsAtEpochMs };
+  }
+  if ((candidate.type === "overlay.playback" || candidate.type === "overlay.playback.prepare") && typeof candidate.instruction === "object" && candidate.instruction !== null) {
+    const instruction = overlayInstructionSchema.safeParse(candidate.instruction);
+    if (instruction.success) return { type: candidate.type === "overlay.playback.prepare" ? "prepare" : "playback", instruction: instruction.data as OverlayInstruction };
+    const id = (candidate.instruction as { readonly id?: unknown }).id;
+    if (typeof id === "string" && /^[a-zA-Z0-9_:.-]{1,200}$/u.test(id)) reportInvalid(id, {
+      referenceId: `err_${crypto.randomUUID()}`, stage: "source-load", message: "Overlay playback instruction failed validation.",
+      exception: serializeException(instruction.error)
+    });
+    return null;
   }
 
   if (candidate.type === "overlay.playback.audio-state" && typeof candidate.muted === "boolean") {

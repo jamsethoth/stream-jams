@@ -247,6 +247,7 @@ function createDiagnosticsDebugExport(): DiagnosticsDebugExport {
     ...createDiagnosticsView(),
     rawEventLogs: [],
     runtimeLogEntries: [],
-    runtimeLogTruncated: false
+    runtimeLogTruncated: false,
+    runtimeLogSkippedCorruptRecords: 0
   };
 }

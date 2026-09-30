@@ -145,3 +145,30 @@ it("classifies metadata deadlines and media errors without discarding their caus
   decodeMedia.dispatchEvent(new Event("error"));
   await expect(decodeWork).rejects.toMatchObject({ stage: "decode" });
 });
+
+it("rejects an elapsed non-looping clip before attempting an impossible seek", async () => {
+  vi.setSystemTime(3600);
+  const media = Object.assign(new Media(), { duration: 2, loop: false });
+  await expect(prepareTimedMedia(media, timing, { signal: new AbortController().signal, deadlineMs: 6000 })).rejects.toThrow(/clip has expired.*offset=2.5.*duration=2/);
+  expect(media.currentTime).toBe(0);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("retains bounded seeks and reports measured drift when slow seeks cannot catch up", async () => {
+  class SlowMedia extends Media {
+    seeks = 0;
+    override get currentTime() { return super.currentTime; }
+    override set currentTime(value: number) {
+      super.currentTime = value; this.seeks++; this.seeking = true;
+      setTimeout(() => { this.seeking = false; this.dispatchEvent(new Event("seeked")); }, 200);
+    }
+  }
+  vi.setSystemTime(3600);
+  const media = new SlowMedia();
+  const work = prepareTimedMedia(media, timing, { signal: new AbortController().signal, deadlineMs: 6000 });
+  const rejected = expect(work).rejects.toThrow(/timing target.*requested=2.7.*actual=2.7.*offset=2.9/);
+  await vi.advanceTimersByTimeAsync(400);
+  await rejected;
+  expect(media.seeks).toBe(2);
+  expect(vi.getTimerCount()).toBe(0);
+});

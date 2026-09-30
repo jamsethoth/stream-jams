@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import {
   desktopVisualCommandSchema, maxDesktopVisualTransferBytes, type DesktopVisualBatch, type DesktopVisualCommand, type DesktopVisualReply,
-  type DesktopModuleSync, type DesktopOverlayTransport, type DesktopOverlayStatus, type OverlayPlaybackFailure, type SurfaceConfiguration, type VisualRecipientKey
+  type PlaybackTimingDiagnostics, type DesktopModuleSync, type DesktopOverlayTransport, type DesktopOverlayStatus, type OverlayPlaybackFailure, type SurfaceConfiguration, type VisualRecipientKey
 } from "@stream-jams/core";
 import { overlayWorkerResponseSchema, type OverlayWorkerMessage } from "./overlay-ipc.js";
 
 type Pending = { key: VisualRecipientKey | null; resolve(result: DesktopVisualReply): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
-type Occurrence = { deadline: number; bytes: number; phase: "preparing" | "ready" | "started" | "cancelled"; timer: ReturnType<typeof setTimeout> };
+type Occurrence = { deadline: number; durationMs: number; deferredStart: boolean; bytes: number; phase: "preparing" | "ready" | "started" | "cancelled"; timer: ReturnType<typeof setTimeout> };
 
 /** Worker-side requests own no media renderer or credentials. Host watchdogs remain authoritative. */
 export class WorkerOverlayClient implements DesktopOverlayTransport {
@@ -64,11 +64,11 @@ export class WorkerOverlayClient implements DesktopOverlayTransport {
     if (this.#closed || this.#occurrences.has(id) || this.#occurrences.size >= 64 || Date.now() >= batch.timing.endsAtEpochMs ||
       bytes > maxDesktopVisualTransferBytes - this.#reservedBytes) return "unavailable";
     const deadline = batch.timing.endsAtEpochMs + 5000;
-    const occurrence: Occurrence = { deadline, bytes, phase: "preparing", timer: setTimeout(() => this.#forget(id, occurrence), Math.max(1, deadline - Date.now())) };
+    const occurrence: Occurrence = { deadline, durationMs: batch.timing.endsAtEpochMs - batch.timing.startsAtEpochMs, deferredStart: batch.deferredStart === true, bytes, phase: "preparing", timer: setTimeout(() => this.#forget(id, occurrence), batch.deferredStart === true ? 15000 : Math.max(1, deadline - Date.now())) };
     this.#reservedBytes += bytes;
     this.#occurrences.set(id, occurrence);
     try {
-      const result = await this.#request(command, Math.min(5000, Math.max(1, deadline - Date.now())));
+      const result = await this.#request(command, batch.deferredStart === true ? 15000 : Math.min(5000, Math.max(1, deadline - Date.now())));
       if (result.type !== "ready" || this.#occurrences.get(id) !== occurrence || occurrence.phase === "cancelled" || Date.now() >= deadline - 5000) {
         this.#forget(id, occurrence); return "unavailable";
       }
@@ -80,15 +80,22 @@ export class WorkerOverlayClient implements DesktopOverlayTransport {
   }
 
   /** Resolves on completion, not on initial renderer admission. */
-  async start(key: VisualRecipientKey): Promise<void> {
+  async start(key: VisualRecipientKey, timing?: DesktopVisualBatch["timing"]): Promise<void | PlaybackTimingDiagnostics> {
     const id = keyId(key);
     const occurrence = this.#occurrences.get(id);
     if (occurrence === undefined || occurrence.phase !== "ready") throw unavailable();
     if (Date.now() >= occurrence.deadline - 5000) { this.#forget(id, occurrence); throw unavailable(); }
+    if (occurrence.deferredStart) {
+      if (timing === undefined || timing.endsAtEpochMs - timing.startsAtEpochMs !== occurrence.durationMs) throw unavailable();
+      occurrence.deadline = timing.endsAtEpochMs + 5000;
+      clearTimeout(occurrence.timer);
+      occurrence.timer = setTimeout(() => this.#forget(id, occurrence), Math.max(1, occurrence.deadline - Date.now()));
+    } else if (timing !== undefined) throw unavailable();
     occurrence.phase = "started";
     try {
-      const result = await this.#request({ type: "start", key }, Math.max(1, occurrence.deadline - Date.now()));
+      const result = await this.#request({ type: "start", key, ...(timing === undefined ? {} : { timing }) }, Math.max(1, occurrence.deadline - Date.now()));
       if (result.type !== "complete") throw unavailable();
+      return result.diagnostics;
     } finally { if (this.#occurrences.get(id)?.phase !== "cancelled") this.#forget(id, occurrence); }
   }
 
@@ -161,5 +168,6 @@ function remoteOverlayFailure(failure: OverlayPlaybackFailure): Error {
   error.name = "DesktopOverlayPlaybackError";
   Object.defineProperty(error, "referenceId", { value: failure.referenceId, enumerable: true });
   Object.defineProperty(error, "stage", { value: failure.stage, enumerable: true });
+  if (failure.diagnostics !== undefined) Object.defineProperty(error, "diagnostics", { value: failure.diagnostics, enumerable: true });
   return error;
 }

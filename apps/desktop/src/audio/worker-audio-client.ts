@@ -27,10 +27,20 @@ export class WorkerAudioClient implements DesktopAudioTransport {
     if (result.type !== "devices") throw unavailable();
     return result.devices;
   }
+  async prepare(payload: AudioPlaybackPayload) {
+    const token = randomUUID();
+    const prepared = await this.#request({ type: "prepare", token, payload });
+    if (prepared.type !== "prepared" || prepared.token !== token) throw unavailable();
+    return { start: async (startsAtEpochMs: number) => {
+      const result = await this.#request({ type: "start", token, startsAtEpochMs, durationMs: payload.batch.durationMs });
+      if (result.type !== "played") throw unavailable();
+      return { ...(result.outputDiagnostics === undefined ? {} : { outputDiagnostics: result.outputDiagnostics }), ...(result.diagnostics === undefined ? {} : { diagnostics: result.diagnostics }), failedRouteIds: result.failedRouteIds, ...(result.failures === undefined ? {} : { failures: result.failures }) };
+    } };
+  }
   async play(payload: AudioPlaybackPayload) {
     const result = await this.#request({ type: "play", payload });
     if (result.type !== "played") throw unavailable();
-    return { failedRouteIds: result.failedRouteIds };
+    return { ...(result.outputDiagnostics === undefined ? {} : { outputDiagnostics: result.outputDiagnostics }), ...(result.diagnostics === undefined ? {} : { diagnostics: result.diagnostics }), failedRouteIds: result.failedRouteIds, ...(result.failures === undefined ? {} : { failures: result.failures }) };
   }
   async stop(playbackId: string): Promise<void> { await this.#ok({ type: "stop", playbackId }); }
   async setMuted(muted: boolean): Promise<void> { await this.#ok({ type: "set-muted", muted }); }
@@ -52,7 +62,7 @@ export class WorkerAudioClient implements DesktopAudioTransport {
     if (this.#closed) return Promise.reject(unavailable());
     const command = audioTransportCommandSchema.parse(candidate);
     const requestId = randomUUID();
-    const timeout = command.type === "play" ? Math.max(1, command.payload.deadlineMs + 8000 - Date.now()) : command.type === "stop" ? 4000 : 15_000;
+    const timeout = command.type === "play" ? Math.max(1, command.payload.deadlineMs + 8000 - Date.now()) : command.type === "start" ? Math.max(1, command.startsAtEpochMs + command.durationMs + 8000 - Date.now()) : command.type === "stop" ? 4000 : 15_000;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.#pending.delete(requestId); reject(unavailable()); }, timeout);
       this.#pending.set(requestId, { resolve, reject, timer });

@@ -70,6 +70,7 @@ function harness(item: EffectOccurrence, options: {
   const delivered: OverlayInstruction[] = [];
   const audioBatches: DeviceAudioBatch[] = [];
   const stopFailures: Array<{ readonly error: unknown; readonly occurrenceId: string }> = [];
+  const playbackFailures: Array<{ error: unknown; occurrenceId: string; recipient: string }> = [];
   const browser = {
     deliverPlaybackInstruction: vi.fn((instruction: OverlayInstruction) => {
       delivered.push(instruction);
@@ -115,6 +116,7 @@ function harness(item: EffectOccurrence, options: {
     validateReferences: options.validateReferences ?? (() => true),
     validateOutputAvailability: options.validateOutputAvailability ?? (() => true),
     onStopFailure(error, occurrenceId) { stopFailures.push({ error, occurrenceId }); },
+    onPlaybackFailure(error, occurrenceId, recipient) { playbackFailures.push({ error, occurrenceId, recipient }); },
     now: () => Date.now()
   });
   return {
@@ -126,11 +128,128 @@ function harness(item: EffectOccurrence, options: {
     desktop,
     delivered,
     audioBatches,
-    stopFailures
+    stopFailures,
+    playbackFailures
   };
 }
 
 describe("EffectPlaybackCoordinator", () => {
+  it("times out only a stalled recipient, starts healthy outputs and plays the next occurrence", async () => {
+    const h = harness(occurrence("stalled"));
+    h.queue.enqueue(occurrence("next"));
+    const lateStart = vi.fn(async () => {});
+    let finish!: () => void;
+    Object.assign(h.desktop, { prepare: vi.fn()
+      .mockImplementationOnce(() => new Promise(resolve => { finish = () => resolve({ start: lateStart }); }))
+      .mockResolvedValue({ start: vi.fn(async () => {}) }) });
+    await h.coordinator.startNext(); await vi.advanceTimersByTimeAsync(14_999);
+    expect(h.delivered).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(h.desktop.stop).toHaveBeenCalledWith(effectOccurrenceKey("screen-effects", "stalled"));
+    expect(h.browser.stopPlaybackInstructions).not.toHaveBeenCalled();
+    expect(h.audio.stop).not.toHaveBeenCalled();
+    expect(h.delivered.length).toBeGreaterThan(0);
+    expect(h.delivered.every(instruction => instruction.timing?.startsAtEpochMs === 20_100)).toBe(true);
+    expect(h.audioBatches[0]!.timing?.startsAtEpochMs).toBe(20_100);
+    finish(); await vi.advanceTimersByTimeAsync(0); expect(lateStart).not.toHaveBeenCalled();
+    for (const instruction of [...h.delivered]) h.coordinator.reportInstructionFinished("obs", instruction.id);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.queue.snapshot().current?.id).toBe("next");
+    expect(h.audioBatches).toHaveLength(2);
+    await h.coordinator.close(); expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("never prepares audio from a route lookup that returns after its own timeout", async () => {
+    const h = harness(occurrence("late-routes"));
+    let finish!: (value: Awaited<ReturnType<EffectPlaybackAudioOutputService["preparePlayback"]>>) => void;
+    vi.mocked(h.audioOutputService.preparePlayback).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const prepare = vi.fn(async () => ({ start: vi.fn(async () => ({ failedRouteIds: [] })) }));
+    Object.assign(h.audio, { prepare });
+    await h.coordinator.startNext(); await vi.advanceTimersByTimeAsync(15_000);
+    expect(h.delivered.length).toBeGreaterThan(0);
+    finish({ unavailableRouteIds: [], batches: [{ playbackId: effectOccurrenceKey("screen-effects", "late-routes"), documentId: "effect-late-routes", durationMs: 10000, muted: false, layers: [], destinations: [{ deviceId: "device", routeIds: ["headphones"] }] }] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(prepare).not.toHaveBeenCalled(); expect(h.audio.play).not.toHaveBeenCalled();
+    await h.coordinator.close(); expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not replay active transient content in reconnect snapshots", async () => {
+    const h = harness(occurrence("reconnect"));
+    await h.coordinator.startNext(); await vi.advanceTimersByTimeAsync(0);
+    expect(h.delivered.length).toBeGreaterThan(0);
+    expect(await h.coordinator.getModuleSnapshot({ moduleId: "screen-effects", overlayId: "default", purpose: "live", scope: "module" })).toEqual({ moduleId: "screen-effects", enabled: true, instructions: [] });
+    await h.coordinator.close();
+  });
+
+  it("drops clients disconnected before their preparation response arrives", async () => {
+    const h = harness(occurrence("disconnected-preparation", "visual"));
+    const releases: Array<() => void> = [];
+    Object.assign(h.browser, { preparePlaybackInstruction: () => new Promise(resolve => {
+      releases.push(() => resolve({ deliveredClientIds: ["obs"], start: vi.fn() }));
+    }) });
+    await h.coordinator.startNext(); await vi.advanceTimersByTimeAsync(0);
+    h.coordinator.reportClientDisconnected("obs");
+    for (const release of releases) release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.queue.snapshot().current).toBeNull();
+    await h.coordinator.close(); expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("contains a rejected stop-failure logger after the completion watchdog", async () => {
+    const queue = new DefaultEffectQueue({ now: () => Date.now() });
+    queue.enqueue(occurrence("logger-failure", "visual"));
+    const onStopFailure = vi.fn(async () => { throw new Error("log unavailable"); });
+    const coordinator = new EffectPlaybackCoordinator({
+      queue, getSafety: () => ({ paused: false, muted: false, doNotDisturb: false }),
+      overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: ["obs"] }) },
+      desktopVisualSink: { play: async () => {}, stop: vi.fn().mockRejectedValueOnce(new Error("stop unavailable")).mockResolvedValue(undefined), close: async () => {} },
+      onStopFailure
+    });
+    await coordinator.startNext(); await vi.advanceTimersByTimeAsync(15_100);
+    expect(onStopFailure).toHaveBeenCalledOnce();
+    expect(queue.snapshot().current?.id).toBe("logger-failure");
+    await coordinator.close(); expect(vi.getTimerCount()).toBe(0);
+  });
+  it("waits for all actual preparations then commits a shared start and full interval", async () => {
+    const h = harness(occurrence("prepared"));
+    const browserStart = vi.fn(); const desktopStart = vi.fn(async () => {}); const audioStart = vi.fn(async () => ({ failedRouteIds: [] }));
+    let finish!: () => void;
+    Object.assign(h.browser, { preparePlaybackInstruction: vi.fn(async () => ({ deliveredClientIds: ["obs"], start: browserStart })) });
+    Object.assign(h.desktop, { prepare: vi.fn(() => new Promise<{ start: typeof desktopStart }>(resolve => { finish = () => resolve({ start: desktopStart }); })) });
+    Object.assign(h.audio, { prepare: vi.fn(async () => ({ start: audioStart })) });
+    await h.coordinator.startNext(); await vi.advanceTimersByTimeAsync(12000);
+    expect(browserStart).not.toHaveBeenCalled(); expect(audioStart).not.toHaveBeenCalled();
+    expect(h.queue.snapshot().current?.id).toBe("prepared");
+    finish(); await vi.advanceTimersByTimeAsync(0);
+    expect(desktopStart).toHaveBeenCalledWith(17100);
+    expect(audioStart).toHaveBeenCalledWith(17100);
+    expect(browserStart.mock.calls.every(call => call[0] === 17100)).toBe(true);
+    expect(h.browser.deliverPlaybackInstruction).not.toHaveBeenCalled();
+    expect(h.desktop.play).not.toHaveBeenCalled(); expect(h.audio.play).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(h.queue.snapshot().current?.id).toBe("prepared");
+    await h.coordinator.close();
+  });
+
+  it("does not start prepared content after cancellation even when readiness arrives late", async () => {
+    const h = harness(occurrence("cancel-prepared"));
+    const start = vi.fn(async () => {}); let finish!: () => void;
+    Object.assign(h.desktop, { prepare: vi.fn(() => new Promise<{ start: typeof start }>(resolve => { finish = () => resolve({ start }); })) });
+    await h.coordinator.startNext(); await vi.advanceTimersByTimeAsync(0);
+    await h.coordinator.skip("cancel-prepared"); finish(); await vi.advanceTimersByTimeAsync(0);
+    expect(start).not.toHaveBeenCalled(); expect(h.browser.deliverPlaybackInstruction).not.toHaveBeenCalled();
+    await h.coordinator.close();
+  });
+  it.each(["unavailable", "failed"])("logs %s selected audio routes while healthy visual recipients continue", async kind => {
+    const h = harness(occurrence("route-failure"));
+    if (kind === "unavailable") vi.mocked(h.audioOutputService.preparePlayback).mockResolvedValue({ batches: [], unavailableRouteIds: ["headphones"] });
+    else h.audio.play.mockResolvedValue({ failedRouteIds: ["headphones"] } as never);
+    await h.coordinator.startNext(); await vi.advanceTimersByTimeAsync(0);
+    expect(h.playbackFailures).toEqual([{ occurrenceId: "route-failure", recipient: "audio", error: expect.objectContaining({ message: expect.stringContaining("headphones") }) }]);
+    expect(h.delivered.length).toBeGreaterThan(0);
+    expect(h.browser.stopPlaybackInstructions).not.toHaveBeenCalled();
+    await h.coordinator.close();
+  });
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(5_000);
@@ -296,7 +415,7 @@ describe("EffectPlaybackCoordinator", () => {
     const { coordinator, queue, browser } = harness(occurrence("watchdog", "visual"));
     await coordinator.startNext();
 
-    await vi.advanceTimersByTimeAsync(14_999);
+    await vi.advanceTimersByTimeAsync(15_099);
     expect(queue.snapshot().current?.id).toBe("watchdog");
     await vi.advanceTimersByTimeAsync(1);
 
@@ -309,7 +428,7 @@ describe("EffectPlaybackCoordinator", () => {
     setup.audio.stop.mockRejectedValueOnce(new Error("silence not acknowledged"));
     await setup.coordinator.startNext();
 
-    await vi.advanceTimersByTimeAsync(15_000);
+    await vi.advanceTimersByTimeAsync(15_100);
     expect(setup.queue.snapshot().current?.id).toBe("watchdog-retry");
     expect(setup.stopFailures).toEqual([{
       error: expect.objectContaining({ message: "silence not acknowledged" }),
@@ -361,6 +480,7 @@ describe("EffectPlaybackCoordinator", () => {
 
     const failed = harness(occurrence("failed-browser", "visual"));
     await failed.coordinator.startNext();
+    await vi.advanceTimersByTimeAsync(0);
     failed.coordinator.reportInstructionFinished("obs", failed.delivered[0]!.id, true);
     for (const instruction of failed.delivered.slice(1)) {
       failed.coordinator.reportInstructionFinished("obs", instruction.id);
@@ -371,4 +491,20 @@ describe("EffectPlaybackCoordinator", () => {
       status: "failed"
     });
   });
+});
+
+it("reports outstanding recipients when the watchdog stops cleanly", async () => {
+  vi.useFakeTimers();
+  try {
+    const queue = new DefaultEffectQueue(); queue.enqueue(occurrence("timeout", "visual"));
+    const expired = vi.fn();
+    const coordinator = new EffectPlaybackCoordinator({ queue, getSafety: () => ({ paused: false, muted: false, doNotDisturb: false }),
+      overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: ["obs"] }), stopPlaybackInstructions: vi.fn() },
+      onWatchdogExpired: expired });
+    await coordinator.startNext();
+    await vi.advanceTimersByTimeAsync(15100);
+    expect(expired).toHaveBeenCalledWith("timeout", expect.objectContaining({ browserInstructions: 2, browserClients: 2, desktopPending: false, audioPending: false }));
+    expect(queue.snapshot().recent[0]?.status).toBe("failed");
+    await coordinator.close();
+  } finally { vi.useRealTimers(); }
 });

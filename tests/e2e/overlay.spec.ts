@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { Buffer } from "node:buffer";
+import { resolve } from "node:path";
 import { installOverlayWebSocketMock } from "./e2e-helpers.js";
 
 test("module test overlay renders a test alert without displaying its route key", async ({ page }) => {
@@ -137,84 +138,50 @@ test("management test audio can be enabled after the browser blocks autoplay", a
 
 for (const scenario of [
   { mode: "play", stage: "play", errorName: "NotSupportedError", errorMessage: "play denied" },
-  { mode: "seek", stage: "seek", errorName: "InvalidStateError", errorMessage: "seek denied" }
+  { mode: "readiness", stage: "decode", errorName: "TimedMediaPreparationError", errorMessage: "Video playback preparation deadline exceeded." }
 ] as const) {
-  test(`timed video ${scenario.mode} failure stays transparent and reports structured provenance`, async ({ page }) => {
+  test(`timed video ${scenario.mode} failure stays transparent and reports structured provenance without seeking`, async ({ page }) => {
     await installOverlayWebSocketMock(page);
     await page.addInitScript(({ mode }) => {
-      const state = window as Window & { __mediaPosition?: number };
-      Object.defineProperties(HTMLMediaElement.prototype, {
-        readyState: { configurable: true, get: () => 1 },
-        seeking: { configurable: true, get: () => false },
-        currentTime: {
-          configurable: true,
-          get: () => state.__mediaPosition ?? 0,
-          set(value: number) {
-            if (mode === "seek") throw new DOMException("seek denied", "InvalidStateError");
-            state.__mediaPosition = value;
-          }
-        },
-        play: {
-          configurable: true,
-          value() {
-            return mode === "play"
-              ? Promise.reject(new DOMException("play denied", "NotSupportedError"))
-              : Promise.resolve();
-          }
-        },
-        pause: { configurable: true, value() {} }
+      const state = window as Window & { __mediaSeekAttempts?: number };
+      const position = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime")!;
+      Object.defineProperty(HTMLMediaElement.prototype, "currentTime", {
+        configurable: true,
+        get: position.get!,
+        set() { state.__mediaSeekAttempts = (state.__mediaSeekAttempts ?? 0) + 1; throw new DOMException("Seeking is forbidden", "InvalidStateError"); }
+      });
+      if (mode === "readiness") Object.defineProperty(HTMLMediaElement.prototype, "readyState", { configurable: true, get: () => 1 });
+      if (mode === "play") Object.defineProperty(HTMLMediaElement.prototype, "play", {
+        configurable: true,
+        value() { return Promise.reject(new DOMException("play denied", "NotSupportedError")); }
       });
     }, { mode: scenario.mode });
     await page.route("**/overlay/modules/alerts/live/ovl_failure/composition*", route => {
       const now = Date.now();
       return route.fulfill({ contentType: "application/json", json: {
-        overlayId: "default",
-        purpose: "live",
-        scope: "module",
-        targetProfileId: "vertical",
+        overlayId: "default", purpose: "live", scope: "module", targetProfileId: "vertical",
         modules: [{ moduleId: "alerts", enabled: true, instructions: [{
-          id: `video-${scenario.mode}`,
-          overlayId: "default",
-          moduleId: "alerts",
-          purpose: "live",
-          scope: "module",
-          targetProfileId: "vertical",
-          visual: {
-            assetId: "failure-video",
-            mediaType: "video",
-            layout: { x: 0, y: 0, width: 1080, height: 1920, zIndex: 1 }
-          },
-          audio: null,
-          text: null,
-          tts: null,
-          durationMs: 5_000,
+          id: `video-${scenario.mode}`, overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", targetProfileId: "vertical",
+          visual: { assetId: "failure-video", mediaType: "video", layout: { x: 0, y: 0, width: 1080, height: 1920, zIndex: 1 } },
+          audio: null, text: null, tts: null, durationMs: 5_000,
           timing: { startsAtEpochMs: now - 1_000, endsAtEpochMs: now + 4_000 }
         }] }]
       } });
     });
-    await page.route("**/assets/failure-video*", route => route.fulfill({ body: "", contentType: "video/webm" }));
-
+    await page.route("**/assets/failure-video*", route => route.fulfill({ path: resolve("tests/fixtures/media/neutral-trackless.webm"), contentType: "video/webm" }));
     await page.goto("/overlay/modules/alerts/live/ovl_failure?profile=vertical");
-
     await expect.poll(async () => page.evaluate(() => {
       const messages = (window as Window & { __overlaySocketMessages?: unknown[] }).__overlaySocketMessages ?? [];
       return messages.find((message) => typeof message === "object" && message !== null
         && "type" in message && message.type === "overlay.playback.failed") ?? null;
-    })).toMatchObject({
-      instructionId: `video-${scenario.mode}`,
-      referenceId: expect.stringMatching(/^err_/),
-      stage: scenario.stage,
-      exception: scenario.mode === "seek"
-        ? expect.objectContaining({
-            type: "TimedMediaPreparationError",
-            cause: expect.objectContaining({ type: scenario.errorName, message: scenario.errorMessage })
-          })
-        : expect.objectContaining({ type: scenario.errorName, message: scenario.errorMessage })
+    }), { timeout: 8000 }).toMatchObject({
+      instructionId: `video-${scenario.mode}`, referenceId: expect.stringMatching(/^err_/), stage: scenario.stage,
+      exception: expect.objectContaining({ type: scenario.errorName, message: scenario.errorMessage })
     });
+    expect(await page.evaluate(() => (window as Window & { __mediaSeekAttempts?: number }).__mediaSeekAttempts ?? 0)).toBe(0);
     await expect(page.getByTestId(`overlay-video-video-${scenario.mode}`)).toHaveCount(0);
     const visibleText = await page.locator("body").innerText();
-    expect(visibleText).not.toContain(scenario.errorMessage);
-    expect(visibleText).not.toContain("err_");
+    expect(visibleText).not.toContain(scenario.errorMessage); expect(visibleText).not.toContain("err_");
   });
 }
 

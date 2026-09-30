@@ -33,6 +33,7 @@ export interface EffectPlaybackCoordinatorOptions {
   readonly isModuleEnabled?: (() => boolean | Promise<boolean>) | undefined;
   readonly validateReferences?: ((content: EffectContentSnapshot) => boolean | Promise<boolean>) | undefined;
   readonly validateOutputAvailability?: ((content: EffectContentSnapshot) => boolean | Promise<boolean>) | undefined;
+  readonly onWatchdogExpired?: ((occurrenceId: string, outstanding: { browserInstructions: number; browserClients: number; browserRecipients: string; desktopPending: boolean; audioPending: boolean }) => void | Promise<void>) | undefined;
   readonly onStopFailure?: ((error: unknown, occurrenceId: string) => void | Promise<void>) | undefined;
   readonly onPlaybackFailure?: ((error: unknown, occurrenceId: string, recipient: "browser" | "desktop" | "audio") => void | Promise<void>) | undefined;
   readonly now?: (() => number) | undefined;
@@ -47,12 +48,15 @@ interface ActivePlayback {
   readonly transportId: string;
   readonly browserInstructions: readonly OverlayInstruction[];
   readonly browser: Map<string, BrowserObligation>;
+  readonly disconnectedClients: Set<string>;
   desktopPending: boolean;
   audioPending: boolean;
   hadRecipient: boolean;
   hadFailure: boolean;
   finished: boolean;
   stopping: Promise<boolean> | null;
+  preparing: boolean;
+  readonly preparationCancels: Set<() => void>;
   timer: ReturnType<typeof setTimeout> | null;
 }
 
@@ -64,6 +68,7 @@ export function effectOccurrenceKey(moduleId: string, occurrenceId: string): str
 }
 
 export class EffectPlaybackCoordinator {
+  readonly #onWatchdogExpired: EffectPlaybackCoordinatorOptions["onWatchdogExpired"];
   readonly #queue: EffectQueue;
   readonly #getSafety: () => PlaybackSafetyState;
   readonly #overlayPlaybackSink: OverlayPlaybackInstructionSink | null;
@@ -82,6 +87,7 @@ export class EffectPlaybackCoordinator {
   #closePromise: Promise<void> | null = null;
 
   constructor(options: EffectPlaybackCoordinatorOptions) {
+    this.#onWatchdogExpired = options.onWatchdogExpired;
     this.#queue = options.queue;
     this.#getSafety = options.getSafety;
     this.#overlayPlaybackSink = options.overlayPlaybackSink ?? null;
@@ -105,19 +111,13 @@ export class EffectPlaybackCoordinator {
     if (!enabled) {
       return { moduleId: "screen-effects", enabled: false, instructions: [] };
     }
-    const instructions = this.#active !== null && !this.#active.finished
-      ? this.#active.browserInstructions.filter((instruction) =>
-      instruction.overlayId === request.overlayId
-      && instruction.moduleId === request.moduleId
-      && instruction.purpose === request.purpose
-      && instruction.scope === request.scope
-      && (instruction.targetProfileId ?? null) === (request.targetProfileId ?? null)
-      )
-      : [];
+    // Transient occurrences are delivered only to recipients admitted at prepare.
+    // Reconnecting outputs resume with subsequent content, never a partial replay.
+    void request;
     return {
       moduleId: "screen-effects",
       enabled,
-      instructions: structuredClone(instructions)
+      instructions: []
     };
   }
 
@@ -174,6 +174,7 @@ export class EffectPlaybackCoordinator {
   reportClientDisconnected(clientId: string): EffectQueueSnapshot {
     const state = this.#active;
     if (state === null || state.finished) return this.#queue.snapshot();
+    state.disconnectedClients.add(clientId);
     for (const [instructionId, obligation] of state.browser) {
       obligation.pendingClients.delete(clientId);
       if (obligation.pendingClients.size === 0) state.browser.delete(instructionId);
@@ -209,6 +210,7 @@ export class EffectPlaybackCoordinator {
       transportId,
       browserInstructions,
       browser: new Map(),
+      disconnectedClients: new Set(),
       desktopPending: desktopInstructions.length > 0 && this.#desktopVisualSink !== null,
       audioPending: audio.length > 0
         && this.#audioOutputService !== null
@@ -217,36 +219,120 @@ export class EffectPlaybackCoordinator {
       hadFailure: false,
       finished: false,
       stopping: null,
+      preparing: true,
+      preparationCancels: new Set(),
       timer: null
     };
     this.#active = state;
-    state.timer = this.#scheduleTimer(
-      () => {
-        void this.#stopAndComplete(occurrence.id, "failed").catch((error: unknown) => {
-          void Promise.resolve(this.#onStopFailure(error, occurrence.id)).catch(
-          // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
-          () => undefined);
-        });
-      },
-      occurrence.content.variant.durationMs + COMPLETION_GRACE_MS
-    );
+    void this.#prepareAndStart(state, desktopInstructions, audio);
+  }
 
-    this.#dispatchBrowser(state, browserInstructions);
-    if (state.desktopPending) {
-      state.hadRecipient = true;
-      void this.#desktopVisualSink!.play(transportId, desktopInstructions, startsAtEpochMs)
-        .then(
-          () => this.#settleDesktop(state, false),
-          (error: unknown) => {
-            this.#reportPlaybackFailure(error, state.occurrence.id, "desktop");
-            this.#settleDesktop(state, true);
+  async #prepareAndStart(state: ActivePlayback, desktop: readonly OverlayInstruction[], audio: readonly ResolvedAlertAudio[]): Promise<void> {
+    const preparations: Promise<(startsAt: number) => void>[] = [];
+    if (this.#overlayPlaybackSink !== null) {
+      for (const instruction of state.browserInstructions) preparations.push(this.#prepareRecipient(state, "browser", async allowed => {
+        const sink = this.#overlayPlaybackSink!;
+        if (sink.preparePlaybackInstruction === undefined) return (startsAt: number) => this.#dispatchBrowser(state, [
+          { ...instruction, timing: { startsAtEpochMs: startsAt, endsAtEpochMs: startsAt + instruction.durationMs } }
+        ]);
+        try {
+          const prepared = await sink.preparePlaybackInstruction(instruction);
+          if (!allowed()) return () => {};
+          const clients = prepared.deliveredClientIds.filter(id => !state.disconnectedClients.has(id));
+          if (clients.length > 0) {
+            state.hadRecipient = true;
+            state.browser.set(instruction.id, { pendingClients: new Set(clients) });
           }
-        );
+          return (startsAt: number) => {
+            try { prepared.start(startsAt); }
+            catch (error) { state.browser.delete(instruction.id); throw error; }
+          };
+        } catch (error) {
+          state.hadFailure = true;
+          this.#reportPlaybackFailure(error, state.occurrence.id, "browser");
+          return () => {};
+        }
+      }, () => {
+        state.browser.delete(instruction.id);
+        this.#overlayPlaybackSink?.stopPlaybackInstructions?.([instruction.id]);
+      }));
     }
-    if (state.audioPending) {
-      void this.#dispatchAudio(state, audio, startsAtEpochMs);
+    if (state.desktopPending) preparations.push(this.#prepareRecipient(state, "desktop", async allowed => {
+      state.hadRecipient = true;
+      try {
+        const sink = this.#desktopVisualSink!;
+        const prepared = sink.prepare === undefined
+          ? { start: (startsAt: number) => sink.play(state.transportId, desktop, startsAt) }
+          : await sink.prepare(state.transportId, desktop);
+        if (!allowed()) return () => {};
+        return (startsAt: number) => {
+          void Promise.resolve().then(() => prepared.start(startsAt)).then(
+            () => this.#settleDesktop(state, false),
+            (error: unknown) => { this.#reportPlaybackFailure(error, state.occurrence.id, "desktop"); this.#settleDesktop(state, true); }
+          );
+        };
+      } catch (error) {
+        this.#reportPlaybackFailure(error, state.occurrence.id, "desktop"); this.#settleDesktop(state, true);
+        return () => {};
+      }
+    }, async () => {
+      await this.#desktopVisualSink!.stop(state.transportId);
+      this.#settleDesktop(state, true);
+    }));
+    if (state.audioPending) preparations.push(this.#prepareRecipient(state, "audio", allowed => this.#prepareAudio(state, audio, allowed), async () => {
+      await this.#audioPlaybackSink!.stop(state.transportId);
+      state.audioPending = false;
+    }));
+    const prepared = await Promise.all(preparations);
+    if (!this.#isActive(state)) return;
+    const startsAt = this.#now() + START_DELAY_MS;
+    if (state.timer !== null) clearTimeout(state.timer);
+    state.timer = this.#scheduleTimer(() => {
+      const outstanding = {
+        browserInstructions: state.browser.size,
+        browserClients: [...state.browser.values()].reduce((sum, value) => sum + value.pendingClients.size, 0),
+        browserRecipients: JSON.stringify([...state.browser].slice(0, 16).map(([instructionId, value]) => ({ instructionId: instructionId.slice(0, 256), clientIds: [...value.pendingClients].slice(0, 16).map(id => id.slice(0, 256)) }))),
+        desktopPending: state.desktopPending, audioPending: state.audioPending
+      };
+      void Promise.resolve().then(() => this.#onWatchdogExpired?.(state.occurrence.id, outstanding)).catch((error: unknown) => this.#reportStopFailure(error, state.occurrence.id));
+      void this.#stopAndComplete(state.occurrence.id, "failed").catch((error: unknown) => this.#reportStopFailure(error, state.occurrence.id));
+    }, START_DELAY_MS + state.occurrence.content.variant.durationMs + COMPLETION_GRACE_MS);
+    for (const start of prepared) {
+      try { start(startsAt); }
+      catch (error) { state.hadFailure = true; this.#reportPlaybackFailure(error, state.occurrence.id, "browser"); }
     }
+    state.preparing = false;
     this.#maybeComplete(state);
+  }
+
+  #prepareRecipient(
+    state: ActivePlayback,
+    recipient: "browser" | "desktop" | "audio",
+    prepare: (allowed: () => boolean) => Promise<(startsAt: number) => void>,
+    cleanup: () => void | Promise<void>
+  ): Promise<(startsAt: number) => void> {
+    return new Promise(resolve => {
+      let settled = false;
+      const allowed = () => !settled && this.#isActive(state);
+      const finish = (start: (at: number) => void) => {
+        if (settled) return;
+        settled = true; clearTimeout(timer); state.preparationCancels.delete(cancel); resolve(start);
+      };
+      const cancel = () => finish(() => {});
+      const fail = async (error: unknown) => {
+        if (settled) return;
+        settled = true; clearTimeout(timer); state.preparationCancels.delete(cancel);
+        state.hadFailure = true;
+        this.#reportPlaybackFailure(error, state.occurrence.id, recipient);
+        try { await cleanup(); }
+        catch (cleanupError) { this.#reportStopFailure(cleanupError, state.occurrence.id); }
+        resolve(() => {});
+      };
+      const timer = this.#scheduleTimer(() => { void fail(new Error(`${recipient} playback preparation timed out after 15000ms.`)); }, 15_000);
+      state.preparationCancels.add(cancel);
+      try { void prepare(allowed).then(finish, fail); }
+      catch (error) { void fail(error); }
+    });
   }
 
   #dispatchBrowser(state: ActivePlayback, instructions: readonly OverlayInstruction[]): void {
@@ -254,7 +340,7 @@ export class EffectPlaybackCoordinator {
     for (const instruction of instructions) {
       try {
         const delivered = this.#overlayPlaybackSink.deliverPlaybackInstruction(instruction);
-        const clients = new Set(delivered?.deliveredClientIds ?? []);
+        const clients = new Set((delivered?.deliveredClientIds ?? []).filter(id => !state.disconnectedClients.has(id)));
         if (clients.size > 0) {
           state.hadRecipient = true;
           state.browser.set(instruction.id, { pendingClients: clients });
@@ -266,45 +352,51 @@ export class EffectPlaybackCoordinator {
     }
   }
 
-  async #dispatchAudio(
+  async #prepareAudio(
     state: ActivePlayback,
     audio: readonly ResolvedAlertAudio[],
-    startsAtEpochMs: number
-  ): Promise<void> {
+    allowed: () => boolean
+  ): Promise<(startsAt: number) => void> {
     try {
       const prepared = await this.#audioOutputService!.preparePlayback(state.transportId, audio);
-      if (!this.#isActive(state)) return;
+      if (!allowed()) return () => {};
       if (prepared.unavailableRouteIds.length > 0 || prepared.batches.length === 0) {
         state.hadFailure = true;
+        this.#reportPlaybackFailure(new Error(`Selected audio routes unavailable: ${prepared.unavailableRouteIds.join(", ") || "no prepared destinations"}`), state.occurrence.id, "audio");
       }
       if (prepared.batches.length > 0) state.hadRecipient = true;
-      const results = await Promise.allSettled(prepared.batches.map((batch) =>
-        this.#audioPlaybackSink!.play({
-          ...batch,
-          muted: this.#getSafety().muted,
-          timing: {
-            startsAtEpochMs,
-            endsAtEpochMs: startsAtEpochMs + batch.durationMs
+      const handles = await Promise.allSettled(prepared.batches.map(batch => {
+        const sink = this.#audioPlaybackSink!;
+        return sink.prepare === undefined ? Promise.resolve({ start: (startsAtEpochMs: number) => sink.play({ ...batch,
+          muted: this.#getSafety().muted, timing: { startsAtEpochMs, endsAtEpochMs: startsAtEpochMs + batch.durationMs } }) })
+          : sink.prepare({ ...batch, muted: this.#getSafety().muted });
+      }));
+      if (!allowed()) return () => {};
+      for (const handle of handles) if (handle.status === "rejected") {
+        state.hadFailure = true; this.#reportPlaybackFailure(handle.reason, state.occurrence.id, "audio");
+      }
+      return startsAt => {
+        void Promise.allSettled(handles.filter(handle => handle.status === "fulfilled").map(handle =>
+          Promise.resolve().then(() => handle.value.start(startsAt)))).then(results => {
+          for (const result of results) {
+            if (result.status === "rejected") {
+              state.hadFailure = true; this.#reportPlaybackFailure(result.reason, state.occurrence.id, "audio");
+            } else if (result.value.failedRouteIds.length > 0) {
+              state.hadFailure = true;
+              this.#reportPlaybackFailure(new Error(`Selected audio routes failed: ${result.value.failedRouteIds.join(", ")}`), state.occurrence.id, "audio");
+            }
           }
-        })
-      ));
-      if (results.some((result) =>
-        result.status === "rejected"
-        || result.value.failedRouteIds.length > 0
-      )) {
-        state.hadFailure = true;
-      }
-      for (const result of results) {
-        if (result.status === "rejected") this.#reportPlaybackFailure(result.reason, state.occurrence.id, "audio");
-      }
+          if (this.#isActive(state)) { state.audioPending = false; this.#maybeComplete(state); }
+        });
+      };
     } catch (error) {
       state.hadFailure = true;
       this.#reportPlaybackFailure(error, state.occurrence.id, "audio");
-    } finally {
       if (this.#isActive(state)) {
         state.audioPending = false;
         this.#maybeComplete(state);
       }
+      return () => {};
     }
   }
 
@@ -318,6 +410,7 @@ export class EffectPlaybackCoordinator {
   #maybeComplete(state: ActivePlayback): void {
     if (
       !this.#isActive(state)
+      || state.preparing
       || state.browser.size > 0
       || state.desktopPending
       || state.audioPending
@@ -330,6 +423,7 @@ export class EffectPlaybackCoordinator {
   #complete(state: ActivePlayback, status: "completed" | "failed"): boolean {
     if (!this.#isActive(state)) return false;
     state.finished = true;
+    for (const cancel of state.preparationCancels) cancel();
     if (state.timer !== null) clearTimeout(state.timer);
     state.timer = null;
     const completed = this.#queue.complete(state.occurrence.id, status, this.#now());
@@ -346,6 +440,7 @@ export class EffectPlaybackCoordinator {
     if (state === null || state.occurrence.id !== occurrenceId) return Promise.resolve(false);
     if (state.stopping !== null) return state.stopping;
     state.finished = true;
+    for (const cancel of state.preparationCancels) cancel();
     if (state.timer !== null) clearTimeout(state.timer);
     state.timer = null;
     try {
@@ -382,6 +477,12 @@ export class EffectPlaybackCoordinator {
 
   #isActive(state: ActivePlayback): boolean {
     return this.#active === state && !state.finished && !this.#closed;
+  }
+
+  #reportStopFailure(error: unknown, occurrenceId: string): void {
+    void Promise.resolve().then(() => this.#onStopFailure(error, occurrenceId)).catch(
+    // error-provenance: allow cleanup -- the production logger owns its own emergency fallback
+    () => undefined);
   }
 
   #reportPlaybackFailure(error: unknown, occurrenceId: string, recipient: "browser" | "desktop" | "audio"): void {

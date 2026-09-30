@@ -101,7 +101,7 @@ describe("overlay-client", () => {
     const socket = new RecordingWebSocket();
     const reporter = createOverlayPlaybackReporter(socket);
 
-    reporter.reportStarted("instruction-1");
+    reporter.reportStarted("instruction-1", { preparationDurationMs: 25, scheduledStartEpochMs: 100, actualStartEpochMs: 105 });
     reporter.reportCompleted("instruction-1");
     reporter.reportFailed("instruction-2", {
       referenceId: "err_failure",
@@ -113,7 +113,8 @@ describe("overlay-client", () => {
     expect(socket.sent).toEqual([
       {
         type: "overlay.playback.started",
-        instructionId: "instruction-1"
+        instructionId: "instruction-1",
+        diagnostics: { preparationDurationMs: 25, scheduledStartEpochMs: 100, actualStartEpochMs: 105 }
       },
       {
         type: "overlay.playback.completed",
@@ -128,6 +129,23 @@ describe("overlay-client", () => {
         exception: { type: "NotSupportedError", message: "unsupported", stack: null, code: null, cause: null, thrownValue: null }
       }
     ]);
+  });
+
+  it.each(["overlay.playback", "overlay.playback.prepare"])("reports validated-ID %s schema failures without rendering them", type => {
+    const onMessage = vi.fn(); connectClient(onMessage);
+    const socket = FakeWebSocket.instances[0]!; socket.emit("open");
+    socket.emitMessage(JSON.stringify({ type, instruction: { id: "bad-style", text: { textStyle: { fontPreset: "external-font" } } } }));
+    expect(onMessage).not.toHaveBeenCalled();
+    expect(socket.sent.map(message => JSON.parse(message))).toEqual([expect.objectContaining({
+      type: "overlay.playback.failed", instructionId: "bad-style", stage: "source-load", referenceId: expect.stringMatching(/^err_/),
+      message: "Overlay playback instruction failed validation.", exception: expect.objectContaining({ type: "ZodError" })
+    })]);
+  });
+  it("does not forge validation reports for unrecognized messages or invalid IDs", () => {
+    connectClient(); const socket = FakeWebSocket.instances[0]!; socket.emit("open");
+    for (const id of [undefined, "", " ", "x".repeat(201), 1]) socket.emitMessage(JSON.stringify({ type: "overlay.playback", instruction: { id } }));
+    socket.emitMessage(JSON.stringify({ type: "unknown", instruction: { id: "valid-id" } }));
+    expect(socket.sent).toEqual([]);
   });
 
   it("reconnects after 1, 2, 4, 8, then 10 seconds capped", () => {
@@ -155,6 +173,28 @@ describe("overlay-client", () => {
     expect(FakeWebSocket.instances).toHaveLength(3);
     vi.advanceTimersByTime(1);
     expect(FakeWebSocket.instances).toHaveLength(4);
+  });
+
+  it("fetches a fresh authoritative composition after every successful connection", async () => {
+    const onMessage = vi.fn();
+    const fetcher = vi.fn().mockResolvedValue({ ok: true, json: vi.fn().mockResolvedValue({
+      overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", modules: []
+    }) });
+    connectOverlayClient({
+      route: parseOverlayRoute("/overlay/modules/alerts/live/ovl_reconnect?profile=landscape")!,
+      fetcher: fetcher as unknown as typeof fetch,
+      WebSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+      onMessage
+    });
+    FakeWebSocket.instances[0]!.emit("open");
+    await vi.advanceTimersByTimeAsync(0);
+    FakeWebSocket.instances[0]!.emit("close");
+    vi.advanceTimersByTime(1_000);
+    FakeWebSocket.instances[1]!.emit("open");
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(onMessage.mock.calls.filter(([message]) => message.type === "composition")).toHaveLength(2);
   });
 
   it("cancels reconnect and closes the active socket when disposed", () => {
@@ -203,6 +243,22 @@ describe("overlay-client", () => {
     expect(onMessage).toHaveBeenCalledTimes(2);
   });
 
+  it("preserves safe close evidence once and reconnects", () => {
+    const onMessage = vi.fn();
+    connectClient(onMessage);
+    const socket = FakeWebSocket.instances[0]!;
+    socket.emitClose(1006, "Lost wss://localhost/overlay/ovl_reconnect ovl_reconnect");
+    socket.emitClose(1006, "duplicate");
+    expect(onMessage).toHaveBeenCalledTimes(1);
+    expect(onMessage.mock.calls[0]![0].message).toContain("1006");
+    expect(JSON.stringify(onMessage.mock.calls)).not.toContain("ovl_reconnect");
+    vi.advanceTimersByTime(1000);
+    FakeWebSocket.instances[1]!.emit("open");
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(onMessage.mock.calls[0]![0].message).toContain("Lost [redacted-url] [redacted]");
+    expect(onMessage.mock.calls[0]![0].message).toContain("Reconnecting in 1000ms");
+  });
+
   it("treats a policy close as a terminal transport failure", () => {
     const onMessage = vi.fn();
     connectClient(onMessage);
@@ -210,7 +266,7 @@ describe("overlay-client", () => {
     FakeWebSocket.instances[0]!.emitClose(1008);
     expect(onMessage).toHaveBeenCalledWith({
       type: "error",
-      message: "Overlay transport connection closed"
+      message: "Overlay transport connection closed (1008). Reconnection stopped."
     });
     vi.advanceTimersByTime(30_000);
     expect(FakeWebSocket.instances).toHaveLength(1);
@@ -257,9 +313,9 @@ class FakeWebSocket {
     for (const listener of this.#listeners.get(type) ?? []) listener(new Event(type));
   }
 
-  emitClose(code: number): void {
+  emitClose(code: number, reason = ""): void {
     this.readyState = WebSocket.CLOSED;
-    for (const listener of this.#listeners.get("close") ?? []) listener({ code } as CloseEvent);
+    for (const listener of this.#listeners.get("close") ?? []) listener({ code, reason } as CloseEvent);
   }
 
   emitMessage(data: string): void {

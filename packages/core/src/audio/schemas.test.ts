@@ -18,6 +18,14 @@ const legacyDocument = { schemaVersion: 1,
   samplePayloads: [{ id: "normal", label: "Normal", kind: "built-in", payload: { userName: "Viewer" } }]
 };
 
+it("bounds per-output timing diagnostics and rejects identifying or malformed fields", () => {
+  const output = { routeIds: ["selected"], layerId: "intro", assetId: "clip", diagnostics: { actualStartEpochMs: 100, terminalOutcome: "completed" } };
+  expect(core.deviceAudioResultSchema.safeParse({ failedRouteIds: [], outputDiagnostics: [output] }).success).toBe(true);
+  for (const outputDiagnostics of [Array.from({ length: 65 }, () => output), [{ ...output, routeIds: [] }], [{ ...output, deviceName: "private" }], [{ ...output, diagnostics: { ...output.diagnostics, actualStartEpochMs: Infinity } }]]) {
+    expect(core.deviceAudioResultSchema.safeParse({ failedRouteIds: [], outputDiagnostics }).success).toBe(false);
+  }
+});
+
 describe("alert-wide audio outputs", () => {
   it("defaults legacy documents to browser audio while retaining explicit silence", () => {
     expect(core.alertEditorDocumentSchema.parse(legacyDocument)).toMatchObject({
@@ -100,4 +108,22 @@ describe("named audio route contracts", () => {
       expect(patch.safeParse(invalid).success).toBe(false);
     }
   });
+});
+
+it("bounds and validates audio failure evidence at the IPC boundary", () => {
+  const failure = { routeIds: ["selected"], layerId: "layer", assetId: "clip", stage: "seek", exception: core.serializeException(new Error("seek fixture")) };
+  const result = { failedRouteIds: ["selected"], failures: [failure] };
+  expect(core.deviceAudioResultSchema.parse(result)).toEqual(result);
+  const longIdentity = { ...failure, layerId: "layer".repeat(100), assetId: "asset".repeat(100) };
+  expect(core.deviceAudioResultSchema.safeParse({ ...result, failures: [longIdentity] }).success).toBe(false);
+  expect(core.deviceAudioResultSchema.safeParse({ ...result, failures: Array.from({ length: 64 }, () => failure) }).success).toBe(true);
+  expect(core.deviceAudioResultSchema.safeParse({ ...result, failures: Array.from({ length: 65 }, () => failure) }).success).toBe(false);
+  for (const invalidResult of [{ ...result, failedRouteIds: Array.from({ length: 65 }, (_, index) => `route-${index}`) },
+    { ...result, failedRouteIds: ["route".repeat(100)] }]) {
+    expect(core.deviceAudioResultSchema.safeParse(invalidResult).success).toBe(false);
+  }
+  for (const invalid of [{ ...failure, stage: "unknown" }, { ...failure, secret: "forbidden" }, { ...failure, routeIds: ["selected", "selected"] },
+    { ...failure, routeIds: Array.from({ length: 65 }, (_, index) => `route-${index}`) }, { ...failure, exception: "unstructured" }]) {
+    expect(core.deviceAudioResultSchema.safeParse({ ...result, failures: [invalid] }).success).toBe(false);
+  }
 });

@@ -22,6 +22,47 @@ const invalidBytes = Buffer.from("not a png", "utf8");
 const replacementPngBytes = Buffer.concat([pngSignature, Buffer.from([9, 8, 7])]);
 
 describe("asset routes", () => {
+  it.each(["management", "module", "unified"] as const)("serves authorized %s asset ranges and HEAD without widening access", async kind => {
+    const access = createOverlayAccessService(["ovl_ranges"]);
+    const key = await access.createKey({ overlayId: "default", moduleId: kind === "unified" ? null : "alerts", purpose: "live", scope: kind === "unified" ? "unified" : "module" });
+    const { app, authHeaders } = await createAppWithAssets({ overlayAccessService: access });
+    await app.inject({ method: "POST", url: "/assets/import", headers: { ...authHeaders, "content-type": "application/octet-stream", "x-stream-jams-file-name": "test.png", "x-stream-jams-mime-type": "image/png" }, payload: pngBytes });
+    const url = kind === "management" ? "/assets/asset_1/file" : kind === "module"
+      ? `/overlay/modules/alerts/live/${key.rawKey}/assets/asset_1` : `/overlay/unified/live/${key.rawKey}/assets/asset_1`;
+    const headers = kind === "management" ? authHeaders : {};
+    for (const [range, start, end] of [["bytes=1-3", 1, 3], ["bytes=8-", 8, 10], ["bytes=-3", 8, 10], ["bytes=8-99", 8, 10], ["bytes=-99", 0, 10]] as const) {
+      const response = await app.inject({ method: "GET", url, headers: { ...headers, range } });
+      expect(response.statusCode).toBe(206);
+      expect(response.headers["accept-ranges"]).toBe("bytes");
+      expect(response.headers["content-range"]).toBe(`bytes ${start}-${end}/11`);
+      expect(response.headers["content-length"]).toBe(String(end - start + 1));
+      expect(response.rawPayload).toEqual(pngBytes.subarray(start, end + 1));
+    }
+    for (const range of ["bytes=11-", "bytes=-0", "bytes=99999999999999999999-"]) {
+      const response = await app.inject({ method: "GET", url, headers: { ...headers, range } });
+      expect(response.statusCode).toBe(416);
+      expect(response.headers["content-range"]).toBe("bytes */11");
+      expect(response.rawPayload.length).toBe(0);
+    }
+    for (const range of ["items=1-3", "bytes=bad", "bytes=4-2", "bytes=0-1,3-4", "bytes=-"]) {
+      const response = await app.inject({ method: "GET", url, headers: { ...headers, range } });
+      expect(response.statusCode).toBe(200);
+      expect(response.rawPayload).toEqual(pngBytes);
+    }
+    const conditional = await app.inject({ method: "GET", url, headers: { ...headers, range: "bytes=1-3", "if-range": '"old"' } });
+    expect(conditional.statusCode).toBe(200);
+    expect(conditional.rawPayload).toEqual(pngBytes);
+    const head = await app.inject({ method: "HEAD", url, headers: { ...headers, range: "bytes=1-3" } });
+    expect(head.statusCode).toBe(200);
+    expect(head.headers["content-length"]).toBe("11");
+    expect(head.headers["accept-ranges"]).toBe("bytes");
+    expect(head.rawPayload.length).toBe(0);
+    if (kind !== "management") await access.revokeKey(key.record.id);
+    const unauthorized = await app.inject({ method: "GET", url, headers: { range: "bytes=1-3" } });
+    expect(unauthorized.statusCode).toBe(401);
+    expect(unauthorized.headers["content-range"]).toBeUndefined();
+    await app.close();
+  });
   it.each(["icon", "start-audio", "end-audio"] as const)("rejects incompatible confirmed timer %s replacements without changing the original", async role => {
     const { app, authHeaders, repository } = await createAppWithAssets({ timerRole: role });
     const originalBytes = role === "icon" ? pngBytes : Buffer.from("ID3original");

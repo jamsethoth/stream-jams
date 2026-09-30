@@ -24,6 +24,7 @@ function deferred<T = void>(): Deferred<T> {
 }
 
 interface ElementControl {
+  readonly stalled?: boolean;
   readonly sink?: Deferred<void>;
   readonly play?: Deferred<void>;
   readonly sinkError?: Error;
@@ -31,7 +32,10 @@ interface ElementControl {
 }
 
 class TestMediaElement implements PlayerMediaElement {
-  currentTime = 0;
+  private position = 0;
+  private startedAt: number | null = null;
+  get currentTime(): number { return this.position + (this.startedAt === null || this.control.stalled ? 0 : (Date.now() - this.startedAt) / 1000); }
+  set currentTime(value: number) { this.position = value; if (this.startedAt !== null) this.startedAt = Date.now(); }
   readyState = 1;
   seeking = false;
   volume = 1;
@@ -58,9 +62,10 @@ class TestMediaElement implements PlayerMediaElement {
     this.mutedAtPlay.push(this.muted);
     if (this.control.playError !== undefined) throw this.control.playError;
     if (this.control.play !== undefined) await this.control.play.promise;
+    this.startedAt = Date.now();
   }
 
-  pause(): void { this.pauseCount += 1; }
+  pause(): void { this.position = this.currentTime; this.startedAt = null; this.pauseCount += 1; }
   load(): void { this.loadCount += 1; }
   remove(): void { this.removeCount += 1; }
   removeAttribute(name: string): void { if (name === "src") this.sourceRemoveCount += 1; }
@@ -152,6 +157,63 @@ async function flushStarts(): Promise<void> {
 }
 
 describe("DeviceAudioPlayer", () => {
+  it("reports stalled playback instead of configured completion and cleans up", async () => {
+    const audio = createHarness({ controls: Array.from({ length: 4 }, () => ({ stalled: true })) }); audio.player.initialize(1, false);
+    const playing = audio.player.play({ generation: 1, batch: batch(), assets, deadlineMs: Date.now() + 1000 });
+    await flushStarts(); await vi.advanceTimersByTimeAsync(1000);
+    const result = await playing;
+    expect(result.failedRouteIds).toEqual(["personal", "broadcast"]);
+    expect(result.failures?.every(failure => failure.stage === "stall")).toBe(true);
+    expect(result.outputDiagnostics).toHaveLength(4);
+    expect(result.outputDiagnostics?.every(output => output.diagnostics.terminalOutcome === "failed" && output.diagnostics.completionReason === "stalled")).toBe(true);
+    expect(audio.elements.every(element => element.cleaned)).toBe(true);
+  });
+
+  it("fails sustained stalled routes and plays the following occurrence", async () => {
+    const audio = createHarness({ controls: [{ stalled: true }] }); audio.player.initialize(1, true);
+    const selected = batch({ layers: [batch().layers[0]!], destinations: [batch().destinations[0]!] });
+    const playing = audio.player.play({ generation: 1, batch: selected, assets, deadlineMs: Date.now() + 10000 });
+    await flushStarts(); audio.elements[0]!.currentTime = 0.5;
+    await vi.advanceTimersByTimeAsync(2250);
+    expect(await playing).toMatchObject({ failedRouteIds: ["personal"], diagnostics: { terminalOutcome: "failed", completionReason: "stalled" }, failures: [{ stage: "stall" }] });
+    await flushStarts();
+    const next = audio.player.play({ generation: 1, batch: { ...selected, playbackId: "next" }, assets, deadlineMs: Date.now() + 1000 });
+    await flushStarts(); await vi.advanceTimersByTimeAsync(1000);
+    expect(await next).toMatchObject({ failedRouteIds: [], diagnostics: { terminalOutcome: "completed", completionReason: "configured-duration" } });
+    expect(audio.elements[1]!.mutedAtPlay).toEqual([true]);
+    expect(audio.elements.every(element => element.cleaned)).toBe(true);
+    audio.player.close(); expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(["device-bind", "play", "metadata", "seek", "decode"] as const)("retains %s failures only for selected failing routes while healthy audio completes", async stage => {
+    const cause = new Error(`${stage} fixture failure`);
+    const audio = createHarness({ controls: [stage === "device-bind" ? { sinkError: cause } : stage === "play" ? { playError: cause } : {}, {}] });
+    audio.player.initialize(1, false);
+    const selected = batch({ layers: [batch().layers[0]!], timing: { startsAtEpochMs: Date.now() - 500, endsAtEpochMs: Date.now() + 10000 } });
+    const playing = audio.player.play({ generation: 1, batch: selected, assets, deadlineMs: Date.now() + 10000 });
+    if (stage === "metadata") audio.elements[0]!.readyState = 0;
+    if (stage === "seek") Object.defineProperty(audio.elements[0], "currentTime", { get: () => 0, set: () => { throw cause; } });
+    await flushStarts();
+    if (stage === "decode") audio.elements[0]!.emit("error");
+    audio.elements[1]!.emit("ended");
+    if (stage === "metadata") await vi.advanceTimersByTimeAsync(5000);
+    const result = await playing;
+    expect(result).toMatchObject({ failedRouteIds: ["personal"], failures: [{ routeIds: ["personal"], layerId: "intro", assetId: "shared-sound", stage, exception: expect.any(Object) }] });
+    if (stage === "device-bind" || stage === "play") expect(result.failures?.[0]?.exception.message).toBe(cause.message);
+    if (stage === "seek") expect(result.failures?.[0]?.exception.cause?.message).toBe(cause.message);
+    expect(audio.elements.map(element => element.sinkIds)).toEqual([["headphones"], ["stream-mix"]]);
+    expect(audio.elements.every(element => element.cleaned)).toBe(true);
+  });
+
+  it("preserves source creation failure without inventing audio destinations", async () => {
+    const cause = new Error("blob creation failed");
+    const audio = createHarness({ createSource: () => { throw cause; } });
+    audio.player.initialize(1, false);
+    const selected = batch({ layers: [batch().layers[0]!], destinations: [batch().destinations[0]!] });
+    const result = await audio.player.play({ generation: 1, batch: selected, assets, deadlineMs: Date.now() + 10000 });
+    expect(result).toMatchObject({ failedRouteIds: ["personal"], failures: [{ routeIds: ["personal"], stage: "source-load", exception: { message: cause.message } }] });
+    expect(audio.elements).toHaveLength(0);
+  });
   it("waits for the common epoch and cancels pending timed starts without replay", async () => {
     const audio = createHarness();
     audio.player.initialize(1, false);
@@ -161,7 +223,7 @@ describe("DeviceAudioPlayer", () => {
     expect(audio.elements.every(element => element.playCount === 0)).toBe(true);
     audio.player.stop(timedBatch.playbackId);
     await vi.advanceTimersByTimeAsync(1);
-    await expect(playing).resolves.toEqual({ failedRouteIds: [] });
+    await expect(playing).resolves.toMatchObject({ failedRouteIds: [] });
     expect(audio.elements.every(element => element.playCount === 0 && element.cleaned)).toBe(true);
   });
 
@@ -184,7 +246,7 @@ describe("DeviceAudioPlayer", () => {
     expect(audio.elements[0]!.currentTime).toBe(2.5);
     expect(audio.elements[0]!.mutedAtPlay).toEqual([true]);
     audio.elements[0]!.emit("ended");
-    await expect(playing).resolves.toEqual({ failedRouteIds: [] });
+    await expect(playing).resolves.toMatchObject({ failedRouteIds: [] });
     expect(audio.elements[0]!.cleaned).toBe(true);
   });
   it("uses only the startup budget remaining after upstream asset and transport work", async () => {
@@ -198,7 +260,7 @@ describe("DeviceAudioPlayer", () => {
     }), assets, startDeadlineMs: 5000, deadlineMs: 30_000 });
     now = 5100; sink.resolve(); await flushStarts();
     expect(audio.elements[0]!.playCount).toBe(0);
-    expect(await playing).toEqual({ failedRouteIds: ["personal"] });
+    expect(await playing).toMatchObject({ failedRouteIds: ["personal"], failures: [expectedFailure("personal", "one", "shared-sound", "device-bind", "Audio preparation deadline exceeded.")] });
     audio.player.close();
   });
 
@@ -215,7 +277,7 @@ describe("DeviceAudioPlayer", () => {
     sink.resolve();
     await flushStarts();
     expect(audio.elements[0]!.playCount).toBe(0);
-    expect(await playing).toEqual({ failedRouteIds: ["personal"] });
+    expect(await playing).toMatchObject({ failedRouteIds: ["personal"], failures: [expectedFailure("personal", "one", "shared-sound", "device-bind", "Audio preparation deadline exceeded.")] });
     audio.player.close();
   });
 
@@ -244,7 +306,7 @@ describe("DeviceAudioPlayer", () => {
     expect(audio.elements.every((element) => element.playCount === 1)).toBe(true);
 
     for (const element of audio.elements) element.emit("ended");
-    await expect(result).resolves.toEqual({ failedRouteIds: [] });
+    await expect(result).resolves.toMatchObject({ failedRouteIds: [] });
     expect(audio.elements.every((element) => element.cleaned)).toBe(true);
     expect(audio.revokedSources).toHaveLength(1);
   });
@@ -304,7 +366,7 @@ describe("DeviceAudioPlayer", () => {
     await flushStarts();
     for (const element of audio.elements) if (element.playCount > 0) element.emit("ended");
 
-    await expect(result).resolves.toEqual({ failedRouteIds: ["personal"] });
+    await expect(result).resolves.toMatchObject({ failedRouteIds: ["personal"], failures: [expectedFailure("personal", "intro", "shared-sound", "device-bind", "device rejected")] });
     expect(audio.elements.slice(2).every((element) => element.playCount === 1)).toBe(true);
   });
 
@@ -322,7 +384,7 @@ describe("DeviceAudioPlayer", () => {
     audio.player.stop(oneOutput.playbackId);
     sink.resolve();
 
-    await expect(result).resolves.toEqual({ failedRouteIds: [] });
+    await expect(result).resolves.toMatchObject({ failedRouteIds: [] });
     await flushStarts();
     expect(audio.elements[0]?.playCount).toBe(0);
     expect(audio.elements[0]?.cleaned).toBe(true);
@@ -361,7 +423,7 @@ describe("DeviceAudioPlayer", () => {
 
     audio.player.initialize(2, true);
     oldSink.resolve();
-    await expect(oldResult).resolves.toEqual({ failedRouteIds: [] });
+    await expect(oldResult).resolves.toMatchObject({ failedRouteIds: [] });
     const newResult = audio.player.play({ generation: 2, batch: oneOutput, assets, deadlineMs: 11_000 });
     await flushStarts();
 
@@ -376,7 +438,7 @@ describe("DeviceAudioPlayer", () => {
     audio.player.initialize(2, false);
 
     await expect(audio.player.play({ generation: 1, batch: batch(), assets, deadlineMs: 11_000 }))
-      .resolves.toEqual({ failedRouteIds: ["personal", "broadcast"] });
+      .resolves.toMatchObject({ failedRouteIds: ["personal", "broadcast"] });
     expect(audio.sourcedAssetIds).toEqual([]);
     expect(audio.elements).toEqual([]);
   });
@@ -472,7 +534,7 @@ describe("DeviceAudioPlayer", () => {
     expect(audio.elements).toHaveLength(2);
     expect(audio.elements.every((element) => element.playCount === 1)).toBe(true);
     for (const element of audio.elements) element.emit("ended");
-    await expect(result).resolves.toEqual({ failedRouteIds: ["personal", "broadcast"] });
+    await expect(result).resolves.toMatchObject({ failedRouteIds: ["personal", "broadcast"], failures: ["personal", "broadcast"].map(route => expectedFailure(route, "missing", "omitted-invalid-sound", "source-load", "Audio asset was not prepared.")) });
   });
 
   it("contains source creation failure to the affected media while healthy assets still play", async () => {
@@ -498,7 +560,7 @@ describe("DeviceAudioPlayer", () => {
 
     expect(audio.elements).toHaveLength(2);
     for (const element of audio.elements) element.emit("ended");
-    await expect(result).resolves.toEqual({ failedRouteIds: ["personal", "broadcast"] });
+    await expect(result).resolves.toMatchObject({ failedRouteIds: ["personal", "broadcast"], failures: ["personal", "broadcast"].map(route => expectedFailure(route, "broken", "broken-sound", "source-load", "blob creation failed")) });
   });
 
   it("uses the absolute dispatch deadline without extending playback for startup", async () => {
@@ -515,7 +577,7 @@ describe("DeviceAudioPlayer", () => {
     expect(audio.elements[0]?.cleaned).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
 
-    await expect(result).resolves.toEqual({ failedRouteIds: [] });
+    await expect(result).resolves.toMatchObject({ failedRouteIds: [] });
     expect(audio.elements[0]?.cleaned).toBe(true);
   });
 
@@ -533,7 +595,7 @@ describe("DeviceAudioPlayer", () => {
     expect(audio.elements[0]?.cleaned).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
 
-    await expect(result).resolves.toEqual({ failedRouteIds: ["personal"] });
+    await expect(result).resolves.toMatchObject({ failedRouteIds: ["personal"], failures: [expectedFailure("personal", "intro", "shared-sound", "device-bind", "Audio preparation deadline exceeded.")] });
     expect(audio.elements[0]?.cleaned).toBe(true);
     sink.resolve();
     await flushStarts();
@@ -556,7 +618,7 @@ describe("DeviceAudioPlayer", () => {
     expect(audio.elements.slice(0, 2).every((element) => element.cleaned)).toBe(true);
     expect(audio.elements.slice(2).every((element) => !element.cleaned && element.playCount === 1)).toBe(true);
     for (const element of audio.elements.slice(2)) element.emit("ended");
-    await expect(result).resolves.toEqual({ failedRouteIds: ["personal"] });
+    await expect(result).resolves.toMatchObject({ failedRouteIds: ["personal"], failures: ["intro", "sting"].map(layer => expectedFailure("personal", layer, "shared-sound", "device-lost", "The selected audio device is no longer available.")) });
   });
 
   it("polls active devices every second with bounded non-overlapping enumeration", async () => {
@@ -596,9 +658,168 @@ describe("DeviceAudioPlayer", () => {
 
     audio.player.close();
     sink.resolve();
-    await expect(result).resolves.toEqual({ failedRouteIds: [] });
+    await expect(result).resolves.toMatchObject({ failedRouteIds: [] });
     await expect(audio.player.play({ generation: 1, batch: oneOutput, assets, deadlineMs: 11_000 }))
-      .resolves.toEqual({ failedRouteIds: ["personal"] });
+      .resolves.toMatchObject({ failedRouteIds: ["personal"] });
     expect(audio.elements[0]?.playCount).toBe(0);
   });
+});
+
+function expectedFailure(route: string, layerId: string, assetId: string, stage: string, message: string) {
+  return { routeIds: [route], layerId, assetId, stage, exception: { type: "Error", message, stack: expect.any(String), code: null, cause: null, thrownValue: null } };
+}
+
+it("classifies a stalled seek at the startup deadline as seek failure and cleans the element", async () => {
+  vi.useFakeTimers(); vi.setSystemTime(1000);
+  const audio = createHarness(); audio.player.initialize(1, false);
+  try {
+    const playing = audio.player.play({ generation: 1, batch: batch({ timing: { startsAtEpochMs: 500, endsAtEpochMs: 11000 }, layers: [{ sourceKind: "audio", layerId: "intro", assetId: "shared-sound", volume: 1 }], destinations: [{ deviceId: "headphones", routeIds: ["personal"] }] }), assets, deadlineMs: 11000 });
+    audio.elements[0]!.seeking = true;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await playing).toMatchObject({ failedRouteIds: ["personal"], failures: [expectedFailure("personal", "intro", "shared-sound", "seek", "Audio preparation deadline exceeded.")] });
+    expect(audio.elements[0]!.playCount).toBe(0);
+    expect(audio.elements[0]!.cleaned).toBe(true);
+  } finally { audio.player.close(); vi.useRealTimers(); }
+});
+
+it("prepares slow selected-device media silently and starts the held elements at zero", async () => {
+  vi.useFakeTimers();
+  const audio = createHarness();
+  audio.player.initialize(1, false);
+  const preparing = audio.player.prepare("prepared-1", { generation: 1, batch: batch(), assets, deadlineMs: Date.now() + 15000 });
+  await vi.advanceTimersByTimeAsync(400);
+  expect(audio.elements.every(element => element.playCount === 0)).toBe(true);
+  for (const element of audio.elements) { element.readyState = 2; element.emit("loadedmetadata"); }
+  await preparing;
+  const playing = audio.player.start("prepared-1", Date.now() + 100);
+  await vi.advanceTimersByTimeAsync(99);
+  expect(audio.elements.every(element => element.playCount === 0)).toBe(true);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(audio.elements.every(element => element.playCount === 1 && element.currentTime === 0)).toBe(true);
+  await vi.advanceTimersByTimeAsync(10000);
+  expect(await playing).toMatchObject({ failedRouteIds: [] });
+  expect(audio.elements.every(element => element.cleaned)).toBe(true);
+  audio.player.close();
+  vi.useRealTimers();
+});
+
+it("keeps failed-route details for prepared batches and permits subsequent playback", async () => {
+  vi.useFakeTimers();
+  const audio = createHarness({ controls: [{ sinkError: new Error("disconnected") }] });
+  audio.player.initialize(1, false);
+  const selected = batch({ layers: [batch().layers[0]!], destinations: [batch().destinations[0]!] });
+  await audio.player.prepare("failed", { generation: 1, batch: selected, assets, deadlineMs: Date.now() + 15000 });
+  const failure = await audio.player.start("failed", Date.now() + 100);
+  expect(failure).toMatchObject({ failedRouteIds: ["personal"], failures: [{ stage: "device-bind" }] });
+  const next = audio.player.prepare("next", { generation: 1, batch: selected, assets, deadlineMs: Date.now() + 15000 });
+  audio.elements.at(-1)!.readyState = 2;
+  await next;
+  const playing = audio.player.start("next", Date.now() + 100);
+  await vi.advanceTimersByTimeAsync(100);
+  expect(audio.elements.at(-1)!.playCount).toBe(1);
+  audio.player.stop(selected.playbackId);
+  await playing;
+  audio.player.close();
+  vi.useRealTimers();
+});
+
+it("releases held sources on stop and never replays cancelled preparations", async () => {
+  vi.useFakeTimers();
+  const audio = createHarness();
+  audio.player.initialize(1, false);
+  const preparing = audio.player.prepare("cancelled", { generation: 1, batch: batch(), assets, deadlineMs: Date.now() + 15000 });
+  audio.player.stop("occurrence-1");
+  await preparing;
+  await expect(audio.player.start("cancelled", Date.now() + 100)).rejects.toThrow("no longer available");
+  await vi.advanceTimersByTimeAsync(100);
+  expect(audio.elements.every(element => element.cleaned && element.playCount === 0)).toBe(true);
+  expect(audio.revokedSources).toHaveLength(1);
+  audio.player.close();
+  vi.useRealTimers();
+});
+
+it.each(["stop", "close"] as const)("%s immediately releases prepared and in-flight device bindings", async operation => {
+  vi.useFakeTimers();
+  const sink = deferred();
+  const audio = createHarness({ controls: [{ sink }] });
+  audio.player.initialize(1, false);
+  try {
+    const preparing = audio.player.prepare("held", { generation: 1, batch: batch(), assets, deadlineMs: Date.now() + 15000 });
+    for (const element of audio.elements) element.readyState = 2;
+    await flushStarts();
+    if (operation === "stop") audio.player.stop("occurrence-1"); else audio.player.close();
+    await preparing;
+    await flushStarts();
+    expect(audio.elements.every(element => element.cleaned && element.playCount === 0)).toBe(true);
+    expect(audio.revokedSources).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+    await expect(audio.player.start("held", Date.now() + 100)).rejects.toThrow("no longer available");
+    sink.resolve();
+    await flushStarts();
+    expect(audio.elements.every(element => element.playCount === 0)).toBe(true);
+  } finally { audio.player.close(); vi.useRealTimers(); }
+});
+
+it.each(["hanging", "rejected"] as const)("bounds %s prepared play attempts and allows the next clip", async kind => {
+  vi.useFakeTimers();
+  const play = deferred();
+  const audio = createHarness({ controls: [kind === "hanging" ? { play } : { playError: new Error("play rejected") }] });
+  const selected = batch({ durationMs: 60000, layers: [batch().layers[0]!], destinations: [batch().destinations[0]!] });
+  audio.player.initialize(1, false);
+  try {
+    const preparing = audio.player.prepare("first", { generation: 1, batch: selected, assets, deadlineMs: Date.now() + 15000 });
+    audio.elements[0]!.readyState = 2;
+    await preparing;
+    let result: Awaited<ReturnType<DeviceAudioPlayer["start"]>> | undefined;
+    const playing = audio.player.start("first", Date.now() + 100).then(value => { result = value; });
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(result).toMatchObject({ failedRouteIds: ["personal"], failures: [{ stage: "play" }] });
+    await playing;
+    expect(audio.elements[0]!.cleaned).toBe(true);
+    const next = audio.player.prepare("second", { generation: 1, batch: selected, assets, deadlineMs: Date.now() + 15000 });
+    audio.elements[1]!.readyState = 2;
+    await next;
+    const nextPlaying = audio.player.start("second", Date.now() + 100);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(audio.elements[1]!.playCount).toBe(1);
+    audio.elements[1]!.emit("ended");
+    expect(await nextPlaying).toMatchObject({ failedRouteIds: [] });
+    play.resolve();
+    await flushStarts();
+    expect(audio.elements[0]!.playCount).toBe(1);
+  } finally { audio.player.close(); vi.useRealTimers(); }
+});
+
+it("gives each selected route its full five seconds after different actual play onsets", async () => {
+  vi.useFakeTimers();
+  const slowPlay = deferred();
+  const audio = createHarness({ controls: [{}, { play: slowPlay }] });
+  audio.player.initialize(1, false);
+  try {
+    const preparing = audio.player.prepare("full-tail", { generation: 1,
+      batch: batch({ durationMs: 5000, layers: [{ ...batch().layers[0]!, fadeOutMs: 100 }] }), assets, deadlineMs: Date.now() + 15000 });
+    for (const element of audio.elements) element.readyState = 2;
+    await preparing;
+    let settled = false;
+    const scheduled = Date.now() + 100;
+    const playing = audio.player.start("full-tail", scheduled).then(result => { settled = true; return result; });
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(170);
+    slowPlay.resolve();
+    await flushStarts();
+    await vi.advanceTimersByTimeAsync(4830);
+    expect(audio.elements[0]!.cleaned).toBe(true);
+    expect(audio.elements[1]!.pauseCount).toBe(0);
+    expect(audio.elements[1]!.volume).toBe(0.25);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(169);
+    expect(audio.elements[1]!.pauseCount).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await playing).toMatchObject({ failedRouteIds: [], outputDiagnostics: [
+      { routeIds: ["personal"], layerId: "intro", assetId: "shared-sound", diagnostics: { scheduledStartEpochMs: scheduled, actualStartEpochMs: scheduled, terminalOutcome: "completed", completionReason: "configured-duration" } },
+      { routeIds: ["broadcast"], layerId: "intro", assetId: "shared-sound", diagnostics: { scheduledStartEpochMs: scheduled, actualStartEpochMs: scheduled + 170, terminalOutcome: "completed", completionReason: "configured-duration" } }
+    ] });
+    expect(audio.elements[1]!.cleaned).toBe(true);
+    expect(audio.elements.every(element => element.currentTime > 0)).toBe(true);
+  } finally { audio.player.close(); vi.useRealTimers(); }
 });

@@ -6,6 +6,19 @@ import { serializeException } from "@stream-jams/core";
 afterEach(() => vi.useRealTimers());
 const key = { surfaceId: "desktop:primary" as const, moduleId: "alerts", occurrenceId: "one", generation: 1 };
 const config = { id: "desktop:primary" as const, kind: "desktop" as const, enabled: false, displayId: null, displayLabel: null, autoFollowDisplayName: false, opacity: 1, layers: [] };
+it("sends committed timing for prepared content and retains its full interval", async () => {
+  vi.useFakeTimers(); vi.setSystemTime(1000);
+  const messages: OverlayWorkerMessage[] = []; const client = new WorkerOverlayClient(3, message => messages.push(message));
+  const preparing = client.prepare({ key, deferredStart: true, timing: { startsAtEpochMs: 16000, endsAtEpochMs: 17000 }, instructions: [], assets: [] });
+  client.receive({ type: "overlay-response", generation: 3, requestId: messages[0]!.requestId, result: { type: "ready", key } });
+  expect(await preparing).toBe("ready");
+  const timing = { startsAtEpochMs: 2200, endsAtEpochMs: 3200 };
+  const playing = client.start(key, timing);
+  expect(messages[1]).toMatchObject({ command: { type: "start", key, timing } });
+  const diagnostics = { preparationDurationMs: 80, scheduledStartEpochMs: 2200, actualStartEpochMs: 2212, terminalOutcome: "completed" as const };
+  client.receive({ type: "overlay-response", generation: 3, requestId: messages[1]!.requestId, result: { type: "complete", key, diagnostics } });
+  expect(await playing).toEqual(diagnostics); client.dispose(); expect(vi.getTimerCount()).toBe(0);
+});
 it("requests status and rejects wrong result types or a lost host safely", async () => {
   vi.useFakeTimers(); const messages: OverlayWorkerMessage[] = []; const client = new WorkerOverlayClient(3, message => messages.push(message));
   const status = { available: true, displays: [], state: "disabled", message: null };

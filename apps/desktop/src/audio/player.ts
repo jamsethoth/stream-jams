@@ -1,5 +1,5 @@
 import { isExplicitAudioOutputDeviceId } from "./audio-player-policy.js";
-import { serializeException } from "@stream-jams/core";
+import { deviceAudioResultSchema, serializeException } from "@stream-jams/core";
 import { DeviceAudioPlayer, type PlayerMediaElement } from "./device-audio-player.js";
 import { audioRendererRequestSchema, type AudioRendererReply, type AudioRendererRequest } from "./audio-ipc.js";
 
@@ -72,7 +72,9 @@ bridge?.onCommand(candidate => {
   void (async () => {
     switch (request.command.type) {
       case "enumerate": reply({ type: "devices", devices: await listOutputDevices() }); break;
-      case "play": reply({ type: "played", failedRouteIds: [...(await player.play({ generation, ...request.command.payload })).failedRouteIds] }); break;
+      case "prepare": await player.prepare(request.command.token, { generation, ...request.command.payload }); reply({ type: "prepared", token: request.command.token }); break;
+      case "start": reply({ type: "played", ...deviceAudioResultSchema.parse(await player.start(request.command.token, request.command.startsAtEpochMs)) }); break;
+      case "play": reply({ type: "played", ...deviceAudioResultSchema.parse(await player.play({ generation, ...request.command.payload })) }); break;
       case "stop": player.stop(request.command.playbackId); reply({ type: "ok" }); break;
       case "set-muted": player.setMuted(request.command.muted); reply({ type: "ok" }); break;
       case "initialize": reply({ type: "ok" }); break;

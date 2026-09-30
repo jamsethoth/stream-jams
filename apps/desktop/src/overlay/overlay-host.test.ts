@@ -39,6 +39,21 @@ function reply(port: { callbacks: OverlayRendererCallbacks }, request: OverlayRe
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0); });
 afterEach(() => vi.useRealTimers());
 
+it("forwards committed timing and resets the completion watchdog after deferred preparation", async () => {
+  const { host, ports } = harness(); await host.configure({ ...config, layers: [] });
+  const value = { ...batch(), deferredStart: true, timing: { startsAtEpochMs: 15000, endsAtEpochMs: 16000 } };
+  expect(await host.prepare(value)).toBe("ready");
+  await vi.advanceTimersByTimeAsync(2200);
+  const timing = { startsAtEpochMs: 2400, endsAtEpochMs: 3400 };
+  const playing = host.start(value.key, timing);
+  await vi.advanceTimersByTimeAsync(0);
+  const request = ports[0]!.sent.at(-1)!;
+  expect(request.command).toEqual({ type: "start", key: value.key, timing });
+  const diagnostics = { preparationDurationMs: 110, scheduledStartEpochMs: 2400, actualStartEpochMs: 2420, terminalOutcome: "completed" as const, completionReason: "configured-duration" as const };
+  reply(ports[0]!, request, { type: "complete", key: value.key, diagnostics }); expect(await playing).toEqual(diagnostics);
+  await host.close(); expect(vi.getTimerCount()).toBe(0);
+});
+
 it("retains a clear tombstone across late acknowledgements and renderer recovery", async () => {
   const { host, ports } = harness(); await host.configure({ ...config, layers: [] }); await host.retry();
   const port = ports[0]!; port.auto = false;
@@ -101,7 +116,7 @@ it("settles loading immediately on cancellation and ignores a late load", async 
   loaded(); await vi.advanceTimersByTimeAsync(0);
   expect(ports[0]!.sent).toHaveLength(0); await host.close(); expect(vi.getTimerCount()).toBe(0);
 });
-it("bounds load to five seconds and permits one recreation then explicit Retry", async () => {
+it("bounds load to five seconds and allows explicit Retry during recovery cooldown", async () => {
   const { host, ports } = harness(() => new Promise(() => {}));
   await host.configure({ ...config, layers: [] });
   const first = host.prepare(batch()); await vi.advanceTimersByTimeAsync(5000); expect(await first).toBe("unavailable");
@@ -109,6 +124,55 @@ it("bounds load to five seconds and permits one recreation then explicit Retry",
   expect(await host.prepare(batch())).toBe("unavailable"); expect(ports).toHaveLength(2);
   const retry = host.retry().catch(() => {}); await vi.advanceTimersByTimeAsync(0); expect(ports).toHaveLength(3);
   await host.close(); await retry;
+});
+it("automatically recovers after repeated crashes without replay and respects disabled output", async () => {
+  const { host, ports } = harness(); await host.configure({ ...config, layers: [] });
+  const next = () => ({ ...batch(), timing: { startsAtEpochMs: Date.now(), endsAtEpochMs: Date.now() + 1000 } });
+  for (const delay of [0, 1000, 2000, 4000, 5000, 5000]) {
+    expect(await host.prepare(next())).toBe("ready");
+    const playing = host.start(batch().key);
+    const rejected = expect(playing).rejects.toThrow();
+    const count = ports.length;
+    ports.at(-1)!.callbacks.onDestroyed(); await rejected;
+    if (delay > 0) {
+      const recovering = host.prepare({ ...next(), timing: { startsAtEpochMs: Date.now(), endsAtEpochMs: Date.now() + 8000 } });
+      host.refreshLease(); await vi.advanceTimersByTimeAsync(delay - 1);
+      expect(ports).toHaveLength(count);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await recovering).toBe("ready");
+      expect(ports).toHaveLength(count + 1);
+      expect(ports.at(-1)!.sent.map(request => request.command.type)).toEqual(["configure", "prepare"]);
+      await host.stop(batch().key);
+    }
+    expect(await host.getStatus()).toMatchObject({ state: "ready" });
+  }
+  await host.configure({ ...config, enabled: false, layers: [] });
+  const count = ports.length;
+  expect(await host.prepare(next())).toBe("unavailable");
+  await host.configure({ ...config, layers: [] });
+  expect(await host.prepare(next())).toBe("ready");
+  expect(ports).toHaveLength(count + 1);
+  expect(ports.at(-1)!.sent.map(request => request.command.type)).toEqual(["configure", "prepare"]);
+  await host.close(); await vi.advanceTimersByTimeAsync(5000);
+  expect(await host.prepare(next())).toBe("unavailable");
+  expect(vi.getTimerCount()).toBe(0);
+});
+it("cancels a pending recovery when disabled and restores persistent modules on later recovery", async () => {
+  const { host, ports } = harness(); await host.configure({ ...config, layers: [] });
+  await host.syncModule(moduleSync(1)); ports[0]!.callbacks.onDestroyed();
+  await host.syncModule(moduleSync(2)); ports[1]!.callbacks.onDestroyed();
+  const preparing = host.prepare({ ...batch(), timing: { startsAtEpochMs: 0, endsAtEpochMs: 8000 } });
+  await host.configure({ ...config, enabled: false, layers: [] });
+  expect(await preparing).toBe("unavailable");
+  await vi.advanceTimersByTimeAsync(1000); expect(ports).toHaveLength(2);
+  await host.configure({ ...config, layers: [] });
+  await host.syncModule(moduleSync(3)); ports[2]!.callbacks.onDestroyed();
+  const recovered = host.prepare({ ...batch(), timing: { startsAtEpochMs: 1000, endsAtEpochMs: 8000 } });
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(await recovered).toBe("ready");
+  expect(ports[3]!.sent.map(request => request.command.type)).toEqual(["configure", "sync-module", "prepare"]);
+  expect(ports[3]!.sent[1]!.command).toMatchObject({ revision: 3 });
+  await host.close(); expect(vi.getTimerCount()).toBe(0);
 });
 it("destroys synchronously on service loss and settles every active module", async () => {
   const { host, ports } = harness(); await host.configure({ ...config, layers: [] });
@@ -129,7 +193,7 @@ it("restores timed-out ownership from a later lease without replaying or losing 
   await host.close(); await host.close(); expect(vi.getTimerCount()).toBe(0);
 });
 
-it("preserves the overlay crash budget when a late lease restores ownership", async () => {
+it("preserves overlay cooldown when a late lease restores ownership", async () => {
   const { host, ports } = harness(); await host.configure({ ...config, layers: [] });
   await host.prepare(batch()); ports[0]!.callbacks.onDestroyed();
   await host.prepare(batch()); ports[1]!.callbacks.onDestroyed();
@@ -375,4 +439,20 @@ it("returns safe capability failure without exposing callback errors or opening 
   const create = vi.fn(() => null); const host = new OverlayHost(create, () => { throw new Error("private callback details"); });
   host.beginOwnership(); expect(await host.getStatus()).toMatchObject({ available: false, displays: [], state: "unavailable" });
   expect((await host.getStatus()).message).not.toContain("private"); expect(create).not.toHaveBeenCalled(); await host.close();
+});
+
+it("preserves media failure provenance without treating it as a renderer crash", async () => {
+  const { host, ports } = harness();
+  await host.configure({ ...config, layers: [] });
+  expect(await host.prepare(batch())).toBe("ready");
+  const playing = host.start(batch().key);
+  await vi.advanceTimersByTimeAsync(0);
+  const request = ports[0]!.sent.at(-1)!;
+  const failure = { referenceId: "media-failure", stage: "seek", message: "Video seek failed", exception: { type: "Error", message: "Seek mismatch", stack: null, code: null, cause: null, thrownValue: null } };
+  ports[0]!.callbacks.onReply({ generation: request.generation, requestId: request.requestId, result: { type: "error", key: batch().key }, failure });
+  await expect(playing).rejects.toMatchObject({ message: "Desktop media playback failed during seek.", cause: failure });
+  expect(ports[0]!.destroy).not.toHaveBeenCalled();
+  expect(await host.prepare(batch("next"))).toBe("ready");
+  expect(ports).toHaveLength(1);
+  await host.close();
 });

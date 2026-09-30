@@ -358,3 +358,13 @@ function styledTextComposition(
     }]
   };
 }
+
+export const Preparing: Story = {
+  args: {
+    composition: mediaOverlayComposition,
+    preparingInstructionIds: new Set(mediaOverlayComposition.modules.flatMap(module => module.instructions.map(instruction => instruction.id))),
+    muted: false,
+    resolveAssetUrl
+  },
+  parameters: { docs: { description: { story: "Prepared content remains transparent and silent until the shared scheduled start." } } }
+};

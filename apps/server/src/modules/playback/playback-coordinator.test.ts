@@ -32,6 +32,114 @@ import { effectOccurrenceKey } from "../screen-effects/effect-playback-coordinat
 const alertPlaybackId = (occurrenceId: string) => effectOccurrenceKey("alerts", occurrenceId);
 
 describe("PlaybackCoordinator", () => {
+  it("records a watchdog expiry even when every stop succeeds", async () => {
+    vi.useFakeTimers();
+    try {
+      const error = vi.fn(async () => {});
+      const coordinator = createCoordinator({ logger: { error }, generateReferenceId: () => "ref",
+        overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: ["obs"] }), stopPlaybackInstructions: vi.fn() } });
+      const event = createCheerEvent();
+      coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [createResolvedAlert(event.id, "alert", "instruction")] });
+      await vi.advanceTimersByTimeAsync(8100);
+      expect(error).toHaveBeenCalledWith("Alert playback completion watchdog expired.", expect.objectContaining({
+        source: "overlay.playback.watchdog-expired", metadata: expect.objectContaining({
+          playbackId: "queue-item-1", terminalOutcome: "timed-out", pendingBrowserInstructionCount: 1,
+          pendingBrowserClientCount: 1, desktopPending: false, audioPending: false
+        })
+      }));
+      expect(coordinator.getSnapshot().current).toBeNull();
+      expect(coordinator.getSnapshot().recent[0]?.status).toBe("skipped");
+      await coordinator.close();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("prepares every recipient before committing a shared full-duration start", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(0);
+    try {
+      const audio = audioFixture();
+      const ready = deferred<void>();
+      const starts: number[] = [];
+      const audioStart = vi.fn((at: number) => { starts.push(at); return audio.finished.promise; });
+      const browserStart = vi.fn((at: number) => { starts.push(at); });
+      const desktopStart = vi.fn((at: number) => { starts.push(at); return new Promise<void>(() => {}); });
+      const coordinator = createCoordinator({ ...audio.dependencies,
+        audioPlaybackSink: { ...audio.sink, prepare: async () => { await ready.promise; return { start: audioStart }; } },
+        desktopVisualSink: { play: vi.fn(async () => {}), prepare: async () => ({ start: desktopStart }), stop: vi.fn(async () => {}), close: vi.fn(async () => {}) },
+        overlayPlaybackSink: { deliverPlaybackInstruction: vi.fn(), preparePlaybackInstruction: async () => ({ deliveredClientIds: ["obs"], start: browserStart }) }
+      });
+      const event = createCheerEvent(); const alert = createResolvedAlert(event.id, "resolved", "instruction");
+      coordinator.enqueueResolvedTest({ sourceEvent: event, audio: [deviceAudio()], alerts: [{ ...alert, desktopVisualEligible: true, overlayInstruction: { ...alert.overlayInstruction, targetProfileId: "landscape" } }] });
+      await vi.advanceTimersByTimeAsync(9000);
+      expect(starts).toEqual([]);
+      expect(coordinator.completeCurrent().current?.id).toBe("queue-item-1");
+      ready.resolve(); await vi.advanceTimersByTimeAsync(0);
+      expect(starts).toEqual([9100, 9100, 9100]);
+      await vi.advanceTimersByTimeAsync(8099);
+      expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
+      await vi.advanceTimersByTimeAsync(1);
+      expect(coordinator.getSnapshot().current).toBeNull();
+      await coordinator.close();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("skips preparation without allowing late starts and plays the next occurrence", async () => {
+    const ready = deferred<{ deliveredClientIds: readonly string[]; start(at: number): void }>();
+    const lateStart = vi.fn(); const nextStart = vi.fn();
+    const coordinator = createCoordinator({ overlayPlaybackSink: {
+      deliverPlaybackInstruction: vi.fn(),
+      preparePlaybackInstruction: vi.fn().mockReturnValueOnce(ready.promise).mockResolvedValue({ deliveredClientIds: ["obs"], start: nextStart }),
+      stopPlaybackInstructions: vi.fn()
+    } });
+    const event = createCheerEvent();
+    coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [createResolvedAlert(event.id, "first", "first")] });
+    coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [createResolvedAlert(event.id, "next", "next")] });
+    expect(coordinator.completeCurrent().current?.id).toBe("queue-item-1");
+    await coordinator.skipCurrent();
+    ready.resolve({ deliveredClientIds: ["obs"], start: lateStart });
+    await vi.waitFor(() => expect(nextStart).toHaveBeenCalledOnce());
+    expect(lateStart).not.toHaveBeenCalled();
+    expect(coordinator.reportInstructionFinished("obs", "queue-item-2:next").current).toBeNull();
+    await coordinator.close();
+  });
+
+  it("starts healthy browser recipients when another preparation fails", async () => {
+    const started = vi.fn();
+    const coordinator = createCoordinator({ overlayPlaybackSink: {
+      deliverPlaybackInstruction: vi.fn(),
+      async preparePlaybackInstruction(instruction) {
+        if (instruction.id.endsWith(":failed")) throw new Error("media unavailable");
+        return { deliveredClientIds: ["obs"], start: started };
+      }
+    } });
+    const event = createCheerEvent();
+    coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [createResolvedAlert(event.id, "failed", "failed"), createResolvedAlert(event.id, "healthy", "healthy")] });
+    await vi.waitFor(() => expect(started).toHaveBeenCalledOnce());
+    expect(coordinator.reportInstructionFinished("obs", "queue-item-1:healthy").current).toBeNull();
+    await coordinator.close();
+  });
+
+  it("bounds stalled browser preparation and prevents its late start while healthy output continues", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(0);
+    try {
+      const late = deferred<{ deliveredClientIds: readonly string[]; start(at: number): void }>();
+      const healthyStart = vi.fn(); const lateStart = vi.fn(); const stop = vi.fn();
+      const coordinator = createCoordinator({ overlayPlaybackSink: {
+        deliverPlaybackInstruction: vi.fn(),
+        preparePlaybackInstruction: async instruction => instruction.id.endsWith(":stalled") ? late.promise : { deliveredClientIds: ["obs"], start: healthyStart },
+        stopPlaybackInstructions: stop
+      } });
+      const event = createCheerEvent();
+      coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [createResolvedAlert(event.id, "stalled", "stalled"), createResolvedAlert(event.id, "healthy", "healthy")] });
+      await vi.advanceTimersByTimeAsync(14_999); expect(healthyStart).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(stop).toHaveBeenCalledWith(["queue-item-1:stalled"]);
+      expect(healthyStart).toHaveBeenCalledWith(15_100);
+      late.resolve({ deliveredClientIds: ["late"], start: lateStart });
+      await vi.advanceTimersByTimeAsync(0); expect(lateStart).not.toHaveBeenCalled();
+      expect(coordinator.reportInstructionFinished("obs", "queue-item-1:healthy").current).toBeNull();
+      await coordinator.close(); expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
   it("shares one scheduled epoch between browser, desktop and routed audio", async () => {
     const audio = audioFixture();
     const browser = { deliverPlaybackInstruction: vi.fn<OverlayPlaybackInstructionSink["deliverPlaybackInstruction"]>(() => ({ deliveredClientIds: ["obs"] })) };
@@ -215,7 +323,7 @@ describe("PlaybackCoordinator", () => {
       coordinator.enqueueResolvedTest({ sourceEvent: event,
         alerts: [{ ...alert, overlayInstruction: { ...alert.overlayInstruction, durationMs: 30_000 } }],
         audio: [{ ...deviceAudio(), durationMs: 30_000 }] });
-      await vi.advanceTimersByTimeAsync(5000);
+      await vi.advanceTimersByTimeAsync(15000);
       expect(stopPlaybackInstructions).not.toHaveBeenCalled();
       expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
       preparation.resolve({ unavailableRouteIds: [], batches: [] });
@@ -226,7 +334,7 @@ describe("PlaybackCoordinator", () => {
     } finally { vi.useRealTimers(); }
   });
 
-  it("stops a hung preparation at five seconds and never starts its late result", async () => {
+  it("stops a hung preparation at fifteen seconds and never starts its late result", async () => {
     vi.useFakeTimers();
     try {
       const audio = audioFixture();
@@ -252,7 +360,7 @@ describe("PlaybackCoordinator", () => {
         alerts: [createResolvedAlert(next.id, "next", "next-instruction")]
       });
 
-      await vi.advanceTimersByTimeAsync(4_999);
+      await vi.advanceTimersByTimeAsync(14_999);
       expect(audio.sink.stop).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
       expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith(alertPlaybackId("queue-item-1"));
@@ -311,7 +419,7 @@ describe("PlaybackCoordinator", () => {
         alerts: [createResolvedAlert(next.id, "next", "next-instruction")]
       });
 
-      await vi.advanceTimersByTimeAsync(7_999);
+      await vi.advanceTimersByTimeAsync(8_099);
       expect(audio.sink.stop).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
       expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith(alertPlaybackId("queue-item-1"));
@@ -359,7 +467,7 @@ describe("PlaybackCoordinator", () => {
         alerts: [createResolvedAlert(next.id, "next", "next-instruction")]
       });
 
-      await vi.advanceTimersByTimeAsync(8_000);
+      await vi.advanceTimersByTimeAsync(8_100);
 
       expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith(alertPlaybackId("queue-item-1"));
       expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
@@ -527,7 +635,7 @@ describe("PlaybackCoordinator", () => {
       expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
       expect(audio.sink.play).toHaveBeenCalledTimes(1);
 
-      await vi.advanceTimersByTimeAsync(8_000);
+      await vi.advanceTimersByTimeAsync(8_100);
       expect(audio.sink.stop).toHaveBeenCalledTimes(1);
       expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
 

@@ -97,7 +97,10 @@ test("live module overlay renders a synthetic follow playback event", async ({ p
   })).toMatchObject({
     type: "overlay.playback.failed",
     instructionId: "invalid-style",
-    message: "Alert text style could not be rendered safely."
+    message: "Overlay playback instruction failed validation.",
+    stage: "source-load",
+    referenceId: expect.stringMatching(/^err_/),
+    exception: expect.objectContaining({ type: "ZodError" })
   });
 });
 

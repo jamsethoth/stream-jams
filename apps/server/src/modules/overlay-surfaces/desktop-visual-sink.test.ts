@@ -12,11 +12,51 @@ function harness() {
   const resolve = vi.fn<(input: Omit<DesktopVisualBatch, "assets">) => Promise<DesktopVisualBatch>>(async input => ({ ...input, assets: [] }));
   const transport = { configure: vi.fn<DesktopOverlayTransport["configure"]>(async () => {}), syncModule: vi.fn<DesktopOverlayTransport["syncModule"]>(async () => {}), prepare: vi.fn<DesktopOverlayTransport["prepare"]>(async () => "ready"),
     start: vi.fn<DesktopOverlayTransport["start"]>(async () => {}), stop: vi.fn<DesktopOverlayTransport["stop"]>(async () => {}), retry: vi.fn(async () => {}), close: vi.fn(async () => {}) };
-  const sink = new DesktopVisualSink({ transport, surfaces: { list }, assets: { resolve } });
-  return { sink, transport, resolve, list, config };
+  const onPlaybackDiagnostics = vi.fn();
+  const sink = new DesktopVisualSink({ transport, surfaces: { list }, assets: { resolve }, onPlaybackDiagnostics });
+  return { sink, transport, resolve, list, config, onPlaybackDiagnostics };
 }
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0); });
 afterEach(() => vi.useRealTimers());
+it("reports renderer-observed timing on both successful and failed desktop playback", async () => {
+  const { sink, transport, onPlaybackDiagnostics } = harness();
+  const diagnostics = { preparationDurationMs: 40, scheduledStartEpochMs: 100, actualStartEpochMs: 115, terminalOutcome: "completed" as const };
+  transport.start.mockResolvedValueOnce(diagnostics);
+  await sink.play("success", [instruction()], 100);
+  expect(onPlaybackDiagnostics).toHaveBeenCalledWith("success", diagnostics);
+  const failed = { ...diagnostics, terminalOutcome: "failed" as const, completionReason: "stalled" as const };
+  transport.start.mockRejectedValueOnce(Object.assign(new Error("stalled"), { diagnostics: failed }));
+  await expect(sink.play("failure", [instruction()], 100)).rejects.toThrow();
+  expect(onPlaybackDiagnostics).toHaveBeenCalledWith("failure", failed);
+  await sink.close();
+});
+it("prepares every duration group before accepting a shared start without consuming clip duration", async () => {
+  const { sink, transport } = harness();
+  let ready!: (value: "ready") => void;
+  transport.prepare.mockImplementationOnce(() => new Promise(done => { ready = done; }));
+  const preparing = sink.prepare("prepared", [instruction(1000), instruction(2000)]);
+  await vi.advanceTimersByTimeAsync(2200);
+  expect(transport.start).not.toHaveBeenCalled();
+  ready("ready");
+  const prepared = await preparing;
+  expect(transport.prepare).toHaveBeenCalledTimes(2);
+  expect(transport.start).not.toHaveBeenCalled();
+  await prepared.start(2400);
+  expect(transport.start.mock.calls.map(call => call[1])).toEqual([
+    { startsAtEpochMs: 2400, endsAtEpochMs: 3400 },
+    { startsAtEpochMs: 2400, endsAtEpochMs: 4400 }
+  ]);
+  await sink.close(); expect(vi.getTimerCount()).toBe(0);
+});
+
+it("stops a prepared occurrence before commit and rejects its late start", async () => {
+  const { sink, transport } = harness();
+  const prepared = await sink.prepare("cancel", [instruction()]);
+  await sink.stop("cancel");
+  await expect(prepared.start(100)).rejects.toThrow();
+  expect(transport.start).not.toHaveBeenCalled();
+  await sink.close();
+});
 it("invalidates pending assets across rebind away and back, blocking intake during apply", async () => {
   const { sink, transport, config, resolve } = harness();
   await sink.configure({ ...config, layers: [...config.layers] });

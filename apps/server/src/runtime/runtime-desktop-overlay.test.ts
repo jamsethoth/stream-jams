@@ -140,7 +140,8 @@ it.each(["twitch", "streamerbot"] as const)("resolves a saved active reviewed La
     text: { text: "Desktop Viewer", layout: { x: 100, y: 120, width: 500, height: 100, zIndex: 2 } }
   }] });
   expect(batch.timing.endsAtEpochMs).toBeGreaterThan(batch.timing.startsAtEpochMs);
-  expect(transport.start).toHaveBeenCalledWith(batch.key);
+  expect(batch.deferredStart).toBe(true);
+  expect(transport.start).toHaveBeenCalledWith(batch.key, expect.objectContaining({ startsAtEpochMs: expect.any(Number), endsAtEpochMs: expect.any(Number) }));
   await settled();
 });
 

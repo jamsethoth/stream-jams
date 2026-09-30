@@ -29,6 +29,25 @@ function harness() {
 }
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0); });
 afterEach(() => vi.useRealTimers());
+it("returns the original active media failure once and keeps future occurrences usable", async () => {
+  const { controller, report, send, configure } = harness(); configure();
+  const value = batch(); send({ type: "prepare", batch: value });
+  const started = send({ type: "start", key: value.key });
+  await vi.advanceTimersByTimeAsync(1000);
+  const failure = { referenceId: "err-seek", stage: "seek" as const, message: "Video seek failed", exception: {
+    type: "TimedMediaPreparationError", message: "seek mismatch", stack: null, code: null, cause: null, thrownValue: null
+  } };
+  controller.fail(value.key, failure);
+  controller.fail(value.key, failure);
+  expect(report.mock.calls.filter(call => call[0].requestId === started.requestId)).toEqual([
+    [{ generation: 1, requestId: started.requestId, result: { type: "error", key: value.key }, failure }]
+  ]);
+  expect(controller.getSnapshot().occurrences).toHaveLength(0);
+  const next = { ...batch(), key: { ...value.key, occurrenceId: "next", generation: 2 } };
+  send({ type: "prepare", batch: next }); send({ type: "start", key: next.key });
+  expect(controller.getSnapshot().occurrences).toHaveLength(1);
+  controller.dispose();
+});
 it.each(["clear", "replace", "reconfigure"])("acknowledges superseded module icon loads immediately on %s", async action => {
   const { controller, report, send, configure, prepareAsset, asset } = harness(); configure();
   let finish!: (value: typeof asset) => void;
@@ -45,6 +64,28 @@ it.each(["clear", "replace", "reconfigure"])("acknowledges superseded module ico
   expect(controller.getSnapshot().modules.map(module => module.revision)).toEqual(action === "replace" ? [2] : []);
   controller.dispose();
 });
+it("waits for mounted media readiness and retains it while committing a fresh full interval", async () => {
+  const { controller, report, send, configure, asset } = harness(); configure();
+  const value = { ...batch("alerts", true), deferredStart: true };
+  const preparing = send({ type: "prepare", batch: value });
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(report.mock.calls.some(call => call[0].requestId === preparing.requestId)).toBe(false);
+  const view = controller.getSnapshot().occurrences[0]!;
+  expect(view.preparing).toBe(true);
+  controller.ready(value.key, value.instructions[0]!.id);
+  expect(report.mock.lastCall?.[0]).toMatchObject({ requestId: preparing.requestId, result: { type: "ready" } });
+  send({ type: "start", key: value.key, timing: { startsAtEpochMs: 2200, endsAtEpochMs: 4200 } });
+  expect(controller.getSnapshot().occurrences[0]).toMatchObject({ preparing: false, timing: { startsAtEpochMs: 2200, endsAtEpochMs: 4200 } });
+  expect(controller.getSnapshot().occurrences[0]!.assetUrls).toBe(view.assetUrls);
+  await vi.advanceTimersByTimeAsync(2199); expect(asset.dispose).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(171); expect(asset.dispose).not.toHaveBeenCalled();
+  const diagnostics = { preparationDurationMs: 1800, scheduledStartEpochMs: 2200, actualStartEpochMs: 2370, terminalOutcome: "completed" as const, completionReason: "configured-duration" as const };
+  controller.complete(value.key, value.instructions[0]!.id, diagnostics);
+  expect(report.mock.lastCall?.[0]).toMatchObject({ result: { type: "complete", diagnostics } });
+  expect(asset.dispose).toHaveBeenCalledOnce();
+  controller.dispose(); expect(vi.getTimerCount()).toBe(0);
+});
+
 it("prepares assets, waits for shared start, then completes exactly at the shared end", async () => {
   const { controller, report, send, configure, asset } = harness(); configure();
   const prepared = send({ type: "prepare", batch: batch("alerts", true) }); await vi.advanceTimersByTimeAsync(0);

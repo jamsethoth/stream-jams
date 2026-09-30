@@ -1,9 +1,67 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { DesktopOverlayApp } from "./DesktopOverlayApp.js";
 import { DesktopOverlayController } from "./desktop-overlay-controller.js";
 
-afterEach(() => { cleanup(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
+
+it("acknowledges actual decoded readiness and retains the silent video until the committed start", async () => {
+  vi.useFakeTimers(); vi.setSystemTime(1000);
+  const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+  vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+  const listeners = new Set<() => void>(); const report = vi.fn(); const dispose = vi.fn();
+  const controller = new DesktopOverlayController({ report, changed: () => { for (const listener of listeners) listener(); }, prepareAsset: async () => ({ url: "blob:clip", dispose }) });
+  const receive = (command: unknown) => controller.receive({ generation: 1, requestId: crypto.randomUUID(), command });
+  render(<DesktopOverlayApp controller={controller} subscribe={listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }} />);
+  const key = { surfaceId: "desktop:primary", moduleId: "alerts", occurrenceId: "prepared-video", generation: 1 };
+  await act(async () => {
+    receive({ type: "configure", config: { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "monitor", opacity: 1, layers: [{ moduleId: "alerts", visible: true }] } });
+    receive({ type: "prepare", batch: { key, deferredStart: true, timing: { startsAtEpochMs: 16000, endsAtEpochMs: 17000 }, assets: [{ assetId: "clip", mimeType: "video/webm", bytes: new Uint8Array([1]) }], instructions: [
+      { id: "video", moduleId: "alerts", overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", durationMs: 1000, audio: null, text: null, tts: null,
+        visual: { assetId: "clip", mediaType: "video", layout: { x: 0, y: 0, width: 100, height: 100, zIndex: 0 } } }
+    ] } });
+  });
+  const video = screen.getByTestId(/^overlay-video-/) as HTMLVideoElement;
+  await act(() => vi.advanceTimersByTimeAsync(1700));
+  expect(video).not.toBeVisible(); expect(play).not.toHaveBeenCalled();
+  expect(report.mock.calls.some(call => call[0].result?.type === "ready")).toBe(false);
+  Object.defineProperty(video, "readyState", { value: 2 });
+  await act(async () => { fireEvent.loadedData(video); });
+  expect(report).toHaveBeenCalledWith(expect.objectContaining({ result: { type: "ready", key } }));
+  act(() => receive({ type: "start", key, timing: { startsAtEpochMs: 2800, endsAtEpochMs: 3800 } }));
+  expect(screen.getByTestId(/^overlay-video-/)).toBe(video); expect(play).not.toHaveBeenCalled();
+  await act(() => vi.advanceTimersByTimeAsync(100));
+  expect(play).toHaveBeenCalledOnce(); expect(video.currentTime).toBe(0); expect(video.playbackRate).toBe(1);
+  expect(video).toBeVisible();
+  await act(() => vi.advanceTimersByTimeAsync(1000));
+  expect(screen.queryByTestId(/^overlay-video-/)).toBeNull(); expect(dispose).toHaveBeenCalledOnce();
+  controller.dispose(); expect(vi.getTimerCount()).toBe(0);
+});
+
+it("forwards a rendered video's failure cause through private IPC and stays transparent", async () => {
+  vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+  vi.useFakeTimers(); vi.setSystemTime(1000);
+  const listeners = new Set<() => void>(); const report = vi.fn();
+  const controller = new DesktopOverlayController({ report, changed: () => { for (const listener of listeners) listener(); }, prepareAsset: async () => ({ url: "blob:clip", dispose() {} }) });
+  const receive = (command: unknown) => controller.receive({ generation: 1, requestId: crypto.randomUUID(), command });
+  render(<DesktopOverlayApp controller={controller} subscribe={listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }} />);
+  const key = { surfaceId: "desktop:primary", moduleId: "alerts", occurrenceId: "failed-video", generation: 1 };
+  await act(async () => {
+    receive({ type: "configure", config: { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "monitor", opacity: 1, layers: [{ moduleId: "alerts", visible: true }] } });
+    receive({ type: "prepare", batch: { key, timing: { startsAtEpochMs: 1000, endsAtEpochMs: 4000 }, assets: [{ assetId: "clip", mimeType: "video/webm", bytes: new Uint8Array([1]) }], instructions: [
+      { id: "video", moduleId: "alerts", overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", durationMs: 3000, audio: null, text: null, tts: null,
+        visual: { assetId: "clip", mediaType: "video", layout: { x: 0, y: 0, width: 100, height: 100, zIndex: 0 } } }
+    ] } });
+  });
+  act(() => receive({ type: "start", key }));
+  const video = screen.getByTestId(/^overlay-video-/);
+  Object.defineProperty(video, "error", { value: new Error("decoder fixture failed") });
+  fireEvent.error(video);
+  expect(report).toHaveBeenCalledWith(expect.objectContaining({ result: { type: "error", key }, failure: expect.objectContaining({ stage: "source-load", exception: expect.objectContaining({ message: "decoder fixture failed" }) }) }));
+  expect(screen.queryByTestId(/^overlay-video-/)).toBeNull();
+  expect(document.body.textContent).not.toContain("decoder fixture failed");
+  controller.dispose();
+});
 
 it("renders only active private occurrences and preserves their nodes on configuration changes", () => {
   vi.useFakeTimers(); vi.setSystemTime(1000);

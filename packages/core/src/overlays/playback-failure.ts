@@ -1,3 +1,4 @@
+import { playbackTimingDiagnosticsSchema, type PlaybackTimingDiagnostics } from "../diagnostics/playback-timing-diagnostics.js";
 import { z } from "zod";
 import { serializedExceptionSchema, type SerializedException } from "../diagnostics/serialized-exception.js";
 
@@ -6,12 +7,14 @@ export const overlayPlaybackFailureStageSchema = z.enum([
   "metadata",
   "seek",
   "decode",
-  "play"
+  "play",
+  "stall"
 ]);
 
 export type OverlayPlaybackFailureStage = z.infer<typeof overlayPlaybackFailureStageSchema>;
 
 export interface OverlayPlaybackFailure {
+  readonly diagnostics?: PlaybackTimingDiagnostics | undefined;
   readonly referenceId: string;
   readonly stage: OverlayPlaybackFailureStage;
   readonly message: string;
@@ -19,6 +22,7 @@ export interface OverlayPlaybackFailure {
 }
 
 export const overlayPlaybackFailureSchema: z.ZodType<OverlayPlaybackFailure> = z.object({
+  diagnostics: playbackTimingDiagnosticsSchema.optional(),
   referenceId: z.string().min(1).max(128),
   stage: overlayPlaybackFailureStageSchema,
   message: z.string().min(1).max(1_024),

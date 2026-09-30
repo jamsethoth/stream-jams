@@ -112,9 +112,9 @@ function registerWebSocketClient(
       overlayGateway.handleClientMessage(clientId, data.toString());
     }
   });
-  socket.on("close", () => {
+  socket.on("close", (code, reason) => {
     if (clientId !== null) {
-      overlayGateway.unregisterClient(clientId);
+      overlayGateway.unregisterClient(clientId, { code, reason: reason.toString() });
     }
   });
 

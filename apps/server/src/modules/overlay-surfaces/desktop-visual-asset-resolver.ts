@@ -9,8 +9,9 @@ export class DesktopVisualAssetResolver {
   constructor(private readonly dependencies: DesktopVisualAssetResolverDependencies) {}
   async resolve(candidate: Omit<DesktopVisualBatch, "assets">): Promise<DesktopVisualBatch> {
     // Reuse the existing field schemas before reads, without placeholder media.
-    if (candidate === null || typeof candidate !== "object" || Object.keys(candidate).some(key => !["key", "timing", "instructions"].includes(key))) throw unavailable();
+    if (candidate === null || typeof candidate !== "object" || Object.keys(candidate).some(key => !["key", "timing", "instructions", "deferredStart"].includes(key))) throw unavailable();
     const input = {
+      ...(candidate.deferredStart === undefined ? {} : { deferredStart: desktopVisualBatchSchema.shape.deferredStart.parse(candidate.deferredStart) }),
       key: desktopVisualBatchSchema.shape.key.parse(candidate.key),
       timing: desktopVisualBatchSchema.shape.timing.parse(candidate.timing),
       instructions: desktopVisualBatchSchema.shape.instructions.parse(candidate.instructions)
