@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, realpath, rename, rm, stat, writeFile, type FileHandle } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, resolve, sep } from "node:path";
 import { posix } from "node:path";
@@ -43,6 +43,39 @@ export class AssetReadLimitExceededError extends Error {
 
 export class LocalAssetStore implements MediaAssetStore {
   readonly #assetDirectory: string;
+  #activeReaders = 0;
+
+  get activeReaders(): number { return this.#activeReaders; }
+
+  async openRead(storagePath: string, expectedSizeBytes: number): Promise<{ readonly handle: FileHandle; readonly sizeBytes: number; readonly close: () => Promise<void> }> {
+    if (!Number.isSafeInteger(expectedSizeBytes) || expectedSizeBytes < 0) throw new RangeError("Invalid asset size");
+    const absolutePath = this.#resolveStoragePath(storagePath);
+    if (this.#activeReaders >= 256) throw new AssetStreamCapacityError();
+    this.#activeReaders += 1;
+    let handle: FileHandle | undefined;
+    let closed = false;
+    const close = async () => {
+      if (closed) return;
+      closed = true;
+      try { await handle?.close(); } finally { this.#activeReaders -= 1; }
+    };
+    try {
+      const root = await realpath(this.#assetDirectory);
+      const target = await realpath(absolutePath);
+      if (!isPathInsideDirectory(target, root)) throw new AssetPathTraversalError(storagePath);
+      handle = await open(target, "r");
+      const opened = await handle.stat();
+      const currentTarget = await realpath(absolutePath);
+      const current = await stat(currentTarget);
+      if (currentTarget !== target || !isPathInsideDirectory(currentTarget, root)) throw new AssetPathTraversalError(storagePath);
+      if (!opened.isFile() || opened.size !== expectedSizeBytes || opened.dev !== current.dev || opened.ino !== current.ino || opened.size !== current.size || opened.mtimeMs !== current.mtimeMs) throw new AssetFileChangedError();
+      return { handle, sizeBytes: opened.size, close };
+    } catch (error) {
+      await close();
+      if (isNodeError(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")) throw new AssetFileNotFoundError(storagePath, { cause: error });
+      throw error;
+    }
+  }
 
   constructor(options: LocalAssetStoreOptions) {
     this.#assetDirectory = resolve(options.assetDirectory);
@@ -158,6 +191,14 @@ const noOpStagedDeletion = {
   commit: async () => undefined,
   rollback: async () => undefined
 } as const;
+
+export class AssetFileChangedError extends Error {
+  constructor() { super("Asset file changed since import"); this.name = "AssetFileChangedError"; }
+}
+
+export class AssetStreamCapacityError extends Error {
+  constructor() { super("Media stream capacity exhausted"); this.name = "AssetStreamCapacityError"; }
+}
 
 function sanitizeFileNamePart(value: string): string {
   return value.replace(/[^A-Za-z0-9_-]/g, "_");

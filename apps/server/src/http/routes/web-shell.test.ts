@@ -47,7 +47,7 @@ describe("web shell routes", () => {
         }
       },
       assetStore: {
-        async read() {
+        async openRead() {
           throw new Error("Unused asset store dependency");
         }
       },
@@ -143,7 +143,7 @@ describe("web shell routes", () => {
         }
       },
       assetStore: {
-        async read() {
+        async openRead() {
           throw new Error("Unused asset store dependency");
         }
       },

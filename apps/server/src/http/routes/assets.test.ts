@@ -22,6 +22,34 @@ const invalidBytes = Buffer.from("not a png", "utf8");
 const replacementPngBytes = Buffer.concat([pngSignature, Buffer.from([9, 8, 7])]);
 
 describe("asset routes", () => {
+  it("validates checksum ETags before opening body streams and rejects weak If-Range", async () => {
+    const { app, authHeaders, store } = await createAppWithAssets();
+    try {
+      await app.inject({ method: "POST", url: "/assets/import", headers: { ...authHeaders, "content-type": "application/octet-stream", "x-stream-jams-file-name": "test.png", "x-stream-jams-mime-type": "image/png" }, payload: pngBytes });
+      // Any fallback to complete-body reads would fail this route.
+      store.read = async () => { throw new Error("Whole-file playback read"); };
+      const url = "/assets/asset_1/file";
+      const initial = await app.inject({ url, headers: authHeaders });
+      expect(initial.statusCode).toBe(200);
+      expect(initial.headers["cache-control"]).toBe("no-store");
+      const etag = initial.headers.etag as string;
+      expect(etag).toMatch(/^"[^"]+"$/);
+      for (const condition of [etag, `W/${etag}`, `"other", ${etag}`]) {
+        const response = await app.inject({ url, headers: { ...authHeaders, "if-none-match": condition } });
+        expect(response.statusCode).toBe(304);
+        expect(response.body).toBe("");
+      }
+      for (const condition of [etag, `W/${etag}`, "Wed, 30 Sep 2026 00:00:00 GMT"]) {
+        const response = await app.inject({ url, headers: { ...authHeaders, range: "bytes=1-3", "if-range": condition } });
+        expect(response.statusCode).toBe(condition === etag ? 206 : 200);
+      }
+      const failed = await app.inject({ url, headers: { ...authHeaders, "if-match": '"other"', "if-none-match": etag } });
+      expect(failed.statusCode).toBe(412);
+      expect(store.activeReaders).toBe(0);
+    } finally {
+      await app.close();
+    }
+  });
   it.each(["management", "module", "unified"] as const)("serves authorized %s asset ranges and HEAD without widening access", async kind => {
     const access = createOverlayAccessService(["ovl_ranges"]);
     const key = await access.createKey({ overlayId: "default", moduleId: kind === "unified" ? null : "alerts", purpose: "live", scope: kind === "unified" ? "unified" : "module" });
@@ -513,6 +541,7 @@ async function createAppWithAssets(options: {
 
   return {
     app,
+    store,
     repository,
     authHeaders: managementTestHeaders(session, "POST")
   };

@@ -20,6 +20,8 @@ The approved direction uses the existing loopback service, native media elements
 
 ## Decisions
 
+Implementation feasibility evidence: [library-findings.md](library-findings.md) and its reproducible probe document why @fastify/static cannot meet the opened-file identity and validator contract through supported APIs. The selected integration retains all product guarantees and replaces the existing custom range calculation.
+
 ### 1. One server-owned reader, HTTP delivery, and thin desktop adapters
 
 The server remains the sole owner of repository lookup and media storage. Add a local-media service that resolves registered immutable versions and opens authorized reads through `LocalAssetStore`. Keep transport-neutral version/lifetime logic outside HTTP handlers. Core owns browser-compatible reference schemas; server owns filesystem handles and authorization state; desktop owns protocol adaptation and renderer lifetime.
@@ -37,9 +39,9 @@ flowchart LR
 
 Retain the existing authenticated management download and overlay URL contracts. Both use the new streaming reader. Add narrowly scoped media-grant routes for previews and desktop requests that cannot use those existing credentials. Do not create a general-purpose URL proxy.
 
-Prefer the existing `@fastify/static` dependency for standard file delivery, using `serve: false` and explicit authorized routes rather than exposing the asset directory. Its `@fastify/send` implementation owns standard range/precondition handling and file streaming. Reuse Node streams and Electron protocol/fetch APIs for the remaining transport. Keep custom code limited to registered-version resolution, authorization, lifetime ownership, integrity policy, and thin adapters; do not build a parallel general-purpose HTTP response planner [R8-R9].
+Use Node FileHandle streams with Fastify stream replies, jshttp `range-parser` for interval calculation, and `fresh` for If-None-Match evaluation. Keep application-specific policy, strong If-Match/If-Range validation, and response orchestration in one thin adapter. Replace the existing handwritten range helper; do not maintain competing delivery paths. Retain @fastify/static for the existing web shell. Avoid forks, monkey patches, or undocumented access to library internals [R8-R10].
 
-First verify that the installed library can satisfy the response contract, 64 KiB file-read buffering, cancellation, path confinement, and pinned-file identity requirements. Validate real resolved paths remain inside the asset root, including symlink/junction escape attempts. Inspection and delivery must refer to the same opened file identity; a path-based library API must not silently weaken this requirement. Where a documented gap requires direct handle ownership, use `FileHandle.createReadStream` with inclusive start/end offsets, narrowly scoped to that gap. Do not maintain a second range parser or precondition engine alongside the library. If the library cannot meet the contract through supported APIs, record the gap and revise the integration design before implementation proceeds with that path. Each request owns its reader and explicit offsets; never share a mutable file cursor across readers. Return/await Fastify stream responses and preserve backpressure through the Electron response body. No `readFile`, `Buffer.concat`, `blob()`, or `arrayBuffer()` in the playback delivery path.
+Use `FileHandle.createReadStream` with inclusive start/end offsets and 64 KiB file-read buffers. Validate real resolved paths remain inside the asset root, including symlink/junction escape attempts. Inspection and delivery refer to the same opened file identity; compare the opened file with the resolved path before returning ownership. Each request owns its reader and explicit offsets; never share a mutable file cursor across readers. Return/await Fastify stream responses and preserve backpressure through the Electron response body. No `readFile`, `Buffer.concat`, `blob()`, or `arrayBuffer()` in the playback delivery path. This protects normal application replacement and detected filesystem changes; it is not a native filesystem sandbox against a hostile process racing directory changes.
 
 Alternatives: direct desktop file access duplicates storage/security ownership; HLS/DASH/MSE introduces packaging and playback machinery unnecessary for local files and does not cover images; raising byte caps retains full-body memory amplification. Native streaming is supported by the existing frameworks [R1-R4].
 
@@ -47,7 +49,7 @@ Alternatives: direct desktop file access duplicates storage/security ownership; 
 
 Serve original PNG/JPEG/WebP/GIF/MP4/WebM/MP3/WAV/Ogg/audio-WebM bytes with their validated MIME type. Keep existing signature validation and import limits (image 10 MiB, GIF/audio 25 MiB, video 100 MiB). Container acceptance does not imply every embedded codec is playable.
 
-Delegate standard HTTP behavior to the established file-serving library. The application integration must satisfy this response contract:
+Use the HTTP utilities and thin adapter to satisfy this response contract:
 
 - Authorized full GET: 200 with exact Content-Length, MIME type, strong checksum-based ETag, `Accept-Ranges: bytes`, and `nosniff`.
 - Authorized single closed/open-ended/suffix range: 206 with exact Content-Range and interval length.
@@ -150,7 +152,8 @@ Sources reviewed September 30, 2026. These establish API feasibility, not tested
 - **R7:** [W3C MSE byte-stream registry](https://www.w3.org/TR/mse-byte-stream-format-registry/): MSE's format-specific streaming machinery is unnecessary for this native multi-format asset delivery use case.
 - **R8:** [@fastify/static](https://github.com/fastify/fastify-static): existing direct dependency; explicit `sendFile` calls with directory serving disabled, configurable headers, and delegated range delivery.
 - **R9:** [@fastify/send](https://github.com/fastify/send): underlying file streaming, byte ranges, and conditional requests. Prefer the existing wrapper; declare a direct dependency only if direct use has a demonstrated integration benefit.
+- **R10:** [jshttp range-parser](https://github.com/jshttp/range-parser), [jshttp fresh](https://github.com/jshttp/fresh): MIT-licensed HTTP utilities selected after the file-serving wrapper feasibility probe failed.
 
 ## Open Questions
 
-The library integration must establish whether supported APIs meet the pinned-file identity and exact HTTP contract before implementation of shared delivery. The protocol, gain, physical-output, and memory gates above are empirical acceptance conditions; a failed gate requires a scoped design revision rather than an unapproved transport/security fallback. Library reuse does not change the integrity policy in decision 4 or introduce caching.
+The file-serving integration gap is resolved by the documented Node/jshttp adapter. The protocol, gain, physical-output, and memory gates above remain empirical acceptance conditions; a failed gate requires a scoped design revision rather than an unapproved transport/security fallback. Library reuse does not change the integrity policy in decision 4 or introduce caching.

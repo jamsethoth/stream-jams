@@ -1,13 +1,13 @@
 ## 1. Baseline And Contract Preparation
 
-- [ ] 1.1 Fetch origin/main, confirm the Windows worktree/branch and unimplemented scope, and create the first slice branch from the current remote baseline with this committed proposal available.
+- [x] 1.1 Fetch origin/main, confirm the Windows worktree/branch and unimplemented scope, and create the first slice branch from the current remote baseline with this committed proposal available.
 - [ ] 1.2 Reconcile current canonical media/timing/security specs and map every registered-asset consumer, including timer icons/cues and all management preview helpers; record the applicable format/output matrix.
 - [ ] 1.3 Add positive and rejected reference/grant contract fixtures and define private protocol version negotiation, version snapshots, ownership identities, and the documented resource limits.
 
 ## 2. Slice One: Shared Streaming And File Lifetimes
 
-- [ ] 2.1 Verify the installed @fastify/static/@fastify/send supported APIs against pinned-file identity, path confinement, bounded reads, cancellation, and the HTTP contract. Document any gap before selecting a narrow Node file-handle adapter or revising the integration; do not introduce a parallel range/precondition implementation.
-- [ ] 2.2 Integrate library-backed file delivery and switch existing management/overlay media routes to streaming through thin authorized handlers; test GET/HEAD, all supported ranges, 200/206/304/416, ETag/preconditions, MIME/no-store headers, overflow input, same-file identity, path confinement, cancellation/close failures, and authorization before metadata disclosure.
+- [x] 2.1 Verify the installed @fastify/static/@fastify/send supported APIs against pinned-file identity, path confinement, bounded reads, cancellation, and the HTTP contract. Document any gap before selecting a narrow Node file-handle adapter or revising the integration; do not introduce a parallel range/precondition implementation. See library-findings.md: use Node FileHandle/Fastify with jshttp utilities.
+- [x] 2.2 Integrate library-backed file delivery and switch existing management/overlay media routes to streaming through thin authorized handlers; test GET/HEAD, all supported ranges, 200/206/304/416, ETag/preconditions, MIME/no-store headers, overflow input, same-file identity, path confinement, cancellation/close failures, and authorization before metadata disclosure.
 - [ ] 2.3 Implement pinned version ownership at admission, preview acquisition, and persistent module revision boundaries; test rejection, purge, skip, completion, concurrent recipients, visibility/reorder, and service loss release.
 - [ ] 2.4 Implement recoverable retirement intent and deferred deletion; test replacement while queued/reading, failed metadata update, interruption/restart, Windows delete behavior, restore invalidation, and protection of current/unrelated files.
 - [ ] 2.5 Implement cancellable incremental desktop integrity verification coalesced within preparation groups; test mismatched checksum/size, changed file identity, missing files, and verification deadline expiry without full-body allocation.

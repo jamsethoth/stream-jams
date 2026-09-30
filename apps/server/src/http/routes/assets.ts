@@ -8,21 +8,21 @@ import {
   type OverlayRouteAccessRequest
 } from "@stream-jams/core";
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerHookHandler } from "fastify";
-import { AssetFileNotFoundError, AssetPathTraversalError, type LocalAssetStore } from "../../modules/assets/local-asset-store.js";
+import { AssetFileChangedError, AssetStreamCapacityError, AssetFileNotFoundError, AssetPathTraversalError, type LocalAssetStore } from "../../modules/assets/local-asset-store.js";
 import type { AssetLibraryService } from "../../modules/assets/asset-library-service.js";
 import {
   createOverlayAuthPreHandler,
   parseOverlayTargetProfileQuery
 } from "../middleware/overlay-auth.js";
 import { sendHttpError } from "../errors.js";
-import { sendMediaBytes } from "../media-response.js";
+import { sendMediaFile } from "../media-response.js";
 import { readModuleOverlayParams, readUnifiedOverlayParams } from "./overlay-route-params.js";
 import { isTimerAssetCompatible } from "../../modules/timers/timer-asset-role.js";
 
 export interface AssetRouteDependencies {
   readonly assetRepository: Pick<AssetRepository, "list" | "findById">;
   readonly mediaImportPipeline: Pick<MediaImportPipeline, "importMedia">;
-  readonly assetStore: Pick<LocalAssetStore, "read">;
+  readonly assetStore: Pick<LocalAssetStore, "openRead">;
   readonly assetLibraryService?: Pick<AssetLibraryService, "registerAsset" | "getChangeImpact" | "completeReplacement">;
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
@@ -130,9 +130,14 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
     }
 
     try {
-      const bytes = await dependencies.assetStore.read(record.storagePath);
-      return sendMediaBytes(request, reply, bytes, record.mimeType);
+      return await sendMediaFile(request, reply, dependencies.assetStore, record);
     } catch (error) {
+      if (error instanceof AssetFileChangedError || error instanceof AssetStreamCapacityError) {
+        return sendHttpError(reply, error instanceof AssetStreamCapacityError ? 503 : 409, {
+          code: error instanceof AssetStreamCapacityError ? "MEDIA_STREAM_CAPACITY" : "ASSET_FILE_CHANGED",
+          message: error.message
+        });
+      }
       if (error instanceof AssetPathTraversalError) {
         return sendHttpError(reply, 400, {
           code: "ASSET_STORAGE_PATH_INVALID",
@@ -195,10 +200,10 @@ async function sendOverlayAsset(
   }
 
   try {
-    const bytes = await dependencies.assetStore.read(record.storagePath);
-    return sendMediaBytes(request, reply.header("cache-control", "no-store"), bytes, record.mimeType);
+    return await sendMediaFile(request, reply, dependencies.assetStore, record);
   } catch (error) {
-    if (error instanceof AssetPathTraversalError || error instanceof AssetFileNotFoundError) {
+    if (error instanceof AssetStreamCapacityError) return sendHttpError(reply, 503, { code: "MEDIA_STREAM_CAPACITY", message: error.message });
+    if (error instanceof AssetPathTraversalError || error instanceof AssetFileNotFoundError || error instanceof AssetFileChangedError) {
       return sendOverlayAssetNotFound(reply);
     }
 

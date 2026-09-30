@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -12,6 +12,35 @@ import {
 const temporaryDirectories: string[] = [];
 
 describe("LocalAssetStore", () => {
+  it("keeps an inspected file open across a path replacement", async () => {
+    const assetDirectory = await createTemporaryAssetDirectory();
+    const store = new LocalAssetStore({ assetDirectory });
+    await writeFile(join(assetDirectory, "original"), "original");
+    const opened = await store.openRead("original", 8);
+    try {
+      await rename(join(assetDirectory, "original"), join(assetDirectory, "retired"));
+      await writeFile(join(assetDirectory, "original"), "replaced");
+      const chunks = [];
+      for await (const chunk of opened.handle.createReadStream({ start: 2, end: 4, highWaterMark: 65536 })) chunks.push(chunk);
+      expect(Buffer.concat(chunks).toString()).toBe("igi");
+    } finally {
+      await opened.close();
+    }
+    expect(store.activeReaders).toBe(0);
+  });
+
+  it("rejects a junction outside the asset root and mismatched file sizes", async () => {
+    const assetDirectory = await createTemporaryAssetDirectory();
+    const outside = await createTemporaryAssetDirectory();
+    await writeFile(join(outside, "secret"), "secret");
+    await symlink(outside, join(assetDirectory, "escape"), "junction");
+    const store = new LocalAssetStore({ assetDirectory });
+    await expect(store.openRead("escape/secret", 6)).rejects.toBeInstanceOf(AssetPathTraversalError);
+    await writeFile(join(assetDirectory, "changed"), "changed");
+    await expect(store.openRead("changed", 2)).rejects.toThrow("changed");
+    expect(store.activeReaders).toBe(0);
+  });
+
   afterEach(async () => {
     await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { force: true, recursive: true })));
   });

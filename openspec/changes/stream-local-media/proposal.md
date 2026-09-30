@@ -5,7 +5,7 @@ Accepted local videos can render successfully while their selected-device soundt
 ## What Changes
 
 - Serve registered, version-pinned local assets using bounded file streams and HTTP byte ranges, preserving original bytes and existing import limits.
-- Reuse the existing @fastify/static/@fastify/send file-delivery implementation and platform streaming APIs; reserve custom code for application authorization, version lifetime, integrity policy, and thin integration adapters.
+- Reuse Node/Fastify streaming APIs and jshttp range-parser/fresh utilities; reserve custom code for application authorization, version lifetime, integrity policy, and thin integration adapters. The existing Fastify file-serving wrapper cannot meet the opened-file/validator contract; library-findings.md records the executable evidence.
 - Replace desktop media byte payloads with scoped references, delivered through the existing private Electron protocols and owned loopback service.
 - Replace registered-asset preview Blobs with revocable, session-owned media URLs.
 - Retain old asset versions while queued/active occurrences, previews, or persistent module presentations own them; retire old storage safely after release.
@@ -29,7 +29,7 @@ Accepted local videos can render successfully while their selected-device soundt
 
 - Core asset, overlay, and audio contracts; server asset store, HTTP response helper, media authorization/lifetimes, and playback composition; desktop private protocols and IPC; management previews and desktop renderer asset resolution.
 - Update the canonical specifications only after implementation and spec sync. This proposal does not change production behavior or user assets.
-- Use Node, Fastify, Electron, and native media elements already in the product. No streaming server, transcoder, HLS/DASH, or additional dependency is proposed.
+- Use Node, Fastify, Electron, and native media elements already in the product, with the small jshttp range-parser/fresh utilities and their TypeScript definitions. No separate streaming server, transcoder, or HLS/DASH player is proposed.
 - Three sequential slices: shared delivery/version lifetimes; desktop references/protocol adapters; management previews and complete runtime acceptance.
 
 ## Non-goals
