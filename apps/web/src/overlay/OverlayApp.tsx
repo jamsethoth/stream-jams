@@ -20,6 +20,9 @@ const maximumPendingOverlayMutations = 100;
 export function OverlayApp() {
   const route = useMemo(() => parseOverlayRoute(`${window.location.pathname}${window.location.search}`), []);
   const [composition, setComposition] = useState<OverlayComposition | null>(null);
+  const [preparingIds, setPreparingIds] = useState<ReadonlySet<string>>(new Set());
+  const seenIdsRef = useRef(new Set<string>());
+  const preparedIdsRef = useRef(new Set<string>());
   const [muted, setMuted] = useState<boolean | null>(null);
   const connectionRef = useRef<OverlayClientConnection | null>(null);
   const compositionReceivedRef = useRef(false);
@@ -57,8 +60,21 @@ export function OverlayApp() {
           pendingMutationsRef.current = [];
           compositionReceivedRef.current = true;
           setComposition(composition);
-        } else if (message.type === "playback") {
+        } else if (message.type === "start") {
+          if (!preparedIdsRef.current.delete(message.instructionId)) return;
+          setComposition(current => current === null ? null : { ...current, modules: current.modules.map(module => ({ ...module,
+            instructions: module.instructions.map(instruction => instruction.id !== message.instructionId ? instruction : { ...instruction,
+              timing: { startsAtEpochMs: message.startsAtEpochMs, endsAtEpochMs: message.startsAtEpochMs + instruction.durationMs } }) })) });
+          setPreparingIds(new Set(preparedIdsRef.current));
+        } else if (message.type === "playback" || message.type === "prepare") {
           if (!instructionMatchesRoute(route, message.instruction)) return;
+          if (seenIdsRef.current.has(message.instruction.id)) return;
+          seenIdsRef.current.add(message.instruction.id);
+          if (seenIdsRef.current.size > 1000) seenIdsRef.current.delete(seenIdsRef.current.values().next().value!);
+          if (message.type === "prepare") {
+            preparedIdsRef.current.add(message.instruction.id);
+            setPreparingIds(new Set(preparedIdsRef.current));
+          }
           if (!compositionReceivedRef.current) queueMutation(message);
           else setComposition((current) => appendInstruction(current, route, message.instruction));
         } else if (message.type === "audio-state") {
@@ -68,9 +84,13 @@ export function OverlayApp() {
           if (!compositionReceivedRef.current) queueMutation(message);
           else setComposition(current => current === null ? null : applySurfaceLayers(current, message.layers));
         } else if (message.type === "stop") {
+          for (const id of message.instructionIds) preparedIdsRef.current.delete(id);
+          setPreparingIds(new Set(preparedIdsRef.current));
           if (!compositionReceivedRef.current) queueMutation(message);
           else setComposition((current) => removeInstructions(current, message.instructionIds));
         } else {
+          preparedIdsRef.current.clear();
+          setPreparingIds(new Set());
           compositionReceivedRef.current = false;
           pendingMutationsRef.current = [];
           setComposition(null);
@@ -91,6 +111,8 @@ export function OverlayApp() {
 
   const onPlaybackEvent = useCallback((event: OverlayPlaybackEvent) => {
     if (event.status === "completed" || event.status === "failed") {
+      preparedIdsRef.current.delete(event.instructionId);
+      setPreparingIds(new Set(preparedIdsRef.current));
       setComposition((current) => removeInstruction(current, event.instructionId));
     }
 
@@ -99,7 +121,9 @@ export function OverlayApp() {
       return;
     }
 
-    if (event.status === "started") {
+    if (event.status === "ready") {
+      reporter.reportReady(event.instructionId);
+    } else if (event.status === "started") {
       reporter.reportStarted(event.instructionId);
     } else if (event.status === "completed") {
       reporter.reportCompleted(event.instructionId);
@@ -119,6 +143,7 @@ export function OverlayApp() {
   return (
     <OverlaySurface
       composition={composition}
+      preparingInstructionIds={preparingIds}
       muted={muted}
       onPlaybackEvent={onPlaybackEvent}
       resolveAssetUrl={resolveOverlayAssetUrl}
@@ -126,7 +151,7 @@ export function OverlayApp() {
   );
 }
 
-type OverlayMutation = Extract<OverlayClientMessage, { readonly type: "playback" | "stop" | "surface-layers" }>;
+type OverlayMutation = Extract<OverlayClientMessage, { readonly type: "playback" | "prepare" | "stop" | "surface-layers" }>;
 
 function applyMutation(
   composition: OverlayComposition,
@@ -134,7 +159,7 @@ function applyMutation(
   mutation: OverlayMutation
 ): OverlayComposition {
   if (mutation.type === "surface-layers") return applySurfaceLayers(composition, mutation.layers);
-  return mutation.type === "playback"
+  return mutation.type === "playback" || mutation.type === "prepare"
     ? appendInstruction(composition, route, mutation.instruction)
     : removeInstructions(composition, mutation.instructionIds) ?? composition;
 }

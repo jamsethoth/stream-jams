@@ -130,6 +130,23 @@ describe("overlay-client", () => {
     ]);
   });
 
+  it.each(["overlay.playback", "overlay.playback.prepare"])("reports validated-ID %s schema failures without rendering them", type => {
+    const onMessage = vi.fn(); connectClient(onMessage);
+    const socket = FakeWebSocket.instances[0]!; socket.emit("open");
+    socket.emitMessage(JSON.stringify({ type, instruction: { id: "bad-style", text: { textStyle: { fontPreset: "external-font" } } } }));
+    expect(onMessage).not.toHaveBeenCalled();
+    expect(socket.sent.map(message => JSON.parse(message))).toEqual([expect.objectContaining({
+      type: "overlay.playback.failed", instructionId: "bad-style", stage: "source-load", referenceId: expect.stringMatching(/^err_/),
+      message: "Overlay playback instruction failed validation.", exception: expect.objectContaining({ type: "ZodError" })
+    })]);
+  });
+  it("does not forge validation reports for unrecognized messages or invalid IDs", () => {
+    connectClient(); const socket = FakeWebSocket.instances[0]!; socket.emit("open");
+    for (const id of [undefined, "", " ", "x".repeat(201), 1]) socket.emitMessage(JSON.stringify({ type: "overlay.playback", instruction: { id } }));
+    socket.emitMessage(JSON.stringify({ type: "unknown", instruction: { id: "valid-id" } }));
+    expect(socket.sent).toEqual([]);
+  });
+
   it("reconnects after 1, 2, 4, 8, then 10 seconds capped", () => {
     connectClient();
 

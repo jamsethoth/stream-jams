@@ -20,6 +20,8 @@ None.
 
 - `overlay-safe-assets`: authorized media range responses.
 - `routed-video-audio`: bounded preparation and actionable selected-output failures.
+- `alert-audio-routing`: bounded automatic renderer recovery without rerouting or replay.
+- `shared-overlay-surfaces`: automatic desktop renderer recovery for subsequent work.
 
 ## Impact
 

@@ -14,6 +14,8 @@ export class TimedMediaPreparationError extends Error {
 export interface TimedMediaElement {
   readonly readyState: number;
   readonly seeking: boolean;
+  readonly duration?: number;
+  readonly loop?: boolean;
   currentTime: number;
   addEventListener(type: string, listener: EventListener): void;
   removeEventListener(type: string, listener: EventListener): void;
@@ -31,6 +33,7 @@ export function prepareTimedMedia(element: TimedMediaElement, candidate: Playbac
   return new Promise((resolve, reject) => {
     let settled = false;
     let requestedOffset: number | null = null;
+    let requestedAt: number | null = null;
     let seekAttempts = 0;
     let startTimer: ReturnType<typeof setTimeout> | undefined;
     const finish = (error?: Error) => {
@@ -55,17 +58,22 @@ export function prepareTimedMedia(element: TimedMediaElement, candidate: Playbac
       if (current >= options.deadlineMs) { finish(new TimedMediaPreparationError(element.readyState < 1 ? "metadata" : "seek", "Media preparation deadline exceeded.")); return; }
       if (current < timing.startsAtEpochMs || element.readyState < 1) return;
       const offset = (current - timing.startsAtEpochMs) / 1000;
+      const evidence = () => `requested=${requestedOffset}, actual=${element.currentTime}, offset=${offset}, duration=${element.duration ?? "unknown"}, seekElapsedMs=${requestedAt === null ? 0 : current - requestedAt}`;
+      if (element.loop !== true && element.duration !== undefined && Number.isFinite(element.duration) && offset >= element.duration) {
+        finish(new TimedMediaPreparationError("seek", `The media clip has expired (${evidence()}).`)); return;
+      }
       try {
         if (requestedOffset !== null) {
           if (element.seeking) return;
-          if (Math.abs(element.currentTime - requestedOffset) > 0.02) { finish(new TimedMediaPreparationError("seek", "The media did not reach its requested seek position.")); return; }
+          if (Math.abs(element.currentTime - requestedOffset) > 0.02) { finish(new TimedMediaPreparationError("seek", `The media did not reach its requested seek position (${evidence()}).`)); return; }
           // A completed asynchronous seek consumes wall time. Do not chase it
           // again when its onset remains within the declared local target.
           if (Math.abs(element.currentTime - offset) <= 0.15) { finish(); return; }
-          if (seekAttempts >= 2) { finish(new TimedMediaPreparationError("seek", "The media could not reach the shared offset within the timing target.")); return; }
+          if (seekAttempts >= 2) { finish(new TimedMediaPreparationError("seek", `The media could not reach the shared offset within the timing target (${evidence()}).`)); return; }
         }
         if (Math.abs(element.currentTime - offset) <= 0.02 && !element.seeking) { finish(); return; }
         requestedOffset = offset;
+        requestedAt = current;
         seekAttempts++;
         element.currentTime = offset;
         if (!element.seeking && Math.abs(element.currentTime - offset) <= 0.02) finish();

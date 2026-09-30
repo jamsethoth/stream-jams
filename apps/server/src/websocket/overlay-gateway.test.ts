@@ -6,10 +6,109 @@ import type {
   OverlayRouteAccessRequest,
   OverlayScope
 } from "@stream-jams/core";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { OverlayGateway, type OverlayGatewaySocket } from "./overlay-gateway.js";
 
 describe("OverlayGateway", () => {
+  afterEach(() => vi.useRealTimers());
+  it("prepares healthy recipients when an earlier socket send fails", async () => {
+    const route = { overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", rawKey: "key" } as const;
+    const gateway = createGateway({ allowed: [route] }); const failed = new RecordingSocket(); const healthy = new RecordingSocket();
+    await gateway.registerClient(failed, route); const registration = await gateway.registerClient(healthy, route);
+    if (!registration.authorized) throw new Error("unauthorized");
+    failed.send = () => { throw new Error("Socket closed"); };
+    const instruction = createInstruction(route); const pending = gateway.preparePlaybackInstruction(instruction);
+    gateway.handleClientMessage(registration.clientId, JSON.stringify({ type: "overlay.playback.ready", instructionId: instruction.id }));
+    const prepared = await pending; prepared.start(1000);
+    expect(prepared.deliveredClientIds).toEqual([registration.clientId]);
+    expect(healthy.messages.at(-1)).toEqual({ type: "overlay.playback.start", instructionId: instruction.id, startsAtEpochMs: 1000 });
+  });
+  it.each(["stop", "disconnect"])("clears the prepared handle expiry on %s", async action => {
+    vi.useFakeTimers();
+    const route = { overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", rawKey: "key" } as const;
+    const gateway = createGateway({ allowed: [route] }); const socket = new RecordingSocket();
+    const registration = await gateway.registerClient(socket, route);
+    if (!registration.authorized) throw new Error("unauthorized");
+    const instruction = createInstruction(route); const pending = gateway.preparePlaybackInstruction(instruction);
+    gateway.handleClientMessage(registration.clientId, JSON.stringify({ type: "overlay.playback.ready", instructionId: instruction.id }));
+    const prepared = await pending;
+    if (action === "stop") gateway.stopPlaybackInstructions([instruction.id]); else gateway.unregisterClient(registration.clientId);
+    expect(vi.getTimerCount()).toBe(0);
+    const messages = [...socket.messages]; prepared.start(1000);
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(socket.messages).toEqual(messages);
+  });
+  it("does not resurrect a stopped preparation or expire its same-id replacement", async () => {
+    vi.useFakeTimers();
+    const route = { overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", rawKey: "key" } as const;
+    const gateway = createGateway({ allowed: [route] }); const socket = new RecordingSocket();
+    const registration = await gateway.registerClient(socket, route);
+    if (!registration.authorized) throw new Error("unauthorized");
+    const instruction = createInstruction(route); const oldPending = gateway.preparePlaybackInstruction(instruction);
+    gateway.stopPlaybackInstructions([instruction.id]);
+    const nextPending = gateway.preparePlaybackInstruction(instruction);
+    const oldHandle = await oldPending;
+    gateway.handleClientMessage(registration.clientId, JSON.stringify({ type: "overlay.playback.ready", instructionId: instruction.id }));
+    const nextHandle = await nextPending;
+    expect(oldHandle.deliveredClientIds).toEqual([]);
+    nextHandle.start(1000); oldHandle.start(1000);
+    expect(vi.getTimerCount()).toBe(0);
+    const messages = [...socket.messages];
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(socket.messages).toEqual(messages);
+    expect(socket.messages.at(-1)).toEqual({ type: "overlay.playback.start", instructionId: instruction.id, startsAtEpochMs: 1000 });
+  });
+  it("bounds a stalled recipient and lets healthy and subsequent occurrences start", async () => {
+    vi.useFakeTimers();
+    const route = { overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", rawKey: "key" } as const;
+    const gateway = createGateway({ allowed: [route] });
+    const stalled = new RecordingSocket(); const healthy = new RecordingSocket();
+    const stalledRegistration = await gateway.registerClient(stalled, route);
+    const healthyRegistration = await gateway.registerClient(healthy, route);
+    if (!stalledRegistration.authorized || !healthyRegistration.authorized) throw new Error("unauthorized");
+    const instruction = createInstruction(route);
+    const pending = gateway.preparePlaybackInstruction(instruction);
+    gateway.handleClientMessage(healthyRegistration.clientId, JSON.stringify({ type: "overlay.playback.ready", instructionId: instruction.id }));
+    await vi.advanceTimersByTimeAsync(6000);
+    const prepared = await pending; prepared.start(7000);
+    expect(prepared.deliveredClientIds).toEqual([healthyRegistration.clientId]);
+    expect(stalled.messages.at(-1)).toEqual({ type: "overlay.playback.stop", instructionIds: [instruction.id] });
+    const next = gateway.preparePlaybackInstruction({ ...instruction, id: "next" });
+    for (const clientId of [stalledRegistration.clientId, healthyRegistration.clientId]) gateway.handleClientMessage(clientId, JSON.stringify({ type: "overlay.playback.ready", instructionId: "next" }));
+    const recovered = await next; recovered.start(8000);
+    expect(recovered.deliveredClientIds).toHaveLength(2);
+    expect(stalled.messages.at(-1)).toEqual({ type: "overlay.playback.start", instructionId: "next", startsAtEpochMs: 8000 });
+  });
+  it("removes disconnected prepared recipients before scheduled delivery", async () => {
+    const route = { overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", rawKey: "key" } as const;
+    const gateway = createGateway({ allowed: [route] }); const socket = new RecordingSocket();
+    const registration = await gateway.registerClient(socket, route);
+    if (!registration.authorized) throw new Error("unauthorized");
+    const instruction = createInstruction(route); const pending = gateway.preparePlaybackInstruction(instruction);
+    gateway.handleClientMessage(registration.clientId, JSON.stringify({ type: "overlay.playback.ready", instructionId: instruction.id }));
+    const prepared = await pending; gateway.unregisterClient(registration.clientId); prepared.start(1234);
+    expect(socket.messages.at(-1)).toEqual({ type: "overlay.playback.prepare", instruction });
+  });
+  it("prepares captured clients and starts ready recipients only once", async () => {
+    const route = { overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", rawKey: "key" } as const;
+    const gateway = createGateway({ allowed: [route] });
+    const socket = new RecordingSocket();
+    const registration = await gateway.registerClient(socket, route);
+    if (!registration.authorized) throw new Error("unauthorized");
+    const instruction = createInstruction(route);
+    const pending = gateway.preparePlaybackInstruction(instruction);
+    expect(socket.messages.at(-1)).toEqual({ type: "overlay.playback.prepare", instruction });
+    gateway.handleClientMessage(registration.clientId, JSON.stringify({ type: "overlay.playback.ready", instructionId: instruction.id }));
+    const prepared = await pending;
+    const reconnect = new RecordingSocket();
+    await gateway.registerClient(reconnect, route);
+    prepared.start(1234); prepared.start(1234);
+    expect(prepared.deliveredClientIds).toEqual([registration.clientId]);
+    expect(socket.messages.filter((message) => (message as { type: string }).type === "overlay.playback.start")).toEqual([
+      { type: "overlay.playback.start", instructionId: instruction.id, startsAtEpochMs: 1234 }
+    ]);
+    expect(reconnect.messages.some((message) => (message as { type: string }).type === "overlay.playback.start")).toBe(false);
+  });
   it("delivers validated live compositions only to their registered output", async () => {
     const registration = { overlayId: "default", moduleId: "timers", purpose: "live", scope: "module", targetProfileId: "landscape", rawKey: "timer-key" } as const;
     const gateway = createGateway({ allowed: [registration] }); const socket = new RecordingSocket();

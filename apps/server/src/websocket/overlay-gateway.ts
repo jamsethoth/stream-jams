@@ -1,4 +1,4 @@
-import { overlayCompositionSchema, surfaceConfigurationSchema, type OverlayComposition, type SurfaceLayer } from "@stream-jams/core";
+import { serializeException, overlayCompositionSchema, surfaceConfigurationSchema, type OverlayComposition, type SurfaceLayer } from "@stream-jams/core";
 import type {
   OverlayAccessDenialReason,
   OverlayAccessService,
@@ -78,6 +78,8 @@ interface RegisteredOverlayGatewayClient extends OverlayGatewayClient {
 }
 
 type OverlayGatewayMessage =
+  | { readonly type: "overlay.playback.prepare"; readonly instruction: OverlayInstruction }
+  | { readonly type: "overlay.playback.start"; readonly instructionId: string; readonly startsAtEpochMs: number }
   | { readonly type: "overlay.surface-layers"; readonly layers: readonly SurfaceLayer[] }
   | { readonly type: "overlay.composition"; readonly composition: OverlayComposition }
   | {
@@ -107,6 +109,12 @@ type OverlayGatewayMessage =
       readonly message: string;
     };
 
+interface PlaybackPreparation {
+  readonly pending: Map<string, (ready: boolean) => void>;
+  readonly eligible: Set<string>;
+  expiry: ReturnType<typeof setTimeout> | undefined;
+}
+
 export class OverlayGateway {
   readonly #overlayAccessService: Pick<OverlayAccessService, "verifyRouteAccess">;
   readonly #generateClientId: () => string;
@@ -115,6 +123,7 @@ export class OverlayGateway {
   readonly #onPlaybackReport: (report: OverlayGatewayPlaybackReport) => void;
   readonly #clients = new Map<string, RegisteredOverlayGatewayClient>();
   readonly #recentClientsByOutput = new Map<string, OverlayGatewayClientState>();
+  readonly #preparations = new Map<string, PlaybackPreparation>();
   #playbackMuted: boolean;
   readonly #surfaceLayers = new Map<string, readonly SurfaceLayer[]>();
 
@@ -210,12 +219,80 @@ export class OverlayGateway {
     }
 
     this.#clients.delete(clientId);
+    for (const [instructionId, preparation] of this.#preparations) {
+      preparation.pending.get(clientId)?.(false);
+      preparation.eligible.delete(clientId);
+      if (preparation.pending.size === 0 && preparation.eligible.size === 0) this.#cancelPreparation(instructionId, preparation);
+    }
     this.#recentClientsByOutput.set(outputStateKey(client), {
       ...toPublicClient(client),
       connectionState: "disconnected",
       disconnectedAt: this.#clock().toISOString()
     });
     this.#onClientDisconnected(clientId);
+  }
+
+  async preparePlaybackInstruction(instruction: OverlayInstruction): Promise<{ readonly deliveredClientIds: readonly string[]; start(startsAtEpochMs: number): void }> {
+    const recipients = [...this.#clients.values()].filter(client => clientMatchesInstruction(client, instruction));
+    const previous = this.#preparations.get(instruction.id);
+    if (previous !== undefined) this.#cancelPreparation(instruction.id, previous);
+    const preparation: PlaybackPreparation = { eligible: new Set(), pending: new Map(), expiry: undefined };
+    const { eligible, pending } = preparation;
+    this.#preparations.set(instruction.id, preparation);
+    const readiness = recipients.map(client => new Promise<string | null>(resolve => {
+      const finish = (success: boolean) => {
+        if (!pending.has(client.id)) return;
+        const accepted = success && this.#preparations.get(instruction.id) === preparation;
+        if (accepted) eligible.add(client.id);
+        clearTimeout(timer); pending.delete(client.id); resolve(accepted ? client.id : null);
+      };
+      const timer = setTimeout(() => {
+        this.#onPlaybackReport({ clientId: client.id, instructionId: instruction.id, status: "failed", message: "Browser media preparation timed out.",
+          referenceId: `err_${crypto.randomUUID()}`, stage: "decode", exception: serializeException(new Error("Browser media readiness was not acknowledged within 6000ms.")), targetProfileId: client.targetProfileId ?? null });
+        try { sendGatewayMessage(client.socket, { type: "overlay.playback.stop", instructionIds: [instruction.id] }); }
+        // error-provenance: allow expected -- failed transport is retired and never included in prepared recipients
+        catch { this.unregisterClient(client.id); }
+        finish(false);
+      }, 6000);
+      pending.set(client.id, finish);
+    }));
+    for (const client of recipients) {
+      try { sendGatewayMessage(client.socket, { type: "overlay.playback.prepare", instruction }); }
+      // error-provenance: allow expected -- failed transport is retired and never included in prepared recipients
+      catch { this.unregisterClient(client.id); }
+    }
+    const ready = await Promise.all(readiness);
+    const current = () => this.#preparations.get(instruction.id) === preparation;
+    const deliveredClientIds = ready.filter((id): id is string => current() && id !== null && eligible.has(id) && this.#clients.has(id));
+    if (current() && deliveredClientIds.length === 0) this.#cancelPreparation(instruction.id, preparation);
+    if (current()) {
+      preparation.expiry = setTimeout(() => {
+        if (current()) this.stopPlaybackInstructions([instruction.id]);
+      }, 20000);
+      preparation.expiry.unref();
+    }
+    let started = false;
+    return { deliveredClientIds, start: startsAtEpochMs => {
+      if (started || !current()) return;
+      started = true;
+      clearTimeout(preparation.expiry);
+      this.#preparations.delete(instruction.id);
+      for (const id of deliveredClientIds) {
+        const client = this.#clients.get(id);
+        if (client === undefined || !eligible.has(id)) continue;
+        try { sendGatewayMessage(client.socket, { type: "overlay.playback.start", instructionId: instruction.id, startsAtEpochMs }); }
+        // error-provenance: allow expected -- failed current transport is retired without affecting healthy recipients
+        catch { this.unregisterClient(id); }
+      }
+    } };
+  }
+
+  #cancelPreparation(instructionId: string, preparation: PlaybackPreparation): void {
+    if (this.#preparations.get(instructionId) !== preparation) return;
+    this.#preparations.delete(instructionId);
+    clearTimeout(preparation.expiry);
+    preparation.eligible.clear();
+    for (const finish of preparation.pending.values()) finish(false);
   }
 
   deliverPlaybackInstruction(instruction: OverlayInstruction): OverlayGatewayDeliveryResult {
@@ -278,6 +355,10 @@ export class OverlayGateway {
       return;
     }
 
+    for (const id of uniqueInstructionIds) {
+      const preparation = this.#preparations.get(id);
+      if (preparation !== undefined) this.#cancelPreparation(id, preparation);
+    }
     for (const client of this.#clients.values()) {
       sendGatewayMessage(client.socket, {
         type: "overlay.playback.stop",
@@ -297,8 +378,27 @@ export class OverlayGateway {
       lastSeenAt: this.#clock().toISOString()
     });
 
+    if (rawMessage.length <= 1000) {
+      try {
+        const candidate = JSON.parse(rawMessage) as { type?: unknown; instructionId?: unknown };
+        if (candidate.type === "overlay.playback.ready" && typeof candidate.instructionId === "string") {
+          this.#preparations.get(candidate.instructionId)?.pending.get(clientId)?.(true);
+          return;
+        }
+      }
+      // error-provenance: allow expected -- malformed input is ignored by report validation below
+      catch { /* invalid input */ }
+    }
     const report = parsePlaybackReport(client, rawMessage);
     if (report !== null) {
+      if (report.status === "failed") {
+        const preparation = this.#preparations.get(report.instructionId);
+        if (preparation !== undefined) {
+          preparation.pending.get(clientId)?.(false);
+          preparation.eligible.delete(clientId);
+          if (preparation.pending.size === 0 && preparation.eligible.size === 0) this.#cancelPreparation(report.instructionId, preparation);
+        }
+      }
       this.#onPlaybackReport(report);
     }
   }

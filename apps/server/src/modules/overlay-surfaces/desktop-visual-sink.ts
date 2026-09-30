@@ -6,8 +6,9 @@ export interface DesktopVisualSinkDependencies {
   assets: Pick<DesktopVisualAssetResolver, "resolve">;
   now?: () => number;
 }
-type Group = { key: VisualRecipientKey; input: Omit<DesktopVisualBatch, "assets"> | null; endsAt: number; timer: ReturnType<typeof setTimeout> | undefined };
-type Playback = { id: string; moduleId: string; groups: Group[]; finished: boolean; running: boolean; starts: number; stopsSettled: boolean; resolve(): void; reject(error: Error): void; stopping: Promise<void> | null };
+type Group = { key: VisualRecipientKey; input: Omit<DesktopVisualBatch, "assets"> | null; durationMs: number; endsAt: number; timer: ReturnType<typeof setTimeout> | undefined };
+type Preparation = { ready(): void; start: Promise<number>; release(): void };
+type Playback = { id: string; moduleId: string; groups: Group[]; preparation: Preparation | undefined; finished: boolean; running: boolean; starts: number; stopsSettled: boolean; resolve(): void; reject(error: Error): void; stopping: Promise<void> | null };
 
 export class DesktopVisualSink {
   readonly #now: () => number;
@@ -36,7 +37,25 @@ export class DesktopVisualSink {
     } finally { this.#configuring = false; }
   }
 
-  async play(occurrenceId: string, instructions: readonly OverlayInstruction[], startsAtEpochMs: number): Promise<void> {
+  prepare(occurrenceId: string, instructions: readonly OverlayInstruction[]): Promise<{ start(startsAtEpochMs: number): Promise<void> }> {
+    let commit!: (startsAt: number) => void;
+    const start = new Promise<number>(resolve => { commit = resolve; });
+    return new Promise((resolve, reject) => {
+      let committed = false;
+      const ready = () => resolve({ start: startsAt => {
+        if (!committed) { committed = true; commit(startsAt); }
+        return completion;
+      } });
+      const completion = this.#play(occurrenceId, instructions, this.#now() + 15000, { ready, start, release: () => commit(0) });
+      void completion.then(ready, reject);
+    });
+  }
+
+  play(occurrenceId: string, instructions: readonly OverlayInstruction[], startsAtEpochMs: number): Promise<void> {
+    return this.#play(occurrenceId, instructions, startsAtEpochMs);
+  }
+
+  async #play(occurrenceId: string, instructions: readonly OverlayInstruction[], startsAtEpochMs: number, preparation?: Preparation): Promise<void> {
     if (this.#closed || this.#configuring || this.#current.has(occurrenceId)) throw unavailable();
     const moduleId = instructions.find(instruction =>
       instruction.targetProfileId === "landscape"
@@ -60,15 +79,15 @@ export class DesktopVisualSink {
       const duplicates = new Set(original.map(instruction => instruction.id)).size !== original.length;
       const normalized = duplicates ? original.map((instruction, index) => ({ ...instruction, id: `${index}:${instruction.id}` })) : original;
       const endsAt = startsAtEpochMs + duration;
-      groups.push({ key, endsAt, input: { key, timing: { startsAtEpochMs, endsAtEpochMs: endsAt }, instructions: normalized }, timer: undefined });
+      groups.push({ key, durationMs: duration, endsAt, input: { ...(preparation === undefined ? {} : { deferredStart: true }), key, timing: { startsAtEpochMs, endsAtEpochMs: endsAt }, instructions: normalized }, timer: undefined });
     }
     return new Promise<void>((resolve, reject) => {
-      const record: Playback = { id: occurrenceId, moduleId, groups, finished: false, running: false, starts: 0, stopsSettled: true, resolve, reject, stopping: null };
+      const record: Playback = { id: occurrenceId, moduleId, groups, preparation, finished: false, running: false, starts: 0, stopsSettled: true, resolve, reject, stopping: null };
       this.#current.set(occurrenceId, record); this.#admitted.add(record);
       // Establish every obligation before any synchronous ready/complete reply.
       for (const group of groups) {
         this.#ledger.add(group.key);
-        group.timer = setTimeout(() => { void this.#cancel(record); }, Math.max(0, Math.min(5000, group.endsAt - this.#now())));
+        group.timer = setTimeout(() => { void this.#cancel(record); }, preparation === undefined ? Math.max(0, Math.min(5000, group.endsAt - this.#now())) : 15000);
       }
       this.#queue.push(record);
       if (!this.#pumping) { this.#pumping = true; void this.#drain(); }
@@ -122,11 +141,26 @@ export class DesktopVisualSink {
       });
       if (record.finished || this.#closed) return;
       if (ready !== "ready" || this.#now() >= group.endsAt) { void this.#cancel(record); return; }
+      if (record.preparation !== undefined) continue;
+      this.#startGroup(record, group);
+    }
+    if (record.preparation !== undefined) {
+      record.preparation.ready();
+      const startsAt = await record.preparation.start;
+      if (record.finished || this.#closed) return;
+      for (const group of record.groups) {
+        group.endsAt = startsAt + group.durationMs;
+        this.#startGroup(record, group, { startsAtEpochMs: startsAt, endsAtEpochMs: group.endsAt });
+      }
+    }
+  }
+
+  #startGroup(record: Playback, group: Group, timing?: Parameters<DesktopOverlayTransport["start"]>[1]): void {
       clearTimeout(group.timer);
       group.timer = setTimeout(() => { void this.#cancel(record); }, Math.max(0, group.endsAt + 5000 - this.#now()));
       record.starts++;
       let completed: Promise<void>;
-      try { completed = this.dependencies.transport.start(group.key); }
+      try { completed = timing === undefined ? this.dependencies.transport.start(group.key) : this.dependencies.transport.start(group.key, timing); }
       catch (error) { record.starts--; throw error; }
       // Start each ready group immediately; its completion never blocks preparing
       // the next duration group on the one serialized resolver path.
@@ -136,7 +170,6 @@ export class DesktopVisualSink {
           if (this.#ledger.pending(record.id) === 0) this.#complete(record);
         }
       }, (error: unknown) => { void this.#cancel(record, error); }).finally(() => { record.starts--; this.#retire(record); });
-    }
   }
 
   #complete(record: Playback): void {
@@ -170,6 +203,7 @@ export class DesktopVisualSink {
   }
   #finish(record: Playback): void {
     record.finished = true;
+    record.preparation?.release();
     if (record.stopsSettled && this.#current.get(record.id) === record) this.#current.delete(record.id);
     for (const group of record.groups) { clearTimeout(group.timer); group.timer = undefined; group.input = null; this.#ledger.settle(group.key); }
     this.#retire(record);

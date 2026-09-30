@@ -17,6 +17,33 @@ function harness() {
 }
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0); });
 afterEach(() => vi.useRealTimers());
+it("prepares every duration group before accepting a shared start without consuming clip duration", async () => {
+  const { sink, transport } = harness();
+  let ready!: (value: "ready") => void;
+  transport.prepare.mockImplementationOnce(() => new Promise(done => { ready = done; }));
+  const preparing = sink.prepare("prepared", [instruction(1000), instruction(2000)]);
+  await vi.advanceTimersByTimeAsync(2200);
+  expect(transport.start).not.toHaveBeenCalled();
+  ready("ready");
+  const prepared = await preparing;
+  expect(transport.prepare).toHaveBeenCalledTimes(2);
+  expect(transport.start).not.toHaveBeenCalled();
+  await prepared.start(2400);
+  expect(transport.start.mock.calls.map(call => call[1])).toEqual([
+    { startsAtEpochMs: 2400, endsAtEpochMs: 3400 },
+    { startsAtEpochMs: 2400, endsAtEpochMs: 4400 }
+  ]);
+  await sink.close(); expect(vi.getTimerCount()).toBe(0);
+});
+
+it("stops a prepared occurrence before commit and rejects its late start", async () => {
+  const { sink, transport } = harness();
+  const prepared = await sink.prepare("cancel", [instruction()]);
+  await sink.stop("cancel");
+  await expect(prepared.start(100)).rejects.toThrow();
+  expect(transport.start).not.toHaveBeenCalled();
+  await sink.close();
+});
 it("invalidates pending assets across rebind away and back, blocking intake during apply", async () => {
   const { sink, transport, config, resolve } = harness();
   await sink.configure({ ...config, layers: [...config.layers] });

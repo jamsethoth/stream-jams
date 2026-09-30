@@ -6,6 +6,7 @@ import { OverlayApp } from "./OverlayApp.js";
 const clientHarness = vi.hoisted(() => ({
   close: vi.fn(),
   onMessage: null as ((message: unknown) => void) | null,
+  reportReady: vi.fn(),
   reportCompleted: vi.fn(),
   reportFailed: vi.fn(),
   reportStarted: vi.fn()
@@ -20,6 +21,7 @@ vi.mock("./overlay-client.js", async () => {
       return {
         close: clientHarness.close,
         reporter: {
+          reportReady: clientHarness.reportReady,
           reportCompleted: clientHarness.reportCompleted,
           reportFailed: clientHarness.reportFailed,
           reportStarted: clientHarness.reportStarted
@@ -30,6 +32,35 @@ vi.mock("./overlay-client.js", async () => {
 });
 
 describe("OverlayApp playback lifecycle", () => {
+  it("keeps prepared text hidden until start and ignores duplicate or stale starts", async () => {
+    vi.setSystemTime(1000);
+    render(<OverlayApp />);
+    const instruction = { id: "prepared", overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", targetProfileId: "landscape", visual: null, audio: null, tts: null,
+      text: { text: "Prepared content", layout: { x: 0, y: 0, width: 300, height: 80, zIndex: 1 } }, durationMs: 1000 };
+    act(() => {
+      clientHarness.onMessage?.({ type: "audio-state", muted: false });
+      clientHarness.onMessage?.({ type: "composition", composition: { overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", modules: [] } });
+      clientHarness.onMessage?.({ type: "prepare", instruction });
+    });
+    await act(async () => {});
+    expect(screen.getByText("Prepared content")).not.toBeVisible();
+    expect(clientHarness.reportReady).toHaveBeenCalledWith("prepared");
+    expect(clientHarness.reportStarted).not.toHaveBeenCalled();
+    act(() => clientHarness.onMessage?.({ type: "start", instructionId: "prepared", startsAtEpochMs: 1100 }));
+    act(() => vi.advanceTimersByTime(99));
+    expect(clientHarness.reportStarted).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.getByText("Prepared content")).toBeVisible();
+    expect(clientHarness.reportStarted).toHaveBeenCalledTimes(1);
+    act(() => clientHarness.onMessage?.({ type: "start", instructionId: "prepared", startsAtEpochMs: 5000 }));
+    act(() => vi.advanceTimersByTime(1000));
+    expect(screen.queryByText("Prepared content")).not.toBeInTheDocument();
+    act(() => {
+      clientHarness.onMessage?.({ type: "prepare", instruction });
+      clientHarness.onMessage?.({ type: "start", instructionId: "prepared", startsAtEpochMs: 5000 });
+    });
+    expect(screen.queryByText("Prepared content")).not.toBeInTheDocument();
+  });
   it("applies queued and live unified layers without restarting active instructions", () => {
     window.history.replaceState(null, "", "/overlay/unified/live/test-local");
     render(<OverlayApp />);

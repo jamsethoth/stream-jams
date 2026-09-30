@@ -215,6 +215,7 @@ export type { PlaybackTiming } from "./overlays/playback-timing.js";
 export { overlayPlaybackFailureSchema, overlayPlaybackFailureStageSchema } from "./overlays/playback-failure.js";
 export type { OverlayPlaybackFailure, OverlayPlaybackFailureStage } from "./overlays/playback-failure.js";
 export { prepareTimedMedia, TimedMediaPreparationError } from "./audio/prepare-timed-media.js";
+export { prepareMediaAtStart } from "./audio/prepare-media-at-start.js";
 export type { TimedMediaElement } from "./audio/prepare-timed-media.js";
 export { desktopModuleSyncSchema, desktopVisualInstructionSchema, desktopVisualAssetSchema, desktopVisualBatchSchema, desktopVisualCommandSchema, desktopVisualReplySchema, desktopVisualRendererRequestSchema, desktopVisualRendererReplySchema, maxDesktopVisualTransferBytes, visualMediaType } from "./overlays/desktop-visual-transport.js";
 export type { DesktopModuleSync, DesktopVisualBatch, DesktopVisualAsset, DesktopVisualCommand, DesktopVisualReply, DesktopOverlayTransport, DesktopVisualRendererRequest, DesktopVisualRendererReply } from "./overlays/desktop-visual-transport.js";

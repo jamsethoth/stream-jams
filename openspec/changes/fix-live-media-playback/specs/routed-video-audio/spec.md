@@ -20,6 +20,12 @@ Desktop visual and selected-device audio failures SHALL retain bounded original 
 ### Requirement: Prepared Outputs Start Content Together From The Beginning
 Participating browser-source, desktop-overlay and configured audio outputs SHALL prepare their media before the coordinator chooses a shared near-future start. Media SHALL start from the beginning at normal speed. Small differences in actual startup SHALL NOT cause catch-up seeks, rate changes or suppressed clips. Preparation SHALL NOT consume the configured playback interval.
 
+#### Scenario: Actual playback starts slightly late
+- **WHEN** a prepared media element starts after the scheduled epoch
+- **THEN** its playback interval and volume envelope use its actual onset
+- **AND** its tail is not truncated or muted early because of startup latency
+- **AND** a separate bounded watchdog still releases genuinely stalled work
+
 #### Scenario: One output loads slowly
 - **WHEN** a short clip takes more than 150 ms to become ready on one output
 - **THEN** ready outputs remain silent and hidden until all participating preparations settle
@@ -45,3 +51,37 @@ Owned desktop renderers SHALL recover from repeated crashes or connection stalls
 - **WHEN** a target reconnects after its active clip was interrupted
 - **THEN** subsequent clips can play
 - **AND** reconnect does not seek into or replay the interrupted clip
+
+## MODIFIED Requirements
+
+### Requirement: Video And Soundtrack Share Occurrence Timing
+Visual media and routed soundtracks SHALL prepare before sharing a scheduled occurrence start epoch. Healthy media SHALL start from zero at normal speed. Actual media onset SHALL anchor its full configured playback interval and envelope, while separate bounded preparation, startup and completion watchdogs release failures. Late startup SHALL NOT cause catch-up seeking, rate changes or a strict skew cutoff.
+
+#### Scenario: Device preparation finishes slowly
+- **WHEN** a configured device needs longer to prepare its media than another participating output
+- **THEN** healthy prepared outputs wait for preparation to settle before a common future start is selected
+- **AND** preparation time does not consume the clip's playback interval
+
+#### Scenario: Preparation finishes after skip
+- **WHEN** an asynchronous media load resolves after its occurrence was skipped or expired
+- **THEN** it emits no audio or visuals and cannot acknowledge a replacement occurrence
+
+#### Scenario: Combined playback is accepted
+- **WHEN** packaged Windows and OBS acceptance tests exercise known audio/visual marker fixtures on the declared supported destinations
+- **THEN** verification records onset skew and the physical destinations tested
+- **AND** approximate simultaneous start is acceptable without claiming frame-perfect synchronization
+
+### Requirement: Routed Video Soundtracks Use Normalized Envelopes
+The system SHALL carry explicit soundtrack fade durations and effective source playback duration in normalized video-audio instructions.
+
+#### Scenario: Browser route plays video audio
+- **WHEN** a video soundtrack is enabled on a browser-routed Alert or Screen Effect
+- **THEN** its element volume SHALL follow the normalized envelope from actual audio onset until its effective playback duration or media end
+
+#### Scenario: Device route plays video audio
+- **WHEN** a video soundtrack is routed to an explicit device
+- **THEN** device playback SHALL use the same normalized envelope and effective duration as browser playback, anchored to actual audio onset
+
+#### Scenario: Video audio is disabled
+- **WHEN** embedded video audio is disabled
+- **THEN** soundtrack fade settings SHALL NOT create an audio playback instruction

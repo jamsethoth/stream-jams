@@ -125,9 +125,9 @@ The system SHALL fail closed for unavailable, disconnected or rejected device si
 - **THEN** the route requires explicit rebinding rather than guessing identity from its name
 
 #### Scenario: Player crashes and recovers
-- **WHEN** the hidden player crashes
+- **WHEN** the hidden player crashes, including repeated failures
 - **THEN** outstanding work fails and no interrupted audio is replayed on recreation
-- **AND** automatic recreation is bounded to one attempt before explicit retry is required
+- **AND** subsequent requests wait for automatic recreation with bounded backoff, without a permanent manual-retry lockout
 
 #### Scenario: Owning service is lost
 - **WHEN** the server exits, its IPC link closes, or its 10-second ownership lease expires
@@ -136,7 +136,7 @@ The system SHALL fail closed for unavailable, disconnected or rejected device si
 #### Scenario: Current service resumes its ownership lease
 - **WHEN** the active service worker sends a valid lease after ownership expired without being replaced or entering shutdown
 - **THEN** the desktop host restores audio-device availability without requiring an app restart
-- **AND** it preserves mute state and the renderer crash budget, recreates the renderer only when new work requires it, and does not replay interrupted audio
+- **AND** it preserves mute state and bounded recovery backoff, recreates the renderer only when new work requires it, and does not replay interrupted audio
 - **AND** leases from an old worker generation or during shutdown cannot restore ownership
 
 ### Requirement: Routing Does Not Change TTS Or Other Video Modules

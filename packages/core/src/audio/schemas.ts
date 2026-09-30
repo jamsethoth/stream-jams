@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { playbackTimingSchema } from "../overlays/playback-timing.js";
+import { serializedExceptionSchema } from "../diagnostics/serialized-exception.js";
 import type { AlertAudioOutputs, AudioOutputDevice, AudioOutputRoute, DeviceAudioBatch, DeviceAudioResult, ResolvedAlertAudio } from "./types.js";
 
 export const mediaVolumeSchema = z.number().finite().min(0).max(2);
@@ -84,7 +85,16 @@ export const deviceAudioBatchSchema = z.object({
     return new Set(destinations.map(destination => destination.deviceId)).size === destinations.length && new Set(routeIds).size === routeIds.length;
   }, "Each device and route must occur once")
 }).strict() satisfies z.ZodType<DeviceAudioBatch>;
-export const deviceAudioResultSchema = z.object({ failedRouteIds: uniqueIds }).strict() satisfies z.ZodType<DeviceAudioResult>;
+export const deviceAudioResultSchema = z.object({
+  failedRouteIds: uniqueIds,
+  failures: z.array(z.object({
+    routeIds: uniqueIds,
+    layerId: audioRouteIdSchema,
+    assetId: audioRouteIdSchema,
+    stage: z.enum(["source-load", "device-bind", "metadata", "seek", "decode", "play", "device-lost"]),
+    exception: serializedExceptionSchema
+  }).strict()).max(64).optional()
+}).strict() satisfies z.ZodType<DeviceAudioResult>;
 
 export const audioDeviceCapabilitySchema = z.object({
   available: z.boolean(),

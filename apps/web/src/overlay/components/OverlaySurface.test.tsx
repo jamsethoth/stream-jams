@@ -21,6 +21,91 @@ afterEach(() => {
 });
 
 describe("OverlaySurface", () => {
+  it("classifies metadata-only startup timeout as decode failure", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(1000); const events = vi.fn();
+    const value: OverlayInstruction = { ...instruction(), timing: { startsAtEpochMs: 1000, endsAtEpochMs: 6000 },
+      visual: { assetId: "clip", mediaType: "video", layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 } } };
+    render(<OverlaySurface composition={composition(value)} resolveAssetUrl={() => "/clip.webm"} onPlaybackEvent={events} />);
+    const video = screen.getByTestId("overlay-video-instruction-1");
+    Object.defineProperty(video, "readyState", { configurable: true, value: 1 }); fireEvent.loadedMetadata(video);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(events).toHaveBeenCalledWith(expect.objectContaining({ status: "failed", failure: expect.objectContaining({ stage: "decode" }) }));
+  });
+  it("finishes each mixed media interval without extra audio while the later video completes", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(1000);
+    const starts = new Map<HTMLMediaElement, () => void>();
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(function(this: HTMLMediaElement) { return new Promise<void>(resolve => { starts.set(this, resolve); }); });
+    const pause = vi.mocked(HTMLMediaElement.prototype.pause); const events = vi.fn();
+    const value: OverlayInstruction = { ...instruction(), durationMs: 1000, timing: { startsAtEpochMs: 1000, endsAtEpochMs: 2000 }, audio: { assetId: "sound", volume: 0.5 },
+      visual: { assetId: "clip", mediaType: "video", layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 } } };
+    render(<OverlaySurface composition={composition(value)} resolveAssetUrl={() => "/clip.webm"} onPlaybackEvent={events} />);
+    const audio = screen.getByTestId("overlay-audio-instruction-1") as HTMLMediaElement;
+    const video = screen.getByTestId("overlay-video-instruction-1") as HTMLMediaElement;
+    for (const element of [audio, video]) { Object.defineProperty(element, "readyState", { configurable: true, value: 2 }); fireEvent.loadedData(element); }
+    await act(async () => { await vi.advanceTimersByTimeAsync(170); starts.get(audio)!(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(130); starts.get(video)!(); });
+    pause.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(870); });
+    expect(pause.mock.contexts).toContain(audio); expect(pause.mock.contexts).not.toContain(video);
+    expect(events).not.toHaveBeenCalledWith(expect.objectContaining({ status: "completed" }));
+    expect(video).toBeVisible();
+    await act(async () => { await vi.advanceTimersByTimeAsync(130); });
+    expect(events).toHaveBeenCalledWith({ instructionId: value.id, status: "completed" });
+    expect(starts.size).toBe(2);
+  });
+  it.each(["audio", "video"])("preserves the full %s interval when play starts 170ms late", async kind => {
+    vi.useFakeTimers(); vi.setSystemTime(1000);
+    let started!: () => void;
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(() => new Promise<void>(resolve => { started = resolve; }));
+    const events = vi.fn();
+    const value: OverlayInstruction = { ...instruction(), durationMs: 1000, timing: { startsAtEpochMs: 1000, endsAtEpochMs: 2000 },
+      ...(kind === "audio" ? { audio: { assetId: "clip", volume: 0.4 } } : { visual: { assetId: "clip", mediaType: "video", layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 } } }) };
+    render(<OverlaySurface composition={composition(value)} resolveAssetUrl={() => "/clip.webm"} onPlaybackEvent={events} />);
+    const element = screen.getByTestId(`overlay-${kind}-instruction-1`) as HTMLMediaElement;
+    Object.defineProperty(element, "readyState", { configurable: true, value: 2 }); fireEvent.loadedData(element);
+    await act(async () => { await vi.advanceTimersByTimeAsync(170); started(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(830); });
+    expect(events).not.toHaveBeenCalledWith(expect.objectContaining({ status: "completed" }));
+    expect(element).toBeVisible();
+    if (kind === "audio") expect(element.volume).toBeGreaterThan(0);
+    await act(async () => { await vi.advanceTimersByTimeAsync(169); });
+    expect(events).not.toHaveBeenCalledWith(expect.objectContaining({ status: "completed" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(events).toHaveBeenCalledWith({ instructionId: value.id, status: "completed" });
+    expect(element.currentTime).toBe(0); expect(element.playbackRate).toBe(1);
+  });
+  it("waits for prepared images to load before acknowledging readiness", async () => {
+    const events = vi.fn();
+    const value = { ...instruction(), visual: { assetId: "image", mediaType: "image" as const, layout: { x: 0, y: 0, width: 100, height: 100, zIndex: 1 } } };
+    render(<OverlaySurface composition={composition(value)} resolveAssetUrl={() => "/image.png"} onPlaybackEvent={events} preparingInstructionIds={new Set([value.id])} />);
+    await act(async () => {});
+    expect(events).not.toHaveBeenCalled();
+    fireEvent.load(screen.getByTestId("overlay-visual-instruction-1"));
+    await act(async () => {});
+    expect(events).toHaveBeenCalledWith({ instructionId: value.id, status: "ready" });
+  });
+  it("prepares the retained media silently then starts from zero at the scheduled epoch", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(1000);
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const events = vi.fn();
+    const value = { ...instruction(), audio: { assetId: "clip", volume: 0.4 } };
+    const props = { resolveAssetUrl: () => "/clip.webm", onPlaybackEvent: events };
+    const view = render(<OverlaySurface {...props} composition={composition(value)} preparingInstructionIds={new Set([value.id])} />);
+    const media = screen.getByTestId("overlay-audio-instruction-1");
+    Object.defineProperty(media, "readyState", { configurable: true, value: 2 });
+    fireEvent.loadedData(media);
+    await act(async () => { await Promise.resolve(); });
+    expect(play).not.toHaveBeenCalled();
+    expect(events).toHaveBeenCalledWith({ instructionId: value.id, status: "ready" });
+    view.rerender(<OverlaySurface {...props} composition={composition({ ...value, timing: { startsAtEpochMs: 1100, endsAtEpochMs: 5100 } })} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(99); });
+    expect(play).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(screen.getByTestId("overlay-audio-instruction-1")).toBe(media);
+    expect(media).toHaveProperty("currentTime", 0);
+    expect(media).toHaveProperty("playbackRate", 1);
+    expect(play).toHaveBeenCalledTimes(1);
+  });
   it("honors the saved visual loop setting", () => {
     const value = { ...instruction(), visual: { assetId: "video", mediaType: "video" as const, loop: true,
       layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 } } };
@@ -65,7 +150,7 @@ describe("OverlaySurface", () => {
       ...(kind === "audio" ? { audio: { assetId: "clip", volume: 0.4 } } : { visual: { assetId: "clip", mediaType: "video", layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 } } }) };
     render(<OverlaySurface composition={composition(value)} resolveAssetUrl={() => "/clip.webm"} onPlaybackEvent={events} />);
     const element = screen.getByTestId(`overlay-${kind}-instruction-1`);
-    Object.defineProperty(element, "readyState", { configurable: true, value: 1 });
+    Object.defineProperty(element, "readyState", { configurable: true, value: 2 });
     fireEvent.loadedMetadata(element);
     await act(async () => { await vi.advanceTimersByTimeAsync(4999); });
     expect(events.mock.calls.some(([event]) => event.status === "failed")).toBe(false);
@@ -79,7 +164,7 @@ describe("OverlaySurface", () => {
     const value = { ...instruction(), audio: { assetId: "video", volume: 0.4 }, timing: { startsAtEpochMs: 1100, endsAtEpochMs: 6100 } };
     const { unmount } = render(<OverlaySurface composition={composition(value)} resolveAssetUrl={() => "/clip.webm"} />);
     const audio = screen.getByTestId("overlay-audio-instruction-1");
-    Object.defineProperty(audio, "readyState", { configurable: true, value: 1 });
+    Object.defineProperty(audio, "readyState", { configurable: true, value: 2 });
     await act(async () => { await vi.advanceTimersByTimeAsync(99); });
     expect(play).not.toHaveBeenCalled();
     unmount();
@@ -87,7 +172,7 @@ describe("OverlaySurface", () => {
     expect(play).not.toHaveBeenCalled();
   });
 
-  it("seeks late browser soundtrack metadata without giving it a fresh duration", async () => {
+  it("starts late browser soundtrack at zero and preserves its full duration", async () => {
     vi.useFakeTimers(); vi.setSystemTime(1000);
     const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
     const events = vi.fn();
@@ -96,15 +181,17 @@ describe("OverlaySurface", () => {
     const audio = screen.getByTestId("overlay-audio-instruction-1") as HTMLAudioElement;
     await act(async () => { await vi.advanceTimersByTimeAsync(2600); });
     expect(play).not.toHaveBeenCalled();
-    Object.defineProperty(audio, "readyState", { configurable: true, value: 1 });
+    Object.defineProperty(audio, "readyState", { configurable: true, value: 2 });
     fireEvent.loadedMetadata(audio);
     await act(async () => {});
-    expect(audio.currentTime).toBe(2.5);
+    expect(audio.currentTime).toBe(0);
     expect(play).toHaveBeenCalledOnce();
+    await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
+    expect(events).not.toHaveBeenCalledWith(expect.objectContaining({ status: "completed" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
     expect(events).toHaveBeenCalledWith({ instructionId: value.id, status: "completed" });
   });
-  it("seeks timed video before reveal and completes at the shared deadline", async () => {
+  it("starts timed video at zero before reveal and preserves its full duration", async () => {
     vi.useFakeTimers(); vi.setSystemTime(4000);
     const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
     const events = vi.fn();
@@ -117,9 +204,9 @@ describe("OverlaySurface", () => {
     const { rerender } = render(<OverlaySurface composition={make(true)} resolveAssetUrl={resolveAssetUrl} onPlaybackEvent={events} />);
     const video = screen.getByTestId("overlay-video-instruction-1") as HTMLVideoElement;
     expect(video).not.toBeVisible();
-    Object.defineProperty(video, "readyState", { configurable: true, value: 1 });
+    Object.defineProperty(video, "readyState", { configurable: true, value: 2 });
     fireEvent.loadedMetadata(video);
-    expect(video.currentTime).toBe(3);
+    expect(video.currentTime).toBe(0);
     fireEvent.seeked(video);
     await act(async () => {});
     expect(video).toBeVisible();
@@ -128,11 +215,13 @@ describe("OverlaySurface", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     rerender(<OverlaySurface composition={make(true)} resolveAssetUrl={resolveAssetUrl} onPlaybackEvent={events} />);
     expect(video).not.toBeVisible();
-    expect(video.currentTime).toBe(4);
+    expect(video.currentTime).toBe(0);
     fireEvent.seeked(video);
     await act(async () => {});
     expect(video).toBeVisible();
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(events).not.toHaveBeenCalledWith(expect.objectContaining({ status: "completed" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
     expect(events).toHaveBeenCalledWith({ instructionId: value.id, status: "completed" });
     expect(video).not.toBeVisible();
   });
@@ -160,9 +249,9 @@ describe("OverlaySurface", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
 
     expect(events).not.toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }));
-    Object.defineProperty(video, "readyState", { configurable: true, value: 1 });
+    Object.defineProperty(video, "readyState", { configurable: true, value: 2 });
     fireEvent.loadedMetadata(video);
-    expect(video.currentTime).toBe(6);
+    expect(video.currentTime).toBe(0);
     fireEvent.seeked(video);
     await act(async () => {});
     expect(play).toHaveBeenCalledOnce();

@@ -1471,13 +1471,13 @@ describe("runtime app composition smoke", () => {
       readonly eventIngestionService: { ingestTwitchEventSubNotification(message: unknown): Promise<{ readonly status: string }> };
     }).eventIngestionService.ingestTwitchEventSubNotification(followNotification("live-editor-follow"));
     await waitFor(() =>
-      firstClientMessages.filter((message) => isGatewayMessage(message, "overlay.playback")).length === 2 &&
-      secondClientMessages.filter((message) => isGatewayMessage(message, "overlay.playback")).length === 2
+      firstClientMessages.filter((message) => isGatewayMessage(message, "overlay.playback.prepare")).length === 2 &&
+      secondClientMessages.filter((message) => isGatewayMessage(message, "overlay.playback.prepare")).length === 2
     );
 
     expect(ingestion.status).toBe("accepted");
-    expect(firstClientMessages.filter((message): message is { readonly type: "overlay.playback"; readonly instruction: OverlayInstruction } =>
-      isGatewayMessage(message, "overlay.playback")
+    expect(firstClientMessages.filter((message): message is { readonly type: "overlay.playback.prepare"; readonly instruction: OverlayInstruction } =>
+      isGatewayMessage(message, "overlay.playback.prepare")
     ).map((message) => ({
       targetProfileId: message.instruction.targetProfileId,
       text: message.instruction.text?.text,
@@ -1494,9 +1494,20 @@ describe("runtime app composition smoke", () => {
         layout: { layerId: "layer-secondary", x: 300, y: 400, width: 600, height: 120, zIndex: 3 }
       }
     ]);
-    const deliveredInstructions = firstClientMessages.filter((message): message is { readonly type: "overlay.playback"; readonly instruction: OverlayInstruction } =>
-      isGatewayMessage(message, "overlay.playback")
+    const deliveredInstructions = firstClientMessages.filter((message): message is { readonly type: "overlay.playback.prepare"; readonly instruction: OverlayInstruction } =>
+      isGatewayMessage(message, "overlay.playback.prepare")
     ).map((message) => message.instruction);
+    const reconnectSnapshot = await composition.app.inject({ method: "GET", url: `/overlay/modules/alerts/live/${profileKey.rawKey}/composition?profile=landscape` });
+    expect(reconnectSnapshot.statusCode).toBe(200);
+    expect(reconnectSnapshot.json().modules.flatMap((module: { instructions: unknown[] }) => module.instructions)).toEqual([]);
+    for (const instruction of deliveredInstructions) firstSocket.send(JSON.stringify({ type: "overlay.playback.ready", instructionId: instruction.id }));
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(firstClientMessages.filter(message => isGatewayMessage(message, "overlay.playback.start"))).toHaveLength(0);
+    for (const instruction of deliveredInstructions) secondSocket.send(JSON.stringify({ type: "overlay.playback.ready", instructionId: instruction.id }));
+    await waitFor(() => firstClientMessages.filter(message => isGatewayMessage(message, "overlay.playback.start")).length === 2
+      && secondClientMessages.filter(message => isGatewayMessage(message, "overlay.playback.start")).length === 2);
+    const starts = [...firstClientMessages, ...secondClientMessages].filter((message): message is { startsAtEpochMs: number } => isGatewayMessage(message, "overlay.playback.start"));
+    expect(new Set(starts.map(message => message.startsAtEpochMs)).size).toBe(1);
     firstSocket.send(JSON.stringify({
       type: "overlay.playback.completed",
       instructionId: deliveredInstructions[0]!.id

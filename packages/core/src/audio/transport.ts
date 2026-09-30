@@ -30,6 +30,8 @@ export const audioPlaybackPayloadSchema = z.object({
 
 export const audioTransportCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("enumerate") }).strict(),
+  z.object({ type: z.literal("prepare"), token: z.uuid(), payload: audioPlaybackPayloadSchema }).strict(),
+  z.object({ type: z.literal("start"), token: z.uuid(), startsAtEpochMs: z.number().int().positive(), durationMs: z.number().int().positive().max(3600000) }).strict(),
   z.object({ type: z.literal("play"), payload: audioPlaybackPayloadSchema }).strict(),
   z.object({ type: z.literal("stop"), playbackId: audioRouteIdSchema }).strict(),
   z.object({ type: z.literal("set-muted"), muted: z.boolean() }).strict(),
@@ -40,6 +42,7 @@ export const audioTransportCommandSchema = z.discriminatedUnion("type", [
 export const audioTransportResultSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("devices"), devices: z.array(audioOutputDeviceSchema) }).strict(),
   z.object({ type: z.literal("played"), ...deviceAudioResultSchema.shape }).strict(),
+  z.object({ type: z.literal("prepared"), token: z.uuid() }).strict(),
   z.object({ type: z.literal("ok") }).strict()
 ]);
 export type AudioPlayerAsset = z.infer<typeof audioPlayerAssetSchema>;
@@ -47,6 +50,7 @@ export type AudioPlaybackPayload = z.infer<typeof audioPlaybackPayloadSchema>;
 export type AudioTransportCommand = z.infer<typeof audioTransportCommandSchema>;
 export type AudioTransportResult = z.infer<typeof audioTransportResultSchema>;
 export interface DesktopAudioTransport extends AudioDeviceHost {
+  prepare?(payload: AudioPlaybackPayload): Promise<{ start(startsAtEpochMs: number): Promise<DeviceAudioResult> }>;
   play(payload: AudioPlaybackPayload): Promise<DeviceAudioResult>;
   stop(playbackId: string): Promise<void>;
   setMuted(muted: boolean): Promise<void>;

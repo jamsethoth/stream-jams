@@ -1163,21 +1163,10 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   };
   const overlayModuleRuntimes = new Map<string, OverlayModuleRuntime>([
     ["alerts", {
-      async getModuleSnapshot(request: Parameters<EffectPlaybackCoordinator["getModuleSnapshot"]>[0]) {
-        const current = playbackQueue.getSnapshot().current;
-        const instructions = current === null
-          ? []
-          : current.alerts
-              .map((alert) => alert.overlayInstruction)
-              .filter(
-                (instruction) =>
-                  instruction.overlayId === request.overlayId
-                  && instruction.moduleId === request.moduleId
-                  && instruction.purpose === request.purpose
-                  && instruction.scope === request.scope
-                  && (instruction.targetProfileId ?? null) === (request.targetProfileId ?? null)
-              );
-        return { moduleId: "alerts", enabled: true, instructions };
+      async getModuleSnapshot() {
+        // Live occurrences belong to the recipients admitted during preparation.
+        // A reconnect restores output configuration, then waits for new content.
+        return { moduleId: "alerts", enabled: true, instructions: [] };
       }
     }],
     ["screen-effects", effectPlaybackCoordinator],

@@ -239,3 +239,18 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
     ...init
   });
 }
+
+it("stops after one renewal when the replacement management session is also unauthorized", async () => {
+  let sessions = 0; let reads = 0;
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input) === "/auth/management/sessions") {
+      sessions++;
+      return jsonResponse({ id: `session_${sessions}`, csrfToken: `csrf_${sessions}` });
+    }
+    reads++;
+    return jsonResponse({ error: { code: "MANAGEMENT_SESSION_UNAUTHORIZED", message: "Expired." } }, { status: 401 });
+  });
+  const client = createManagementHttpClient({ fetch: fetcher });
+  await expect(client.getJson("/read", "Unable to read.")).rejects.toThrow("Expired.");
+  expect(sessions).toBe(2); expect(reads).toBe(2);
+});

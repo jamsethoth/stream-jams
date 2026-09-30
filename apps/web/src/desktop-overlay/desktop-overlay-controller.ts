@@ -2,7 +2,7 @@ import { desktopVisualRendererRequestSchema, maxDesktopVisualTransferBytes, seri
 type Configuration = Extract<SurfaceConfiguration, { kind: "desktop" }>;
 export interface DesktopOverlaySnapshot {
   config: Configuration;
-  occurrences: readonly { key: VisualRecipientKey; timing: PlaybackTiming; instructions: DesktopVisualBatch["instructions"]; assetUrls: ReadonlyMap<string, string> }[];
+  occurrences: readonly { key: VisualRecipientKey; timing: PlaybackTiming; instructions: DesktopVisualBatch["instructions"]; assetUrls: ReadonlyMap<string, string>; preparing?: boolean }[];
   modules: readonly { moduleId: DesktopModuleSync["moduleId"]; revision: number; presentation: OverlayModulePresentation; assetUrls: ReadonlyMap<string, string> }[];
 }
 export interface DesktopOverlayControllerDependencies {
@@ -15,7 +15,9 @@ type Envelope = Pick<DesktopVisualRendererRequest, "generation" | "requestId">;
 type PreparedAsset = Awaited<ReturnType<DesktopOverlayControllerDependencies["prepareAsset"]>>;
 type Occurrence = {
   view: DesktopOverlaySnapshot["occurrences"][number];
-  state: "preparing" | "ready" | "scheduled" | "active" | "cancelled";
+  state: "preparing" | "decoding" | "ready" | "scheduled" | "active" | "cancelled";
+  pendingReady: Set<string>;
+  pendingCompletion: Set<string>;
   prepare: Envelope | null;
   start: Envelope | null;
   requestIds: Set<string>;
@@ -70,7 +72,7 @@ export class DesktopOverlayController {
       }
       case "prepare": this.#prepare(envelope, command.batch); break;
       case "sync-module": void this.#syncModule(envelope, command); break;
-      case "start": this.#start(envelope, command.key); break;
+      case "start": this.#start(envelope, command.key, command.timing); break;
       case "stop": {
         const record = this.#records.get(identity(command.key));
         if (record !== undefined) this.#finish(record, "error");
@@ -81,9 +83,21 @@ export class DesktopOverlayController {
     }
   }
 
-  fail(key: VisualRecipientKey): void {
+  fail(key: VisualRecipientKey, failure?: OverlayPlaybackFailure): void {
     const record = this.#records.get(identity(key));
-    if (record !== undefined) this.#finish(record, "error");
+    if (record !== undefined) this.#finish(record, "error", failure);
+  }
+  ready(key: VisualRecipientKey, instructionId: string): void {
+    const record = this.#records.get(identity(key));
+    if (record?.state !== "decoding") return;
+    record.pendingReady.delete(instructionId);
+    if (record.pendingReady.size === 0) this.#prepared(record);
+  }
+  complete(key: VisualRecipientKey, instructionId: string): void {
+    const record = this.#records.get(identity(key));
+    if (record?.state !== "active" || record.view.preparing !== false) return;
+    record.pendingCompletion.delete(instructionId);
+    if (record.pendingCompletion.size === 0) this.#finish(record, "complete");
   }
   dispose(): void {
     if (this.#disposed) return;
@@ -101,13 +115,15 @@ export class DesktopOverlayController {
     }
     const urls = new Map<string, string>();
     const record: Occurrence = {
-      view: { key: batch.key, timing: batch.timing, instructions: batch.instructions.map(instruction => ({ ...instruction, timing: batch.timing, targetProfileId: "landscape" })), assetUrls: urls },
+      view: { key: batch.key, timing: batch.timing, instructions: batch.instructions.map(instruction => ({ ...instruction, timing: batch.timing, targetProfileId: "landscape" })), assetUrls: urls, ...(batch.deferredStart === true ? { preparing: true } : {}) },
+      pendingReady: new Set(batch.instructions.map(instruction => instruction.id)),
+      pendingCompletion: new Set(batch.instructions.map(instruction => instruction.id)),
       state: "preparing", prepare: envelope, start: null, requestIds: new Set([envelope.requestId]), queue: batch.assets, resources: [], urls, bytes, loading: true,
       prepareTimer: undefined, startTimer: undefined, endTimer: undefined
     };
     this.#records.set(identity(batch.key), record); this.#bytes += bytes;
     record.prepareTimer = setTimeout(() => this.#finish(record, "error"), 5000);
-    record.endTimer = setTimeout(() => this.#finish(record, "complete"), Math.max(0, batch.timing.endsAtEpochMs - this.#now()));
+    if (batch.deferredStart !== true) record.endTimer = setTimeout(() => this.#finish(record, "complete"), Math.max(0, batch.timing.endsAtEpochMs - this.#now()));
     void this.#load(record);
   }
 
@@ -156,10 +172,9 @@ export class DesktopOverlayController {
         record.resources.push(resource); record.urls.set(asset.assetId, resource.url);
       }
       if (record.state === "cancelled" || this.#now() >= record.view.timing.endsAtEpochMs) { this.#finish(record, "error"); return; }
-      clearTimeout(record.prepareTimer); record.prepareTimer = undefined;
-      record.state = "ready";
-      const preparing = record.prepare; record.prepare = null;
-      if (preparing !== null) this.#report(preparing, { type: "ready", key: record.view.key });
+      if (record.view.preparing === true && record.pendingReady.size > 0) {
+        record.state = "decoding"; this.#publish();
+      } else this.#prepared(record);
     }
     catch (error) {
       this.#finish(record, "error", {
@@ -175,12 +190,31 @@ export class DesktopOverlayController {
     }
   }
 
-  #start(envelope: Envelope, key: VisualRecipientKey): void {
+  #prepared(record: Occurrence): void {
+    clearTimeout(record.prepareTimer); record.prepareTimer = undefined;
+    record.state = "ready";
+    if (record.view.preparing === true) record.prepareTimer = setTimeout(() => this.#finish(record, "error"), 15000);
+    const preparing = record.prepare; record.prepare = null;
+    if (preparing !== null) this.#report(preparing, { type: "ready", key: record.view.key });
+  }
+
+  #start(envelope: Envelope, key: VisualRecipientKey, timing?: PlaybackTiming): void {
     const record = this.#records.get(identity(key));
     if (record === undefined || record.state !== "ready" || this.#now() >= record.view.timing.endsAtEpochMs) {
       this.#report(envelope, { type: "error", key }); return;
     }
     record.start = envelope; record.requestIds.add(envelope.requestId);
+    if (record.view.preparing === true) {
+      if (timing === undefined || timing.endsAtEpochMs - timing.startsAtEpochMs !== record.view.timing.endsAtEpochMs - record.view.timing.startsAtEpochMs) {
+        this.#finish(record, "error"); return;
+      }
+      clearTimeout(record.prepareTimer); record.prepareTimer = undefined;
+      record.view = { ...record.view, timing, preparing: false };
+      record.state = "active";
+      // Media owns its full interval from actual onset; this is only a stall watchdog.
+      record.endTimer = setTimeout(() => this.#finish(record, "error"), Math.max(0, timing.endsAtEpochMs + 5000 - this.#now()));
+      this.#publish(); return;
+    }
     record.state = "scheduled";
     const activate = () => {
       record.startTimer = undefined;
@@ -194,7 +228,7 @@ export class DesktopOverlayController {
 
   #finish(record: Occurrence, result: "complete" | "error", failure?: OverlayPlaybackFailure): void {
     if (record.state === "cancelled") return;
-    const wasActive = record.state === "active";
+    const wasActive = record.state === "active" || record.view.preparing === true;
     record.state = "cancelled";
     clearTimeout(record.prepareTimer); clearTimeout(record.startTimer); clearTimeout(record.endTimer);
     record.prepareTimer = undefined; record.startTimer = undefined; record.endTimer = undefined;
@@ -210,7 +244,7 @@ export class DesktopOverlayController {
     // and byte reservation until settled, including across retry/reconfiguration.
     if (!record.loading) this.#release(record);
     if (preparing !== null) this.#report(preparing, { type: "error", key: record.view.key }, failure);
-    if (started !== null) this.#report(started, { type: result, key: record.view.key });
+    if (started !== null) this.#report(started, { type: result, key: record.view.key }, failure);
   }
   #release(record: Occurrence): void {
     const id = identity(record.view.key);
@@ -241,7 +275,7 @@ export class DesktopOverlayController {
     this.#bytes -= record.bytes;
   }
   #publish(config = this.#snapshot.config): void {
-    this.#snapshot = { config, occurrences: [...this.#records.values()].filter(record => record.state === "active").map(record => record.view),
+    this.#snapshot = { config, occurrences: [...this.#records.values()].filter(record => record.state === "active" || (record.view.preparing === true && ["decoding", "ready", "scheduled"].includes(record.state))).map(record => record.view),
       modules: [...this.#modules.values()].map(record => ({ moduleId: record.moduleId, revision: record.revision,
         presentation: record.presentation, assetUrls: record.assetUrls })) };
     this.dependencies.changed();

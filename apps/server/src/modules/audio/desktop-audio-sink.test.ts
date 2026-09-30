@@ -299,7 +299,7 @@ function batchFixture(overrides: Partial<DeviceAudioBatch> = {}): DeviceAudioBat
   };
 }
 
-function transportFixture(result = { failedRouteIds: [] as string[] }): DesktopAudioTransport & {
+function transportFixture(result: DeviceAudioResult = { failedRouteIds: [] }): DesktopAudioTransport & {
   readonly play: ReturnType<typeof vi.fn<(payload: AudioPlaybackPayload) => Promise<typeof result>>>;
 } {
   return {
@@ -322,3 +322,31 @@ function deferred<T>() {
 function hash(bytes: Uint8Array): string {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
+
+it("logs original per-layer failure evidence while preserving exactly the selected destinations", async () => {
+  const failure = { routeIds: ["personal"], layerId: "layer", assetId: "tone", stage: "device-bind" as const, exception: { type: "Error", message: "Selected sink rejected", stack: null, code: null, cause: null, thrownValue: null } };
+  const result: DeviceAudioResult = { failedRouteIds: ["personal"], failures: [failure] };
+  const transport = transportFixture(); transport.play.mockResolvedValue(result);
+  const logger = { debug: vi.fn(async () => {}), info: vi.fn(async () => {}), warn: vi.fn(async () => {}), error: vi.fn(async () => {}) };
+  const batch = batchFixture();
+  const sink = new DesktopAudioSink({ transport, assetRepository: { findManyByIds: async () => new Map() }, assetStore: { readBounded: async () => new Uint8Array() }, logger, generateReferenceId: () => "error-fixture" });
+  expect(await sink.play(batch)).toEqual(result);
+  expect(transport.play.mock.calls[0]![0].batch.destinations).toEqual(batch.destinations);
+  expect(logger.error).toHaveBeenCalledExactlyOnceWith("Selected device audio playback failed.", {
+    module: "audio-output", source: "desktop-audio.playback-failed", correlationId: "error-fixture", processingId: null,
+    metadata: { playbackId: "playback", documentId: "document", layerId: "layer", assetId: "tone", routeIds: ["personal"], stage: "device-bind" }
+  }, failure.exception);
+});
+
+it("prepares short clips without consuming their playback duration and holds until start", async () => {
+  const start = vi.fn(async () => ({ failedRouteIds: [] }));
+  const prepare = vi.fn(async () => ({ start }));
+  const transport = { ...transportFixture(), prepare };
+  const sink = new DesktopAudioSink({ transport, assetRepository: { findManyByIds: async () => new Map() }, assetStore: { readBounded: async () => new Uint8Array() }, now: () => 3000 });
+  const handle = await sink.prepare(batchFixture({ durationMs: 100, timing: { startsAtEpochMs: 1000, endsAtEpochMs: 1100 } }));
+  expect(prepare).toHaveBeenCalledWith(expect.objectContaining({ deadlineMs: 18000, startDeadlineMs: 8000, batch: expect.objectContaining({ timing: undefined }) }));
+  expect(transport.play).not.toHaveBeenCalled();
+  expect(start).not.toHaveBeenCalled();
+  await handle.start(9000);
+  expect(start).toHaveBeenCalledExactlyOnceWith(9000);
+});

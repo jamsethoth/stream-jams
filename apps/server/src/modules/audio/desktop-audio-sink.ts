@@ -43,6 +43,7 @@ export class DesktopAudioSink implements AudioPlaybackSink {
   readonly #generateReferenceId: (() => string) | undefined;
   readonly #cancelled = new Set<string>();
   readonly #pendingByPlaybackId = new Map<string, number>();
+  readonly #waitingStarts = new Map<string, Set<() => void>>();
   #closed = false;
 
   constructor(dependencies: DesktopAudioSinkDependencies) {
@@ -54,9 +55,39 @@ export class DesktopAudioSink implements AudioPlaybackSink {
     this.#generateReferenceId = dependencies.generateReferenceId;
   }
 
-  async play(batch: DeviceAudioBatch): Promise<DeviceAudioResult> {
+  async prepare(batch: DeviceAudioBatch): Promise<{ start(startsAtEpochMs: number): Promise<DeviceAudioResult> }> {
+    let ready!: (handle: { start(startsAtEpochMs: number): Promise<DeviceAudioResult> }) => void;
+    let begin!: (startsAtEpochMs: number) => void;
+    const starts = new Promise<number>(resolve => { begin = resolve; });
+    const prepared = new Promise<{ start(startsAtEpochMs: number): Promise<DeviceAudioResult> }>(resolve => { ready = resolve; });
+    const result = this.#play({ ...batch, timing: undefined }, async payload => {
+      if (this.#transport.prepare === undefined) throw new Error("Desktop audio preparation is unavailable.");
+      const handle = await this.#transport.prepare(payload);
+      if (!this.#isCurrent(batch.playbackId)) return { failedRouteIds: [] };
+      ready({ start: startsAtEpochMs => { begin(startsAtEpochMs); return result; } });
+      const cancel = () => begin(this.#now());
+      const waiting = this.#waitingStarts.get(batch.playbackId) ?? new Set<() => void>();
+      waiting.add(cancel);
+      this.#waitingStarts.set(batch.playbackId, waiting);
+      let expired = false;
+      const timeout = setTimeout(() => { expired = true; cancel(); }, 15000);
+      const startsAtEpochMs = await starts;
+      clearTimeout(timeout);
+      waiting.delete(cancel);
+      if (waiting.size === 0) this.#waitingStarts.delete(batch.playbackId);
+      if (!this.#isCurrent(batch.playbackId)) return { failedRouteIds: [] };
+      if (expired) { await this.#transport.stop(batch.playbackId); return failedDestinations(batch); }
+      return handle.start(startsAtEpochMs);
+    });
+    void result.then(value => ready({ start: async () => value }), (error: unknown) => ready({ start: async () => { throw error; } }));
+    return prepared;
+  }
+
+  play(batch: DeviceAudioBatch): Promise<DeviceAudioResult> { return this.#play(batch); }
+
+  async #play(batch: DeviceAudioBatch, prepare?: (payload: import("@stream-jams/core").AudioPlaybackPayload) => Promise<DeviceAudioResult>): Promise<DeviceAudioResult> {
     const startedAtMs = this.#now();
-    const deadlineMs = batch.timing?.endsAtEpochMs ?? startedAtMs + batch.durationMs;
+    const deadlineMs = prepare === undefined ? batch.timing?.endsAtEpochMs ?? startedAtMs + batch.durationMs : startedAtMs + 15000;
     const startDeadlineMs = Math.min(deadlineMs, (batch.timing?.startsAtEpochMs ?? startedAtMs) + maxPreparationDurationMs);
     this.#pendingByPlaybackId.set(batch.playbackId, (this.#pendingByPlaybackId.get(batch.playbackId) ?? 0) + 1);
     try {
@@ -112,7 +143,17 @@ export class DesktopAudioSink implements AudioPlaybackSink {
       }
       if (!this.#isCurrent(batch.playbackId)) return { failedRouteIds: [] };
       if (this.#now() >= startDeadlineMs) return failedDestinations(batch);
-      return this.#transport.play(audioPlaybackPayloadSchema.parse({ batch, assets, deadlineMs, startDeadlineMs }));
+      const result = await (prepare ?? (payload => this.#transport.play(payload)))(audioPlaybackPayloadSchema.parse({ batch, assets, deadlineMs, startDeadlineMs }));
+      for (const failure of result.failures ?? []) {
+        await this.#logger?.error("Selected device audio playback failed.", {
+          module: "audio-output",
+          source: "desktop-audio.playback-failed",
+          correlationId: this.#generateReferenceId?.() ?? batch.playbackId,
+          processingId: null,
+          metadata: { playbackId: batch.playbackId, documentId: batch.documentId, layerId: failure.layerId, assetId: failure.assetId, routeIds: [...failure.routeIds], stage: failure.stage }
+        }, failure.exception);
+      }
+      return result;
     } finally {
       const remaining = (this.#pendingByPlaybackId.get(batch.playbackId) ?? 1) - 1;
       if (remaining === 0) {
@@ -126,6 +167,7 @@ export class DesktopAudioSink implements AudioPlaybackSink {
 
   async stop(playbackId: string): Promise<void> {
     this.#cancelled.add(playbackId);
+    for (const cancel of this.#waitingStarts.get(playbackId) ?? []) cancel();
     try {
       await this.#transport.stop(playbackId);
     } finally {
@@ -139,6 +181,7 @@ export class DesktopAudioSink implements AudioPlaybackSink {
 
   async close(): Promise<void> {
     this.#closed = true;
+    for (const waiting of this.#waitingStarts.values()) for (const cancel of waiting) cancel();
     await this.#transport.close();
   }
 

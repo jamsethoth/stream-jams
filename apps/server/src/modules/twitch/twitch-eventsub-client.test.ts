@@ -333,6 +333,11 @@ describe("TwitchEventSubClient", () => {
       referenceId: "ref-1"
     });
     expect(harness.scheduled).toEqual([1_000]);
+    harness.runScheduled();
+    await harness.sockets[1]?.emitMessage(sessionWelcome("session-after-timeout"));
+    await harness.sockets[1]?.emitMessage(notification("after-timeout"));
+    expect(harness.client.getStatus()).toMatchObject({ state: "connected", message: null, referenceId: null });
+    expect(harness.notifications.map(message => message.metadata.message_id)).toEqual(["after-timeout"]);
   });
 
   it("clears a transient transport failure after a valid message but retains revocation failures", async () => {

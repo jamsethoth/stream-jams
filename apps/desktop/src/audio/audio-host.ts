@@ -13,10 +13,14 @@ export class AudioHost implements DesktopAudioTransport {
   #generation = 0;
   #ready: Promise<void> | null = null;
   #pending = new Map<string, Pending>();
+  #prepared = new Map<string, { playbackId: string; generation: number; durationMs: number; timer: ReturnType<typeof setTimeout> }>();
   #starts = new Set<{ playbackId: string; cancelled: boolean }>();
   #muted = true;
   #owned = false;
   #failures = 0;
+  #retryAt = 0;
+  #cooldown: Promise<void> | null = null;
+  #cancelCooldown: (() => void) | null = null;
   #leaseAt = 0;
   #leaseTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -26,7 +30,7 @@ export class AudioHost implements DesktopAudioTransport {
     this.serviceLost();
     this.#owned = true;
     this.#muted = true;
-    this.#failures = 0;
+    this.#failures = 0; this.#retryAt = 0;
     this.#startLease();
   }
   refreshLease(): void {
@@ -46,7 +50,9 @@ export class AudioHost implements DesktopAudioTransport {
     const command = audioTransportCommandSchema.parse(candidate);
     switch (command.type) {
       case "enumerate": return { type: "devices", devices: [...await this.listOutputDevices()] };
-      case "play": return { type: "played", failedRouteIds: [...(await this.play(command.payload)).failedRouteIds] };
+      case "prepare": return this.#prepare(command.token, command.payload);
+      case "start": return this.#start(command.token, command.startsAtEpochMs);
+      case "play": return { type: "played", ...await this.play(command.payload) };
       case "stop": await this.stop(command.playbackId); break;
       case "set-muted": await this.setMuted(command.muted); break;
       case "test": await this.testOutput(command.deviceId); break;
@@ -61,6 +67,40 @@ export class AudioHost implements DesktopAudioTransport {
     if (result.type !== "devices") { this.#discard(true); throw unavailable(); }
     return result.devices;
   }
+  async prepare(payload: AudioPlaybackPayload) {
+    const token = randomUUID();
+    await this.#prepare(token, payload);
+    return { start: async (startsAtEpochMs: number) => {
+      const result = await this.#start(token, startsAtEpochMs);
+      if (result.type !== "played") throw unavailable();
+      return { failedRouteIds: result.failedRouteIds, ...(result.failures === undefined ? {} : { failures: result.failures }) };
+    } };
+  }
+  async #prepare(token: string, candidate: AudioPlaybackPayload): Promise<AudioTransportResult> {
+    const payload = audioPlaybackPayloadSchema.parse(candidate);
+    if (this.#prepared.size >= 64 || this.#prepared.has(token)) throw unavailable();
+    const start = { playbackId: payload.batch.playbackId, cancelled: false };
+    this.#starts.add(start);
+    try {
+      await this.#ensure();
+      if (start.cancelled) throw unavailable();
+      const now = Date.now();
+      const result = await this.#request({ type: "prepare", token, payload: { ...payload, startDeadlineMs: now + 5000, deadlineMs: now + 15000 } }, 6000);
+      if (start.cancelled || result.type !== "prepared" || result.token !== token) throw unavailable();
+      const timer = setTimeout(() => this.#prepared.delete(token), 15000);
+      this.#prepared.set(token, { playbackId: payload.batch.playbackId, generation: this.#generation, durationMs: payload.batch.durationMs, timer });
+      return result;
+    } finally { this.#starts.delete(start); }
+  }
+  async #start(token: string, startsAtEpochMs: number): Promise<AudioTransportResult> {
+    const prepared = this.#prepared.get(token);
+    if (prepared === undefined || prepared.generation !== this.#generation) throw unavailable();
+    clearTimeout(prepared.timer);
+    this.#prepared.delete(token);
+    const result = await this.#request({ type: "start", token, startsAtEpochMs, durationMs: prepared.durationMs }, Math.max(1, startsAtEpochMs + prepared.durationMs + 5000 - Date.now()));
+    if (result.type !== "played") throw unavailable();
+    return result;
+  }
   async play(candidate: AudioPlaybackPayload) {
     const payload = audioPlaybackPayloadSchema.parse(candidate);
     const start = { playbackId: payload.batch.playbackId, cancelled: false };
@@ -70,10 +110,11 @@ export class AudioHost implements DesktopAudioTransport {
       if (start.cancelled || Date.now() >= Math.min(payload.startDeadlineMs, payload.deadlineMs)) throw unavailable();
       const result = await this.#request({ type: "play", payload }, Math.max(1, payload.deadlineMs + 5000 - Date.now()));
       if (result.type !== "played") { this.#discard(true); throw unavailable(); }
-      return { failedRouteIds: result.failedRouteIds };
+      return { failedRouteIds: result.failedRouteIds, ...(result.failures === undefined ? {} : { failures: result.failures }) };
     } finally { this.#starts.delete(start); }
   }
   async stop(playbackId: string): Promise<void> {
+    for (const [token, prepared] of this.#prepared) if (prepared.playbackId === playbackId) { clearTimeout(prepared.timer); this.#prepared.delete(token); }
     for (const start of this.#starts) if (start.playbackId === playbackId) start.cancelled = true;
     if (this.#port === null) return;
     // Do not wait for loading: even a pending load owns a renderer capable of sound.
@@ -98,7 +139,7 @@ export class AudioHost implements DesktopAudioTransport {
   async retry(): Promise<void> {
     if (!this.#owned) throw unavailable();
     this.#discard(false);
-    this.#failures = 0;
+    this.#failures = 0; this.#retryAt = 0;
     await this.#ensure();
   }
   async close(): Promise<void> { this.serviceLost(); }
@@ -121,7 +162,9 @@ export class AudioHost implements DesktopAudioTransport {
     }, 1000);
   }
   async #ensure(): Promise<void> {
-    if (!this.#owned || this.#failures > 1) throw unavailable();
+    if (!this.#owned) throw unavailable();
+    if (Date.now() < this.#retryAt) await this.#waitForRecovery();
+    if (!this.#owned) throw unavailable();
     if (this.#ready !== null) return this.#ready;
     const generation = ++this.#generation;
     const port = this.createRenderer({
@@ -167,21 +210,41 @@ export class AudioHost implements DesktopAudioTransport {
     clearTimeout(pending.timer);
     pending.resolve(parsed.data.result);
   }
+  async #waitForRecovery(): Promise<void> {
+    if (Date.now() >= this.#retryAt) return;
+    const generation = this.#generation;
+    if (this.#cooldown === null) {
+      this.#cooldown = new Promise<void>(resolve => {
+        const timer = setTimeout(() => {
+          this.#cooldown = null; this.#cancelCooldown = null; resolve();
+        }, this.#retryAt - Date.now());
+        this.#cancelCooldown = () => { clearTimeout(timer); resolve(); };
+      });
+    }
+    await this.#cooldown;
+    if (generation !== this.#generation) throw unavailable();
+  }
   #discard(failed: boolean, cause?: unknown): void {
     const port = this.#port;
+    for (const prepared of this.#prepared.values()) clearTimeout(prepared.timer);
+    this.#prepared.clear();
+    this.#cancelCooldown?.(); this.#cancelCooldown = null; this.#cooldown = null;
     this.#port = null;
     this.#ready = null;
     this.#generation++;
     for (const start of this.#starts) start.cancelled = true;
     // Destroy synchronously before rejecting terminal promises or acknowledging stop.
     port?.destroy();
-    if (failed && port !== null) this.#failures++;
+    if (failed && port !== null) {
+      this.#failures++;
+      this.#retryAt = Date.now() + (this.#failures === 1 ? 0 : Math.min(5000, 1000 * 2 ** Math.min(3, this.#failures - 2)));
+    }
     for (const pending of this.#pending.values()) { clearTimeout(pending.timer); pending.reject(unavailable(cause)); }
     this.#pending.clear();
   }
 }
 function unavailable(cause?: unknown): Error {
-  return new Error("Local audio is unavailable. Retry the audio backend explicitly if automatic recovery has been exhausted.", cause === undefined ? undefined : { cause });
+  return new Error("Local audio is unavailable. Future requests recover automatically; Retry can restore the backend immediately.", cause === undefined ? undefined : { cause });
 }
 function testTone(): Uint8Array<ArrayBuffer> {
   const samples = 24_000;

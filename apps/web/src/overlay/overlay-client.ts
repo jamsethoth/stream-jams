@@ -1,4 +1,4 @@
-import { overlayCompositionSchema, surfaceLayersSchema, type SurfaceLayer } from "@stream-jams/core";
+import { serializeException, overlayInstructionSchema, overlayCompositionSchema, surfaceLayersSchema, type SurfaceLayer } from "@stream-jams/core";
 import type {
   OverlayPlaybackFailure,
   OverlayComposition,
@@ -20,6 +20,7 @@ export interface ParsedOverlayRoute {
 }
 
 export interface OverlayPlaybackReporter {
+  reportReady(instructionId: string): void;
   reportStarted(instructionId: string): void;
   reportCompleted(instructionId: string): void;
   reportFailed(instructionId: string, failure: OverlayPlaybackFailure): void;
@@ -31,6 +32,8 @@ export interface OverlaySocketLike {
 }
 
 export type OverlayClientMessage =
+  | { readonly type: "prepare"; readonly instruction: OverlayInstruction }
+  | { readonly type: "start"; readonly instructionId: string; readonly startsAtEpochMs: number }
   | { readonly type: "surface-layers"; readonly layers: readonly SurfaceLayer[] }
   | {
       readonly type: "composition";
@@ -138,6 +141,7 @@ export function createOverlayAssetUrl(route: ParsedOverlayRoute, assetId: string
 
 export function createOverlayPlaybackReporter(socket: OverlaySocketLike): OverlayPlaybackReporter {
   return {
+    reportReady(instructionId: string) { sendIfOpen(socket, { type: "overlay.playback.ready", instructionId }); },
     reportStarted(instructionId: string) {
       sendIfOpen(socket, {
         type: "overlay.playback.started",
@@ -190,7 +194,7 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
       if (socket === nextSocket) reconnectDelayMs = 1_000;
     });
     nextSocket.addEventListener("message", (event) => {
-      const message = parseOverlaySocketMessage(event.data);
+      const message = parseOverlaySocketMessage(event.data, (instructionId, failure) => reporter.reportFailed(instructionId, failure));
       if (message?.type === "composition" && !initialCompositionSettled) pendingSocketComposition = message;
       else if (message !== null) options.onMessage(message);
     });
@@ -265,7 +269,7 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
   };
 }
 
-function parseOverlaySocketMessage(data: unknown): OverlayClientMessage | null {
+function parseOverlaySocketMessage(data: unknown, reportInvalid: (instructionId: string, failure: OverlayPlaybackFailure) => void): OverlayClientMessage | null {
   if (typeof data !== "string") {
     return null;
   }
@@ -286,6 +290,8 @@ function parseOverlaySocketMessage(data: unknown): OverlayClientMessage | null {
   const candidate = parsed as {
     readonly type?: unknown;
     readonly instruction?: unknown;
+    readonly instructionId?: unknown;
+    readonly startsAtEpochMs?: unknown;
     readonly muted?: unknown;
     readonly instructionIds?: unknown;
     readonly message?: unknown;
@@ -300,11 +306,18 @@ function parseOverlaySocketMessage(data: unknown): OverlayClientMessage | null {
     const composition = overlayCompositionSchema.safeParse(candidate.composition);
     return composition.success ? { type: "composition", composition: composition.data as OverlayComposition } : null;
   }
-  if (candidate.type === "overlay.playback" && typeof candidate.instruction === "object" && candidate.instruction !== null) {
-    return {
-      type: "playback",
-      instruction: candidate.instruction as OverlayInstruction
-    };
+  if (candidate.type === "overlay.playback.start" && typeof candidate.instructionId === "string" && typeof candidate.startsAtEpochMs === "number" && Number.isFinite(candidate.startsAtEpochMs)) {
+    return { type: "start", instructionId: candidate.instructionId, startsAtEpochMs: candidate.startsAtEpochMs };
+  }
+  if ((candidate.type === "overlay.playback" || candidate.type === "overlay.playback.prepare") && typeof candidate.instruction === "object" && candidate.instruction !== null) {
+    const instruction = overlayInstructionSchema.safeParse(candidate.instruction);
+    if (instruction.success) return { type: candidate.type === "overlay.playback.prepare" ? "prepare" : "playback", instruction: instruction.data as OverlayInstruction };
+    const id = (candidate.instruction as { readonly id?: unknown }).id;
+    if (typeof id === "string" && /^[a-zA-Z0-9_:.-]{1,200}$/u.test(id)) reportInvalid(id, {
+      referenceId: `err_${crypto.randomUUID()}`, stage: "source-load", message: "Overlay playback instruction failed validation.",
+      exception: serializeException(instruction.error)
+    });
+    return null;
   }
 
   if (candidate.type === "overlay.playback.audio-state" && typeof candidate.muted === "boolean") {

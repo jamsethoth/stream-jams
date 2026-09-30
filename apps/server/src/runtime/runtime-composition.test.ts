@@ -545,6 +545,7 @@ it("applies persisted mute before wiring the desktop transport for device playba
     listOutputDevices: vi.fn(async () => { calls.push("devices"); return [{ deviceId: "test-device", label: "Test output" }]; }),
     testOutput: vi.fn(async () => {}),
     play: vi.fn<DesktopAudioTransport["play"]>(async () => { calls.push("play"); return { failedRouteIds: [] }; }),
+    prepare: vi.fn(async () => { calls.push("prepare"); return { start: async () => { calls.push("start"); return { failedRouteIds: [] }; } }; }),
     stop: vi.fn(async () => {}),
     setMuted: vi.fn(async muted => { calls.push(`mute:${String(muted)}`); }),
     retry: vi.fn(async () => { calls.push("retry"); }),
@@ -593,14 +594,15 @@ it("applies persisted mute before wiring the desktop transport for device playba
       }]
     });
 
-    await vi.waitFor(() => expect(transport.play).toHaveBeenCalledTimes(1));
-    expect(transport.play).toHaveBeenCalledWith(expect.objectContaining({
+    await vi.waitFor(() => expect(calls).toContain("start"));
+    expect(transport.prepare).toHaveBeenCalledWith(expect.objectContaining({
       batch: expect.objectContaining({ playbackId: expect.any(String), muted: true }),
       assets: [{ assetId: "tone", mimeType: "audio/mpeg", bytes: new Uint8Array([1, 2, 3]) }],
       deadlineMs: expect.any(Number),
       startDeadlineMs: expect.any(Number)
     }));
-    expect(calls).toEqual(["mute:true", "devices", "devices", "devices", "play"]);
+    expect(transport.play).not.toHaveBeenCalled();
+    expect(calls).toEqual(["mute:true", "devices", "devices", "devices", "prepare", "start"]);
     expect((await composition.app.inject({ method: "POST", url: "/audio/retry", headers })).statusCode).toBe(204);
     expect(transport.retry).toHaveBeenCalledTimes(1);
   } finally {

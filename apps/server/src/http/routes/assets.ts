@@ -15,6 +15,7 @@ import {
   parseOverlayTargetProfileQuery
 } from "../middleware/overlay-auth.js";
 import { sendHttpError } from "../errors.js";
+import { sendMediaBytes } from "../media-response.js";
 import { readModuleOverlayParams, readUnifiedOverlayParams } from "./overlay-route-params.js";
 import { isTimerAssetCompatible } from "../../modules/timers/timer-asset-role.js";
 
@@ -130,7 +131,7 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
 
     try {
       const bytes = await dependencies.assetStore.read(record.storagePath);
-      return reply.header("x-content-type-options", "nosniff").type(record.mimeType).send(bytes);
+      return sendMediaBytes(request, reply, bytes, record.mimeType);
     } catch (error) {
       if (error instanceof AssetPathTraversalError) {
         return sendHttpError(reply, 400, {
@@ -195,7 +196,7 @@ async function sendOverlayAsset(
 
   try {
     const bytes = await dependencies.assetStore.read(record.storagePath);
-    return reply.header("cache-control", "no-store").header("x-content-type-options", "nosniff").type(record.mimeType).send(bytes);
+    return sendMediaBytes(request, reply.header("cache-control", "no-store"), bytes, record.mimeType);
   } catch (error) {
     if (error instanceof AssetPathTraversalError || error instanceof AssetFileNotFoundError) {
       return sendOverlayAssetNotFound(reply);

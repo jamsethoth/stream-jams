@@ -46,9 +46,16 @@ export function DesktopOverlayApp({ controller, subscribe }: {
     return "";
   }, [controller]);
   const onPlaybackEvent = useCallback((event: OverlayPlaybackEvent) => {
-    if (event.status !== "failed") return;
     const occurrence = controller.getSnapshot().occurrences.find(value => value.instructions.some(instruction => scopedId(value.key, instruction.id) === event.instructionId));
-    if (occurrence !== undefined) controller.fail(occurrence.key);
+    if (occurrence === undefined) return;
+    if (event.status === "failed") controller.fail(occurrence.key, event.failure);
+    if (event.status === "ready" || event.status === "completed") {
+      const instruction = occurrence.instructions.find(value => scopedId(occurrence.key, value.id) === event.instructionId)!;
+      if (event.status === "ready") controller.ready(occurrence.key, instruction.id);
+      else controller.complete(occurrence.key, instruction.id);
+    }
   }, [controller]);
-  return <OverlaySurface composition={composition} muted resolveAssetUrl={resolveAssetUrl} onPlaybackEvent={onPlaybackEvent} />;
+  const preparingInstructionIds = useMemo(() => new Set(snapshot.occurrences.filter(occurrence => occurrence.preparing === true)
+    .flatMap(occurrence => occurrence.instructions.map(instruction => scopedId(occurrence.key, instruction.id)))), [snapshot]);
+  return <OverlaySurface composition={composition} muted preparingInstructionIds={preparingInstructionIds} resolveAssetUrl={resolveAssetUrl} onPlaybackEvent={onPlaybackEvent} />;
 }

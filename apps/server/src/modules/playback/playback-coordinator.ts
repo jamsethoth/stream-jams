@@ -21,7 +21,7 @@ import type {
   TtsService
 } from "@stream-jams/core";
 import { collectAlertDurationAssetIds, resolveAlertAudio, resolveMediaDuration } from "@stream-jams/core";
-import type { AudioPlaybackSink, PlaybackQueueItem } from "@stream-jams/core";
+import type { AudioPlaybackSink, DeviceAudioBatch, DeviceAudioResult, PlaybackQueueItem } from "@stream-jams/core";
 import type { AudioOutputService } from "../audio/audio-output-service.js";
 import { effectOccurrenceKey } from "../screen-effects/effect-playback-coordinator.js";
 
@@ -54,12 +54,14 @@ function dedupeTargets(targets: readonly AlertResolverTarget[]): readonly AlertR
 }
 
 export interface OverlayPlaybackInstructionSink {
+  preparePlaybackInstruction?(instruction: OverlayInstruction): Promise<{ readonly deliveredClientIds: readonly string[]; start(startsAtEpochMs: number): void }>;
   deliverPlaybackInstruction(instruction: OverlayInstruction): { readonly deliveredClientIds: readonly string[] } | void;
   setPlaybackMuted?(muted: boolean): void;
   stopPlaybackInstructions?(instructionIds: readonly string[]): void;
 }
 
 export interface DesktopVisualPlaybackSink {
+  prepare?(occurrenceId: string, instructions: readonly OverlayInstruction[]): Promise<{ start(startsAtEpochMs: number): Promise<void> }>;
   play(occurrenceId: string, instructions: readonly OverlayInstruction[], startsAtEpochMs: number): Promise<void>;
   stop(occurrenceId: string): Promise<void>;
   close(): Promise<void>;
@@ -102,7 +104,7 @@ interface PendingBrowserInstruction {
   dispatchComplete: boolean;
 }
 
-const PLAYBACK_PREPARATION_TIMEOUT_MS = 5_000;
+const PLAYBACK_PREPARATION_TIMEOUT_MS = 15_000;
 const PLAYBACK_COMPLETION_GRACE_MS = 5_000;
 
 export class PlaybackCoordinator {
@@ -123,7 +125,7 @@ export class PlaybackCoordinator {
   readonly #audioOutputService: PlaybackAudioOutputService | null;
   #devicePlayback: DevicePlaybackState | null = null;
   #closePromise: Promise<void> | null = null;
-  #preparationTimer: ReturnType<typeof setTimeout> | null = null;
+  #preparationCancels = new Set<() => void>();
   #completionTimer: ReturnType<typeof setTimeout> | null = null;
   #stoppingOccurrence: { readonly id: string; readonly promise: Promise<PlaybackQueueSnapshot> } | null = null;
   readonly #findEditorDocuments:
@@ -367,7 +369,7 @@ export class PlaybackCoordinator {
   }
 
   completeCurrent(): PlaybackQueueSnapshot {
-    if (this.#closed || (this.#desktopPlayback !== null && (!this.#desktopPlayback.settled || this.#desktopPlayback.cancelled)) || (this.#devicePlayback !== null && (!this.#devicePlayback.settled || this.#devicePlayback.cancelled))) {
+    if (this.#closed || !this.#browserDispatchComplete || (this.#desktopPlayback !== null && (!this.#desktopPlayback.settled || this.#desktopPlayback.cancelled)) || (this.#devicePlayback !== null && (!this.#devicePlayback.settled || this.#devicePlayback.cancelled))) {
       return this.#queue.getSnapshot();
     }
     this.#clearOccurrenceTimers();
@@ -536,7 +538,6 @@ export class PlaybackCoordinator {
       this.#browserDispatchComplete = false;
       this.#devicePlayback = null;
       this.#desktopPlayback = null;
-      const startsAtEpochMs = Date.now() + 100;
       const transportId = effectOccurrenceKey("alerts", snapshot.current.id);
       const desktopInstructions = snapshot.current.alerts.filter(alert => alert.desktopVisualEligible === true).map(alert => alert.overlayInstruction).filter(instruction =>
         instruction.moduleId === "alerts" && instruction.scope === "module" && instruction.targetProfileId === "landscape" &&
@@ -552,7 +553,6 @@ export class PlaybackCoordinator {
       }
       const browserInstructions = (this.#overlayPlaybackSink === null ? [] : snapshot.current.alerts).map(alert => ({
         ...alert.overlayInstruction,
-        timing: { startsAtEpochMs, endsAtEpochMs: startsAtEpochMs + alert.overlayInstruction.durationMs },
         id: `${snapshot.current!.id}:${alert.overlayInstruction.id}`
       }));
       this.#browserInstructionIds = browserInstructions.map(instruction => instruction.id);
@@ -573,55 +573,99 @@ export class PlaybackCoordinator {
           stopping: null
         };
         this.#devicePlayback = state;
-        this.#preparationTimer = this.#scheduleTimer(
-          () => { void this.#expireDevicePreparation(snapshot.current!, state); },
-          PLAYBACK_PREPARATION_TIMEOUT_MS
-        );
+
       }
       const occurrenceDurationMs = Math.max(
         0,
         ...snapshot.current.alerts.map(alert => alert.overlayInstruction.durationMs),
         ...snapshot.current.audio.map(audio => audio.durationMs)
       );
-      this.#completionTimer = this.#scheduleTimer(
-        () => { void this.#handleWatchdog(snapshot.current!.id); },
-        occurrenceDurationMs + PLAYBACK_COMPLETION_GRACE_MS
-      );
-      if (this.#devicePlayback !== null) {
-        const state = this.#devicePlayback;
-        void this.#dispatchDeviceAudio(snapshot.current, state, startsAtEpochMs);
-      }
-      if (this.#desktopPlayback !== null) void this.#dispatchDesktop(desktopInstructions, startsAtEpochMs, this.#desktopPlayback);
+      const item = snapshot.current;
+      const device = this.#devicePlayback;
+      const desktop = this.#desktopPlayback;
+      const active = () => !this.#closed && this.#queue.getSnapshot().current?.id === item.id && this.#stoppingOccurrence?.id !== item.id;
+      const starters: Array<(at: number) => void> = [];
+      const preparation: Promise<void>[] = [];
       for (const instruction of browserInstructions) {
-        const pending = this.#pendingClientsByInstructionId.get(instruction.id)!;
-        try {
-          const delivery = this.#overlayPlaybackSink!.deliverPlaybackInstruction(instruction);
-          pending.dispatchComplete = true;
-          if (delivery === undefined) {
-            if (pending.completedBeforeDispatch.size > 0) this.#pendingClientsByInstructionId.delete(instruction.id);
-          } else {
-            pending.pendingClients = new Set(delivery.deliveredClientIds);
-            for (const clientId of pending.completedBeforeDispatch) pending.pendingClients.delete(clientId);
-            if (pending.pendingClients.size === 0) this.#pendingClientsByInstructionId.delete(instruction.id);
-          }
-        } catch (error) {
-          pending.dispatchComplete = true;
+        const dispatch = (at: number, prepared?: { readonly deliveredClientIds: readonly string[]; start(at: number): void }) => {
+          const pending = this.#pendingClientsByInstructionId.get(instruction.id);
+          if (pending === undefined) return;
+          try {
+            const delivery = prepared === undefined
+              ? this.#overlayPlaybackSink!.deliverPlaybackInstruction({ ...instruction, timing: { startsAtEpochMs: at, endsAtEpochMs: at + instruction.durationMs } })
+              : (prepared.start(at), prepared);
+            pending.dispatchComplete = true;
+            if (delivery === undefined) {
+              if (pending.completedBeforeDispatch.size > 0) this.#pendingClientsByInstructionId.delete(instruction.id);
+            } else {
+              pending.pendingClients = new Set(delivery.deliveredClientIds);
+              for (const clientId of pending.completedBeforeDispatch) pending.pendingClients.delete(clientId);
+              if (pending.pendingClients.size === 0) this.#pendingClientsByInstructionId.delete(instruction.id);
+            }
+          } catch (error) { browserFailed(error); }
+        };
+        const browserFailed = (error: unknown) => {
           this.#pendingClientsByInstructionId.delete(instruction.id);
-          void this.#recordOverlayTransportFailure(
-            "Browser overlay playback instruction could not be delivered.",
-            "overlay.playback.delivery-failed",
-            error,
-            snapshot.current.id,
-            instruction.id
-          );
+          this.#stopBrowserInstructions([instruction.id]);
+          void this.#recordOverlayTransportFailure("Browser overlay playback instruction could not be delivered.", "overlay.playback.delivery-failed", error, item.id, instruction.id);
+        };
+        if (this.#overlayPlaybackSink?.preparePlaybackInstruction === undefined) starters.push(at => dispatch(at));
+        else preparation.push(this.#prepareRecipient(
+          () => this.#overlayPlaybackSink!.preparePlaybackInstruction!(instruction), browserFailed
+        ).then(prepared => { if (prepared !== null) starters.push(at => dispatch(at, prepared)); }));
+      }
+      if (desktop !== null) {
+        if (this.#desktopVisualSink!.prepare === undefined) starters.push(at => { void this.#dispatchDesktop(desktopInstructions, at, desktop); });
+        else preparation.push(this.#prepareRecipient(
+          () => this.#desktopVisualSink!.prepare!(desktop.transportId, desktopInstructions),
+          async error => {
+            desktop.settled = true;
+            this.#recordDesktopFailure(error, desktop);
+            await this.#desktopVisualSink!.stop(desktop.transportId);
+          }
+        ).then(prepared => { if (prepared !== null) starters.push(at => { void this.#dispatchDesktop(desktopInstructions, at, desktop, prepared.start); }); }));
+      }
+      if (device !== null) preparation.push(this.#prepareRecipient(async () => {
+        const selected = await this.#audioOutputService!.preparePlayback(device.transportId, item.audio);
+        if (!active() || device.cancelled) return [];
+        if (selected.unavailableRouteIds.length > 0) void this.#recordDeviceAudioFailure(item.id, selected.unavailableRouteIds);
+        const batches = await Promise.all(selected.batches.map(async batch => {
+          try {
+            const prepared = await this.#audioPlaybackSink!.prepare?.({ ...batch, muted: this.#queue.getSnapshot().muted });
+            return { batch, prepared };
+          } catch (error) {
+            void this.#recordDeviceAudioFailure(item.id, batch.destinations.flatMap(destination => destination.routeIds), error);
+            return null;
+          }
+        }));
+        return batches.filter(batch => batch !== null);
+      }, async error => {
+        device.cancelled = true;
+        void this.#recordDeviceAudioFailure(item.id, item.audio.flatMap(audio => audio.outputs.deviceRouteIds), error);
+        device.stopping ??= this.#audioPlaybackSink!.stop(device.transportId);
+        await device.stopping;
+        if (this.#devicePlayback === device) this.#devicePlayback = null;
+      }).then(batches => { if (batches !== null) starters.push(at => { void this.#dispatchDeviceAudio(item, device, at, batches); }); }));
+      const commit = () => {
+        if (!active()) return;
+        const startsAtEpochMs = Date.now() + 100;
+        this.#completionTimer = this.#scheduleTimer(() => { void this.#handleWatchdog(item.id); }, startsAtEpochMs - Date.now() + occurrenceDurationMs + PLAYBACK_COMPLETION_GRACE_MS);
+        for (const start of starters) start(startsAtEpochMs);
+        this.#browserDispatchComplete = true;
+        if (shouldDispatchRemoteTts && !this.#queue.getSnapshot().muted) {
+          void this.#dispatchRemoteTts(item.alerts).catch(
+          // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+          () => undefined);
         }
+      };
+      if (preparation.length > 0) {
+        void Promise.allSettled(preparation).then(() => {
+          commit();
+          if (active() && this.#canCompleteCurrent()) this.completeCurrent();
+        });
+        return snapshot;
       }
-      this.#browserDispatchComplete = true;
-      if (shouldDispatchRemoteTts && !snapshot.muted) {
-        void this.#dispatchRemoteTts(snapshot.current.alerts).catch(
-        // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
-        () => undefined);
-      }
+      commit();
 
       if (!this.#canCompleteCurrent()) {
         return snapshot;
@@ -631,20 +675,17 @@ export class PlaybackCoordinator {
     }
   }
 
-  async #dispatchDeviceAudio(item: PlaybackQueueItem, state: DevicePlaybackState, startsAtEpochMs: number): Promise<void> {
+  async #dispatchDeviceAudio(item: PlaybackQueueItem, state: DevicePlaybackState, startsAtEpochMs: number, batches: readonly { batch: DeviceAudioBatch; prepared: { start(at: number): Promise<DeviceAudioResult> } | undefined }[]): Promise<void> {
     const active = () => !this.#closed && !state.cancelled && this.#devicePlayback === state;
     try {
-      const prepared = await this.#audioOutputService!.preparePlayback(state.transportId, item.audio);
-      if (this.#devicePlayback === state) this.#clearPreparationTimer();
       if (!active()) return;
-      if (prepared.unavailableRouteIds.length > 0) void this.#recordDeviceAudioFailure(item.id, prepared.unavailableRouteIds);
       // All documents belong to one occurrence. One failed document must not
       // release the queue while other documents are still playing.
       let requiresExplicitStop = false;
-      await Promise.allSettled(prepared.batches.map(async batch => {
+      await Promise.allSettled(batches.map(async ({ batch, prepared }) => {
         if (!active()) return;
         try {
-          const result = await this.#audioPlaybackSink!.play({ ...batch, timing: { startsAtEpochMs, endsAtEpochMs: startsAtEpochMs + batch.durationMs }, muted: this.#queue.getSnapshot().muted });
+          const result = await (prepared === undefined ? this.#audioPlaybackSink!.play({ ...batch, timing: { startsAtEpochMs, endsAtEpochMs: startsAtEpochMs + batch.durationMs }, muted: this.#queue.getSnapshot().muted }) : prepared.start(startsAtEpochMs));
           if (result.failedRouteIds.length > 0) void this.#recordDeviceAudioFailure(item.id, result.failedRouteIds);
         } catch (error) {
           requiresExplicitStop = true;
@@ -664,7 +705,6 @@ export class PlaybackCoordinator {
         }
       }
     } catch (error) {
-      if (this.#devicePlayback === state) this.#clearPreparationTimer();
       void this.#recordDeviceAudioFailure(item.id, item.audio.flatMap(audio => audio.outputs.deviceRouteIds), error);
     } finally {
       state.settled = true;
@@ -679,40 +719,47 @@ export class PlaybackCoordinator {
       (this.#desktopPlayback === null || this.#desktopPlayback.settled);
   }
 
-  async #dispatchDesktop(instructions: readonly OverlayInstruction[], startsAt: number, state: DevicePlaybackState): Promise<void> {
-    try { await this.#desktopVisualSink!.play(state.transportId, instructions, startsAt); }
+  async #dispatchDesktop(instructions: readonly OverlayInstruction[], startsAt: number, state: DevicePlaybackState, start?: (at: number) => Promise<void>): Promise<void> {
+    try { await (start === undefined ? this.#desktopVisualSink!.play(state.transportId, instructions, startsAt) : start(startsAt)); }
     catch (error) {
-      // A transported desktop renderer failure is already owned and persisted by
-      // the supervisor under its renderer reference. Do not create a duplicate.
-      if (!state.cancelled && ownedFailureReferenceId(error) === null) void this.#logger?.error("Desktop visual playback unavailable. Browser and audio outputs continue independently.", {
-        module: "overlay-surfaces", source: "desktop-overlay.playback.failed", correlationId: this.#generateReferenceId?.() ?? state.occurrenceId, processingId: null,
-        metadata: { playbackId: state.occurrenceId, nextStep: "Check the selected display and retry the desktop overlay in Settings. Interrupted content is not replayed." }
-      }, error);
+      this.#recordDesktopFailure(error, state);
     } finally {
       state.settled = true;
       if (!this.#closed && !state.cancelled && this.#desktopPlayback === state && this.#queue.getSnapshot().current?.id === state.occurrenceId && this.#canCompleteCurrent()) this.completeCurrent();
     }
   }
 
-  async #expireDevicePreparation(item: PlaybackQueueItem, state: DevicePlaybackState): Promise<void> {
-    if (this.#closed || this.#devicePlayback !== state || state.cancelled) return;
-    this.#clearPreparationTimer();
-    state.cancelled = true;
-    void this.#recordDeviceAudioFailure(item.id, item.audio.flatMap(audio => audio.outputs.deviceRouteIds));
-    try {
-      state.stopping ??= this.#audioPlaybackSink!.stop(state.transportId);
-      await state.stopping;
-    } catch (error) {
-      state.stopping = null;
-      this.#clearOccurrenceTimers();
-      void this.#recordDeviceAudioFailure(item.id, item.audio.flatMap(audio => audio.outputs.deviceRouteIds), error);
-      return;
-    }
-    if (this.#closed || this.#devicePlayback !== state || this.#stoppingOccurrence !== null) return;
-    // No device dispatch may follow this preparation. Release only its token;
-    // healthy browser recipients retain their own completion and watchdog.
-    this.#devicePlayback = null;
-    if (this.#canCompleteCurrent()) this.completeCurrent();
+  #recordDesktopFailure(error: unknown, state: DevicePlaybackState): void {
+      // A transported desktop renderer failure is already owned and persisted by
+      // the supervisor under its renderer reference. Do not create a duplicate.
+      if (!state.cancelled && ownedFailureReferenceId(error) === null) void this.#logger?.error("Desktop visual playback unavailable. Browser and audio outputs continue independently.", {
+        module: "overlay-surfaces", source: "desktop-overlay.playback.failed", correlationId: this.#generateReferenceId?.() ?? state.occurrenceId, processingId: null,
+        metadata: { playbackId: state.occurrenceId, nextStep: "Check the selected display and retry the desktop overlay in Settings. Interrupted content is not replayed." }
+      }, error);
+  }
+
+  #prepareRecipient<T>(prepare: () => Promise<T>, failed: (error: unknown) => void | Promise<void>): Promise<T | null> {
+    return new Promise(resolve => {
+      let settled = false;
+      const finish = (value: T | null) => {
+        if (settled) return;
+        settled = true; clearTimeout(timer); this.#preparationCancels.delete(cancel); resolve(value);
+      };
+      const cancel = () => finish(null);
+      const fail = async (error: unknown) => {
+        if (settled) return;
+        settled = true; clearTimeout(timer); this.#preparationCancels.delete(cancel);
+        try { await failed(error); }
+        catch (cleanupError) {
+          void this.#recordOverlayTransportFailure("Playback preparation cleanup failed.", "overlay.playback.preparation-stop-failed", cleanupError);
+        }
+        resolve(null);
+      };
+      const timer = this.#scheduleTimer(() => { void fail(new Error("Playback preparation timed out after 15000ms.")); }, PLAYBACK_PREPARATION_TIMEOUT_MS);
+      this.#preparationCancels.add(cancel);
+      try { void prepare().then(finish, fail); }
+      catch (error) { void fail(error); }
+    });
   }
 
   #handleWatchdog(playbackId: string): Promise<PlaybackQueueSnapshot> {
@@ -794,14 +841,8 @@ export class PlaybackCoordinator {
     }
   }
 
-  #clearPreparationTimer(): void {
-    if (this.#preparationTimer === null) return;
-    clearTimeout(this.#preparationTimer);
-    this.#preparationTimer = null;
-  }
-
   #clearOccurrenceTimers(): void {
-    this.#clearPreparationTimer();
+    for (const cancel of this.#preparationCancels) cancel();
     if (this.#completionTimer === null) return;
     clearTimeout(this.#completionTimer);
     this.#completionTimer = null;

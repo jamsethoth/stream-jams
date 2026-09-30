@@ -3,7 +3,7 @@ import { desktopOverlayStatusSchema, type DesktopOverlayStatus } from "./desktop
 import { defaultAssetValidationPolicy } from "../assets/asset-validator.js";
 import { surfaceConfigurationSchema, type SurfaceConfiguration } from "../overlay-modules/surface-configuration.js";
 import { overlayElementLayoutSchema } from "../shared/schemas.js";
-import { playbackTimingSchema } from "./playback-timing.js";
+import { playbackTimingSchema, type PlaybackTiming } from "./playback-timing.js";
 import {
   overlayInstructionSchema, overlayVisualInstructionSchema, overlayTextInstructionSchema,
   overlayShapeInstructionSchema, overlayPresetAnimationInstructionSchema
@@ -44,6 +44,7 @@ export function visualMediaType(mimeType: typeof mimeTypes[number]): "image" | "
 }
 
 export const desktopVisualBatchSchema = z.object({
+  deferredStart: z.boolean().optional(),
   key: visualRecipientKeySchema.extend({ surfaceId: z.literal("desktop:primary") }).strict(),
   timing: playbackTimingSchema,
   instructions: z.array(desktopVisualInstructionSchema),
@@ -100,7 +101,7 @@ export const desktopVisualCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("configure"), config: surfaceConfigurationSchema.refine(config => config.kind === "desktop") }).strict(),
   z.object({ type: z.literal("prepare"), batch: desktopVisualBatchSchema }).strict(),
   z.object({ type: z.literal("sync-module"), ...desktopModuleSyncSchema.shape }).strict(),
-  z.object({ type: z.literal("start"), key: visualRecipientKeySchema }).strict(),
+  z.object({ type: z.literal("start"), key: visualRecipientKeySchema, timing: playbackTimingSchema.optional() }).strict(),
   z.object({ type: z.literal("stop"), key: visualRecipientKeySchema }).strict(),
   z.object({ type: z.literal("retry") }).strict(),
   z.object({ type: z.literal("close") }).strict()
@@ -117,7 +118,7 @@ export type DesktopVisualCommand =
   | { readonly type: "configure"; readonly config: Extract<SurfaceConfiguration, { kind: "desktop" }> }
   | { readonly type: "prepare"; readonly batch: DesktopVisualBatch }
   | ({ readonly type: "sync-module" } & DesktopModuleSync)
-  | { readonly type: "start"; readonly key: VisualRecipientKey }
+  | { readonly type: "start"; readonly key: VisualRecipientKey; readonly timing?: PlaybackTiming | undefined }
   | { readonly type: "stop"; readonly key: VisualRecipientKey }
   | { readonly type: "retry" }
   | { readonly type: "close" };
@@ -138,7 +139,7 @@ export interface DesktopOverlayTransport {
   configure(config: Extract<SurfaceConfiguration, { kind: "desktop" }>): Promise<void>;
   syncModule(sync: DesktopModuleSync): Promise<void>;
   prepare(batch: DesktopVisualBatch): Promise<"ready" | "unavailable">;
-  start(key: VisualRecipientKey): Promise<void>;
+  start(key: VisualRecipientKey, timing?: PlaybackTiming): Promise<void>;
   stop(key: VisualRecipientKey): Promise<void>;
   retry(): Promise<void>;
   close(): Promise<void>;

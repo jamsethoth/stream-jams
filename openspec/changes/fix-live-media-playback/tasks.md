@@ -11,7 +11,7 @@
 
 ## 3. Timing and recovery
 
-- [x] 3.1 Test and classify expired source media and slow asynchronous seek failures with timing evidence, retaining current synchronization bounds.
+- [x] 3.1 Test and classify expired source media and slow asynchronous seek failures with timing evidence, retaining the then-current synchronization bounds (superseded for normal playback by section 5).
 - [x] 3.2 Verify provider keepalive recovery and management session renewal scenarios; cover missing failure cases.
 
 ## 4. Verification and handoff
@@ -22,7 +22,7 @@
 ## 5. Approved coordinated startup and automatic target recovery
 
 - [x] 5.1 Record approved preparation-then-start policy: approximate shared start, full content at normal speed, selected audio destinations only, target recovery without interrupted clip replay.
-- [ ] 5.2 Add failing regressions and implement browser-source, desktop-overlay and selected-device audio prepare/start handshakes with cancellation and bounded readiness.
-- [ ] 5.3 Coordinate shared start after preparation for Alerts and Screen Effects; base completion deadlines on committed start and exclude reconnect replay.
-- [ ] 5.4 Add repeated-failure recovery tests and remove permanent renderer lockouts while bounding recreation and respecting shutdown.
-- [ ] 5.5 Run affected tests and repository/UI gates; rebuild and verify actual browser media startup, including the previously failing short clip; document physical output verification limits.
+- [x] 5.2 Add failing regressions and implement browser-source, desktop-overlay and selected-device audio prepare/start handshakes with cancellation and bounded readiness.
+- [x] 5.3 Coordinate shared start after preparation for Alerts and Screen Effects; preserve full media intervals and fades from actual onset, retain separate watchdogs, and exclude reconnect replay.
+- [x] 5.4 Add repeated-failure recovery tests and remove permanent renderer lockouts while bounding recreation and respecting shutdown.
+- [x] 5.5 Run affected tests and repository/UI gates; rebuild and verify actual browser media startup, including the previously failing short clip; document physical output verification limits.

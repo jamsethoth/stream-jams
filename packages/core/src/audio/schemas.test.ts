@@ -101,3 +101,16 @@ describe("named audio route contracts", () => {
     }
   });
 });
+
+it("bounds and validates audio failure evidence at the IPC boundary", () => {
+  const failure = { routeIds: ["selected"], layerId: "layer", assetId: "clip", stage: "seek", exception: core.serializeException(new Error("seek fixture")) };
+  const result = { failedRouteIds: ["selected"], failures: [failure] };
+  expect(core.deviceAudioResultSchema.parse(result)).toEqual(result);
+  const longIdentity = { ...failure, layerId: "layer".repeat(100), assetId: "asset".repeat(100) };
+  expect(core.deviceAudioResultSchema.parse({ ...result, failures: [longIdentity] })).toEqual({ ...result, failures: [longIdentity] });
+  expect(core.deviceAudioResultSchema.safeParse({ ...result, failures: Array.from({ length: 64 }, () => failure) }).success).toBe(true);
+  expect(core.deviceAudioResultSchema.safeParse({ ...result, failures: Array.from({ length: 65 }, () => failure) }).success).toBe(false);
+  for (const invalid of [{ ...failure, stage: "unknown" }, { ...failure, secret: "forbidden" }, { ...failure, routeIds: ["selected", "selected"] }, { ...failure, exception: "unstructured" }]) {
+    expect(core.deviceAudioResultSchema.safeParse({ ...result, failures: [invalid] }).success).toBe(false);
+  }
+});
