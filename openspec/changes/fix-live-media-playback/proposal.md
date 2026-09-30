@@ -4,9 +4,10 @@ The September 29 live session exposed unseekable HTTP media, lost desktop render
 
 ## What Changes
 
-- Serve authorized asset byte ranges so late browser recipients can seek to the shared timeline.
+- Serve authorized asset byte ranges for reliable browser media loading and explicit seeking.
 - Preserve desktop renderer and selected-device audio failure causes, including fulfilled failed-route results.
-- Classify expired media and capture bounded timing evidence without changing synchronization tolerance or configured destinations.
+- Prepare actual media on participating outputs before scheduling a shared start from zero at normal speed, without changing configured destinations.
+- Automatically recover failed output targets for subsequent clips; interrupted clips do not require replay.
 - Add regression tests for transport, timing, renderer, device, provider recovery, and session renewal failure scenarios.
 
 ## Capabilities

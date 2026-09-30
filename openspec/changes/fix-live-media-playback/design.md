@@ -1,19 +1,21 @@
 ## Context
 
-The incident report in `artifacts/log-analysis-2026-09-29/report.md` identifies the existing paths to repair. The user authorized fixes and regression tests, clarified that audio uses only module-selected devices, and has not approved relaxing synchronization. This is a repair to existing flows. UX sections: Assets, Diagnostics, browser-source outputs and overlay error presentation. It stays within implemented local playback scope.
+The incident report in `artifacts/log-analysis-2026-09-29/report.md` identifies the existing paths to repair. The user authorized fixes and regression tests, with audio restricted to module-selected devices. The approved synchronization policy prepares participating outputs first, then schedules a shared near-future start from the beginning at normal speed. Approximate simultaneous start is sufficient. UX sections: Assets, Diagnostics, browser-source outputs and overlay error presentation.
 
 ## Goals / Non-Goals
 
-**Goals:** seekable authorized HTTP assets; original playback failure evidence through desktop IPC and device results; bounded media-expiry handling; real browser and focused failure-path regressions.
+**Goals:** seekable authorized HTTP assets; original failure evidence through desktop IPC and device results; actual media readiness before coordinated startup; automatic target recovery for subsequent content; real browser and focused failure-path regressions.
 
-**Non-Goals:** additional audio routes, fallback devices, relaxed synchronization, replaying expired work, modifying live user settings, or replacing the installed executable.
+**Non-Goals:** additional audio routes, fallback devices, frame-perfect synchronization, catch-up seeks, playback-rate corrections, durable clip replay or group pause/resume after crashes, modifying live user settings, or replacing the installed executable. An occurrence interrupted by a crash may be lost.
 
 ## Decisions
 
 - Use a small shared HTTP response helper for existing buffer-backed asset reads. Support one valid byte range; ignore unsupported/malformed range syntax and If-Range without a matching validator by returning the complete representation. Return 416 for valid unsatisfiable ranges. HEAD returns full representation headers without a body and ignores Range. Preserve all prehandlers.
 - Forward the existing overlay failure envelope through the private renderer's started reply. Media failures do not imply host failure. Do not recreate healthy renderers merely because an occurrence fails.
 - Add bounded optional per-layer/route failures to device playback results. Keep failed route IDs as the authoritative compatibility field, preserve exceptions at the player boundary, propagate results through IPC and log them in the server sink. Healthy routes continue. Screen Effects also reports unavailable routes and fulfilled failed-route results.
-- Keep the 150 ms target and bounded attempts. Distinguish media whose duration has already elapsed, and capture requested/actual offset and elapsed seek time in preparation exceptions. No impossible beyond-end seek or fallback-to-zero playback.
+- Introduce a bounded, cancellable preparation phase in browser, desktop visual and selected-device audio paths. Readiness means actual media elements can begin playback, not merely that bytes or metadata exist. Keep those same elements for playback. After participating recipients are ready or have failed/disconnected, the coordinator selects one near-future start timestamp. Completion deadlines are based on this committed start, so preparation does not consume clip duration.
+- Start fresh media at zero and normal speed; do not seek to elapsed wall time or reject slightly late startup. Do not join/replay transient occurrences from reconnect snapshots. Failed recipients release their preparation obligation and resources, allowing healthy recipients and later occurrences to proceed. Stop/disable/close prevents late preparation callbacks from starting abandoned work.
+- Recover owned renderer hosts automatically with bounded retry delay; requests during recovery wait rather than requiring manual retry. Do not replay the interrupted occurrence or repeatedly recreate healthy hosts for individual media errors. Browser connections retain bounded reconnect and rebuild their state for subsequent content.
 - Add or verify watchdog-reconnection and unauthorized-session renewal regressions; fix only demonstrated defects. Record remaining historical unknowns explicitly.
 
 ## Risks / Trade-offs
