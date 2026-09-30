@@ -5,6 +5,7 @@ Accepted local videos can render successfully while their selected-device soundt
 ## What Changes
 
 - Serve registered, version-pinned local assets using bounded file streams and HTTP byte ranges, preserving original bytes and existing import limits.
+- Reuse the existing @fastify/static/@fastify/send file-delivery implementation and platform streaming APIs; reserve custom code for application authorization, version lifetime, integrity policy, and thin integration adapters.
 - Replace desktop media byte payloads with scoped references, delivered through the existing private Electron protocols and owned loopback service.
 - Replace registered-asset preview Blobs with revocable, session-owned media URLs.
 - Retain old asset versions while queued/active occurrences, previews, or persistent module presentations own them; retire old storage safely after release.

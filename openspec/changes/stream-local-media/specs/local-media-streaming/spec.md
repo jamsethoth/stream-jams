@@ -50,6 +50,8 @@ Replacement/deletion cleanup SHALL retain pinned versions until owners and activ
 ### Requirement: Streaming Preserves Integrity And Path Confinement
 Only registered pinned assets with supported MIME types and valid size/version metadata SHALL be readable. File access SHALL remain within the configured asset root after resolving filesystem links. Desktop preparation SHALL retain pre-playback checksum verification using bounded incremental reads, sharing verification within a preparation group. Missing, changed, or mismatched files SHALL fail before affected playback starts.
 
+The application SHALL NOT add media-body caching or reuse successful checksum results across preparation groups. In-flight verification sharing SHALL be limited to recipients of the same preparation group. The streaming integrity claim SHALL distinguish initial checksum verification plus managed immutability/change detection from the current verified in-memory byte snapshot.
+
 #### Scenario: File differs from its registered checksum
 - **WHEN** desktop preparation detects a size or checksum mismatch
 - **THEN** it SHALL reject the affected media with an integrity-stage diagnostic
@@ -63,6 +65,10 @@ Only registered pinned assets with supported MIME types and valid size/version m
 - **WHEN** multiple recipients prepare the same pinned file version together
 - **THEN** verification SHALL be shared without retaining the complete file in memory
 - **AND** cancellation by one recipient SHALL NOT invalidate a remaining healthy owner
+
+#### Scenario: A later occurrence prepares the same asset
+- **WHEN** a new preparation group uses a version verified by an earlier group
+- **THEN** it SHALL perform fresh verification rather than reuse the earlier checksum result
 
 ### Requirement: Media Grants Are Narrow Revocable Capabilities
 Media grants SHALL authorize only GET/HEAD reads of their pinned versions, SHALL be unguessable, and SHALL be bound to their issuing session or trusted runtime owner and generation. They SHALL NOT authorize management actions, arbitrary URLs, or arbitrary filesystem paths. Expiry, revocation, and owner loss SHALL cancel affected open responses and reject later reads. Grant secrets SHALL be excluded from logs, diagnostics, exports, and saved documents.

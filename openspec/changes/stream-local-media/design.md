@@ -37,7 +37,9 @@ flowchart LR
 
 Retain the existing authenticated management download and overlay URL contracts. Both use the new streaming reader. Add narrowly scoped media-grant routes for previews and desktop requests that cannot use those existing credentials. Do not create a general-purpose URL proxy.
 
-Use `FileHandle.createReadStream` with inclusive start/end offsets and a 64 KiB high-water mark. Open and inspect the same handle before sending headers. Validate real resolved paths remain inside the asset root, including symlink/junction escape attempts. Each request owns its handle and explicit offsets; never share a mutable file cursor across readers. Return/await Fastify stream responses and preserve backpressure through the Electron response body. No `readFile`, `Buffer.concat`, `blob()`, or `arrayBuffer()` in the playback delivery path.
+Prefer the existing `@fastify/static` dependency for standard file delivery, using `serve: false` and explicit authorized routes rather than exposing the asset directory. Its `@fastify/send` implementation owns standard range/precondition handling and file streaming. Reuse Node streams and Electron protocol/fetch APIs for the remaining transport. Keep custom code limited to registered-version resolution, authorization, lifetime ownership, integrity policy, and thin adapters; do not build a parallel general-purpose HTTP response planner [R8-R9].
+
+First verify that the installed library can satisfy the response contract, 64 KiB file-read buffering, cancellation, path confinement, and pinned-file identity requirements. Validate real resolved paths remain inside the asset root, including symlink/junction escape attempts. Inspection and delivery must refer to the same opened file identity; a path-based library API must not silently weaken this requirement. Where a documented gap requires direct handle ownership, use `FileHandle.createReadStream` with inclusive start/end offsets, narrowly scoped to that gap. Do not maintain a second range parser or precondition engine alongside the library. If the library cannot meet the contract through supported APIs, record the gap and revise the integration design before implementation proceeds with that path. Each request owns its reader and explicit offsets; never share a mutable file cursor across readers. Return/await Fastify stream responses and preserve backpressure through the Electron response body. No `readFile`, `Buffer.concat`, `blob()`, or `arrayBuffer()` in the playback delivery path.
 
 Alternatives: direct desktop file access duplicates storage/security ownership; HLS/DASH/MSE introduces packaging and playback machinery unnecessary for local files and does not cover images; raising byte caps retains full-body memory amplification. Native streaming is supported by the existing frameworks [R1-R4].
 
@@ -45,7 +47,7 @@ Alternatives: direct desktop file access duplicates storage/security ownership; 
 
 Serve original PNG/JPEG/WebP/GIF/MP4/WebM/MP3/WAV/Ogg/audio-WebM bytes with their validated MIME type. Keep existing signature validation and import limits (image 10 MiB, GIF/audio 25 MiB, video 100 MiB). Container acceptance does not imply every embedded codec is playable.
 
-The shared response planner handles:
+Delegate standard HTTP behavior to the established file-serving library. The application integration must satisfy this response contract:
 
 - Authorized full GET: 200 with exact Content-Length, MIME type, strong checksum-based ETag, `Accept-Ranges: bytes`, and `nosniff`.
 - Authorized single closed/open-ended/suffix range: 206 with exact Content-Range and interval length.
@@ -56,7 +58,7 @@ The shared response planner handles:
 - If-None-Match: matching authorized GET/HEAD returns 304 before body reads; authorization always runs first. Standard precondition precedence is covered by contract tests.
 - `Cache-Control: no-store`, no response compression/transformation, and `Referrer-Policy: no-referrer` for capability responses.
 
-Use bounded header parsing and overflow-safe arithmetic. Forward only necessary request/response headers through desktop adapters. A failure before headers uses the normal safe error envelope; a failure after headers closes the body and emits a correlated diagnostic rather than injecting JSON into media bytes. RFC 9110 defines range/validator behavior [R3].
+Verify the library's header parsing and range arithmetic against malformed/overflow inputs through integration tests. Configure validators and headers through supported APIs; do not assume generated ETags are cryptographic checksums or that the library's `immutable` cache directive makes files immutable. Forward only necessary request/response headers through desktop adapters. A failure before headers uses the normal safe error envelope; a failure after headers closes the body and emits a correlated diagnostic rather than injecting JSON into media bytes. RFC 9110 defines range/validator behavior [R3].
 
 ### 3. Version identity and lifetime are independent of access credentials
 
@@ -74,7 +76,11 @@ Persist a small retirement journal under the managed asset store before replacem
 
 Desktop preparation currently verifies SHA-256 before handing media to the player. Keep that check as a cancellable incremental hash over bounded chunks, coalesced for consumers of the same pinned version within a preparation group. Compare size and file identity before/after verification, and reject a changed/missing file. Do not substitute a late streaming hash that detects corruption only after bytes have already played.
 
+Do not add an application media cache or retain successful checksum results for reuse by later preparation groups. Every new preparation group performs its own verification. Sharing an in-flight verification among that group's destinations only avoids duplicate simultaneous work; it does not cache validation for subsequent playback. Operating-system file caching remains outside application control.
+
 After verification, application-managed versions are immutable for their lifetime; opened reads validate the pinned identity. Changed size/identity/timestamps invalidate readiness and fail the affected recipient. This does not promise protection against an external process deliberately modifying a file in place while concealing all identity changes. A cold verification reads the full file from disk, but does not allocate or transfer its full body. Retain the existing preparation deadline; slow storage fails with a stage-specific error rather than unbounded waiting.
+
+The present buffer path plays the exact bytes that passed verification. The proposed streaming path verifies first and reads again later, so its initial checksum alone does not prove that every subsequent range remains identical. Its continued integrity depends on managed version immutability and change detection. This distinction must remain explicit in documentation and acceptance evidence; the check is not malware scanning or proof of source authenticity.
 
 ### 5. Desktop renderers receive scoped references
 
@@ -142,7 +148,9 @@ Sources reviewed September 30, 2026. These establish API feasibility, not tested
 - **R5:** [Web Audio cross-origin security](https://www.w3.org/TR/webaudio/#MediaElementAudioSourceNode-security): a CORS-cross-origin MediaElementAudioSourceNode must output silence.
 - **R6:** [FFmpeg MP4 layout](https://www.ffmpeg.org/ffmpeg-formats.html): faststart moves the MP4 index; useful optimization, not required automatic transcoding.
 - **R7:** [W3C MSE byte-stream registry](https://www.w3.org/TR/mse-byte-stream-format-registry/): MSE's format-specific streaming machinery is unnecessary for this native multi-format asset delivery use case.
+- **R8:** [@fastify/static](https://github.com/fastify/fastify-static): existing direct dependency; explicit `sendFile` calls with directory serving disabled, configurable headers, and delegated range delivery.
+- **R9:** [@fastify/send](https://github.com/fastify/send): underlying file streaming, byte ranges, and conditional requests. Prefer the existing wrapper; declare a direct dependency only if direct use has a demonstrated integration benefit.
 
 ## Open Questions
 
-No unresolved product choices are required to implement the proposed design. The protocol, gain, physical-output, and memory gates above are empirical acceptance conditions; a failed gate requires a scoped design revision rather than an unapproved transport/security fallback.
+The library integration must establish whether supported APIs meet the pinned-file identity and exact HTTP contract before implementation of shared delivery. The protocol, gain, physical-output, and memory gates above are empirical acceptance conditions; a failed gate requires a scoped design revision rather than an unapproved transport/security fallback. Library reuse does not change the integrity policy in decision 4 or introduce caching.
