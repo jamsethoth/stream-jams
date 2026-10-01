@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { _electron, expect, test } from "@playwright/test";
+import { serializeMediaStreamingEvidence } from "../../scripts/media-streaming-evidence.mjs";
 import { windowByUrl } from "./audio-harness.js";
 import { finishUtilityResources, installUtilityResourceObserver, startUtilityResources, type UtilityResources } from "./utility-resource-observer.js";
 
@@ -41,6 +42,7 @@ test("@hardware Forge streaming uses bounded reference IPC across 1/25/100 MiB r
   const child = desktop.process(), pids = new Set<number>(), results: unknown[] = [], failures: unknown[] = [];
   const ranges: { status: number; contentRange: string | null }[] = [];
   const utilityResources: UtilityResources[] = [];
+  const failureCodes: ("PLAYBACK_FAILED" | "OBSERVATION_FAILED" | "QUIT_FAILED")[] = [];
   let observation: { ipc: Observation["ipc"]; samples: unknown[] } | undefined;
   let quitMs: number | undefined;
   let capturedPidsExited = false;
@@ -143,7 +145,7 @@ test("@hardware Forge streaming uses bounded reference IPC across 1/25/100 MiB r
     const packaged = await desktop.evaluate(({ app }) => ({ packaged: app.isPackaged, appPath: app.getAppPath() }));
     expect(packaged.packaged).toBe(true); expect(packaged.appPath.endsWith("app.asar")).toBe(true);
     expect(await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().every(window => !window.isVisible()))).toBe(true);
-  } catch (error) { failures.push(error); }
+  } catch (error) { failures.push(error); failureCodes.push("PLAYBACK_FAILED"); }
   finally {
     try {
       observation = await desktop.evaluate(({ app }) => {
@@ -156,18 +158,24 @@ test("@hardware Forge streaming uses bounded reference IPC across 1/25/100 MiB r
       expect(observation.samples.length).toBeGreaterThan(5);
       (await desktop.evaluate(({ app }) => app.getAppMetrics().map(metric => metric.pid))).forEach(pid => pids.add(pid));
       if (child.pid !== undefined) pids.add(child.pid);
-    } catch (error) { failures.push(error); }
+    } catch (error) { failures.push(error); failureCodes.push("OBSERVATION_FAILED"); }
     try {
       const started = Date.now(); await desktop.evaluate(({ app }) => app.quit()).catch(() => undefined);
       await expect.poll(() => child.exitCode, { timeout: 20000 }).toBe(0);
       await expect.poll(() => [...pids].every(pid => { try { process.kill(pid, 0); return false; } catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") return true; throw error; } }), { timeout: 20000 }).toBe(true);
       capturedPidsExited = true;
       quitMs = Date.now() - started;
-    } catch (error) { failures.push(error); }
-    const evidence = { profile: root, packageSha256, results, ranges, observation, utilityResources, utilityScope: "Instrumented packaged Electron utility process imports unchanged ASAR service worker/classes; test-only loader samples Node memory and existing counters, observes file stream push sizes, and enables GC. No production diagnostic API.", quitMs, exitCode: child.exitCode, capturedPidsExited, failures: failures.map(error => error instanceof Error ? error.message : String(error)),
+    } catch (error) { failures.push(error); failureCodes.push("QUIT_FAILED"); }
+    const evidence = { profile: root, packageSha256, results, ranges, observation, utilityResources, utilityScope: "Instrumented packaged Electron utility process imports unchanged ASAR service worker/classes; test-only loader samples Node memory and existing counters, observes file stream push sizes, and enables GC. No production diagnostic API.", quitMs, exitCode: child.exitCode, capturedPidsExited, failures: failureCodes,
       limitations: ["Main/utility/renderer working sets are sampled every 100 ms; utility external peaks every 1 ms can miss transient allocations. Decoder and RSS totals have no constant-memory guarantee.", "Direct utility measurements use a test-only loader and GC; they do not describe the untouched shipping entrypoint's GC schedule. Existing production counter getters and streams are unchanged.", "First use is not OS-cache cold; no cache flushing occurred. Padding controls transport size while retaining one decoder workload.", "Muted explicit-sink playback and hidden windows do not establish physical sound, OBS coexistence or visible compositing."] };
-    await writeFile(join(outputRoot, "packaged-resources.json"), JSON.stringify(evidence, null, 2));
-    await test.info().attach("packaged-streaming-resources", { body: JSON.stringify(evidence), contentType: "application/json" });
+    let serialized: string;
+    try { serialized = serializeMediaStreamingEvidence("resources", evidence); }
+    catch (error) {
+      failures.push(error);
+      serialized = serializeMediaStreamingEvidence("failure", { status: "invalid-evidence", failures: ["EVIDENCE_VALIDATION_FAILED", ...failureCodes] });
+    }
+    await writeFile(join(outputRoot, "packaged-resources.json"), serialized);
+    await test.info().attach("packaged-streaming-resources", { body: serialized, contentType: "application/json" });
   }
   if (failures.length) throw new AggregateError(failures, "Packaged resource acceptance failed; evidence retained");
 });

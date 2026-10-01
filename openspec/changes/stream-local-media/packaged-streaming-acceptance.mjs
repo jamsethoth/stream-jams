@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { _electron, expect } from '@playwright/test';
+import { serializeMediaStreamingEvidence } from '../../../scripts/media-streaming-evidence.mjs';
 
 // Run only against the self-contained Forge package, with an isolated config,
 // muted production safety state and zero-gain layers. Private originals are
@@ -51,7 +52,7 @@ try {
   const headers = { authorization: `Bearer ${session.id}`, 'x-stream-jams-csrf': session.csrfToken, 'content-type': 'application/json' };
   async function api(path, method = 'GET', body) {
     const response = await fetch(`${base}${path}`, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(20_000) });
-    if (!response.ok) throw new Error(`${method} ${path}: ${response.status} ${await response.text()}`);
+    if (!response.ok) throw new Error(`${method}: HTTP ${response.status}`);
     return response.status === 204 ? null : response.json();
   }
   const devices = await api('/audio/devices'); expect(devices.available).toBe(true); expect(devices.devices.length).toBeGreaterThan(0);
@@ -62,7 +63,7 @@ try {
   const rule = (await api('/alerts/rules')).find(item => item.eventType === 'follow');
   const editor = await api(`/management/alerts/${rule.id}/editor`);
   async function sample(label) {
-    const host = await desktop.evaluate(({ app }) => ({ at: Date.now(), main: process.memoryUsage(), processes: app.getAppMetrics().map(metric => ({ pid: metric.pid, type: metric.type, serviceName: metric.serviceName, memory: metric.memory })) }));
+    const host = await desktop.evaluate(({ app }) => ({ at: Date.now(), main: process.memoryUsage(), processes: app.getAppMetrics().map(metric => ({ pid: metric.pid, type: metric.type, memory: metric.memory })) }));
     const renderer = await player.evaluate(() => { const memory = performance.memory; return memory ? { usedJSHeapSize: memory.usedJSHeapSize, totalJSHeapSize: memory.totalJSHeapSize, jsHeapSizeLimit: memory.jsHeapSizeLimit } : null; });
     results.samples.push({ label, ...host, renderer });
   }
@@ -82,7 +83,7 @@ try {
     const sizeBytes = (await stat(candidate.path)).size;
     const hash = createHash('sha256'); for await (const chunk of createReadStream(candidate.path)) hash.update(chunk);
     const imported = await fetch(`${base}/assets/import`, { method: 'POST', headers: { ...headers, 'content-type': 'application/octet-stream', 'x-stream-jams-file-name': candidate.path.split(/[\\/]/).at(-1), 'x-stream-jams-mime-type': candidate.mimeType, 'content-length': String(sizeBytes) }, body: createReadStream(candidate.path), duplex: 'half', signal: AbortSignal.timeout(40_000) });
-    if (!imported.ok) throw new Error(`Import ${candidate.name}: ${imported.status} ${await imported.text()}`);
+    if (!imported.ok) throw new Error(`Import: HTTP ${imported.status}`);
     const asset = await imported.json();
     for (let pass = 0; pass < candidate.passes; pass++) {
       await sample(`${candidate.name}:${pass}:before`);
@@ -92,11 +93,11 @@ try {
       await expect.poll(() => player.locator('audio').evaluateAll(elements => elements.some(element => element.currentTime > 0.05)), { timeout: 15_000 }).toBe(true);
       const onsetObservedMs = Date.now() - begin;
       const playback = await player.locator('audio').first().evaluate(async audio => {
-        const before = { currentTime: audio.currentTime, duration: audio.duration, muted: audio.muted, volume: audio.volume, sinkId: audio.sinkId, privateUrl: audio.src.startsWith('stream-jams-audio://player/media/private_'), error: audio.error?.code ?? null };
+        const before = { currentTime: audio.currentTime, duration: Number.isFinite(audio.duration) ? audio.duration : null, muted: audio.muted, volume: audio.volume, sinkId: audio.sinkId, privateUrl: audio.src.startsWith('stream-jams-audio://player/media/private_'), error: audio.error?.code ?? null };
         audio.pause();
         const seekStarted = Date.now();
         const seekTarget = Math.min(5, audio.duration / 2);
-        await new Promise((accept, reject) => { const timeout = setTimeout(() => reject(new Error(`Native private seek timed out: ${JSON.stringify(before)}, target ${seekTarget}`)), 5000); audio.addEventListener('seeked', () => { clearTimeout(timeout); accept(); }, { once: true }); audio.currentTime = seekTarget; });
+        await new Promise((accept, reject) => { const timeout = setTimeout(() => reject(new Error('Native private seek timed out')), 5000); audio.addEventListener('seeked', () => { clearTimeout(timeout); accept(); }, { once: true }); audio.currentTime = seekTarget; });
         return { ...before, seekTarget, seekTime: audio.currentTime, seekMs: Date.now() - seekStarted };
       });
       expect(playback.muted).toBe(true); expect(playback.volume).toBe(0); expect(playback.privateUrl).toBe(true); expect(playback.error).toBeNull(); expect(playback.seekTarget).toBeGreaterThan(0); expect(Math.abs(playback.seekTime - playback.seekTarget)).toBeLessThan(0.15);
@@ -131,8 +132,8 @@ try {
   }
   results.ipc = await desktop.evaluate(() => globalThis.acceptanceIpc);
   expect(results.ipc.length).toBeGreaterThan(0); expect(results.ipc.every(entry => !entry.bodyField && !entry.trustedHandle && entry.sizeBytes < 16_384)).toBe(true);
-  results.packaged = await desktop.evaluate(({ app }) => ({ packaged: app.isPackaged, appPath: app.getAppPath(), versions: process.versions })); expect(results.packaged.packaged).toBe(true); expect(results.packaged.appPath.endsWith('app.asar')).toBe(true);
-} catch (error) { results.error = error.stack ?? String(error); }
+  results.packaged = await desktop.evaluate(({ app }) => ({ packaged: app.isPackaged, appPath: app.getAppPath(), versions: { node: process.versions.node, electron: process.versions.electron, chrome: process.versions.chrome } })); expect(results.packaged.packaged).toBe(true); expect(results.packaged.appPath.endsWith('app.asar')).toBe(true);
+} catch { results.error = 'ACCEPTANCE_FAILED'; }
 finally {
   if (desktop && child) {
     try {
@@ -141,13 +142,19 @@ finally {
       await expect.poll(() => child.exitCode, { timeout: 20_000 }).toBe(0);
       await expect.poll(() => pids.every(pid => { try { process.kill(pid, 0); return false; } catch (error) { if (error.code === 'ESRCH') return true; throw error; } }), { timeout: 20_000 }).toBe(true);
       results.quit = { elapsedMs: Date.now() - quitStarted, exitCode: child.exitCode, capturedPidsExited: true };
-    } catch (error) { results.quitError = error.stack ?? String(error); }
+    } catch { results.quitError = 'QUIT_FAILED'; }
   }
-  const logDirectory = join(profile, 'data/logs');
-  const logFiles = (await readdir(logDirectory)).filter(file => file.endsWith('.jsonl'));
-  results.nativeTiming = (await Promise.all(logFiles.map(async file => (await readFile(join(logDirectory, file), 'utf8')).trim().split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line))))).flat().filter(entry => entry.event === 'desktop-audio.playback-timing').map(entry => ({ preparationDurationMs: entry.details.preparationDurationMs, scheduledStartEpochMs: entry.details.scheduledStartEpochMs, actualStartEpochMs: entry.details.actualStartEpochMs, terminalOutcome: entry.details.terminalOutcome }));
+  results.nativeTiming = [];
+  try {
+    const logDirectory = join(profile, 'data/logs');
+    const logFiles = (await readdir(logDirectory)).filter(file => file.endsWith('.jsonl'));
+    results.nativeTiming = (await Promise.all(logFiles.map(async file => (await readFile(join(logDirectory, file), 'utf8')).trim().split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line))))).flat().filter(entry => entry.event === 'desktop-audio.playback-timing').map(entry => ({ preparationDurationMs: entry.details.preparationDurationMs, scheduledStartEpochMs: entry.details.scheduledStartEpochMs, actualStartEpochMs: entry.details.actualStartEpochMs, terminalOutcome: entry.details.terminalOutcome }));
+  } catch { results.logError = 'TIMING_LOG_FAILED'; }
   const output = join(evidenceRoot, formatsOnly ? 'formats.json' : 'results.json');
-  await writeFile(output, JSON.stringify(results, null, 2));
+  let serialized;
+  try { serialized = serializeMediaStreamingEvidence('acceptance', results); }
+  catch { serialized = serializeMediaStreamingEvidence('failure', { status: 'invalid-evidence', failures: ['EVIDENCE_VALIDATION_FAILED', ...[results.error, results.quitError, results.logError].filter(Boolean)] }); process.exitCode = 1; }
+  await writeFile(output, serialized);
   console.info(`Full Forge acceptance evidence: ${output}`);
-  if (results.error || results.quitError) process.exitCode = 1;
+  if (results.error || results.quitError || results.logError) process.exitCode = 1;
 }

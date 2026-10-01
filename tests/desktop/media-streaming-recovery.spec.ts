@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { _electron, expect, test, type Page } from "@playwright/test";
 import type { AlertEditorDocument } from "../../packages/core/dist/index.js";
 import { finishDesktop, windowByUrl, withCleanup } from "./audio-harness.js";
+import { uploadMediaFixture } from "../../scripts/media-streaming-fixtures.mjs";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
@@ -63,7 +64,7 @@ test("@hardware hidden muted streaming survives slow preparation, recipient fail
     const selected = devices.devices.slice(0, 2);
     const routes = await Promise.all(selected.map((device, index) => api<{ id: string }>("/audio/routes", "POST", { name: `Silent recovery ${index}`, deviceId: device.deviceId })));
     const bytes = await readFile(resolve("tests/fixtures/media/neutral-with-audio.webm"));
-    const imported = await fetch(`${base}/assets/import`, { method: "POST", headers: { ...headers, "content-type": "application/octet-stream", "x-stream-jams-file-name": "recovery.webm", "x-stream-jams-mime-type": "video/webm" }, body: bytes });
+    const imported = await uploadMediaFixture({ ownedBase: base, headers, bytes, name: "recovery.webm", mimeType: "video/webm", fixture: "neutral-with-audio.webm" });
     expect(imported.ok).toBe(true);
     const asset = await imported.json() as { id: string };
     const rule = (await api<{ id: string; eventType: string }[]>("/alerts/rules")).find(candidate => candidate.eventType === "follow")!;

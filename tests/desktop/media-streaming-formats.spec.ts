@@ -7,6 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { _electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
 import { alertEditorDocumentSchema, surfaceSettingsViewSchema, type AlertEditorDocument } from "../../packages/core/dist/index.js";
 import { windowByUrl } from "./audio-harness.js";
+import { uploadMediaFixture, type MediaFixture } from "../../scripts/media-streaming-fixtures.mjs";
 
 // Only disposable profiles. No physical audio, visible overlay or diagnostic
 // serialization of credentials/capability URLs. Retained JSON survives test cleanup.
@@ -81,7 +82,7 @@ test("end-metadata progressive MP4 retains registered-preview seeking instead of
   const moov = mdat + bytes.readUInt32BE(mdat); expect(bytes.toString("ascii", moov + 4, moov + 8)).toBe("moov");
   expect(moov + bytes.readUInt32BE(moov)).toBe(bytes.length);
   await writeFile(join(evidenceRoot, "end-metadata.mp4"), bytes);
-  const assetId = await importAsset(bytes, "end-metadata.mp4", "video/mp4");
+  const assetId = await importAsset(bytes, "end-metadata.mp4", "video/mp4", "media-streaming-end-metadata.mp4");
   const sample = await seekPreview(assetId);
   expect(sample.duration).toBeGreaterThan(9); expect(sample.duration).toBeLessThan(11);
   results.push({ case: "end-metadata-progressive-mp4", bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex"), moovOffset: moov, ...sample });
@@ -91,7 +92,7 @@ test("valid Microsoft ADPCM WAVE produces a bounded codec error distinct from ma
   const bytes = await readFile(resolve("tests/fixtures/media/media-streaming-unsupported-adpcm.wav"));
   expect(bytes.toString("ascii", 0, 4)).toBe("RIFF"); expect(bytes.readUInt16LE(20)).toBe(2);
   await writeFile(join(evidenceRoot, "unsupported-adpcm.wav"), bytes);
-  const assetId = await importAsset(bytes, "unsupported-adpcm.wav", "audio/wav");
+  const assetId = await importAsset(bytes, "unsupported-adpcm.wav", "audio/wav", "media-streaming-unsupported-adpcm.wav");
   const preview = await api<{ id: string; url: string }>(`/assets/${assetId}/preview`, "POST");
   try {
     // Valid registered bytes passed import and real authorized transport.
@@ -119,7 +120,7 @@ test("valid Microsoft ADPCM WAVE produces a bounded codec error distinct from ma
 
 test("audio-only Opus WebM decodes and seeks through a registered preview without a video track", async () => {
   const bytes = await readFile(resolve("tests/fixtures/media/media-streaming-audio-only.webm"));
-  const assetId = await importAsset(bytes, "audio-only.webm", "audio/webm");
+  const assetId = await importAsset(bytes, "audio-only.webm", "audio/webm", "media-streaming-audio-only.webm");
   const sample = await seekPreview(assetId, 1); expect(sample.videoWidth).toBe(0); expect(sample.videoHeight).toBe(0);
   results.push({ case: "audio-only-webm-registered-preview", ...sample });
 });
@@ -133,7 +134,7 @@ test("private selected-device end-metadata MP4 and audio-only WebM retain native
     { name: "media-streaming-end-metadata.mp4", mimeType: "video/mp4", type: "video" as const, target: undefined },
     { name: "media-streaming-audio-only.webm", mimeType: "audio/webm", type: "audio" as const, target: 1 }
   ]) {
-    const assetId = await importAsset(await readFile(resolve("tests/fixtures/media", fixture.name)), fixture.name, fixture.mimeType);
+    const assetId = await importAsset(await readFile(resolve("tests/fixtures/media", fixture.name)), fixture.name, fixture.mimeType, fixture.name);
     await sendAudio(assetId, fixture.type); results.push({ case: `private-${fixture.type}-seek`, ...await seekPrivateAudio(fixture.target) }); await skip();
   }
 });
@@ -141,7 +142,7 @@ test("private selected-device end-metadata MP4 and audio-only WebM retain native
 test("private Timer GIF continues changing frames and transparent PNG pixels composite after streaming", async () => {
   await enableDesktop();
   const config = await api<{ config: unknown }>("/overlay-modules/timers/config"); await api("/overlay-modules/timers/config", "PUT", { enabled: true, config: config.config });
-  const gifId = await importAsset(await readFile(resolve("tests/fixtures/media/media-streaming-animated.gif")), "animated.gif", "image/gif");
+  const gifId = await importAsset(await readFile(resolve("tests/fixtures/media/media-streaming-animated.gif")), "animated.gif", "image/gif", "media-streaming-animated.gif");
   const timerId = await startTimer(gifId);
   const overlay = await windowByUrl(desktop, "stream-jams-overlay://surface/");
   try {
@@ -180,7 +181,7 @@ test("private Timer GIF continues changing frames and transparent PNG pixels com
     const canvas = document.createElement("canvas"); canvas.width = 8; canvas.height = 8; const context = canvas.getContext("2d")!;
     context.fillStyle = "#ff0000"; context.fillRect(0, 0, 4, 8); return canvas.toDataURL("image/png").split(",")[1]!;
   });
-  const pngId = await importAsset(Buffer.from(png, "base64"), "transparent.png", "image/png");
+  const pngId = await importAsset(Buffer.from(png, "base64"), "transparent.png", "image/png", { kind: "generated-png", width: 8, height: 8 });
   const pngTimerId = await startTimer(pngId);
   try {
     await expect.poll(() => overlay.locator("img").evaluateAll(images => images.map(element => element as HTMLImageElement).some(image => image.complete && image.naturalWidth === 8))).toBe(true);
@@ -198,7 +199,7 @@ test("private Timer GIF continues changing frames and transparent PNG pixels com
 
 test("two transient private VP9-alpha videos preserve transparent pixels and detach on skip", async () => {
   await enableDesktop();
-  const assetId = await importAsset(await readFile(resolve("tests/fixtures/media/media-streaming-transparent-vp9.webm")), "transparent.webm", "video/webm");
+  const assetId = await importAsset(await readFile(resolve("tests/fixtures/media/media-streaming-transparent-vp9.webm")), "transparent.webm", "video/webm", "media-streaming-transparent-vp9.webm");
   const layers = [0, 1].map(index => ({ id: `format-video-${index}`, type: "video", name: `Silent visual ${index}`, assetId, visible: true, order: index, playEmbeddedAudio: false, audioVolume: 0, animation }));
   const document = alertEditorDocumentSchema.parse({ ...editor, durationMode: "custom", durationMs: 10_000, outputs: { browserSource: false, deviceRouteIds: [] }, layers,
     targetProfiles: editor.targetProfiles.map(profile => ({ ...profile, enabled: profile.id === "landscape", reviewState: "ready", layerLayouts: layers.map((layer, index) => ({ layerId: layer.id, x: index * 350, y: 0, width: 320, height: 240, zIndex: index })) })) });
@@ -253,8 +254,8 @@ async function api<T = unknown>(path: string, method = "GET", body?: unknown): P
   expect(response.ok, `${method} ${path}: HTTP ${response.status}`).toBe(true);
   return response.status === 204 ? null as T : response.json() as Promise<T>;
 }
-async function importAsset(bytes: Buffer, name: string, mimeType: string): Promise<string> {
-  const response = await fetch(`${base}/assets/import`, { method: "POST", headers: { ...headers, "content-type": "application/octet-stream", "x-stream-jams-file-name": name, "x-stream-jams-mime-type": mimeType }, body: Buffer.from(bytes) });
+async function importAsset(bytes: Buffer, name: string, mimeType: string, fixture: MediaFixture): Promise<string> {
+  const response = await uploadMediaFixture({ ownedBase: base, headers, bytes, name, mimeType, fixture });
   expect(response.ok, `Import ${name}: HTTP ${response.status}`).toBe(true);
   return (await response.json() as { id: string }).id;
 }

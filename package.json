@@ -28,7 +28,7 @@
     "start:local": "corepack pnpm build && node apps/server/dist/index.js",
     "build": "corepack pnpm -r build",
     "test": "corepack pnpm test:unit",
-    "test:unit": "vitest run && node --test scripts/check-web-route-bundles.test.mjs scripts/desktop-shutdown-fixture-data.test.mjs scripts/desktop-shutdown-exit.test.mjs scripts/error-provenance-check.test.mjs scripts/portable-desktop-artifact.test.mjs scripts/local-media-cold-timing.test.mjs scripts/local-media-cold-trace.test.mjs",
+    "test:unit": "vitest run && node --test scripts/check-web-route-bundles.test.mjs scripts/desktop-shutdown-fixture-data.test.mjs scripts/desktop-shutdown-exit.test.mjs scripts/error-provenance-check.test.mjs scripts/portable-desktop-artifact.test.mjs scripts/local-media-cold-timing.test.mjs scripts/local-media-cold-trace.test.mjs scripts/media-streaming-fixtures.test.mjs scripts/media-streaming-evidence.test.mjs",
     "test:e2e": "corepack pnpm build && playwright test",
     "test:e2e:report": "playwright show-report",
     "playwright:docker-server": "node scripts/playwright-docker-server.mjs",
@@ -49,6 +49,7 @@
     "jsdom": "29.1.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.70.1",
-    "vitest": "5.0.1"
+    "vitest": "5.0.1",
+    "zod": "4.6.5"
   }
 }
