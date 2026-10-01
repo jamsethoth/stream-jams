@@ -115,7 +115,7 @@ The desktop shell SHALL use sandboxed, context-isolated renderers without Node i
 - **THEN** the shell blocks it or opens an explicitly permitted external HTTP(S) destination in the system browser without carrying desktop privileges
 
 ### Requirement: Desktop Scope Remains A Runnable Folder
-The desktop delivery SHALL remain a runnable Windows application folder. CI SHALL publish that existing folder as a short-lived authenticated workflow artifact after successful packaging, independently of desktop runtime tests. Such artifacts SHALL be labelled built but not desktop-test-verified in their names, download summaries, and an included build-status notice. The desktop delivery SHALL NOT introduce an installer, code signing, durable release publication, automatic updates, startup-at-login, a Windows service, portable user state, or secret-store migration.
+The desktop delivery SHALL remain a runnable Windows application folder. CI SHALL publish that existing folder as a short-lived authenticated workflow artifact after successful packaging, independently of desktop runtime tests. Such artifact names SHALL identify the platform, ref, and full commit SHA without an untested suffix. Artifacts SHALL be labelled built but not desktop-test-verified in download summaries and an included build-status notice. The desktop delivery SHALL NOT introduce an installer, code signing, durable release publication, automatic updates, startup-at-login, a Windows service, portable user state, or secret-store migration.
 
 #### Scenario: Desktop build is completed
 - **WHEN** the packaging command succeeds

@@ -65,9 +65,9 @@ async function prepare() {
   await requireFile(packageDirectory, "Stream Jams.exe");
   await requireFile(packageDirectory, "resources/app.asar");
 
-  const artifactName = `stream-jams-windows-x64-untested-${slugRef(refName)}-${sha}`;
+  const artifactName = `stream-jams-windows-x64-${slugRef(refName)}-${sha}`;
   await writeFile(join(packageDirectory, "BUILD-STATUS.txt"),
-    `Built, not desktop-test-verified.\nCommit: ${sha}\nCheck the separate manual windows-desktop job for runtime test results.\nThis unsigned application folder is not a certified release.\n`, "utf8");
+    `Built, not desktop-test-verified.\nCommit: ${sha}\nCheck the separate windows-desktop job for runtime test results.\nThis unsigned application folder is not a certified release.\n`, "utf8");
   await appendFile(githubOutput, `artifact-name=${artifactName}\n`, "utf8");
   process.stdout.write(`Prepared portable desktop artifact metadata for ${artifactName}.\n`);
 }
@@ -97,7 +97,7 @@ async function summarize() {
     "",
     `- Artifact: \`${markdownCode(artifactName)}\``,
     "- Platform: `windows-x64`",
-    "- Validation: built, not desktop-test-verified; see the separate manual windows-desktop job",
+    "- Validation: built, not desktop-test-verified; see the separate windows-desktop job",
     `- Ref: \`${markdownCode(refName)}\``,
     `- Commit: \`${sha}\``,
     `- SHA-256: \`${artifactDigest}\``,
