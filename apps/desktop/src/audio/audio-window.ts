@@ -62,7 +62,7 @@ export class AudioWindow {
       if (this.#destroying) return new Response(null, { status: 404 });
       const resource = resources.get(request.url);
       if (resource === undefined || request.method !== "GET") {
-        return this.#media?.handle(request) ?? new Response(null, { status: 404 });
+        return (await this.#media?.handle(request)) ?? new Response(null, { status: 404 });
       }
       return new Response(await readFile(resource.path), {
         headers: {

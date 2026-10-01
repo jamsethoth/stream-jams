@@ -2,6 +2,59 @@ import { describe, expect, it, vi } from "vitest";
 import { ManagementHttpError, createManagementHttpClient } from "./management-http-client.js";
 
 describe("createManagementHttpClient", () => {
+  it("retries session creation after a shared attempt fails", async () => {
+    let rejectSession!: (error: Error) => void;
+    const failedSession = new Promise<Response>((_resolve, reject) => { rejectSession = reject; });
+    let sessions = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/auth/management/sessions") {
+        sessions++;
+        return sessions === 1 ? failedSession : jsonResponse({ id: "replacement", csrfToken: "replacement_csrf" });
+      }
+      return jsonResponse({ ok: true });
+    });
+    const client = createManagementHttpClient({ fetch: fetcher });
+    const failure = new Error("Session transport failed");
+    const requests = Promise.allSettled([
+      client.getJson("/first", "Unable to read."),
+      client.getJson("/second", "Unable to read.")
+    ]);
+    rejectSession(failure);
+    expect(await requests).toEqual([
+      { status: "rejected", reason: failure },
+      { status: "rejected", reason: failure }
+    ]);
+    expect(sessions).toBe(1);
+    await expect(client.getJson("/retry", "Unable to read.")).resolves.toEqual({ ok: true });
+    expect(sessions).toBe(2);
+  });
+
+  it("keeps a renewed session when an older concurrent request returns a late 401", async () => {
+    let completeLateRequest!: (response: Response) => void;
+    const lateResponse = new Promise<Response>(resolve => { completeLateRequest = resolve; });
+    let sessions = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/auth/management/sessions") {
+        sessions++;
+        return jsonResponse({ id: `session_${sessions}`, csrfToken: `csrf_${sessions}` });
+      }
+      const authorization = new Headers(init?.headers).get("authorization");
+      if (authorization === "Bearer session_1") {
+        return path === "/late" ? lateResponse : new Response(null, { status: 401 });
+      }
+      expect(authorization).toBe("Bearer session_2");
+      return jsonResponse({ ok: true });
+    });
+    const client = createManagementHttpClient({ fetch: fetcher });
+    const first = client.getJson("/first", "Unable to read.");
+    const late = client.getJson("/late", "Unable to read.");
+    await expect(first).resolves.toEqual({ ok: true });
+    completeLateRequest(new Response(null, { status: 401 }));
+    await expect(late).resolves.toEqual({ ok: true });
+    expect(sessions).toBe(2);
+  });
+
   it("shares one pending session for concurrent preview owners and their releases", async () => {
     let complete!: (value: Response) => void;
     const session = new Promise<Response>(resolve => { complete = resolve; });

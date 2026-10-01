@@ -3,6 +3,8 @@ import { spawn } from 'node:child_process';
 import { mkdir, open, cp, writeFile, readFile } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import process from 'node:process';
+import { Buffer } from 'node:buffer';
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve('test-results/desktop-protocol-probe');
 const source = process.env.STREAM_JAMS_PROBE_ELECTRON ?? 'C:/dev/projects/stream-jams/apps/desktop/node_modules/electron/dist/electron.exe';
@@ -38,5 +40,3 @@ const code = await new Promise((resolveExit, reject) => { child.once('error', re
 const result = JSON.parse(await readFile(resolve(root, process.argv.includes('--packaged') ? 'packaged-results.json' : 'development-results.json'), 'utf8'));
 if (result.error || (process.argv.includes('--packaged') && !result.packaged)) throw new Error(result.error ?? 'Packaged mode was not detected');
 process.exitCode = code ?? 1;
-import process from 'node:process';
-import { Buffer } from 'node:buffer';

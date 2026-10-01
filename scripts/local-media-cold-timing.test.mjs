@@ -4,7 +4,7 @@ import process from 'node:process';
 import test from 'node:test';
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { URL } from 'node:url';
@@ -103,6 +103,77 @@ test('concrete retained lock persists recovery metadata and refuses a second exc
     assert.deepEqual(JSON.parse(await readFile(lockPath, 'utf8')), record);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test('default lock uses the same private user directory across runs and survives retention', async () => {
+  const homeDirectory = await mkdtemp(join(tmpdir(), 'stream-jams-home-test-'));
+  const lockDirectory = join(homeDirectory, '.stream-jams', 'local-media-cold-timing');
+  const lockPath = join(lockDirectory, 'runner.lock');
+  try {
+    const dependencies = { homeDirectory, legacyLockPath: join(homeDirectory, 'legacy.lock') };
+    const first = createAdapter({ warmOnly: true }, dependencies);
+    const second = createAdapter({ warmOnly: true }, dependencies);
+    await first.lock();
+    await assert.rejects(second.lock(), error => error.code === 'EEXIST');
+    const record = await first.retainLock({ recovery: 'Confirm owned processes exited.' });
+    assert.equal(record.path, lockPath);
+    assert.deepEqual(JSON.parse(await readFile(lockPath, 'utf8')), record);
+    await assert.rejects(second.lock(), error => error.code === 'EEXIST');
+    if (process.platform !== 'win32') {
+      assert.equal((await stat(lockDirectory)).mode & 0o777, 0o700);
+      assert.equal((await stat(lockPath)).mode & 0o777, 0o600);
+    }
+    await rm(lockPath);
+    await second.lock();
+    await second.unlock();
+    await assert.rejects(stat(lockPath), error => error.code === 'ENOENT');
+  } finally { await rm(homeDirectory, { recursive: true, force: true }); }
+});
+
+test('lock rejects a redirected private directory without writing into its target', async () => {
+  const homeDirectory = await mkdtemp(join(tmpdir(), 'stream-jams-home-test-'));
+  const target = await mkdtemp(join(tmpdir(), 'stream-jams-lock-target-'));
+  try {
+    await mkdir(join(homeDirectory, '.stream-jams'));
+    await symlink(target, join(homeDirectory, '.stream-jams', 'local-media-cold-timing'), 'junction');
+    await assert.rejects(createAdapter({}, { homeDirectory, legacyLockPath: join(homeDirectory, 'legacy.lock') }).lock(), /private directory/);
+    await assert.rejects(stat(join(target, 'runner.lock')), error => error.code === 'ENOENT');
+  } finally {
+    await rm(homeDirectory, { recursive: true, force: true });
+    await rm(target, { recursive: true, force: true });
+  }
+});
+
+test('a retained legacy temporary lock blocks migration without altering either lock', async () => {
+  const homeDirectory = await mkdtemp(join(tmpdir(), 'stream-jams-home-test-'));
+  const legacyLockPath = join(homeDirectory, 'legacy.lock');
+  const legacyRecord = JSON.stringify({ status: 'retained', pid: 42, recovery: 'Confirm owned processes exited.' });
+  try {
+    await writeFile(legacyLockPath, legacyRecord, { flag: 'wx' });
+    const adapter = createAdapter({}, { homeDirectory, legacyLockPath });
+    await assert.rejects(adapter.lock(), /Legacy runner lock exists/);
+    assert.equal(await readFile(legacyLockPath, 'utf8'), legacyRecord);
+    await assert.rejects(stat(join(homeDirectory, '.stream-jams')), error => error.code === 'ENOENT');
+    await rm(legacyLockPath);
+    await adapter.lock();
+    await adapter.unlock();
+  } finally { await rm(homeDirectory, { recursive: true, force: true }); }
+});
+
+for (const operation of ['unlock', 'retainLock']) {
+  test(`${operation} preserves a replacement lock after descriptor ownership changes`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'stream-jams-lock-test-'));
+    const lockPath = join(directory, 'runner.lock');
+    try {
+      const adapter = createAdapter({}, { lockPath });
+      await adapter.lock();
+      await rename(lockPath, join(directory, 'original.lock'));
+      await writeFile(lockPath, 'replacement owner', { flag: 'wx' });
+      await assert.rejects(adapter[operation]({ recovery: 'test' }), /ownership changed/);
+      assert.equal(await readFile(lockPath, 'utf8'), 'replacement owner');
+      assert.equal(await readFile(join(directory, 'original.lock'), 'utf8'), `pid=${process.pid}\n`);
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+}
 test('exclusive lock failure never releases another run lock or mutates fixtures', async () => {
   const { adapter, calls } = fixture({ lock: async () => { throw new Error('already running'); } });
   assert.equal((await runColdTiming(real, adapter)).outcome, 'blocked');

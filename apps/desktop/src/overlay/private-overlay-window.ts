@@ -49,7 +49,7 @@ export class PrivateOverlayWindow implements OverlayRendererPort {
     this.#session.protocol.handle(OVERLAY_PLAYER_SCHEME, async request => {
       const resource = resources.get(request.url);
       if (this.#destroying) return new Response(null, { status: 404 });
-      if (request.method !== "GET" || resource === undefined) return this.#media?.handle(request) ?? new Response(null, { status: 404 });
+      if (request.method !== "GET" || resource === undefined) return (await this.#media?.handle(request)) ?? new Response(null, { status: 404 });
       try {
         const bytes = await readFile(resolve(import.meta.dirname, "../../desktop-overlay", resource.name));
         if (this.#destroying) return new Response(null, { status: 404 });

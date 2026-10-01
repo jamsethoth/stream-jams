@@ -5,9 +5,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { createNativeProbe } from './local-media-cold-native.mjs';
 import { captureDiagnostic, createTraceProbe, traceHelper } from './local-media-cold-trace.mjs';
-import { mkdir, mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { basename, join, resolve, sep } from 'node:path';
+import { lstat, mkdir, mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, URL } from 'node:url';
 
@@ -141,7 +141,12 @@ export function createAdapter(options, dependencies = {}) {
   const platform = dependencies.platform ?? process.platform, env = dependencies.env ?? process.env;
   const hash = dependencies.hashFile ?? hashFile, child = dependencies.runChild ?? runChild, read = dependencies.readFile ?? readFile;
   const output = resolve(options.output ?? 'apps/desktop/out/local-media-cold-timing');
-  const lockPath = dependencies.lockPath ?? join(tmpdir(), 'stream-jams-local-media-cold-timing.lock');
+  // Coordination needs a stable name, but shared temporary directories permit
+  // another user to precreate that name. Use the user's protected home instead.
+  const userState = join(dependencies.homeDirectory ?? homedir(), '.stream-jams');
+  const lockPath = dependencies.lockPath ?? join(userState, 'local-media-cold-timing', 'runner.lock');
+  const lockDirectories = dependencies.lockPath ? [dirname(lockPath)] : [userState, dirname(lockPath)];
+  const legacyLockPath = dependencies.legacyLockPath ?? join(tmpdir(), 'stream-jams-local-media-cold-timing.lock');
   let lock, directory, native, tool, trace, helperSha256;
   const executablePath = resolve('apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe');
   return {
@@ -173,7 +178,24 @@ export function createAdapter(options, dependencies = {}) {
       return { sha256, ...metadata, evidence: capability, tracing, helperSha256, packageSha256, executableSha256 };
     },
     async lock() {
-      lock = await open(lockPath, 'wx');
+      if (!dependencies.lockPath) {
+        // A prior runner may have retained unresolved cleanup evidence here.
+        // Migration must not bypass it or delete an unknown owner's file.
+        let legacyExists = false;
+        try { await lstat(legacyLockPath); legacyExists = true; }
+        catch (error) { if (error.code !== 'ENOENT') throw error; }
+        if (legacyExists) throw new Error(`Legacy runner lock exists at ${legacyLockPath}; confirm its recorded owned processes exited before removing that exact file`);
+      }
+      for (const path of lockDirectories) {
+        try { await mkdir(path, { mode: 0o700 }); }
+        catch (error) { if (error.code !== 'EEXIST') throw error; }
+        const directory = await lstat(path);
+        if (!directory.isDirectory() || directory.isSymbolicLink() ||
+          (process.platform !== 'win32' && (directory.uid !== process.getuid() || (directory.mode & 0o077) !== 0))) {
+          throw new Error('Runner lock requires a private directory owned by the current user');
+        }
+      }
+      lock = await open(lockPath, 'wx', 0o600);
       try { await lock.writeFile(`pid=${process.pid}\n`); }
       catch (error) { await lock.close(); await rm(lockPath); throw error; }
     },

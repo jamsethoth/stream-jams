@@ -48,8 +48,26 @@ helper's native-stop timing, retaining the PID even after exit. Missing successf
 `stopped` evidence, nonzero exit or an unresolved deadline still fails closed and
 retains evidence and ownership for cleanup. The helper watchdog bounds waiting
 for a stop request; it cannot cancel a synchronous `ControlTraceW` call. An
-unresolved owned stop retains the runner's machine lock. This implementation has
+unresolved owned stop retains the runner's user lock. This implementation has
 fake-child coverage; elevated live verification remains required before any purge.
+
+The runner uses a stable exclusive file at
+`<user home>/.stream-jams/local-media-cold-timing/runner.lock`, outside shared
+temporary directories. Its private directories inherit the Windows user home's
+access controls; on POSIX they must belong to the current user with no group or
+other access (created as `0700`, with a `0600` lock). Directory links are rejected.
+The open descriptor owns the lock throughout the run; cleanup failure writes
+recovery metadata through that descriptor and leaves the file in place. A later
+run by the same user remains blocked until the recorded owned helper/session and
+packaged processes are confirmed exited and this exact file is removed. Never
+remove a replacement lock or stop unrelated sessions. The helper's global mutex
+and session inventory above continue to coordinate capture across accounts.
+Migration also fails closed if the old
+`<OS temporary directory>/stream-jams-local-media-cold-timing.lock` still exists;
+the runner leaves it untouched and reports its exact path. Review its ownership
+and recovery evidence, confirm any recorded owned processes/session have exited,
+then remove that exact old file before retrying. Do not run old and new runner
+versions concurrently during migration.
 
 Analyze uses `--trace FILE.etl --manifest FILE.json --output NEW.json` and does
 not alter tracing sessions. The library creates a uniquely named local ETLX next
