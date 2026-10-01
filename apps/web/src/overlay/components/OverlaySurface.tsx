@@ -25,7 +25,7 @@ export interface OverlaySurfaceProps {
   readonly composition: OverlayComposition;
   readonly preparingInstructionIds?: ReadonlySet<string>;
   readonly muted?: boolean;
-  readonly resolveAssetUrl: (assetId: string) => string;
+  readonly resolveAssetUrl: (assetId: string, version?: string) => string;
   readonly onPlaybackEvent?: ((event: OverlayPlaybackEvent) => void) | undefined;
 }
 
@@ -141,7 +141,7 @@ function TimerPresentation({
   resolveAssetUrl
 }: {
   readonly presentation: OverlayComposition["modules"][number]["presentation"];
-  readonly resolveAssetUrl: (assetId: string) => string;
+  readonly resolveAssetUrl: (assetId: string, version?: string) => string;
 }) {
   if (presentation?.kind !== "timer-stack") return null;
   const stack = timerStackProjectionSchema.safeParse(presentation.stack);
@@ -161,7 +161,7 @@ function OverlayInstructionLayer({
   readonly preparing: boolean;
   readonly muted: boolean;
   readonly visualVisible: boolean;
-  readonly resolveAssetUrl: (assetId: string) => string;
+  readonly resolveAssetUrl: (assetId: string, version?: string) => string;
   readonly onPlaybackEvent?: ((event: OverlayPlaybackEvent) => void) | undefined;
   readonly onTestAudioBlockedChange: (instructionId: string, blocked: boolean) => void;
 }) {
@@ -497,7 +497,7 @@ function OverlayInstructionLayer({
           onPlay={(event) => { if (startsAt === undefined && !preparing) observeMedia(event.currentTarget); }}
           onEnded={(event) => { if (!visualLoop) { naturalEnd(event.currentTarget); setVideoEnded(true); } }}
           onError={(event) => reportFailure("source-load", "Video playback failed", event.currentTarget.error ?? event.nativeEvent)}
-          src={resolveAssetUrl(instruction.visual.assetId)}
+          src={resolveAssetUrl(instruction.visual.assetId, instruction.assetVersions?.[instruction.visual.assetId])}
           style={{ ...elementStyle(instruction.visual.layout, !playbackActive || !videoReady ? null : instruction.animation, instruction.durationMs, initialOffset.current), objectFit: "contain",
             ...(videoReady && !videoEnded ? {} : { visibility: "hidden" }) }}
         />
@@ -507,7 +507,7 @@ function OverlayInstructionLayer({
           ref={imageElementRef}
           data-testid={`overlay-visual-${instruction.id}`}
           onError={(event) => reportFailure("source-load", "Image playback failed", event.nativeEvent)}
-          src={resolveAssetUrl(instruction.visual.assetId)}
+          src={resolveAssetUrl(instruction.visual.assetId, instruction.assetVersions?.[instruction.visual.assetId])}
           style={{ ...elementStyle(instruction.visual.layout, !playbackActive ? null : instruction.animation, instruction.durationMs, initialOffset.current), objectFit: "contain" }}
         />
       )}
@@ -545,7 +545,7 @@ function OverlayInstructionLayer({
           }}
           preload="auto"
           ref={(element) => { audioElementRef.current = element; }}
-          src={resolveAssetUrl(instruction.audio.assetId)}
+          src={resolveAssetUrl(instruction.audio.assetId, instruction.assetVersions?.[instruction.audio.assetId])}
           style={{ height: 0, position: "absolute", width: 0 }}
         />
       ) : (
@@ -559,7 +559,7 @@ function OverlayInstructionLayer({
           }}
           preload="auto"
           ref={(element) => { audioElementRef.current = element; }}
-          src={resolveAssetUrl(instruction.audio.assetId)}
+          src={resolveAssetUrl(instruction.audio.assetId, instruction.assetVersions?.[instruction.audio.assetId])}
         />
       )}
     </>

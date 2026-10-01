@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import type { OverlayComposition, OverlayInstruction, VisualRecipientKey } from "@stream-jams/core";
 import { OverlaySurface, type OverlayPlaybackEvent } from "../overlay/components/OverlaySurface.js";
-import type { DesktopOverlayController } from "./desktop-overlay-controller.js";
+import { moduleAssetKey, type DesktopOverlayController } from "./desktop-overlay-controller.js";
 
 function scopedId(key: VisualRecipientKey, id: string): string {
   return JSON.stringify([key.surfaceId, key.moduleId, key.occurrenceId, key.generation, id]);
@@ -31,7 +31,7 @@ export function DesktopOverlayApp({ controller, subscribe }: {
         ...(persistent === undefined ? {} : { presentation: { ...persistent.presentation, stack: {
           ...persistent.presentation.stack,
           cards: persistent.presentation.stack.cards.map(card => ({ ...card, iconAssetId: card.iconAssetId === null ? null :
-            scopedModuleAssetId(persistent.moduleId, persistent.revision, card.iconAssetId) }))
+            scopedModuleAssetId(persistent.moduleId, persistent.revision, moduleAssetKey(card.iconAssetId, card.iconVersion)) }))
         } } })
       };
     })

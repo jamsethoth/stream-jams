@@ -1,120 +1,78 @@
 import { createHash } from "node:crypto";
 import { expect, it, vi } from "vitest";
-import type { AssetRecord, DesktopVisualBatch } from "@stream-jams/core";
+import type { AssetRecord, DesktopVisualBatch, TrustedMediaGrant } from "@stream-jams/core";
 import { DesktopVisualAssetResolver } from "./desktop-visual-asset-resolver.js";
 
-const bytes = Buffer.from([1, 2, 3]);
-const checksum = createHash("sha256").update(bytes).digest("hex");
-it("accepts the canonical sha256-prefixed checksum used by runtime imports", async () => {
-  const { resolver } = harness({ checksum: `sha256:${checksum}` });
-  expect((await resolver.resolve(input())).assets[0]?.bytes).toEqual(new Uint8Array(bytes));
-  await expect(harness({ checksum: `sha256:${"0".repeat(64)}` }).resolver.resolve(input())).rejects.toThrow();
-});
+const checksum = `sha256:${createHash("sha256").update(new Uint8Array([1, 2, 3])).digest("hex")}`;
 const input = (): Omit<DesktopVisualBatch, "assets"> => ({
   key: { surfaceId: "desktop:primary", moduleId: "alerts", occurrenceId: "one", generation: 1 },
   timing: { startsAtEpochMs: 1000, endsAtEpochMs: 2000 },
   instructions: [{ id: "layer", overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", durationMs: 1000, audio: null, tts: null, text: null,
     visual: { assetId: "asset", mediaType: "image", layout: { x: 0, y: 0, width: 100, height: 100, zIndex: 0 } } }]
 });
+
 function harness(record: Partial<AssetRecord> = {}) {
   const records = new Map<string, AssetRecord>([["asset", { id: "asset", originalFileName: "one.png", mediaType: "image", mimeType: "image/png", sizeBytes: 3, checksum, storagePath: "image/asset", durationMs: null, ...record }]]);
-  const findManyByIds = vi.fn(async () => records as ReadonlyMap<string, AssetRecord>);
-  const readBounded = vi.fn<(path: string, max: number) => Promise<Uint8Array>>(async () => bytes);
-  const resolver = new DesktopVisualAssetResolver({ assetRepository: { findManyByIds }, assetStore: { readBounded } });
-  return { resolver, records, findManyByIds, readBounded };
+  const media = {
+    records: vi.fn((owner: string, ids: readonly string[]) => { void owner; void ids; return records; }),
+    hasOwner: vi.fn(() => false),
+    shareVersion: vi.fn((_owner: string, _source: string, id: string) => { if (!records.has(id)) throw new Error("missing"); }),
+    verifyGroup: vi.fn(async (_owner: string, ids: readonly string[]) => { for (const id of ids) if (records.get(id)?.checksum !== checksum) throw new Error("integrity"); }),
+    issueTrustedGrant: vi.fn((_owner: string, assetId: string, _recipient: string, expiresAt: number): TrustedMediaGrant => {
+      const value = records.get(assetId)!;
+      return { handle: `med_${"a".repeat(43)}`, expiresAt, snapshot: { assetId, version: "a".repeat(64), mimeType: value.mimeType as TrustedMediaGrant["snapshot"]["mimeType"], sizeBytes: value.sizeBytes, durationMs: value.durationMs } };
+    })
+  };
+  return { resolver: new DesktopVisualAssetResolver({ media, now: () => 1000 }), records, media };
 }
-it("resolves only referenced IDs once and compacts pooled bytes without exposing storage paths", async () => {
-  const { resolver, records, findManyByIds, readBounded } = harness();
-  records.set("unreferenced", { ...records.get("asset")!, id: "unreferenced" });
-  const batch = input(); batch.instructions.push({ ...batch.instructions[0]!, id: "second" });
+it("uses only referenced owned records and grants without bodies or paths", async () => {
+  const { resolver, media } = harness(); const batch = input(); batch.instructions.push({ ...batch.instructions[0]!, id: "second" });
   const result = await resolver.resolve(batch);
-  expect(findManyByIds).toHaveBeenCalledExactlyOnceWith(["asset"]);
-  expect(readBounded).toHaveBeenCalledExactlyOnceWith("image/asset", 3);
-  expect(result.assets).toEqual([{ assetId: "asset", mimeType: "image/png", bytes: new Uint8Array([1, 2, 3]) }]);
-  expect(result.assets[0]!.bytes.byteOffset).toBe(0); expect(result.assets[0]!.bytes.buffer.byteLength).toBe(3);
-  expect(result.assets[0]!.bytes.buffer).not.toBe(bytes.buffer);
+  expect(media.records).toHaveBeenCalledExactlyOnceWith('["alerts","one"]', ["asset"]);
+  expect(media.verifyGroup).toHaveBeenCalledExactlyOnceWith('["alerts","one"]', ["asset"], expect.any(AbortSignal));
+  expect(result.assets).toHaveLength(1); expect(result.assets[0]?.grant.snapshot.mimeType).toBe("image/png");
+  expect(JSON.stringify(result)).not.toContain("image/asset"); expect(JSON.stringify(result)).not.toContain('"bytes"');
 });
-
-it.each([
-  { id: "wrong" }, { mediaType: "audio" as const }, { mimeType: "text/html" }, { mimeType: "video/mp4" },
-  { sizeBytes: 0 }, { sizeBytes: -1 }, { sizeBytes: 0.5 }, { sizeBytes: 10 * 1024 * 1024 + 1 }, { checksum: "invalid" }
-])("rejects unsupported or corrupt metadata before reading: %j", async record => {
-  const { resolver, readBounded } = harness(record);
-  await expect(resolver.resolve(input())).rejects.toThrow(); expect(readBounded).not.toHaveBeenCalled();
+it.each([{ id: "wrong" }, { mediaType: "audio" as const }, { mimeType: "text/html" }, { mimeType: "video/mp4" }, { sizeBytes: 0 }, { sizeBytes: -1 }, { sizeBytes: .5 }, { sizeBytes: 10 * 1024 * 1024 + 1 }, { checksum: "invalid" }])("rejects invalid metadata before verification: %j", async record => {
+  const { resolver, media } = harness(record); await expect(resolver.resolve(input())).rejects.toThrow(); expect(media.verifyGroup).not.toHaveBeenCalled();
 });
-it.each([{ sizeBytes: 2 }, { checksum: "0".repeat(64) }])("rejects changed content without returning a partial batch: %j", async record => {
-  const { resolver } = harness(record); await expect(resolver.resolve(input())).rejects.toThrow();
+it("rejects checksum failure, missing owned records and verification failure", async () => {
+  await expect(harness({ checksum: `sha256:${"0".repeat(64)}` }).resolver.resolve(input())).rejects.toThrow("integrity");
+  const missing = harness(); missing.records.clear(); await expect(missing.resolver.resolve(input())).rejects.toThrow(); expect(missing.media.verifyGroup).not.toHaveBeenCalled();
+  const failed = harness(); failed.media.verifyGroup.mockRejectedValueOnce(new Error("changed file")); await expect(failed.resolver.resolve(input())).rejects.toThrow("changed file");
 });
-it("rejects missing records and filesystem read failures", async () => {
-  const missing = harness(); missing.records.clear();
-  await expect(missing.resolver.resolve(input())).rejects.toThrow(); expect(missing.readBounded).not.toHaveBeenCalled();
-  const failed = harness(); failed.readBounded.mockRejectedValueOnce(new Error("read failed"));
-  await expect(failed.resolver.resolve(input())).rejects.toThrow();
+it("returns text-only content without owner or file access", async () => {
+  const { resolver, media } = harness(); const batch = input(); batch.instructions[0]!.visual = null;
+  expect(await resolver.resolve(batch)).toEqual({ ...batch, assets: [] }); expect(media.records).not.toHaveBeenCalled(); expect(media.verifyGroup).not.toHaveBeenCalled();
 });
-it("returns text-only content without repository or filesystem access", async () => {
-  const { resolver, findManyByIds, readBounded } = harness(); const batch = input(); batch.instructions[0]!.visual = null;
-  expect(await resolver.resolve(batch)).toEqual({ ...batch, assets: [] });
-  expect(findManyByIds).not.toHaveBeenCalled(); expect(readBounded).not.toHaveBeenCalled();
-});
-it.each(["url", "audio", "identity", "duration", "duplicate", "extra"]) ("rejects invalid %s input before repository access", async failure => {
-  const { resolver, findManyByIds } = harness(); const batch = input();
+it.each(["url", "audio", "identity", "duration", "duplicate", "extra"])("rejects invalid %s input before owner access", async failure => {
+  const { resolver, media } = harness(); const batch = input();
   if (failure === "url") Object.assign(batch.instructions[0]!.visual!, { url: "https://example.com/asset" });
   if (failure === "audio") Object.assign(batch.instructions[0]!, { audio: { assetId: "audio", volume: 1 } });
   if (failure === "identity") batch.instructions[0]!.moduleId = "wrong";
   if (failure === "duration") batch.instructions[0]!.durationMs = 3000;
   if (failure === "duplicate") batch.instructions.push(batch.instructions[0]!);
   if (failure === "extra") Object.assign(batch, { assets: [] });
-  await expect(resolver.resolve(batch)).rejects.toThrow(); expect(findManyByIds).not.toHaveBeenCalled();
+  await expect(resolver.resolve(batch)).rejects.toThrow(); expect(media.records).not.toHaveBeenCalled();
 });
-it("rejects aggregate metadata over 128MiB before allocating media", async () => {
-  const { resolver, records, readBounded } = harness({ mediaType: "video", mimeType: "video/webm", sizeBytes: 65 * 1024 * 1024 });
-  records.set("second", { ...records.get("asset")!, id: "second" });
-  const batch = input(); batch.instructions[0]!.visual!.mediaType = "video";
-  batch.instructions.push({ ...batch.instructions[0]!, id: "second", visual: { ...batch.instructions[0]!.visual!, assetId: "second" } });
-  await expect(resolver.resolve(batch)).rejects.toThrow(); expect(readBounded).not.toHaveBeenCalled();
-});
-
-it.each([
-  { mediaType: "gif" as const, mimeType: "image/gif" },
-  { mediaType: "video" as const, mimeType: "video/mp4" },
-  { mediaType: "video" as const, mimeType: "video/webm" }
-])("resolves supported normalized visual media: %j", async record => {
+it.each([{ mediaType: "gif" as const, mimeType: "image/gif" }, { mediaType: "video" as const, mimeType: "video/mp4" }, { mediaType: "video" as const, mimeType: "video/webm" }])("resolves normalized %j media references", async record => {
   const { resolver } = harness(record); const batch = input(); batch.instructions[0]!.visual!.mediaType = record.mediaType;
-  expect((await resolver.resolve(batch)).assets[0]!.mimeType).toBe(record.mimeType);
+  expect((await resolver.resolve(batch)).assets[0]?.grant.snapshot.mimeType).toBe(record.mimeType);
 });
-
-it("reads sequentially and stops after a failed asset without reading later files", async () => {
-  const { resolver, records, readBounded } = harness();
-  records.set("second", { ...records.get("asset")!, id: "second", storagePath: "image/second" });
-  const batch = input(); batch.instructions.push({ ...batch.instructions[0]!, id: "second", visual: { ...batch.instructions[0]!.visual!, assetId: "second" } });
-  let finish!: (value: Uint8Array) => void;
-  readBounded.mockImplementationOnce(() => new Promise<Uint8Array>(resolve => { finish = resolve; }));
-  const resolving = resolver.resolve(batch); await Promise.resolve(); await Promise.resolve();
-  expect(readBounded).toHaveBeenCalledTimes(1);
-  finish(bytes); expect((await resolving).assets).toHaveLength(2); expect(readBounded.mock.calls.map(call => call[0])).toEqual(["image/asset", "image/second"]);
-  readBounded.mockClear(); readBounded.mockRejectedValueOnce(new Error("read failed"));
-  await expect(resolver.resolve(batch)).rejects.toThrow(); expect(readBounded).toHaveBeenCalledTimes(1);
+it("allows several full import-size videos without aggregate body transfer caps", async () => {
+  const { resolver, records, media } = harness({ mediaType: "video", mimeType: "video/webm", sizeBytes: 100 * 1024 * 1024 });
+  records.set("second", { ...records.get("asset")!, id: "second" }); const batch = input(); batch.instructions[0]!.visual!.mediaType = "video";
+  batch.instructions.push({ ...batch.instructions[0]!, id: "second", visual: { ...batch.instructions[0]!.visual!, assetId: "second" } });
+  expect((await resolver.resolve(batch)).assets).toHaveLength(2); expect(media.verifyGroup).toHaveBeenCalledTimes(1);
 });
-
-it.each([
-  { mediaType: "image" as const, mimeType: "image/png" },
-  { mediaType: "gif" as const, mimeType: "image/gif" }
-])("resolves timer icons while omitting unavailable icons: %j", async media => {
-  const { resolver, records, findManyByIds } = harness(media);
-  const presentation = { kind: "timer-stack", stack: {
-    targetProfileId: "landscape", region: { layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 }, orientation: "vertical", maxVisible: 2 },
-    cards: [
-      { definitionId: "one", generation: "g1", label: "One", iconAssetId: "asset", status: "paused", remainingMs: 5000,
-        slot: { x: 0, y: 0, width: 320, height: 90, zIndex: 1 } },
-      { definitionId: "two", generation: "g2", label: "Two", iconAssetId: "missing", status: "paused", remainingMs: 6000,
-        slot: { x: 0, y: 90, width: 320, height: 90, zIndex: 1 } }
-    ], overflowCount: 0
-  } } as const;
-  records.delete("missing");
+it("renews timer references without repeating integrity work for a transport revision", async () => {
+  const { resolver, media } = harness();
+  const presentation = { kind: "timer-stack", stack: { targetProfileId: "landscape", region: { layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 }, orientation: "vertical", maxVisible: 2 }, cards: [
+    { definitionId: "one", generation: "g1", label: "One", iconAssetId: "asset", iconVersion: "a".repeat(64), status: "paused", remainingMs: 5000, slot: { x: 0, y: 0, width: 320, height: 90, zIndex: 1 } },
+    { definitionId: "two", generation: "g2", label: "Two", iconAssetId: "missing", iconVersion: "a".repeat(64), status: "paused", remainingMs: 6000, slot: { x: 0, y: 90, width: 320, height: 90, zIndex: 1 } }
+  ], overflowCount: 0 } } as const;
   const result = await resolver.resolveTimerModule(presentation);
-  expect(findManyByIds).toHaveBeenCalledWith(["asset", "missing"]);
-  expect(result.assets.map(asset => asset.assetId)).toEqual(["asset"]);
-  expect(result.assets[0]?.mimeType).toBe(media.mimeType);
-  expect(result.missingAssetIds).toEqual(["missing"]);
-  expect(result.presentation.stack.cards.map(card => card.iconAssetId)).toEqual(["asset", null]);
+  expect(result.assets.map(asset => asset.assetId)).toEqual(["asset"]); expect(result.missingAssetIds).toEqual(["missing"]);
+  expect(result.presentation.stack.cards.map(card => card.iconAssetId)).toEqual(["asset", null]); expect(media.verifyGroup).not.toHaveBeenCalled();
+  await resolver.resolveTimerModule(presentation); expect(media.issueTrustedGrant).toHaveBeenCalledTimes(2);
 });

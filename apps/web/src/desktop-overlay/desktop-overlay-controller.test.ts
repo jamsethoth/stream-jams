@@ -1,29 +1,29 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { DesktopModuleSync, DesktopVisualBatch, DesktopVisualCommand, DesktopVisualRendererRequest } from "@stream-jams/core";
+import type { PrivateDesktopModuleSync, PrivateDesktopVisualBatch, PrivateDesktopVisualCommand, DesktopVisualRendererRequest } from "@stream-jams/core";
 import { DesktopOverlayController } from "./desktop-overlay-controller.js";
 import type { DesktopOverlayControllerDependencies } from "./desktop-overlay-controller.js";
 
 const config = { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "one", displayLabel: "Main monitor", autoFollowDisplayName: false, opacity: 1, layers: [{ moduleId: "alerts", visible: true }] } as const;
 let sequence = 0;
-const request = (command: DesktopVisualCommand, generation = 1): DesktopVisualRendererRequest => ({ generation, requestId: `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}`, command });
-function batch(moduleId = "alerts", media = false): DesktopVisualBatch {
+const request = (command: PrivateDesktopVisualCommand, generation = 1): DesktopVisualRendererRequest => ({ protocolVersion: 1, generation, requestId: `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}`, command });
+function batch(moduleId = "alerts", media = false): PrivateDesktopVisualBatch {
   return { key: { surfaceId: "desktop:primary", moduleId, occurrenceId: moduleId, generation: 1 }, timing: { startsAtEpochMs: 1000, endsAtEpochMs: 3000 },
     instructions: [{ id: "one", moduleId, overlayId: "default", purpose: "live", scope: "module", durationMs: 2000, audio: null, tts: null, text: null,
       visual: media ? { assetId: "asset", mediaType: "image", layout: { x: 0, y: 0, width: 100, height: 100, zIndex: 0 } } : null }],
-    assets: media ? [{ assetId: "asset", mimeType: "image/png", bytes: new Uint8Array([1, 2, 3]) }] : [] };
+    assets: media ? [privateAsset("asset")] : [] };
 }
-function moduleSync(revision: number, icon = true): DesktopModuleSync {
+function moduleSync(revision: number, icon = true): PrivateDesktopModuleSync {
   return { moduleId: "timers", revision, presentation: { kind: "timer-stack", stack: {
     targetProfileId: "landscape", region: { layout: { x: 0, y: 0, width: 320, height: 90, zIndex: 1 }, orientation: "vertical", maxVisible: 1 },
-    cards: [{ definitionId: "mitts", generation: `g${revision}`, label: "Wear oven mitts", iconAssetId: icon ? "icon" : null,
+    cards: [{ definitionId: "mitts", generation: `g${revision}`, label: "Wear oven mitts", iconAssetId: icon ? "icon" : null, ...(icon ? { iconVersion: "a".repeat(64) } : {}),
       status: "paused", remainingMs: 5000, slot: { x: 0, y: 0, width: 320, height: 90, zIndex: 1 } }], overflowCount: 0
-  } }, assets: icon ? [{ assetId: "icon", mimeType: "image/png", bytes: new Uint8Array([1, 2, 3]) }] : [] };
+  } }, assets: icon ? [privateAsset("icon")] : [] };
 }
 function harness() {
   const report = vi.fn(); const changed = vi.fn(); const asset = { url: "blob:asset", dispose: vi.fn() };
   const prepareAsset = vi.fn<DesktopOverlayControllerDependencies["prepareAsset"]>(async () => asset);
   const controller = new DesktopOverlayController({ report, changed, prepareAsset });
-  const send = (command: DesktopVisualCommand) => { const envelope = request(command); controller.receive(envelope); return envelope; };
+  const send = (command: PrivateDesktopVisualCommand) => { const envelope = request(command); controller.receive(envelope); return envelope; };
   const configure = () => send({ type: "configure", config: { ...config, layers: [...config.layers] } });
   return { controller, report, changed, prepareAsset, asset, send, configure };
 }
@@ -40,7 +40,7 @@ it("returns the original active media failure once and keeps future occurrences 
   controller.fail(value.key, failure);
   controller.fail(value.key, failure);
   expect(report.mock.calls.filter(call => call[0].requestId === started.requestId)).toEqual([
-    [{ generation: 1, requestId: started.requestId, result: { type: "error", key: value.key }, failure }]
+    [{ protocolVersion: 1, generation: 1, requestId: started.requestId, result: { type: "error", key: value.key }, failure }]
   ]);
   expect(controller.getSnapshot().occurrences).toHaveLength(0);
   const next = { ...batch(), key: { ...value.key, occurrenceId: "next", generation: 2 } };
@@ -56,7 +56,7 @@ it.each(["clear", "replace", "reconfigure"])("acknowledges superseded module ico
   if (action === "reconfigure") send({ type: "configure", config: { ...config, enabled: false, layers: [] } });
   else send({ type: "sync-module", ...moduleSync(2, false), ...(action === "clear" ? { presentation: null } : {}) });
   expect(report.mock.calls.filter(call => call[0].requestId === old.requestId)).toEqual([
-    [{ generation: 1, requestId: old.requestId, result: { type: "ok" } }]
+    [{ protocolVersion: 1, generation: 1, requestId: old.requestId, result: { type: "ok" } }]
   ]);
   finish(asset); await vi.advanceTimersByTimeAsync(6000);
   expect(report.mock.calls.filter(call => call[0].requestId === old.requestId)).toHaveLength(1);
@@ -89,14 +89,14 @@ it("waits for mounted media readiness and retains it while committing a fresh fu
 it("prepares assets, waits for shared start, then completes exactly at the shared end", async () => {
   const { controller, report, send, configure, asset } = harness(); configure();
   const prepared = send({ type: "prepare", batch: batch("alerts", true) }); await vi.advanceTimersByTimeAsync(0);
-  expect(report).toHaveBeenLastCalledWith({ generation: 1, requestId: prepared.requestId, result: { type: "ready", key: batch().key } });
+  expect(report).toHaveBeenLastCalledWith({ protocolVersion: 1, generation: 1, requestId: prepared.requestId, result: { type: "ready", key: batch().key } });
   const started = send({ type: "start", key: batch().key });
   expect(controller.getSnapshot().occurrences).toHaveLength(0);
   await vi.advanceTimersByTimeAsync(1000); expect(controller.getSnapshot().occurrences).toHaveLength(1);
   expect(controller.getSnapshot().occurrences[0]!.instructions[0]).toMatchObject({ targetProfileId: "landscape", timing: { startsAtEpochMs: 1000, endsAtEpochMs: 3000 } });
   expect(controller.getSnapshot().occurrences[0]!.assetUrls.get("asset")).toBe("blob:asset");
   await vi.advanceTimersByTimeAsync(2000);
-  expect(report).toHaveBeenLastCalledWith({ generation: 1, requestId: started.requestId, result: { type: "complete", key: batch().key } });
+  expect(report).toHaveBeenLastCalledWith({ protocolVersion: 1, generation: 1, requestId: started.requestId, result: { type: "complete", key: batch().key } });
   expect(controller.getSnapshot().occurrences).toHaveLength(0); expect(asset.dispose).toHaveBeenCalledOnce();
   controller.dispose(); expect(vi.getTimerCount()).toBe(0);
 });
@@ -115,8 +115,8 @@ it("cancels preparation immediately and disposes its late asset without reviving
   let finish!: (value: typeof asset) => void; prepareAsset.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   const preparing = send({ type: "prepare", batch: batch("alerts", true) });
   const stopped = send({ type: "stop", key: batch().key });
-  expect(report).toHaveBeenCalledWith({ generation: 1, requestId: preparing.requestId, result: { type: "error", key: batch().key } });
-  expect(report).toHaveBeenLastCalledWith({ generation: 1, requestId: stopped.requestId, result: { type: "ok" } });
+  expect(report).toHaveBeenCalledWith({ protocolVersion: 1, generation: 1, requestId: preparing.requestId, result: { type: "error", key: batch().key } });
+  expect(report).toHaveBeenLastCalledWith({ protocolVersion: 1, generation: 1, requestId: stopped.requestId, result: { type: "ok" } });
   finish(asset); await vi.advanceTimersByTimeAsync(0); expect(asset.dispose).toHaveBeenCalledOnce();
   expect(controller.getSnapshot().occurrences).toHaveLength(0); controller.dispose(); expect(vi.getTimerCount()).toBe(0);
 });
@@ -137,13 +137,13 @@ it.each(["disable", "rebind", "retry", "close"])("clears active work on %s witho
   if (action === "retry" || action === "close") send({ type: action });
   else send({ type: "configure", config: { ...config, enabled: action !== "disable", displayId: action === "rebind" ? "two" : "one", layers: [...config.layers] } });
   expect(controller.getSnapshot().occurrences).toHaveLength(0); expect(asset.dispose).toHaveBeenCalledOnce();
-  expect(report).toHaveBeenCalledWith({ generation: 1, requestId: start.requestId, result: { type: "error", key: batch().key } });
+  expect(report).toHaveBeenCalledWith({ protocolVersion: 1, generation: 1, requestId: start.requestId, result: { type: "error", key: batch().key } });
   await vi.advanceTimersByTimeAsync(4000); expect(controller.getSnapshot().occurrences).toHaveLength(0); controller.dispose(); expect(vi.getTimerCount()).toBe(0);
 });
 it("ignores invalid/stale envelopes and duplicate requests without admitting extra work", async () => {
   const { controller, report, send, configure, prepareAsset } = harness();
   send({ type: "prepare", batch: batch("alerts", true) }); expect(prepareAsset).not.toHaveBeenCalled();
-  configure(); report.mockClear(); controller.receive({ generation: 1, requestId: "invalid", command: { type: "retry" } });
+  configure(); report.mockClear(); controller.receive({ protocolVersion: 1, generation: 1, requestId: "invalid", command: { type: "retry" } });
   controller.receive(request({ type: "configure", config: { ...config, layers: [] } }, 2)); expect(report).not.toHaveBeenCalled();
   const prepared = send({ type: "prepare", batch: batch("alerts", true) }); controller.receive(prepared); await vi.advanceTimersByTimeAsync(0);
   expect(prepareAsset).toHaveBeenCalledOnce(); expect(report).toHaveBeenCalledTimes(1); controller.dispose();
@@ -175,7 +175,7 @@ it("reports rendering failure through the original start and disposes only the a
   send({ type: "prepare", batch: batch("alerts", true) }); send({ type: "prepare", batch: batch("other") });
   await vi.advanceTimersByTimeAsync(1000); const start = send({ type: "start", key: batch().key }); send({ type: "start", key: batch("other").key });
   controller.fail(batch().key); controller.fail(batch().key);
-  expect(report.mock.calls.filter(call => call[0].requestId === start.requestId)).toEqual([[{ generation: 1, requestId: start.requestId, result: { type: "error", key: batch().key } }]]);
+  expect(report.mock.calls.filter(call => call[0].requestId === start.requestId)).toEqual([[{ protocolVersion: 1, generation: 1, requestId: start.requestId, result: { type: "error", key: batch().key } }]]);
   expect(controller.getSnapshot().occurrences.map(occurrence => occurrence.key.moduleId)).toEqual(["other"]); expect(asset.dispose).toHaveBeenCalledOnce(); controller.dispose();
 });
 it("does not mutate published snapshot data when an occurrence is removed", async () => {
@@ -184,17 +184,20 @@ it("does not mutate published snapshot data when an occurrence is removed", asyn
   send({ type: "stop", key: batch().key }); expect(controller.getSnapshot()).not.toBe(published);
   expect(published.occurrences[0]!.assetUrls.get("asset")).toBe("blob:asset"); controller.dispose();
 });
-it("reserves the aggregate byte budget across ready and active modules and releases on settlement", async () => {
-  const { controller, send, configure, prepareAsset, report } = harness(); configure();
-  const video = (id: string): DesktopVisualBatch => {
+it("admits multiple large media references without an aggregate body budget", async () => {
+  const { controller, send, configure, prepareAsset } = harness(); configure();
+  const video = (id: string): PrivateDesktopVisualBatch => {
     const value = batch(id, true); value.instructions[0]!.visual!.mediaType = "video";
-    value.assets = [{ assetId: "asset", mimeType: "video/webm", bytes: new Uint8Array(65 * 1024 * 1024) }]; return value;
+    const asset = privateAsset("asset"); asset.reference.snapshot.mimeType = "video/webm";
+    asset.reference.snapshot.sizeBytes = 100 * 1024 * 1024; value.assets = [asset]; return value;
   };
-  send({ type: "prepare", batch: video("alerts") }); await vi.advanceTimersByTimeAsync(1000); send({ type: "start", key: batch().key });
-  send({ type: "prepare", batch: video("other") }); expect(report.mock.lastCall?.[0].result.type).toBe("error"); expect(prepareAsset).toHaveBeenCalledOnce();
-  send({ type: "stop", key: batch().key }); send({ type: "prepare", batch: video("other") }); await vi.advanceTimersByTimeAsync(0);
-  expect(report.mock.lastCall?.[0].result.type).toBe("ready"); expect(prepareAsset).toHaveBeenCalledTimes(2); controller.dispose();
+  send({ type: "prepare", batch: video("alerts") }); await vi.advanceTimersByTimeAsync(0);
+  send({ type: "prepare", batch: video("other") }); await vi.advanceTimersByTimeAsync(0);
+  expect(prepareAsset).toHaveBeenCalledTimes(2);
+  expect(JSON.stringify(prepareAsset.mock.calls).length).toBeLessThan(2000);
+  controller.dispose();
 });
+
 it("allows concurrent duration groups in one module while rejecting duplicate full occurrence keys", async () => {
   const { controller, send, configure, report } = harness(); configure(); send({ type: "prepare", batch: batch() });
   send({ type: "prepare", batch: batch() }); expect(report.mock.lastCall?.[0].result.type).toBe("error");
@@ -209,8 +212,8 @@ it("publishes only complete newer module snapshots and clears their owned URLs",
   const { controller, send, configure, report, asset, prepareAsset } = harness(); configure();
   const first = send({ type: "sync-module", ...moduleSync(1) }); await vi.advanceTimersByTimeAsync(0);
   expect(controller.getSnapshot().modules[0]).toMatchObject({ moduleId: "timers", revision: 1, presentation: moduleSync(1).presentation });
-  expect(controller.getSnapshot().modules[0]!.assetUrls.get("icon")).toBe("blob:asset");
-  expect(report).toHaveBeenCalledWith({ generation: 1, requestId: first.requestId, result: { type: "ok" } });
+  expect(controller.getSnapshot().modules[0]!.assetUrls.get(JSON.stringify(["icon", "a".repeat(64)]))).toBe("blob:asset");
+  expect(report).toHaveBeenCalledWith({ protocolVersion: 1, generation: 1, requestId: first.requestId, result: { type: "ok" } });
   send({ type: "sync-module", ...moduleSync(0, false) }); await vi.advanceTimersByTimeAsync(0);
   expect(controller.getSnapshot().modules[0]!.revision).toBe(1); expect(asset.dispose).not.toHaveBeenCalled();
   const replacement = { url: "blob:new", dispose: vi.fn() }; prepareAsset.mockResolvedValueOnce(replacement);
@@ -228,5 +231,33 @@ it("does not replace a module snapshot when its next icon fails to load", async 
   expect(controller.getSnapshot().modules[0]!.revision).toBe(1);
   expect(report).toHaveBeenCalledWith(expect.objectContaining({ requestId: failed.requestId, result: null,
     failure: expect.objectContaining({ stage: "source-load", message: "Desktop timer icons could not be prepared." }) }));
+  controller.dispose();
+});
+
+function privateAsset(assetId: string): import("@stream-jams/core").PrivateDesktopMediaAsset {
+  return { assetId, reference: { protocolVersion: 1, handle: `private_${"a".repeat(43)}`, snapshot: { assetId, version: "a".repeat(64), mimeType: "image/png", sizeBytes: 3, durationMs: null } } };
+}
+
+it("preserves two versions of one timer icon and keeps stable sources through same-revision refresh", async () => {
+  const { controller, configure, send, prepareAsset } = harness(); configure();
+  const sync = moduleSync(1);
+  sync.presentation!.stack.region.maxVisible = 2;
+  const first = privateAsset("icon");
+  const second = privateAsset("icon");
+  second.reference.snapshot.version = "b".repeat(64);
+  second.reference.handle = `private_${"b".repeat(43)}`;
+  sync.assets = [first, second];
+  const card = sync.presentation!.stack.cards[0]!;
+  sync.presentation!.stack.cards.push({ ...card, definitionId: "other", generation: "other", iconVersion: second.reference.snapshot.version });
+  prepareAsset.mockImplementation(async asset => ({ url: `stream-jams-overlay://surface/media/${asset.reference.handle}`, dispose: vi.fn() }));
+  send({ type: "sync-module", ...sync });
+  await vi.advanceTimersByTimeAsync(0);
+  const urls = controller.getSnapshot().modules[0]!.assetUrls;
+  expect(urls.size).toBe(2);
+  expect(urls.get(JSON.stringify(["icon", "a".repeat(64)]))).not.toBe(urls.get(JSON.stringify(["icon", "b".repeat(64)])));
+  send({ type: "sync-module", ...sync });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(prepareAsset).toHaveBeenCalledTimes(2);
+  expect(controller.getSnapshot().modules[0]!.assetUrls).toBe(urls);
   controller.dispose();
 });

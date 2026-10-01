@@ -10,9 +10,9 @@ function harness() {
   const host = new AudioHost(callbacks => {
     const port = { callbacks, destroy: vi.fn(), sent: [] as AudioRendererRequest[], reply: true };
     ports.push(port);
-    return { load: async () => undefined, destroy: port.destroy, send: (request: AudioRendererRequest) => {
+    return { issueMedia: (_owner, grant) => ({ protocolVersion: 1, snapshot: grant.snapshot, handle: `private_${"A".repeat(43)}` }), revokeMediaOwner: vi.fn(), load: async () => undefined, destroy: port.destroy, send: (request: AudioRendererRequest) => {
       port.sent.push(request);
-      if (port.reply && request.command.type !== "play" && request.command.type !== "start") callbacks.onReply({ generation: request.generation, requestId: request.requestId,
+      if (port.reply && request.command.type !== "play" && request.command.type !== "start") callbacks.onReply({ protocolVersion: 1, generation: request.generation, requestId: request.requestId,
         result: request.command.type === "prepare" ? { type: "prepared", token: request.command.token } : request.command.type === "enumerate" ? { type: "devices", devices: [] } : { type: "ok" } });
     } };
   });
@@ -90,7 +90,7 @@ it("restores timed-out ownership from a later lease without changing mute state 
   expect(ports).toHaveLength(1);
   await host.listOutputDevices();
   expect(ports).toHaveLength(2);
-  expect(ports[1]!.sent[0]!.command).toEqual({ type: "initialize", muted: false });
+  expect(ports[1]!.sent[0]!.command).toEqual({ type: "initialize", protocolVersion: 1, muted: false });
   await host.close();
 });
 
@@ -120,10 +120,10 @@ it("rejects stale and malformed replies without allowing them to complete curren
   await vi.advanceTimersByTimeAsync(0);
   const request = ports[0]!.sent.at(-1)!;
   const done = vi.fn(); void playing.then(done);
-  ports[0]!.callbacks.onReply({ generation: request.generation - 1, requestId: request.requestId, result: { type: "played", failedRouteIds: [] } });
-  ports[0]!.callbacks.onReply({ generation: request.generation, requestId: request.requestId, result: { type: "played", failedRouteIds: [], path: "secret" } });
+  ports[0]!.callbacks.onReply({ protocolVersion: 1, generation: request.generation - 1, requestId: request.requestId, result: { type: "played", failedRouteIds: [] } });
+  ports[0]!.callbacks.onReply({ protocolVersion: 1, generation: request.generation, requestId: request.requestId, result: { type: "played", failedRouteIds: [], path: "secret" } });
   await vi.advanceTimersByTimeAsync(0); expect(done).not.toHaveBeenCalled();
-  ports[0]!.callbacks.onReply({ generation: request.generation, requestId: request.requestId, result: { type: "played", failedRouteIds: [] } });
+  ports[0]!.callbacks.onReply({ protocolVersion: 1, generation: request.generation, requestId: request.requestId, result: { type: "played", failedRouteIds: [] } });
   expect(await playing).toEqual({ failedRouteIds: [] });
   await host.close();
 });
@@ -136,7 +136,7 @@ it("preserves a renderer command exception as the host rejection cause", async (
   await vi.waitFor(() => expect(ports[0]!.sent).toHaveLength(3));
   const request = ports[0]!.sent.at(-1)!;
   const exception = serializeException(new Error("device enumeration failed", { cause: new Error("audio service unavailable") }));
-  const reply = { generation: request.generation, requestId: request.requestId, result: null, exception };
+  const reply = { protocolVersion: 1, generation: request.generation, requestId: request.requestId, result: null, exception };
   expect(audioRendererReplySchema.safeParse(reply).success).toBe(true);
   ports[0]!.callbacks.onReply(reply);
   const rejected = await pending.catch((error: unknown) => error);
@@ -149,7 +149,7 @@ it("never sends a delayed play after cancellation during renderer loading", asyn
   vi.useFakeTimers(); vi.setSystemTime(0);
   let loaded!: () => void;
   const send = vi.fn(); const destroy = vi.fn();
-  const host = new AudioHost(() => ({ load: () => new Promise<void>(resolve => { loaded = resolve; }), send, destroy }));
+  const host = new AudioHost(() => ({ issueMedia: (_owner, grant) => ({ protocolVersion: 1, snapshot: grant.snapshot, handle: `private_${"A".repeat(43)}` }), revokeMediaOwner: vi.fn(), load: () => new Promise<void>(resolve => { loaded = resolve; }), send, destroy }));
   host.beginOwnership();
   const playing = host.play(payload).catch(() => undefined);
   const stopped = host.stop("one");
@@ -164,12 +164,12 @@ it("initializes every new renderer with authoritative mute and destroys stalled 
   vi.useFakeTimers(); vi.setSystemTime(0);
   const { host, ports } = harness();
   await host.setMuted(true); await host.listOutputDevices();
-  expect(ports[0]!.sent[0]!.command).toEqual({ type: "initialize", muted: true });
+  expect(ports[0]!.sent[0]!.command).toEqual({ type: "initialize", protocolVersion: 1, muted: true });
   const playing = host.play({ ...payload, deadlineMs: 1000 }).catch(() => undefined);
   await vi.advanceTimersByTimeAsync(6000); await playing;
   expect(ports[0]!.destroy).toHaveBeenCalledOnce();
   await host.listOutputDevices();
-  expect(ports[1]!.sent[0]!.command).toEqual({ type: "initialize", muted: true });
+  expect(ports[1]!.sent[0]!.command).toEqual({ type: "initialize", protocolVersion: 1, muted: true });
   host.serviceLost();
   expect(ports[1]!.destroy).toHaveBeenCalledOnce();
 });
@@ -182,7 +182,7 @@ it("carries per-route failures through renderer and host command replies without
   await vi.advanceTimersByTimeAsync(0);
   const request = ports[0]!.sent.at(-1)!;
   const result = { type: "played" as const, failedRouteIds: ["selected"], failures: [{ routeIds: ["selected"], layerId: "video", assetId: "clip", stage: "seek" as const, exception: serializeException(new Error("seek fixture")) }] };
-  ports[0]!.callbacks.onReply({ generation: request.generation, requestId: request.requestId, result });
+  ports[0]!.callbacks.onReply({ protocolVersion: 1, generation: request.generation, requestId: request.requestId, result });
   expect(await playing).toEqual(result);
   expect(ports[0]!.destroy).not.toHaveBeenCalled();
   await host.listOutputDevices();
@@ -198,7 +198,7 @@ it("forwards prepared batches without replaying handles after renderer loss", as
   const playing = prepared.start(1500);
   const request = ports[0]!.sent.at(-1)!;
   expect(request.command).toMatchObject({ type: "start", startsAtEpochMs: 1500, durationMs: 1000 });
-  ports[0]!.callbacks.onReply({ generation: request.generation, requestId: request.requestId, result: { type: "played", failedRouteIds: [] } });
+  ports[0]!.callbacks.onReply({ protocolVersion: 1, generation: request.generation, requestId: request.requestId, result: { type: "played", failedRouteIds: [] } });
   expect(await playing).toEqual({ failedRouteIds: [] });
   const interrupted = await host.prepare(payload);
   ports[0]!.callbacks.onDestroyed();
@@ -220,7 +220,43 @@ it("preserves renderer timing across the audio host boundary", async () => {
   const request = ports[0]!.sent.find(value => value.command.type === "play")!;
   const diagnostics = { preparationDurationMs: 20, scheduledStartEpochMs: 100, actualStartEpochMs: 104, terminalOutcome: "completed" };
   const outputDiagnostics = [{ routeIds: ["selected"], layerId: "intro", assetId: "clip", diagnostics }];
-  ports[0]!.callbacks.onReply({ generation: request.generation, requestId: request.requestId, result: { type: "played", failedRouteIds: [], diagnostics, outputDiagnostics } });
+  ports[0]!.callbacks.onReply({ protocolVersion: 1, generation: request.generation, requestId: request.requestId, result: { type: "played", failedRouteIds: [], diagnostics, outputDiagnostics } });
   expect(await playing).toEqual({ failedRouteIds: [], diagnostics, outputDiagnostics });
   await host.close();
+});
+
+it("isolates private grant owners for documents sharing one playback and revokes each terminal document", async () => {
+  vi.useFakeTimers(); vi.setSystemTime(0);
+  const callbacks: AudioRendererCallbacks[] = [];
+  const requests: AudioRendererRequest[] = [];
+  const issueMedia = vi.fn((_owner: string, grant: import("@stream-jams/core").TrustedMediaGrant) => ({ protocolVersion: 1 as const, snapshot: grant.snapshot, handle: `private_${"A".repeat(43)}` }));
+  const revokeMediaOwner = vi.fn();
+  const host = new AudioHost(callback => { callbacks.push(callback); return { load: async () => {}, destroy: vi.fn(), issueMedia, revokeMediaOwner,
+    send(request) { requests.push(request); if (request.command.type === "initialize") callback.onReply({ protocolVersion: 1, generation: request.generation, requestId: request.requestId, result: { type: "ok" } }); }
+  }; });
+  host.beginOwnership();
+  const grant = { handle: `med_${"S".repeat(43)}`, expiresAt: 10000, snapshot: { assetId: "large", mimeType: "video/webm" as const, version: "a".repeat(64), sizeBytes: 59_790_021, durationMs: 1000 } };
+  const input = { ...payload, batch: { ...payload.batch, layers: [{ sourceKind: "video-soundtrack" as const, layerId: "video", assetId: "large", volume: 2 }], destinations: [{ deviceId: "explicit", routeIds: ["route"] }] }, assets: [{ assetId: "large", grant }] };
+  const first = host.play(input); const second = host.play({ ...input, batch: { ...input.batch, documentId: "second" } });
+  await vi.advanceTimersByTimeAsync(0);
+  const plays = requests.filter(request => request.command.type === "play");
+  expect(plays).toHaveLength(2);
+  expect(issueMedia.mock.calls[0]![0]).not.toBe(issueMedia.mock.calls[1]![0]);
+  expect(JSON.stringify(plays)).not.toContain("med_");
+  expect(JSON.stringify(plays)).not.toContain("bytes");
+  callbacks[0]!.onReply({ protocolVersion: 1, generation: plays[0]!.generation, requestId: plays[0]!.requestId, result: { type: "played", failedRouteIds: [] } });
+  await first;
+  expect(revokeMediaOwner).toHaveBeenCalledExactlyOnceWith(issueMedia.mock.calls[0]![0]);
+  callbacks[0]!.onReply({ protocolVersion: 1, generation: plays[1]!.generation, requestId: plays[1]!.requestId, result: { type: "played", failedRouteIds: [] } });
+  await second; expect(revokeMediaOwner).toHaveBeenCalledTimes(2); await host.close();
+});
+it("rejects obsolete renderer protocol acknowledgements with an actionable incompatibility diagnostic", async () => {
+  vi.useFakeTimers(); vi.setSystemTime(0);
+  const diagnostics = vi.fn(); const destroy = vi.fn();
+  const host = new AudioHost(callback => ({ issueMedia: () => { throw new Error("unused"); }, revokeMediaOwner: vi.fn(), destroy, load: async () => {}, send(request) {
+    callback.onReply({ generation: request.generation, requestId: request.requestId, result: { type: "ok" } });
+  } }), diagnostics);
+  host.beginOwnership(); await expect(host.listOutputDevices()).rejects.toThrow();
+  expect(diagnostics).toHaveBeenCalledWith(expect.objectContaining({ source: "desktop.audio.incompatible-media-protocol" }));
+  expect(destroy).toHaveBeenCalledOnce(); await host.close();
 });

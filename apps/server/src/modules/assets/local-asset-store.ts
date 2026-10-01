@@ -1,12 +1,20 @@
 import { createReadStream } from "node:fs";
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, realpath, rename, rm, stat, writeFile, type FileHandle } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { dirname, isAbsolute, resolve, sep } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { posix } from "node:path";
 import type { AssetStorageWrite, MediaAssetStore } from "@stream-jams/core";
 
 export interface LocalAssetStoreOptions {
   readonly assetDirectory: string;
+}
+
+export interface MediaFileIdentity {
+  readonly dev: number;
+  readonly ino: number;
+  readonly size: number;
+  readonly mtimeMs: number;
+  readonly ctimeMs: number;
 }
 
 export class AssetPathTraversalError extends Error {
@@ -43,6 +51,39 @@ export class AssetReadLimitExceededError extends Error {
 
 export class LocalAssetStore implements MediaAssetStore {
   readonly #assetDirectory: string;
+  #activeReaders = 0;
+
+  get activeReaders(): number { return this.#activeReaders; }
+
+  async openRead(storagePath: string, expectedSizeBytes: number): Promise<{ readonly handle: FileHandle; readonly sizeBytes: number; readonly identity: MediaFileIdentity; readonly close: () => Promise<void> }> {
+    if (!Number.isSafeInteger(expectedSizeBytes) || expectedSizeBytes < 0) throw new RangeError("Invalid asset size");
+    const absolutePath = this.#resolveStoragePath(storagePath);
+    if (this.#activeReaders >= 256) throw new AssetStreamCapacityError();
+    this.#activeReaders += 1;
+    let handle: FileHandle | undefined;
+    let closed = false;
+    const close = async () => {
+      if (closed) return;
+      closed = true;
+      try { await handle?.close(); } finally { this.#activeReaders -= 1; }
+    };
+    try {
+      const root = await realpath(this.#assetDirectory);
+      const target = await realpath(absolutePath);
+      if (!isPathInsideDirectory(target, root)) throw new AssetPathTraversalError(storagePath);
+      handle = await open(target, "r");
+      const opened = await handle.stat();
+      const currentTarget = await realpath(absolutePath);
+      const current = await stat(currentTarget);
+      if (currentTarget !== target || !isPathInsideDirectory(currentTarget, root)) throw new AssetPathTraversalError(storagePath);
+      if (!opened.isFile() || opened.size !== expectedSizeBytes || opened.dev !== current.dev || opened.ino !== current.ino || opened.size !== current.size || opened.mtimeMs !== current.mtimeMs) throw new AssetFileChangedError();
+      return { handle, sizeBytes: opened.size, identity: { dev: opened.dev, ino: opened.ino, size: opened.size, mtimeMs: opened.mtimeMs, ctimeMs: opened.ctimeMs }, close };
+    } catch (error) {
+      await close();
+      if (isNodeError(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")) throw new AssetFileNotFoundError(storagePath, { cause: error });
+      throw error;
+    }
+  }
 
   constructor(options: LocalAssetStoreOptions) {
     this.#assetDirectory = resolve(options.assetDirectory);
@@ -104,7 +145,19 @@ export class LocalAssetStore implements MediaAssetStore {
   }
 
   async delete(storagePath: string): Promise<void> {
-    await rm(this.#resolveStoragePath(storagePath), { force: true });
+    const absolutePath = this.#resolveStoragePath(storagePath);
+    try {
+      const target = await realpath(absolutePath);
+      const root = await realpath(this.#assetDirectory);
+      const expected = resolve(root, relative(this.#assetDirectory, absolutePath));
+      const samePath = process.platform === "win32" ? target.toLowerCase() === expected.toLowerCase() : target === expected;
+      // Retirement names must identify their own file, never a reparse alias to another asset.
+      if (!isPathInsideDirectory(target, root) || !samePath) throw new AssetPathTraversalError(storagePath);
+      await rm(absolutePath, { force: true });
+    } catch (error) {
+      if (isNodeError(error) && error.code === "ENOENT") return;
+      throw error;
+    }
   }
 
   async stageDelete(storagePath: string): Promise<{ readonly commit: () => Promise<void>; readonly rollback: () => Promise<void> }> {
@@ -158,6 +211,14 @@ const noOpStagedDeletion = {
   commit: async () => undefined,
   rollback: async () => undefined
 } as const;
+
+export class AssetFileChangedError extends Error {
+  constructor() { super("Asset file changed since import"); this.name = "AssetFileChangedError"; }
+}
+
+export class AssetStreamCapacityError extends Error {
+  constructor() { super("Media stream capacity exhausted"); this.name = "AssetStreamCapacityError"; }
+}
 
 function sanitizeFileNamePart(value: string): string {
   return value.replace(/[^A-Za-z0-9_-]/g, "_");

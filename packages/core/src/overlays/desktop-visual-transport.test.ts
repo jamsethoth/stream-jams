@@ -6,7 +6,7 @@ const instruction = { id: "layer", overlayId: "default", moduleId: "alerts", pur
   targetProfileId: "landscape", durationMs: 1000, audio: null, tts: null, text: null,
   visual: { assetId: "asset", mediaType: "image", layout: { x: 0, y: 0, width: 100, height: 100, zIndex: 0 } } };
 const batch = { key, timing: { startsAtEpochMs: 1000, endsAtEpochMs: 2000 }, instructions: [instruction],
-  assets: [{ assetId: "asset", mimeType: "image/png", bytes: new Uint8Array([1, 2, 3]) }] };
+  assets: [asset("asset", "image/png")] };
 
 it("accepts normalized visual batches without audio authority", () => {
   expect(desktopVisualBatchSchema.parse(batch)).toEqual(batch);
@@ -26,28 +26,28 @@ it("requires unique instruction IDs and exactly the referenced assets with match
   for (const fields of [
     { instructions: [instruction, instruction] }, { assets: [] }, { assets: [...batch.assets, ...batch.assets] },
     { assets: [{ ...batch.assets[0], assetId: "unreferenced" }] },
-    { assets: [{ ...batch.assets[0], mimeType: "audio/wav" }] },
-    { assets: [{ ...batch.assets[0], mimeType: "video/webm" }] },
+    { assets: [asset("asset", "audio/wav")] },
+    { assets: [asset("asset", "video/webm")] },
     { assets: [{ ...batch.assets[0], bytes: new Uint8Array() }] },
     { assets: [{ ...batch.assets[0], path: "C:/private" }] },
     { key: { ...key, surfaceId: "other-surface" } }
   ]) expect(desktopVisualBatchSchema.safeParse({ ...batch, ...fields }).success).toBe(false);
 });
 
-it("enforces per-asset size limits and the aggregate transfer budget", () => {
-  expect(desktopVisualBatchSchema.safeParse({ ...batch, assets: [{ ...batch.assets[0], bytes: new Uint8Array(10 * 1024 * 1024 + 1) }] }).success).toBe(false);
+it("enforces import ceilings while allowing multiple large references", () => {
+  expect(desktopVisualBatchSchema.safeParse({ ...batch, assets: [asset("asset", "image/png", 10 * 1024 * 1024 + 1)] }).success).toBe(false);
   const video = { ...instruction, visual: { ...instruction.visual, mediaType: "video" } };
-  const bytes = new Uint8Array(65 * 1024 * 1024);
+  const sizeBytes = 65 * 1024 * 1024;
   expect(desktopVisualBatchSchema.safeParse({ ...batch,
     instructions: [video, { ...video, id: "second", visual: { ...video.visual, assetId: "second" } }],
-    assets: [{ assetId: "asset", mimeType: "video/webm", bytes }, { assetId: "second", mimeType: "video/webm", bytes }]
-  }).success).toBe(false);
+    assets: [asset("asset", "video/webm", sizeBytes), asset("second", "video/webm", sizeBytes)]
+  }).success).toBe(true);
 });
 
-it("rejects subviews that would clone unrelated bytes from a larger backing buffer", () => {
+it("rejects all legacy whole-body bytes including exact buffers", () => {
   const backing = new Uint8Array([99, 1, 2, 3, 88]);
   expect(desktopVisualBatchSchema.safeParse({ ...batch, assets: [{ ...batch.assets[0], bytes: backing.subarray(1, 4) }] }).success).toBe(false);
-  expect(desktopVisualBatchSchema.safeParse({ ...batch, assets: [{ ...batch.assets[0], bytes: new Uint8Array(backing.subarray(1, 4)) }] }).success).toBe(true);
+  expect(desktopVisualBatchSchema.safeParse({ ...batch, assets: [{ ...batch.assets[0], bytes: new Uint8Array(backing.subarray(1, 4)) }] }).success).toBe(false);
 });
 
 it("validates discriminated commands and keyed acknowledgements without extra authority", () => {
@@ -68,13 +68,24 @@ it("accepts bounded timer module snapshots with exactly their referenced icon as
       slot: { x: 0, y: 0, width: 320, height: 90, zIndex: 0 } }], overflowCount: 0
   } } as const;
   const sync = { moduleId: "timers", revision: 1, presentation,
-    assets: [{ assetId: "icon", mimeType: "image/png", bytes: new Uint8Array([1, 2, 3]) }] };
+    assets: [asset("icon", "image/png")] };
   expect(desktopModuleSyncSchema.parse(sync)).toEqual(sync);
-  expect(desktopModuleSyncSchema.safeParse({ ...sync, assets: [{ ...sync.assets[0], mimeType: "image/gif" }] }).success).toBe(true);
+  expect(desktopModuleSyncSchema.safeParse({ ...sync, assets: [asset("icon", "image/gif")] }).success).toBe(true);
   expect(desktopVisualCommandSchema.parse({ type: "sync-module", ...sync })).toEqual({ type: "sync-module", ...sync });
   expect(desktopModuleSyncSchema.safeParse({ ...sync, assets: [] }).success).toBe(false);
   expect(desktopModuleSyncSchema.safeParse({ ...sync, assets: [{ ...sync.assets[0], assetId: "other" }] }).success).toBe(false);
-  expect(desktopModuleSyncSchema.safeParse({ ...sync, assets: [{ ...sync.assets[0], mimeType: "video/webm" }] }).success).toBe(false);
+  expect(desktopModuleSyncSchema.safeParse({ ...sync, assets: [asset("icon", "video/webm")] }).success).toBe(false);
   expect(desktopModuleSyncSchema.safeParse({ ...sync, moduleId: "alerts" }).success).toBe(false);
   expect(desktopModuleSyncSchema.parse({ moduleId: "timers", revision: 2, presentation: null, assets: [] }).presentation).toBeNull();
+});
+
+function asset(assetId: string, mimeType: string, sizeBytes = 3) { return { assetId, grant: { handle: `med_${"A".repeat(43)}`, expiresAt: 1000000, snapshot: { assetId, mimeType, sizeBytes, version: "a".repeat(64), durationMs: 1000 } } }; }
+
+it("retains two timer versions of one asset and rejects missing versions in the command boundary", () => {
+  const first = asset("icon", "image/png"); const second = { ...first, grant: { ...first.grant, handle: `med_${"B".repeat(43)}`, snapshot: { ...first.grant.snapshot, version: "b".repeat(64) } } };
+  const card = { definitionId: "a", generation: "g", label: "Timer", iconAssetId: "icon", iconVersion: first.grant.snapshot.version, status: "paused", remainingMs: 1000, slot: { x: 0, y: 0, width: 100, height: 100, zIndex: 0 } };
+  const sync = { moduleId: "timers", revision: 1, assets: [first, second], presentation: { kind: "timer-stack", stack: { targetProfileId: "landscape", region: { layout: card.slot, orientation: "vertical", maxVisible: 2 }, cards: [card, { ...card, definitionId: "b", iconVersion: second.grant.snapshot.version }], overflowCount: 0 } } };
+  expect(desktopModuleSyncSchema.safeParse(sync).success).toBe(true);
+  expect(desktopVisualCommandSchema.safeParse({ type: "sync-module", ...sync, assets: [first] }).success).toBe(false);
+  expect(desktopModuleSyncSchema.safeParse({ ...sync, assets: [first, first] }).success).toBe(false);
 });

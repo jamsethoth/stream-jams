@@ -160,7 +160,7 @@ it("starts admitted content only once and releases it on completion", async () =
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("bounds aggregate admitted visual bytes and releases the reservation on cancellation", async () => {
+it("admits independent large video references without bulk transfer reservations", async () => {
   vi.useFakeTimers();
   const messages: OverlayWorkerMessage[] = [];
   const client = new WorkerOverlayClient(1, message => messages.push(message));
@@ -168,18 +168,19 @@ it("bounds aggregate admitted visual bytes and releases the reservation on cance
     instructions: [{ id: "layer", overlayId: "default", moduleId: "alerts", purpose: "live" as const, scope: "module" as const,
       durationMs: 1000, audio: null, tts: null, text: null,
       visual: { assetId: "video", mediaType: "video" as const, layout: { x: 0, y: 0, width: 100, height: 100, zIndex: 0 } } }],
-    assets: [{ assetId: "video", mimeType: "video/webm" as const, bytes: new Uint8Array(65 * 1024 * 1024) }] };
+    assets: [{ assetId: "video", grant: { handle: `med_${"A".repeat(43)}`, expiresAt: Date.now() + 1000000, snapshot: { assetId: "video", mimeType: "video/webm" as const, version: "a".repeat(64), sizeBytes: 65 * 1024 * 1024, durationMs: 1000 } } }] };
   const first = client.prepare(batch);
   const second = client.prepare({ ...batch, key: { ...key, occurrenceId: "two" } });
   try {
-    expect(messages).toHaveLength(1);
-    expect(await second).toBe("unavailable");
+    expect(messages).toHaveLength(2);
+    client.receive({ type: "overlay-response", generation: 1, requestId: messages[1]!.requestId, result: { type: "ready", key: { ...key, occurrenceId: "two" } } });
+    expect(await second).toBe("ready");
     const stopped = client.stop(key);
-    client.receive({ type: "overlay-response", generation: 1, requestId: messages[1]!.requestId, result: { type: "ok" } });
+    client.receive({ type: "overlay-response", generation: 1, requestId: messages[2]!.requestId, result: { type: "ok" } });
     await stopped;
     expect(await first).toBe("unavailable");
     const retry = client.prepare({ ...batch, key: { ...key, occurrenceId: "three" } });
-    expect(messages).toHaveLength(3);
+    expect(messages).toHaveLength(4);
     client.dispose();
     expect(await retry).toBe("unavailable");
   } finally { client.dispose(); await Promise.all([first, second]); }

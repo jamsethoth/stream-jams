@@ -1,3 +1,6 @@
+import { createTestMediaPreviewApi, previewDescriptor } from "../../../test-support/media-preview-fixture.js";
+import type { MediaPreviewApi } from "../../assets/media-preview-api.js";
+import type { MediaPreviewDescriptor } from "@stream-jams/core";
 import { type AlertEditorDocument } from "@stream-jams/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -16,7 +19,7 @@ describe("createAlertPreviewController", () => {
     const controller = createController({ now: () => now });
 
     await controller.start(startInput(documentWithoutMedia()));
-    expect(controller.getSnapshot()).toEqual({ active: true, playing: true, elapsedMs: 0, durationMs: 5_000, runId: 1 });
+    expect(controller.getSnapshot()).toMatchObject({ active: true, playing: true, elapsedMs: 0, durationMs: 5_000, runId: 1 });
 
     now = 1_100;
     controller.pause();
@@ -39,16 +42,16 @@ describe("createAlertPreviewController", () => {
     await controller.start(startInput({ ...documentWithoutMedia(), durationMs: 1_000 }));
     await vi.advanceTimersByTimeAsync(1_000);
 
-    expect(controller.getSnapshot()).toEqual({ active: true, playing: false, elapsedMs: 1_000, durationMs: 1_000, runId: 1 });
+    expect(controller.getSnapshot()).toMatchObject({ active: true, playing: false, elapsedMs: 1_000, durationMs: 1_000, runId: 1 });
   });
 
   it("bounds preparation and ignores a blob that arrives after the deadline", async () => {
     vi.useFakeTimers();
-    let resolveBlob!: (blob: Blob) => void;
+    let resolveBlob!: (descriptor: MediaPreviewDescriptor) => void;
     const failures: AlertPreviewFailure[] = [];
     const createAudio = vi.fn();
     const controller = createController({
-      getAssetFile: () => new Promise((resolve) => { resolveBlob = resolve; }),
+      createPreview: () => new Promise((resolve) => { resolveBlob = resolve; }),
       createAudio,
       onError: (failure) => failures.push(failure),
       preparationTimeoutMs: 5_000
@@ -59,43 +62,43 @@ describe("createAlertPreviewController", () => {
     await started;
 
     expect(failures).toEqual([expect.objectContaining({ summary: "Local preview media could not be played" })]);
-    resolveBlob(new Blob(["late"]));
+    resolveBlob(previewDescriptor("asset-audio"));
     await Promise.resolve();
     expect(createAudio).not.toHaveBeenCalled();
   });
 
   it("cancels a superseded start before it can allocate media", async () => {
-    let resolveFirst!: (blob: Blob) => void;
-    let resolveSecond!: (blob: Blob) => void;
-    const getAssetFile = vi.fn()
+    let resolveFirst!: (descriptor: MediaPreviewDescriptor) => void;
+    let resolveSecond!: (descriptor: MediaPreviewDescriptor) => void;
+    const createPreview = vi.fn()
       .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }))
       .mockImplementationOnce(() => new Promise((resolve) => { resolveSecond = resolve; }));
     const createAudio = vi.fn(() => readyAudio());
-    const controller = createController({ getAssetFile, createAudio });
+    const controller = createController({ createPreview, createAudio });
 
     const first = controller.start(startInput(documentWithAudio()));
     const second = controller.start(startInput(documentWithAudio()));
-    resolveFirst(new Blob(["first"]));
+    resolveFirst(previewDescriptor("asset-audio"));
     await first;
     expect(createAudio).not.toHaveBeenCalled();
 
-    resolveSecond(new Blob(["second"]));
+    resolveSecond(previewDescriptor("asset-audio"));
     await second;
     expect(createAudio).toHaveBeenCalledOnce();
     expect(controller.getSnapshot().runId).toBe(2);
   });
 
   it("prevents pending work from allocating media after stop", async () => {
-    let resolveBlob!: (blob: Blob) => void;
+    let resolveBlob!: (descriptor: MediaPreviewDescriptor) => void;
     const createAudio = vi.fn();
     const controller = createController({
-      getAssetFile: () => new Promise((resolve) => { resolveBlob = resolve; }),
+      createPreview: () => new Promise((resolve) => { resolveBlob = resolve; }),
       createAudio
     });
 
     const started = controller.start(startInput(documentWithAudio()));
     controller.stop();
-    resolveBlob(new Blob(["late"]));
+    resolveBlob(previewDescriptor("asset-audio"));
     await started;
 
     expect(createAudio).not.toHaveBeenCalled();
@@ -105,13 +108,13 @@ describe("createAlertPreviewController", () => {
   it("releases media and permanently rejects new work after disposal", async () => {
     const audio = readyAudio();
     const gain = { setGain: vi.fn(), dispose: vi.fn() };
-    const revokeObjectUrl = vi.fn();
+    const releasePreview = vi.fn(async () => {});
     const listener = vi.fn();
     const controller = createController({
-      getAssetFile: async () => new Blob(["audio"]),
+      createPreview: async () => previewDescriptor("asset-audio"),
       createAudio: () => audio,
       createGainController: () => gain,
-      revokeObjectUrl
+      releasePreview
     });
     controller.subscribe(listener);
 
@@ -120,7 +123,7 @@ describe("createAlertPreviewController", () => {
 
     expect(audio.pause).toHaveBeenCalled();
     expect(gain.dispose).toHaveBeenCalled();
-    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:preview");
+    expect(releasePreview).toHaveBeenCalledWith("preview-asset-audio");
     expect(controller.getSnapshot().active).toBe(false);
     await expect(controller.start(startInput(documentWithoutMedia()))).rejects.toThrow("disposed");
   });
@@ -142,16 +145,14 @@ describe("createAlertPreviewController", () => {
   });
 });
 
-function createController(overrides: Partial<Parameters<typeof createAlertPreviewController>[0]> = {}) {
+function createController(overrides: Partial<Parameters<typeof createAlertPreviewController>[0]> & Partial<MediaPreviewApi> = {}) {
   return createAlertPreviewController({
-    getAssetFile: overrides.getAssetFile ?? (async () => new Blob(["audio"])),
+    assetApi: { ...createTestMediaPreviewApi(overrides.createPreview), ...(overrides.releasePreview === undefined ? {} : { releasePreview: overrides.releasePreview }) },
     getVisualAssetMediaTypes: () => ({}),
     getAssetDurations: () => ({}),
     now: () => 0,
     requestFrame: () => 1,
     cancelFrame: () => undefined,
-    createObjectUrl: () => "blob:preview",
-    revokeObjectUrl: () => undefined,
     createAudio: () => readyAudio(),
     createGainController: () => ({ setGain: () => undefined, dispose: () => undefined }),
     speech: { available: () => true, cancel: () => undefined, speak: () => undefined },

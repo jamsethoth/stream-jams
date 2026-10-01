@@ -230,6 +230,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     playing: previewPlaying,
     elapsedMs: previewElapsedMs,
     runId: previewRunId,
+    media: previewMedia,
     start: startPreview,
     play: playPreview,
     pause: pausePreview,
@@ -1076,6 +1077,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             onSelectLayer={(layerId) => { setSelectedLayerId(layerId); setTab("layers"); }}
             onViewStateChange={updateCurrentCanvasView}
             preview={preview}
+            previewMedia={previewMedia}
+            assetRevision={assets.map(asset => `${asset.id}:${asset.updatedAt}:${asset.sizeBytes}:${asset.mimeType}:${asset.durationMs}`).join("|")}
             previewElapsedMs={previewElapsedMs}
             previewRunId={previewRunId}
             previewTextByLayerId={previewTextByLayerId}

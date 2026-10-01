@@ -1,3 +1,4 @@
+import { createTestMediaPreviewApi } from "../../test-support/media-preview-fixture.js";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { timersOverlayModuleDefinition, type TimerDefinition, type TimerRunState } from "@stream-jams/core";
 import { expect, userEvent, within } from "storybook/test";
@@ -11,7 +12,7 @@ const definition: TimerDefinition = { id: "mitts", label: "Wear oven mitts for t
   startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: true, deviceRouteIds: [] },
   createdAt: "2026-09-29T00:00:00.000Z", updatedAt: "2026-09-29T00:00:00.000Z" };
 const audioApi = { getStatus: async () => ({ capability: { available: true, devices: [], reason: null, nextStep: null }, muted: false, routes: [] }) } as unknown as AudioApi;
-const assetApi = { getAssetFile: async () => new Blob(["<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6'/></svg>"], { type: "image/svg+xml" }) } as unknown as AssetApi;
+const assetApi = createTestMediaPreviewApi() as unknown as AssetApi;
 const buildApi = (states: readonly TimerRunState[], enabled = true): TimersApi => ({
   list: async () => [definition], listStates: async () => states, create: async input => ({ ...definition, ...input }), update: async (_id, input) => ({ ...definition, ...input }),
   listBrowserSources: async () => [
@@ -26,7 +27,7 @@ const buildApi = (states: readonly TimerRunState[], enabled = true): TimersApi =
   getAutomationCredential: async () => ({ configured: false, createdAt: null, rotatedAt: null }),
   rotateAutomationCredential: async () => ({ configured: true, createdAt: definition.createdAt, rotatedAt: null, token: `tmr_${"placeholder".repeat(4)}` }), revokeAutomationCredential: async () => {}
 });
-const meta = { title: "Management/Timers", component: TimersPage, parameters: { layout: "fullscreen" }, args: {
+const meta = { tags: ["stream-local-media"], title: "Management/Timers", component: TimersPage, parameters: { layout: "fullscreen" }, args: {
   assetApi, audioApi, managementApi: {} as AssetLibraryManagementApi, api: buildApi([])
 } } satisfies Meta<typeof TimersPage>;
 export default meta; type Story = StoryObj<typeof meta>;

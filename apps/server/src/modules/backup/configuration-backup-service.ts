@@ -68,6 +68,7 @@ export interface ConfigurationBackupServiceOptions {
     deleteTokenSecrets(accountId: string): Promise<void>;
   };
   readonly runExclusive?: <T>(work: () => Promise<T>) => Promise<T>;
+  readonly deferRetiredAssetCleanup?: boolean;
 }
 
 export class ConfigurationRestoreBlockedError extends Error {
@@ -551,7 +552,7 @@ export class ConfigurationBackupService {
 
     const regeneratedOutputs: { label: string; url: string }[] = [];
     const warnings = [...preflight.warnings];
-    const oldAssetCleanupFailures = settledFailures(await Promise.allSettled(
+    const oldAssetCleanupFailures = this.#options.deferRetiredAssetCleanup === true ? [] : settledFailures(await Promise.allSettled(
       currentAssets
         .filter((current) => !stagedAssets.some((staged) => staged.storagePath === current.storagePath))
         .map((record) => this.#options.assetStore.delete(record.storagePath))
@@ -643,6 +644,7 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   if (currentSchemaVersion === 25) return [19, 20, 21, 22, 23, 24].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 26) return [19, 20, 21, 22, 23, 24, 25].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 27) return [19, 20, 21, 22, 23, 24, 25, 26].includes(archiveSchemaVersion);
+  if (currentSchemaVersion === 29) return [19, 20, 21, 22, 23, 24, 25, 26, 27, 28].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 28) return [19, 20, 21, 22, 23, 24, 25, 26, 27].includes(archiveSchemaVersion);
   return false;
 }

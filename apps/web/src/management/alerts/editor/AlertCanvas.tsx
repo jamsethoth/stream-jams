@@ -1,6 +1,8 @@
 import { createAlertTemplateContext, type AlertEditorDocument, type AlertLayer, type TargetProfileId } from "@stream-jams/core";
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import type { AssetApi } from "../../assets/asset-api.js";
+import type { MediaPreviewGroupState, MediaPreviewGroup } from "../../assets/media-preview-group.js";
+import { useMediaPreviewGroup } from "../../assets/use-media-preview-group.js";
 import { alertTextLayerStyle } from "../../../overlay/components/alert-text-style.js";
 import { overlayPresetAnimationStyle } from "../../../overlay/components/OverlaySurface.js";
 import { snapLayerGeometry, type CanvasViewState, type LayerGeometry } from "./editor-state.js";
@@ -21,6 +23,8 @@ interface AlertCanvasProps {
   readonly onSelectLayer: (layerId: string) => void;
   readonly onViewStateChange?: (viewState: CanvasViewState) => void;
   readonly preview: boolean;
+  readonly previewMedia?: MediaPreviewGroup | null;
+  readonly assetRevision?: string;
   readonly previewElapsedMs?: number;
   readonly previewRunId?: number;
   readonly previewTextByLayerId?: Readonly<Record<string, string>>;
@@ -45,6 +49,11 @@ interface PointerOperation {
 
 export function AlertCanvas(props: AlertCanvasProps) {
   const profile = props.document.targetProfiles.find((candidate) => candidate.id === props.profileId)!;
+  const visibleLayouts = new Set(profile.layerLayouts.map(layout => layout.layerId));
+  const visualIds = props.document.layers.flatMap(layer => layer.visible && visibleLayouts.has(layer.id) && (layer.type === "image" || layer.type === "video") ? [layer.assetId] : []);
+  const staticMedia = useMediaPreviewGroup(props.assetApi, visualIds, props.assetRevision ?? "", !props.preview || props.previewMedia === undefined);
+  const mediaGroup = props.preview ? props.previewMedia ?? staticMedia.group : staticMedia.group;
+  const mediaState = useSyncExternalStore(mediaGroup?.subscribe ?? emptySubscribe, mediaGroup?.getSnapshot ?? emptySnapshot, emptySnapshot);
   const dimensions = props.profileId === "landscape" ? { width: 1920, height: 1080 } : { width: 1080, height: 1920 };
   const surfaceRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -189,8 +198,9 @@ export function AlertCanvas(props: AlertCanvasProps) {
                   tabIndex={0}
                 >
                   <CanvasLayer
-                    assetApi={props.assetApi}
-                    assetMediaType={"assetId" in layer ? props.assetMediaTypes?.[layer.assetId] : undefined}
+                    mediaGroup={mediaGroup}
+                    sourceUrl={"assetId" in layer ? mediaState.descriptors[layer.assetId]?.url ?? null : null}
+                    assetMediaType={"assetId" in layer ? snapshotMediaType(mediaState.descriptors[layer.assetId]?.snapshot.mimeType) ?? props.assetMediaTypes?.[layer.assetId] : undefined}
                     layer={layer}
                     {...(props.preview && layer.type === "text"
                       ? { previewText: props.previewTextByLayerId?.[layer.id] ?? "" }
@@ -223,14 +233,16 @@ export function AlertCanvas(props: AlertCanvasProps) {
 }
 
 function CanvasLayer({
-  assetApi,
+  mediaGroup,
+  sourceUrl,
   assetMediaType,
   layer,
   previewText,
   scale,
   templateContext
 }: {
-  readonly assetApi: AssetApi;
+  readonly mediaGroup: MediaPreviewGroup | null;
+  readonly sourceUrl: string | null;
   readonly assetMediaType?: "image" | "gif" | "video" | undefined;
   readonly layer: AlertLayer;
   readonly previewText?: string;
@@ -247,7 +259,7 @@ function CanvasLayer({
   }
   if (layer.type === "image" || layer.type === "video") {
     const kind = assetMediaType === "gif" ? "gif" : assetMediaType ?? layer.type;
-    return <CanvasAsset assetApi={assetApi} assetId={layer.assetId} kind={kind} loop={layer.type === "video" && (layer.loop ?? false)} />;
+    return <CanvasAsset group={mediaGroup} url={sourceUrl} assetId={layer.assetId} kind={kind} loop={layer.type === "video" && (layer.loop ?? false)} />;
   }
   if (layer.type === "shape") {
     return <span className="alert-canvas__shape" style={{ background: layer.fill }} />;
@@ -255,29 +267,19 @@ function CanvasLayer({
   return <span>{layer.name}</span>;
 }
 
-function CanvasAsset({ assetApi, assetId, kind, loop }: { readonly assetApi: AssetApi; readonly assetId: string; readonly kind: "image" | "gif" | "video"; readonly loop: boolean }) {
-  const [url, setUrl] = useState<string | null>(null);
+const emptyMediaState: MediaPreviewGroupState = { descriptors: {}, unavailable: false };
+const emptySubscribe = () => () => {};
+const emptySnapshot = () => emptyMediaState;
+
+function CanvasAsset({ group, url, assetId, kind, loop }: { readonly group: MediaPreviewGroup | null; readonly url: string | null; readonly assetId: string; readonly kind: "image" | "gif" | "video"; readonly loop: boolean }) {
+  const element = useRef<HTMLVideoElement | HTMLImageElement>(null);
   useEffect(() => {
-    let active = true;
-    let objectUrl: string | null = null;
-    void assetApi.getAssetFile(assetId).then((blob) => {
-      if (!active) return;
-      objectUrl = URL.createObjectURL(blob);
-      setUrl(objectUrl);
-    }).catch(
-    // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
-    () => {
-      if (active) setUrl(null);
-    });
-    return () => {
-      active = false;
-      if (objectUrl !== null) URL.revokeObjectURL(objectUrl);
-    };
-  }, [assetApi, assetId]);
+    if (group !== null && element.current !== null) return group.registerElement(element.current, assetId);
+  }, [group, assetId, url]);
   if (url === null) return <span className="alert-canvas__asset-placeholder">{kind === "video" ? "Video" : kind === "gif" ? "GIF" : "Image"}</span>;
   return kind === "video"
-    ? <video aria-label="Video asset preview" autoPlay loop={loop} muted src={url} />
-    : <img alt={kind === "gif" ? "Animated image asset preview" : ""} src={url} />;
+    ? <video ref={element as React.RefObject<HTMLVideoElement>} aria-label="Video asset preview" autoPlay loop={loop} muted src={url} />
+    : <img ref={element as React.RefObject<HTMLImageElement>} referrerPolicy="no-referrer" alt={kind === "gif" ? "Animated image asset preview" : ""} src={url} />;
 }
 
 function layerStyle(
@@ -315,4 +317,10 @@ function constrainGeometry(
 
 function profileLabel(profileId: TargetProfileId): string {
   return profileId === "landscape" ? "Landscape" : "Vertical";
+}
+
+function snapshotMediaType(mimeType: string | undefined): "image" | "gif" | "video" | undefined {
+  if (mimeType?.startsWith("video/")) return "video";
+  if (mimeType === "image/gif") return "gif";
+  return mimeType?.startsWith("image/") ? "image" : undefined;
 }

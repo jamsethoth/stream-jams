@@ -131,7 +131,7 @@ function createHarness(options: {
 }
 
 const assets: readonly AudioPlayerAsset[] = [
-  { assetId: "shared-sound", mimeType: "audio/wav", bytes: new Uint8Array([1, 2, 3]) }
+  privateAsset("shared-sound", "audio/wav")
 ];
 
 function batch(overrides: Partial<DeviceAudioBatch> = {}): DeviceAudioBatch {
@@ -551,7 +551,7 @@ describe("DeviceAudioPlayer", () => {
     ] });
     const partialAssets: readonly AudioPlayerAsset[] = [
       ...assets,
-      { assetId: "broken-sound", mimeType: "audio/ogg", bytes: new Uint8Array([4, 5, 6]) }
+      privateAsset("broken-sound", "audio/ogg")
     ];
 
     const result = audio.player.play({ generation: 1, batch: partial, assets: partialAssets, deadlineMs: 11_000 });
@@ -823,3 +823,5 @@ it("gives each selected route its full five seconds after different actual play 
     expect(audio.elements.every(element => element.currentTime > 0)).toBe(true);
   } finally { audio.player.close(); vi.useRealTimers(); }
 });
+
+function privateAsset(assetId: string, mimeType: "audio/wav" | "audio/ogg"): AudioPlayerAsset { return { assetId, reference: { protocolVersion: 1, handle: `private_${"A".repeat(43)}`, snapshot: { assetId, mimeType, version: "a".repeat(64), sizeBytes: 3, durationMs: 1000 } } }; }

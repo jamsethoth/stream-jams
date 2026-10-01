@@ -1,3 +1,4 @@
+import { mockMediaPreviews } from "./media-preview-fixtures.js";
 import { alertEditorDocumentSchema, parseStoredAlertEditorDocument } from "@stream-jams/core";
 import { expect, test } from "@playwright/test";
 import { mockManagementShell } from "./e2e-helpers.js";
@@ -24,7 +25,7 @@ test("legacy video stays silent until explicitly saved and soundtrack choices su
     width: 1, height: 1, durationMs: null, health: "available", tags: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z",
     usage: { assetId: "asset-gif", totalUsageCount: 0, usages: [] }
   }] }));
-  await page.route("**/assets/asset-gif/file", route => route.fulfill({ contentType: "image/gif", body: Buffer.from("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==", "base64") }));
+  await mockMediaPreviews(page, () => ({ mimeType: "image/gif", body: Buffer.from("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==", "base64") }));
   await page.route("**/audio/status", route => route.fulfill({ json: {
     capability: { available: true, devices: [{ deviceId: "fake-private", label: "Private headphones" }], reason: null, nextStep: null }, muted: false,
     routes: [{ route: { id: "private", name: "Private headphones", deviceId: "fake-private", deviceLabel: "Private headphones" }, state: "ready" }]

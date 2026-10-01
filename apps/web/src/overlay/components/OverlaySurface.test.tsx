@@ -21,6 +21,15 @@ afterEach(() => {
 });
 
 describe("OverlaySurface", () => {
+  it("resolves each concurrent occurrence against its own immutable asset version", () => {
+    const first = { ...instruction(), id: "first", assetVersions: { image: "a".repeat(64) },
+      visual: { assetId: "image", mediaType: "image" as const, layout: { x: 0, y: 0, width: 10, height: 10, zIndex: 0 } } };
+    const second = { ...first, id: "second", assetVersions: { image: "b".repeat(64) } };
+    const resolve = vi.fn((id: string, version?: string) => `/assets/${id}?version=${version}`);
+    const { container } = render(<OverlaySurface composition={compositionFromInstructions([first, second])} resolveAssetUrl={resolve} />);
+    expect([...container.querySelectorAll("img")].map(element => element.getAttribute("src")))
+      .toEqual([`/assets/image?version=${"a".repeat(64)}`, `/assets/image?version=${"b".repeat(64)}`]);
+  });
   it("fails stalled media and never reports timer completion", async () => {
     vi.useFakeTimers(); vi.setSystemTime(1000);
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();

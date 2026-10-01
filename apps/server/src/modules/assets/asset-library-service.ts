@@ -56,6 +56,8 @@ export interface AssetLibraryServiceOptions {
   readonly clock?: () => Date;
   readonly durationCatalog?: AssetDurationCatalog | undefined;
   readonly metadataProbe?: MediaMetadataProbe | undefined;
+  /** Runtime retirement is committed atomically with asset metadata; never rename pinned files. */
+  readonly mediaLifetime?: { readonly mutate: <T>(work: () => Promise<T>) => Promise<T> };
 }
 
 export class AssetLibraryNotFoundError extends Error {
@@ -166,6 +168,18 @@ export class AssetLibraryService {
   }
 
   async deleteAsset(assetId: string): Promise<void> {
+    if (this.#options.mediaLifetime !== undefined) {
+      return this.#options.mediaLifetime.mutate(async () => {
+        const impact = await this.getChangeImpact(assetId);
+        if (!impact.canDelete) throw new AssetLibraryInUseError(impact);
+        await this.#findRecord(assetId);
+        if (this.#options.deletePersistedAsset === undefined) {
+          throw new Error("Deferred asset deletion requires an atomic metadata mutation");
+        }
+        this.#options.deletePersistedAsset(assetId);
+        this.#options.durationCatalog?.invalidate(assetId);
+      });
+    }
     const impact = await this.getChangeImpact(assetId);
     if (!impact.canDelete) throw new AssetLibraryInUseError(impact);
     const record = await this.#findRecord(assetId);
@@ -208,7 +222,7 @@ export class AssetLibraryService {
     if (previous.id !== replacement.id) {
       throw new TypeError("Asset replacement must preserve the asset ID");
     }
-    if (previous.storagePath !== replacement.storagePath) {
+    if (this.#options.mediaLifetime === undefined && previous.storagePath !== replacement.storagePath) {
       await this.#options.assetStore.delete(previous.storagePath);
     }
     const metadata = await this.#metadata(replacement);

@@ -15,6 +15,15 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("overlay-client", () => {
+  it("pins immutable media versions without losing target-profile authorization", () => {
+    const version = "a".repeat(64);
+    expect(createOverlayAssetUrl(parseOverlayRoute("/overlay/modules/alerts/live/ovl_profile?profile=vertical")!, "clip", version))
+      .toBe(`/overlay/modules/alerts/live/ovl_profile/assets/clip?profile=vertical&version=${version}`);
+    expect(createOverlayAssetUrl(parseOverlayRoute("/overlay/modules/alerts/live/ovl_profile")!, "clip", version))
+      .toBe(`/overlay/modules/alerts/live/ovl_profile/assets/clip?version=${version}`);
+    expect(createOverlayAssetUrl(parseOverlayRoute("/overlay/unified/live/ovl_profile")!, "clip", version))
+      .toBe(`/overlay/unified/live/ovl_profile/assets/clip?version=${version}`);
+  });
   it("parses validated composition updates from the live socket", async () => {
     const onMessage = vi.fn(); connectClient(onMessage); await vi.advanceTimersByTimeAsync(0); onMessage.mockClear();
     const composition = { overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape",

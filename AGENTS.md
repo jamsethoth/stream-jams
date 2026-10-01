@@ -29,6 +29,7 @@
 - Keep strict TypeScript, project references, ESM, and package boundaries. Do not weaken `strict`, `noUncheckedIndexedAccess`, or `exactOptionalPropertyTypes`.
 - In NodeNext code, use explicit `.js` relative imports, `import type` for type-only imports, and `node:` specifiers for built-ins.
 - Use pnpm workspaces and `workspace:` internal dependencies. Keep exact direct versions and lockfile in sync; do not add dependencies without a concrete need.
+- For substantial features, prefer established, actively maintained, widely adopted libraries over custom implementations of standard behavior. Evaluate stack compatibility, maintenance/security history, documentation, license, and dependency cost; reuse existing dependencies and platform APIs first. Keep custom code focused on product-specific rules and thin integration boundaries, and document concrete gaps before implementing a replacement for library functionality.
 
 ### Server, Persistence, And Security
 

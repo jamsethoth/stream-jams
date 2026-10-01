@@ -1,14 +1,16 @@
-import { createHash } from "node:crypto";
-import { defaultAssetValidationPolicy, desktopModuleSyncSchema, desktopVisualAssetSchema, desktopVisualBatchSchema, maxDesktopVisualTransferBytes, overlayModulePresentationSchema, visualMediaType, type AssetRepository, type DesktopModuleSync, type DesktopVisualBatch, type OverlayModulePresentation } from "@stream-jams/core";
+import { defaultAssetValidationPolicy, mediaVersionSnapshotSchema, desktopVisualBatchSchema, overlayModulePresentationSchema, type DesktopModuleSync, type DesktopVisualBatch, type OverlayModulePresentation } from "@stream-jams/core";
+import type { LocalMediaService } from "../assets/local-media-service.js";
+
 export interface DesktopVisualAssetResolverDependencies {
-  readonly assetRepository: Pick<AssetRepository, "findManyByIds">;
-  readonly assetStore: { readBounded(storagePath: string, maxBytes: number): Promise<Uint8Array> };
+  readonly media: Pick<LocalMediaService, "records" | "verifyGroup" | "issueTrustedGrant" | "hasOwner" | "shareVersion">;
+  readonly now?: () => number;
 }
 
 export class DesktopVisualAssetResolver {
-  constructor(private readonly dependencies: DesktopVisualAssetResolverDependencies) {}
+  readonly #now: () => number;
+  constructor(private readonly dependencies: DesktopVisualAssetResolverDependencies) { this.#now = dependencies.now ?? Date.now; }
+
   async resolve(candidate: Omit<DesktopVisualBatch, "assets">): Promise<DesktopVisualBatch> {
-    // Reuse the existing field schemas before reads, without placeholder media.
     if (candidate === null || typeof candidate !== "object" || Object.keys(candidate).some(key => !["key", "timing", "instructions", "deferredStart"].includes(key))) throw unavailable();
     const input = {
       ...(candidate.deferredStart === undefined ? {} : { deferredStart: desktopVisualBatchSchema.shape.deferredStart.parse(candidate.deferredStart) }),
@@ -16,76 +18,58 @@ export class DesktopVisualAssetResolver {
       timing: desktopVisualBatchSchema.shape.timing.parse(candidate.timing),
       instructions: desktopVisualBatchSchema.shape.instructions.parse(candidate.instructions)
     };
-    const instructionIds = new Set<string>();
+    const ids = new Set<string>();
     const referenced = new Map<string, "image" | "gif" | "video">();
     for (const instruction of input.instructions) {
-      if (instructionIds.has(instruction.id) || instruction.moduleId !== input.key.moduleId ||
-        instruction.durationMs !== input.timing.endsAtEpochMs - input.timing.startsAtEpochMs) throw unavailable();
-      instructionIds.add(instruction.id);
+      if (ids.has(instruction.id) || instruction.moduleId !== input.key.moduleId || instruction.durationMs !== input.timing.endsAtEpochMs - input.timing.startsAtEpochMs) throw unavailable();
+      ids.add(instruction.id);
       if (instruction.visual === null) continue;
       const { assetId, mediaType } = instruction.visual;
       if (referenced.has(assetId) && referenced.get(assetId) !== mediaType) throw unavailable();
       referenced.set(assetId, mediaType);
     }
     if (referenced.size === 0) return desktopVisualBatchSchema.parse({ ...input, assets: [] });
-    const records = await this.dependencies.assetRepository.findManyByIds([...referenced.keys()]);
-    let totalBytes = 0;
-    const reads = [];
-    for (const [assetId, mediaType] of referenced) {
-      const record = records.get(assetId);
-      if (record === undefined || record.id !== assetId || record.mediaType !== mediaType) throw unavailable();
-      const mime = desktopVisualAssetSchema.shape.mimeType.safeParse(record.mimeType);
-      if (!mime.success || visualMediaType(mime.data) !== mediaType || !Number.isSafeInteger(record.sizeBytes) ||
-        record.sizeBytes <= 0 || record.sizeBytes > defaultAssetValidationPolicy[mediaType].maxSizeBytes ||
-        !/^(?:sha256:)?[a-f0-9]{64}$/i.test(record.checksum)) throw unavailable();
-      totalBytes += record.sizeBytes;
-      if (totalBytes > maxDesktopVisualTransferBytes) throw unavailable();
-      reads.push({ ...record, checksum: record.checksum.replace(/^sha256:/i, "").toLowerCase(), mimeType: mime.data });
+    const owner = this.dependencies.media.hasOwner(input.key.occurrenceId) ? input.key.occurrenceId : JSON.stringify([input.key.moduleId, input.key.occurrenceId]);
+    const records = this.dependencies.media.records(owner, [...referenced.keys()]);
+    for (const [id, kind] of referenced) {
+      const record = records.get(id);
+      if (record === undefined || record.id !== id || record.mediaType !== kind || record.mimeType !== ({ image: ["image/png", "image/jpeg", "image/webp"], gif: ["image/gif"], video: ["video/mp4", "video/webm"] }[kind]).find(mime => mime === record.mimeType) ||
+          !mediaVersionSnapshotSchema.shape.mimeType.safeParse(record.mimeType).success || !Number.isSafeInteger(record.sizeBytes) || record.sizeBytes <= 0 ||
+          record.sizeBytes > defaultAssetValidationPolicy[kind].maxSizeBytes || !/^(?:sha256:)?[a-f0-9]{64}$/i.test(record.checksum)) throw unavailable();
     }
-    const assets: DesktopVisualBatch["assets"] = [];
-    // Sequential reads cap outstanding allocations to one bounded asset read.
-    for (const record of reads) {
-      const bytes = await this.dependencies.assetStore.readBounded(record.storagePath, record.sizeBytes);
-      if (bytes.byteLength !== record.sizeBytes || createHash("sha256").update(bytes).digest("hex") !== record.checksum.toLowerCase()) throw unavailable();
-      assets.push({ assetId: record.id, mimeType: record.mimeType, bytes: new Uint8Array(bytes) });
-    }
+    await this.dependencies.media.verifyGroup(owner, [...referenced.keys()], AbortSignal.timeout(5000));
+    const assets = [...referenced.keys()].map(assetId => ({ assetId, grant: this.dependencies.media.issueTrustedGrant(owner, assetId,
+      `desktop-visual:${JSON.stringify(input.key)}`, Math.min(this.#now() + 3600000, Math.max(this.#now() + 20000, input.timing.endsAtEpochMs + 5000))) }));
     return desktopVisualBatchSchema.parse({ ...input, assets });
   }
 
   async resolveTimerModule(candidate: OverlayModulePresentation): Promise<{
-    presentation: OverlayModulePresentation;
-    assets: DesktopModuleSync["assets"];
-    missingAssetIds: readonly string[];
+    presentation: OverlayModulePresentation; assets: DesktopModuleSync["assets"]; missingAssetIds: readonly string[];
   }> {
     const presentation = overlayModulePresentationSchema.parse(candidate);
     if (presentation.stack.targetProfileId !== "landscape") throw unavailable();
-    const referenced = [...new Set(presentation.stack.cards.flatMap(card => card.iconAssetId === null ? [] : [card.iconAssetId]))];
-    if (referenced.length === 0) return { presentation, assets: [], missingAssetIds: [] };
-    const records = await this.dependencies.assetRepository.findManyByIds(referenced);
     const assets: DesktopModuleSync["assets"][number][] = [];
     const missing = new Set<string>();
-    let totalBytes = 0;
-    for (const assetId of referenced) {
-      const record = records.get(assetId);
-      const mime = desktopVisualAssetSchema.shape.mimeType.safeParse(record?.mimeType);
-      if (record === undefined || record.id !== assetId || (record.mediaType !== "image" && record.mediaType !== "gif") || !mime.success || visualMediaType(mime.data) !== record.mediaType ||
-        !Number.isSafeInteger(record.sizeBytes) || record.sizeBytes <= 0 || record.sizeBytes > defaultAssetValidationPolicy[record.mediaType].maxSizeBytes ||
-        !/^(?:sha256:)?[a-f0-9]{64}$/i.test(record.checksum) || totalBytes + record.sizeBytes > maxDesktopVisualTransferBytes) {
-        missing.add(assetId); continue;
-      }
+    const failedVersions = new Set<string>();
+    const seen = new Set<string>();
+    for (const card of presentation.stack.cards) {
+      if (card.iconAssetId === null) continue;
+      const id = card.iconAssetId;
+      const identity = JSON.stringify([id, card.iconVersion]);
       try {
-        const bytes = await this.dependencies.assetStore.readBounded(record.storagePath, record.sizeBytes);
-        const checksum = record.checksum.replace(/^sha256:/i, "").toLowerCase();
-        if (bytes.byteLength !== record.sizeBytes || createHash("sha256").update(bytes).digest("hex") !== checksum) { missing.add(assetId); continue; }
-        assets.push({ assetId, mimeType: mime.data, bytes: new Uint8Array(bytes) }); totalBytes += record.sizeBytes;
+        if (card.iconVersion === undefined) throw unavailable();
+        const owner = JSON.stringify(["timers", `desktop-icon:${identity}`]);
+        this.dependencies.media.shareVersion(owner, JSON.stringify(["timers", card.generation]), id, card.iconVersion);
+        if (seen.has(identity)) continue;
+        seen.add(identity);
+        // Run admission verifies icons once; transport revisions and refreshes only renew access.
+        assets.push({ assetId: id, grant: this.dependencies.media.issueTrustedGrant(owner, id, "desktop-timers", this.#now() + 3600000) });
       }
-      // error-provenance: allow expected -- unavailable icon bytes are represented by the missing-asset fallback
-      catch { missing.add(assetId); }
+      // error-provenance: allow expected -- unavailable icon references use the existing missing-icon fallback
+      catch { missing.add(id); failedVersions.add(identity); }
     }
-    const normalized: OverlayModulePresentation = { ...presentation, stack: { ...presentation.stack,
-      cards: presentation.stack.cards.map(card => card.iconAssetId !== null && missing.has(card.iconAssetId) ? { ...card, iconAssetId: null } : card) } };
-    desktopModuleSyncSchema.parse({ moduleId: "timers", revision: 0, presentation: normalized, assets });
-    return { presentation: normalized, assets, missingAssetIds: [...missing] };
+    return { presentation: { ...presentation, stack: { ...presentation.stack, cards: presentation.stack.cards.map(card =>
+      card.iconAssetId !== null && failedVersions.has(JSON.stringify([card.iconAssetId, card.iconVersion])) ? { ...card, iconAssetId: null } : card) } }, assets, missingAssetIds: [...missing] };
   }
 }
 function unavailable(): Error { return new Error("Desktop visual asset is unavailable or invalid"); }

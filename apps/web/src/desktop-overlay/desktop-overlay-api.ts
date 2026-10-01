@@ -1,4 +1,4 @@
-import type { DesktopVisualAsset, DesktopVisualRendererReply, DesktopVisualRendererRequest } from "@stream-jams/core";
+import { privateVisualMediaUrl, type PrivateDesktopMediaAsset, DesktopVisualRendererReply, DesktopVisualRendererRequest } from "@stream-jams/core";
 
 export interface DesktopOverlayBridge {
   onCommand(callback: (request: DesktopVisualRendererRequest) => void): () => void;
@@ -7,11 +7,11 @@ export interface DesktopOverlayBridge {
 
 declare global { interface Window { streamJamsOverlayHost?: DesktopOverlayBridge } }
 
-/** Only decoded, renderer-local Blob URLs reach the visual component. */
-export function prepareDesktopVisualAsset(asset: DesktopVisualAsset): Promise<{ url: string; dispose(): void }> {
+/** Native elements stream only the fixed private session origin. */
+export function prepareDesktopVisualAsset(asset: PrivateDesktopMediaAsset): Promise<{ url: string; dispose(): void }> {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(new Blob([new Uint8Array(asset.bytes)], { type: asset.mimeType }));
-    const element = asset.mimeType.startsWith("video/") ? document.createElement("video") : new Image();
+    const url = privateVisualMediaUrl(asset.reference);
+    const element = asset.reference.snapshot.mimeType.startsWith("video/") ? document.createElement("video") : new Image();
     let disposed = false;
     const dispose = () => {
       if (disposed) return;
@@ -23,7 +23,13 @@ export function prepareDesktopVisualAsset(asset: DesktopVisualAsset): Promise<{ 
       if (element instanceof HTMLVideoElement) element.pause();
       element.removeAttribute("src");
       if (element instanceof HTMLVideoElement) element.load();
-      URL.revokeObjectURL(url);
+      // Detach mounted consumers as well as the readiness probe before host release.
+      for (const consumer of document.querySelectorAll<HTMLImageElement | HTMLMediaElement>("img[src],video[src],audio[src]")) {
+        if (consumer.getAttribute("src") !== url) continue;
+        if (consumer instanceof HTMLMediaElement) consumer.pause();
+        consumer.removeAttribute("src");
+        if (consumer instanceof HTMLMediaElement) consumer.load();
+      }
     };
     const fail = () => { dispose(); reject(new Error("Desktop visual media could not be prepared")); };
     const ready = () => {

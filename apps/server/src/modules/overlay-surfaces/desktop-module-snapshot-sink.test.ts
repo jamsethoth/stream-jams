@@ -68,3 +68,20 @@ it("clears desktop presentation when timers are disabled or empty", async () => 
   await sink.sync();
   expect(syncModule).toHaveBeenCalledWith({ moduleId: "timers", revision: 1, presentation: null, assets: [] });
 });
+
+it("refreshes unchanged paused timer access beyond one hour and removes the refresh on close", async () => {
+  vi.useFakeTimers(); vi.setSystemTime(1000);
+  const syncModule = vi.fn<(sync: DesktopModuleSync) => Promise<void>>(async () => {});
+  const handle = `med_${"a".repeat(43)}`;
+  const sink = new DesktopModuleSnapshotSink({ transport: { syncModule }, surfaces: { list: async () => [desktop()] },
+    runtime: { getModuleSnapshot: async () => ({ moduleId: "timers", enabled: true, instructions: [], presentation }) },
+    assets: { resolveTimerModule: async () => ({ presentation, missingAssetIds: [], assets: [{ assetId: "missing", grant: { handle, expiresAt: Date.now() + 3600000, snapshot: { assetId: "missing", version: "a".repeat(64), mimeType: "image/png", sizeBytes: 3, durationMs: null } } }] }) } });
+  try {
+    await sink.sync(); const first = syncModule.mock.calls[0]![0].assets[0]!.grant;
+    await vi.advanceTimersByTimeAsync(61 * 60000);
+    const latest = syncModule.mock.calls.at(-1)![0].assets[0]!.grant;
+    expect(latest.handle).toBe(first.handle); expect(latest.expiresAt).toBeGreaterThan(first.expiresAt);
+    expect(latest.expiresAt).toBeGreaterThan(Date.now());
+    await sink.close(); expect(vi.getTimerCount()).toBe(0);
+  } finally { await sink.close(); vi.useRealTimers(); }
+});

@@ -20,10 +20,11 @@ import type {
   Logger,
   TtsService
 } from "@stream-jams/core";
-import { collectAlertDurationAssetIds, resolveAlertAudio, resolveMediaDuration } from "@stream-jams/core";
+import { collectAlertDurationAssetIds, PlaybackQueueItemNotFoundError, resolveAlertAudio, resolveMediaDuration } from "@stream-jams/core";
 import type { AudioPlaybackSink, DeviceAudioBatch, DeviceAudioResult, PlaybackQueueItem } from "@stream-jams/core";
 import type { AudioOutputService } from "../audio/audio-output-service.js";
 import { effectOccurrenceKey } from "../screen-effects/effect-playback-coordinator.js";
+import type { LocalMediaService } from "../assets/local-media-service.js";
 
 type PlaybackAudioOutputService = Pick<AudioOutputService, "preparePlayback"> & Partial<Pick<AudioOutputService, "listRoutes">>;
 
@@ -68,6 +69,7 @@ export interface DesktopVisualPlaybackSink {
 }
 
 export interface PlaybackCoordinatorDependencies {
+  readonly localMediaService?: LocalMediaService;
   readonly alertService: Pick<AlertService, "listActiveRules">;
   readonly matcher: AlertMatcher;
   readonly resolver: AlertResolver;
@@ -140,8 +142,11 @@ export class PlaybackCoordinator {
   #browserInstructionIds: readonly string[] = [];
   #browserDispatchComplete = true;
   #closed = false;
+  readonly #replayDocuments = new Map<string, readonly AlertEditorDocument[]>();
+  readonly #localMediaService: LocalMediaService | undefined;
 
   constructor(dependencies: PlaybackCoordinatorDependencies) {
+    this.#localMediaService = dependencies.localMediaService;
     this.#alertService = dependencies.alertService;
     this.#matcher = dependencies.matcher;
     this.#resolver = dependencies.resolver;
@@ -181,10 +186,13 @@ export class PlaybackCoordinator {
     if (this.#desktopPlayback !== null) this.#desktopPlayback.cancelled = true;
     this.#clearOccurrenceTimers();
     this.#queue.pause();
+    this.#queue.clearPending();
     this.#pendingClientsByInstructionId.clear();
     const ids = this.#browserInstructionIds;
     this.#stopBrowserInstructions(ids);
-    this.#closePromise = Promise.allSettled([this.#audioPlaybackSink?.close(), this.#desktopVisualSink?.close()]).then(results => {
+    this.#closePromise = Promise.allSettled([this.#audioPlaybackSink?.close(), this.#desktopVisualSink?.close(),
+      ...(this.#localMediaService === undefined || this.#queue.getSnapshot().current === null ? [] : [this.#localMediaService.release(effectOccurrenceKey("alerts", this.#queue.getSnapshot().current!.id))])
+    ]).then(results => {
       const failures = results.filter(result => result.status === "rejected").map(result => result.reason as unknown);
       if (failures.length > 0) throw new AggregateError(failures, "Playback output cleanup failed");
     });
@@ -192,6 +200,10 @@ export class PlaybackCoordinator {
   }
 
   async enqueueEvent(event: NormalizedStreamEvent): Promise<PlaybackEnqueueResult> {
+    return this.#localMediaService === undefined ? this.#enqueueEvent(event) : this.#localMediaService.runAdmission(() => this.#enqueueEvent(event));
+  }
+
+  async #enqueueEvent(event: NormalizedStreamEvent): Promise<PlaybackEnqueueResult> {
     if (this.#closed) throw new Error("Playback has stopped.");
     if (!this.#dedupeService.accept(event)) {
       return this.#result("duplicate", [], []);
@@ -220,6 +232,11 @@ export class PlaybackCoordinator {
 
     const selectedVariants = this.#resolver.selectVariants(readyMatches);
     const editorDocuments = await this.#loadEditorDocuments(readyMatches, selectedVariants);
+    if (this.#localMediaService !== undefined) {
+      const assetIds = [...selectedVariants.values()].flatMap(variant => [variant.visualAssetId, variant.audioAssetId]).filter((id): id is string => id !== null);
+      assetIds.push(...[...editorDocuments.values()].flatMap(document => document.layers.flatMap(layer => layer.type === "image" || layer.type === "video" || layer.type === "audio" ? [layer.assetId] : [])));
+      await this.#localMediaService.captureAdmission(assetIds);
+    }
     const { documents: resolvedEditorDocuments, assetDurations } = await this.#resolveEditorDurations(editorDocuments);
     const visualAssetMediaTypes = await this.#resolveVisualAssetMediaTypes(
       selectedVariants.values(),
@@ -244,12 +261,13 @@ export class PlaybackCoordinator {
         assetDurations
       })
     );
-    const snapshot = this.#deliverCurrent(this.#queue.enqueue({
+    const snapshot = this.enqueueResolvedTest({
       sourceEvent: event,
+      replayDocuments: [...editorDocuments.values()],
       alerts: resolvedAlerts,
       audio,
       priority: Math.max(...readyMatches.map((match) => match.rule.priority))
-    }));
+    });
 
     for (const subject of readySubjects) {
       this.#cooldownService.recordPlayback(subject);
@@ -271,7 +289,7 @@ export class PlaybackCoordinator {
   }> {
     if (this.#assetDurationCatalog == null) return { documents, assetDurations: {} };
     const ids = [...new Set([...documents.values()].flatMap(collectAlertDurationAssetIds))];
-    const records = await this.#assetDurationCatalog.getMany(ids);
+    const records = this.#localMediaService === undefined ? await this.#assetDurationCatalog.getMany(ids) : await this.#localMediaService.captureAdmission(ids);
     const assetDurations = Object.fromEntries(ids.map((assetId) => [assetId, records.get(assetId)?.durationMs ?? null]));
     const resolvedDocuments = new Map([...documents].map(([id, document]) => {
       const candidates = collectAlertDurationAssetIds(document).flatMap((assetId) => {
@@ -363,9 +381,20 @@ export class PlaybackCoordinator {
       );
   }
 
-  enqueueResolvedTest(input: EnqueuePlaybackItemInput): PlaybackQueueSnapshot {
+  enqueueResolvedTest(input: EnqueuePlaybackItemInput & { readonly replayDocuments?: readonly AlertEditorDocument[] }): PlaybackQueueSnapshot {
     if (this.#closed) throw new Error("Playback has stopped.");
-    return this.#deliverCurrent(this.#queue.enqueue(input));
+    if (this.#localMediaService === undefined) return this.#deliverCurrent(this.#queue.enqueue(input));
+    if (!this.#localMediaService.admissionActive()) throw new Error("Playback media admission was not captured.");
+    const before = this.#queue.getSnapshot();
+    const existing = new Set([before.current?.id, ...before.queued.map(item => item.id)]);
+    const assetVersions = this.#localMediaService.admissionVersions();
+    const snapshot = this.#queue.enqueue({ ...input, alerts: input.alerts.map(alert => ({ ...alert, overlayInstruction: { ...alert.overlayInstruction, assetVersions } })) });
+    const admitted = [snapshot.current, ...snapshot.queued].find(item => item !== null && !existing.has(item.id));
+    if (admitted !== undefined && admitted !== null) {
+      this.#localMediaService.commitAdmission(effectOccurrenceKey("alerts", admitted.id));
+      this.#replayDocuments.set(admitted.id, structuredClone(input.replayDocuments ?? []));
+    }
+    return this.#deliverCurrent(snapshot);
   }
 
   completeCurrent(): PlaybackQueueSnapshot {
@@ -458,8 +487,37 @@ export class PlaybackCoordinator {
     return snapshot;
   }
 
-  replayRecent(itemId: string): PlaybackQueueSnapshot {
-    return this.#deliverCurrent(this.#queue.replayRecent(itemId));
+  replayRecent(itemId: string): PlaybackQueueSnapshot | Promise<PlaybackQueueSnapshot> {
+    if (this.#localMediaService === undefined) return this.#deliverCurrent(this.#queue.replayRecent(itemId));
+    const item = this.#queue.getSnapshot().recent.find(candidate => candidate.id === itemId);
+    if (item === undefined) throw new PlaybackQueueItemNotFoundError(itemId);
+    return this.#localMediaService.runAdmission(async () => {
+      const authored = this.#replayDocuments.get(itemId) ?? [];
+      const ids = [...new Set([
+        ...item.alerts.flatMap(alert => [alert.overlayInstruction.visual?.assetId, alert.overlayInstruction.audio?.assetId, alert.overlayInstruction.tts?.audioAssetId].filter((id): id is string => id != null)),
+        ...item.audio.flatMap(audio => audio.layers.map(layer => layer.assetId)),
+        ...authored.flatMap(collectAlertDurationAssetIds)
+      ])];
+      const records = await this.#localMediaService!.captureAdmission(ids);
+      const durations = new Map(authored.map(document => [document.id, resolveMediaDuration({
+        mode: document.durationMode ?? "custom", customDurationMs: document.durationMs, fallbackDurationMs: 5000, maximumDurationMs: 120000,
+        candidates: collectAlertDurationAssetIds(document).map(id => { const record = records.get(id)!; return { assetId: id, label: record.originalFileName, mediaType: record.mediaType, durationMs: record.durationMs, eligible: true }; })
+      }).durationMs]));
+      const alerts = item.alerts.map(alert => {
+        const document = authored.find(candidate => candidate.id === alert.variantId || candidate.id === alert.ruleId);
+        const instruction = alert.overlayInstruction;
+        const baseDuration = document === undefined ? instruction.durationMs : durations.get(document.id)!;
+        const extension = document?.durationMode === "media" && instruction.audio === null && instruction.tts === null && instruction.animation?.exit !== undefined && instruction.animation.exit !== "none" ? instruction.animation.durationMs : 0;
+        const durationMs = Math.min(120000, baseDuration + extension);
+        return { ...alert, overlayInstruction: { ...instruction, durationMs, timing: undefined,
+          audio: instruction.audio === null ? null : { ...instruction.audio, playbackDurationMs: Math.min(records.get(instruction.audio.assetId)?.durationMs ?? baseDuration, baseDuration) } } };
+      });
+      const audio = item.audio.map(value => {
+        const durationMs = durations.get(value.documentId) ?? value.durationMs;
+        return { ...value, durationMs, layers: value.layers.map(layer => ({ ...layer, playbackDurationMs: Math.min(records.get(layer.assetId)?.durationMs ?? durationMs, durationMs) })) };
+      });
+      return this.enqueueResolvedTest({ sourceEvent: item.sourceEvent, alerts, audio, priority: item.priority, replayDocuments: authored });
+    });
   }
 
   async pause(): Promise<PlaybackQueueSnapshot> {
@@ -494,6 +552,12 @@ export class PlaybackCoordinator {
   }
 
   #deliverCurrent(initialSnapshot: PlaybackQueueSnapshot): PlaybackQueueSnapshot {
+    const retained = new Set([initialSnapshot.current?.id, ...initialSnapshot.queued.map(item => item.id), ...initialSnapshot.recent.map(item => item.id)]);
+    for (const id of this.#replayDocuments.keys()) if (!retained.has(id)) this.#replayDocuments.delete(id);
+    return this.#localMediaService === undefined ? this.#deliverGroup(initialSnapshot) : this.#localMediaService.runPreparation(() => this.#deliverGroup(initialSnapshot));
+  }
+
+  #deliverGroup(initialSnapshot: PlaybackQueueSnapshot): PlaybackQueueSnapshot {
     if (this.#closed) return initialSnapshot;
     let snapshot = initialSnapshot;
     while (true) {
@@ -926,7 +990,7 @@ export class PlaybackCoordinator {
       }
     }
 
-    const assets = await this.#assetRepository.findManyByIds([...visualAssetIds]);
+    const assets = this.#localMediaService === undefined ? await this.#assetRepository.findManyByIds([...visualAssetIds]) : await this.#localMediaService.captureAdmission([...visualAssetIds]);
     for (const [assetId, asset] of assets) {
       if (asset?.mediaType === "image" || asset?.mediaType === "gif" || asset?.mediaType === "video") {
         mediaTypes[assetId] = asset.mediaType;

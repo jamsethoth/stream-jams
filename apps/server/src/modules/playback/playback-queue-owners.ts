@@ -14,7 +14,7 @@ interface AlertOwnerCoordinator {
   getSnapshot(): PlaybackQueueSnapshot;
   skip(occurrenceId: string): Promise<boolean>;
   remove(occurrenceId: string): boolean;
-  replayRecent(occurrenceId: string): PlaybackQueueSnapshot;
+  replayRecent(occurrenceId: string): PlaybackQueueSnapshot | Promise<PlaybackQueueSnapshot>;
   clearPending(): number;
   setModulePaused(paused: boolean): PlaybackQueueSnapshot;
 }
@@ -36,7 +36,7 @@ export function createAlertQueueOwner(options: {
     remove: async (occurrenceId) => options.coordinator.remove(occurrenceId),
     replay: async (occurrenceId) => {
       try {
-        options.coordinator.replayRecent(occurrenceId);
+        await options.coordinator.replayRecent(occurrenceId);
         return true;
       } catch (error) {
         if (error instanceof PlaybackQueueItemNotFoundError) return false;

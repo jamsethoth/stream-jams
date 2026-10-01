@@ -1,3 +1,4 @@
+import { createTestMediaPreviewApi } from "../../test-support/media-preview-fixture.js";
 import type { AssetChangeImpact, AssetLibraryItem, AssetMetadataUpdateInput } from "@stream-jams/core";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -258,6 +259,7 @@ function createFixture(overrides: Partial<AssetLibraryManagementApi> = {}) {
   const assetApi: AssetApi = {
     async listAssets() { return []; },
     async importAsset() { throw new Error("not called"); },
+    ...createTestMediaPreviewApi(),
     async getAssetFile(assetId) {
       return new Blob([assetId === "asset-image" ? pngBytes : new Uint8Array([1, 2, 3])], {
         type: assetId === "asset-image" ? "image/png" : "audio/wav"

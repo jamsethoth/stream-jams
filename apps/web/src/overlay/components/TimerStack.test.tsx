@@ -30,6 +30,14 @@ function stack(overrides: Partial<TimerStackProjection> = {}): TimerStackProject
 }
 
 describe("TimerStack", () => {
+  it("keeps concurrent runs of the same timer icon pinned independently", () => {
+    const base = stack().cards[0]!;
+    const value = stack({ cards: [{ ...base, generation: "old", iconVersion: "a".repeat(64) },
+      { ...base, generation: "new", iconVersion: "b".repeat(64) }] });
+    const { container } = render(<TimerStack stack={value} resolveAssetUrl={(id, version) => `/assets/${id}?version=${version}`} />);
+    expect([...container.querySelectorAll("img")].map(element => element.getAttribute("src")))
+      .toEqual([`/assets/mitts?version=${"a".repeat(64)}`, `/assets/mitts?version=${"b".repeat(64)}`]);
+  });
   it.each(["vertical", "horizontal"] as const)("reserves stable %s overflow clearance at the profile edge", orientation => {
     const region = { layout: { x: 1320, y: 780, width: 600, height: 300, zIndex: 4 }, orientation, maxVisible: 3 };
     const edge = stack({ region, cards: stack().cards.map((card, index) => ({ ...card, slot: {

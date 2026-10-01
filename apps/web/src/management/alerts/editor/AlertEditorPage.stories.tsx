@@ -22,7 +22,7 @@ const managementApi = createStoryManagementApi({
   getAlertSet: async () => alertSetDetail()
 });
 
-const meta = {
+const meta = { tags: ["stream-local-media"],
   title: "Management/Alerts/Focused editor",
   component: AlertEditorPage,
   decorators: [(Story, context) => {

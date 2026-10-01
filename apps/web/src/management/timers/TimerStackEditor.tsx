@@ -1,19 +1,31 @@
 import { projectTimerStack, timerProfileDimensions, type OverlayTargetProfileId, type TimerDefinition, type TimerRunState, type TimersOverlayModuleConfig } from "@stream-jams/core";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { TimerStack } from "../../overlay/components/TimerStack.js";
-import type { AssetApi } from "../assets/asset-api.js";
+import type { MediaPreviewApi } from "../assets/media-preview-api.js";
+import { useMediaPreviewGroup } from "../assets/use-media-preview-group.js";
 
 export function TimerStackEditor({ assetApi, definitions, value, onChange }: {
-  readonly assetApi: Pick<AssetApi, "getAssetFile">;
+  readonly assetApi: MediaPreviewApi;
   readonly definitions?: readonly TimerDefinition[];
   readonly value: TimersOverlayModuleConfig;
   readonly onChange: (value: TimersOverlayModuleConfig) => void;
 }) {
   const [profile, setProfile] = useState<OverlayTargetProfileId>("landscape");
   const [availableWidth, setAvailableWidth] = useState(840);
-  const previewAssetUrls = usePreviewAssetUrls(assetApi, definitions ?? []);
+  const ids = (definitions ?? []).flatMap(definition => definition.iconAssetId === null ? [] : [definition.iconAssetId]);
+  const { group, descriptors } = useMediaPreviewGroup(assetApi, ids);
+  const previewAssetUrls = useMemo(() => new Map(Object.entries(descriptors).map(([id, descriptor]) => [id, descriptor.url])), [descriptors]);
   const resolvePreviewAssetUrl = useCallback((assetId: string) => previewAssetUrls.get(assetId) ?? null, [previewAssetUrls]);
   const previewShell = useRef<HTMLDivElement>(null);
+  const sourceKey = [...previewAssetUrls.values()].join("\u0000");
+  useEffect(() => {
+    const cleanups: (() => void)[] = [];
+    if (group !== null) for (const image of previewShell.current?.querySelectorAll("img") ?? []) {
+      const id = Object.entries(descriptors).find(([, descriptor]) => image.getAttribute("src") === descriptor.url)?.[0];
+      if (id !== undefined) cleanups.push(group.registerElement(image, id));
+    }
+    return () => { for (const cleanup of cleanups) cleanup(); };
+  }, [group, sourceKey]);
   const region = value.profiles[profile]; const bounds = timerProfileDimensions[profile];
   const previewScale = Math.min(1, availableWidth / bounds.width, 620 / bounds.height);
   const gesture = useRef<{ mode: "move" | "resize"; clientX: number; clientY: number; layout: typeof region.layout } | null>(null);
@@ -110,34 +122,4 @@ function sampleRuns(definitions: readonly TimerDefinition[], maxVisible: number)
     startedAtEpochMs: 0,
     endsAtEpochMs: (index + 1) * 15_000
   }));
-}
-
-function usePreviewAssetUrls(assetApi: Pick<AssetApi, "getAssetFile">, definitions: readonly TimerDefinition[]): ReadonlyMap<string, string> {
-  const assetIdsKey = [...new Set(definitions.flatMap(definition => definition.iconAssetId === null ? [] : [definition.iconAssetId]))].sort().join("\u0000");
-  const [urls, setUrls] = useState<ReadonlyMap<string, string>>(new Map());
-  useEffect(() => {
-    let active = true;
-    const created: string[] = [];
-    const assetIds = assetIdsKey === "" ? [] : assetIdsKey.split("\u0000");
-    setUrls(new Map());
-    void Promise.all(assetIds.map(async assetId => {
-      try {
-        const blob = await assetApi.getAssetFile(assetId);
-        if (!active) return null;
-        const url = URL.createObjectURL(blob);
-        created.push(url);
-        return [assetId, url] as const;
-      } catch (error) {
-        if (active) console.error(`[timer-preview-icon-${assetId}] Timer preview icon failed`, error);
-        return null;
-      }
-    })).then(entries => {
-      if (active) setUrls(new Map(entries.filter(entry => entry !== null)));
-    });
-    return () => {
-      active = false;
-      created.forEach(url => URL.revokeObjectURL(url));
-    };
-  }, [assetApi, assetIdsKey]);
-  return urls;
 }

@@ -59,6 +59,7 @@ export interface TimersOverlayModuleConfig {
 }
 
 interface TimerOverlayCardBase {
+  readonly iconVersion?: string | undefined;
   readonly definitionId: string;
   readonly generation: string;
   readonly label: string;

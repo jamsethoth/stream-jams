@@ -1,3 +1,4 @@
+import { mockMediaPreviews } from "./media-preview-fixtures.js";
 import { expect, test } from "@playwright/test";
 import { mockManagementShell } from "./e2e-helpers.js";
 
@@ -45,9 +46,7 @@ test("asset library filters, edits, previews impact, and keeps invalid uploads i
   await page.route("**/management/assets/library", async (route) => {
     await route.fulfill({ contentType: "application/json", json: [imageItem(), audioItem] });
   });
-  await page.route("**/assets/*/file", async (route) => {
-    await route.fulfill({ contentType: "image/png", body: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) });
-  });
+  await mockMediaPreviews(page, id => ({ mimeType: id === "asset-audio" ? "audio/wav" : "image/png" }));
   await page.route("**/management/assets/asset-image", async (route) => {
     const method = route.request().method();
     expect(route.request().headers()["x-stream-jams-csrf"]).toBe("csrf_e2e");

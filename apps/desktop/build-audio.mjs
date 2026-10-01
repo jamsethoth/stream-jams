@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { build } from "vite";
 import { resolve } from "node:path";
 
@@ -14,3 +15,14 @@ for (const [directory, entry, format, fileName] of [
     rolldownOptions: { external: ["electron"] }
   } });
 }
+
+// Fixed one-second routing fixture; never registered asset IPC.
+const { writeFile } = await import("node:fs/promises");
+const samples = 24000;
+const tone = Buffer.alloc(44 + samples * 2);
+tone.write("RIFF"); tone.writeUInt32LE(tone.length - 8, 4); tone.write("WAVEfmt ", 8);
+tone.writeUInt32LE(16, 16); tone.writeUInt16LE(1, 20); tone.writeUInt16LE(1, 22);
+tone.writeUInt32LE(samples, 24); tone.writeUInt32LE(samples * 2, 28); tone.writeUInt16LE(2, 32); tone.writeUInt16LE(16, 34);
+tone.write("data", 36); tone.writeUInt32LE(samples * 2, 40);
+for (let i = 0; i < samples; i++) tone.writeInt16LE(Math.round(Math.sin(2 * Math.PI * 660 * i / samples) * 16383 * Math.min(1, i / 240, (samples - i) / 240)), 44 + i * 2);
+await writeFile("dist/audio/tone.wav", tone);

@@ -28,6 +28,7 @@ export interface PlaybackQueue {
 }
 
 export interface PlaybackQueueDependencies {
+  readonly onRelease?: (itemId: string) => void;
   readonly clock?: () => Date;
   readonly generateId: () => string;
   readonly recentLimit?: number;
@@ -48,6 +49,7 @@ export class DefaultPlaybackQueue implements PlaybackQueue {
   readonly #clock: () => Date;
   readonly #generateId: () => string;
   readonly #recentLimit: number;
+  readonly #onRelease: (itemId: string) => void;
   #current: InternalPlaybackQueueItem | null = null;
   #queued: InternalPlaybackQueueItem[] = [];
   #recent: InternalPlaybackQueueItem[] = [];
@@ -61,6 +63,7 @@ export class DefaultPlaybackQueue implements PlaybackQueue {
     this.#clock = dependencies.clock ?? (() => new Date());
     this.#generateId = dependencies.generateId;
     this.#recentLimit = dependencies.recentLimit ?? 25;
+    this.#onRelease = dependencies.onRelease ?? (() => {});
     this.#paused = dependencies.initialSafetyState?.paused ?? false;
     this.#muted = dependencies.initialSafetyState?.muted ?? false;
     this.#doNotDisturb = dependencies.initialSafetyState?.doNotDisturb ?? false;
@@ -120,12 +123,15 @@ export class DefaultPlaybackQueue implements PlaybackQueue {
     const index = this.#queued.findIndex((candidate) => candidate.id === itemId);
     if (index < 0) return false;
     this.#queued.splice(index, 1);
+    this.#onRelease(itemId);
     return true;
   }
 
   clearPending(): number {
     const count = this.#queued.length;
+    const removed = this.#queued;
     this.#queued = [];
+    for (const item of removed) this.#onRelease(item.id);
     return count;
   }
 
@@ -186,7 +192,9 @@ export class DefaultPlaybackQueue implements PlaybackQueue {
       completedAt: now
     });
     this.#recent = this.#recent.slice(0, this.#recentLimit);
+    const releasedId = this.#current.id;
     this.#current = null;
+    this.#onRelease(releasedId);
     this.#maybeStartNext(now);
     return this.#snapshot();
   }

@@ -132,7 +132,7 @@ export function OverlayApp() {
     }
   }, []);
   const resolveOverlayAssetUrl = useCallback(
-    (assetId: string) => (route === null ? "" : createOverlayAssetUrl(route, assetId)),
+    (assetId: string, version?: string) => (route === null ? "" : createOverlayAssetUrl(route, assetId, version)),
     [route]
   );
 

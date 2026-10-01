@@ -1,3 +1,4 @@
+import { createTestMediaPreviewApi } from "../../test-support/media-preview-fixture.js";
 import { ManagementHttpError } from "../management-http-client.js";
 import { createStoryEffectSets } from "../../stories/screen-effect-set-fixtures.js";
 import {
@@ -493,6 +494,6 @@ function audioApi(): AudioApi {
 
 function assetApi(): AssetApi {
   return {
-    listAssets: vi.fn(async () => []), importAsset: vi.fn(), getAssetFile: vi.fn(async () => new Blob()), replaceAsset: vi.fn()
+    listAssets: vi.fn(async () => []), importAsset: vi.fn(), ...createTestMediaPreviewApi(), getAssetFile: vi.fn(async () => new Blob()), replaceAsset: vi.fn()
   };
 }

@@ -23,7 +23,10 @@ export interface EffectPlaybackAudioOutputService {
   }>;
 }
 
+import type { LocalMediaService } from "../assets/local-media-service.js";
+
 export interface EffectPlaybackCoordinatorOptions {
+  readonly localMediaService?: LocalMediaService;
   readonly queue: EffectQueue;
   readonly getSafety: () => PlaybackSafetyState;
   readonly overlayPlaybackSink?: OverlayPlaybackInstructionSink | undefined;
@@ -31,7 +34,7 @@ export interface EffectPlaybackCoordinatorOptions {
   readonly audioOutputService?: EffectPlaybackAudioOutputService | undefined;
   readonly audioPlaybackSink?: AudioPlaybackSink | undefined;
   readonly isModuleEnabled?: (() => boolean | Promise<boolean>) | undefined;
-  readonly validateReferences?: ((content: EffectContentSnapshot) => boolean | Promise<boolean>) | undefined;
+  readonly validateReferences?: ((content: EffectContentSnapshot, owner?: string) => boolean | Promise<boolean>) | undefined;
   readonly validateOutputAvailability?: ((content: EffectContentSnapshot) => boolean | Promise<boolean>) | undefined;
   readonly onWatchdogExpired?: ((occurrenceId: string, outstanding: { browserInstructions: number; browserClients: number; browserRecipients: string; desktopPending: boolean; audioPending: boolean }) => void | Promise<void>) | undefined;
   readonly onStopFailure?: ((error: unknown, occurrenceId: string) => void | Promise<void>) | undefined;
@@ -68,6 +71,7 @@ export function effectOccurrenceKey(moduleId: string, occurrenceId: string): str
 }
 
 export class EffectPlaybackCoordinator {
+  readonly #localMediaService: LocalMediaService | undefined;
   readonly #onWatchdogExpired: EffectPlaybackCoordinatorOptions["onWatchdogExpired"];
   readonly #queue: EffectQueue;
   readonly #getSafety: () => PlaybackSafetyState;
@@ -76,7 +80,7 @@ export class EffectPlaybackCoordinator {
   readonly #audioOutputService: EffectPlaybackAudioOutputService | null;
   readonly #audioPlaybackSink: AudioPlaybackSink | null;
   readonly #isModuleEnabled: () => boolean | Promise<boolean>;
-  readonly #validateReferences: (content: EffectContentSnapshot) => boolean | Promise<boolean>;
+  readonly #validateReferences: (content: EffectContentSnapshot, owner?: string) => boolean | Promise<boolean>;
   readonly #validateOutputAvailability: (content: EffectContentSnapshot) => boolean | Promise<boolean>;
   readonly #onStopFailure: (error: unknown, occurrenceId: string) => void | Promise<void>;
   readonly #onPlaybackFailure: (error: unknown, occurrenceId: string, recipient: "browser" | "desktop" | "audio") => void | Promise<void>;
@@ -87,6 +91,7 @@ export class EffectPlaybackCoordinator {
   #closePromise: Promise<void> | null = null;
 
   constructor(options: EffectPlaybackCoordinatorOptions) {
+    this.#localMediaService = options.localMediaService;
     this.#onWatchdogExpired = options.onWatchdogExpired;
     this.#queue = options.queue;
     this.#getSafety = options.getSafety;
@@ -128,7 +133,7 @@ export class EffectPlaybackCoordinator {
       while (!this.#closed && this.#active === null && await this.#isModuleEnabled()) {
         const occurrence = this.#queue.advance(this.#getSafety());
         if (occurrence === null) return;
-        const ready = await this.#validateReferences(occurrence.content)
+        const ready = await this.#validateReferences(occurrence.content, effectOccurrenceKey("screen-effects", occurrence.id))
           && await this.#validateOutputAvailability(occurrence.content)
           && await this.#isModuleEnabled();
         if (this.#queue.snapshot().current?.id !== occurrence.id) return;
@@ -202,8 +207,10 @@ export class EffectPlaybackCoordinator {
   #start(occurrence: EffectOccurrence): void {
     const transportId = effectOccurrenceKey("screen-effects", occurrence.id);
     const startsAtEpochMs = this.#now() + START_DELAY_MS;
-    const browserInstructions = createBrowserInstructions(occurrence, startsAtEpochMs);
-    const desktopInstructions = createDesktopInstructions(occurrence, startsAtEpochMs);
+    const versions = this.#localMediaService?.versions(transportId);
+    const bind = (instruction: OverlayInstruction): OverlayInstruction => versions === undefined ? instruction : { ...instruction, assetVersions: versions };
+    const browserInstructions = createBrowserInstructions(occurrence, startsAtEpochMs).map(bind);
+    const desktopInstructions = createDesktopInstructions(occurrence, startsAtEpochMs).map(bind);
     const audio = createResolvedAudio(occurrence);
     const state: ActivePlayback = {
       occurrence,
@@ -227,7 +234,12 @@ export class EffectPlaybackCoordinator {
     void this.#prepareAndStart(state, desktopInstructions, audio);
   }
 
-  async #prepareAndStart(state: ActivePlayback, desktop: readonly OverlayInstruction[], audio: readonly ResolvedAlertAudio[]): Promise<void> {
+  #prepareAndStart(state: ActivePlayback, desktop: readonly OverlayInstruction[], audio: readonly ResolvedAlertAudio[]): Promise<void> {
+    return this.#localMediaService === undefined ? this.#prepareGroup(state, desktop, audio)
+      : this.#localMediaService.runPreparation(() => this.#prepareGroup(state, desktop, audio));
+  }
+
+  async #prepareGroup(state: ActivePlayback, desktop: readonly OverlayInstruction[], audio: readonly ResolvedAlertAudio[]): Promise<void> {
     const preparations: Promise<(startsAt: number) => void>[] = [];
     if (this.#overlayPlaybackSink !== null) {
       for (const instruction of state.browserInstructions) preparations.push(this.#prepareRecipient(state, "browser", async allowed => {

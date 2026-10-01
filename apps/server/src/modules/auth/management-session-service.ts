@@ -40,6 +40,7 @@ export class InMemoryManagementSessionRepository implements ManagementSessionRep
 
 /** Creates and verifies opaque localhost management sessions independent of HTTP handlers. */
 export class LocalManagementSessionService implements ManagementSessionService {
+  readonly #invalidationListeners = new Set<(sessionId: string) => Promise<void>>();
   readonly #repository: ManagementSessionRepository;
   readonly #clock: () => Date;
   readonly #generateId: () => string;
@@ -107,7 +108,14 @@ export class LocalManagementSessionService implements ManagementSessionService {
       ...session,
       revokedAt: this.#clock().toISOString()
     };
-    return this.#repository.update(revokedSession);
+    const updated = await this.#repository.update(revokedSession);
+    await Promise.all([...this.#invalidationListeners].map(listener => listener(sessionId)));
+    return updated;
+  }
+
+  onInvalidated(listener: (sessionId: string) => Promise<void>): () => void {
+    this.#invalidationListeners.add(listener);
+    return () => this.#invalidationListeners.delete(listener);
   }
 }
 

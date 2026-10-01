@@ -8,21 +8,24 @@ import {
   type OverlayRouteAccessRequest
 } from "@stream-jams/core";
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerHookHandler } from "fastify";
-import { AssetFileNotFoundError, AssetPathTraversalError, type LocalAssetStore } from "../../modules/assets/local-asset-store.js";
+import { AssetFileChangedError, AssetStreamCapacityError, AssetFileNotFoundError, AssetPathTraversalError, type LocalAssetStore } from "../../modules/assets/local-asset-store.js";
 import type { AssetLibraryService } from "../../modules/assets/asset-library-service.js";
 import {
   createOverlayAuthPreHandler,
   parseOverlayTargetProfileQuery
 } from "../middleware/overlay-auth.js";
 import { sendHttpError } from "../errors.js";
-import { sendMediaBytes } from "../media-response.js";
+import { sendMediaFile } from "../media-response.js";
 import { readModuleOverlayParams, readUnifiedOverlayParams } from "./overlay-route-params.js";
 import { isTimerAssetCompatible } from "../../modules/timers/timer-asset-role.js";
+import { randomUUID } from "node:crypto";
+import { MediaCapacityError, MediaUnavailableError, type LocalMediaService } from "../../modules/assets/local-media-service.js";
 
 export interface AssetRouteDependencies {
   readonly assetRepository: Pick<AssetRepository, "list" | "findById">;
   readonly mediaImportPipeline: Pick<MediaImportPipeline, "importMedia">;
-  readonly assetStore: Pick<LocalAssetStore, "read">;
+  readonly assetStore: Pick<LocalAssetStore, "openRead">;
+  readonly localMediaService?: LocalMediaService;
   readonly assetLibraryService?: Pick<AssetLibraryService, "registerAsset" | "getChangeImpact" | "completeReplacement">;
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
@@ -39,6 +42,25 @@ const maximumAssetImportBodyBytes = Math.max(
 
 export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRouteDependencies): void {
   const preHandler = [dependencies.managementRateLimitPreHandler, dependencies.managementAuthPreHandler];
+
+  const media = dependencies.localMediaService;
+  if (media !== undefined) {
+    app.get("/media/:handle", async (request, reply) => {
+      reply.header("referrer-policy", "no-referrer").header("cache-control", "no-store");
+      try {
+        const handle = String((request.params as { handle?: string }).handle ?? "");
+        const context = media.resolveForDelivery(handle);
+        return await sendMediaFile(request, reply, context.reader, context.record, context.signal);
+      } catch (error) {
+        if (error instanceof MediaCapacityError) return sendHttpError(reply, 503, { code: "MEDIA_CAPACITY", message: error.message });
+        if (error instanceof AssetStreamCapacityError) return sendHttpError(reply, 503, { code: "MEDIA_STREAM_CAPACITY", message: "Media stream capacity exhausted" });
+        if (error instanceof MediaUnavailableError || error instanceof AssetFileNotFoundError || error instanceof AssetFileChangedError || error instanceof AssetPathTraversalError) {
+          return sendHttpError(reply, 404, { code: "MEDIA_UNAVAILABLE", message: "Media reference unavailable" });
+        }
+        throw error;
+      }
+    });
+  }
 
   if (!app.hasContentTypeParser(importContentType)) {
     app.addContentTypeParser(importContentType, { parseAs: "buffer" }, (_request, body, done) => {
@@ -58,8 +80,11 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
     }
 
     try {
-      const record = await dependencies.mediaImportPipeline.importMedia(importRequest);
-      await dependencies.assetLibraryService?.registerAsset(record);
+      const record = await mutateMedia(dependencies, async () => {
+        const imported = await dependencies.mediaImportPipeline.importMedia(importRequest);
+        await dependencies.assetLibraryService?.registerAsset(imported);
+        return imported;
+      });
       return reply.status(201).send(record);
     } catch (error) {
       if (error instanceof InvalidMediaImportError) {
@@ -76,6 +101,7 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
   const assetLibraryService = dependencies.assetLibraryService;
   if (assetLibraryService !== undefined) {
     app.post("/assets/:assetId/replace", { preHandler, bodyLimit: maximumAssetImportBodyBytes }, async (request, reply) => {
+      return mutateMedia(dependencies, async () => {
       const assetId = readAssetId(request.params);
       const existing = await dependencies.assetRepository.findById(assetId);
       if (existing === null) {
@@ -116,6 +142,7 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
         }
         throw error;
       }
+      });
     });
   }
 
@@ -130,9 +157,14 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
     }
 
     try {
-      const bytes = await dependencies.assetStore.read(record.storagePath);
-      return sendMediaBytes(request, reply, bytes, record.mimeType);
+      return await sendOwnedAssetMedia(request, reply, dependencies, record);
     } catch (error) {
+      if (error instanceof AssetFileChangedError || error instanceof AssetStreamCapacityError) {
+        return sendHttpError(reply, error instanceof AssetStreamCapacityError ? 503 : 409, {
+          code: error instanceof AssetStreamCapacityError ? "MEDIA_STREAM_CAPACITY" : "ASSET_FILE_CHANGED",
+          message: error.message
+        });
+      }
       if (error instanceof AssetPathTraversalError) {
         return sendHttpError(reply, 400, {
           code: "ASSET_STORAGE_PATH_INVALID",
@@ -140,7 +172,8 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
         });
       }
 
-      if (error instanceof AssetFileNotFoundError) {
+      if (error instanceof MediaCapacityError) return sendHttpError(reply, 503, { code: "MEDIA_CAPACITY", message: error.message });
+      if (error instanceof AssetFileNotFoundError || error instanceof MediaUnavailableError) {
         return sendHttpError(reply, 404, {
           code: "ASSET_FILE_NOT_FOUND",
           message: "Asset file not found"
@@ -155,6 +188,7 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
     registerOverlayAssetRoutes(app, {
       assetRepository: dependencies.assetRepository,
       assetStore: dependencies.assetStore,
+      ...(dependencies.localMediaService === undefined ? {} : { localMediaService: dependencies.localMediaService }),
       overlayAccessService: dependencies.overlayAccessService
     });
   }
@@ -162,7 +196,7 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
 
 function registerOverlayAssetRoutes(
   app: FastifyInstance,
-  dependencies: Pick<AssetRouteDependencies, "assetRepository" | "assetStore"> & {
+  dependencies: Pick<AssetRouteDependencies, "assetRepository" | "assetStore" | "localMediaService"> & {
     readonly overlayAccessService: Pick<OverlayAccessService, "verifyRouteAccess">;
   }
 ): void {
@@ -186,24 +220,58 @@ function registerOverlayAssetRoutes(
 async function sendOverlayAsset(
   request: FastifyRequest,
   reply: FastifyReply,
-  dependencies: Pick<AssetRouteDependencies, "assetRepository" | "assetStore">
+  dependencies: Pick<AssetRouteDependencies, "assetRepository" | "assetStore" | "localMediaService">
 ) {
   const assetId = readAssetId(request.params);
+  const version = (request.query as { version?: unknown }).version;
+  if (version !== undefined && dependencies.localMediaService !== undefined) {
+    try {
+      if (typeof version !== "string") throw new MediaUnavailableError();
+      const moduleId = (request.params as { moduleId?: string }).moduleId ?? null;
+      const owner = `http:${randomUUID()}`;
+      const record = await dependencies.localMediaService.acquireVersion(owner, assetId, version, moduleId);
+      try {
+        const context = dependencies.localMediaService.context(owner, record.id);
+        return await sendMediaFile(request, reply, context.reader, context.record, context.signal);
+      } finally { await dependencies.localMediaService.release(owner); }
+    } catch (error) {
+      if (error instanceof MediaCapacityError) return sendHttpError(reply, 503, { code: "MEDIA_CAPACITY", message: error.message });
+        if (error instanceof AssetStreamCapacityError) return sendHttpError(reply, 503, { code: "MEDIA_STREAM_CAPACITY", message: error.message });
+      if (error instanceof MediaUnavailableError || error instanceof AssetPathTraversalError || error instanceof AssetFileNotFoundError || error instanceof AssetFileChangedError) return sendOverlayAssetNotFound(reply);
+      throw error;
+    }
+  }
   const record = await dependencies.assetRepository.findById(assetId);
   if (record === null) {
     return sendOverlayAssetNotFound(reply);
   }
 
   try {
-    const bytes = await dependencies.assetStore.read(record.storagePath);
-    return sendMediaBytes(request, reply.header("cache-control", "no-store"), bytes, record.mimeType);
+    return await sendOwnedAssetMedia(request, reply, dependencies, record);
   } catch (error) {
-    if (error instanceof AssetPathTraversalError || error instanceof AssetFileNotFoundError) {
+    if (error instanceof MediaCapacityError) return sendHttpError(reply, 503, { code: "MEDIA_CAPACITY", message: error.message });
+        if (error instanceof AssetStreamCapacityError) return sendHttpError(reply, 503, { code: "MEDIA_STREAM_CAPACITY", message: error.message });
+    if (error instanceof AssetPathTraversalError || error instanceof AssetFileNotFoundError || error instanceof AssetFileChangedError || error instanceof MediaUnavailableError) {
       return sendOverlayAssetNotFound(reply);
     }
 
     throw error;
   }
+}
+
+async function sendOwnedAssetMedia(request: FastifyRequest, reply: FastifyReply, dependencies: Pick<AssetRouteDependencies, "assetStore" | "localMediaService">, record: import("@stream-jams/core").AssetRecord): Promise<FastifyReply> {
+  const media = dependencies.localMediaService;
+  if (media === undefined) return sendMediaFile(request, reply, dependencies.assetStore, record);
+  const owner = `http:${randomUUID()}`;
+  await media.acquire(owner, [record.id]);
+  try {
+    const context = media.context(owner, record.id);
+    return await sendMediaFile(request, reply, context.reader, context.record, context.signal);
+  } finally { await media.release(owner); }
+}
+
+function mutateMedia<T>(dependencies: Pick<AssetRouteDependencies, "localMediaService">, work: () => Promise<T>): Promise<T> {
+  return dependencies.localMediaService === undefined ? work() : dependencies.localMediaService.mutate(work);
 }
 
 function sendOverlayAssetNotFound(reply: FastifyReply): FastifyReply {

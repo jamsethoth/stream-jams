@@ -1,5 +1,5 @@
 import { isExplicitAudioOutputDeviceId } from "./audio-player-policy.js";
-import { deviceAudioResultSchema, serializeException } from "@stream-jams/core";
+import { deviceAudioResultSchema, privateAudioMediaUrl, serializeException } from "@stream-jams/core";
 import { DeviceAudioPlayer, type PlayerMediaElement } from "./device-audio-player.js";
 import { audioRendererRequestSchema, type AudioRendererReply, type AudioRendererRequest } from "./audio-ipc.js";
 
@@ -23,6 +23,7 @@ async function listOutputDevices() {
     .map(({ deviceId, label }) => ({ deviceId, label: label || "Unlabelled output" }));
 }
 
+const toneReference = { protocolVersion: 1 as const, handle: `private_${"T".repeat(43)}`, snapshot: { assetId: "tone", version: "0".repeat(64), mimeType: "audio/wav" as const, sizeBytes: 48044, durationMs: 1000 } };
 const player = new DeviceAudioPlayer({
   createElement(source) {
     const element = new Audio(source);
@@ -53,8 +54,8 @@ const player = new DeviceAudioPlayer({
       }
     };
   },
-  createSource: asset => URL.createObjectURL(new Blob([new Uint8Array(asset.bytes)], { type: asset.mimeType })),
-  revokeSource: source => URL.revokeObjectURL(source),
+  createSource: asset => asset.reference.handle === toneReference.handle ? "stream-jams-audio://player/tone.wav" : privateAudioMediaUrl(asset.reference),
+  revokeSource: () => {},
   listOutputDevices
 });
 let generation = 0;
@@ -68,9 +69,10 @@ bridge?.onCommand(candidate => {
     generation = request.generation;
     player.initialize(generation, request.command.muted);
   } else if (request.generation !== generation) return;
-  const reply = (result: AudioRendererReply["result"], exception?: AudioRendererReply["exception"]) => bridge.report({ generation: request.generation, requestId: request.requestId, result, ...(exception === undefined ? {} : { exception }) });
+  const reply = (result: AudioRendererReply["result"], exception?: AudioRendererReply["exception"]) => bridge.report({ protocolVersion: 1, generation: request.generation, requestId: request.requestId, result, ...(exception === undefined ? {} : { exception }) });
   void (async () => {
     switch (request.command.type) {
+      case "test": await playTone(request.command.deviceId); reply({ type: "ok" }); break;
       case "enumerate": reply({ type: "devices", devices: await listOutputDevices() }); break;
       case "prepare": await player.prepare(request.command.token, { generation, ...request.command.payload }); reply({ type: "prepared", token: request.command.token }); break;
       case "start": reply({ type: "played", ...deviceAudioResultSchema.parse(await player.start(request.command.token, request.command.startsAtEpochMs)) }); break;
@@ -84,17 +86,17 @@ bridge?.onCommand(candidate => {
 navigator.mediaDevices.addEventListener("devicechange", () => { void player.reconcileDevices(); });
 window.addEventListener("pagehide", () => player.close());
 
-// Retain the bounded packaged capability harness, using the production engine
-// and its authoritative mute state rather than a second unmanaged audio path.
-async function playFixture(request: { source: string; deviceIds: readonly string[]; volume: number }): Promise<void> {
-  const match = /^data:audio\/wav;base64,([A-Za-z0-9+/=]+)$/.exec(request.source);
-  if (match === null || request.source.length > 36 * 1024 * 1024 || generation === 0) throw new Error("A bounded WAV fixture and initialized audio host are required.");
-  const bytes = Uint8Array.from(atob(match[1]!), char => char.charCodeAt(0));
+// A fixed packaged tone exercises routing without moving registered media bodies.
+async function playTone(deviceId: string, volume = 0.25, deviceIds: readonly string[] = [deviceId]): Promise<void> {
   const result = await player.play({ generation, batch: {
-    playbackId: crypto.randomUUID(), documentId: "capability-fixture", durationMs: 30_000, muted: false,
-    layers: [{ sourceKind: "audio", layerId: "fixture", assetId: "fixture", volume: request.volume }],
-    destinations: [...new Set(request.deviceIds)].map(deviceId => ({ deviceId, routeIds: [deviceId] }))
-  }, assets: [{ assetId: "fixture", mimeType: "audio/wav", bytes }], deadlineMs: Date.now() + 30_000 });
-  if (result.failedRouteIds.length > 0) throw new Error("An explicit output could not complete the fixture.");
+    playbackId: crypto.randomUUID(), documentId: "route-test", durationMs: 1000, muted: false,
+    layers: [{ sourceKind: "audio", layerId: "tone", assetId: "tone", volume }],
+    destinations: [...new Set(deviceIds)].map(id => ({ deviceId: id, routeIds: ["route-test"] }))
+  }, assets: [{ assetId: "tone", reference: toneReference }], deadlineMs: Date.now() + 1000 });
+  if (result.failedRouteIds.length > 0) throw new Error("The explicit output could not complete the test tone.");
+}
+async function playFixture(request: { source: string; deviceIds: readonly string[]; volume: number }): Promise<void> {
+  if (request.source !== "stream-jams-audio://player/tone.wav" || !Number.isFinite(request.volume) || request.volume < 0 || request.volume > 2 || request.deviceIds.length === 0 || request.deviceIds.length > 16) throw new Error("Only the fixed packaged tone is available.");
+  await playTone(request.deviceIds[0]!, request.volume, request.deviceIds);
 }
 window.streamJamsAudioCapability = Object.freeze({ listOutputDevices, playFixture });

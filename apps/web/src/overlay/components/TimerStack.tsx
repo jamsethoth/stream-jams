@@ -4,7 +4,7 @@ import "../overlay.css";
 
 export interface TimerStackProps {
   readonly stack: TimerStackProjection;
-  readonly resolveAssetUrl: (assetId: string) => string | null;
+  readonly resolveAssetUrl: (assetId: string, version?: string) => string | null;
   readonly now?: () => number;
 }
 
@@ -83,7 +83,7 @@ function TimerCard({
 }: {
   readonly card: TimerOverlayCard;
   readonly nowEpochMs: number;
-  readonly resolveAssetUrl: (assetId: string) => string | null;
+  readonly resolveAssetUrl: (assetId: string, version?: string) => string | null;
 }) {
   const remainingMs = card.status === "running"
     ? Math.max(0, card.endsAtEpochMs - nowEpochMs)
@@ -116,7 +116,7 @@ function TimerCard({
     >
       {card.iconAssetId === null
         ? <DefaultTimerIcon />
-        : <TimerIcon assetId={card.iconAssetId} label={card.label} resolveAssetUrl={resolveAssetUrl} />}
+        : <TimerIcon version={card.iconVersion} assetId={card.iconAssetId} label={card.label} resolveAssetUrl={resolveAssetUrl} />}
       <span className="timer-stack__label" title={card.label}>{card.label}</span>
       <time className="timer-stack__value" data-testid={`timer-value-${card.definitionId}`}>{value}</time>
     </div>
@@ -143,20 +143,23 @@ function DefaultTimerIcon() {
 }
 
 function TimerIcon({
+  version,
   assetId,
   label,
   resolveAssetUrl
 }: {
+  readonly version: string | undefined;
   readonly assetId: string;
   readonly label: string;
-  readonly resolveAssetUrl: (assetId: string) => string | null;
+  readonly resolveAssetUrl: (assetId: string, version?: string) => string | null;
 }) {
   const [failed, setFailed] = useState(false);
-  const src = resolveAssetUrl(assetId);
+  const src = resolveAssetUrl(assetId, version);
   useEffect(() => setFailed(false), [assetId, src]);
   if (failed || src === null) return null;
   return (
     <img
+      referrerPolicy="no-referrer"
       alt={`${label} icon`}
       className="timer-stack__icon"
       onError={() => setFailed(true)}
