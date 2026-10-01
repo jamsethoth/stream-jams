@@ -14,7 +14,10 @@ for (const format of [
   { name: "WebM", mimeType: "video/webm;codecs=vp9,opus", extension: "webm" },
   { name: "MP4", mimeType: "video/mp4;codecs=avc1.42001E,mp4a.40.2", extension: "mp4" }
 ] as const) {
-test(`packaged decoder silently plays and seeks ${format.name} soundtracks and trackless media`, async () => {
+for (const mode of ["decoder", "device-soundtrack"] as const) {
+test(mode === "decoder"
+  ? `packaged decoder silently plays and seeks ${format.name} soundtracks and trackless media`
+  : `@hardware packaged private player routes muted ${format.name} soundtracks to an explicit output`, async () => {
   const testInfo = test.info();
   const clips = await Promise.all([true, false].map(async withAudio => ({
     withAudio,
@@ -44,40 +47,43 @@ test(`packaged decoder silently plays and seeks ${format.name} soundtracks and t
   try {
     const management = await windowByUrl(desktop, `http://127.0.0.1:${port}/manage`);
     await expect(management.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
-    await ensureAudioPlayerReady(port);
-    const player = await windowByUrl(desktop, "stream-jams-audio://player/");
     await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().startsWith("http://127.0.0.1:"))!.hide());
     expect(await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(w => w.webContents.getURL().startsWith("http://127.0.0.1:")).every(w => !w.isVisible()))).toBe(true);
-    for (const clip of clips) {
-      const result = await probeRegisteredMedia(management, port, clip.bytes, format.extension);
-      results.push({ withAudio: clip.withAudio, sha256: createHash("sha256").update(clip.bytes).digest("hex"), sizeBytes: clip.bytes.byteLength, ...result });
-      expect(result.error).toBeNull();
-      expect(result.samples.length).toBe(3);
-      expect(result.samples.every(sample => sample.muted && sample.audioTime > 0 && sample.videoTime > 0)).toBe(true);
-      expect(result.samples.every(sample => Math.abs(sample.audioTime - sample.videoTime) < 0.15)).toBe(true);
-      expect(result.seekTime).toBeGreaterThanOrEqual(4.9);
-      expect(result.seekTime).toBeLessThan(5.15);
-      expect(result.ended).toBe(true);
-      expect(result.videoWidth).toBe(320);
-      expect(result.videoHeight).toBe(180);
+    if (mode === "decoder") {
+      for (const clip of clips) {
+        const result = await probeRegisteredMedia(management, port, clip.bytes, format.extension);
+        results.push({ withAudio: clip.withAudio, sha256: createHash("sha256").update(clip.bytes).digest("hex"), sizeBytes: clip.bytes.byteLength, ...result });
+        expect(result.error).toBeNull();
+        expect(result.samples.length).toBe(3);
+        expect(result.samples.every(sample => sample.muted && sample.audioTime > 0 && sample.videoTime > 0)).toBe(true);
+        expect(result.samples.every(sample => Math.abs(sample.audioTime - sample.videoTime) < 0.15)).toBe(true);
+        expect(result.seekTime).toBeGreaterThanOrEqual(4.9);
+        expect(result.seekTime).toBeLessThan(5.15);
+        expect(result.ended).toBe(true);
+        expect(result.videoWidth).toBe(320);
+        expect(result.videoHeight).toBe(180);
+      }
+      // Management supports local File/Blob previews; the private player CSP
+      // intentionally forbids Blob. Probe decoding here so rejection cannot be
+      // a private CSP false positive.
+      const malformed = await management.evaluate(async () => {
+        const url = URL.createObjectURL(new Blob([new Uint8Array([0, 1, 2, 3])], { type: "video/webm" }));
+        const audio = new Audio(); audio.muted = true; audio.volume = 0;
+        try {
+          return await new Promise<boolean>(resolveResult => {
+            const timer = setTimeout(() => resolveResult(false), 5000);
+            audio.onerror = () => { clearTimeout(timer); resolveResult(true); };
+            audio.src = url; audio.load();
+          });
+        } finally { audio.pause(); audio.removeAttribute("src"); audio.load(); URL.revokeObjectURL(url); }
+      });
+      expect(malformed).toBe(true);
+      results.push({ malformedRejectedWithinMs: 5000 });
+    } else {
+      await ensureAudioPlayerReady(port);
+      const player = await windowByUrl(desktop, "stream-jams-audio://player/");
+      results.push(await probeProductionSoundtrack(player, port, clips[0]!.bytes, format.extension));
     }
-    // Management supports local File/Blob previews; the private player CSP
-    // intentionally forbids Blob. Probe decoding here so rejection cannot be
-    // a private CSP false positive.
-    const malformed = await management.evaluate(async () => {
-      const url = URL.createObjectURL(new Blob([new Uint8Array([0, 1, 2, 3])], { type: "video/webm" }));
-      const audio = new Audio(); audio.muted = true; audio.volume = 0;
-      try {
-        return await new Promise<boolean>(resolveResult => {
-          const timer = setTimeout(() => resolveResult(false), 5000);
-          audio.onerror = () => { clearTimeout(timer); resolveResult(true); };
-          audio.src = url; audio.load();
-        });
-      } finally { audio.pause(); audio.removeAttribute("src"); audio.load(); URL.revokeObjectURL(url); }
-    });
-    expect(malformed).toBe(true);
-    results.push({ malformedRejectedWithinMs: 5000 });
-    results.push(await probeProductionSoundtrack(player, port, clips[0]!.bytes, format.extension));
     (await desktop.evaluate(({ app }) => app.getAppMetrics().map(metric => metric.pid))).forEach(pid => pids.add(pid));
   } catch (error) { failures.push(error); }
 
@@ -90,14 +96,16 @@ test(`packaged decoder silently plays and seeks ${format.name} soundtracks and t
       catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") return true; throw error; }
     }), { timeout: 20_000 }).toBe(true);
   } catch (error) { failures.push(error); }
-  const evidence = { root, format, packageSha256, mainPid, launcherPid: child.pid, capturedPids: [...pids], exitCode: child.exitCode, signal: child.signalCode,
+  const evidence = { root, format, mode, packageSha256, mainPid, launcherPid: child.pid, capturedPids: [...pids], exitCode: child.exitCode, signal: child.signalCode,
     results, failures: failures.map(failure => failure instanceof Error ? failure.message : "Unknown failure"),
-    limitation: "Silent decoder plus production device-only soundtrack delivery when an explicit output is available; not physical marker timing or OBS acceptance." };
+    limitation: mode === "decoder" ? "Silent registered-preview decoder coverage; no selected-device delivery, physical marker timing or OBS acceptance."
+      : "Muted production device-only soundtrack delivery; requires an explicit output, not physical marker timing or OBS acceptance." };
   await writeFile(join(root, "evidence.json"), JSON.stringify(evidence, null, 2));
   await testInfo.attach("silent-decoder-evidence", { body: JSON.stringify(evidence), contentType: "application/json" });
   console.info(`Silent video codec evidence retained: ${root}`);
   if (failures.length) throw new AggregateError(failures, "Silent video codec probe failed; profile retained");
 });
+}
 }
 
 async function ensureAudioPlayerReady(port: number): Promise<void> {
@@ -153,7 +161,8 @@ async function probeProductionSoundtrack(player: Page, port: number, bytes: Uint
   }, body: Buffer.from(bytes), signal: AbortSignal.timeout(5000) });
   expect(imported.ok).toBe(true);
   const asset = await imported.json() as { id: string };
-  const rule = (await api<{ id: string; eventType: string }[]>("/alerts/rules")).find(item => item.eventType === "follow")!;
+  const set = await api<{ id: string }>("/management/alert-sets", "POST", { name: "Soundtrack probe alerts" });
+  const rule = await api<{ id: string }>(`/management/alert-sets/${set.id}/alerts`, "POST", { eventType: "follow", name: "Soundtrack probe follow" });
   const document = await api<import("../../packages/core/dist/index.js").AlertEditorDocument>(`/management/alerts/${rule.id}/editor`);
   const draft = { ...document, durationMode: "custom" as const, durationMs: 5000, outputs: { browserSource: false, deviceRouteIds: [route.id] },
     layers: [0, 1].map(index => ({ id: `probe-video-${index}`, type: "video", name: `Silent video ${index}`, assetId: asset.id,

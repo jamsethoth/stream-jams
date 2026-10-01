@@ -44,7 +44,8 @@ test.beforeAll(async () => {
   const response = await fetch(`${base}/auth/management/sessions`, { method: "POST" }); expect(response.ok).toBe(true);
   const session = await response.json() as { id: string; csrfToken: string };
   headers = { authorization: `Bearer ${session.id}`, "x-stream-jams-csrf": session.csrfToken };
-  const rule = (await api<{ id: string; eventType: string }[]>("/alerts/rules")).find(item => item.eventType === "follow")!;
+  const set = await api<{ id: string }>("/management/alert-sets", "POST", { name: "Format probe alerts" });
+  const rule = await api<{ id: string }>(`/management/alert-sets/${set.id}/alerts`, "POST", { eventType: "follow", name: "Format probe follow" });
   editor = alertEditorDocumentSchema.parse(await api(`/management/alerts/${rule.id}/editor`));
   const runtime = await desktop.evaluate(({ app }) => ({ packaged: app.isPackaged, asar: app.getAppPath().endsWith("app.asar"), versions: process.versions }));
   expect(runtime.packaged && runtime.asar).toBe(true); evidence.runtime = runtime;
