@@ -141,23 +141,31 @@ for (const scenario of [
   { mode: "readiness", stage: "decode", errorName: "TimedMediaPreparationError", errorMessage: "Video playback preparation deadline exceeded." }
 ] as const) {
   test(`timed video ${scenario.mode} failure stays transparent and reports structured provenance without seeking`, async ({ page }) => {
+    const testTime = new Date("2026-10-01T12:00:00Z");
+    if (scenario.mode === "readiness") {
+      await page.clock.install({ time: new Date(testTime.getTime() - 1000) });
+      await page.clock.pauseAt(testTime);
+    }
     await installOverlayWebSocketMock(page);
     await page.addInitScript(({ mode }) => {
-      const state = window as Window & { __mediaSeekAttempts?: number };
+      const state = window as Window & { __mediaSeekAttempts?: number; __mediaPreparationStartedAt?: number };
       const position = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime")!;
       Object.defineProperty(HTMLMediaElement.prototype, "currentTime", {
         configurable: true,
         get: position.get!,
         set() { state.__mediaSeekAttempts = (state.__mediaSeekAttempts ?? 0) + 1; throw new DOMException("Seeking is forbidden", "InvalidStateError"); }
       });
-      if (mode === "readiness") Object.defineProperty(HTMLMediaElement.prototype, "readyState", { configurable: true, get: () => 1 });
+      if (mode === "readiness") Object.defineProperty(HTMLMediaElement.prototype, "readyState", {
+        configurable: true,
+        get() { state.__mediaPreparationStartedAt ??= Date.now(); return 1; }
+      });
       if (mode === "play") Object.defineProperty(HTMLMediaElement.prototype, "play", {
         configurable: true,
         value() { return Promise.reject(new DOMException("play denied", "NotSupportedError")); }
       });
     }, { mode: scenario.mode });
     await page.route("**/overlay/modules/alerts/live/ovl_failure/composition*", route => {
-      const now = Date.now();
+      const now = scenario.mode === "readiness" ? testTime.getTime() : Date.now();
       return route.fulfill({ contentType: "application/json", json: {
         overlayId: "default", purpose: "live", scope: "module", targetProfileId: "vertical",
         modules: [{ moduleId: "alerts", enabled: true, instructions: [{
@@ -170,6 +178,28 @@ for (const scenario of [
     });
     await page.route("**/assets/failure-video*", route => route.fulfill({ path: resolve("tests/fixtures/media/neutral-trackless.webm"), contentType: "video/webm" }));
     await page.goto("/overlay/modules/alerts/live/ovl_failure?profile=vertical");
+    if (scenario.mode === "readiness") {
+      // Preparation has installed its timers before checking readyState. Keep
+      // Date.now and both deadlines on one clock so timer order cannot race.
+      await expect.poll(async () => {
+        // The WebSocket mock opens on a timer, and rendering may need a frame.
+        await page.clock.runFor(16);
+        return page.evaluate(() =>
+          (window as Window & { __mediaPreparationStartedAt?: number }).__mediaPreparationStartedAt
+        );
+      }).toBeDefined();
+      const untilDeadline = await page.evaluate(() => {
+        const startedAt = (window as Window & { __mediaPreparationStartedAt?: number }).__mediaPreparationStartedAt;
+        if (startedAt === undefined) throw new Error("Media preparation has not started.");
+        return startedAt + 5000 - Date.now();
+      });
+      await page.clock.runFor(untilDeadline - 1);
+      expect(await page.evaluate(() =>
+        ((window as Window & { __overlaySocketMessages?: { type: string }[] }).__overlaySocketMessages ?? [])
+          .filter(message => message.type === "overlay.playback.failed")
+      )).toHaveLength(0);
+      await page.clock.runFor(1);
+    }
     await expect.poll(async () => page.evaluate(() => {
       const messages = (window as Window & { __overlaySocketMessages?: unknown[] }).__overlaySocketMessages ?? [];
       return messages.find((message) => typeof message === "object" && message !== null
