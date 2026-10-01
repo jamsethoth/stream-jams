@@ -11,6 +11,7 @@ export interface MediaPreviewGroupState {
 export function createMediaPreviewGroup(api: MediaPreviewApi) {
   let state: MediaPreviewGroupState = { descriptors: {}, unavailable: false };
   let disposed = false;
+  const failedAssets = new Set<string>();
   const owners = new Map<string, OwnedMediaPreview>();
   const elements = new Map<Element, { assetId: string; url: string | null }>();
   const listeners = new Set<() => void>();
@@ -24,7 +25,7 @@ export function createMediaPreviewGroup(api: MediaPreviewApi) {
   };
   const publish = () => {
     const descriptors: Record<string, MediaPreviewDescriptor> = {};
-    let unavailable = false;
+    let unavailable = failedAssets.size > 0;
     for (const [id, owner] of owners) {
       const snapshot = owner.getSnapshot();
       if (snapshot.descriptor !== null) descriptors[id] = snapshot.descriptor;
@@ -47,6 +48,20 @@ export function createMediaPreviewGroup(api: MediaPreviewApi) {
         detach(element, entry.url);
         if (elements.get(element) === entry) elements.delete(element);
       };
+    },
+    failAsset(assetId: string, expectedUrl: string) {
+      const owner = owners.get(assetId);
+      if (disposed || owner?.getSnapshot().descriptor?.url !== expectedUrl) return;
+      for (const [element, entry] of elements) {
+        if (entry.assetId === assetId) {
+          detach(element, entry.url);
+          elements.delete(element);
+        }
+      }
+      owners.delete(assetId);
+      failedAssets.add(assetId);
+      owner.dispose();
+      publish();
     },
     async acquire(assetIds: readonly string[]) {
       try {

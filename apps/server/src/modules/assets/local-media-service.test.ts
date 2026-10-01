@@ -115,14 +115,33 @@ it("retains failed cleanup intent for retry and protects paths restored to curre
   const f = await fixture();
   try {
     await f.assets.save({ ...f.original, storagePath: "new.webm" });
-    const deletion = vi.spyOn(f.store, "delete").mockRejectedValueOnce(new Error("file is busy"));
-    await expect(f.media.reconcile()).rejects.toThrow("busy");
+    const deletion = vi.spyOn(f.store, "delete").mockRejectedValueOnce(Object.assign(new Error("file is busy"), { code: "EBUSY" }));
+    await expect(f.media.reconcile()).resolves.toBeUndefined();
     expect(f.retirements.list()).toHaveLength(1);
     await f.assets.save(f.original);
     await f.media.reconcile();
     expect(await f.store.inspect("old.webm")).toBe("available");
     expect(deletion.mock.calls).toEqual([["old.webm"], ["new.webm"]]);
     expect(f.retirements.list()).toEqual([]);
+  } finally { await f.close(); }
+});
+
+it.each(["list", "isCurrent", "forget"] as const)("does not suppress retirement repository %s failures during reconciliation", async operation => {
+  const f = await fixture();
+  try {
+    await f.assets.save({ ...f.original, storagePath: "new.webm" });
+    const failure = vi.spyOn(f.retirements, operation).mockImplementation(() => { throw new Error("retirement database failed"); });
+    await expect(f.media.reconcile()).rejects.toThrow("retirement database failed");
+    failure.mockRestore();
+  } finally { await f.close(); }
+});
+
+it("does not suppress invalid retired storage paths during reconciliation", async () => {
+  const f = await fixture();
+  try {
+    f.database.connection.prepare("INSERT INTO asset_retirements (storage_path, asset_id) VALUES (?, ?)").run("../outside", "asset");
+    await expect(f.media.reconcile()).rejects.toThrow();
+    f.retirements.forget("../outside");
   } finally { await f.close(); }
 });
 

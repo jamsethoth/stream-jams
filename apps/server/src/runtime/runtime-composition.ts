@@ -305,7 +305,6 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   const closeLocalMedia = onceAsync(() => localMediaService.close());
   cleanups.push(closeLocalMedia);
-  await localMediaService.reconcile();
   const assetValidator = new DefaultAssetValidator();
   const mediaImportPipeline = new DefaultMediaImportPipeline({
     validator: assetValidator,
@@ -376,6 +375,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     retentionService: logRetentionService,
     now
   });
+  await localMediaService.reconcile();
   const localMaintenanceService = new LocalMaintenanceService({
     dataDirectory: initialConfig.storage.dataDirectory,
     logDirectory,

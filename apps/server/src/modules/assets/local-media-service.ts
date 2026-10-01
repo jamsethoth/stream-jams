@@ -427,7 +427,7 @@ export class LocalMediaService {
     }
   }
 
-  reconcile(): Promise<void> { return this.#exclusive(() => this.#cleanup()); }
+  reconcile(): Promise<void> { return this.#exclusive(() => this.#cleanup(true)); }
 
   async close(): Promise<void> {
     this.#closed = true;
@@ -461,11 +461,19 @@ export class LocalMediaService {
 
   invalidate(): Promise<void> { return this.maintenance(async () => undefined); }
 
-  async #cleanup(): Promise<void> {
+  async #cleanup(deferInaccessibleFiles = false): Promise<void> {
     const pinned = new Set([...this.#owners.values()].flatMap(owner => [...owner.records.values()].map(record => record.storagePath)));
     for (const retired of this.options.retirements.list()) {
       if (pinned.has(retired.storagePath) || this.#reads.has(retired.storagePath)) continue;
-      if (!this.options.retirements.isCurrent(retired.storagePath)) await this.options.store.delete(retired.storagePath);
+      if (!this.options.retirements.isCurrent(retired.storagePath)) {
+        try { await this.options.store.delete(retired.storagePath); }
+        catch (error) {
+          if (!deferInaccessibleFiles || !(error instanceof Error) || !("code" in error) || !["EBUSY", "EACCES", "EPERM"].includes(String(error.code))) throw error;
+          // The durable retirement remains pending; a locked file must not block startup.
+          this.options.onCleanupError?.(error);
+          continue;
+        }
+      }
       this.options.retirements.forget(retired.storagePath);
     }
   }

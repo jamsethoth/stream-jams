@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile, readdir, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,6 +30,63 @@ import type {
 } from "../modules/twitch/twitch-eventsub-client.js";
 import * as runtimeComposition from "./runtime-composition.js";
 import { createRuntimeAppComposition } from "./runtime-composition.js";
+import { LocalAssetStore } from "../modules/assets/local-asset-store.js";
+import { SqliteAssetRepository } from "../modules/assets/sqlite-asset-repository.js";
+import { SqliteAssetRetirementRepository } from "../modules/assets/sqlite-asset-retirement-repository.js";
+
+it.each(["EBUSY", "EACCES", "EPERM"])("starts with persisted retirement %s and retries cleanup while current media stays readable", async code => {
+  const testRoot = await mkdtemp(join(tmpdir(), "stream-jams-retirement-startup-"));
+  let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
+  const options = {
+    homeDirectory: testRoot,
+    webBuildDirectory: await createWebBuildFixture(testRoot),
+    configStore: new StaticConfigStore(createConfig(testRoot)),
+    environment: {}, secretStore: new TestSecretStore(),
+    scheduleRecurring: () => ({ scheduled: true }), cancelRecurring: () => {}
+  };
+  const originalDelete = LocalAssetStore.prototype.delete;
+  let blocked = true;
+  const deletion = vi.spyOn(LocalAssetStore.prototype, "delete").mockImplementation(async function (this: LocalAssetStore, storagePath) {
+    if (blocked && storagePath === "old.webm") throw Object.assign(new Error("retired file is busy"), { code });
+    return originalDelete.call(this, storagePath);
+  });
+  try {
+    composition = await createRuntimeAppComposition(options);
+    await mkdir(join(testRoot, "assets"), { recursive: true });
+    await writeFile(join(testRoot, "assets", "old.webm"), "old");
+    await writeFile(join(testRoot, "assets", "new.webm"), "new");
+    const assets = new SqliteAssetRepository(composition.database.connection);
+    const current = { id: "asset", originalFileName: "media.webm", mediaType: "video" as const, mimeType: "video/webm", sizeBytes: 3,
+      checksum: `sha256:${createHash("sha256").update("new").digest("hex")}`, storagePath: "new.webm", durationMs: 1000 };
+    await assets.save({ ...current, storagePath: "old.webm" });
+    await assets.save(current);
+    await composition.close();
+    composition = undefined;
+    await rm(join(testRoot, "data", "logs"), { recursive: true, force: true });
+    composition = await createRuntimeAppComposition(options);
+    expect((await composition.app.inject({ method: "GET", url: "/health" })).statusCode).toBe(200);
+    const retirements = new SqliteAssetRetirementRepository(composition.database.connection);
+    expect(retirements.list()).toEqual([{ storagePath: "old.webm", assetId: "asset" }]);
+    await composition.localMediaService.acquire("current", ["asset"]);
+    await expect(composition.localMediaService.verify("current", "asset", AbortSignal.timeout(5000))).resolves.toBeUndefined();
+    await vi.waitFor(async () => {
+      const logDirectory = join(testRoot, "data", "logs");
+      const logs = await Promise.all((await readdir(logDirectory)).filter(name => name.endsWith(".jsonl")).map(name => readFile(join(logDirectory, name), "utf8")));
+      expect(logs.join("\n")).toContain("Retired media cleanup will be retried");
+      expect(logs.join("\n")).toContain("retired file is busy");
+    });
+    blocked = false;
+    await composition.localMediaService.reconcile();
+    expect(retirements.list()).toEqual([]);
+    await expect(readFile(join(testRoot, "assets", "old.webm"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(join(testRoot, "assets", "new.webm"), "utf8")).toBe("new");
+  } finally {
+    blocked = false;
+    await composition?.close();
+    deletion.mockRestore();
+    await rm(testRoot, { recursive: true, force: true });
+  }
+});
 
 type RuntimeErrorConverter = (
   providerName: string,

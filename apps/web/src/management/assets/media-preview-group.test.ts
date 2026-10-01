@@ -4,6 +4,34 @@ import { createMediaPreviewGroup } from "./media-preview-group.js";
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
+it("detaches and releases only the failed asset while healthy grouped consumers keep renewing", async () => {
+  vi.useFakeTimers();
+  const api = createTestMediaPreviewApi();
+  const release = vi.spyOn(api, "releasePreview");
+  const renew = vi.spyOn(api, "renewPreview");
+  const group = createMediaPreviewGroup(api);
+  await group.acquire(["image", "healthy-image"]);
+  const failed = document.createElement("img");
+  const healthy = document.createElement("img");
+  const failedUrl = group.getSnapshot().descriptors.image!.url;
+  failed.src = failedUrl;
+  healthy.src = group.getSnapshot().descriptors["healthy-image"]!.url;
+  group.registerElement(failed, "image");
+  group.registerElement(healthy, "healthy-image");
+  group.failAsset("image", "stale-url");
+  expect(release).not.toHaveBeenCalled();
+  group.failAsset("image", failedUrl);
+  group.failAsset("image", failedUrl);
+  expect(failed.hasAttribute("src")).toBe(false);
+  expect(healthy.hasAttribute("src")).toBe(true);
+  expect(group.getSnapshot().descriptors.image).toBeUndefined();
+  expect(group.getSnapshot().unavailable).toBe(true);
+  expect(release).toHaveBeenCalledExactlyOnceWith("preview-image");
+  await vi.advanceTimersByTimeAsync(60000);
+  expect(renew).toHaveBeenCalledExactlyOnceWith("preview-healthy-image");
+  group.dispose();
+});
+
 it("shares one immutable source across visual and soundtrack consumers and detaches before release", async () => {
   const api = createTestMediaPreviewApi();
   const create = vi.spyOn(api, "createPreview");

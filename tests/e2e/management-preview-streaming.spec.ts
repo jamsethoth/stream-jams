@@ -95,3 +95,49 @@ async function unusedPort(): Promise<number> {
   await new Promise<void>((resolve, reject) => server.close(error => error === undefined ? resolve() : reject(error)));
   return address.port;
 }
+
+for (const mediaType of ["image", "audio", "video"] as const) {
+  test(`management ${mediaType} preview reports a native read failure after successful grant acquisition`, async ({ page }) => {
+    const root = await mkdtemp(join(tmpdir(), "stream-jams-preview-read-failure-"));
+    const config = { ...createDefaultAppConfig(root), server: { host: "127.0.0.1" as const, port: await unusedPort() } };
+    const runtime = await startLocalRuntime({ homeDirectory: root, webBuildDirectory: resolve("apps/web/dist"),
+      configStore: new FileConfigStore({ configFilePath: join(root, "config.json"), defaultConfig: config }), environment: {}, secretStore: new InMemorySecretStore() });
+    try {
+      const fileName = mediaType === "image" ? "tiny-image.png" : mediaType === "audio" ? "tiny-audio.wav" : "tiny-video.mp4";
+      const mimeType = mediaType === "image" ? "image/png" : mediaType === "audio" ? "audio/wav" : "video/mp4";
+      const bytes = await readFile(resolve("apps/web/public/storybook-assets", fileName));
+      const storagePath = `${mediaType}/${fileName}`;
+      await mkdir(join(config.storage.assetDirectory, mediaType), { recursive: true });
+      await writeFile(join(config.storage.assetDirectory, storagePath), bytes);
+      await new SqliteAssetRepository(runtime.composition.database.connection).save({ id: "failed-preview", originalFileName: fileName, mediaType, mimeType,
+        storagePath, sizeBytes: bytes.length, checksum: `sha256:${createHash("sha256").update(bytes).digest("hex")}`, durationMs: mediaType === "image" ? null : 1000 });
+      await new SqliteAssetLibraryMetadataRepository(runtime.composition.database.connection).save({ assetId: "failed-preview", displayName: "Failed preview fixture", tags: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      const baseline = runtime.composition.localMediaService.counts;
+      let grants = 0;
+      let failedReads = 0;
+      page.on("response", response => { if (new URL(response.url()).pathname.endsWith("/preview") && response.status() === 201) grants++; });
+      await page.route("**/media/**", async route => {
+        failedReads++;
+        await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ message: "Media source unavailable" }) });
+      });
+      await page.goto(`${runtime.url}/manage/assets`);
+      const tableFailure = page.getByRole("table").getByText("Preview unavailable", { exact: true });
+      const detailsFailure = page.getByRole("region", { name: "Failed preview fixture details" }).getByText("Preview unavailable", { exact: true });
+      await expect(tableFailure).toBeVisible();
+      await expect(detailsFailure).toBeVisible();
+      await expect.poll(() => grants).toBe(2);
+      expect(failedReads).toBeGreaterThan(0);
+      await expect(page.locator("img.asset-preview__media, video.asset-preview__media, audio.asset-preview__audio")).toHaveCount(0);
+      for (const failure of [tableFailure, detailsFailure]) {
+        await expect(failure).toHaveAttribute("title", "Retry by reselecting the asset. Reference: asset-preview-failed-preview");
+      }
+      await expect.poll(() => runtime.composition.localMediaService.counts).toEqual(baseline);
+      await page.getByRole("link", { name: "Settings", exact: true }).click();
+      await page.getByRole("link", { name: "Assets", exact: true }).click();
+      await expect(tableFailure).toBeVisible();
+      await expect(detailsFailure).toBeVisible();
+      await expect.poll(() => grants).toBe(4);
+      await expect.poll(() => runtime.composition.localMediaService.counts).toEqual(baseline);
+    } finally { await runtime.close(); await rm(root, { recursive: true, force: true }); }
+  });
+}

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, within } from "storybook/test";
+import { expect, fireEvent, within } from "storybook/test";
 import { storyAssetLibraryItems } from "../../stories/story-fixtures.js";
 import { createTestMediaPreviewApi } from "../../test-support/media-preview-fixture.js";
 import { AssetPreview } from "./AssetPreview.js";
@@ -20,4 +20,13 @@ export const Loading: Story = { args: { assetApi: createTestMediaPreviewApi(() =
 export const Unavailable: Story = {
   args: { assetApi: createTestMediaPreviewApi(async () => { throw new Error("Session expired"); }) },
   play: async ({ canvasElement }) => { await expect(await within(canvasElement).findByText("Preview unavailable")).toBeVisible(); }
+};
+export const NativeReadFailure: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    fireEvent.error(await canvas.findByRole("img"));
+    await expect(await canvas.findByText("Preview unavailable")).toBeVisible();
+    await expect(canvas.getByText("Preview unavailable")).toHaveAttribute("title", expect.stringContaining("Retry by reselecting the asset."));
+    await expect(canvas.queryByRole("img")).toBeNull();
+  }
 };

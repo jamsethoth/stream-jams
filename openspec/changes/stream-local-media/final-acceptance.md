@@ -1,6 +1,6 @@
 # Streaming media final acceptance — October 1, 2026
 
-All in-scope acceptance is complete for this working tree, with the measurement boundaries below. This is not publication, installation or archive. Earlier dated checkpoints retain their original evidence; this record supersedes their pending acceptance lists.
+The original acceptance pass completed all in-scope tasks with the measurement boundaries below. Subsequent independent-review corrections and current PR status are recorded in [review-fixes.md](review-fixes.md). This acceptance evidence is not installation or archive. Earlier dated checkpoints retain their original evidence; this record supersedes their pending acceptance lists.
 
 ## Final verified matrix
 
@@ -19,7 +19,7 @@ All in-scope acceptance is complete for this working tree, with the measurement 
 | Physical desktop/OBS and SFX/Game | User-confirmed original large effects, transparency, routing/aliases, gain, fades, mute/stop, cross-module coexistence; additional image/video/audio formats confirmed | [manual-physical-checkpoint.md](manual-physical-checkpoint.md) |
 | Post-purge storage-read timing | User's elevated run passed all fixture mappings and exact-file storage reads with zero lost events/buffers and completed cleanup | [cold-timing-checkpoint.md](cold-timing-checkpoint.md) |
 
-The final rebuilt ASAR SHA-256 is `14c343e31dff3a7c44efe831acbe823830f9e6984433641bedf5d6f6fb23ca14`, identical to the application used for the latest user-assisted physical/cold timing checks. The validation changes add tests and documentation only. No installed executable, production configuration or user assets were replaced.
+The original acceptance rebuild's ASAR SHA-256 was `14c343e31dff3a7c44efe831acbe823830f9e6984433641bedf5d6f6fb23ca14`, identical to the application used for those user-assisted physical/cold timing checks. That final validation pass added tests and documentation only; the later review corrections are separately identified above. No installed executable, production configuration or user assets were replaced.
 
 ## Closed remaining gaps
 
