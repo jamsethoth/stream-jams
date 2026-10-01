@@ -2,6 +2,24 @@ import { describe, expect, it, vi } from "vitest";
 import { ManagementHttpError, createManagementHttpClient } from "./management-http-client.js";
 
 describe("createManagementHttpClient", () => {
+  it("shares one pending session for concurrent preview owners and their releases", async () => {
+    let complete!: (value: Response) => void;
+    const session = new Promise<Response>(resolve => { complete = resolve; });
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/auth/management/sessions") return session;
+      const headers = new Headers(init?.headers);
+      expect(headers.get("authorization")).toBe("Bearer shared_session");
+      expect(headers.get("x-stream-jams-csrf")).toBe("shared_csrf");
+      return new Response(null, { status: 204 });
+    });
+    const client = createManagementHttpClient({ fetch: fetcher });
+    const first = client.postRequest("/assets/one/preview", "Unable to create.");
+    const second = client.postRequest("/assets/two/preview", "Unable to create.");
+    complete(jsonResponse({ id: "shared_session", csrfToken: "shared_csrf" }));
+    await Promise.all([first, second]);
+    await Promise.all([client.deleteRequest("/assets/previews/one", "Unable to release."), client.deleteRequest("/assets/previews/two", "Unable to release.")]);
+    expect(fetcher.mock.calls.filter(([url]) => String(url) === "/auth/management/sessions")).toHaveLength(1);
+  });
   it("reuses the management session and sends CSRF headers for mutating JSON requests", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

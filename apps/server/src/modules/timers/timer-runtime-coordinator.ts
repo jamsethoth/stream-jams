@@ -12,6 +12,8 @@ import {
 } from "@stream-jams/core";
 import { snapshotTimerDefinition, TimerDefinitionNotFoundError, type TimerActivityProbe } from "./timer-management-service.js";
 
+import type { LocalMediaService } from "../assets/local-media-service.js";
+
 const MAX_SCHEDULE_DELAY_MS = 2_147_483_647;
 const COMPLETION_HOLD_MS = 3_000;
 
@@ -22,11 +24,13 @@ export interface TimerScheduler {
 }
 
 export interface TimerCueSink {
+  close?(): Promise<void>;
   play(input: { readonly cue: "start" | "end"; readonly run: TimerRunState }): Promise<void>;
   stop(generation: string): Promise<void>;
 }
 
 interface TimerRuntimeCoordinatorOptions {
+  readonly localMediaService?: LocalMediaService;
   readonly definitions: Pick<TimerDefinitionRepository, "findById">;
   readonly config: { getModuleConfig(moduleId: string): Promise<OverlayModuleConfig> };
   readonly clock: TimerClock;
@@ -37,11 +41,13 @@ interface TimerRuntimeCoordinatorOptions {
 }
 
 interface RuntimeEntry {
+  iconAvailable: boolean;
   state: TimerRunState;
   scheduled: { cancel(): void } | null;
 }
 
 export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModuleRuntime {
+  readonly #media: LocalMediaService | undefined;
   readonly #entries = new Map<string, RuntimeEntry>();
   readonly #listeners = new Set<(revision: number) => void>();
   readonly #definitions: TimerRuntimeCoordinatorOptions["definitions"];
@@ -56,6 +62,7 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
   #closed = false;
 
   constructor(options: TimerRuntimeCoordinatorOptions) {
+    this.#media = options.localMediaService;
     this.#definitions = options.definitions;
     this.#config = options.config;
     this.#clock = options.clock;
@@ -131,6 +138,7 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
     this.#entries.delete(definitionId);
     this.#publish();
     await this.#settleCueStop(entry.state.generation);
+    await this.#media?.release(timerRunOwner(entry.state.generation));
     return this.#result(true, null);
   }
 
@@ -141,7 +149,7 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
     if (existing !== undefined) {
       existing.scheduled?.cancel();
       this.#entries.delete(definitionId);
-      cleanup = this.#settleCueStop(existing.state.generation);
+      cleanup = this.#settleCueStop(existing.state.generation).then(() => this.#media?.release(timerRunOwner(existing.state.generation)));
     }
     // Commit the replacement before yielding: cleanup must never reopen a stopped or closed timer.
     const started = this.#startFresh(definitionId);
@@ -158,18 +166,21 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
     const saved = await this.#config.getModuleConfig("timers");
     const config = timersOverlayModuleConfigSchema.parse(saved.config);
     const targetProfileId = request.targetProfileId ?? "landscape";
+    const projection = projectTimerStack({ nowEpochMs: this.#clock.now(), targetProfileId, region: config.profiles[targetProfileId], runs: this.listStates() });
+    const cards = projection.cards.map(card => {
+      if (this.#media === undefined || card.iconAssetId === null) return card;
+      if (this.#entries.get(card.definitionId)?.iconAvailable === false) return { ...card, iconAssetId: null };
+      try { return { ...card, iconVersion: this.#media.descriptor(timerRunOwner(card.generation), card.iconAssetId).version }; }
+      // error-provenance: allow expected -- retired or unavailable icons retain the existing transparent fallback
+      catch { return { ...card, iconAssetId: null }; }
+    });
     return {
       moduleId: "timers",
       enabled: saved.enabled,
       instructions: [],
       presentation: {
         kind: "timer-stack",
-        stack: projectTimerStack({
-          nowEpochMs: this.#clock.now(),
-          targetProfileId,
-          region: config.profiles[targetProfileId],
-          runs: this.listStates()
-        })
+        stack: { ...projection, cards }
       }
     };
   }
@@ -181,7 +192,11 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
     this.#entries.clear();
     this.#listeners.clear();
     for (const entry of entries) entry.scheduled?.cancel();
-    await Promise.allSettled(entries.map(entry => this.#cueSink?.stop(entry.state.generation)));
+    await Promise.allSettled(entries.map(async entry => {
+      await this.#settleCueStop(entry.state.generation);
+      await this.#media?.release(timerRunOwner(entry.state.generation));
+    }));
+    await this.#cueSink?.close?.();
   }
 
   async #startFresh(definitionId: string): Promise<TimerCommandResult> {
@@ -196,7 +211,27 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
       startedAtEpochMs,
       endsAtEpochMs: startedAtEpochMs + definition.durationMs
     };
-    this.#entries.set(definitionId, { state, scheduled: null });
+    const entry: RuntimeEntry = { state, scheduled: null, iconAvailable: true };
+    this.#entries.set(definitionId, entry);
+    if (this.#media !== undefined) {
+      const owner = timerRunOwner(state.generation);
+      try {
+        await this.#media.acquire(owner, [definition.iconAssetId, definition.startAudioAssetId, definition.endAudioAssetId].filter((id): id is string => id !== null), undefined, true);
+        if (definition.iconAssetId !== null) {
+          try { await this.#media.verifyGroup(owner, [definition.iconAssetId], AbortSignal.timeout(5000)); }
+          // error-provenance: allow expected -- an unreadable icon cannot prevent the authoritative timer run
+          catch { entry.iconAvailable = false; }
+        }
+      } catch (error) {
+        if (this.#entries.get(definitionId) === entry) this.#entries.delete(definitionId);
+        await this.#media.release(owner);
+        throw error;
+      }
+      if (this.#closed || this.#entries.get(definitionId) !== entry) {
+        await this.#media.release(owner);
+        return this.#result(true, this.#entries.get(definitionId)?.state ?? null);
+      }
+    }
     this.#scheduleDeadline(definitionId, state.generation);
     this.#publish();
     await this.#settleCuePlay("start", state);
@@ -235,6 +270,7 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
       if (current?.state.status !== "completed" || current.state.generation !== generation) return;
       this.#entries.delete(definitionId);
       this.#publish();
+      void this.#media?.release(timerRunOwner(generation));
     });
     this.#publish();
     void this.#settleCuePlay("end", entry.state);
@@ -266,3 +302,5 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
     this.#assertCommandAvailable?.();
   }
 }
+
+export function timerRunOwner(generation: string): string { return JSON.stringify(["timers", generation]); }

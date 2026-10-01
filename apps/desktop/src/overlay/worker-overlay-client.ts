@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import {
-  desktopVisualCommandSchema, maxDesktopVisualTransferBytes, type DesktopVisualBatch, type DesktopVisualCommand, type DesktopVisualReply,
+  desktopVisualCommandSchema, type DesktopVisualBatch, type DesktopVisualCommand, type DesktopVisualReply,
   type PlaybackTimingDiagnostics, type DesktopModuleSync, type DesktopOverlayTransport, type DesktopOverlayStatus, type OverlayPlaybackFailure, type SurfaceConfiguration, type VisualRecipientKey
 } from "@stream-jams/core";
 import { overlayWorkerResponseSchema, type OverlayWorkerMessage } from "./overlay-ipc.js";
 
 type Pending = { key: VisualRecipientKey | null; resolve(result: DesktopVisualReply): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
-type Occurrence = { deadline: number; durationMs: number; deferredStart: boolean; bytes: number; phase: "preparing" | "ready" | "started" | "cancelled"; timer: ReturnType<typeof setTimeout> };
+type Occurrence = { deadline: number; durationMs: number; deferredStart: boolean; phase: "preparing" | "ready" | "started" | "cancelled"; timer: ReturnType<typeof setTimeout> };
 
 /** Worker-side requests own no media renderer or credentials. Host watchdogs remain authoritative. */
 export class WorkerOverlayClient implements DesktopOverlayTransport {
@@ -14,7 +14,6 @@ export class WorkerOverlayClient implements DesktopOverlayTransport {
   readonly #pending = new Map<string, Pending>();
   readonly #occurrences = new Map<string, Occurrence>();
   readonly #stops = new Map<string, Promise<void>>();
-  #reservedBytes = 0;
   readonly #lease: ReturnType<typeof setInterval>;
 
   constructor(private readonly generation: number, private readonly send: (message: OverlayWorkerMessage) => void) {
@@ -60,12 +59,9 @@ export class WorkerOverlayClient implements DesktopOverlayTransport {
   async prepare(batch: DesktopVisualBatch): Promise<"ready" | "unavailable"> {
     const command = desktopVisualCommandSchema.parse({ type: "prepare", batch });
     const id = keyId(batch.key);
-    const bytes = batch.assets.reduce((total, asset) => total + asset.bytes.byteLength, 0);
-    if (this.#closed || this.#occurrences.has(id) || this.#occurrences.size >= 64 || Date.now() >= batch.timing.endsAtEpochMs ||
-      bytes > maxDesktopVisualTransferBytes - this.#reservedBytes) return "unavailable";
+    if (this.#closed || this.#occurrences.has(id) || this.#occurrences.size >= 64 || Date.now() >= batch.timing.endsAtEpochMs) return "unavailable";
     const deadline = batch.timing.endsAtEpochMs + 5000;
-    const occurrence: Occurrence = { deadline, durationMs: batch.timing.endsAtEpochMs - batch.timing.startsAtEpochMs, deferredStart: batch.deferredStart === true, bytes, phase: "preparing", timer: setTimeout(() => this.#forget(id, occurrence), batch.deferredStart === true ? 15000 : Math.max(1, deadline - Date.now())) };
-    this.#reservedBytes += bytes;
+    const occurrence: Occurrence = { deadline, durationMs: batch.timing.endsAtEpochMs - batch.timing.startsAtEpochMs, deferredStart: batch.deferredStart === true, phase: "preparing", timer: setTimeout(() => this.#forget(id, occurrence), batch.deferredStart === true ? 15000 : Math.max(1, deadline - Date.now())) };
     this.#occurrences.set(id, occurrence);
     try {
       const result = await this.#request(command, batch.deferredStart === true ? 15000 : Math.min(5000, Math.max(1, deadline - Date.now())));
@@ -138,7 +134,7 @@ export class WorkerOverlayClient implements DesktopOverlayTransport {
     const occurrence = this.#occurrences.get(id);
     if (occurrence === undefined || (expected !== undefined && occurrence !== expected)) return;
     clearTimeout(occurrence.timer);
-    this.#reservedBytes -= occurrence.bytes;
+
     this.#occurrences.delete(id);
   }
   async #ok(command: DesktopVisualCommand): Promise<void> {

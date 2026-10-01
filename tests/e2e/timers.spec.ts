@@ -1,3 +1,4 @@
+import { mockMediaPreviews } from "./media-preview-fixtures.js";
 import { expect, test } from "@playwright/test";
 import { installOverlayWebSocketMock, mockManagementShell } from "./e2e-helpers.js";
 
@@ -23,10 +24,7 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
   ];
 
   await page.route("**/management/assets/library", route => route.fulfill({ json: assets }));
-  await page.route("**/assets/*/file", route => route.fulfill({
-    body: "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6'/></svg>",
-    contentType: "image/svg+xml"
-  }));
+  await mockMediaPreviews(page, id => ({ mimeType: id.startsWith("audio") ? "audio/wav" : "image/png" }));
   await page.route("**/audio/status", route => route.fulfill({ json: {
     capability: { available: true, devices: [], reason: null, nextStep: null }, muted: false,
     routes: [{ route: { id: "speakers", name: "Speakers", deviceId: "device-a", deviceLabel: "Speakers", autoFollowDeviceName: false }, state: "ready", automaticBindingState: "not-needed" }]
@@ -169,7 +167,7 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
   await expect(timerPreview.getByRole("listitem").first()).toContainText("Cat paws reward");
   const savedTimerIcon = timerPreview.getByRole("img", { name: "Cat paws reward icon" });
   await expect(savedTimerIcon).toBeVisible();
-  await expect(savedTimerIcon).toHaveAttribute("src", /^blob:/u);
+  await expect(savedTimerIcon).toHaveAttribute("src", /^\/media\/med_[A-Za-z0-9_-]{43}$/u);
   await expect.poll(() => savedTimerIcon.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   expect(definition).toMatchObject({
     label: "Cat paws reward", durationMs: 30_000, iconAssetId: "icon-paws",

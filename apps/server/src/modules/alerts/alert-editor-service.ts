@@ -43,6 +43,7 @@ import type {
   AlertRuleManagementMetadata,
   AlertSetMetadataRepository
 } from "./alert-set-management-service.js";
+import type { LocalMediaService } from "../assets/local-media-service.js";
 
 export interface AlertEditorDocumentRepository {
   find(alertId: string): Promise<AlertEditorDocument | null>;
@@ -52,6 +53,7 @@ export interface AlertEditorDocumentRepository {
 }
 
 export interface AlertEditorTestPlayback {
+  readonly replayDocuments?: readonly AlertEditorDocument[];
   readonly sourceEvent: NormalizedStreamEvent;
   readonly alerts: readonly ResolvedAlert[];
   readonly audio: readonly ResolvedAlertAudio[];
@@ -65,6 +67,7 @@ export interface AlertEditorAtomicSaveInput {
 }
 
 export interface AlertEditorServiceOptions {
+  readonly localMediaService?: LocalMediaService;
   readonly documents: AlertEditorDocumentRepository;
   readonly rules: Pick<AlertRepository, "findRuleById" | "listRules" | "listCollections" | "saveRule">;
   readonly metadata: Pick<AlertSetMetadataRepository, "findRule" | "saveRule">;
@@ -293,6 +296,10 @@ export class AlertEditorService {
   }
 
   async sendTest(alertId: string, candidate: AlertEditorTestRequest): Promise<AlertEditorTestResult> {
+    return this.#options.localMediaService === undefined ? this.#sendTest(alertId, candidate) : this.#options.localMediaService.runAdmission(() => this.#sendTest(alertId, candidate));
+  }
+
+  async #sendTest(alertId: string, candidate: AlertEditorTestRequest): Promise<AlertEditorTestResult> {
     const request = alertEditorTestRequestSchema.parse(candidate);
     if (request.document.id !== alertId) {
       throw new AlertEditorValidationError(["The test document does not match the selected alert."]);
@@ -345,7 +352,7 @@ export class AlertEditorService {
       );
     }
 
-    await this.#options.enqueueTest({ sourceEvent, alerts, audio });
+    await this.#options.enqueueTest({ sourceEvent, alerts, audio, replayDocuments: [request.document] });
     return {
       status: "queued",
       targetProfileId: request.targetProfileId,
@@ -500,7 +507,7 @@ export class AlertEditorService {
     const assetIds = [...new Set(document.layers.flatMap((layer) =>
       layer.type === "image" || layer.type === "video" || layer.type === "audio" ? [layer.assetId] : []
     ))];
-    return this.#options.findAssets(assetIds);
+    return this.#options.localMediaService === undefined ? this.#options.findAssets(assetIds) : this.#options.localMediaService.captureAdmission(assetIds);
   }
 
   #resolveTestDuration(

@@ -3,6 +3,8 @@ import {
   resolveAudioEnvelope,
   type AlertEditorDocument
 } from "@stream-jams/core";
+import type { MediaPreviewApi } from "../../assets/media-preview-api.js";
+import { createMediaPreviewGroup, type MediaPreviewGroup } from "../../assets/media-preview-group.js";
 import { createMediaGainController, type MediaGainController } from "../../../media/media-gain-controller.js";
 
 export interface AlertPreviewState {
@@ -11,6 +13,7 @@ export interface AlertPreviewState {
   readonly elapsedMs: number;
   readonly durationMs: number;
   readonly runId: number;
+  readonly media: MediaPreviewGroup | null;
 }
 
 export interface AlertPreviewStartInput {
@@ -46,7 +49,7 @@ export interface AlertPreviewSpeech {
 }
 
 export interface AlertPreviewControllerOptions {
-  readonly getAssetFile: (assetId: string) => Promise<Blob>;
+  readonly assetApi: MediaPreviewApi;
   readonly getVisualAssetMediaTypes: () => Readonly<Record<string, "image" | "gif" | "video">>;
   readonly getAssetDurations: () => Readonly<Record<string, number | null>>;
   readonly onError: (failure: AlertPreviewFailure) => void;
@@ -55,8 +58,6 @@ export interface AlertPreviewControllerOptions {
   readonly wallNow?: () => number;
   readonly requestFrame?: (callback: FrameRequestCallback) => number;
   readonly cancelFrame?: (handle: number) => void;
-  readonly createObjectUrl?: (blob: Blob) => string;
-  readonly revokeObjectUrl?: (url: string) => void;
   readonly createAudio?: (url: string) => AlertPreviewAudioElement;
   readonly createGainController?: (audio: AlertPreviewAudioElement) => MediaGainController;
   readonly speech?: AlertPreviewSpeech;
@@ -67,7 +68,8 @@ const initialState: AlertPreviewState = {
   playing: false,
   elapsedMs: 0,
   durationMs: 0,
-  runId: 0
+  runId: 0,
+  media: null
 };
 
 export function createAlertPreviewController(options: AlertPreviewControllerOptions): AlertPreviewController {
@@ -75,8 +77,6 @@ export function createAlertPreviewController(options: AlertPreviewControllerOpti
   const wallNow = options.wallNow ?? (() => Date.now());
   const requestFrame = options.requestFrame ?? ((callback) => requestAnimationFrame(callback));
   const cancelFrame = options.cancelFrame ?? ((handle) => cancelAnimationFrame(handle));
-  const createObjectUrl = options.createObjectUrl ?? ((blob) => URL.createObjectURL(blob));
-  const revokeObjectUrl = options.revokeObjectUrl ?? ((url) => URL.revokeObjectURL(url));
   const createAudio = options.createAudio ?? ((url) => new Audio(url));
   const createGain = options.createGainController
     ?? ((audio) => createMediaGainController(audio as HTMLMediaElement));
@@ -86,8 +86,10 @@ export function createAlertPreviewController(options: AlertPreviewControllerOpti
   const mediaCleanup = new Set<() => void>();
   const mediaSync = new Set<() => void>();
   let state = initialState;
+  let previewGroup: MediaPreviewGroup | null = null;
   let generation = 0;
   let disposed = false;
+  let preparingGroup = false;
   let frameHandle: number | null = null;
   let completionTimer: number | null = null;
   let speechActive = false;
@@ -115,6 +117,8 @@ export function createAlertPreviewController(options: AlertPreviewControllerOpti
     for (const release of [...mediaCleanup]) release();
     mediaCleanup.clear();
     mediaSync.clear();
+    previewGroup?.dispose();
+    previewGroup = null;
     if (speechActive) speech.cancel();
     speechActive = false;
   };
@@ -157,11 +161,11 @@ export function createAlertPreviewController(options: AlertPreviewControllerOpti
     clock = {
       elapsedMs: nextElapsedMs,
       startedAt: now(),
-      playing: nextPlaying,
+      playing: nextPlaying && !preparingGroup,
       durationMs: clock.durationMs
     };
     updateState({ ...state, playing: nextPlaying, elapsedMs: nextElapsedMs });
-    if (nextPlaying) scheduleClock(generation);
+    if (clock.playing) scheduleClock(generation);
     else cancelClockSchedule();
     syncMedia();
   };
@@ -192,18 +196,12 @@ export function createAlertPreviewController(options: AlertPreviewControllerOpti
     expectedGeneration: number,
     preparationDeadline: number
   ) => {
-    const blob = await prepare(options.getAssetFile(layer.assetId), preparationDeadline);
-    if (blob === null || !isCurrent(expectedGeneration)) return;
-    const url = createObjectUrl(blob);
-    let audio: AlertPreviewAudioElement;
-    let gain: MediaGainController;
-    try {
-      audio = createAudio(url);
-      gain = createGain(audio);
-    } catch (cause) {
-      revokeObjectUrl(url);
-      throw cause;
-    }
+    const group = previewGroup;
+    const url = group?.getSnapshot().descriptors[layer.assetId]?.url;
+    if (url === undefined || group === null || !isCurrent(expectedGeneration)) return;
+    const audio = createAudio(url);
+    const gain = createGain(audio);
+    const detach = group.registerElement(audio, layer.assetId);
     const updateEnvelope = () => {
       gain.setGain(resolveAudioEnvelope({
         volume: layer.volume,
@@ -223,9 +221,8 @@ export function createAlertPreviewController(options: AlertPreviewControllerOpti
       mediaSync.delete(sync);
       window.clearInterval(envelopeTimer);
       gain.dispose();
-      audio.pause();
-      audio.src = "";
-      revokeObjectUrl(url);
+      detach();
+
     };
     mediaCleanup.add(release);
     audio.onended = () => {
@@ -303,16 +300,39 @@ export function createAlertPreviewController(options: AlertPreviewControllerOpti
       controller.stop();
       const expectedGeneration = generation;
       const durationMs = input.document.durationMs;
-      clock = { elapsedMs: 0, startedAt: now(), playing: durationMs > 0, durationMs };
-      updateState({ active: true, playing: durationMs > 0, elapsedMs: 0, durationMs, runId: state.runId + 1 });
-      if (clock.playing) scheduleClock(expectedGeneration);
+      preparingGroup = true;
+      clock = { elapsedMs: 0, startedAt: now(), playing: false, durationMs };
+      const group = createMediaPreviewGroup(options.assetApi);
+      previewGroup = group;
+      updateState({ active: true, playing: durationMs > 0, elapsedMs: 0, durationMs, runId: state.runId + 1, media: group });
       const preparationDeadline = wallNow() + preparationTimeoutMs;
       try {
+        const ids = input.document.layers.flatMap(layer => layer.visible && (
+          layer.type === "image" || layer.type === "video" || (input.includeAudio && layer.type === "audio")
+        ) ? [layer.assetId] : []);
+        const acquired = await prepare(group.acquire(ids).then(() => true), preparationDeadline);
+        if (acquired === null || !isCurrent(expectedGeneration)) { group.dispose(); return; }
+        group.subscribe(() => {
+          if (group.getSnapshot().unavailable && generation === expectedGeneration) {
+            controller.stop();
+            options.onError({ summary: "Local preview media expired", cause: new Error("Preview ownership is unavailable."), nextStep: "Replay the preview to load the selected media again." });
+          }
+        });
+        const descriptors = group.getSnapshot().descriptors;
+        const durations = Object.fromEntries(Object.entries(descriptors).map(([id, value]) => [id, value.snapshot.durationMs]));
+        const mediaTypes: Record<string, "image" | "gif" | "video"> = {};
+        for (const [id, descriptor] of Object.entries(descriptors)) {
+          if (descriptor.snapshot.mimeType.startsWith("video/")) mediaTypes[id] = "video";
+          else if (descriptor.snapshot.mimeType.startsWith("image/")) mediaTypes[id] = descriptor.snapshot.mimeType === "image/gif" ? "gif" : "image";
+        }
+        preparingGroup = false;
+        clock = { elapsedMs: state.elapsedMs, startedAt: now(), playing: state.playing, durationMs };
+        if (clock.playing) scheduleClock(expectedGeneration);
         if (input.includeAudio) {
           const audioLayers = resolveAlertAudio(
             input.document,
-            options.getVisualAssetMediaTypes(),
-            options.getAssetDurations()
+            mediaTypes,
+            durations
           )?.layers ?? [];
           await Promise.all(audioLayers.map((layer) => prepareAudioLayer(
             input,
@@ -332,7 +352,7 @@ export function createAlertPreviewController(options: AlertPreviewControllerOpti
         }
       } catch (cause) {
         if (!isCurrent(expectedGeneration)) return;
-        stopMedia();
+        controller.stop();
         options.onError({
           summary: "Local preview media could not be played",
           cause,
@@ -352,6 +372,7 @@ export function createAlertPreviewController(options: AlertPreviewControllerOpti
     stop() {
       if (disposed) return;
       generation += 1;
+      preparingGroup = false;
       cancelClockSchedule();
       stopMedia();
       clock = { elapsedMs: 0, startedAt: now(), playing: false, durationMs: 0 };

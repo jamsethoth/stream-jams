@@ -110,6 +110,7 @@ export const timersOverlayModuleConfigSchema = z.object({
 }).strict() satisfies z.ZodType<TimersOverlayModuleConfig>;
 
 const cardBase = {
+  iconVersion: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   definitionId: timerIdSchema,
   generation: timerIdSchema,
   label: nonEmptyStringSchema,

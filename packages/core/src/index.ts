@@ -217,8 +217,8 @@ export type { OverlayPlaybackFailure, OverlayPlaybackFailureStage } from "./over
 export { prepareTimedMedia, TimedMediaPreparationError } from "./audio/prepare-timed-media.js";
 export { prepareMediaAtStart } from "./audio/prepare-media-at-start.js";
 export type { TimedMediaElement } from "./audio/prepare-timed-media.js";
-export { desktopModuleSyncSchema, desktopVisualInstructionSchema, desktopVisualAssetSchema, desktopVisualBatchSchema, desktopVisualCommandSchema, desktopVisualReplySchema, desktopVisualRendererRequestSchema, desktopVisualRendererReplySchema, maxDesktopVisualTransferBytes, visualMediaType } from "./overlays/desktop-visual-transport.js";
-export type { DesktopModuleSync, DesktopVisualBatch, DesktopVisualAsset, DesktopVisualCommand, DesktopVisualReply, DesktopOverlayTransport, DesktopVisualRendererRequest, DesktopVisualRendererReply } from "./overlays/desktop-visual-transport.js";
+export { desktopModuleSyncSchema, desktopVisualInstructionSchema, desktopVisualAssetSchema, desktopVisualBatchSchema, desktopVisualCommandSchema, desktopVisualReplySchema, desktopVisualRendererRequestSchema, desktopVisualRendererReplySchema, privateDesktopVisualBatchSchema, privateDesktopModuleSyncSchema, privateDesktopVisualCommandSchema, visualMediaType } from "./overlays/desktop-visual-transport.js";
+export type { DesktopModuleSync, DesktopVisualBatch, DesktopVisualAsset, DesktopVisualCommand, DesktopVisualReply, PrivateDesktopVisualBatch, PrivateDesktopModuleSync, PrivateDesktopVisualCommand, DesktopOverlayTransport, DesktopVisualRendererRequest, DesktopVisualRendererReply } from "./overlays/desktop-visual-transport.js";
 export { VisualRecipientLedger } from "./overlays/visual-recipient-ledger.js";
 export { selectedDesktopDisplaySchema, desktopOverlayDiagnosticSchema, desktopOverlayStatusSchema, surfaceSettingsViewSchema } from "./overlays/desktop-overlay-status.js";
 export type { SelectedDesktopDisplay, DesktopOverlayDiagnostic, DesktopOverlayStatus, SurfaceSettingsView, DesktopBindingState } from "./overlays/desktop-overlay-status.js";
@@ -359,3 +359,5 @@ export * from "./screen-effects/sets.js";
 
 export { playbackTimingDiagnosticsSchema, playbackTimingMilestoneSchema, type PlaybackTimingDiagnostics, type PlaybackTimingMilestone } from "./diagnostics/playback-timing-diagnostics.js";
 export { monitorMediaProgress } from "./audio/media-progress.js";
+export * from "./assets/media-reference.js";
+export * from "./assets/desktop-media-asset.js";

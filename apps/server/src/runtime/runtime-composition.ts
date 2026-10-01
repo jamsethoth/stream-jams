@@ -36,6 +36,7 @@ import {
   type SecretStore,
   type SerializedException
 } from "@stream-jams/core";
+import { effectOccurrenceKey } from "../modules/screen-effects/effect-playback-coordinator.js";
 import type { FastifyInstance } from "fastify";
 import { createServerApp, type ProductionServerAppDependencies } from "../app.js";
 import { createDefaultAppConfig, resolveConfigFilePath } from "../config/default-config.js";
@@ -60,6 +61,9 @@ import { SqliteAlertEditorDocumentRepository } from "../modules/alerts/sqlite-al
 import { SqliteAlertAggregateMutationStore } from "../modules/alerts/sqlite-alert-aggregate-mutation-store.js";
 import { LocalManagementSessionService } from "../modules/auth/management-session-service.js";
 import { LocalAssetStore } from "../modules/assets/local-asset-store.js";
+import { LocalMediaService } from "../modules/assets/local-media-service.js";
+import { MediaPreviewService } from "../modules/assets/media-preview-service.js";
+import { SqliteAssetRetirementRepository } from "../modules/assets/sqlite-asset-retirement-repository.js";
 import { SqliteAssetRepository } from "../modules/assets/sqlite-asset-repository.js";
 import { AssetLibraryService } from "../modules/assets/asset-library-service.js";
 import { SqliteAssetLibraryMetadataRepository } from "../modules/assets/sqlite-asset-library-metadata-repository.js";
@@ -204,6 +208,7 @@ export interface RuntimeAppCompositionOptions {
 }
 
 export interface RuntimeAppComposition {
+  readonly localMediaService: LocalMediaService;
   readonly desktopConfigService: DesktopConfigService;
   readonly playbackCoordinator: PlaybackCoordinator;
   readonly effectPlaybackCoordinator: EffectPlaybackCoordinator;
@@ -286,6 +291,21 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const initialAlertModuleSettings = await alertModuleSettingsRepository.get();
   const twitchAccountRepository = new SqliteTwitchAccountRepository(database.connection);
   const assetStore = new LocalAssetStore({ assetDirectory: initialConfig.storage.assetDirectory });
+  const localMediaService = new LocalMediaService({
+    assets: assetRepository,
+    store: assetStore,
+    retirements: new SqliteAssetRetirementRepository(database.connection),
+    now: () => now().getTime(),
+    onCleanupError(error) {
+      void runtimeLogger.warn("Retired media cleanup will be retried", {
+        module: "assets", source: "assets.retirement", correlationId: "media-retirement", processingId: null,
+        metadata: { error: error instanceof Error ? error.message : "Media cleanup failed" }
+      });
+    }
+  });
+  const closeLocalMedia = onceAsync(() => localMediaService.close());
+  cleanups.push(closeLocalMedia);
+  await localMediaService.reconcile();
   const assetValidator = new DefaultAssetValidator();
   const mediaImportPipeline = new DefaultMediaImportPipeline({
     validator: assetValidator,
@@ -304,6 +324,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     ...(options.generateManagementSessionId === undefined ? {} : { generateId: options.generateManagementSessionId }),
     ...(options.generateManagementCsrfToken === undefined ? {} : { generateCsrfToken: options.generateManagementCsrfToken })
   });
+  const mediaPreviewService = new MediaPreviewService({ media: localMediaService, sessions: managementSessionService, now: () => now().getTime() });
+  cleanups.push(() => mediaPreviewService.close());
   const managementRateLimiter = new LocalManagementRateLimiter({
     maxRequests: 120,
     windowMs: 60_000
@@ -316,7 +338,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const managementOriginPreHandler = createManagementOriginPreHandler(managementOriginPolicy);
   const overlayModuleRegistry = createDefaultOverlayModuleRegistry();
   const surfaceRepository = new SqliteSurfaceRepository(database.connection, overlayModuleRegistry);
-  const desktopVisualAssetResolver = new DesktopVisualAssetResolver({ assetRepository, assetStore });
+  const desktopVisualAssetResolver = new DesktopVisualAssetResolver({ media: localMediaService });
   const desktopVisualSink = options.desktopOverlayTransport === undefined ? undefined : new DesktopVisualSink({
     transport: options.desktopOverlayTransport, surfaces: surfaceRepository, assets: desktopVisualAssetResolver,
     onPlaybackDiagnostics: (occurrenceId, diagnostics) => runtimeLogger.info("Desktop overlay playback timing.", {
@@ -473,11 +495,13 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     }
   });
   const playbackQueue = new DefaultPlaybackQueue({
+    onRelease: itemId => { void trackRuntimeWork(() => localMediaService.release(effectOccurrenceKey("alerts", itemId))); },
     generateId: generatePlaybackQueueItemId,
     initialSafetyState: initialConfig.playback,
     initialModulePaused: initialAlertModuleSettings.paused
   });
   const effectQueue = new DefaultEffectQueue({
+    onRelease: occurrenceId => { void trackRuntimeWork(() => localMediaService.release(effectOccurrenceKey("screen-effects", occurrenceId))); },
     modulePaused: initialEffectModuleSettings.paused
   });
   const maintenanceGate = new RuntimeMaintenanceGate();
@@ -499,8 +523,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     }
     desktopAudioSink = new DesktopAudioSink({
       transport: options.desktopAudioTransport,
-      assetRepository,
-      assetStore,
+      media: localMediaService,
       now: () => now().getTime(),
       logger: runtimeLogger,
       generateReferenceId: generateRuntimeReferenceId
@@ -520,6 +543,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   const timerDefinitionRepository = new SqliteTimerDefinitionRepository(database.connection);
   const timerCueService = new TimerCueService({
+    localMediaService,
     assets: assetRepository,
     browser: {
       play(instruction) {
@@ -547,6 +571,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateReferenceId: generateRuntimeReferenceId
   });
   const timerRuntimeCoordinator = new TimerRuntimeCoordinator({
+    localMediaService,
     assertCommandAvailable: () => maintenanceGate.runConfigurationMutation(() => undefined),
     definitions: timerDefinitionRepository,
     config: overlayModuleConfigService,
@@ -607,6 +632,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     outputs: outputReadinessService
   });
   const playbackCoordinator = new PlaybackCoordinator({
+    localMediaService,
     alertService,
     matcher: new DefaultAlertMatcher(),
     resolver: new DefaultAlertResolver({
@@ -652,6 +678,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateReferenceId: generateRuntimeReferenceId
   });
   const effectPlaybackCoordinator = new EffectPlaybackCoordinator({
+    localMediaService,
     queue: effectQueue,
     getSafety: () => {
       const snapshot = playbackQueue.getSnapshot();
@@ -666,7 +693,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     ...(audioPlaybackSink === undefined ? {} : { audioPlaybackSink }),
     ...(desktopVisualSink === undefined ? {} : { desktopVisualSink }),
     isModuleEnabled: isEffectModuleEnabled,
-    validateReferences: (content) => effectPlaybackEligibilityService.referencesExist(content),
+    validateReferences: (content, owner) => effectPlaybackEligibilityService.referencesExist(content, owner === undefined ? undefined : localMediaService.records(owner, [content.variant.visual?.assetId, content.variant.sound?.assetId].filter((id): id is string => id !== undefined))),
     validateOutputAvailability: (content) => effectPlaybackEligibilityService.hasAvailableOutput(content),
     onWatchdogExpired: (occurrenceId, outstanding) => runtimeLogger.error("Screen Effects playback completion watchdog expired.", {
       module: "screen-effects", source: "screen-effects.playback-watchdog-expired", correlationId: generateRuntimeReferenceId(), processingId: null,
@@ -693,6 +720,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     now: () => now().getTime()
   });
   const effectAdmissionService = new EffectAdmissionService({
+    localMediaService,
     repository: { list: () => effectRepository.listActive(), find: (id) => effectRepository.find(id) },
     isEffectLive: (id) => effectRepository.isInActiveSet(id),
     queue: effectQueue,
@@ -940,6 +968,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     alertEditorDocumentRepository
   );
   const alertEditorService = new AlertEditorService({
+    localMediaService,
     documents: alertEditorDocumentRepository,
     rules: alertRepository,
     metadata: alertSetMetadataRepository,
@@ -1041,6 +1070,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     assetRepository,
     metadataRepository: new SqliteAssetLibraryMetadataRepository(database.connection),
     assetStore,
+    mediaLifetime: localMediaService,
     alertRepository,
     effectRepository,
     timerRepository: timerDefinitionRepository,
@@ -1053,6 +1083,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     metadataProbe: mediaMetadataProbe
   });
   const configurationBackupService = new ConfigurationBackupService({
+    deferRetiredAssetCleanup: true,
     appVersion: createAppVersion().version,
     schemaVersion: currentSchemaVersion,
     now,
@@ -1125,7 +1156,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         ]);
       }
     },
-    runExclusive: (work) => maintenanceGate.runMaintenance(work)
+    runExclusive: (work) => maintenanceGate.runMaintenance(() => localMediaService.maintenance(work))
   });
   const managementOverviewService = new ManagementOverviewService({
     providerService: providerManagementService,
@@ -1379,6 +1410,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     assetRepository,
     mediaImportPipeline,
     assetStore,
+    localMediaService,
+    mediaPreviewService,
     assetLibraryService,
     playbackCoordinator,
     legacyPlaybackOperationsService: playbackOperationsService,
@@ -1431,6 +1464,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   };
   registerManagementCorsPreflightRoute(app, managementOriginPolicy);
   cleanups.push(() => app.close());
+  // Reverse cleanup must revoke media and cancel backpressured readers before
+  // Fastify waits for HTTP drain; SQLite still closes after both have settled.
+  cleanups.push(closeLocalMedia);
   cleanups.push(() => {
     twitchEventSubRuntimeService.disconnect();
     streamerBotRuntimeService.disconnect();
@@ -1447,6 +1483,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
 
   return {
     app,
+    localMediaService,
     desktopConfigService,
     playbackCoordinator,
     effectPlaybackCoordinator,

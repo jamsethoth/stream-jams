@@ -7,6 +7,7 @@ import { registerSurfaceSettingsRoutes, type SurfaceSettingsRouteDependencies } 
 import { registerAlertRoutes, type AlertRuleRouteDependencies } from "./http/routes/alerts.js";
 import { registerAlertCollectionRoutes, type AlertCollectionRouteDependencies } from "./http/routes/collections.js";
 import { registerAssetRoutes, type AssetRouteDependencies } from "./http/routes/assets.js";
+import { registerAssetPreviewRoutes, type AssetPreviewRouteDependencies } from "./http/routes/assets-preview.js";
 import { registerConfigRoutes, type ServerConfigRouteDependencies } from "./http/routes/config.js";
 import { registerDesktopConfigRoutes, type DesktopConfigRouteDependencies } from "./http/routes/desktop-config.js";
 import {
@@ -82,6 +83,7 @@ export type ProductionServerAppDependencies = BaseServerAppOptions
   & OverlayOutputManagementRouteDependencies
   & Omit<OverlayRouteDependencies, "webShellRenderer">
   & AssetRouteDependencies
+  & Partial<AssetPreviewRouteDependencies>
   & AlertRuleRouteDependencies
   & AlertCollectionRouteDependencies
   & PlaybackRouteDependencies
@@ -97,7 +99,9 @@ export type ProductionServerAppDependencies = BaseServerAppOptions
   & WebShellRouteDependencies;
 
 export function createBaseServerApp(options: BaseServerAppOptions): FastifyInstance {
-  const app = Fastify({ logger: false });
+  // Shutdown cancels owned playback/media first. Close remaining connections,
+  // including fetch-pool sockets that connected without sending an HTTP request.
+  const app = Fastify({ logger: false, forceCloseConnections: true });
   registerServerErrorHandler(app, options);
   registerHealthRoutes(app, options.metadata);
   return app;
@@ -118,6 +122,7 @@ export function createServerApp(dependencies: ProductionServerAppDependencies): 
   registerAlertCollectionRoutes(app, dependencies);
   registerAlertRoutes(app, dependencies);
   registerAssetRoutes(app, dependencies);
+  if (dependencies.mediaPreviewService !== undefined) registerAssetPreviewRoutes(app, { ...dependencies, mediaPreviewService: dependencies.mediaPreviewService });
   registerOverlayRoutes(app, { ...dependencies, webShellRenderer });
   registerOverlayModuleRoutes(app, dependencies);
   registerOverlayOutputManagementRoutes(app, dependencies);

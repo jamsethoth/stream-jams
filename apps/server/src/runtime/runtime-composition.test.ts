@@ -223,6 +223,10 @@ it("serves audio routes over loopback, observes global mute, and retains binding
       readonly layers: readonly object[];
       readonly [key: string]: unknown;
     };
+    await mkdir(join(testRoot, "assets", "audio"), { recursive: true });
+    await writeFile(join(testRoot, "assets", "audio", "test-tone.mp3"), Buffer.from("ID3"));
+    composition.database.connection.prepare("INSERT INTO asset_metadata VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run("test-tone", "test-tone.mp3", "audio", "audio/mpeg", 3, `sha256:${createHash("sha256").update("ID3").digest("hex")}`, "audio/test-tone.mp3", 3000);
     const sent = await fetch(`${address}/management/alerts/${alert.id}/editor/test`, {
       method: "POST",
       headers,
@@ -580,7 +584,9 @@ it("applies persisted mute before wiring the desktop transport for device playba
     expect(created.statusCode, created.body).toBe(201);
     const route = created.json() as { id: string };
 
-    composition.playbackCoordinator.enqueueResolvedTest({
+    await composition.localMediaService.runAdmission(async () => {
+      await composition!.localMediaService.captureAdmission(["tone"]);
+      composition!.playbackCoordinator.enqueueResolvedTest({
       sourceEvent: {
         id: "device-only-event", providerId: "twitch", sourcePlatform: "twitch", ingestProvider: "twitch",
         occurredAt: "2026-09-07T00:00:00.000Z", type: "cheer", amount: 100,
@@ -592,12 +598,13 @@ it("applies persisted mute before wiring the desktop transport for device playba
         outputs: { browserSource: false, deviceRouteIds: [route.id] },
         layers: [{ sourceKind: "audio", layerId: "sound", assetId: "tone", volume: 0.5 }]
       }]
+      });
     });
 
     await vi.waitFor(() => expect(calls).toContain("start"));
     expect(transport.prepare).toHaveBeenCalledWith(expect.objectContaining({
       batch: expect.objectContaining({ playbackId: expect.any(String), muted: true }),
-      assets: [{ assetId: "tone", mimeType: "audio/mpeg", bytes: new Uint8Array([1, 2, 3]) }],
+      assets: [{ assetId: "tone", grant: expect.objectContaining({ handle: expect.stringMatching(/^med_[\w-]{43}$/), snapshot: expect.objectContaining({ assetId: "tone", mimeType: "audio/mpeg", sizeBytes: 3 }) }) }],
       deadlineMs: expect.any(Number),
       startDeadlineMs: expect.any(Number)
     }));

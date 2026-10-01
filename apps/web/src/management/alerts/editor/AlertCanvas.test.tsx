@@ -1,3 +1,4 @@
+import { createTestMediaPreviewApi, previewDescriptor } from "../../../test-support/media-preview-fixture.js";
 import {
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
@@ -14,7 +15,8 @@ afterEach(cleanup);
 describe("AlertCanvas", () => {
   it("renders GIF assets as animated images and respects video loop settings", async () => {
     vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:preview"), revokeObjectURL: vi.fn() });
-    const mediaApi: AssetApi = { ...assetApi, getAssetFile: vi.fn(async () => new Blob(["media"])) };
+    let mimeType: "image/gif" | "video/mp4" = "image/gif";
+    const mediaApi: AssetApi = { ...assetApi, ...createTestMediaPreviewApi(async id => { const descriptor = previewDescriptor(id); return { ...descriptor, snapshot: { ...descriptor.snapshot, mimeType } }; }), getAssetFile: vi.fn(async () => new Blob(["media"])) };
     const visualDocument: AlertEditorDocument = {
       ...editorDocument,
       layers: [{
@@ -32,7 +34,8 @@ describe("AlertCanvas", () => {
     expect(await screen.findByRole("img", { name: "Animated image asset preview" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Video asset preview")).not.toBeInTheDocument();
 
-    rerender(<AlertCanvas {...props} assetMediaTypes={{ animated: "video" }} document={{ ...visualDocument,
+    mimeType = "video/mp4";
+    rerender(<AlertCanvas {...props} assetRevision="replacement" assetMediaTypes={{ animated: "video" }} document={{ ...visualDocument,
       layers: visualDocument.layers.map((layer) => layer.type === "video" ? { ...layer, loop: true } : layer) }} />);
     await waitFor(() => expect(screen.getByLabelText("Video asset preview")).toHaveProperty("loop", true));
   });
@@ -311,6 +314,7 @@ describe("AlertCanvas", () => {
 const assetApi: AssetApi = {
   listAssets: vi.fn(async () => []),
   importAsset: vi.fn(),
+  ...createTestMediaPreviewApi(),
   getAssetFile: vi.fn(),
   replaceAsset: vi.fn()
 };

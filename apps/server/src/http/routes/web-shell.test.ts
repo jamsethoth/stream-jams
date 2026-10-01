@@ -96,6 +96,8 @@ describe("web shell routes", () => {
     expect(root.headers.location).toBe("/manage");
     expect(management.statusCode).toBe(200);
     expect(management.headers["content-type"]).toContain("text/html");
+    expect(management.headers["referrer-policy"]).toBe("no-referrer");
+    expect(management.body).toContain('<meta name="referrer" content="no-referrer">');
     expect(management.body).toContain('<link rel="modulepreload" crossorigin href="/assets/vendor-test.js">');
     expect(management.body).toContain('<link rel="stylesheet" crossorigin href="/assets/index-test.css">');
     expect(management.body).toContain('<script type="module" crossorigin src="/assets/index-test.js"></script>');

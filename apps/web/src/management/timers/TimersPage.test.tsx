@@ -1,3 +1,4 @@
+import { createTestMediaPreviewApi } from "../../test-support/media-preview-fixture.js";
 import { timersOverlayModuleDefinition, type AssetLibraryItem, type TimerDefinition, type TimerRunState } from "@stream-jams/core";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -76,7 +77,7 @@ it("selects a GIF icon from compatible assets and saves its stable ID", async ()
     width: null, height: null, durationMs: null, health: "missing", tags: [], createdAt: definition.createdAt, updatedAt: definition.updatedAt,
     usage: { assetId: "paws-gif", totalUsageCount: 0, usages: [] } };
   const managementApi = { listAssetLibraryItems: async () => [gif] } as unknown as AssetLibraryManagementApi;
-  const assetApi = { getAssetFile: async () => { throw new Error("Preview unavailable"); } } as unknown as AssetApi;
+  const assetApi = createTestMediaPreviewApi() as unknown as AssetApi;
   render(<TimersPage api={values.api} assetApi={assetApi} audioApi={values.audioApi} managementApi={managementApi} />);
   await user.click(await screen.findByRole("button", { name: /Wear oven mitts/ }));
   await user.click(screen.getAllByRole("button", { name: "Choose" })[0]!);

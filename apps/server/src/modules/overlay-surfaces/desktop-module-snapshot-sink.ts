@@ -11,9 +11,16 @@ export interface DesktopModuleSnapshotSinkDependencies {
 }
 
 export class DesktopModuleSnapshotSink {
+  readonly #refresh: ReturnType<typeof setInterval>;
   #revision = 0;
   #closed = false;
-  constructor(private readonly dependencies: DesktopModuleSnapshotSinkDependencies) {}
+  constructor(private readonly dependencies: DesktopModuleSnapshotSinkDependencies) {
+    this.#refresh = setInterval(() => { void this.sync().catch((error: unknown) => this.dependencies.logger?.warn("Timer desktop media refresh failed.", {
+      module: "timers", source: "desktop-overlay.timer-icons.refresh-failed", correlationId: this.dependencies.generateReferenceId?.() ?? "timer-refresh", processingId: null,
+      metadata: { errorName: error instanceof Error ? error.name : "UnknownError" }
+    })); }, 60000);
+    this.#refresh.unref();
+  }
 
   async sync(): Promise<void> {
     if (this.#closed) return;
@@ -50,6 +57,7 @@ export class DesktopModuleSnapshotSink {
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
+    clearInterval(this.#refresh);
     await this.dependencies.transport.syncModule({ moduleId: "timers", revision: ++this.#revision, presentation: null, assets: [] });
   }
 }

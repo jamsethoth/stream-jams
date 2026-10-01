@@ -1,5 +1,6 @@
 import type {
   AssetRepository,
+  AssetRecord,
   AudioOutputRouteRepository,
   EffectContentSnapshot
 } from "@stream-jams/core";
@@ -17,12 +18,12 @@ export interface EffectPlaybackEligibilityServiceOptions {
 export class EffectPlaybackEligibilityService {
   constructor(private readonly options: EffectPlaybackEligibilityServiceOptions) {}
 
-  async referencesExist(content: EffectContentSnapshot): Promise<boolean> {
+  async referencesExist(content: EffectContentSnapshot, pinned?: ReadonlyMap<string, AssetRecord>): Promise<boolean> {
     const assetIds = [
       ...(content.variant.visual === null ? [] : [content.variant.visual.assetId]),
       ...(content.variant.sound === null ? [] : [content.variant.sound.assetId])
     ];
-    const assets = await this.options.assets.findManyByIds(assetIds);
+    const assets = pinned ?? await this.options.assets.findManyByIds(assetIds);
     const visual = content.variant.visual;
     if (visual !== null && assets.get(visual.assetId)?.mediaType !== visual.mediaType) return false;
     const sound = content.variant.sound;

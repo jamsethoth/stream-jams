@@ -1,3 +1,4 @@
+import { createTestMediaPreviewApi, previewDescriptor } from "../../../test-support/media-preview-fixture.js";
 import {
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
@@ -119,8 +120,8 @@ describe("AlertEditorPage", () => {
   });
 
   it("bounds pending preview fetches while the preview is paused", async () => {
-    let finish!: (blob: Blob) => void;
-    vi.spyOn(assetApi, "getAssetFile").mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    let finish!: (descriptor: import("@stream-jams/core").MediaPreviewDescriptor) => void;
+    vi.spyOn(assetApi, "createPreview").mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
     const play = vi.fn(async () => undefined);
     vi.stubGlobal("Audio", class { volume = 1; play = play; pause = vi.fn(); });
     const source = routedEditorDocument();
@@ -134,7 +135,7 @@ describe("AlertEditorPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Pause preview" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(screen.getByText("Local preview media could not be played")).toBeInTheDocument();
-    await act(async () => { finish(new Blob(["silent"])); });
+    await act(async () => { finish(previewDescriptor("asset-audio")); });
     expect(play).not.toHaveBeenCalled();
   });
   it("pauses soundtrack preview, seeks without starting audio, and resumes at the selected playhead", async () => {
@@ -417,8 +418,8 @@ describe("AlertEditorPage", () => {
   it("does not start a pending soundtrack fetch after preview unmount", async () => {
     const play = vi.fn(async () => undefined);
     vi.stubGlobal("Audio", class { volume = 1; play = play; pause = vi.fn(); });
-    let finish!: (blob: Blob) => void;
-    const getAssetFile = vi.spyOn(assetApi, "getAssetFile").mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    let finish!: (descriptor: import("@stream-jams/core").MediaPreviewDescriptor) => void;
+    const getAssetFile = vi.spyOn(assetApi, "createPreview").mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
     const source = routedEditorDocument();
     const document: AlertEditorDocument = { ...source, layers: source.layers.filter(layer => layer.type === "audio").map(layer => ({ ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 1 })) };
     const { user } = renderWorkspaceEditor(document);
@@ -427,15 +428,15 @@ describe("AlertEditorPage", () => {
     await user.click(screen.getByRole("button", { name: "Preview" }));
     await waitFor(() => expect(getAssetFile).toHaveBeenCalled());
     cleanup();
-    await act(async () => { finish(new Blob(["silent"], { type: "video/webm" })); });
+    await act(async () => { finish(previewDescriptor("asset-audio")); });
     expect(play).not.toHaveBeenCalled();
   });
 
-  it("stops soundtrack preview and revokes its URL at the declared duration", async () => {
+  it("stops soundtrack preview and releases its descriptor at the declared duration", async () => {
     const play = vi.fn(async () => undefined);
     const pause = vi.fn();
     vi.stubGlobal("Audio", class { volume = 1; play = play; pause = pause; });
-    const revoke = vi.spyOn(URL, "revokeObjectURL");
+    const revoke = vi.spyOn(assetApi, "releasePreview");
     const source = routedEditorDocument();
     const document: AlertEditorDocument = { ...source, layers: source.layers.filter(layer => layer.type === "audio").map(layer => ({ ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 1 })) };
     const { user } = renderWorkspaceEditor(document);
@@ -2608,7 +2609,7 @@ describe("AlertEditorPage", () => {
     vi.stubGlobal("Audio", class { volume = 1; play = play; pause = vi.fn(); });
     vi.stubGlobal("SpeechSynthesisUtterance", class { constructor(readonly text: string) {} });
     vi.stubGlobal("speechSynthesis", { cancel: vi.fn(), speak });
-    const getAssetFile = vi.fn(async () => new Blob(["audio"], { type: "audio/mpeg" }));
+    const getAssetFile = vi.fn(async (id: string) => previewDescriptor(id));
     const previewDocument: AlertEditorDocument = {
       ...editorDocument(),
       templateVariables: [{ key: "userName", label: "User name", description: "Display name for the event actor." }],
@@ -2629,7 +2630,7 @@ describe("AlertEditorPage", () => {
       <DirtyNavigationProvider>
         <AlertEditorPage
           alertId="alert-follow"
-          assetApi={{ ...assetApi, getAssetFile }}
+          assetApi={{ ...assetApi, createPreview: getAssetFile }}
           managementApi={{
             getAlertEditorDocument: vi.fn(async () => previewDocument),
             getAlertSet: vi.fn(async () => alertSetDetail(false)),
@@ -2682,7 +2683,7 @@ describe("AlertEditorPage", () => {
     const user = userEvent.setup();
     const play = vi.fn(async () => undefined);
     const speak = vi.fn();
-    const getAssetFile = vi.fn(async () => new Blob(["audio"], { type: "audio/mpeg" }));
+    const getAssetFile = vi.fn(async (id: string) => previewDescriptor(id));
     vi.stubGlobal("Audio", class { volume = 1; play = play; pause = vi.fn(); });
     vi.stubGlobal("SpeechSynthesisUtterance", class { constructor(readonly text: string) {} });
     vi.stubGlobal("speechSynthesis", { cancel: vi.fn(), speak });
@@ -2709,7 +2710,7 @@ describe("AlertEditorPage", () => {
       <DirtyNavigationProvider>
         <AlertEditorPage
           alertId={previewDocument.id}
-          assetApi={{ ...assetApi, getAssetFile }}
+          assetApi={{ ...assetApi, createPreview: getAssetFile }}
           managementApi={{
             getAlertEditorDocument: vi.fn(async () => previewDocument),
             getAlertSet: vi.fn(async () => alertSetDetail(false)),
@@ -4241,6 +4242,7 @@ const activeSpeakerBot: RegisteredProviderView = {
 const assetApi: AssetApi = {
   listAssets: vi.fn(async () => []),
   importAsset: vi.fn(),
+  ...createTestMediaPreviewApi(),
   getAssetFile: vi.fn(async () => new Blob(["image"], { type: "image/png" })),
   replaceAsset: vi.fn()
 };

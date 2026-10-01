@@ -36,6 +36,8 @@ describe("LocalAssetStore", () => {
     await symlink(outside, join(assetDirectory, "escape"), "junction");
     const store = new LocalAssetStore({ assetDirectory });
     await expect(store.openRead("escape/secret", 6)).rejects.toBeInstanceOf(AssetPathTraversalError);
+    await expect(store.delete("escape/secret")).rejects.toBeInstanceOf(AssetPathTraversalError);
+    expect(await new LocalAssetStore({ assetDirectory: outside }).read("secret")).toEqual(Buffer.from("secret"));
     await writeFile(join(assetDirectory, "changed"), "changed");
     await expect(store.openRead("changed", 2)).rejects.toThrow("changed");
     expect(store.activeReaders).toBe(0);
@@ -176,3 +178,16 @@ async function createTemporaryAssetDirectory(): Promise<string> {
   temporaryDirectories.push(directory);
   return directory;
 }
+
+it("refuses an in-root retirement junction instead of deleting its current or unrelated target", async () => {
+  const assetDirectory = await mkdtemp(join(tmpdir(), "stream-jams-retirement-alias-"));
+  const store = new LocalAssetStore({ assetDirectory });
+  try {
+    await mkdir(join(assetDirectory, "current"));
+    await writeFile(join(assetDirectory, "current", "protected.webm"), "current bytes");
+    await symlink(join(assetDirectory, "current"), join(assetDirectory, "retired"), "junction");
+    await expect(store.delete("retired/protected.webm")).rejects.toBeInstanceOf(AssetPathTraversalError);
+    expect(await store.read("current/protected.webm")).toEqual(Buffer.from("current bytes"));
+    expect(await store.inspect("retired/protected.webm")).toBe("available");
+  } finally { await rm(assetDirectory, { recursive: true, force: true }); }
+});

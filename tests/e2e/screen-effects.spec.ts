@@ -1,3 +1,4 @@
+import { mockMediaPreviews } from "./media-preview-fixtures.js";
 import { expect, test } from "@playwright/test";
 import { mockManagementShell } from "./e2e-helpers.js";
 
@@ -48,10 +49,7 @@ test("creates, saves, enables, tests, and reloads one Screen Effect", async ({ p
     } } });
   });
   await page.route("**/management/assets/library", (route) => route.fulfill({ json: [assetLibraryItem()] }));
-  await page.route("**/assets/asset-effect-image/file", (route) => route.fulfill({
-    body: "<svg xmlns='http://www.w3.org/2000/svg' width='64' height='36'><rect width='64' height='36' fill='#667788'/></svg>",
-    contentType: "image/svg+xml"
-  }));
+  await mockMediaPreviews(page, () => ({ mimeType: "image/png" }));
   await page.route("**/twitch/auth/status", (route) => route.fulfill({ json: {
     connected: false,
     authorizationState: "disconnected",
@@ -352,7 +350,7 @@ test("plays and mutes local draft sound without live output", async ({ page }) =
   wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
   wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(16000, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34);
   wav.write("data", 36); wav.writeUInt32LE(wav.length - 44, 40);
-  await page.route("**/assets/preview-sound/file", (route) => route.fulfill({ body: wav, contentType: "audio/wav" }));
+  await mockMediaPreviews(page, () => ({ mimeType: "audio/wav", body: wav, durationMs: 1000 }));
   let liveRequests = 0;
   await page.route("**/screen-effects/*/test", (route) => { liveRequests += 1; return route.abort(); });
   await page.goto("/manage/modules/screen-effects/editor/effect-no-output");

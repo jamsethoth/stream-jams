@@ -56,7 +56,7 @@ export function createViteManifestWebShellRenderer(input: { readonly webBuildDir
 }
 
 export function sendHtml(reply: FastifyReply, html: string): FastifyReply {
-  return reply.type("text/html; charset=utf-8").send(html);
+  return reply.header("referrer-policy", "no-referrer").type("text/html; charset=utf-8").send(html);
 }
 
 class ViteManifestWebShellRenderer implements WebShellRenderer {
@@ -210,6 +210,7 @@ function renderHtmlShell(input: {
 <html lang="en">
   <head>
     <meta charset="utf-8">
+    <meta name="referrer" content="no-referrer">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${escapeText(input.title)}</title>${inlineStyle}
     ${input.assetTags}

@@ -8,7 +8,7 @@ import {
 } from "./alert-preview-controller.js";
 
 export interface UseAlertPreviewOptions {
-  readonly assetApi: Pick<AssetApi, "getAssetFile">;
+  readonly assetApi: Pick<AssetApi, "createPreview" | "renewPreview" | "releasePreview">;
   readonly visualAssetMediaTypes: Readonly<Record<string, "image" | "gif" | "video">>;
   readonly assetDurations: Readonly<Record<string, number | null>>;
   readonly onError: (failure: AlertPreviewFailure) => void;
@@ -32,7 +32,7 @@ export function useAlertPreview(options: UseAlertPreviewOptions): AlertPreviewVi
   onErrorRef.current = options.onError;
 
   const controller = useMemo(() => createAlertPreviewController({
-    getAssetFile: (assetId) => options.assetApi.getAssetFile(assetId),
+    assetApi: options.assetApi,
     getVisualAssetMediaTypes: () => mediaTypesRef.current,
     getAssetDurations: () => durationsRef.current,
     onError: (failure) => onErrorRef.current(failure)

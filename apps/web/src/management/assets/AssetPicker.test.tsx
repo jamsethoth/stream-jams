@@ -1,3 +1,4 @@
+import { createTestMediaPreviewApi } from "../../test-support/media-preview-fixture.js";
 import type { AssetLibraryItem } from "@stream-jams/core";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -170,6 +171,7 @@ function fixture() {
   const assetApi: AssetApi = {
     listAssets: vi.fn(async () => []),
     importAsset: vi.fn(async () => ({ id: "asset-new", originalFileName: "new.png", mediaType: "image" as const, mimeType: "image/png", sizeBytes: pngBytes.byteLength, checksum: "sha256:new", storagePath: "image/asset-new.png", durationMs: null })),
+    ...createTestMediaPreviewApi(),
     getAssetFile: vi.fn(async () => new Blob([pngBytes], { type: "image/png" })),
     replaceAsset: vi.fn(async () => { throw new Error("not called"); })
   };

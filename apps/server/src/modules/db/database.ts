@@ -29,6 +29,7 @@ import { removeScreenEffectAnimationsMigration } from "./migrations/025-remove-s
 import { automaticOutputRebindingMigration } from "./migrations/026-automatic-output-rebinding.js";
 import { removeAlertSetProfileStateMigration } from "./migrations/027-remove-alert-set-profile-state.js";
 import { timerOverlayModuleMigration } from "./migrations/028-timer-overlay-module.js";
+import { assetRetirementsMigration } from "./migrations/029-asset-retirements.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -69,7 +70,8 @@ const migrations = [
   removeScreenEffectAnimationsMigration,
   automaticOutputRebindingMigration,
   removeAlertSetProfileStateMigration,
-  timerOverlayModuleMigration
+  timerOverlayModuleMigration,
+  assetRetirementsMigration
 ] satisfies readonly StreamJamsMigration[];
 
 export const currentSchemaVersion = migrations.length;

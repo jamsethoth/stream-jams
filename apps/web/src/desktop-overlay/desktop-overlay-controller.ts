@@ -1,4 +1,4 @@
-import { desktopVisualRendererRequestSchema, maxDesktopVisualTransferBytes, serializeException, type DesktopModuleSync, type DesktopVisualAsset, type DesktopVisualBatch, type DesktopVisualRendererReply, type DesktopVisualRendererRequest, type OverlayModulePresentation, type OverlayPlaybackFailure, type PlaybackTiming, type SurfaceConfiguration, type VisualRecipientKey } from "@stream-jams/core";
+import { desktopVisualRendererRequestSchema, privateVisualMediaUrl, serializeException, type PrivateDesktopModuleSync as DesktopModuleSync, type PrivateDesktopMediaAsset as DesktopVisualAsset, type PrivateDesktopVisualBatch as DesktopVisualBatch, type DesktopVisualRendererReply, type DesktopVisualRendererRequest, type OverlayModulePresentation, type OverlayPlaybackFailure, type PlaybackTiming, type SurfaceConfiguration, type VisualRecipientKey } from "@stream-jams/core";
 type Configuration = Extract<SurfaceConfiguration, { kind: "desktop" }>;
 export interface DesktopOverlaySnapshot {
   config: Configuration;
@@ -26,14 +26,13 @@ type Occurrence = {
   queue: DesktopVisualAsset[];
   resources: PreparedAsset[];
   urls: Map<string, string>;
-  bytes: number;
   loading: boolean;
   prepareTimer: ReturnType<typeof setTimeout> | undefined;
   startTimer: ReturnType<typeof setTimeout> | undefined;
   endTimer: ReturnType<typeof setTimeout> | undefined;
 };
-type ModuleRecord = DesktopOverlaySnapshot["modules"][number] & { resources: PreparedAsset[]; bytes: number };
-type ModuleLoad = { envelope: Envelope; revision: number; cancelled: boolean; resources: PreparedAsset[]; bytes: number };
+type ModuleRecord = DesktopOverlaySnapshot["modules"][number] & { resources: PreparedAsset[] };
+type ModuleLoad = { envelope: Envelope; revision: number; cancelled: boolean; resources: PreparedAsset[] };
 
 /** Browser-only media lifetime owner. Native transport owns the final watchdog. */
 export class DesktopOverlayController {
@@ -45,7 +44,6 @@ export class DesktopOverlayController {
   #moduleLoads = new Map<string, ModuleLoad>();
   #moduleRevisions = new Map<string, number>();
   #recent = new Set<string>();
-  #bytes = 0;
   readonly #now: () => number;
 
   constructor(private readonly dependencies: DesktopOverlayControllerDependencies) { this.#now = dependencies.now ?? Date.now; }
@@ -107,13 +105,12 @@ export class DesktopOverlayController {
     this.#disposed = true;
     this.#clear(); this.#recent.clear();
     // No new admission is possible; late loader callbacks still own their record.
-    this.#records.clear(); this.#bytes = 0;
+    this.#records.clear();
   }
 
   #prepare(envelope: Envelope, batch: DesktopVisualBatch): void {
-    const bytes = batch.assets.reduce((sum, asset) => sum + asset.bytes.byteLength, 0);
     if (!this.#snapshot.config.enabled || this.#snapshot.config.displayId === null || batch.key.surfaceId !== this.#snapshot.config.id || this.#now() >= batch.timing.endsAtEpochMs ||
-      this.#records.size >= 64 || this.#bytes + bytes > maxDesktopVisualTransferBytes || this.#records.has(identity(batch.key))) {
+      this.#records.size >= 64 || this.#records.has(identity(batch.key))) {
       this.#report(envelope, { type: "error", key: batch.key }); return;
     }
     const urls = new Map<string, string>();
@@ -121,10 +118,10 @@ export class DesktopOverlayController {
       view: { key: batch.key, timing: batch.timing, instructions: batch.instructions.map(instruction => ({ ...instruction, timing: batch.timing, targetProfileId: "landscape" })), assetUrls: urls, ...(batch.deferredStart === true ? { preparing: true } : {}) },
       pendingReady: new Set(batch.instructions.map(instruction => instruction.id)),
       pendingCompletion: new Set(batch.instructions.map(instruction => instruction.id)),
-      state: "preparing", prepare: envelope, start: null, requestIds: new Set([envelope.requestId]), queue: batch.assets, resources: [], urls, bytes, loading: true,
+      state: "preparing", prepare: envelope, start: null, requestIds: new Set([envelope.requestId]), queue: batch.assets, resources: [], urls, loading: true,
       prepareTimer: undefined, startTimer: undefined, endTimer: undefined
     };
-    this.#records.set(identity(batch.key), record); this.#bytes += bytes;
+    this.#records.set(identity(batch.key), record);
     record.prepareTimer = setTimeout(() => this.#finish(record, "error"), 5000);
     if (batch.deferredStart !== true) record.endTimer = setTimeout(() => this.#finish(record, "complete"), Math.max(0, batch.timing.endsAtEpochMs - this.#now()));
     void this.#load(record);
@@ -132,31 +129,34 @@ export class DesktopOverlayController {
 
   async #syncModule(envelope: Envelope, sync: DesktopModuleSync): Promise<void> {
     const latest = this.#moduleRevisions.get(sync.moduleId) ?? -1;
-    if (sync.revision <= latest) { this.#report(envelope, { type: "ok" }); return; }
+    if (sync.revision < latest) { this.#report(envelope, { type: "ok" }); return; }
+    const existing = this.#modules.get(sync.moduleId);
+    if (sync.revision === latest && existing !== undefined && sync.presentation !== null && sync.assets.length === existing.assetUrls.size && sync.assets.every(asset => existing.assetUrls.get(moduleAssetKey(asset.assetId, asset.reference.snapshot.version)) === privateVisualMediaUrl(asset.reference))) {
+      this.#report(envelope, { type: "ok" }); return;
+    }
     this.#moduleRevisions.set(sync.moduleId, sync.revision);
     const previousLoad = this.#moduleLoads.get(sync.moduleId);
     if (previousLoad !== undefined) this.#cancelModuleLoad(sync.moduleId, previousLoad);
     if (sync.presentation === null) {
       this.#removeModule(sync.moduleId); this.#publish(); this.#report(envelope, { type: "ok" }); return;
     }
-    const bytes = sync.assets.reduce((sum, asset) => sum + asset.bytes.byteLength, 0);
-    if (!this.#snapshot.config.enabled || this.#snapshot.config.displayId === null || this.#bytes + bytes > maxDesktopVisualTransferBytes) {
+    if (!this.#snapshot.config.enabled || this.#snapshot.config.displayId === null) {
       this.#report(envelope, null, failure("Desktop timer snapshot could not be admitted.")); return;
     }
-    const load: ModuleLoad = { envelope, revision: sync.revision, cancelled: false, resources: [], bytes };
-    this.#moduleLoads.set(sync.moduleId, load); this.#bytes += bytes;
+    const load: ModuleLoad = { envelope, revision: sync.revision, cancelled: false, resources: [] };
+    this.#moduleLoads.set(sync.moduleId, load);
     const urls = new Map<string, string>();
     try {
       for (const asset of sync.assets) {
         const resource = await this.dependencies.prepareAsset(asset);
         if (load.cancelled || this.#disposed || this.#moduleLoads.get(sync.moduleId) !== load) { releaseResource(resource); return; }
-        load.resources.push(resource); urls.set(asset.assetId, resource.url);
+        load.resources.push(resource); urls.set(moduleAssetKey(asset.assetId, asset.reference.snapshot.version), resource.url);
       }
       if (load.cancelled || this.#disposed || this.#moduleLoads.get(sync.moduleId) !== load) return;
       this.#moduleLoads.delete(sync.moduleId);
       this.#removeModule(sync.moduleId);
       this.#modules.set(sync.moduleId, { moduleId: sync.moduleId, revision: sync.revision, presentation: sync.presentation,
-        assetUrls: urls, resources: load.resources, bytes });
+        assetUrls: urls, resources: load.resources });
       this.#publish(); this.#report(envelope, { type: "ok" });
     } catch (error) {
       if (load.cancelled || this.#disposed || this.#moduleLoads.get(sync.moduleId) !== load) return;
@@ -244,7 +244,7 @@ export class DesktopOverlayController {
     // releases media; old snapshots may retain only their inert URL strings.
     record.resources.length = 0;
     // In-flight preloads cannot be aborted by this interface. Keep their admission
-    // and byte reservation until settled, including across retry/reconfiguration.
+    // reservation until settled, including across retry/reconfiguration.
     if (!record.loading) this.#release(record);
     if (preparing !== null) this.#report(preparing, { type: "error", key: record.view.key }, failure);
     if (started !== null) this.#report(started, result === "complete" ? { type: result, key: record.view.key, ...(record.diagnostics === undefined ? {} : { diagnostics: record.diagnostics }) } : { type: result, key: record.view.key }, failure);
@@ -252,7 +252,7 @@ export class DesktopOverlayController {
   #release(record: Occurrence): void {
     const id = identity(record.view.key);
     if (this.#records.get(id) !== record) return;
-    this.#records.delete(id); this.#bytes -= record.bytes;
+    this.#records.delete(id);
   }
   #clear(): void {
     for (const record of this.#records.values()) this.#finish(record, "error");
@@ -269,13 +269,11 @@ export class DesktopOverlayController {
   #releaseModuleLoad(load: ModuleLoad): void {
     for (const resource of load.resources) releaseResource(resource);
     load.resources.length = 0;
-    if (load.bytes > 0) { this.#bytes -= load.bytes; load.bytes = 0; }
   }
   #removeModule(moduleId: string): void {
     const record = this.#modules.get(moduleId); if (record === undefined) return;
     this.#modules.delete(moduleId);
     for (const resource of record.resources) releaseResource(resource);
-    this.#bytes -= record.bytes;
   }
   #publish(config = this.#snapshot.config): void {
     this.#snapshot = { config, occurrences: [...this.#records.values()].filter(record => record.state === "active" || (record.view.preparing === true && ["decoding", "ready", "scheduled"].includes(record.state))).map(record => record.view),
@@ -284,7 +282,7 @@ export class DesktopOverlayController {
     this.dependencies.changed();
   }
   #report(envelope: Envelope, result: DesktopVisualRendererReply["result"], failure?: OverlayPlaybackFailure): void {
-    this.dependencies.report({ ...envelope, result, ...(failure === undefined ? {} : { failure }) });
+    this.dependencies.report({ protocolVersion: 1, ...envelope, result, ...(failure === undefined ? {} : { failure }) });
   }
 }
 function mergeDiagnostics(previous: TimingDiagnostics | undefined, next: TimingDiagnostics): TimingDiagnostics {
@@ -306,3 +304,5 @@ function failure(message: string, error?: unknown): OverlayPlaybackFailure {
   return { referenceId: `err_${crypto.randomUUID()}`, stage: "source-load", message,
     exception: serializeException(error ?? new Error(message)) };
 }
+
+export function moduleAssetKey(assetId: string, version: string | undefined): string { return JSON.stringify([assetId, version ?? null]); }

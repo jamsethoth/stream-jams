@@ -1,3 +1,4 @@
+import { createTestMediaPreviewApi } from "./test-support/media-preview-fixture.js";
 import type { AssetRecord } from "./management/assets/asset-api.js";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -286,6 +287,7 @@ function createAssetApi(): AssetApi {
     async importAsset(): Promise<AssetRecord> {
       throw new Error("not called");
     },
+    ...createTestMediaPreviewApi(),
     async getAssetFile(): Promise<Blob> {
       throw new Error("not called");
     },

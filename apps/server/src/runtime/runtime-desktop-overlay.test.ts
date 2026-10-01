@@ -145,15 +145,26 @@ it.each(["twitch", "streamerbot"] as const)("resolves a saved active reviewed La
   await settled();
 });
 
-it("dispatches bytes imported through the real asset API with its persisted checksum", async () => {
-  const { transport, configure, ingest, settled, assetId, pngBytes } = await setup(true);
+it("dispatches a scoped reference to imported bytes with their persisted checksum", async () => {
+  const { runtime, transport, configure, ingest, settled, assetId, pngBytes } = await setup(true);
+  transport.prepare.mockImplementationOnce(async batch => {
+    const media = await runtime.app.inject({ method: "GET", url: `/media/${batch.assets[0]!.grant.handle}` });
+    expect(media.statusCode, media.body).toBe(200);
+    expect(media.rawPayload).toEqual(pngBytes);
+    return "ready";
+  });
   await configure(true);
   await ingest("imported-image");
   await vi.waitFor(() => expect(transport.start).toHaveBeenCalledOnce());
   const batch = transport.prepare.mock.calls[0]![0];
-  expect(batch.assets).toEqual([{ assetId, mimeType: "image/png", bytes: new Uint8Array(pngBytes) }]);
+  expect(batch.assets).toEqual([{ assetId, grant: {
+    handle: expect.stringMatching(/^med_[A-Za-z0-9_-]{43}$/u), expiresAt: expect.any(Number),
+    snapshot: { assetId, version: expect.stringMatching(/^[a-f0-9]{64}$/u), mimeType: "image/png", sizeBytes: pngBytes.length, durationMs: null }
+  } }]);
+  const grant = batch.assets[0]!.grant;
   expect(batch.instructions).toEqual(expect.arrayContaining([expect.objectContaining({ visual: expect.objectContaining({ assetId, mediaType: "image" }), audio: null, tts: null })]));
   await settled();
+  expect((await runtime.app.inject({ method: "GET", url: `/media/${grant.handle}` })).statusCode).toBe(404);
 });
 
 it.each(["disabled", "hidden"] as const)("does not dispatch %s output or replay its missed event on enabling", async state => {

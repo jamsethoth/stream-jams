@@ -1,29 +1,24 @@
-import { createHash } from "node:crypto";
 import {
   audioPlaybackPayloadSchema,
-  maxAudioTransportAssetBytes,
-  maxAudioTransportBatchBytes,
-  type AssetRepository,
   type AudioPlaybackSink,
-  type AudioPlayerAsset,
+  type AudioPlaybackPayload,
   type DesktopAudioTransport,
   type DeviceAudioBatch,
   type DeviceAudioResult,
   type Logger
 } from "@stream-jams/core";
 
+import type { LocalMediaService } from "../assets/local-media-service.js";
+
 export interface DesktopAudioSinkDependencies {
   readonly transport: DesktopAudioTransport;
-  readonly assetRepository: Pick<AssetRepository, "findManyByIds">;
-  readonly assetStore: {
-    readBounded(storagePath: string, maxBytes: number): Promise<Uint8Array>;
-  };
+  readonly media: Pick<LocalMediaService, "records" | "verifyGroup" | "issueTrustedGrant">;
   readonly now?: () => number;
   readonly logger?: Logger;
   readonly generateReferenceId?: () => string;
 }
 
-const supportedMimeTypes = new Set<AudioPlayerAsset["mimeType"]>([
+const supportedMimeTypes = new Set<string>([
   "audio/mpeg",
   "audio/wav",
   "audio/ogg",
@@ -32,15 +27,14 @@ const supportedMimeTypes = new Set<AudioPlayerAsset["mimeType"]>([
   "video/mp4"
 ]);
 const maxPreparationDurationMs = 5_000;
-const preparationTimedOut = Symbol("preparationTimedOut");
 
 export class DesktopAudioSink implements AudioPlaybackSink {
   readonly #transport: DesktopAudioTransport;
-  readonly #assetRepository: Pick<AssetRepository, "findManyByIds">;
-  readonly #assetStore: DesktopAudioSinkDependencies["assetStore"];
+  readonly #media: DesktopAudioSinkDependencies["media"];
   readonly #now: () => number;
   readonly #logger: Logger | undefined;
   readonly #generateReferenceId: (() => string) | undefined;
+  readonly #verification = new Map<string, Set<AbortController>>();
   readonly #cancelled = new Set<string>();
   readonly #pendingByPlaybackId = new Map<string, number>();
   readonly #waitingStarts = new Map<string, Set<() => void>>();
@@ -48,8 +42,7 @@ export class DesktopAudioSink implements AudioPlaybackSink {
 
   constructor(dependencies: DesktopAudioSinkDependencies) {
     this.#transport = dependencies.transport;
-    this.#assetRepository = dependencies.assetRepository;
-    this.#assetStore = dependencies.assetStore;
+    this.#media = dependencies.media;
     this.#now = dependencies.now ?? Date.now;
     this.#logger = dependencies.logger;
     this.#generateReferenceId = dependencies.generateReferenceId;
@@ -90,55 +83,32 @@ export class DesktopAudioSink implements AudioPlaybackSink {
     const deadlineMs = prepare === undefined ? batch.timing?.endsAtEpochMs ?? startedAtMs + batch.durationMs : startedAtMs + 15000;
     const startDeadlineMs = Math.min(deadlineMs, (batch.timing?.startsAtEpochMs ?? startedAtMs) + maxPreparationDurationMs);
     this.#pendingByPlaybackId.set(batch.playbackId, (this.#pendingByPlaybackId.get(batch.playbackId) ?? 0) + 1);
+    const controller = new AbortController();
+    const verifying = this.#verification.get(batch.playbackId) ?? new Set<AbortController>();
+    verifying.add(controller); this.#verification.set(batch.playbackId, verifying);
     try {
       if (!this.#isCurrent(batch.playbackId)) return { failedRouteIds: [] };
       const assetIds = [...new Set(batch.layers.map(layer => layer.assetId))];
-      const records = await this.#beforeStartDeadline(
-        this.#assetRepository.findManyByIds(assetIds),
-        startDeadlineMs,
-        (error) => this.#recordFailure("Desktop audio asset lookup failed after its preparation deadline.", "desktop-audio.asset-lookup-late-failed", batch.playbackId, error)
-      );
-      if (records === preparationTimedOut) return failedDestinations(batch);
-      const assets: AudioPlayerAsset[] = [];
-      let totalBytes = 0;
+      const records = this.#media.records(batch.playbackId, assetIds);
+      const assets: AudioPlaybackPayload["assets"] = [];
+      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(Math.max(1, startDeadlineMs - this.#now()))]);
       for (const assetId of assetIds) {
         if (!this.#isCurrent(batch.playbackId)) return { failedRouteIds: [] };
         if (this.#now() >= startDeadlineMs) return failedDestinations(batch);
         const record = records.get(assetId);
-        if (record === undefined || !isSupportedMimeType(record.mimeType) ||
+        if (record === undefined || !supportedMimeTypes.has(record.mimeType) ||
             !batch.layers.filter(layer => layer.assetId === assetId).every(layer =>
               layer.sourceKind === "audio"
                 ? record.mediaType === "audio" && record.mimeType.startsWith("audio/")
-                : layer.sourceKind === "video-soundtrack" && record.mediaType === "video" && record.mimeType.startsWith("video/")) ||
-            !Number.isSafeInteger(record.sizeBytes) ||
-            record.sizeBytes <= 0 || record.sizeBytes > maxAudioTransportAssetBytes ||
-            record.sizeBytes > maxAudioTransportBatchBytes - totalBytes) {
-          continue;
-        }
+                : layer.sourceKind === "video-soundtrack" && record.mediaType === "video" && record.mimeType.startsWith("video/"))) continue;
         try {
-          const bytes = await this.#beforeStartDeadline(
-            this.#assetStore.readBounded(
-              record.storagePath,
-              Math.min(maxAudioTransportAssetBytes, maxAudioTransportBatchBytes - totalBytes)
-            ),
-            startDeadlineMs,
-            (error) => this.#recordFailure("Desktop audio asset read failed after its preparation deadline.", "desktop-audio.asset-read-late-failed", batch.playbackId, error, assetId)
-          );
-          if (bytes === preparationTimedOut) return failedDestinations(batch);
+          await this.#media.verifyGroup(batch.playbackId, [assetId], signal);
           if (!this.#isCurrent(batch.playbackId)) return { failedRouteIds: [] };
-          if (this.#now() >= startDeadlineMs) return failedDestinations(batch);
-          if (bytes.byteLength !== record.sizeBytes || bytes.byteLength === 0 ||
-              bytes.byteLength > maxAudioTransportAssetBytes ||
-              bytes.byteLength > maxAudioTransportBatchBytes - totalBytes ||
-              `sha256:${createHash("sha256").update(bytes).digest("hex")}` !== record.checksum) {
-            continue;
-          }
-          assets.push({ assetId, mimeType: record.mimeType, bytes: new Uint8Array(bytes) });
-          totalBytes += bytes.byteLength;
+          signal.throwIfAborted();
+          assets.push({ assetId, grant: this.#media.issueTrustedGrant(batch.playbackId, assetId,
+            `desktop-audio:${JSON.stringify([batch.playbackId, batch.documentId])}`, Math.min(this.#now() + 3600000, Math.max(deadlineMs + 5000, this.#now() + batch.durationMs + 20000))) });
         } catch (error) {
           await this.#recordFailure("Desktop audio asset could not be prepared.", "desktop-audio.asset-read-failed", batch.playbackId, error, assetId);
-          // Missing, changed or unreadable assets are omitted. The player maps
-          // the still-present batch layers to affected route failures.
         }
       }
       if (!this.#isCurrent(batch.playbackId)) return { failedRouteIds: [] };
@@ -168,6 +138,8 @@ export class DesktopAudioSink implements AudioPlaybackSink {
       }
       return result;
     } finally {
+      verifying.delete(controller);
+      if (verifying.size === 0) this.#verification.delete(batch.playbackId);
       const remaining = (this.#pendingByPlaybackId.get(batch.playbackId) ?? 1) - 1;
       if (remaining === 0) {
         this.#pendingByPlaybackId.delete(batch.playbackId);
@@ -180,6 +152,7 @@ export class DesktopAudioSink implements AudioPlaybackSink {
 
   async stop(playbackId: string): Promise<void> {
     this.#cancelled.add(playbackId);
+    for (const controller of this.#verification.get(playbackId) ?? []) controller.abort();
     for (const cancel of this.#waitingStarts.get(playbackId) ?? []) cancel();
     try {
       await this.#transport.stop(playbackId);
@@ -194,34 +167,13 @@ export class DesktopAudioSink implements AudioPlaybackSink {
 
   async close(): Promise<void> {
     this.#closed = true;
+    for (const controllers of this.#verification.values()) for (const controller of controllers) controller.abort();
     for (const waiting of this.#waitingStarts.values()) for (const cancel of waiting) cancel();
     await this.#transport.close();
   }
 
   #isCurrent(playbackId: string): boolean {
     return !this.#closed && !this.#cancelled.has(playbackId);
-  }
-
-  async #beforeStartDeadline<T>(
-    work: Promise<T>,
-    startDeadlineMs: number,
-    onLateFailure: (error: unknown) => void | Promise<void>
-  ): Promise<T | typeof preparationTimedOut> {
-    const remainingMs = startDeadlineMs - this.#now();
-    if (remainingMs <= 0) {
-      void work.catch(onLateFailure);
-      return preparationTimedOut;
-    }
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<typeof preparationTimedOut>((resolve) => {
-      timer = setTimeout(() => { resolve(preparationTimedOut); }, remainingMs);
-      timer.unref?.();
-    });
-    try {
-      return await Promise.race([work, timeout]);
-    } finally {
-      if (timer !== undefined) clearTimeout(timer);
-    }
   }
 
   async #recordFailure(message: string, source: string, playbackId: string, error: unknown, assetId?: string): Promise<void> {
@@ -235,10 +187,6 @@ export class DesktopAudioSink implements AudioPlaybackSink {
       metadata: { playbackId, ...(assetId === undefined ? {} : { assetId }) }
     }, error);
   }
-}
-
-function isSupportedMimeType(mimeType: string): mimeType is AudioPlayerAsset["mimeType"] {
-  return supportedMimeTypes.has(mimeType as AudioPlayerAsset["mimeType"]);
 }
 
 function failedDestinations(batch: DeviceAudioBatch): DeviceAudioResult {

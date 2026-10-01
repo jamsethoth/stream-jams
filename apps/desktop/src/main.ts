@@ -25,8 +25,8 @@ if (isolatedUserData !== undefined) {
   app.setPath("userData", isolatedUserData);
 }
 let management: ManagementWindow | null = null;
-const audio = new AudioHost(callbacks => new AudioWindow(callbacks), (input) => diagnostics.record(input));
-const overlay = new OverlayHost((config, callbacks) => PrivateOverlayWindow.create(config, callbacks), () => ({
+const audio = new AudioHost((callbacks, generation) => new AudioWindow(callbacks, () => ownedMediaOptions(generation)), (input) => diagnostics.record(input));
+const overlay = new OverlayHost((config, callbacks, generation) => PrivateOverlayWindow.create(config, callbacks, () => ownedMediaOptions(generation)), () => ({
   available: process.platform === "win32", displays: process.platform === "win32" ? enumerateDesktopDisplays() : []
 }), (input) => diagnostics.record(input));
 let tray: ReturnType<typeof createTray> | null = null;
@@ -44,6 +44,11 @@ const diagnostics = new DesktopDiagnostics({
   send: (report) => supervisor.recordDiagnostic(report),
   writeFallback: createDesktopDiagnosticFallbackWriter(resolve(app.getPath("logs"), "desktop-emergency.jsonl"))
 });
+
+function ownedMediaOptions(generation: number): { trustedServiceOrigin: string; generation: number } {
+  if (supervisor.snapshot === null) throw new Error("The owned media service is unavailable");
+  return { trustedServiceOrigin: new URL(supervisor.snapshot.url).origin, generation };
+}
 
 try {
   crashReporter.start({ productName: "Stream Jams", uploadToServer: false });

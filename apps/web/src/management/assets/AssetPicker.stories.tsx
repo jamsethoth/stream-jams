@@ -3,7 +3,7 @@ import { expect, userEvent, within } from "storybook/test";
 import { createStoryAssetApi, createStoryManagementApi } from "../../stories/mock-apis.js";
 import { AssetPicker } from "./AssetPicker.js";
 
-const meta = { title: "Management/Assets/Picker", component: AssetPicker } satisfies Meta<typeof AssetPicker>;
+const meta = { tags: ["stream-local-media"], title: "Management/Assets/Picker", component: AssetPicker } satisfies Meta<typeof AssetPicker>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { playbackTimingDiagnosticsSchema, type PlaybackTimingDiagnostics } from "../diagnostics/playback-timing-diagnostics.js";
 import { desktopOverlayStatusSchema, type DesktopOverlayStatus } from "./desktop-overlay-status.js";
-import { defaultAssetValidationPolicy } from "../assets/asset-validator.js";
+import { trustedVisualMediaAssetSchema, privateVisualMediaAssetSchema } from "../assets/desktop-media-asset.js";
 import { surfaceConfigurationSchema, type SurfaceConfiguration } from "../overlay-modules/surface-configuration.js";
 import { overlayElementLayoutSchema } from "../shared/schemas.js";
 import { playbackTimingSchema, type PlaybackTiming } from "./playback-timing.js";
@@ -14,10 +14,8 @@ import { overlayPlaybackFailureSchema } from "./playback-failure.js";
 import { overlayModulePresentationSchema } from "../timers/schemas.js";
 import type { OverlayModulePresentation } from "../timers/types.js";
 
-export const maxDesktopVisualTransferBytes = 128 * 1024 * 1024;
 const identity = z.string().min(1).refine(value => value === value.trim());
 const layout = overlayElementLayoutSchema.strict();
-const mimeTypes = ["image/png", "image/jpeg", "image/webp", "image/gif", "video/mp4", "video/webm"] as const;
 
 export const desktopVisualInstructionSchema = overlayInstructionSchema.extend({
   id: identity,
@@ -31,25 +29,18 @@ export const desktopVisualInstructionSchema = overlayInstructionSchema.extend({
   animation: overlayPresetAnimationInstructionSchema.strict().nullable().optional()
 }).strict();
 
-export const desktopVisualAssetSchema = z.object({
-  assetId: identity,
-  mimeType: z.enum(mimeTypes),
-  bytes: z.instanceof(Uint8Array)
-}).strict().refine(asset => asset.bytes.buffer instanceof ArrayBuffer && asset.bytes.byteOffset === 0 &&
-  asset.bytes.byteLength === asset.bytes.buffer.byteLength, "Visual bytes require a dedicated exact-length buffer")
-  .refine(asset => asset.bytes.byteLength > 0 && asset.bytes.byteLength <=
-  defaultAssetValidationPolicy[visualMediaType(asset.mimeType)].maxSizeBytes, "Invalid visual asset byte length");
+export const desktopVisualAssetSchema = trustedVisualMediaAssetSchema;
 
-export function visualMediaType(mimeType: typeof mimeTypes[number]): "image" | "gif" | "video" {
+export function visualMediaType(mimeType: string): "image" | "gif" | "video" {
   return mimeType === "image/gif" ? "gif" : mimeType.startsWith("video/") ? "video" : "image";
 }
 
-export const desktopVisualBatchSchema = z.object({
+const visualBatch = <T extends z.ZodType<{ assetId: string }>>(assetSchema: T, mime: (asset: z.infer<T>) => string) => z.object({
   deferredStart: z.boolean().optional(),
   key: visualRecipientKeySchema.extend({ surfaceId: z.literal("desktop:primary") }).strict(),
   timing: playbackTimingSchema,
-  instructions: z.array(desktopVisualInstructionSchema),
-  assets: z.array(desktopVisualAssetSchema)
+  instructions: z.array(desktopVisualInstructionSchema).max(64),
+  assets: z.array(assetSchema).max(64)
 }).strict().superRefine((batch, context) => {
   const fail = (message: string) => context.addIssue({ code: "custom", message });
   if (new Set(batch.instructions.map(instruction => instruction.id)).size !== batch.instructions.length) fail("Instruction IDs must be unique");
@@ -64,49 +55,62 @@ export const desktopVisualBatchSchema = z.object({
     if (instruction.visual !== null) {
       referenced.add(instruction.visual.assetId);
       const asset = assets.get(instruction.visual.assetId);
-      if (asset === undefined || visualMediaType(asset.mimeType) !== instruction.visual.mediaType) fail("Visual asset is missing or has the wrong media kind");
+      if (asset === undefined || visualMediaType(mime(asset)) !== instruction.visual.mediaType) fail("Visual asset is missing or has the wrong media kind");
     }
   }
   if (batch.assets.some(asset => !referenced.has(asset.assetId))) fail("Unreferenced assets are not authorized");
-  if (batch.assets.reduce((total, asset) => total + asset.bytes.byteLength, 0) > maxDesktopVisualTransferBytes) fail("Desktop transfer budget exceeded");
 });
 
+export const desktopVisualBatchSchema = visualBatch(trustedVisualMediaAssetSchema, asset => asset.grant.snapshot.mimeType);
+export const privateDesktopVisualBatchSchema = visualBatch(privateVisualMediaAssetSchema, asset => asset.reference.snapshot.mimeType);
+export type PrivateDesktopVisualBatch = z.infer<typeof privateDesktopVisualBatchSchema>;
 export type DesktopVisualBatch = z.infer<typeof desktopVisualBatchSchema>;
 export type DesktopVisualAsset = z.infer<typeof desktopVisualAssetSchema>;
-export const desktopModuleSyncSchema = z.object({
+const moduleSync = <T extends z.ZodType<{ assetId: string }>>(assetSchema: T, mime: (asset: z.infer<T>) => string, version: (asset: z.infer<T>) => string) => z.object({
   moduleId: z.literal("timers"),
   revision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   presentation: overlayModulePresentationSchema.nullable(),
-  assets: z.array(desktopVisualAssetSchema)
+  assets: z.array(assetSchema).max(64)
 }).strict().superRefine((sync, context) => {
   const fail = (message: string) => context.addIssue({ code: "custom", message });
   if (sync.presentation !== null && sync.presentation.stack.targetProfileId !== "landscape") fail("Desktop timer presentation must target landscape");
-  const referenced = new Set(sync.presentation?.stack.cards.flatMap(card => card.iconAssetId === null ? [] : [card.iconAssetId]) ?? []);
-  const assets = new Map(sync.assets.map(asset => [asset.assetId, asset]));
-  if (assets.size !== sync.assets.length) fail("Asset IDs must be unique");
-  for (const assetId of referenced) {
-    const asset = assets.get(assetId);
-    if (asset === undefined || visualMediaType(asset.mimeType) === "video") fail("Timer icon asset is missing or has the wrong media kind");
+  const referenced = new Set<string>();
+  const assets = new Map(sync.assets.map(asset => [JSON.stringify([asset.assetId, version(asset)]), asset]));
+  if (assets.size !== sync.assets.length) fail("Asset versions must be unique");
+  for (const card of sync.presentation?.stack.cards ?? []) {
+    if (card.iconAssetId === null) continue;
+    const asset = card.iconVersion === undefined ? sync.assets.find(asset => asset.assetId === card.iconAssetId) : assets.get(JSON.stringify([card.iconAssetId, card.iconVersion]));
+    if (asset === undefined || visualMediaType(mime(asset)) === "video") fail("Timer icon asset version is missing or has the wrong media kind");
+    else referenced.add(JSON.stringify([asset.assetId, version(asset)]));
   }
-  if (sync.assets.some(asset => !referenced.has(asset.assetId))) fail("Unreferenced assets are not authorized");
-  if (sync.assets.reduce((total, asset) => total + asset.bytes.byteLength, 0) > maxDesktopVisualTransferBytes) fail("Desktop transfer budget exceeded");
+  if (sync.assets.some(asset => !referenced.has(JSON.stringify([asset.assetId, version(asset)])))) fail("Unreferenced assets are not authorized");
 });
+export const desktopModuleSyncSchema = moduleSync(trustedVisualMediaAssetSchema, asset => asset.grant.snapshot.mimeType, asset => asset.grant.snapshot.version);
+export const privateDesktopModuleSyncSchema = moduleSync(privateVisualMediaAssetSchema, asset => asset.reference.snapshot.mimeType, asset => asset.reference.snapshot.version);
+export type PrivateDesktopModuleSync = z.infer<typeof privateDesktopModuleSyncSchema>;
 export interface DesktopModuleSync {
   readonly moduleId: "timers";
   readonly revision: number;
   readonly presentation: OverlayModulePresentation | null;
   readonly assets: readonly DesktopVisualAsset[];
 }
-export const desktopVisualCommandSchema = z.discriminatedUnion("type", [
+const visualCommands = <B extends z.ZodType, S extends z.ZodRawShape>(batch: B, sync: z.ZodObject<S>) => z.discriminatedUnion("type", [
   z.object({ type: z.literal("status") }).strict(),
   z.object({ type: z.literal("configure"), config: surfaceConfigurationSchema.refine(config => config.kind === "desktop") }).strict(),
-  z.object({ type: z.literal("prepare"), batch: desktopVisualBatchSchema }).strict(),
-  z.object({ type: z.literal("sync-module"), ...desktopModuleSyncSchema.shape }).strict(),
+  z.object({ type: z.literal("prepare"), batch }).strict(),
+  z.object({ type: z.literal("sync-module"), ...sync.shape }).strict().superRefine((value, context) => {
+    const candidate = Object.fromEntries(Object.entries(value).filter(([key]) => key !== "type"));
+    const result = sync.safeParse(candidate);
+    if (!result.success) for (const issue of result.error.issues) context.addIssue({ code: "custom", message: issue.message, path: issue.path });
+  }),
   z.object({ type: z.literal("start"), key: visualRecipientKeySchema, timing: playbackTimingSchema.optional() }).strict(),
   z.object({ type: z.literal("stop"), key: visualRecipientKeySchema }).strict(),
   z.object({ type: z.literal("retry") }).strict(),
   z.object({ type: z.literal("close") }).strict()
 ]);
+export const desktopVisualCommandSchema = visualCommands(desktopVisualBatchSchema, desktopModuleSyncSchema);
+export const privateDesktopVisualCommandSchema = visualCommands(privateDesktopVisualBatchSchema, privateDesktopModuleSyncSchema);
+export type PrivateDesktopVisualCommand = z.infer<typeof privateDesktopVisualCommandSchema>;
 export const desktopVisualReplySchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("status"), status: desktopOverlayStatusSchema }).strict(),
   z.object({ type: z.literal("ready"), key: visualRecipientKeySchema }).strict(),
@@ -125,13 +129,14 @@ export type DesktopVisualCommand =
   | { readonly type: "close" };
 export type DesktopVisualReply = z.infer<typeof desktopVisualReplySchema>;
 
-const rendererEnvelope = { generation: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), requestId: z.uuid() };
-export const desktopVisualRendererRequestSchema = z.object({ ...rendererEnvelope, command: desktopVisualCommandSchema }).strict();
+const rendererEnvelope = { protocolVersion: z.literal(1), generation: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), requestId: z.uuid() };
+export const desktopVisualRendererRequestSchema = z.object({ ...rendererEnvelope, command: privateDesktopVisualCommandSchema }).strict();
 export const desktopVisualRendererReplySchema = z.object({ ...rendererEnvelope, result: desktopVisualReplySchema.nullable(), failure: overlayPlaybackFailureSchema.optional() }).strict();
 export interface DesktopVisualRendererRequest {
+  readonly protocolVersion: 1;
   readonly generation: number;
   readonly requestId: string;
-  readonly command: DesktopVisualCommand;
+  readonly command: PrivateDesktopVisualCommand;
 }
 export type DesktopVisualRendererReply = z.infer<typeof desktopVisualRendererReplySchema>;
 

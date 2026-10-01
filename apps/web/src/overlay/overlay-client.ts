@@ -132,13 +132,15 @@ export function createOverlayWebSocketUrl(origin: string, route: Pick<ParsedOver
   return url.toString();
 }
 
-export function createOverlayAssetUrl(route: ParsedOverlayRoute, assetId: string): string {
+export function createOverlayAssetUrl(route: ParsedOverlayRoute, assetId: string, version?: string): string {
   const encodedAssetId = encodeURIComponent(assetId);
+  const versionQuery = version === undefined ? "" : `version=${encodeURIComponent(version)}`;
   if (route.scope === "module") {
-    return `/overlay/modules/${encodeURIComponent(route.moduleId ?? "")}/${route.purpose}/${encodeURIComponent(route.rawKey)}/assets/${encodedAssetId}${targetProfileQuery(route.targetProfileId)}`;
+    const profileQuery = targetProfileQuery(route.targetProfileId);
+    return `/overlay/modules/${encodeURIComponent(route.moduleId ?? "")}/${route.purpose}/${encodeURIComponent(route.rawKey)}/assets/${encodedAssetId}${profileQuery}${versionQuery === "" ? "" : `${profileQuery === "" ? "?" : "&"}${versionQuery}`}`;
   }
 
-  return `/overlay/unified/${route.purpose}/${encodeURIComponent(route.rawKey)}/assets/${encodedAssetId}`;
+  return `/overlay/unified/${route.purpose}/${encodeURIComponent(route.rawKey)}/assets/${encodedAssetId}${versionQuery === "" ? "" : `?${versionQuery}`}`;
 }
 
 export function createOverlayPlaybackReporter(socket: OverlaySocketLike): OverlayPlaybackReporter {

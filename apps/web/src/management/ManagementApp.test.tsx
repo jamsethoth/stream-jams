@@ -1,3 +1,4 @@
+import { createTestMediaPreviewApi } from "../test-support/media-preview-fixture.js";
 import { createStoryEffectSets } from "../stories/screen-effect-set-fixtures.js";
 import type { AssetRecord } from "./assets/asset-api.js";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -821,6 +822,7 @@ function createAssetApi(): AssetApi {
     async importAsset(): Promise<AssetRecord> {
       throw new Error("not called");
     },
+    ...createTestMediaPreviewApi(),
     async getAssetFile(): Promise<Blob> {
       return new Blob([new Uint8Array([0])], { type: "image/png" });
     },

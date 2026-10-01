@@ -1,3 +1,5 @@
+import { createTestMediaPreviewApi, previewDescriptor } from "../../../test-support/media-preview-fixture.js";
+import type { MediaPreviewDescriptor } from "@stream-jams/core";
 import type { AlertEditorDocument } from "@stream-jams/core";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { StrictMode, type PropsWithChildren } from "react";
@@ -56,7 +58,7 @@ describe("useAlertPreview", () => {
   });
 
   it("disposes pending work when the asset API identity changes", async () => {
-    let resolveBlob!: (blob: Blob) => void;
+    let resolveBlob!: (descriptor: MediaPreviewDescriptor) => void;
     const firstAssetApi = previewAssetApi(() => new Promise((resolve) => { resolveBlob = resolve; }));
     const createObjectUrl = vi.spyOn(URL, "createObjectURL");
     const { result, rerender } = renderHook(
@@ -79,7 +81,7 @@ describe("useAlertPreview", () => {
       });
     });
     rerender({ assetApi: previewAssetApi() });
-    resolveBlob(new Blob(["late"]));
+    resolveBlob(previewDescriptor());
     await act(() => started);
 
     expect(createObjectUrl).not.toHaveBeenCalled();
@@ -116,11 +118,12 @@ function StrictModeBoundary({ children }: PropsWithChildren) {
   return <StrictMode>{children}</StrictMode>;
 }
 
-function previewAssetApi(getAssetFile: AssetApi["getAssetFile"] = async () => new Blob(["audio"])): AssetApi {
+function previewAssetApi(createPreview: AssetApi["createPreview"] = async id => previewDescriptor(id)): AssetApi {
   return {
     listAssets: vi.fn(async () => []),
     importAsset: vi.fn(),
-    getAssetFile,
+    ...createTestMediaPreviewApi(createPreview),
+    getAssetFile: vi.fn(),
     replaceAsset: vi.fn()
   };
 }

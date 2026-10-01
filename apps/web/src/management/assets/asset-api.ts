@@ -1,4 +1,5 @@
 import type { AssetRecord } from "@stream-jams/core";
+import { createHttpMediaPreviewApi, type MediaPreviewApi } from "./media-preview-api.js";
 import {
   createManagementHttpClient,
   type HttpManagementClientOptions,
@@ -7,7 +8,7 @@ import {
 
 export type { AssetRecord } from "@stream-jams/core";
 
-export interface AssetApi {
+export interface AssetApi extends MediaPreviewApi {
   listAssets(): Promise<readonly AssetRecord[]>;
   importAsset(file: File): Promise<AssetRecord>;
   getAssetFile(assetId: string): Promise<Blob>;
@@ -22,6 +23,7 @@ export function createHttpAssetApi(options: HttpAssetApiOptions = {}): AssetApi 
   const client = options.client ?? createManagementHttpClient(options);
 
   return {
+    ...createHttpMediaPreviewApi({ client }),
     async listAssets() {
       const response = await client.request("/assets", {
         fallbackMessage: "Unable to load assets."

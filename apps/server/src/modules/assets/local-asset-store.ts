@@ -1,12 +1,20 @@
 import { createReadStream } from "node:fs";
 import { mkdir, open, readFile, realpath, rename, rm, stat, writeFile, type FileHandle } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { dirname, isAbsolute, resolve, sep } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { posix } from "node:path";
 import type { AssetStorageWrite, MediaAssetStore } from "@stream-jams/core";
 
 export interface LocalAssetStoreOptions {
   readonly assetDirectory: string;
+}
+
+export interface MediaFileIdentity {
+  readonly dev: number;
+  readonly ino: number;
+  readonly size: number;
+  readonly mtimeMs: number;
+  readonly ctimeMs: number;
 }
 
 export class AssetPathTraversalError extends Error {
@@ -47,7 +55,7 @@ export class LocalAssetStore implements MediaAssetStore {
 
   get activeReaders(): number { return this.#activeReaders; }
 
-  async openRead(storagePath: string, expectedSizeBytes: number): Promise<{ readonly handle: FileHandle; readonly sizeBytes: number; readonly close: () => Promise<void> }> {
+  async openRead(storagePath: string, expectedSizeBytes: number): Promise<{ readonly handle: FileHandle; readonly sizeBytes: number; readonly identity: MediaFileIdentity; readonly close: () => Promise<void> }> {
     if (!Number.isSafeInteger(expectedSizeBytes) || expectedSizeBytes < 0) throw new RangeError("Invalid asset size");
     const absolutePath = this.#resolveStoragePath(storagePath);
     if (this.#activeReaders >= 256) throw new AssetStreamCapacityError();
@@ -69,7 +77,7 @@ export class LocalAssetStore implements MediaAssetStore {
       const current = await stat(currentTarget);
       if (currentTarget !== target || !isPathInsideDirectory(currentTarget, root)) throw new AssetPathTraversalError(storagePath);
       if (!opened.isFile() || opened.size !== expectedSizeBytes || opened.dev !== current.dev || opened.ino !== current.ino || opened.size !== current.size || opened.mtimeMs !== current.mtimeMs) throw new AssetFileChangedError();
-      return { handle, sizeBytes: opened.size, close };
+      return { handle, sizeBytes: opened.size, identity: { dev: opened.dev, ino: opened.ino, size: opened.size, mtimeMs: opened.mtimeMs, ctimeMs: opened.ctimeMs }, close };
     } catch (error) {
       await close();
       if (isNodeError(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")) throw new AssetFileNotFoundError(storagePath, { cause: error });
@@ -137,7 +145,19 @@ export class LocalAssetStore implements MediaAssetStore {
   }
 
   async delete(storagePath: string): Promise<void> {
-    await rm(this.#resolveStoragePath(storagePath), { force: true });
+    const absolutePath = this.#resolveStoragePath(storagePath);
+    try {
+      const target = await realpath(absolutePath);
+      const root = await realpath(this.#assetDirectory);
+      const expected = resolve(root, relative(this.#assetDirectory, absolutePath));
+      const samePath = process.platform === "win32" ? target.toLowerCase() === expected.toLowerCase() : target === expected;
+      // Retirement names must identify their own file, never a reparse alias to another asset.
+      if (!isPathInsideDirectory(target, root) || !samePath) throw new AssetPathTraversalError(storagePath);
+      await rm(absolutePath, { force: true });
+    } catch (error) {
+      if (isNodeError(error) && error.code === "ENOENT") return;
+      throw error;
+    }
   }
 
   async stageDelete(storagePath: string): Promise<{ readonly commit: () => Promise<void>; readonly rollback: () => Promise<void> }> {

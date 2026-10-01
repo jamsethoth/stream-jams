@@ -16,13 +16,17 @@ import {
 } from "./audio-player-policy.js";
 import { AUDIO_COMMAND_CHANNEL, AUDIO_REPLY_CHANNEL, audioRendererRequestSchema, type AudioRendererRequest } from "./audio-ipc.js";
 import type { AudioRendererCallbacks } from "./audio-host.js";
+import type { PrivateMediaReference, TrustedMediaGrant } from "@stream-jams/core";
+import { PrivateMediaProtocol, type PrivateMediaProtocolOptions } from "../private-media-protocol.js";
 
 const AUDIO_SCHEME = "stream-jams-audio";
 const AUDIO_PARTITION = "persist:stream-jams-audio";
+type MediaOptions = Omit<PrivateMediaProtocolOptions, "scheme" | "host" | "recipientId">;
 const contentSecurityPolicy = [
   "default-src 'none'",
   "script-src 'self'",
-  "media-src data: blob:",
+  "media-src 'self'",
+  "connect-src 'none'",
   "base-uri 'none'",
   "frame-ancestors 'none'"
 ].join("; ");
@@ -43,17 +47,22 @@ export class AudioWindow {
   readonly #audioSession = session.fromPartition(AUDIO_PARTITION, { cache: false });
   #destroying = false;
   readonly #reply: (event: IpcMainEvent, candidate: unknown) => void;
+  #media: PrivateMediaProtocol | undefined;
 
-  constructor(callbacks: AudioRendererCallbacks) {
+  constructor(callbacks: AudioRendererCallbacks, private readonly mediaOptions?: MediaOptions | (() => MediaOptions)) {
+    this.#media = mediaOptions === undefined || typeof mediaOptions === "function" ? undefined : new PrivateMediaProtocol({ ...mediaOptions,
+      scheme: AUDIO_SCHEME, host: "player", recipientId: "selected-device-audio" });
     const resources = new Map<string, { readonly path: string; readonly contentType: string }>([
       [AUDIO_PLAYER_URL, { path: resolve(import.meta.dirname, "player.html"), contentType: "text/html; charset=utf-8" }],
       [`${AUDIO_PLAYER_ORIGIN}player.js`, { path: resolve(import.meta.dirname, "player.js"), contentType: "text/javascript; charset=utf-8" }],
       [`${AUDIO_PLAYER_ORIGIN}audio-player-policy.js`, { path: resolve(import.meta.dirname, "audio-player-policy.js"), contentType: "text/javascript; charset=utf-8" }]
+      , [`${AUDIO_PLAYER_ORIGIN}tone.wav`, { path: resolve(import.meta.dirname, "tone.wav"), contentType: "audio/wav" }]
     ]);
     this.#audioSession.protocol.handle(AUDIO_SCHEME, async (request) => {
+      if (this.#destroying) return new Response(null, { status: 404 });
       const resource = resources.get(request.url);
       if (resource === undefined || request.method !== "GET") {
-        return new Response("Not found", { status: 404 });
+        return this.#media?.handle(request) ?? new Response(null, { status: 404 });
       }
       return new Response(await readFile(resource.path), {
         headers: {
@@ -87,8 +96,8 @@ export class AudioWindow {
         event.senderFrame === this.window.webContents.mainFrame && event.senderFrame.url === AUDIO_PLAYER_URL) callbacks.onReply(candidate);
     };
     ipcMain.on(AUDIO_REPLY_CHANNEL, this.#reply);
-    this.window.webContents.on("render-process-gone", () => { if (!this.#destroying) callbacks.onDestroyed(); });
-    this.window.on("closed", () => { if (!this.#destroying) callbacks.onDestroyed(); });
+    this.window.webContents.on("render-process-gone", () => { if (!this.#destroying) { this.destroy(); callbacks.onDestroyed(); } });
+    this.window.on("closed", () => { if (!this.#destroying) { this.destroy(); callbacks.onDestroyed(); } });
     this.window.webContents.on("will-navigate", (event, url) => {
       if (url !== AUDIO_PLAYER_URL) event.preventDefault();
     });
@@ -125,9 +134,20 @@ export class AudioWindow {
     this.window.webContents.send(AUDIO_COMMAND_CHANNEL, audioRendererRequestSchema.parse(request));
   }
 
+  issueMedia(ownerId: string, grant: TrustedMediaGrant): PrivateMediaReference {
+    if (this.#destroying) throw new Error("Private media ownership is unavailable");
+    if (this.#media === undefined && typeof this.mediaOptions === "function") {
+      this.#media = new PrivateMediaProtocol({ ...this.mediaOptions(), scheme: AUDIO_SCHEME, host: "player", recipientId: "selected-device-audio" });
+    }
+    if (this.#media === undefined) throw new Error("Private audio media is unavailable");
+    return this.#media.issue(ownerId, grant);
+  }
+  revokeMediaOwner(ownerId: string): void { this.#media?.revokeOwner(ownerId); }
+
   destroy(): void {
     if (this.#destroying) return;
     this.#destroying = true;
+    this.#media?.destroy();
     ipcMain.removeListener(AUDIO_REPLY_CHANNEL, this.#reply);
     this.#audioSession.setPermissionCheckHandler(null);
     this.#audioSession.setPermissionRequestHandler(null);

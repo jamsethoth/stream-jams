@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { audioPlaybackPayloadSchema, audioTransportCommandSchema, type AudioPlaybackPayload, type AudioTransportCommand, type AudioTransportResult, type DesktopAudioTransport } from "@stream-jams/core";
+import { audioPlaybackPayloadSchema, audioTransportCommandSchema, type AudioPlaybackPayload, type AudioTransportCommand, type AudioTransportResult, type PrivateMediaReference, type TrustedMediaGrant, type PrivateAudioPlaybackPayload, type DesktopAudioTransport } from "@stream-jams/core";
 import { audioRendererReplySchema, type AudioRendererRequest } from "./audio-ipc.js";
 import type { DesktopDiagnosticInput } from "../desktop-diagnostics.js";
 
 export interface AudioRendererCallbacks { onReply(reply: unknown): void; onDestroyed(): void }
-export interface AudioRendererPort { load(): Promise<void>; send(request: AudioRendererRequest): void; destroy(): void }
+export interface AudioRendererPort { load(): Promise<void>; send(request: AudioRendererRequest): void; destroy(): void; issueMedia(ownerId: string, grant: TrustedMediaGrant): PrivateMediaReference; revokeMediaOwner(ownerId: string): void }
 type Pending = { resolve(result: AudioTransportResult): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
 
 /** Main-process ownership is the last-resort silence boundary. No interrupted play is replayed. */
@@ -14,6 +14,7 @@ export class AudioHost implements DesktopAudioTransport {
   #ready: Promise<void> | null = null;
   #pending = new Map<string, Pending>();
   #prepared = new Map<string, { playbackId: string; generation: number; durationMs: number; timer: ReturnType<typeof setTimeout> }>();
+  #mediaOwners = new Map<string, string>();
   #starts = new Set<{ playbackId: string; cancelled: boolean }>();
   #muted = true;
   #owned = false;
@@ -24,7 +25,7 @@ export class AudioHost implements DesktopAudioTransport {
   #leaseAt = 0;
   #leaseTimer: ReturnType<typeof setInterval> | undefined;
 
-  constructor(private readonly createRenderer: (callbacks: AudioRendererCallbacks) => AudioRendererPort, private readonly diagnose?: (input: DesktopDiagnosticInput) => void) {}
+  constructor(private readonly createRenderer: (callbacks: AudioRendererCallbacks, generation: number) => AudioRendererPort, private readonly diagnose?: (input: DesktopDiagnosticInput) => void) {}
 
   beginOwnership(): void {
     this.serviceLost();
@@ -85,37 +86,41 @@ export class AudioHost implements DesktopAudioTransport {
       await this.#ensure();
       if (start.cancelled) throw unavailable();
       const now = Date.now();
-      const result = await this.#request({ type: "prepare", token, payload: { ...payload, startDeadlineMs: now + 5000, deadlineMs: now + 15000 } }, 6000);
+      const result = await this.#request({ type: "prepare", token, payload: this.#translate({ ...payload, startDeadlineMs: now + 5000, deadlineMs: now + 15000 }, token) }, 6000);
       if (start.cancelled || result.type !== "prepared" || result.token !== token) throw unavailable();
-      const timer = setTimeout(() => this.#prepared.delete(token), 15000);
+      const timer = setTimeout(() => { void this.stop(payload.batch.playbackId); }, 15000);
       this.#prepared.set(token, { playbackId: payload.batch.playbackId, generation: this.#generation, durationMs: payload.batch.durationMs, timer });
       return result;
-    } finally { this.#starts.delete(start); }
+    } catch (error) { this.#revoke(token); throw error; } finally { this.#starts.delete(start); }
   }
   async #start(token: string, startsAtEpochMs: number): Promise<AudioTransportResult> {
     const prepared = this.#prepared.get(token);
     if (prepared === undefined || prepared.generation !== this.#generation) throw unavailable();
     clearTimeout(prepared.timer);
     this.#prepared.delete(token);
-    const result = await this.#request({ type: "start", token, startsAtEpochMs, durationMs: prepared.durationMs }, Math.max(1, startsAtEpochMs + prepared.durationMs + 5000 - Date.now()));
-    if (result.type !== "played") throw unavailable();
-    return result;
+    try {
+      const result = await this.#request({ type: "start", token, startsAtEpochMs, durationMs: prepared.durationMs }, Math.max(1, startsAtEpochMs + prepared.durationMs + 5000 - Date.now()));
+      if (result.type !== "played") throw unavailable();
+      return result;
+    } finally { this.#revoke(token); }
   }
   async play(candidate: AudioPlaybackPayload) {
     const payload = audioPlaybackPayloadSchema.parse(candidate);
+    const owner = randomUUID();
     const start = { playbackId: payload.batch.playbackId, cancelled: false };
     this.#starts.add(start);
     try {
       await this.#ensure();
       if (start.cancelled || Date.now() >= Math.min(payload.startDeadlineMs, payload.deadlineMs)) throw unavailable();
-      const result = await this.#request({ type: "play", payload }, Math.max(1, payload.deadlineMs + 5000 - Date.now()));
+      const result = await this.#request({ type: "play", payload: this.#translate(payload, owner) }, Math.max(1, payload.deadlineMs + 5000 - Date.now()));
       if (result.type !== "played") { this.#discard(true); throw unavailable(); }
       return { ...(result.outputDiagnostics === undefined ? {} : { outputDiagnostics: result.outputDiagnostics }), ...(result.diagnostics === undefined ? {} : { diagnostics: result.diagnostics }), failedRouteIds: result.failedRouteIds, ...(result.failures === undefined ? {} : { failures: result.failures }) };
-    } finally { this.#starts.delete(start); }
+    } finally { this.#revoke(owner); this.#starts.delete(start); }
   }
   async stop(playbackId: string): Promise<void> {
     for (const [token, prepared] of this.#prepared) if (prepared.playbackId === playbackId) { clearTimeout(prepared.timer); this.#prepared.delete(token); }
     for (const start of this.#starts) if (start.playbackId === playbackId) start.cancelled = true;
+    for (const [owner, id] of this.#mediaOwners) if (id === playbackId) this.#revoke(owner);
     if (this.#port === null) return;
     // Do not wait for loading: even a pending load owns a renderer capable of sound.
     try {
@@ -144,16 +149,17 @@ export class AudioHost implements DesktopAudioTransport {
   }
   async close(): Promise<void> { this.serviceLost(); }
   async testOutput(deviceId: string): Promise<void> {
-    // A fixed one-second PCM fixture. Uses exactly the same sink/mute/lifetime path.
     audioTransportCommandSchema.parse({ type: "test", deviceId });
-    const bytes = testTone();
-    const result = await this.play({ batch: {
-      playbackId: randomUUID(), documentId: "route-test", durationMs: 1000, muted: this.#muted,
-      layers: [{ sourceKind: "audio", layerId: "tone", assetId: "tone", volume: 0.25,
-        fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 1000 }], destinations: [{ deviceId, routeIds: ["route-test"] }]
-    }, assets: [{ assetId: "tone", mimeType: "audio/wav", bytes }], startDeadlineMs: Date.now() + 1000, deadlineMs: Date.now() + 1000 });
-    if (result.failedRouteIds.length > 0) throw unavailable();
+    await this.#ensure();
+    const result = await this.#request({ type: "test", deviceId }, 6000);
+    if (result.type !== "ok") throw unavailable();
   }
+  #translate(payload: AudioPlaybackPayload, owner: string): PrivateAudioPlaybackPayload {
+    if (this.#port === null) throw unavailable();
+    this.#mediaOwners.set(owner, payload.batch.playbackId);
+    return { ...payload, assets: payload.assets.map(asset => ({ assetId: asset.assetId, reference: this.#port!.issueMedia(owner, asset.grant) })) };
+  }
+  #revoke(owner: string): void { this.#port?.revokeMediaOwner(owner); this.#mediaOwners.delete(owner); }
   #startLease(): void {
     this.#leaseAt = Date.now();
     clearInterval(this.#leaseTimer);
@@ -170,7 +176,7 @@ export class AudioHost implements DesktopAudioTransport {
     const port = this.createRenderer({
       onReply: candidate => this.#receive(candidate, generation),
       onDestroyed: () => { if (this.#generation === generation && this.#port !== null) this.#discard(true); }
-    });
+    }, generation);
     this.#port = port;
     this.#ready = (async () => {
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -179,7 +185,7 @@ export class AudioHost implements DesktopAudioTransport {
           timer = setTimeout(() => reject(unavailable()), 5000);
         })]);
         if (this.#port !== port || generation !== this.#generation) throw unavailable();
-        const result = await this.#request({ type: "initialize", muted: this.#muted }, 2000);
+        const result = await this.#request({ type: "initialize", protocolVersion: 1, muted: this.#muted }, 2000);
         if (result.type !== "ok") throw unavailable();
       }
       catch (error) {
@@ -193,14 +199,25 @@ export class AudioHost implements DesktopAudioTransport {
     if (this.#port === null || !this.#owned) return Promise.reject(unavailable());
     const requestId = randomUUID();
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => this.#discard(true), timeoutMs);
+      const timer = setTimeout(() => {
+        if (command.type === "initialize") {
+          const error = new Error("Desktop media protocol v1 initialization was not acknowledged. Rebuild the desktop runtime and private renderer together.");
+          this.diagnose?.({ component: "audio-renderer", source: "desktop.audio.incompatible-media-protocol", message: error.message });
+          this.#discard(true, error);
+        } else this.#discard(true);
+      }, timeoutMs);
       this.#pending.set(requestId, { resolve, reject, timer });
-      try { this.#port!.send({ generation: this.#generation, requestId, command }); }
+      try { this.#port!.send({ protocolVersion: 1, generation: this.#generation, requestId, command }); }
       catch (error) { this.#discard(true, error); }
     });
   }
   #receive(candidate: unknown, generation: number): void {
     if (generation !== this.#generation || this.#port === null) return;
+    if (typeof candidate === "object" && candidate !== null && "generation" in candidate && candidate.generation === generation && (! ("protocolVersion" in candidate) || candidate.protocolVersion !== 1)) {
+      const error = new Error("Incompatible desktop media protocol. Rebuild the desktop runtime and its private renderer together.");
+      this.diagnose?.({ component: "audio-renderer", source: "desktop.audio.incompatible-media-protocol", message: error.message });
+      this.#discard(true, error); return;
+    }
     const parsed = audioRendererReplySchema.safeParse(candidate);
     if (!parsed.success || parsed.data.generation !== generation) return;
     const pending = this.#pending.get(parsed.data.requestId);
@@ -228,6 +245,7 @@ export class AudioHost implements DesktopAudioTransport {
     const port = this.#port;
     for (const prepared of this.#prepared.values()) clearTimeout(prepared.timer);
     this.#prepared.clear();
+    this.#mediaOwners.clear();
     this.#cancelCooldown?.(); this.#cancelCooldown = null; this.#cooldown = null;
     this.#port = null;
     this.#ready = null;
@@ -245,16 +263,4 @@ export class AudioHost implements DesktopAudioTransport {
 }
 function unavailable(cause?: unknown): Error {
   return new Error("Local audio is unavailable. Future requests recover automatically; Retry can restore the backend immediately.", cause === undefined ? undefined : { cause });
-}
-function testTone(): Uint8Array<ArrayBuffer> {
-  const samples = 24_000;
-  const bytes = new Uint8Array(44 + samples * 2);
-  const data = new DataView(bytes.buffer);
-  const text = (offset: number, value: string) => [...value].forEach((char, index) => data.setUint8(offset + index, char.charCodeAt(0)));
-  text(0, "RIFF"); data.setUint32(4, bytes.length - 8, true); text(8, "WAVEfmt ");
-  data.setUint32(16, 16, true); data.setUint16(20, 1, true); data.setUint16(22, 1, true);
-  data.setUint32(24, samples, true); data.setUint32(28, samples * 2, true); data.setUint16(32, 2, true); data.setUint16(34, 16, true);
-  text(36, "data"); data.setUint32(40, samples * 2, true);
-  for (let i = 0; i < samples; i++) data.setInt16(44 + i * 2, Math.round(Math.sin(2 * Math.PI * 660 * i / samples) * 16383 * Math.min(1, i / 240, (samples - i) / 240)), true);
-  return bytes;
 }

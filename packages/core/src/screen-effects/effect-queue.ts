@@ -35,6 +35,7 @@ export interface EffectQueue {
 }
 
 export interface EffectQueueOptions {
+  readonly onRelease?: (occurrenceId: string) => void;
   readonly maxPending?: number;
   readonly recentLimit?: number;
   readonly modulePaused?: boolean;
@@ -53,6 +54,7 @@ export class DefaultEffectQueue implements EffectQueue {
   readonly #maxPending: number;
   readonly #recentLimit: number;
   readonly #now: () => number;
+  readonly #onRelease: (occurrenceId: string) => void;
   #current: EffectOccurrence | null = null;
   #queued: EffectOccurrence[] = [];
   #recent: EffectOccurrence[] = [];
@@ -63,6 +65,7 @@ export class DefaultEffectQueue implements EffectQueue {
     this.#recentLimit = boundedInteger(options.recentLimit ?? 25, "recentLimit", 0);
     this.#modulePaused = options.modulePaused ?? false;
     this.#now = options.now ?? Date.now;
+    this.#onRelease = options.onRelease ?? (() => {});
   }
 
   hasPendingCapacity(): boolean {
@@ -108,6 +111,7 @@ export class DefaultEffectQueue implements EffectQueue {
     this.#recent.unshift({ ...this.#current, status, completedAtMs: nowMs });
     this.#recent = this.#recent.slice(0, this.#recentLimit);
     this.#current = null;
+    this.#onRelease(occurrenceId);
     return true;
   }
 
@@ -115,12 +119,15 @@ export class DefaultEffectQueue implements EffectQueue {
     const index = this.#queued.findIndex((candidate) => candidate.id === occurrenceId);
     if (index < 0) return false;
     this.#queued.splice(index, 1);
+    this.#onRelease(occurrenceId);
     return true;
   }
 
   clearPending(): number {
     const count = this.#queued.length;
+    const removed = this.#queued;
     this.#queued = [];
+    for (const item of removed) this.#onRelease(item.id);
     return count;
   }
 

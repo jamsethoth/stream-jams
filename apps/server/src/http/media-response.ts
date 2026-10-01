@@ -7,9 +7,11 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import type { LocalAssetStore } from "../modules/assets/local-asset-store.js";
 
 /** Authorization and registered-asset resolution must precede this boundary. */
-export async function sendMediaFile(request: FastifyRequest, reply: FastifyReply, store: Pick<LocalAssetStore, "openRead">, asset: AssetRecord): Promise<FastifyReply> {
+export async function sendMediaFile(request: FastifyRequest, reply: FastifyReply, store: Pick<LocalAssetStore, "openRead">, asset: AssetRecord, signal?: AbortSignal): Promise<FastifyReply> {
+  signal?.throwIfAborted();
   const opened = await store.openRead(asset.storagePath, asset.sizeBytes);
   try {
+    signal?.throwIfAborted();
     // Hash the registered identity, not the media body; this is a validator, not fresh integrity verification.
     const etag = `"${createHash("sha256").update(asset.storagePath).update("\0").update(asset.checksum).digest("hex")}"`;
     reply.header("accept-ranges", "bytes").header("etag", etag).header("cache-control", "no-store")
@@ -37,7 +39,7 @@ export async function sendMediaFile(request: FastifyRequest, reply: FastifyReply
       await opened.close();
       return await reply.send(Readable.from([]));
     }
-    const stream = opened.handle.createReadStream({ highWaterMark: 64 * 1024, start: range?.start ?? 0, end: range?.end ?? opened.sizeBytes - 1 });
+    const stream = opened.handle.createReadStream({ highWaterMark: 64 * 1024, start: range?.start ?? 0, end: range?.end ?? opened.sizeBytes - 1, ...(signal === undefined ? {} : { signal }) });
     return await reply.send(stream);
   } finally {
     await opened.close();

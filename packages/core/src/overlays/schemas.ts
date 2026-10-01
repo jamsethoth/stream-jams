@@ -71,6 +71,7 @@ export const overlayPresetAnimationInstructionSchema = z.object({
 });
 
 export const overlayInstructionSchema = z.object({
+  assetVersions: z.record(z.string().min(1), z.string().regex(/^[a-f0-9]{64}$/)).optional(),
   timing: playbackTimingSchema.optional(),
   id: nonEmptyStringSchema,
   overlayId: nonEmptyStringSchema,

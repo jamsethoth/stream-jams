@@ -40,7 +40,7 @@ const managementApi = createStoryManagementApi({
   }] })
 });
 
-const meta = {
+const meta = { tags: ["stream-local-media"],
   title: "Management/Screen Effects/Focused editor",
   component: ScreenEffectEditor,
   decorators: [(Story) => <DirtyNavigationProvider><div className="management-main management-main--focused"><Story /></div></DirtyNavigationProvider>],

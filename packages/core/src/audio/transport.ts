@@ -1,17 +1,12 @@
 import { z } from "zod";
+import { trustedAudioMediaAssetSchema, privateAudioMediaAssetSchema } from "../assets/desktop-media-asset.js";
 import { audioOutputDeviceSchema, audioRouteIdSchema, deviceAudioBatchSchema, deviceAudioResultSchema, explicitAudioDeviceIdSchema } from "./schemas.js";
 import type { AudioDeviceHost, DeviceAudioResult } from "./types.js";
 
-export const maxAudioTransportAssetBytes = 25 * 1024 * 1024;
-export const maxAudioTransportBatchBytes = 100 * 1024 * 1024;
-export const audioPlayerAssetSchema = z.object({
-  assetId: audioRouteIdSchema,
-  mimeType: z.enum(["audio/mpeg", "audio/wav", "audio/ogg", "audio/webm", "video/webm", "video/mp4"]),
-  bytes: z.instanceof(Uint8Array).refine(bytes => bytes.byteLength > 0 && bytes.byteLength <= maxAudioTransportAssetBytes)
-}).strict();
-export const audioPlaybackPayloadSchema = z.object({
+export const audioPlayerAssetSchema = trustedAudioMediaAssetSchema;
+const audioPayload = <T extends z.ZodType<{ assetId: string }>>(assetSchema: T, mime: (asset: z.infer<T>) => string) => z.object({
   batch: deviceAudioBatchSchema,
-  assets: z.array(audioPlayerAssetSchema),
+  assets: z.array(assetSchema).max(64),
   startDeadlineMs: z.number().int().positive(),
   deadlineMs: z.number().int().positive()
 }).strict().refine(({ batch, assets }) => {
@@ -19,14 +14,17 @@ export const audioPlaybackPayloadSchema = z.object({
   return new Set(assets.map(asset => asset.assetId)).size === assets.length &&
     assets.every(asset => ids.has(asset.assetId)) &&
     assets.every(asset => batch.layers.filter(layer => layer.assetId === asset.assetId).every(layer =>
-      (layer.sourceKind === "video-soundtrack") === asset.mimeType.startsWith("video/"))) &&
-    assets.reduce((size, asset) => size + asset.bytes.byteLength, 0) <= maxAudioTransportBatchBytes;
-}, "Audio bytes must be bounded, unique and referenced by this batch")
+      (layer.sourceKind === "video-soundtrack") === mime(asset).startsWith("video/")));
+}, "Audio references must be bounded, unique and referenced by this batch")
   .refine(({ batch, deadlineMs, startDeadlineMs }) => batch.timing === undefined || (
     deadlineMs === batch.timing.endsAtEpochMs && startDeadlineMs <= deadlineMs &&
     startDeadlineMs <= batch.timing.startsAtEpochMs + 5000 &&
     batch.durationMs === batch.timing.endsAtEpochMs - batch.timing.startsAtEpochMs
   ), "Audio deadlines must match the shared occurrence timing");
+
+export const audioPlaybackPayloadSchema = audioPayload(trustedAudioMediaAssetSchema, asset => asset.grant.snapshot.mimeType);
+export const privateAudioPlaybackPayloadSchema = audioPayload(privateAudioMediaAssetSchema, asset => asset.reference.snapshot.mimeType);
+export type PrivateAudioPlaybackPayload = z.infer<typeof privateAudioPlaybackPayloadSchema>;
 
 export const audioTransportCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("enumerate") }).strict(),

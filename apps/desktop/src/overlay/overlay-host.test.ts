@@ -23,7 +23,7 @@ function harness(load = async () => {}, missing = false) {
     if (missing) return null;
     const port = { callbacks, sent: [] as OverlayRendererRequest[], destroy: vi.fn(), auto: true };
     ports.push(port);
-    return { load, destroy: port.destroy, send(request) {
+    return { issueMedia: (_owner, grant) => ({ protocolVersion: 1, snapshot: grant.snapshot, handle: `private_${"A".repeat(43)}` }), revokeMediaOwner: vi.fn(), load, destroy: port.destroy, send(request) {
       port.sent.push(request);
       if (port.auto && request.command.type !== "start") reply(port, request, request.command.type === "prepare" ? { type: "ready", key: request.command.batch.key } : { type: "ok" });
     } };
@@ -34,7 +34,7 @@ function harness(load = async () => {}, missing = false) {
   return { host, ports };
 }
 function reply(port: { callbacks: OverlayRendererCallbacks }, request: OverlayRendererRequest, result: DesktopVisualReply) {
-  port.callbacks.onReply({ generation: request.generation, requestId: request.requestId, result });
+  port.callbacks.onReply({ protocolVersion: 1, generation: request.generation, requestId: request.requestId, result });
 }
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0); });
 afterEach(() => vi.useRealTimers());
@@ -254,7 +254,7 @@ it("ignores stale renderer callbacks after rebind and does not consume recovery 
   await host.configure({ ...config, displayId: "two", layers: [] }); await host.prepare(batch());
   ports[0]!.callbacks.onDestroyed(); ports[0]!.callbacks.onUnavailable();
   const playing = host.start(batch().key); const request = ports[1]!.sent.at(-1)!;
-  ports[0]!.callbacks.onReply({ generation: request.generation, requestId: request.requestId, result: { type: "complete", key: batch().key } });
+  ports[0]!.callbacks.onReply({ protocolVersion: 1, generation: request.generation, requestId: request.requestId, result: { type: "complete", key: batch().key } });
   reply(ports[1]!, request, { type: "complete", key: batch().key }); await playing;
   for (let i = 0; i < 3; i++) { ports.at(-1)!.callbacks.onUnavailable(); expect(await host.prepare(batch())).toBe("ready"); }
   await host.close();
@@ -297,14 +297,15 @@ it("retains a stopping occurrence until acknowledgement even when prepare replie
   expect(await host.prepare(batch())).toBe("ready"); await host.close();
 });
 
-it("reserves aggregate bytes across batches and releases them after stop", async () => {
+it("admits independent large video references and releases duplicate ownership on stop", async () => {
   const { host } = harness(); await host.configure({ ...config, layers: [] });
   const media = (id: string): DesktopVisualBatch => ({ ...batch(id), instructions: [{ id: "video", overlayId: "default", moduleId: id, purpose: "live", scope: "module", durationMs: 1000, audio: null, tts: null, text: null,
     visual: { assetId: "asset", mediaType: "video", layout: { x: 0, y: 0, width: 100, height: 100, zIndex: 0 } } }],
-    assets: [{ assetId: "asset", mimeType: "video/webm", bytes: new Uint8Array(65 * 1024 * 1024) }] });
+    assets: [{ assetId: "asset", grant: { handle: `med_${"A".repeat(43)}`, expiresAt: 1000000, snapshot: { assetId: "asset", mimeType: "video/webm", version: "a".repeat(64), sizeBytes: 65 * 1024 * 1024, durationMs: 1000 } } }] });
   expect(await host.prepare(media("first"))).toBe("ready");
+  expect(await host.prepare(media("second"))).toBe("ready");
   expect(await host.prepare(media("second"))).toBe("unavailable");
-  await host.stop(batch("first").key); expect(await host.prepare(media("second"))).toBe("ready"); await host.close();
+  await host.stop(batch("second").key); expect(await host.prepare(media("second"))).toBe("ready"); await host.close();
 });
 
 it("bounds initial configuration acknowledgement and never sends expired content after loading", async () => {
@@ -344,8 +345,8 @@ it("status preserves the crash budget and reports explicit Retry recovery", asyn
   const callbacks: OverlayRendererCallbacks[] = [];
   const host = new OverlayHost((_config, callback) => {
     callbacks.push(callback);
-    return { load: async () => {}, destroy() {}, send(request) {
-      callback.onReply({ generation: request.generation, requestId: request.requestId, result: request.command.type === "prepare" ? { type: "ready", key: request.command.batch.key } : { type: "ok" } });
+    return { issueMedia: (_owner, grant) => ({ protocolVersion: 1, snapshot: grant.snapshot, handle: `private_${"A".repeat(43)}` }), revokeMediaOwner: vi.fn(), load: async () => {}, destroy() {}, send(request) {
+      callback.onReply({ protocolVersion: 1, generation: request.generation, requestId: request.requestId, result: request.command.type === "prepare" ? { type: "ready", key: request.command.batch.key } : { type: "ok" } });
     } };
   }, () => ({ available: true, displays: [{ id: "one", label: "One", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }] }));
   host.beginOwnership(); await host.configure({ ...config, layers: [] }); await host.prepare(batch());
@@ -382,7 +383,7 @@ it("reports the operation and timeout that exhaust the renderer crash budget", a
     diagnostic: {
       kind: "renderer-command-timeout",
       operation: "configure",
-      reason: "timeout-after-2000ms",
+      reason: "media-protocol-v1-not-acknowledged; rebuild-desktop-and-private-renderer-together",
       exitCode: null,
       occurredAt: "1970-01-01T00:00:04.000Z",
       consecutiveFailures: 2
@@ -449,7 +450,7 @@ it("preserves media failure provenance without treating it as a renderer crash",
   await vi.advanceTimersByTimeAsync(0);
   const request = ports[0]!.sent.at(-1)!;
   const failure = { referenceId: "media-failure", stage: "seek", message: "Video seek failed", exception: { type: "Error", message: "Seek mismatch", stack: null, code: null, cause: null, thrownValue: null } };
-  ports[0]!.callbacks.onReply({ generation: request.generation, requestId: request.requestId, result: { type: "error", key: batch().key }, failure });
+  ports[0]!.callbacks.onReply({ protocolVersion: 1, generation: request.generation, requestId: request.requestId, result: { type: "error", key: batch().key }, failure });
   await expect(playing).rejects.toMatchObject({ message: "Desktop media playback failed during seek.", cause: failure });
   expect(ports[0]!.destroy).not.toHaveBeenCalled();
   expect(await host.prepare(batch("next"))).toBe("ready");

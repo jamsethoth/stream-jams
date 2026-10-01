@@ -142,6 +142,7 @@ export interface OverlayPresetAnimationInstruction {
 }
 
 export interface OverlayInstruction {
+  readonly assetVersions?: Readonly<Record<string, string>> | undefined;
   readonly timing?: PlaybackTiming | undefined;
   readonly id: string;
   readonly overlayId: string;

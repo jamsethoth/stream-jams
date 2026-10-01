@@ -1,15 +1,14 @@
 import {
-  audioPlayerAssetSchema,
+  privateAudioMediaAssetSchema,
   monitorMediaProgress,
   type PlaybackTimingDiagnostics,
   deviceAudioBatchSchema,
-  maxAudioTransportAssetBytes,
-  maxAudioTransportBatchBytes,
   prepareTimedMedia,
   prepareMediaAtStart,
   resolveAudioEnvelope,
   serializeException,
   TimedMediaPreparationError,
+  type PrivateDesktopMediaAsset,
   type DeviceAudioFailure,
   type AudioOutputDevice,
   type DeviceAudioBatch,
@@ -21,11 +20,7 @@ const START_TIMEOUT_MS = 5_000;
 const DEVICE_POLL_INTERVAL_MS = 1_000;
 const DEVICE_ENUMERATION_TIMEOUT_MS = 5_000;
 
-export interface AudioPlayerAsset {
-  readonly assetId: string;
-  readonly mimeType: string;
-  readonly bytes: Uint8Array;
-}
+export type AudioPlayerAsset = PrivateDesktopMediaAsset;
 
 export interface PlayerMediaElement {
   currentTime: number;
@@ -191,7 +186,7 @@ export class DeviceAudioPlayer {
     let release!: (startsAtEpochMs: number) => void;
     const gate: PreparedStart = { ready: [], start: new Promise(resolve => { release = resolve; }), release: value => release(value) };
     const result = this.#play(request, gate, token);
-    const timer = setTimeout(() => { this.#prepared.delete(token); gate.release(this.#now()); }, 15000);
+    const timer = setTimeout(() => { this.stop(request.batch.playbackId); }, 15000);
     this.#prepared.set(token, { playbackId: request.batch.playbackId, gate, result, timer });
     void result.finally(() => { gate.release(this.#now()); }).catch(
       // error-provenance: allow cleanup -- the start handle retains the original result and error
@@ -572,16 +567,14 @@ export class DeviceAudioPlayer {
 
     const referencedAssetIds = new Set(request.batch.layers.map((layer) => layer.assetId));
     const receivedAssetIds = new Set<string>();
-    let totalBytes = 0;
+    if (request.assets.length > 64) throw new Error("Device audio asset capacity exceeded.");
     for (const asset of request.assets) {
-      if (!audioPlayerAssetSchema.safeParse(asset).success || receivedAssetIds.has(asset.assetId) ||
-          !referencedAssetIds.has(asset.assetId) || asset.bytes.byteLength > maxAudioTransportAssetBytes) {
+      if (!privateAudioMediaAssetSchema.safeParse(asset).success || receivedAssetIds.has(asset.assetId) ||
+          !referencedAssetIds.has(asset.assetId)) {
         throw new Error("Device audio assets must be bounded, unique, supported and referenced by the batch.");
       }
       receivedAssetIds.add(asset.assetId);
-      totalBytes += asset.bytes.byteLength;
     }
-    if (totalBytes > maxAudioTransportBatchBytes) throw new Error("Device audio batch bytes exceed the transport limit.");
   }
 
   #updateDevicePolling(): void {

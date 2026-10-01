@@ -14,6 +14,8 @@ import {
   type ScreenEffectDocument,
   type ScreenEffectRepository
 } from "@stream-jams/core";
+import { MediaUnavailableError, type LocalMediaService } from "../assets/local-media-service.js";
+import { effectOccurrenceKey } from "./effect-playback-coordinator.js";
 
 export type EffectAdmissionOutcomeStatus =
   | "queued"
@@ -41,6 +43,7 @@ export type EffectAdmissionResult =
     };
 
 export interface EffectAdmissionServiceOptions {
+  readonly localMediaService?: LocalMediaService;
   readonly repository: Pick<ScreenEffectRepository, "list" | "find">;
   readonly queue: EffectQueue;
   readonly dedupe: PlaybackDedupeKeyService;
@@ -103,8 +106,10 @@ export class EffectAdmissionService {
   readonly #assetDurationCatalog: EffectAdmissionServiceOptions["assetDurationCatalog"] | null;
   #admissionTail = Promise.resolve();
   #nextSequence = 0;
+  readonly #localMediaService: LocalMediaService | undefined;
 
   constructor(options: EffectAdmissionServiceOptions) {
+    this.#localMediaService = options.localMediaService;
     this.#isEffectLive = options.isEffectLive ?? (() => true);
     this.#repository = options.repository;
     this.#queue = options.queue;
@@ -164,7 +169,7 @@ export class EffectAdmissionService {
     if (!this.#queue.hasPendingCapacity()) {
       return { effectId, status: "full" };
     }
-    const content = await this.#resolveContentDuration(resolveEffectContent(document, this.#random()));
+    const content = resolveEffectContent(document, this.#random());
     return this.#enqueueExplicit(content, null);
   }
 
@@ -181,12 +186,12 @@ export class EffectAdmissionService {
     if (!this.#queue.hasPendingCapacity()) {
       return { effectId, status: "full" };
     }
-    return this.#enqueueExplicit(await this.#resolveContentDuration({
+    return this.#enqueueExplicit({
       effectId: document.id,
       effectName: document.name,
       variant: structuredClone(variant),
       priority: document.priority
-    }), null);
+    }, null);
   }
 
   async replayRecent(occurrenceId: string): Promise<EffectAdmissionOutcome> {
@@ -205,8 +210,19 @@ export class EffectAdmissionService {
 
   async #enqueueExplicit(
     content: EffectContentSnapshot,
-    trigger: EffectTrigger | null
+    trigger: EffectTrigger | null,
+    requireLive = false
   ): Promise<EffectAdmissionOutcome> {
+    const work = () => this.#enqueueCaptured(content, trigger, requireLive);
+    try { return this.#localMediaService === undefined ? await work() : await this.#localMediaService.runAdmission(work); }
+    catch (error) {
+      if (error instanceof MediaUnavailableError) return { effectId: content.effectId, status: "missing-reference" };
+      throw error;
+    }
+  }
+
+  async #enqueueCaptured(content: EffectContentSnapshot, trigger: EffectTrigger | null, requireLive: boolean): Promise<EffectAdmissionOutcome> {
+    content = await this.#resolveContentDuration(content);
     if (!await this.#isModuleEnabled()) {
       return { effectId: content.effectId, status: "module-disabled" };
     }
@@ -222,9 +238,11 @@ export class EffectAdmissionService {
     if (!this.#queue.hasPendingCapacity()) {
       return { effectId: content.effectId, status: "full" };
     }
+    if (requireLive && !this.#isEffectLive(content.effectId)) return { effectId: content.effectId, status: "module-disabled" };
 
     const occurrenceId = this.#generateOccurrenceId();
     const queued = this.#queue.enqueue(this.#createOccurrence(occurrenceId, content, trigger));
+    if (queued !== "full") this.#localMediaService?.commitAdmission(effectOccurrenceKey("screen-effects", occurrenceId));
     return queued === "full"
       ? { effectId: content.effectId, status: "full" }
       : { effectId: content.effectId, status: "queued", occurrenceId };
@@ -253,35 +271,10 @@ export class EffectAdmissionService {
         continue;
       }
 
-      const content = await this.#resolveContentDuration(resolveEffectContent(document, this.#random()));
-      if (!hasSelectedOutput(content.variant)) {
-        outcomes.push({ effectId: document.id, status: "no-output" });
-        continue;
-      }
-      if (!await this.#validateReferences(content)) {
-        outcomes.push({ effectId: document.id, status: "missing-reference" });
-        continue;
-      }
-      if (!await this.#validateOutputAvailability(content)) {
-        outcomes.push({ effectId: document.id, status: "unavailable-output" });
-        continue;
-      }
-      if (!await this.#isModuleEnabled()) {
-        outcomes.push({ effectId: document.id, status: "module-disabled" });
-        continue;
-      }
-
-      // Activation may have changed while reference/output checks awaited.
-      if (!this.#isEffectLive(document.id)) continue;
-      const occurrenceId = this.#generateOccurrenceId();
-      const occurrence = this.#createOccurrence(occurrenceId, content, match.trigger);
-      if (this.#queue.enqueue(occurrence) === "full") {
-        outcomes.push({ effectId: document.id, status: "full" });
-        continue;
-      }
-
-      admittedAny = true;
-      outcomes.push({ effectId: document.id, status: "queued", occurrenceId });
+      const outcome = await this.#enqueueExplicit(resolveEffectContent(document, this.#random()), match.trigger, true);
+      if (outcome.status === "module-disabled" && !this.#isEffectLive(document.id)) continue;
+      outcomes.push(outcome);
+      admittedAny ||= outcome.status === "queued";
     }
 
     if (admittedAny) {
@@ -291,9 +284,15 @@ export class EffectAdmissionService {
   }
 
   async #resolveContentDuration(content: EffectContentSnapshot): Promise<EffectContentSnapshot> {
+    if (this.#localMediaService !== undefined) {
+      await this.#localMediaService.captureAdmission([
+        ...(content.variant.visual === null ? [] : [content.variant.visual.assetId]),
+        ...(content.variant.sound === null ? [] : [content.variant.sound.assetId])
+      ]);
+    }
     if (this.#assetDurationCatalog == null) return content;
     const ids = collectEffectDurationAssetIds(content.variant);
-    const records = await this.#assetDurationCatalog.getMany(ids);
+    const records = this.#localMediaService === undefined ? await this.#assetDurationCatalog.getMany(ids) : await this.#localMediaService.captureAdmission(ids);
     const resolution = resolveMediaDuration({
       mode: content.variant.durationMode ?? "custom",
       customDurationMs: content.variant.durationMs,

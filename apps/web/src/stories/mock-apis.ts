@@ -1,3 +1,4 @@
+import { createTestMediaPreviewApi, previewDescriptor } from "../test-support/media-preview-fixture.js";
 import type {
   ManagementApi,
   OverlayOutputKeyRequestView,
@@ -332,6 +333,10 @@ export function createStoryAssetApi(overrides: Partial<AssetApi> = {}): AssetApi
         durationMs: null
       } satisfies AssetRecord;
     },
+    ...createTestMediaPreviewApi(async id => {
+      const asset = storyAssets.find(candidate => candidate.id === id);
+      return previewDescriptor(id, asset === undefined ? {} : { snapshot: { assetId: id, version: "a".repeat(64), mimeType: asset.mediaType === "audio" ? "audio/wav" : "image/png", sizeBytes: asset.sizeBytes, durationMs: asset.durationMs } });
+    }),
     async getAssetFile(assetId) {
       const asset = storyAssets.find((candidate) => candidate.id === assetId) ?? storyAssets[0]!;
       if (asset.mediaType === "audio") {

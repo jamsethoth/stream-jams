@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createAssetRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import { LocalAssetStore } from "../../modules/assets/local-asset-store.js";
+import { LocalMediaService, mediaVersion } from "../../modules/assets/local-media-service.js";
 import { LocalOverlayAccessService } from "../../modules/overlays/overlay-access-service.js";
 import { createLocalManagementRateLimitPreHandler, LocalManagementRateLimiter } from "../middleware/local-management-rate-limit.js";
 import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
@@ -22,6 +23,37 @@ const invalidBytes = Buffer.from("not a png", "utf8");
 const replacementPngBytes = Buffer.concat([pngSignature, Buffer.from([9, 8, 7])]);
 
 describe("asset routes", () => {
+  it("serves scoped grants and exact owned overlay versions without granting management access", async () => {
+    const access = createOverlayAccessService(["ovl_versions"]);
+    const key = await access.createKey({ overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module" });
+    const { app, authHeaders, store, repository, media } = await createAppWithAssets({ enableMedia: true, overlayAccessService: access });
+    try {
+      await app.inject({ method: "POST", url: "/assets/import", headers: { ...authHeaders, "content-type": "application/octet-stream", "x-stream-jams-file-name": "test.png", "x-stream-jams-mime-type": "image/png" }, payload: pngBytes });
+      const owner = JSON.stringify(["alerts", "occurrence"]);
+      const original = (await media!.acquire(owner, ["asset_1"])).get("asset_1")!;
+      const grant = media!.issue(owner, "asset_1", "trusted-recipient", Date.now() + 60000);
+      const capability = await app.inject({ url: `/media/${grant.handle}`, headers: { range: "bytes=8-" } });
+      expect(capability.statusCode).toBe(206);
+      expect(capability.rawPayload).toEqual(pngBytes.subarray(8));
+      expect(capability.headers["referrer-policy"]).toBe("no-referrer");
+      const management = await app.inject({ url: "/assets", headers: { authorization: `Bearer ${grant.handle}` } });
+      expect(management.statusCode).toBe(401);
+      const newer = await store.write({ assetId: "asset_1", mediaType: "image", originalFileName: "new.png", normalizedExtension: ".png", storageVersion: "new", bytes: replacementPngBytes });
+      await media!.mutate(() => repository.save({ ...original, ...newer }));
+      const overlayUrl = `/overlay/modules/alerts/live/${key.rawKey}/assets/asset_1`;
+      const pinned = await app.inject({ url: `${overlayUrl}?version=${mediaVersion(original)}` });
+      expect(pinned.rawPayload).toEqual(pngBytes);
+      const invalid = await app.inject({ url: `${overlayUrl}?version=invalid` });
+      expect(invalid.statusCode).toBe(404);
+      expect(invalid.headers["content-range"]).toBeUndefined();
+      await media!.release(owner);
+      expect((await app.inject({ url: `/media/${grant.handle}` })).statusCode).toBe(404);
+      expect((await app.inject({ url: `${overlayUrl}?version=${mediaVersion(original)}` })).statusCode).toBe(404);
+      expect((await app.inject({ url: overlayUrl })).rawPayload).toEqual(replacementPngBytes);
+      await expect.poll(() => store.activeReaders).toBe(0);
+      await expect.poll(() => media!.counts).toEqual({ owners: 0, grants: 0, readers: 0 });
+    } finally { await app.close(); await media?.close(); }
+  });
   it("validates checksum ETags before opening body streams and rejects weak If-Range", async () => {
     const { app, authHeaders, store } = await createAppWithAssets();
     try {
@@ -468,6 +500,7 @@ describe("asset routes", () => {
 });
 
 async function createAppWithAssets(options: {
+  readonly enableMedia?: boolean;
   readonly overlayAccessService?: LocalOverlayAccessService;
   readonly replacementRequiresConfirmation?: boolean;
   readonly timerRole?: "icon" | "start-audio" | "end-audio";
@@ -475,6 +508,7 @@ async function createAppWithAssets(options: {
   const assetDirectory = await createTemporaryAssetDirectory();
   const repository = new InMemoryAssetRepository();
   const store = new LocalAssetStore({ assetDirectory });
+  const media = options.enableMedia ? new LocalMediaService({ assets: repository, store, retirements: { list: () => [], isCurrent: () => false, forget: () => {} } }) : undefined;
   const pipeline = new DefaultMediaImportPipeline({
     validator: new DefaultAssetValidator(),
     repository,
@@ -502,6 +536,7 @@ async function createAppWithAssets(options: {
     assetRepository: repository,
     mediaImportPipeline: pipeline,
     assetStore: store,
+    ...(media === undefined ? {} : { localMediaService: media }),
     assetLibraryService: {
       async registerAsset() {
         return {} as never;
@@ -541,6 +576,7 @@ async function createAppWithAssets(options: {
 
   return {
     app,
+    media,
     store,
     repository,
     authHeaders: managementTestHeaders(session, "POST")

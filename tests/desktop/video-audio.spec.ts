@@ -49,7 +49,7 @@ test(`packaged decoder silently plays and seeks ${format.name} soundtracks and t
     await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().startsWith("http://127.0.0.1:"))!.hide());
     expect(await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(w => w.webContents.getURL().startsWith("http://127.0.0.1:")).every(w => !w.isVisible()))).toBe(true);
     for (const clip of clips) {
-      const result = await probeMedia(player, clip.bytes, format.mimeType);
+      const result = await probeRegisteredMedia(management, port, clip.bytes, format.extension);
       results.push({ withAudio: clip.withAudio, sha256: createHash("sha256").update(clip.bytes).digest("hex"), sizeBytes: clip.bytes.byteLength, ...result });
       expect(result.error).toBeNull();
       expect(result.samples.length).toBe(3);
@@ -61,7 +61,10 @@ test(`packaged decoder silently plays and seeks ${format.name} soundtracks and t
       expect(result.videoWidth).toBe(320);
       expect(result.videoHeight).toBe(180);
     }
-    const malformed = await player.evaluate(async () => {
+    // Management supports local File/Blob previews; the private player CSP
+    // intentionally forbids Blob. Probe decoding here so rejection cannot be
+    // a private CSP false positive.
+    const malformed = await management.evaluate(async () => {
       const url = URL.createObjectURL(new Blob([new Uint8Array([0, 1, 2, 3])], { type: "video/webm" }));
       const audio = new Audio(); audio.muted = true; audio.volume = 0;
       try {
@@ -113,6 +116,20 @@ async function ensureAudioPlayerReady(port: number): Promise<void> {
   expect(response?.ok, `GET /audio/devices: HTTP ${response?.status ?? "no response"}`).toBe(true);
 }
 
+async function probeRegisteredMedia(page: Page, port: number, bytes: Uint8Array, extension: "webm" | "mp4") {
+  const base = `http://127.0.0.1:${port}`;
+  const session = await (await fetch(`${base}/auth/management/sessions`, { method: "POST" })).json() as { id: string; csrfToken: string };
+  const headers = { authorization: `Bearer ${session.id}`, "x-stream-jams-csrf": session.csrfToken };
+  const imported = await fetch(`${base}/assets/import`, { method: "POST", headers: { ...headers, "content-type": "application/octet-stream", "x-stream-jams-file-name": `neutral.${extension}`, "x-stream-jams-mime-type": `video/${extension}` }, body: Buffer.from(bytes) });
+  expect(imported.ok).toBe(true);
+  const asset = await imported.json() as { id: string };
+  const created = await fetch(`${base}/assets/${asset.id}/preview`, { method: "POST", headers });
+  expect(created.ok).toBe(true);
+  const preview = await created.json() as { id: string; url: string };
+  try { return await probeMedia(page, `${base}${preview.url}`); }
+  finally { expect((await fetch(`${base}/assets/previews/${preview.id}`, { method: "DELETE", headers })).status).toBe(204); }
+}
+
 async function probeProductionSoundtrack(player: Page, port: number, bytes: Uint8Array, extension: "webm" | "mp4") {
   const base = `http://127.0.0.1:${port}`;
   const sessionResponse = await fetch(`${base}/auth/management/sessions`, { method: "POST" });
@@ -128,8 +145,9 @@ async function probeProductionSoundtrack(player: Page, port: number, bytes: Uint
   const devices = await api<{ available: boolean; devices: { deviceId: string }[] }>("/audio/devices");
   expect(devices.available).toBe(true);
   const device = devices.devices[0];
-  if (device === undefined) return { productionDeviceSoundtrack: false, reason: "no-explicit-audio-output" };
-  const route = await api<{ id: string }>("/audio/routes", "POST", { name: "Silent soundtrack probe", deviceId: device.deviceId });
+  if (device === undefined) throw new Error("Silent private decoder probe requires an explicitly enumerated audio output");
+  const { routes } = await api<{ routes: { id: string; deviceId: string }[] }>("/audio/routes");
+  const route = routes.find(item => item.deviceId === device.deviceId) ?? await api<{ id: string }>("/audio/routes", "POST", { name: "Silent soundtrack probe", deviceId: device.deviceId });
   const imported = await fetch(`${base}/assets/import`, { method: "POST", headers: {
     ...headers, "content-type": "application/octet-stream", "x-stream-jams-file-name": `neutral.${extension}`, "x-stream-jams-mime-type": `video/${extension}`
   }, body: Buffer.from(bytes), signal: AbortSignal.timeout(5000) });
@@ -156,14 +174,18 @@ async function probeProductionSoundtrack(player: Page, port: number, bytes: Uint
   }).toBe(true);
   expect(samples.every(sample => sample.muted && sample.volume === 0 && sample.sinkId === device.deviceId && sample.error === null)).toBe(true);
   expect(Math.abs(samples[0]!.currentTime - samples[1]!.currentTime)).toBeLessThan(0.15);
+  // The owned production main/worker/server prepares the real scoped grant.
+  // Decoder probes above use scoped native management preview URLs. This
+  // independent soundtrack path proves the production private transport.
+  const privateUrl = await player.locator("audio").first().getAttribute("src");
+  expect(privateUrl).toMatch(/^stream-jams-audio:\/\/player\/media\/private_/);
   await expect(player.locator("audio")).toHaveCount(0, { timeout: 7000 });
   await expect.poll(async () => (await api<{ current: unknown }>("/playback")).current).toBeNull();
   return { productionDeviceSoundtrack: true, distinctLayersSharingAsset: 2, samples };
 }
 
-async function probeMedia(page: Page, bytes: Uint8Array, mimeType: string) {
-  return page.evaluate(async ({ values, mimeType }) => {
-    const url = URL.createObjectURL(new Blob([new Uint8Array(values)], { type: mimeType }));
+async function probeMedia(page: Page, url: string) {
+  return page.evaluate(async url => {
     const audio = new Audio(), video = document.createElement("video");
     const elements = [audio, video];
     const samples: { audioTime: number; videoTime: number; muted: boolean }[] = [];
@@ -203,9 +225,9 @@ async function probeMedia(page: Page, bytes: Uint8Array, mimeType: string) {
       });
       seekTime = audio.currentTime;
     } catch (failure) { error = failure instanceof Error ? failure.message : "Unknown decoder failure"; }
-    finally { for (const element of elements) { element.pause(); element.removeAttribute("src"); element.load(); } URL.revokeObjectURL(url); }
+    finally { for (const element of elements) { element.pause(); element.removeAttribute("src"); element.load(); } }
     return { samples, error, seekTime, ended, videoWidth, videoHeight };
-  }, { values: Array.from(bytes), mimeType });
+  }, url);
 }
 
 async function unusedPort(): Promise<number> {

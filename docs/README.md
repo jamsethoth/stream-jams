@@ -24,6 +24,7 @@ Use this map to distinguish current behavior, pending work, and historical evide
 - `apps/desktop` owns the Electron service process, management window, tray, private audio player, and private desktop overlay. Windows x64 runnable-folder packaging and short-lived verified CI artifacts are implemented.
 - Alerts, Screen Effects, and Timers are registered modules. Alerts and Screen Effects retain independent playback queues; Timers use an independent server-authoritative lifecycle. Shared surfaces and global safety controls coordinate their outputs without combining their schedulers.
 - Screen Effects supports one active set, unified weighted variants, draft variant removal, media-based duration, fades, and percentage media gain. Per-effect cooldown, default/weighted authoring kinds, and Screen Effect animation controls are no longer current authoring features.
+- Registered local media uses version-pinned bounded streams for management previews, browser sources and private desktop recipients. The [local media specification](../openspec/specs/local-media-streaming/spec.md) defines integrity, ownership and resource bounds; [streaming acceptance](../openspec/changes/stream-local-media/final-acceptance.md) records validation and measurement limits for the change.
 
 Installers, signing, automatic updates, non-Windows desktop delivery, LAN mode, Docker product delivery, and cloud hosting remain outside current delivery. Playwright's Docker test infrastructure is separate from product delivery.
 

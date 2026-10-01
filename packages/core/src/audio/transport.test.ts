@@ -13,26 +13,26 @@ it("rejects timing that extends the occurrence or transport deadline", () => {
   expect(core.audioPlaybackPayloadSchema.safeParse({ ...payload, batch: { ...payload.batch, durationMs: 2000 } }).success).toBe(false);
 });
 
-it.each(["video/webm", "video/mp4"])("accepts bounded local %s soundtrack bytes only for video sources", mimeType => {
+it.each(["video/webm", "video/mp4"])("accepts bounded local %s soundtrack references only for video sources", mimeType => {
   const payload = { batch: {
     playbackId: "occurrence", documentId: "alert", durationMs: 1000, muted: false,
     layers: [{ layerId: "video", assetId: "clip", volume: 0.5, sourceKind: "video-soundtrack" }],
     destinations: [{ deviceId: "explicit", routeIds: ["route"] }]
-  }, assets: [{ assetId: "clip", mimeType, bytes: new Uint8Array([1, 2]) }], startDeadlineMs: 1000, deadlineMs: 2000 };
+  }, assets: [asset("clip", mimeType, 59_790_021)], startDeadlineMs: 1000, deadlineMs: 2000 };
   expect(core.audioPlaybackPayloadSchema.safeParse(payload).success).toBe(true);
   expect(core.audioPlaybackPayloadSchema.safeParse({ ...payload, batch: { ...payload.batch, layers: [{ ...payload.batch.layers[0], sourceKind: "audio" }] } }).success).toBe(false);
-  expect(core.audioPlaybackPayloadSchema.safeParse({ ...payload, assets: [{ ...payload.assets[0], mimeType: "audio/webm" }] }).success).toBe(false);
+  expect(core.audioPlaybackPayloadSchema.safeParse({ ...payload, assets: [asset("clip", "audio/webm")] }).success).toBe(false);
   expect(core.audioPlaybackPayloadSchema.safeParse({ ...payload, assets: [...payload.assets, ...payload.assets] }).success).toBe(false);
 });
 
-it("validates bounded device audio bytes without accepting paths, default sinks or extra assets", () => {
+it("validates bounded device audio references without accepting paths, default sinks or extra assets", () => {
   expect(core).toHaveProperty("audioTransportCommandSchema");
   const input = {
     type: "play", payload: { batch: {
       playbackId: "occurrence", documentId: "alert", durationMs: 1000, muted: false,
       layers: [{ layerId: "layer", assetId: "sound", volume: 0.5 }],
       destinations: [{ deviceId: "explicit", routeIds: ["route"] }]
-    }, assets: [{ assetId: "sound", mimeType: "audio/wav", bytes: new Uint8Array([1, 2]) }], startDeadlineMs: 123456, deadlineMs: 123456 }
+    }, assets: [asset("sound", "audio/wav")], startDeadlineMs: 123456, deadlineMs: 123456 }
   };
   expect(core.audioTransportCommandSchema.safeParse(input).success).toBe(true);
   expect(core.audioTransportCommandSchema.safeParse({ ...input, path: "C:/private/file" }).success).toBe(false);
@@ -41,3 +41,5 @@ it("validates bounded device audio bytes without accepting paths, default sinks 
   expect(core.audioTransportCommandSchema.safeParse({ ...input, payload: { ...input.payload, assets: [{ assetId: "other", mimeType: "audio/wav", bytes: new Uint8Array([1]) }] } }).success).toBe(false);
   expect(core.audioTransportCommandSchema.safeParse({ type: "test", deviceId: "default" }).success).toBe(false);
 });
+
+function asset(assetId: string, mimeType: string, sizeBytes = 3) { return { assetId, grant: { handle: `med_${"A".repeat(43)}`, expiresAt: 1000000, snapshot: { assetId, mimeType, sizeBytes, version: "a".repeat(64), durationMs: 1000 } } }; }

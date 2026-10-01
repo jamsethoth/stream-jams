@@ -81,6 +81,7 @@ export function createManagementHttpClient(options: HttpManagementClientOptions 
   const fetcher = options.fetch ?? globalThis.fetch.bind(globalThis);
   let sessionId: string | null = null;
   let csrfToken: string | null = null;
+  let pendingSession: Promise<ManagementSession> | null = null;
 
   async function getSession(): Promise<ManagementSession> {
     if (sessionId !== null && csrfToken !== null) {
@@ -90,17 +91,18 @@ export function createManagementHttpClient(options: HttpManagementClientOptions 
       };
     }
 
-    const response = await fetcher("/auth/management/sessions", {
-      method: "POST"
-    });
-    if (!response.ok) {
-      throw await createManagementHttpError(response, "Unable to create management session.");
-    }
-
-    const session = (await response.json()) as ManagementSessionResponse;
-    sessionId = session.id;
-    csrfToken = session.csrfToken;
-    return session;
+    if (pendingSession !== null) return pendingSession;
+    const creating = (async () => {
+      const response = await fetcher("/auth/management/sessions", { method: "POST" });
+      if (!response.ok) throw await createManagementHttpError(response, "Unable to create management session.");
+      const session = (await response.json()) as ManagementSessionResponse;
+      sessionId = session.id;
+      csrfToken = session.csrfToken;
+      return session;
+    })();
+    pendingSession = creating;
+    try { return await creating; }
+    finally { if (pendingSession === creating) pendingSession = null; }
   }
 
   function invalidateSession(session: ManagementSession): void {

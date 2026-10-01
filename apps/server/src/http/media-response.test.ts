@@ -2,6 +2,7 @@ import { mkdtemp, open, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { get } from "node:http";
+import type { ReadStream } from "node:fs";
 import Fastify from "fastify";
 import { expect, it } from "vitest";
 import { LocalAssetStore, AssetStreamCapacityError } from "../modules/assets/local-asset-store.js";
@@ -17,7 +18,17 @@ it("streams a small interval of a large file over HTTP and closes abandoned read
   await file.close();
   const store = new LocalAssetStore({ assetDirectory: directory });
   const record = { id: "large", originalFileName: "large.webm", storagePath: "large.webm", checksum: "sha256:fixture", mimeType: "video/webm", mediaType: "video" as const, sizeBytes, durationMs: null };
-  app.get("/media", (request, reply) => sendMediaFile(request, reply, store, record));
+  const streams: ReadStream[] = [];
+  app.get("/media", (request, reply) => sendMediaFile(request, reply, {
+    async openRead(path, size) {
+      const opened = await store.openRead(path, size);
+      const create = opened.handle.createReadStream.bind(opened.handle);
+      opened.handle.createReadStream = options => {
+        const stream = create(options); streams.push(stream); return stream;
+      };
+      return opened;
+    }
+  }, record));
   app.get("/failed-read", (request, reply) => sendMediaFile(request, reply, {
     async openRead(path, size) {
       const opened = await store.openRead(path, size);
@@ -37,6 +48,23 @@ it("streams a small interval of a large file over HTTP and closes abandoned read
     expect(response.status).toBe(206);
     expect(response.headers.get("content-length")).toBe("5");
     expect(await response.text()).toBe("range");
+    await expect.poll(() => store.activeReaders).toBe(0);
+    expect(streams[0]?.bytesRead).toBe(5);
+    // Pause a real HTTP recipient. Disk reads must settle before the full body is read.
+    const slow = await new Promise<{ request: ReturnType<typeof get>; incoming: import("node:http").IncomingMessage }>((resolve, reject) => {
+      const request = get(`${origin}/media`, incoming => { incoming.pause(); resolve({ request, incoming }); });
+      request.once("error", reject);
+    });
+    try {
+      await expect.poll(() => streams[1]?.bytesRead ?? 0).toBeGreaterThan(0);
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const readAtPause = streams[1]!.bytesRead;
+      await new Promise(resolve => setTimeout(resolve, 300));
+      expect(streams[1]!.bytesRead).toBe(readAtPause);
+      expect(readAtPause).toBeLessThan(sizeBytes);
+      expect(streams[1]!.readableLength).toBeLessThanOrEqual(65536);
+      expect(store.activeReaders).toBe(1);
+    } finally { slow.incoming.destroy(); slow.request.destroy(); }
     await expect.poll(() => store.activeReaders).toBe(0);
     const failed = await fetch(`${origin}/failed-read`);
     expect(failed.status).toBe(200);
