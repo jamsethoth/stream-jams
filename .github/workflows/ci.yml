@@ -197,8 +197,7 @@ jobs:
 
   desktop:
     name: windows-desktop
-    # Tests remain manual-only; their result cannot prevent package publication.
-    if: github.event_name == 'workflow_dispatch'
+    # Test the published package on every CI run; publication remains independent.
     needs: desktop-package
     runs-on: windows-2025
     timeout-minutes: 30

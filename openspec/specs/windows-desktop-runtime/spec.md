@@ -126,8 +126,8 @@ The desktop delivery SHALL remain a runnable Windows application folder. CI SHAL
 - **THEN** CI exposes that exact folder as a bounded authenticated untested workflow artifact without changing its runtime behavior, user-data paths, or credential storage
 - **AND** absent or failing desktop runtime tests do not suppress its publication
 
-#### Scenario: Manual desktop tests consume the published build
-- **WHEN** CI is manually dispatched and packaging succeeds
+#### Scenario: Desktop tests consume the published build on every CI run
+- **WHEN** a pull-request, main-push, or manually dispatched CI run packages successfully
 - **THEN** the separate desktop test job downloads and tests the exact artifact from that run without repackaging it
 - **AND** test failures remain visible independently of the successful packaging result
 
