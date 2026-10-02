@@ -25,6 +25,14 @@ export class OverlayWindow {
   readonly #selectedId: string;
   #ready = false;
   #contentInterrupted = false;
+  #loadGeneration = 0;
+  #recoveryTimer: ReturnType<typeof setInterval> | undefined;
+  readonly #shown = (): void => {
+    this.ensureTopmost();
+    if (!this.#ready || this.#contentInterrupted || this.window.isDestroyed() || !this.window.isVisible() || this.#recoveryTimer !== undefined) return;
+    this.#recoveryTimer = setInterval(() => this.ensureTopmost(), 100);
+    this.#recoveryTimer.unref();
+  };
   readonly #onUnavailable: ((failure: OverlayWindowFailure) => void) | undefined;
   readonly #updateDisplay = (): void => {
     if (this.window.isDestroyed()) return;
@@ -33,6 +41,7 @@ export class OverlayWindow {
       const firstInterruption = !this.#contentInterrupted;
       this.#contentInterrupted = true;
       this.#ready = false; // A reconnect must not replay interrupted content.
+      this.#stopRecovery();
       this.window.hide();
       if (firstInterruption) this.#onUnavailable?.({ kind: "display-unavailable", reason: "selected-display-missing", exitCode: null });
       return;
@@ -67,24 +76,32 @@ export class OverlayWindow {
       this.destroy();
     });
     this.window.on("closed", () => {
+      this.#ready = false;
+      this.#stopRecovery();
       screen.removeListener("display-added", this.#updateDisplay);
       screen.removeListener("display-removed", this.#updateDisplay);
       screen.removeListener("display-metrics-changed", this.#updateDisplay);
     });
+    this.window.on("hide", () => this.#stopRecovery());
+    this.window.on("show", this.#shown);
     screen.on("display-added", this.#updateDisplay);
     screen.on("display-removed", this.#updateDisplay);
     screen.on("display-metrics-changed", this.#updateDisplay);
   }
 
   async load(url: string): Promise<void> {
+    const generation = ++this.#loadGeneration;
+    this.#stopRecovery();
     this.#ready = false;
     this.#contentInterrupted = false;
     try {
       await this.window.loadURL(url);
-      if (this.window.isDestroyed() || this.#contentInterrupted) return;
+      if (generation !== this.#loadGeneration || this.window.isDestroyed() || this.#contentInterrupted) return;
       this.#ready = true;
       this.#updateDisplay();
+      this.#shown();
     } catch (error) {
+      if (generation !== this.#loadGeneration || this.window.isDestroyed()) throw error;
       this.#onUnavailable?.({ kind: "renderer-load-failed", reason: safeReason(error, "renderer-load-failed"), exitCode: null });
       this.destroy();
       throw error;
@@ -92,7 +109,28 @@ export class OverlayWindow {
   }
 
   destroy(): void {
+    this.#ready = false;
+    this.#stopRecovery();
     if (!this.window.isDestroyed()) this.window.destroy();
+  }
+
+  ensureTopmost(): void {
+    if (!this.#ready || this.#contentInterrupted || this.window.isDestroyed() || !this.window.isVisible()) return;
+    try { this.window.moveTop(); }
+    // error-provenance: allow expected -- native failure becomes a bounded unavailable diagnostic and transparent teardown
+    catch {
+      this.#ready = false;
+      this.#stopRecovery();
+      try { this.#onUnavailable?.({ kind: "renderer-load-failed", reason: "topmost-restoration-failed", exitCode: null }); }
+      // error-provenance: allow cleanup -- a host diagnostic exception must not escape the background recovery callback
+      catch { /* Native teardown must still run. */ }
+      finally { this.destroy(); }
+    }
+  }
+
+  #stopRecovery(): void {
+    if (this.#recoveryTimer !== undefined) clearInterval(this.#recoveryTimer);
+    this.#recoveryTimer = undefined;
   }
 }
 

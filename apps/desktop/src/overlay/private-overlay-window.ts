@@ -92,6 +92,10 @@ export class PrivateOverlayWindow implements OverlayRendererPort {
     const request = overlayRendererRequestSchema.parse(candidate);
     if (this.#destroying || this.native.window.isDestroyed()) throw new Error("Desktop overlay is unavailable");
     if (request.command.type === "configure" && request.command.config.kind === "desktop") this.native.window.setOpacity(request.command.config.opacity);
+    if (request.command.type === "start") {
+      this.native.ensureTopmost();
+      if (this.#destroying || this.native.window.isDestroyed()) throw new Error("Desktop overlay is unavailable");
+    }
     this.native.window.webContents.send(OVERLAY_COMMAND_CHANNEL, request);
   }
   destroy(): void {

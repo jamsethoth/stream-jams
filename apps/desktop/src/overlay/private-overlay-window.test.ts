@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { beforeEach, expect, it, vi, type Mock } from "vitest";
 
-interface MockWindow { options: unknown; webContents: EventEmitter & { mainFrame: { url: string } }; destroyed: boolean; loadURL: Mock }
+interface MockWindow { options: unknown; webContents: EventEmitter & { mainFrame: { url: string }; send: Mock }; destroyed: boolean; loadURL: Mock; moveTop: Mock }
 interface MockSession extends EventEmitter {
   protocol: { handle: Mock; unhandle: Mock; isProtocolHandled: Mock }; setPermissionCheckHandler: Mock; setPermissionRequestHandler: Mock;
 }
@@ -20,8 +20,10 @@ vi.mock("electron", async () => {
     BrowserWindow: class extends EventEmitter {
       webContents = Object.assign(new EventEmitter(), { mainFrame: { url: "stream-jams-overlay://surface/" }, setWindowOpenHandler: vi.fn(), send: vi.fn() });
       destroyed = false;
+      visible = false;
+      moveTop = vi.fn(); isVisible = () => this.visible;
       setIgnoreMouseEvents = vi.fn(); setAlwaysOnTop = vi.fn(); setBounds = vi.fn(); setOpacity = vi.fn();
-      showInactive = vi.fn(); hide = vi.fn(); removeMenu = vi.fn(); loadURL = vi.fn(async () => { if (native.loadError !== null) throw native.loadError; });
+      showInactive = vi.fn(() => { this.visible = true; this.emit("show"); }); hide = vi.fn(() => { this.visible = false; this.emit("hide"); }); removeMenu = vi.fn(); loadURL = vi.fn(async () => { if (native.loadError !== null) throw native.loadError; });
       isDestroyed = () => this.destroyed;
       destroy = () => { if (!this.destroyed) { this.destroyed = true; this.emit("closed"); } };
       constructor(public options: unknown) { super(); native.windows.push(this); }
@@ -37,6 +39,27 @@ import { OVERLAY_REPLY_CHANNEL } from "./overlay-ipc.js";
 
 const config = { id: "desktop:primary" as const, kind: "desktop" as const, enabled: true, displayId: "2", displayLabel: "Secondary", autoFollowDisplayName: false, opacity: 0.5, layers: [] };
 beforeEach(() => { native.windows = []; native.available = true; native.reads = []; native.loadError = null; vi.clearAllMocks(); });
+
+it("raises immediately before a validated start and suppresses dispatch if raising fails", async () => {
+  const unavailable = vi.fn();
+  const port = PrivateOverlayWindow.create(config, { onReply() {}, onDestroyed() {}, onUnavailable: unavailable })!;
+  try {
+    await port.load();
+    const window = native.windows[0]!;
+    const start = { protocolVersion: 1 as const, generation: 1, requestId: "b6dab44a-2b8b-4b7d-85c6-428ce63c8757",
+      command: { type: "start" as const, key: { surfaceId: "desktop:primary" as const, moduleId: "alerts" as const, occurrenceId: "ordering", generation: 1 } } };
+    window.moveTop.mockClear();
+    window.webContents.send.mockImplementation(() => { expect(window.moveTop).toHaveBeenCalledOnce(); });
+    expect(() => port.send({ ...start, generation: 0 })).toThrow();
+    expect(window.moveTop).not.toHaveBeenCalled();
+    port.send(start);
+    expect(window.webContents.send).toHaveBeenCalledOnce();
+    window.moveTop.mockImplementation(() => { throw new Error("raise failed"); });
+    expect(() => port.send(start)).toThrow("Desktop overlay is unavailable");
+    expect(window.webContents.send).toHaveBeenCalledOnce();
+    expect(unavailable).toHaveBeenCalledExactlyOnceWith({ kind: "renderer-load-failed", reason: "topmost-restoration-failed", exitCode: null });
+  } finally { port.destroy(); }
+});
 
 it("registers the audio and private overlay schemes in a single privileged registration", () => {
   registerAudioPlayerScheme([overlayPlayerScheme]);
