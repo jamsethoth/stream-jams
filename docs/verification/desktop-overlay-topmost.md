@@ -32,7 +32,7 @@ The candidate is on `codex/desktop-overlay-topmost-recovery`. Production recover
 | Background native order | Passed: baseline remained covered across 63 observations; six actual overtakes recovered in 29.35–100.30 ms, foreground unchanged |
 | Native compositor capture | Passed in a narrow owned-window check: covered baseline `#123456`, candidate `#ff00ff`; all owned PIDs exited |
 | Interactive native focus/input fixture | **Passed:** covered baseline, six candidate trials, compositor pixels, preserved competitor focus, native click/F8 delivery, and teardown |
-| Control DX12 borderless physical acceptance | **Passed:** user confirmed “Video visible; input worked normally” |
+| Control DX12 borderless physical acceptance | **Passed:** neutral candidate video/input, then installed Mr Rogers video/audio/input and Alt-Tab return confirmed by the user |
 | Control DX11 and exclusive fullscreen | Not tested |
 
 The background native measurements are six observations on this machine with the session locked, not a performance guarantee or evidence of physical game visibility. Fixture defects found and corrected include Electron startup blocked by top-level await, launcher PID differing from native window-owner PID, background activation denied by Windows, and .NET rejecting combined screenshot flags. The capture helper now uses native GDI `BitBlt(SRCCOPY | CAPTUREBLT)` with balanced DC cleanup. One independent review found an observer-interruption false-success bug; terminal-state handling and four regression tests corrected it.
@@ -44,6 +44,10 @@ Local evidence is retained under `.superpowers/sdd/2026-10-02-desktop-overlay-to
 The full interactive fixture passed after the user switched to Codex and left input idle. Earlier runs could not retain the owned competitor's foreground while Control was active; those failures were retained without relaxing assertions. In the passing run the baseline stayed covered for 64 samples. All six candidate trials ended above the competitor with unchanged foreground, five observed actual occlusion before recovery (35.60–87.26 ms), and one had already recovered at the first 10.80 ms observation. The compositor crops show the expected covered blue baseline and visible magenta candidate. Fresh renderer events confirmed a native left click and F8 through the overlay; teardown remained absent after the delayed check. These controlled measurements do not promise a worst-case recovery bound for games.
 
 Attended evidence is also retained in the local ledger: `interactive-native-topmost-evidence.json`, `interactive-*-compositor.png`, `control-run-1790977500063.json`, `control-dx12-user-acceptance.json`, and `control-observer-cadence.jsonl`.
+
+After explicit installation approval, the identical tested archive replaced the normal installation with an application/configuration/database rollback backup. Health, management UI and unchanged configuration were verified. Two attended replays used the saved Mr Rogers variant and existing audio routing. The user confirmed video, audio and gameplay input on the first replay, then confirmed everything still worked after Alt-Tab on the second. Playback completed and cleanup was already terminal in both runs. Evidence: `installed-control-1790980094193.json`, `installed-control-1790980185447.json`, and `installed-alt-tab-acceptance.json` in the local ledger.
+
+Both installed replays **failed the strict every-sample ordering check** despite physical acceptance. The first had one covered observation after playback completed and recovered by the next sample 124.40 ms later. The Alt-Tab replay had one covered observation immediately after game focus returned, followed by a passing sample 192.31 ms later. The user reported no disruption. These intervals bound the gap between observations, not the actual recovery latency. The result supports non-activating recovery and usable DX12 playback, but does not establish uninterrupted topmost ordering; the strict failures remain recorded.
 
 ## Prepared Control runner
 
@@ -73,7 +77,7 @@ Focus Control yourself during the finite window. The runner never focuses, sends
 
 ## Remaining physical acceptance
 
-DX12 borderless video and gameplay input passed with the user, and the separate interactive native fixture passed. The neutral effect was silent, so this run supplies no audio-delivery evidence. DX11 borderless, a deliberate game Alt-Tab/reorder cycle and flicker observation remain untested. Exclusive fullscreen is optional investigation and has no promised support; protected desktops and exclusive scanout may bypass normal desktop composition.
+DX12 borderless video, audio, gameplay input and Alt-Tab return passed with the user on the installed build, and the separate interactive native fixture passed. The strict native observer still recorded transient occlusion on focus return, so continuous topmost ordering is not established. DX11 borderless remains untested. Exclusive fullscreen is optional investigation and has no promised support; protected desktops and exclusive scanout may bypass normal desktop composition.
 
 
 Observer lifecycle is part of the result: `observerTerminal` records its code, signal, elapsed time and termination reason. A nonzero exit or clean exit before the requested observation deadline fails the run even if earlier samples passed. Explicit Ctrl+C/SIGTERM cancellation also fails. The runner's expected deadline shutdown can succeed only with the required native/playback evidence; it never turns an observer crash or incomplete observation into success.
