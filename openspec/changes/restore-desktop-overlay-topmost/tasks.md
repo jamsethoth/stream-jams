@@ -18,6 +18,6 @@
 - [x] 4.1 Run relevant build/typecheck/lint/tests and background native candidate ordering checks; retain evidence.
 - [x] 4.2 Review the completed diff and resolve in-scope findings.
 - [x] 4.3 Prepare candidate and user-return commands with exact automated versus pending evidence.
-- [x] 4.4 Confirm physical Control visibility and gameplay input with the user. Control DX12 borderless passed; DX11 remains untested.
+- [x] 4.4 Confirm physical Control visibility and gameplay input with the user. Installed Control DX11 and DX12 borderless passed video/audio/input and Alt-Tab checks; the user accepted the imperceptible DX12 ordering transient.
 
 - [x] 4.5 Complete foreground/input/compositor native fixture acceptance after unlock. Passed with Control in the background and user input idle; see docs/verification/desktop-overlay-topmost.md for evidence and earlier failed attempts.
