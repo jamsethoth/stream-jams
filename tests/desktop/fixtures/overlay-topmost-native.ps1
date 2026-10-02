@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][long]$Overlay, [Parameter(Mandatory)][long]$Competitor, [Parameter(Mandatory)][int]$OwnerPid, [ValidateSet('raise','background-raise','input','capture','gone')][string]$Action = 'raise', [switch]$Baseline, [string]$CapturePath)
+param([Parameter(Mandatory)][long]$Overlay, [Parameter(Mandatory)][long]$Competitor, [Parameter(Mandatory)][int]$OwnerPid, [ValidateSet('raise','background-raise','activate-owned','input','capture','gone')][string]$Action = 'raise', [switch]$Baseline, [string]$CapturePath)
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @'
 using System;
@@ -22,6 +22,9 @@ public static class TopmostNative {
  [DllImport("user32.dll")] public static extern void mouse_event(uint flags,uint x,uint y,uint data,UIntPtr extra);
  [DllImport("user32.dll")] public static extern void keybd_event(byte key,byte scan,uint flags,UIntPtr extra);
  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+ [DllImport("user32.dll",SetLastError=true)] public static extern IntPtr GetDC(IntPtr h);
+ [DllImport("user32.dll")] public static extern int ReleaseDC(IntPtr h,IntPtr dc);
+ [DllImport("gdi32.dll",SetLastError=true)] public static extern bool BitBlt(IntPtr target,int x,int y,int width,int height,IntPtr source,int sourceX,int sourceY,uint operation);
 }
 '@
 [void][TopmostNative]::SetProcessDPIAware()
@@ -48,7 +51,35 @@ function Sample {
  @{ elapsedMs = $watch.Elapsed.TotalMilliseconds; overlayAbove = $above; foreground = [TopmostNative]::GetForegroundWindow().ToInt64().ToString(); overlayVisible = [TopmostNative]::IsWindowVisible([IntPtr]::new($Overlay)); style = [TopmostNative]::GetWindowLongPtr([IntPtr]::new($Overlay),-20).ToInt64(); bounds = @{ x=$rect.Left;y=$rect.Top;width=$rect.Right-$rect.Left;height=$rect.Bottom-$rect.Top } }
 }
 $watch = [Diagnostics.Stopwatch]::StartNew()
-if ($Action -eq 'raise' -or $Action -eq 'background-raise') {
+if ($Action -eq 'activate-owned') {
+ if ([TopmostNative]::GetForegroundWindow().ToInt64() -eq $Competitor) {
+  @{ foreground=$Competitor.ToString(); activation='already-owned-foreground' } | ConvertTo-Json -Compress
+  exit
+ }
+ if (-not [TopmostNative]::SetWindowPos([IntPtr]::new($Competitor),[IntPtr]::new(-1),0,0,0,0,0x13)) { throw 'Owned activation raise failed' }
+ $original = New-Object TopmostNative+Point
+ [void][TopmostNative]::GetCursorPos([ref]$original)
+ try {
+  $target = New-Object TopmostNative+Point
+  $target.X = $rect.Left+200
+  $target.Y = $rect.Top+150
+  [void][TopmostNative]::SetCursorPos($target.X,$target.Y)
+  Assert-Owned $Competitor
+  $hit = [TopmostNative]::GetAncestor([TopmostNative]::WindowFromPoint($target),2)
+  if ($hit.ToInt64() -ne $Competitor) { throw 'Owned activation target is occluded; no input sent' }
+  Assert-Owned ($hit.ToInt64())
+  [TopmostNative]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+  [TopmostNative]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+  $watch.Restart()
+  do {
+   $foreground = [TopmostNative]::GetForegroundWindow().ToInt64()
+   if ($foreground -eq $Competitor) { break }
+   Start-Sleep -Milliseconds 10
+  } while ($watch.ElapsedMilliseconds -lt 1000)
+  if ($foreground -ne $Competitor) { throw "Owned activation did not obtain foreground: expectedHandle=$Competitor observedHandle=$foreground" }
+  @{ foreground=$foreground.ToString(); activation='verified-owned-native-click';elapsedMs=$watch.Elapsed.TotalMilliseconds } | ConvertTo-Json -Compress
+ } finally { [void][TopmostNative]::SetCursorPos($original.X,$original.Y) }
+} elseif ($Action -eq 'raise' -or $Action -eq 'background-raise') {
  $initialForeground = [TopmostNative]::GetForegroundWindow().ToInt64().ToString()
  if ($Action -eq 'raise' -and [TopmostNative]::GetForegroundWindow().ToInt64() -ne $Competitor) {
   $foreground = [TopmostNative]::GetForegroundWindow()
@@ -86,10 +117,27 @@ if ($Action -eq 'raise' -or $Action -eq 'background-raise') {
  Add-Type -AssemblyName System.Drawing
  $bitmap = New-Object Drawing.Bitmap ($rect.Right-$rect.Left),($rect.Bottom-$rect.Top)
  $graphics = [Drawing.Graphics]::FromImage($bitmap)
+ $sourceDc = [IntPtr]::Zero
+ $targetDc = [IntPtr]::Zero
  try {
-  $graphics.CopyFromScreen($rect.Left,$rect.Top,0,0,$bitmap.Size,([Drawing.CopyPixelOperation]::SourceCopy -bor [Drawing.CopyPixelOperation]::CaptureBlt))
+  $sourceDc = [TopmostNative]::GetDC([IntPtr]::Zero)
+  if ($sourceDc -eq [IntPtr]::Zero) { throw 'Desktop capture source DC unavailable' }
+  $targetDc = $graphics.GetHdc()
+  try {
+   # Win32 SRCCOPY | CAPTUREBLT includes layered windows; Graphics.CopyFromScreen rejects the combined enum.
+   if (-not [TopmostNative]::BitBlt($targetDc,0,0,$bitmap.Width,$bitmap.Height,$sourceDc,$rect.Left,$rect.Top,[uint32]0x40CC0020)) {
+    throw "Desktop BitBlt capture failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())"
+   }
+  } finally {
+   if ($targetDc -ne [IntPtr]::Zero) { $graphics.ReleaseHdc($targetDc); $targetDc = [IntPtr]::Zero }
+  }
   $center=$bitmap.GetPixel(200,150)
   $bitmap.Save($CapturePath,[Drawing.Imaging.ImageFormat]::Png)
-  @{ sample=(Sample); center=@{r=$center.R;g=$center.G;b=$center.B};capture='Windows CopyFromScreen compositor crop' } | ConvertTo-Json -Depth 6 -Compress
- } finally { $graphics.Dispose(); $bitmap.Dispose() }
+  @{ sample=(Sample); center=@{r=$center.R;g=$center.G;b=$center.B};capture='Windows GDI BitBlt SRCCOPY|CAPTUREBLT compositor crop' } | ConvertTo-Json -Depth 6 -Compress
+ } finally {
+  if ($targetDc -ne [IntPtr]::Zero) { $graphics.ReleaseHdc($targetDc) }
+  if ($sourceDc -ne [IntPtr]::Zero) { [void][TopmostNative]::ReleaseDC([IntPtr]::Zero,$sourceDc) }
+  $graphics.Dispose()
+  $bitmap.Dispose()
+ }
 }

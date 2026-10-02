@@ -18,6 +18,6 @@
 - [x] 4.1 Run relevant build/typecheck/lint/tests and background native candidate ordering checks; retain evidence.
 - [x] 4.2 Review the completed diff and resolve in-scope findings.
 - [x] 4.3 Prepare candidate and user-return commands with exact automated versus pending evidence.
-- [ ] 4.4 Confirm physical Control visibility and gameplay input with the user; leave pending while unavailable.
+- [x] 4.4 Confirm physical Control visibility and gameplay input with the user. Control DX12 borderless passed; DX11 remains untested.
 
-- [ ] 4.5 Complete foreground/input/compositor native fixture acceptance after unlock. [blocked] Windows LockApp owns the foreground; no unlocking or input bypass attempted. See docs/verification/desktop-overlay-topmost.md for measured evidence and commands.
+- [x] 4.5 Complete foreground/input/compositor native fixture acceptance after unlock. Passed with Control in the background and user input idle; see docs/verification/desktop-overlay-topmost.md for evidence and earlier failed attempts.

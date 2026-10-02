@@ -79,7 +79,10 @@ async function runNativeCompetition(backgroundOnly: boolean): Promise<void> {
       competitor.focus();
     }, index);
     const raiseAction = backgroundOnly ? "background-raise" : "raise";
-    if (!backgroundOnly) await focusCompetitor(0);
+    if (!backgroundOnly) {
+      await focusCompetitor(0);
+      await native(handles.baseline, first, "activate-owned");
+    }
     const baseline = await native(handles.baseline, first, raiseAction, ["-Baseline"]) as Observation;
     expect(baseline.samples.length).toBeGreaterThan(1);
     expect(baseline.samples.every(sample => !sample.overlayAbove && sample.foreground === (backgroundOnly ? baseline.initialForeground : first))).toBe(true);
@@ -94,7 +97,10 @@ async function runNativeCompetition(backgroundOnly: boolean): Promise<void> {
     let overtakenTrials = 0;
     for (const index of [0, 0, 1, 0, 1, 0]) {
       const competitor = handles.competitors[index]!;
-      if (!backgroundOnly) await focusCompetitor(index);
+      if (!backgroundOnly) {
+        await focusCompetitor(index);
+        await native(handles.overlay, competitor, "activate-owned");
+      }
       const result = await native(handles.overlay, competitor, raiseAction) as Observation;
       if (result.samples.some(sample => !sample.overlayAbove)) overtakenTrials++;
       expect(result.samples.every(sample => sample.foreground === (backgroundOnly ? result.initialForeground : competitor))).toBe(true);
@@ -111,6 +117,7 @@ async function runNativeCompetition(backgroundOnly: boolean): Promise<void> {
       const composed = await native(handles.overlay, first, "capture", ["-CapturePath", capturePath]) as { center: { r: number; g: number; b: number } };
       await info.attach("candidate-compositor", { path: capturePath, contentType: "image/png" });
       expect(composed.center).toEqual({ r: 255, g: 0, b: 255 });
+      await desktop.evaluate(async () => (globalThis as ProbeGlobal).topmostProbe!.competitors[0]!.webContents.executeJavaScript("window.events = []"));
       await native(handles.overlay, first, "input");
       await expect.poll(() => desktop.evaluate(async () => (globalThis as ProbeGlobal).topmostProbe!.competitors[0]!.webContents.executeJavaScript("window.events"))).toEqual(expect.arrayContaining([{ type: "mouse", button: 0 }, { type: "key", key: "F8" }]));
     }
