@@ -52,6 +52,12 @@ export function playbackEvidence(trigger, triggered, observations) {
   if (triggered && observations.some(row => ['playing', 'completed'].includes(row.status))) return { status: 'pass', scope: 'Playback bookkeeping only; physical delivery unconfirmed' };
   return { status: 'incomplete', reason: 'Triggered occurrence was not observed playing or completed' };
 }
+export function runOrderingEvidence(samples, trigger) {
+  if (!trigger) return orderEvidence(samples);
+  const first = samples.findIndex(sample => sample.overlays.some(row => row.visible));
+  if (first < 0) return { status: 'incomplete', reason: 'No visible matching candidate overlay observed', assessmentStartMs: null };
+  return { ...orderEvidence(samples.slice(first)), assessmentStartMs: samples[first].elapsedMs };
+}
 export async function run(options, dependencies = {}) {
   const fetcher = dependencies.fetch ?? fetch;
   const now = dependencies.now ?? (() => performance.now());
@@ -100,7 +106,8 @@ export async function run(options, dependencies = {}) {
       if (options.overlayPid) sample.overlays = sample.overlays.filter(row => row.pid === options.overlayPid);
       if (samples.length && sample.elapsedMs < samples.at(-1).elapsedMs) throw new Error('non-monotonic-observer');
       samples.push(sample);
-      if (options.trigger && !session && focusedGame(sample) && sample.overlays.length === 1) {
+      const triggerTargetUnambiguous = sample.overlays.length === 1 || (sample.overlays.length === 0 && Boolean(options.overlayPid));
+      if (options.trigger && !session && focusedGame(sample) && triggerTargetUnambiguous) {
         session = await request('/auth/management/sessions', 'POST', {});
         if (typeof session.id !== 'string' || typeof session.csrfToken !== 'string') throw new Error('invalid-session');
         // Observer stopwatch starts after process launch/interop compilation. This
@@ -108,7 +115,7 @@ export async function run(options, dependencies = {}) {
         triggerAfterSampleMs = now() - observerStarted;
         continue; // Recheck game focus in a fresh native sample after authentication.
       }
-      if (options.trigger && session && !occurrenceId && sample.elapsedMs >= triggerAfterSampleMs && focusedGame(sample) && sample.overlays.length === 1) {
+      if (options.trigger && session && !occurrenceId && sample.elapsedMs >= triggerAfterSampleMs && focusedGame(sample) && triggerTargetUnambiguous) {
         const result = await request(`/screen-effects/${encodeURIComponent(options.effectId)}/test`, 'POST', { variantId: options.variantId, confirmLiveImpact: true });
         if (result.status !== 'queued' || typeof result.occurrenceId !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(result.occurrenceId)) throw new Error('invalid-trigger-result');
         occurrenceId = result.occurrenceId;
@@ -142,7 +149,7 @@ export async function run(options, dependencies = {}) {
   else if (observerTerminal && observerTerminal.reason !== 'deadline' && (observerTerminal.code !== 0 || observerTerminal.elapsedMs < options.timeoutMs)) failure ??= 'Observer failed or exited before the requested observation deadline';
   const playbackOutcome = playbackEvidence(options.trigger, Boolean(occurrenceId), playback);
   if (options.trigger && playbackOutcome.status !== 'pass') failure ??= `Playback ${playbackOutcome.status}: selected playback was not observed successfully`;
-  return { mode: options.trigger ? 'trigger' : 'observe-only', durationMs: now() - start, ...(failure ? { failure } : {}), ...(observerTerminal ? { observerTerminal } : {}), ordering: orderEvidence(samples), triggered: Boolean(occurrenceId), playbackOutcome, playback, cleanup, samples };
+  return { mode: options.trigger ? 'trigger' : 'observe-only', durationMs: now() - start, ...(failure ? { failure } : {}), ...(observerTerminal ? { observerTerminal } : {}), ordering: runOrderingEvidence(samples, options.trigger), triggered: Boolean(occurrenceId), playbackOutcome, playback, cleanup, samples };
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try { const result = await run(parseArgs(process.argv.slice(2))); console.log(JSON.stringify(result, null, 2)); process.exitCode = result.failure || result.ordering.status !== 'pass' || result.cleanup.startsWith('failed') ? 1 : 0; }

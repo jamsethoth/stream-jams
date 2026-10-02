@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
-import { parseArgs, parseSample, orderEvidence, playbackEvidence, run } from './desktop-overlay-game-check.mjs';
+import { parseArgs, parseSample, orderEvidence, runOrderingEvidence, playbackEvidence, run } from './desktop-overlay-game-check.mjs';
 const row = (hwnd, rank) => ({ hwnd, pid: 1, rank, visible: true, live: true, exStyle: 0x08000020, bounds: [0,0,100,100] });
 const sample = { kind: 'sample', elapsedMs: 1, foreground: 2, games: [row(2,2)], overlays: [row(1,1)] };
 test('strict finite arguments and explicit trigger', () => {
@@ -117,4 +117,47 @@ test('expected complete deadline can pass with valid evidence', async () => {
  const child=fixture();let elapsed=0;
  const result=await run(parseArgs(['--timeout-ms','1000']),{now:()=>elapsed,fetch:async()=>({ok:true,json:async()=>({})}),spawn:()=>{queueMicrotask(()=>{child.stdout.write(JSON.stringify(sample)+'\n');setTimeout(()=>{elapsed=1000;child.stdout.write(JSON.stringify({...sample,elapsedMs:1000})+'\n');},5);});return child;}});
  assert.equal(result.ordering.status,'pass');assert.equal(result.failure,undefined);assert.equal(result.observerTerminal.reason,'deadline');
+});
+
+
+test('trigger ordering starts at first visible overlay and retains covered initial evidence', () => {
+ const absent={...sample,overlays:[]};
+ const covered={...sample,elapsedMs:2,overlays:[row(1,3)]};
+ const good={...sample,elapsedMs:3};
+ assert.equal(runOrderingEvidence([absent,good],true).status,'pass');
+ assert.equal(runOrderingEvidence([absent,good],true).assessmentStartMs,3);
+ assert.equal(runOrderingEvidence([covered,good],true).status,'fail');
+ assert.equal(runOrderingEvidence([absent],true).status,'incomplete');
+ assert.equal(runOrderingEvidence([absent,good],false).status,'fail');
+});
+async function lazyFixture(selectedPid, appearedPid) {
+ const child=fixture();let elapsed=0;const calls=[];
+ const result=await run(parseArgs(['--trigger','--effect-id','e','--variant-id','v','--overlay-pid',String(selectedPid)]),{
+  now:()=>elapsed,
+  fetch:async url=>{
+   calls.push(url);let data={};
+   if(url.endsWith('/sessions')) {data={id:'hidden',csrfToken:'hidden'};queueMicrotask(()=>child.stdout.write(JSON.stringify({...sample,elapsedMs:100,overlays:[]})+'\n'));}
+   if(url.endsWith('/test')) {
+    data={status:'queued',occurrenceId:'mine'};
+    queueMicrotask(()=>{child.stdout.write(JSON.stringify({...sample,elapsedMs:200,overlays:[{...row(1,1),pid:appearedPid}]})+'\n');setTimeout(()=>{elapsed=30000;child.kill();},5);});
+   }
+   if(url.endsWith('/operations')) data={current:[{moduleId:'screen-effects',occurrenceId:'mine',status:'playing'}],queued:[],recent:[]};
+   return {ok:true,json:async()=>data};
+  },
+  spawn:()=>{queueMicrotask(()=>child.stdout.write(JSON.stringify({...sample,overlays:[]})+'\n'));return child;}
+ });
+ return {result,calls};
+}
+test('explicit candidate PID permits first playback and lazy matching overlay creation', async () => {
+ const {result,calls}=await lazyFixture(42,42);
+ assert.equal(calls.filter(url=>url.endsWith('/test')).length,1);
+ assert.equal(result.ordering.status,'pass');assert.equal(result.ordering.assessmentStartMs,200);
+ assert.equal(result.playbackOutcome.status,'pass');assert.equal(result.failure,undefined);
+ assert.equal(result.samples[0].overlays.length,0);
+});
+test('wrong or nonexistent candidate PID cannot produce accepted lazy ordering', async () => {
+ for(const pid of [42,999999]) {
+  const {result}=await lazyFixture(pid,1);
+  assert.equal(result.ordering.status,'incomplete');assert.equal(result.ordering.assessmentStartMs,null);
+ }
 });
