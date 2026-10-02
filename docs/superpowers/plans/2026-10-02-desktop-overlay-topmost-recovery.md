@@ -75,7 +75,11 @@
 - [x] Commit tested implementation and update OpenSpec tasks/evidence. Keep physical acceptance unchecked; do not archive as fully accepted.
 - [x] Stage an isolated runnable candidate if feasible. Leave ready-to-run commands and remaining human observations. No push or merge is requested.
 
-## Pending unlocked acceptance
+## Attended acceptance — completed 2026-10-02
 
-- [ ] Run the full interactive native fixture after unlock: foreground switching, compositor capture and real click-through/key delivery. Windows LockApp blocked these checks during unattended execution; the separate background order test passes.
-- [ ] Run the Control runner with DX11 and DX12 borderless; confirm monitor video, audio and uninterrupted gameplay. Exclusive fullscreen remains optional investigation.
+- [x] Run the full interactive native fixture after unlock: foreground switching, compositor capture and real click-through/key delivery. Passed with Control in the background and user input idle; the earlier locked-session limitation remains historical evidence.
+- [x] Run the Control runner with DX11 and DX12 borderless; confirm monitor video, audio and uninterrupted gameplay. Both passed physical video/audio/input and Alt-Tab return. The user accepted the imperceptible DX12 ordering transient; the strict sample failures remain recorded.
+
+Control DX11's Fullscreen setting failed physical video acceptance; audio worked and video appeared after Alt-Tab to the desktop. Actual exclusive presentation remains unverified. Fullscreen compatibility stays in BL-049. See [verification evidence](../../verification/desktop-overlay-topmost.md).
+
+The original unattended constraints above describe that phase. The user subsequently authorized a backed-up installation and then PR publication. The installed tested archive passed the attended borderless checks without changing saved configuration. Canonical shared-surface requirements are synchronized; merge remains a separate action.

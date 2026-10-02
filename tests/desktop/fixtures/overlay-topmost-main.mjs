@@ -1,6 +1,7 @@
 import { app, BrowserWindow, screen } from 'electron';
 import { OverlayWindow } from './overlay/overlay-window.js';
 import { appendFileSync } from 'node:fs';
+import process from 'node:process';
 
 app.disableHardwareAcceleration();
 app.setPath('userData', process.env.STREAM_JAMS_PROBE_PROFILE);

@@ -21,3 +21,4 @@
 - [x] 4.4 Confirm physical Control visibility and gameplay input with the user. Installed Control DX11 and DX12 borderless passed video/audio/input and Alt-Tab checks; the user accepted the imperceptible DX12 ordering transient.
 
 - [x] 4.5 Complete foreground/input/compositor native fixture acceptance after unlock. Passed with Control in the background and user input idle; see docs/verification/desktop-overlay-topmost.md for evidence and earlier failed attempts.
+- [x] 4.6 Synchronize canonical shared-overlay-surfaces requirements and reconcile final acceptance. Control DX11's Fullscreen setting failed video acceptance and remains the separate BL-049 investigation; actual exclusive presentation was not established.

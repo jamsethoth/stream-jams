@@ -37,6 +37,6 @@ The existing Electron window is transparent, non-focusable and click-through. Co
 
 No data migration. Build the candidate in this worktree and stage an isolated runnable artifact/test command. Do not replace C:\StreamingTools\stream-jams while unattended. Rollback is the previous application build; settings are unchanged.
 
-## Open Questions
+## Acceptance reconciliation — 2026-10-02
 
-Physical Control visibility, real gameplay input and latency under game load are pending the user's return. Exclusive fullscreen needs a separate backend feasibility assessment.
+The attended native fixture passed foreground preservation, compositor pixels, click-through, keyboard delivery and teardown. After separately approved backed-up installation, Control DX11 and DX12 borderless passed physical video/audio/input and Alt-Tab return. The user accepted the imperceptible DX12 ordering transient; strict observer failures remain recorded and uninterrupted ordering is not claimed. Control DX11's Fullscreen setting failed video acceptance, with audio working and video visible on the desktop after Alt-Tab. Actual exclusive presentation was not established; BL-049 remains a separate backend feasibility assessment. See [verification evidence](../../../docs/verification/desktop-overlay-topmost.md).
