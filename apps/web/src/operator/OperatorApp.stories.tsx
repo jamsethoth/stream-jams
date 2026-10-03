@@ -9,6 +9,7 @@ import type { OperatorTimersApi } from "./timers-api.js";
 const meta = {
   title: "Operator/Playback Console",
   component: OperatorApp,
+  tags: ["operator-compact"],
   parameters: { layout: "fullscreen" },
   args: { timersApi: createTimersApi([]) }
 } satisfies Meta<typeof OperatorApp>;
@@ -40,6 +41,19 @@ export const ActiveTimers: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement); await expect(await canvas.findByRole("heading", { name: "Active timers (3)" })).toBeVisible();
     await expect(canvas.getByText("Wear oven mitts")).toBeVisible(); await expect(canvas.getByText("Tea break")).toBeVisible();
+  }
+};
+
+export const CompactLivePanel: Story = {
+  args: { api: createApi(activeSnapshot()), timersApi: createTimersApi(timerStates()) },
+  decorators: [(Story) => <div style={{ maxWidth: 540 }}><Story /></div>],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole("heading", { name: "Active timers (3)" });
+    await expect(canvas.getByRole("button", { name: /^Pause$/ })).toBeVisible();
+    await expect(canvasElement.querySelector(".timer-adjustment")).not.toBeVisible();
+    await userEvent.click(canvas.getAllByText("Adjust time")[0]!);
+    await expect(canvas.getAllByRole("group", { name: "Adjust remaining time" })[0]).toBeVisible();
   }
 };
 
