@@ -4,7 +4,7 @@ import { privateMediaReferenceSchema, trustedMediaGrantSchema, type MediaVersion
 
 function validAssetSnapshot(assetId: string, snapshot: MediaVersionSnapshot): boolean {
   const kind = snapshot.mimeType === "image/gif" ? "gif" : snapshot.mimeType.startsWith("image/") ? "image" :
-    snapshot.mimeType.startsWith("video/") ? "video" : "audio";
+    snapshot.mimeType.startsWith("video/") ? "video" : snapshot.mimeType.startsWith("font/") ? "font" : "audio";
   return assetId === snapshot.assetId && snapshot.sizeBytes <= defaultAssetValidationPolicy[kind].maxSizeBytes;
 }
 
@@ -22,9 +22,9 @@ export const trustedAudioMediaAssetSchema = trustedDesktopMediaAssetSchema.refin
 export const privateAudioMediaAssetSchema = privateDesktopMediaAssetSchema.refine(asset =>
   /^(audio|video)\//.test(asset.reference.snapshot.mimeType), "Audio requires an audio asset or video soundtrack");
 export const trustedVisualMediaAssetSchema = trustedDesktopMediaAssetSchema.refine(asset =>
-  /^(image|video)\//.test(asset.grant.snapshot.mimeType), "Visuals require an image or video asset");
+  /^(image|video|font)\//.test(asset.grant.snapshot.mimeType), "Visuals require an image or video asset");
 export const privateVisualMediaAssetSchema = privateDesktopMediaAssetSchema.refine(asset =>
-  /^(image|video)\//.test(asset.reference.snapshot.mimeType), "Visuals require an image or video asset");
+  /^(image|video|font)\//.test(asset.reference.snapshot.mimeType), "Visuals require an image or video asset");
 
 export type TrustedDesktopMediaAsset = z.infer<typeof trustedDesktopMediaAssetSchema>;
 export type PrivateDesktopMediaAsset = z.infer<typeof privateDesktopMediaAssetSchema>;

@@ -1080,6 +1080,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     now
   });
   const assetLibraryService = new AssetLibraryService({
+    findEditorDocuments: ids => alertEditorDocumentRepository.findMany(ids),
     assetRepository,
     metadataRepository: new SqliteAssetLibraryMetadataRepository(database.connection),
     assetStore,

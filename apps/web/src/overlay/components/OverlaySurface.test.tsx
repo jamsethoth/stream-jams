@@ -21,6 +21,22 @@ afterEach(() => {
 });
 
 describe("OverlaySurface", () => {
+  it("keeps text-only preparation transparent and reports font failures with provenance", async () => {
+    const events = vi.fn();
+    const fetchFont = vi.fn().mockRejectedValue(new Error("font delivery failed"));
+    vi.stubGlobal("fetch", fetchFont);
+    const value: OverlayInstruction = { ...instruction(), assetVersions: { "font-1": "a".repeat(64) }, text: {
+      text: "Hidden font", textStyle: { ...compatibilityAlertTextStyle, fontAssetId: "font-1" },
+      layout: { x: 0, y: 0, width: 400, height: 100, zIndex: 1 }
+    } };
+    render(<OverlaySurface composition={composition(value)} preparingInstructionIds={new Set([value.id])} resolveAssetUrl={(id, version) => `/assets/${id}?version=${version}`} onPlaybackEvent={events} />);
+    expect(screen.getByText("Hidden font")).not.toBeVisible();
+    await waitFor(() => expect(events).toHaveBeenCalledWith(expect.objectContaining({ status: "failed", failure: expect.objectContaining({ stage: "decode", referenceId: expect.stringMatching(/^err_/) }) })));
+    expect(fetchFont).toHaveBeenCalledWith(`/assets/font-1?version=${"a".repeat(64)}`);
+    expect(events).not.toHaveBeenCalledWith(expect.objectContaining({ status: "ready" }));
+    expect(events).not.toHaveBeenCalledWith(expect.objectContaining({ status: "started" }));
+    expect(screen.getByText("Hidden font")).not.toBeVisible();
+  });
   it("resolves each concurrent occurrence against its own immutable asset version", () => {
     const first = { ...instruction(), id: "first", assetVersions: { image: "a".repeat(64) },
       visual: { assetId: "image", mediaType: "image" as const, layout: { x: 0, y: 0, width: 10, height: 10, zIndex: 0 } } };

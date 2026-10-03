@@ -489,6 +489,14 @@ Layout:
 - Right: inspector with layer list and alert/event controls.
 - Toolbar: `Preview`, `Test draft`, save/revert controls, target profile switch.
 
+Text typography:
+
+- Uploaded TTF, OTF, WOFF and WOFF2 fonts are reusable library assets, selectable or uploaded from the text inspector. Existing preset fonts remain available.
+- Text supports italic, underline, letter spacing, and an outline with separate color, opacity and thickness controls.
+- `Warp text` enables a normalized control grid. `Edit warp` shows draggable handles, arrow-key and numeric positioning, horizontal/vertical splits, interior row/column removal and reset.
+- Adding a split preserves the existing deformation. Grids allow three to seven rows and columns; one completed drag is one undo operation. Layer move/resize is suspended while editing its warp.
+- `Done` hides editing guides. Editor previews and live output share font preparation and warped rendering; failures are actionable in management and remain transparent on live output.
+
 Focused editor:
 
 - Distinct route such as `/manage/modules/alerts/editor/:alertId`.

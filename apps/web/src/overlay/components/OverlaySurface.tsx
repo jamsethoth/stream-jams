@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import "../overlay.css";
-import { monitorMediaProgress, prepareMediaAtStart, rgbaColorSchema, serializeException, targetProfileDefinitions, timerStackProjectionSchema, TimedMediaPreparationError } from "@stream-jams/core";
+import { monitorMediaProgress, prepareMediaAtStart, compatibilityAlertTextStyle, rgbaColorSchema, serializeException, targetProfileDefinitions, timerStackProjectionSchema, TimedMediaPreparationError } from "@stream-jams/core";
 import type {
   PlaybackTimingMilestone,
   PlaybackTimingDiagnostics,
@@ -13,6 +13,7 @@ import type {
 } from "@stream-jams/core";
 import { alertTextLayerStyle } from "./alert-text-style.js";
 import { useMediaVolumeEnvelope } from "../../media/use-media-volume-envelope.js";
+import { AlertTextContent } from "./AlertTextContent.js";
 import { TimerStack } from "./TimerStack.js";
 
 export type OverlayPlaybackEvent =
@@ -199,7 +200,8 @@ function OverlayInstructionLayer({
     videoStartedAt === null ? 0 : videoStartedAt + instruction.durationMs
   ) : endsAt;
   const [timingActive, setTimingActive] = useState(() => startsAt === undefined || (Date.now() >= startsAt && (hasTimedMedia || Date.now() < endsAt!)));
-  const playbackActive = !preparing && timingActive && (startsAt === undefined || Date.now() >= startsAt);
+  const [textReady, setTextReady] = useState(instruction.text === null);
+  const playbackActive = textReady && !preparing && timingActive && (startsAt === undefined || Date.now() >= startsAt);
   const [videoReady, setVideoReady] = useState(startsAt === undefined);
   const [videoEnded, setVideoEnded] = useState(false);
   const initialOffset = useRef(0);
@@ -232,6 +234,16 @@ function OverlayInstructionLayer({
     });
   }, [instruction.id, onPlaybackEvent]);
 
+  const loadTextFont = useCallback(async (assetId: string) => {
+    const response = await fetch(resolveAssetUrl(assetId, instruction.assetVersions?.[assetId]));
+    if (!response.ok) throw new Error("Font file could not load. Check the asset and retry.");
+    return response.blob();
+  }, [resolveAssetUrl, instruction.assetVersions]);
+  const textPrepared = useCallback(() => setTextReady(true), []);
+  const textFailed = useCallback((error: unknown) => {
+    setTextReady(false);
+    reportFailure("decode", "Alert text could not prepare. Check the selected font and warp, then retry.", error);
+  }, [reportFailure]);
   const observeMedia = useCallback((element: HTMLMediaElement) => {
     diagnosticsRef.current.actualStartEpochMs ??= Date.now();
     progressRef.current.get(element)?.stop();
@@ -260,7 +272,7 @@ function OverlayInstructionLayer({
   }, [startsAt]);
 
   useEffect(() => {
-    if (!preparing || presentationInvalid) return;
+    if (!preparing || presentationInvalid || !textReady) return;
     const preparationStartedAt = Date.now();
     const controller = new AbortController();
     const media = [videoElementRef.current, audioElementRef.current].filter((element): element is HTMLMediaElement => element !== null);
@@ -277,7 +289,7 @@ function OverlayInstructionLayer({
       .then(() => { if (!controller.signal.aborted && !completionReportedRef.current) { diagnosticsRef.current.preparationDurationMs = Math.min(300000, Date.now() - preparationStartedAt); onPlaybackEvent?.({ instructionId: instruction.id, status: "ready" }); } })
       .catch((error: unknown) => { if (!controller.signal.aborted) reportFailure(error instanceof TimedMediaPreparationError ? error.stage : "decode", "Media could not prepare for playback.", error); });
     return () => controller.abort();
-  }, [preparing, instruction.id, presentationInvalid, onPlaybackEvent, reportFailure]);
+  }, [preparing, instruction.id, presentationInvalid, textReady, onPlaybackEvent, reportFailure]);
 
   useEffect(() => {
     setVideoEnded(false);
@@ -517,9 +529,7 @@ function OverlayInstructionLayer({
           data-testid={`overlay-text-${instruction.id}`}
           style={elementStyle(instruction.text.layout, !playbackActive ? null : instruction.animation, instruction.durationMs, initialOffset.current)}
         >
-          <div className="alert-text-layer" dir="auto" style={textPresentationStyle ?? undefined}>
-            {instruction.text.text}
-          </div>
+          <AlertTextContent text={instruction.text.text} textStyle={instruction.text.textStyle ?? compatibilityAlertTextStyle} {...(instruction.text.boxStyle === undefined ? {} : { boxStyle: instruction.text.boxStyle })} width={instruction.text.layout.width} height={instruction.text.layout.height} loadFont={loadTextFont} onReady={textPrepared} onError={textFailed} />
         </div>
       )}
       {instruction.shape == null ? null : (

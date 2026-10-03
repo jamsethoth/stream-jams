@@ -11,6 +11,15 @@ import {
 } from "./text-style.js";
 
 describe("alert text styles", () => {
+  it("keeps legacy objects unchanged and validates optional typography strictly", () => {
+    expect(alertTextStyleSchema.parse(compatibilityAlertTextStyle)).toEqual(compatibilityAlertTextStyle);
+    expect(alertTextStyleSchema.parse({ ...compatibilityAlertTextStyle, fontAssetId: null, outline: null, warp: null })).toMatchObject({ fontAssetId: null, outline: null, warp: null });
+    for (const letterSpacingPx of [-20, 100]) expect(alertTextStyleSchema.safeParse({ ...compatibilityAlertTextStyle, letterSpacingPx }).success).toBe(true);
+    for (const widthPx of [0, 32]) expect(alertTextStyleSchema.parse({ ...compatibilityAlertTextStyle, outline: { color: "#aabbccdd", widthPx } }).outline?.color).toBe("#AABBCCDD");
+    for (const extra of [{ letterSpacingPx: -21 }, { letterSpacingPx: 101 }, { letterSpacingPx: Infinity }, { italic: 1 }, { underline: "true" }, { fontAssetId: "" }, { outline: { color: "red", widthPx: 2 } }, { outline: { color: "#FFFFFFFF", widthPx: -1 } }, { outline: { color: "#FFFFFFFF", widthPx: 33 } }, { outline: { color: "#FFFFFFFF", widthPx: 1, extra: true } }]) {
+      expect(alertTextStyleSchema.safeParse({ ...compatibilityAlertTextStyle, ...extra }).success).toBe(false);
+    }
+  });
   it("normalizes canonical RGBA colors and rejects CSS-like values", () => {
     expect(rgbaColorSchema.parse("#12ab34cd")).toBe("#12AB34CD");
     for (const value of ["#12AB34", "red", "rgb(1, 2, 3)", "url(font.woff2)", "var(--color)", 123]) {

@@ -17,6 +17,7 @@ export interface AssetValidationRule {
 }
 
 export interface AssetValidationPolicy {
+  readonly font: { readonly maxSizeBytes: number; readonly maxSizeLabel: string };
   readonly image: {
     readonly maxSizeBytes: number;
     readonly maxSizeLabel: string;
@@ -40,6 +41,7 @@ export interface AssetValidator {
 }
 
 export const defaultAssetValidationPolicy: AssetValidationPolicy = {
+  font: { maxSizeBytes: 10 * 1024 * 1024, maxSizeLabel: "10 MiB" },
   image: {
     maxSizeBytes: 10 * 1024 * 1024,
     maxSizeLabel: "10 MiB"
@@ -59,6 +61,11 @@ export const defaultAssetValidationPolicy: AssetValidationPolicy = {
 } as const;
 
 const defaultRules: readonly AssetValidationRule[] = [
+  ...(["ttf", "otf", "woff", "woff2"] as const).map(format => ({
+    mediaType: "font" as const, mimeType: `font/${format}`, extensions: [`.${format}`],
+    matchesSignature: (bytes: Uint8Array) => matchesFontContainer(bytes, format),
+    ...defaultAssetValidationPolicy.font
+  })),
   {
     mediaType: "image",
     mimeType: "image/png",
@@ -139,7 +146,7 @@ export class DefaultAssetValidator implements AssetValidator {
   }
 
   validate(input: AssetValidationInput): AssetValidationResult {
-    const normalizedMimeType = input.mimeType.trim().toLowerCase();
+    const normalizedMimeType = normalizeAssetMimeType(input.mimeType, input.originalFileName);
     const rule = this.#rulesByMimeType.get(normalizedMimeType);
     if (rule === undefined) {
       return rejected("Unsupported media type");
@@ -169,6 +176,48 @@ export class DefaultAssetValidator implements AssetValidator {
       normalizedExtension: extension
     };
   }
+}
+
+/** Browsers and OS file pickers report several MIME aliases for the same font container. */
+export function normalizeAssetMimeType(mimeType: string, fileName: string): string {
+  const mime = mimeType.trim().toLowerCase();
+  const extension = readLowercaseExtension(fileName);
+  const format = extension.slice(1);
+  const aliases: Readonly<Record<string, readonly string[]>> = {
+    ttf: ["font/ttf", "application/x-font-ttf", "application/x-font-truetype", "application/font-sfnt", "font/sfnt"],
+    otf: ["font/otf", "application/x-font-opentype", "application/x-font-otf", "application/vnd.ms-opentype", "application/font-sfnt", "font/sfnt"],
+    woff: ["font/woff", "application/font-woff", "application/x-font-woff"],
+    woff2: ["font/woff2", "application/font-woff2", "application/x-font-woff2"]
+  };
+  return aliases[format]?.includes(mime) || (aliases[format] !== undefined && (mime === "" || mime === "application/octet-stream")) ? `font/${format}` : mime;
+}
+
+function matchesFontContainer(bytes: Uint8Array, format: "ttf" | "otf" | "woff" | "woff2"): boolean {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (format === "ttf" || format === "otf") {
+    if (bytes.length < 12 || !(format === "ttf" ? startsWithBytes(bytes, [0, 1, 0, 0]) : asciiAt(bytes, 0, "OTTO"))) return false;
+    const count = view.getUint16(4);
+    if (count === 0 || count > 256 || 12 + count * 16 > bytes.length) return false;
+    for (let index = 0; index < count; index++) {
+      const offset = view.getUint32(12 + index * 16 + 8);
+      const length = view.getUint32(12 + index * 16 + 12);
+      if (offset < 12 + count * 16 || length === 0 || offset + length > bytes.length) return false;
+    }
+    return true;
+  }
+  const header = format === "woff" ? 44 : 48;
+  if (bytes.length < header || !asciiAt(bytes, 0, format === "woff" ? "wOFF" : "wOF2")) return false;
+  const count = view.getUint16(12);
+  if (view.getUint32(8) !== bytes.length || count === 0 || count > 256 || view.getUint16(14) !== 0 || view.getUint32(16) < 12 + count * 16) return false;
+  if (!(startsWithBytes(bytes.subarray(4), [0, 1, 0, 0]) || asciiAt(bytes, 4, "OTTO"))) return false;
+  if (format === "woff2") return view.getUint32(20) > 0 && header + count * 2 + view.getUint32(20) <= bytes.length;
+  if (header + count * 20 > bytes.length) return false;
+  for (let index = 0; index < count; index++) {
+    const base = header + index * 20;
+    const offset = view.getUint32(base + 4), compressed = view.getUint32(base + 8), original = view.getUint32(base + 12);
+    if (offset < header + count * 20 || compressed === 0 || compressed > original || offset + compressed > bytes.length) return false;
+  }
+  return true;
 }
 
 function rejected(reason: string): AssetValidationResult {

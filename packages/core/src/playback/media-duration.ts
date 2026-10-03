@@ -6,7 +6,7 @@ export type PlaybackDurationMode = "media" | "custom";
 export interface MediaDurationCandidate {
   readonly assetId: string;
   readonly label: string;
-  readonly mediaType: "image" | "gif" | "video" | "audio";
+  readonly mediaType: import("../assets/types.js").AssetMediaType;
   readonly durationMs: number | null;
   readonly eligible: boolean;
 }

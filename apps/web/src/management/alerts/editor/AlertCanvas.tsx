@@ -1,9 +1,10 @@
-import { createAlertTemplateContext, type AlertEditorDocument, type AlertLayer, type TargetProfileId } from "@stream-jams/core";
-import { useEffect, useRef, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { createAlertTemplateContext, type AlertEditorDocument, type AlertLayer, type AlertTextWarp, type TargetProfileId } from "@stream-jams/core";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import type { AssetApi } from "../../assets/asset-api.js";
 import type { MediaPreviewGroupState, MediaPreviewGroup } from "../../assets/media-preview-group.js";
 import { useMediaPreviewGroup } from "../../assets/use-media-preview-group.js";
-import { alertTextLayerStyle } from "../../../overlay/components/alert-text-style.js";
+import { AlertTextContent } from "../../../overlay/components/AlertTextContent.js";
+import { TextWarpEditor } from "./TextWarpEditor.js";
 import { overlayPresetAnimationStyle } from "../../../overlay/components/OverlaySurface.js";
 import { snapLayerGeometry, type CanvasViewState, type LayerGeometry } from "./editor-state.js";
 import { renderAlertTemplatePreview } from "./template-preview.js";
@@ -14,6 +15,9 @@ export interface CanvasBackground {
 }
 
 interface AlertCanvasProps {
+  readonly warpLayerId?: string | null;
+  readonly onWarpChange?: (layerId: string, warp: AlertTextWarp) => void;
+  readonly onWarpDone?: () => void;
   readonly assetApi: AssetApi;
   readonly assetMediaTypes?: Readonly<Record<string, "image" | "gif" | "video">>;
   readonly background?: CanvasBackground;
@@ -48,6 +52,8 @@ interface PointerOperation {
 }
 
 export function AlertCanvas(props: AlertCanvasProps) {
+  const [draftWarp, setDraftWarp] = useState<{ layerId: string; value: AlertTextWarp } | null>(null);
+  const loadFont = useCallback((assetId: string) => props.assetApi.getAssetFile(assetId), [props.assetApi, props.assetRevision]);
   const profile = props.document.targetProfiles.find((candidate) => candidate.id === props.profileId)!;
   const visibleLayouts = new Set(profile.layerLayouts.map(layout => layout.layerId));
   const visualIds = props.document.layers.flatMap(layer => layer.visible && visibleLayouts.has(layer.id) && (layer.type === "image" || layer.type === "video") ? [layer.assetId] : []);
@@ -60,6 +66,10 @@ export function AlertCanvas(props: AlertCanvasProps) {
   const processedFitRequestRef = useRef(0);
   const operationRef = useRef<PointerOperation | null>(null);
   const layouts = new Map(profile.layerLayouts.map((layout) => [layout.layerId, layout]));
+  const warpLayer = !props.preview && props.warpLayerId === props.selectedLayerId ? props.document.layers.find((layer) => layer.id === props.warpLayerId && layer.visible && layer.type === "text") : undefined;
+  const warpLayout = warpLayer === undefined ? undefined : layouts.get(warpLayer.id);
+  const authoredWarp = warpLayer?.type === "text" ? warpLayer.textStyle.warp : undefined;
+  useEffect(() => { setDraftWarp(null); }, [props.profileId, props.warpLayerId, props.selectedLayerId, props.preview, authoredWarp]);
   const viewState = props.viewState ?? { zoom: props.zoom ?? 100, scrollLeft: 0, scrollTop: 0 };
   const background = props.background ?? { mode: "checkerboard", color: "#1a1e23" };
   const templateContext = createAlertTemplateContext({
@@ -86,6 +96,7 @@ export function AlertCanvas(props: AlertCanvasProps) {
   }, [dimensions.height, dimensions.width, props.fitRequestId, props.onViewStateChange, props.viewState]);
 
   function beginOperation(event: ReactPointerEvent<HTMLElement>, layerId: string, mode: "move" | "resize") {
+    if (layerId === warpLayer?.id) return;
     const layout = layouts.get(layerId);
     if (layout === undefined) return;
     event.preventDefault();
@@ -169,6 +180,7 @@ export function AlertCanvas(props: AlertCanvasProps) {
                   key={`${layer.id}:${props.preview ? props.previewRunId ?? 0 : "edit"}`}
                   onClick={() => props.onSelectLayer(layer.id)}
                   onKeyDown={(event) => {
+                    if (layer.id === warpLayer?.id) return;
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
                       props.onSelectLayer(layer.id);
@@ -198,26 +210,35 @@ export function AlertCanvas(props: AlertCanvasProps) {
                   tabIndex={0}
                 >
                   <CanvasLayer
+                    loadFont={loadFont}
+                    width={layout.width * viewState.zoom / 100}
+                    height={layout.height * viewState.zoom / 100}
                     mediaGroup={mediaGroup}
                     sourceUrl={"assetId" in layer ? mediaState.descriptors[layer.assetId]?.url ?? null : null}
                     assetMediaType={"assetId" in layer ? snapshotMediaType(mediaState.descriptors[layer.assetId]?.snapshot.mimeType) ?? props.assetMediaTypes?.[layer.assetId] : undefined}
-                    layer={layer}
+                    layer={layer.type === "text" && layer.id === warpLayer?.id && draftWarp?.layerId === layer.id ? { ...layer, textStyle: { ...layer.textStyle, warp: draftWarp.value } } : layer}
                     {...(props.preview && layer.type === "text"
                       ? { previewText: props.previewTextByLayerId?.[layer.id] ?? "" }
                       : {})}
                     scale={viewState.zoom / 100}
                     templateContext={templateContext}
                   />
-                  <span
+                  {layer.id === warpLayer?.id ? null : <span
                     aria-hidden="true"
                     className="alert-canvas__resize-handle"
                     onPointerDown={(event) => beginOperation(event, layer.id, "resize")}
                     onPointerMove={continueOperation}
                     onPointerUp={endOperation}
-                  />
+                  />}
                 </div>
               );
             })}
+          {warpLayer?.type === "text" && warpLayer.textStyle.warp && warpLayout ? <div className="alert-canvas__warp-surface" style={{ ...layerStyle(warpLayout, dimensions, null, props.document.durationMs, 0), zIndex: 10000 }}>
+            <TextWarpEditor key={`${props.profileId}:${warpLayer.id}`} warp={draftWarp?.layerId === warpLayer.id ? draftWarp.value : warpLayer.textStyle.warp}
+              onPreview={(value) => setDraftWarp(value === null ? null : { layerId: warpLayer.id, value })}
+              onCommit={(value) => { setDraftWarp(null); props.onWarpChange?.(warpLayer.id, value); }}
+              onDone={() => { setDraftWarp(null); props.onWarpDone?.(); }} />
+          </div> : null}
           {props.document.layers.some((layer) => layer.visible && layouts.has(layer.id)) ? null : (
             <p className="alert-canvas__empty">Add or show a visual layer to begin.</p>
           )}
@@ -233,6 +254,9 @@ export function AlertCanvas(props: AlertCanvasProps) {
 }
 
 function CanvasLayer({
+  loadFont,
+  width,
+  height,
   mediaGroup,
   sourceUrl,
   assetMediaType,
@@ -241,6 +265,9 @@ function CanvasLayer({
   scale,
   templateContext
 }: {
+  readonly loadFont: (assetId: string) => Promise<Blob>;
+  readonly width: number;
+  readonly height: number;
   readonly mediaGroup: MediaPreviewGroup | null;
   readonly sourceUrl: string | null;
   readonly assetMediaType?: "image" | "gif" | "video" | undefined;
@@ -250,12 +277,7 @@ function CanvasLayer({
   readonly templateContext: Record<string, unknown>;
 }) {
   if (layer.type === "text") {
-    const style = alertTextLayerStyle({ textStyle: layer.textStyle, boxStyle: layer.boxStyle, scale });
-    return style === null ? null : (
-      <span className="alert-canvas__text alert-text-layer" style={style}>
-        {previewText ?? renderAlertTemplatePreview(layer.template, templateContext)}
-      </span>
-    );
+    return <CanvasText key={layer.id} text={previewText ?? renderAlertTemplatePreview(layer.template, templateContext)} layer={layer} width={width} height={height} scale={scale} loadFont={loadFont} />;
   }
   if (layer.type === "image" || layer.type === "video") {
     const kind = assetMediaType === "gif" ? "gif" : assetMediaType ?? layer.type;
@@ -265,6 +287,12 @@ function CanvasLayer({
     return <span className="alert-canvas__shape" style={{ background: layer.fill }} />;
   }
   return <span>{layer.name}</span>;
+}
+
+function CanvasText({ text, layer, width, height, scale, loadFont }: { readonly text: string; readonly layer: Extract<AlertLayer, { type: "text" }>; readonly width: number; readonly height: number; readonly scale: number; readonly loadFont: (assetId: string) => Promise<Blob> }) {
+  const [error, setError] = useState<string | null>(null);
+  return <><AlertTextContent text={text} textStyle={layer.textStyle} boxStyle={layer.boxStyle} width={width} height={height} scale={scale} loadFont={loadFont} onReady={() => setError(null)} onError={(cause) => setError(cause instanceof Error ? cause.message : "Unable to render text. Select another font or reset the warp.")} />
+    {error ? <span role="alert" className="alert-canvas__text-error">{error}</span> : null}</>;
 }
 
 const emptyMediaState: MediaPreviewGroupState = { descriptors: {}, unavailable: false };
