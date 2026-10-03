@@ -19,6 +19,21 @@ import { EventPipeline } from "./event-pipeline.js";
 import { PlaybackCoordinator, type PlaybackEnqueueResult } from "../playback/playback-coordinator.js";
 
 describe("EventPipeline", () => {
+  it("delivers events to timers and diagnoses timer failures without blocking alert admission", async () => {
+    const diagnostics = new RecordingDiagnosticsRepository();
+    const playback = new RecordingPlaybackCoordinator(queueResult(createFollowEvent()));
+    const errors: unknown[] = [];
+    const received: NormalizedStreamEvent[] = [];
+    const failure = new Error("Timer persistence unavailable");
+    const pipeline = new EventPipeline({ playbackCoordinator: playback, diagnosticsLogRepository: diagnostics,
+      generateId: kind => `${kind}-test`, timerEventSink: { async handleEvent(event) { received.push(event); throw failure; } },
+      onTimerError: error => { errors.push(error); }
+    });
+    await pipeline.handleEvent(createFollowEvent());
+    expect(received).toEqual([createFollowEvent()]); expect(errors).toEqual([failure]);
+    expect(playback.events).toEqual([createFollowEvent()]);
+    expect(diagnostics.eventLogs.map(log => log.status)).toEqual(["received", "processed"]);
+  });
   it("logs received events, enqueues playback, and records alert match and playback outcomes", async () => {
     const diagnostics = new RecordingDiagnosticsRepository();
     const playback = new RecordingPlaybackCoordinator(queueResult(createFollowEvent()));

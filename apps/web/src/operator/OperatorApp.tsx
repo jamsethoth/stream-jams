@@ -11,6 +11,7 @@ import {
   PlaybackOperationsConflictError,
   type PlaybackApi
 } from "./playback-api.js";
+import { TimerAdjustmentControls } from "../management/timers/TimerAdjustmentControls.js";
 import { defaultOperatorTimersApi, type OperatorTimersApi } from "./timers-api.js";
 
 const normalPollDelayMs = 2_000;
@@ -169,6 +170,14 @@ export function OperatorApp({ api = defaultPlaybackApi, timersApi = defaultOpera
     }
   }
 
+  async function adjustTimer(timer: TimerRunState, input: import("@stream-jams/core").TimerAdjustment) {
+    if (pendingRef.current) return;
+    pendingRef.current = true; setPending(`timer:${timer.definitionId}:adjust`); setCommandError(null);
+    try { await timersApi.adjust(timer.definitionId, input); setTimers(await timersApi.listStates()); setTimerRefreshError(null); setAnnouncement(`${timer.snapshot.label} adjusted.`); }
+    catch (error) { setCommandError(toOperatorError(error, "The timer adjustment failed.")); }
+    finally { pendingRef.current = false; setPending(null); }
+  }
+
   async function runTimerCommand(command: "pause" | "resume" | "stop" | "restart", timer: TimerRunState, focusTarget: HTMLButtonElement) {
     if (pendingRef.current) return;
     pendingRef.current = true; restoreFocusRef.current = focusTarget; setPending(`timer:${timer.definitionId}:${command}`); setCommandError(null); setAnnouncement("");
@@ -242,7 +251,7 @@ export function OperatorApp({ api = defaultPlaybackApi, timersApi = defaultOpera
         <h2 id="operator-active-timers">Active timers ({timers.length})</h2>
         {timerRefreshError === null ? null : <OperatorErrorBanner error={timerRefreshError} title="Timer state may be stale"><p>Showing the last known timers. Check the local service; timer refresh will retry automatically.</p></OperatorErrorBanner>}
         {timers.length === 0 ? <p className="management-empty">No timers are active.</p> : <ol className="operator-list operator-timer-list">
-          {timers.map(timer => <li key={`${timer.definitionId}:${timer.generation}`}><OperatorTimerCard disabled={disabled} onCommand={(command, button) => void runTimerCommand(command, timer, button)} timer={timer} /></li>)}
+          {timers.map(timer => <li key={`${timer.definitionId}:${timer.generation}`}><OperatorTimerCard onAdjust={input => adjustTimer(timer, input)} disabled={disabled} onCommand={(command, button) => void runTimerCommand(command, timer, button)} timer={timer} /></li>)}
         </ol>}
       </section>
 
@@ -330,8 +339,8 @@ export function OperatorApp({ api = defaultPlaybackApi, timersApi = defaultOpera
   );
 }
 
-function OperatorTimerCard({ disabled, onCommand, timer }: { readonly disabled: boolean; readonly timer: TimerRunState;
-  readonly onCommand: (command: "pause" | "resume" | "stop" | "restart", button: HTMLButtonElement) => void }) {
+function OperatorTimerCard({ disabled, onCommand, onAdjust, timer }: { readonly disabled: boolean; readonly timer: TimerRunState;
+  readonly onAdjust: (input: import("@stream-jams/core").TimerAdjustment) => Promise<void>; readonly onCommand: (command: "pause" | "resume" | "stop" | "restart", button: HTMLButtonElement) => void }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => { if (timer.status !== "running") return; const handle = window.setInterval(() => setNow(Date.now()), 250); return () => window.clearInterval(handle); }, [timer.status]);
   const remaining = timer.status === "running" ? Math.max(0, timer.endsAtEpochMs - now) : timer.status === "paused" ? timer.remainingMs : 0;
@@ -339,7 +348,7 @@ function OperatorTimerCard({ disabled, onCommand, timer }: { readonly disabled: 
     {timer.status === "running" ? <button disabled={disabled} onClick={event => onCommand("pause", event.currentTarget)} type="button">Pause</button> : timer.status === "paused" ? <button disabled={disabled} onClick={event => onCommand("resume", event.currentTarget)} type="button">Resume</button> : null}
     <button disabled={disabled} onClick={event => onCommand("restart", event.currentTarget)} type="button">Restart</button>
     <button disabled={disabled} onClick={event => onCommand("stop", event.currentTarget)} type="button">Stop</button>
-  </div></div></article>;
+  </div></div><TimerAdjustmentControls disabled={disabled} onApply={onAdjust} /></article>;
 }
 
 function OperatorHeader() {

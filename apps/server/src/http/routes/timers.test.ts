@@ -18,6 +18,18 @@ const running: TimerRunState = {
 };
 
 describe("timer management routes", () => {
+  it("protects manual adjustments and rejects malformed bodies before mutation", async () => {
+    const { app, headers, runtime } = await fixture();
+    const payload = { action: "increment", amountMs: 60_000 };
+    expect((await app.inject({ method: "POST", url: "/timers/cat-paws/adjust", payload })).statusCode).toBe(401);
+    for (const invalid of [{ ...payload, extra: true }, { ...payload, amountMs: -1 }, { ...payload, amountMs: Number.MAX_SAFE_INTEGER }, { action: "restart", amountMs: 0 }]) {
+      expect((await app.inject({ method: "POST", url: "/timers/cat-paws/adjust", headers, payload: invalid })).statusCode).toBe(400);
+    }
+    expect(runtime.adjust).not.toHaveBeenCalled();
+    expect((await app.inject({ method: "POST", url: "/timers/cat-paws/adjust", headers, payload })).statusCode).toBe(200);
+    expect(runtime.adjust).toHaveBeenCalledWith("cat-paws", payload);
+    await app.close();
+  });
   it("protects CRUD, state, controls, and credential lifecycle", async () => {
     const { app, headers, definitions, runtime, credentials } = await fixture();
     expect((await app.inject({ method: "GET", url: "/timers" })).statusCode).toBe(401);
@@ -71,7 +83,7 @@ async function fixture() {
   };
   const result = { changed: true, state: running };
   const runtime = {
-    listStates: vi.fn(() => [running]), start: vi.fn(async () => result), pause: vi.fn(async () => result),
+    adjust: vi.fn(async () => result), listStates: vi.fn(() => [running]), start: vi.fn(async () => result), pause: vi.fn(async () => result),
     resume: vi.fn(async () => result), stop: vi.fn(async () => ({ changed: true, state: null })), restart: vi.fn(async () => result)
   };
   const credentials = {

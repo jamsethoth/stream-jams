@@ -20,7 +20,7 @@ function harness(state: TimerRunState | null = null) {
     list: vi.fn(async () => definitions), listStates: vi.fn(async () => states),
     create: vi.fn(async input => { const created = { ...definition, ...input, id: "created" }; definitions = [...definitions, created]; return created; }),
     update: vi.fn(async (_id, input) => ({ ...definition, ...input })), remove: vi.fn(async () => { definitions = []; }),
-    command: vi.fn(async (_id, command) => { if (command === "start") states = [{ status: "running", definitionId: definition.id, generation: "g1", snapshot: definition,
+    adjust: async () => ({ changed: false, state: null }), command: vi.fn(async (_id, command) => { if (command === "start") states = [{ status: "running", definitionId: definition.id, generation: "g1", snapshot: definition,
       startedAtEpochMs: 1000, endsAtEpochMs: 61_000 }]; return { changed: true, state: states[0] ?? null }; }),
     getModuleConfig: vi.fn(async () => ({ moduleId: "timers", enabled: true, config: structuredClone(timersOverlayModuleDefinition.defaultConfig), updatedAt: definition.updatedAt })),
     setModuleEnabled,
@@ -47,6 +47,22 @@ function harness(state: TimerRunState | null = null) {
 function renderPage(state: TimerRunState | null = null) {
   const values = harness(state); render(<TimersPage api={values.api} assetApi={{} as AssetApi} audioApi={values.audioApi} managementApi={{} as AssetLibraryManagementApi} />); return values;
 }
+
+it("retains correction input after a failed request and permits an explicit retry", async () => {
+  const user = userEvent.setup();
+  const values = harness({ status: "paused", definitionId: "mitts", generation: "g1", snapshot: definition, remainingMs: 60000 });
+  const adjust = vi.fn().mockRejectedValueOnce(new Error("Check the local service and retry.")).mockResolvedValue({ changed: true, state: null });
+  render(<TimersPage api={{ ...values.api, adjust }} assetApi={{} as AssetApi} audioApi={values.audioApi} managementApi={{} as AssetLibraryManagementApi} />);
+  await user.click(await screen.findByRole("button", { name: /Wear oven mitts/ }));
+  await user.clear(screen.getByLabelText("Time (seconds)")); await user.type(screen.getByLabelText("Time (seconds)"), "42");
+  await user.click(screen.getByRole("button", { name: "Apply adjustment" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Check the local service and retry.");
+  expect(screen.getByLabelText("Time (seconds)")).toHaveValue(42);
+  expect(screen.getByRole("button", { name: "Apply adjustment" })).toBeEnabled();
+  await user.click(screen.getByRole("button", { name: "Apply adjustment" }));
+  await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  expect(adjust).toHaveBeenNthCalledWith(2, "mitts", { action: "increment", amountMs: 42000 });
+});
 
 it("keeps the timer editor closed until New timer opens the creation dialog", async () => {
   const user = userEvent.setup(); const { api } = renderPage();

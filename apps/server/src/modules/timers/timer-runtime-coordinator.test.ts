@@ -7,6 +7,9 @@ import {
   type TimerScheduler
 } from "./timer-runtime-coordinator.js";
 import { RuntimeMaintenanceGate } from "../backup/runtime-maintenance-gate.js";
+import { normalizedStreamEventSchema, type TimerEventRule } from "@stream-jams/core";
+import { TimerEventService } from "./timer-event-service.js";
+import { snapshotTimerDefinition } from "./timer-management-service.js";
 
 function definition(id: string, durationMs = 10_000): TimerDefinition {
   return {
@@ -48,7 +51,7 @@ class FakeTime implements TimerClock, TimerScheduler {
   }
 }
 
-function setup(definitions = [definition("a"), definition("b", 5_000)], gate?: RuntimeMaintenanceGate) {
+function setup(definitions = [definition("a"), definition("b", 5_000)], gate?: RuntimeMaintenanceGate, recovery?: import("./sqlite-timer-run-repository.js").TimerRunRepository, extra: Partial<ConstructorParameters<typeof TimerRuntimeCoordinator>[0]> = {}) {
   const time = new FakeTime();
   const records = new Map(definitions.map(item => [item.id, item]));
   const cueSink: TimerCueSink = { play: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) };
@@ -65,6 +68,8 @@ function setup(definitions = [definition("a"), definition("b", 5_000)], gate?: R
     }
   };
   const coordinator = new TimerRuntimeCoordinator({
+    ...extra,
+    ...(recovery === undefined ? {} : { recovery }),
     ...(gate === undefined ? {} : { assertCommandAvailable: () => gate.runConfigurationMutation(() => undefined) }),
     definitions: { findById: id => records.get(id) ?? null },
     config: { getModuleConfig: vi.fn().mockResolvedValue(config) },
@@ -77,6 +82,200 @@ function setup(definitions = [definition("a"), definition("b", 5_000)], gate?: R
 }
 
 describe("TimerRuntimeCoordinator", () => {
+  it("keeps completion live on a failed recovery write and retries removal without running timers", async () => {
+    let saved: readonly import("@stream-jams/core").TimerRunState[] = [];
+    const replace = vi.fn((states: typeof saved) => { saved = structuredClone(states); });
+    const failure = new Error("disk unavailable");
+    const onRecoveryError = vi.fn();
+    const { coordinator, time, cueSink } = setup([definition("a", 1000)], undefined, { list: () => saved, replace }, { onRecoveryError });
+    const listener = vi.fn(); coordinator.subscribe(listener);
+    await coordinator.start("a");
+    replace.mockImplementationOnce(() => { throw failure; });
+    await expect(time.advance(1000)).resolves.toBeUndefined();
+    expect(coordinator.getState("a")?.status).toBe("completed");
+    expect(saved).toHaveLength(1);
+    expect(onRecoveryError).toHaveBeenCalledWith(failure);
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(cueSink.play).toHaveBeenLastCalledWith(expect.objectContaining({ cue: "end" }));
+    await time.advance(1000); expect(saved).toEqual([]);
+    await time.advance(2000); expect(coordinator.getState("a")).toBeNull();
+    await coordinator.close();
+  });
+  it.each(["stop", "restart", "close"] as const)("does not apply an older idle adjustment after %s", async command => {
+    let release: (() => void) | undefined;
+    const acquire = vi.fn().mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; })).mockResolvedValue(undefined);
+    const media = { acquire, release: vi.fn().mockResolvedValue(undefined) } as unknown as import("../assets/local-media-service.js").LocalMediaService;
+    const { coordinator } = setup(undefined, undefined, undefined, { localMediaService: media });
+    const adjustment = coordinator.adjust("a", { action: "set", amountMs: 2000 });
+    if (command === "close") await coordinator.close();
+    else await coordinator[command]("a");
+    if (command === "stop") await coordinator.start("a");
+    const replacement = coordinator.getState("a");
+    release?.(); await adjustment;
+    expect(coordinator.getState("a")).toEqual(replacement);
+    await coordinator.close();
+  });
+  it("reserves a completed-run adjustment before cue cleanup and never replaces a newer start", async () => {
+    const { coordinator, time, cueSink } = setup([definition("a", 1000)]);
+    await coordinator.start("a"); await time.advance(1000);
+    let release: (() => void) | undefined;
+    vi.mocked(cueSink.stop).mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }));
+    const pending = coordinator.adjust("a", { action: "set", amountMs: 2000 });
+    await coordinator.stop("a"); await coordinator.start("a");
+    const replacement = coordinator.getState("a");
+    release?.(); await pending;
+    expect(coordinator.getState("a")).toEqual(replacement);
+    await coordinator.close();
+  });
+  it.each(["stop", "adjust"] as const)("retries failed %s persistence while preserving transitions and cleanup", async command => {
+    let saved: readonly import("@stream-jams/core").TimerRunState[] = [];
+    const replace = vi.fn((states: typeof saved) => { saved = structuredClone(states); });
+    const { coordinator, time, cueSink } = setup(undefined, undefined, { list: () => saved, replace });
+    await coordinator.start("a"); await coordinator.pause("a");
+    replace.mockImplementationOnce(() => { throw new Error("disk unavailable"); });
+    if (command === "stop") {
+      await coordinator.stop("a"); expect(coordinator.getState("a")).toBeNull();
+      expect(cueSink.stop).toHaveBeenCalledWith("generation-1");
+    } else {
+      await coordinator.adjust("a", { action: "set", amountMs: 2000 });
+      expect(coordinator.getState("a")).toMatchObject({ status: "paused", remainingMs: 2000 });
+    }
+    expect(saved[0]).toMatchObject({ remainingMs: 10000 });
+    await time.advance(1000);
+    if (command === "stop") expect(saved).toEqual([]);
+    else expect(saved[0]).toMatchObject({ remainingMs: 2000 });
+    await coordinator.close();
+  });
+  it("finishes shutdown cleanup before reporting a failed final recovery write", async () => {
+    const replace = vi.fn();
+    const { coordinator, cueSink, time } = setup(undefined, undefined, { list: () => [], replace });
+    await coordinator.start("a");
+    const failure = new Error("disk unavailable"); replace.mockImplementationOnce(() => { throw failure; });
+    await expect(coordinator.close()).rejects.toBe(failure);
+    expect(coordinator.listStates()).toEqual([]);
+    expect(cueSink.stop).toHaveBeenCalledWith("generation-1");
+    const calls = replace.mock.calls.length;
+    await time.advance(20000); expect(replace).toHaveBeenCalledTimes(calls);
+    await expect(coordinator.start("a")).rejects.toThrow();
+  });
+  it.each([
+    { type: "subscription", amount: 1, tier: "2000", quantityUnit: null, added: 2000 },
+    { type: "resubscription", amount: 24, tier: "2000", streakMonths: 12, quantityUnit: null, added: 2000 },
+    { type: "gift_subscription", amount: 1, tier: "2000", recipient: { id: "r", displayName: "Recipient" }, gifter: null, quantityUnit: 1, added: 2000 },
+    { type: "community_gift", amount: 5, tier: "2000", cumulativeTotal: null, anonymous: true, quantityUnit: 2, added: 4000 }
+  ])("applies $type tier/quantity rules with ordered actions and both idle alternatives", async ({ quantityUnit, added, ...fields }) => {
+    const { coordinator, records } = setup();
+    const event = normalizedStreamEventSchema.parse({ ...fields, id: "event", providerId: "twitch", sourcePlatform: "twitch", ingestProvider: "streamerbot", occurredAt: "2026-10-01T00:00:00Z", actor: { id: "u", displayName: "Viewer" }, message: null, metadata: {} });
+    const rule: TimerEventRule = { enabled: true, ingestProvider: "streamerbot", eventType: event.type, rewardId: null, tier: "2000", action: "increment", amountMs: 2000, quantityUnit, inactiveBehavior: "paused" };
+    const setRules = (...rules: TimerEventRule[]) => records.set("a", { ...definition("a"), eventRules: rules });
+    const service = new TimerEventService({ list: () => [...records.values()] }, coordinator);
+    setRules(rule);
+    await service.handleEvent({ ...event, tier: "1000" } as typeof event);
+    expect(coordinator.getState("a")).toBeNull();
+    await service.handleEvent(event);
+    expect(coordinator.getState("a")).toMatchObject({ status: "paused", remainingMs: 10000 + added });
+    setRules({ ...rule, action: "decrement" }); await service.handleEvent(event);
+    expect(coordinator.getState("a")).toMatchObject({ status: "paused", remainingMs: 10000 });
+    setRules({ ...rule, action: "restart" }, rule); await service.handleEvent(event);
+    const restarted = coordinator.getState("a");
+    expect(restarted).toMatchObject({ status: "running", endsAtEpochMs: 11000 + added });
+    setRules({ ...rule, action: "start" }); await service.handleEvent(event);
+    expect(coordinator.getState("a")).toEqual(restarted);
+    setRules({ ...rule, action: "stop" }); await service.handleEvent(event);
+    expect(coordinator.getState("a")).toBeNull();
+    setRules({ ...rule, inactiveBehavior: "start" }); await service.handleEvent(event);
+    expect(coordinator.getState("a")).toMatchObject({ status: "running", endsAtEpochMs: 11000 + added });
+    await coordinator.close();
+  });
+  it("reports a failed checkpoint, retains the last successful save, and retries", async () => {
+    let saved: readonly import("@stream-jams/core").TimerRunState[] = [];
+    const failure = new Error("disk unavailable");
+    const replace = vi.fn((states: typeof saved) => { saved = structuredClone(states); });
+    const recovery = { list: () => structuredClone(saved), replace };
+    const onRecoveryError = vi.fn();
+    const { coordinator, time } = setup(undefined, undefined, recovery, { onRecoveryError });
+    await coordinator.start("a");
+    replace.mockImplementationOnce(() => { throw failure; });
+    await time.advance(1000);
+    expect(onRecoveryError).toHaveBeenCalledExactlyOnceWith(failure);
+    expect(saved[0]).toMatchObject({ remainingMs: 10000 });
+    const crashed = setup(undefined, undefined, recovery);
+    await crashed.coordinator.restore();
+    expect(crashed.coordinator.getState("a")).toMatchObject({ status: "paused", remainingMs: 10000 });
+    await time.advance(1000);
+    expect(saved[0]).toMatchObject({ remainingMs: 8000 });
+    expect(coordinator.getState("a")?.status).toBe("running");
+    await coordinator.close();
+  });
+  it("does not restore stopped or completed runs, including completion hold", async () => {
+    let saved: readonly import("@stream-jams/core").TimerRunState[] = [];
+    const recovery = { list: () => structuredClone(saved), replace: (states: typeof saved) => { saved = structuredClone(states); } };
+    const first = setup(undefined, undefined, recovery);
+    await first.coordinator.start("a"); await first.coordinator.start("b");
+    await first.coordinator.stop("a");
+    await first.time.advance(5000);
+    expect(first.coordinator.getState("b")?.status).toBe("completed");
+    expect(saved).toEqual([]);
+    const reopened = setup(undefined, undefined, recovery);
+    await reopened.coordinator.restore();
+    expect(reopened.coordinator.listStates()).toEqual([]);
+    expect(reopened.cueSink.play).not.toHaveBeenCalled();
+    await first.coordinator.close(); await reopened.coordinator.close();
+  });
+  it("preserves recovered time and hides the icon when retained media is missing", async () => {
+    const snapshot = { ...snapshotTimerDefinition(definition("a")), iconAssetId: "missing-icon" };
+    const recovery = { list: () => [{ status: "paused" as const, definitionId: "a", generation: "old", snapshot, remainingMs: 4321 }], replace: vi.fn() };
+    const failure = new Error("asset missing");
+    const acquire = vi.fn().mockRejectedValue(failure);
+    const onRecoveryError = vi.fn();
+    const media = { acquire, release: vi.fn().mockResolvedValue(undefined) } as unknown as import("../assets/local-media-service.js").LocalMediaService;
+    const { coordinator, cueSink, time } = setup(undefined, undefined, recovery, { localMediaService: media, onRecoveryError });
+    await coordinator.restore(); await time.advance(100000);
+    expect(coordinator.getState("a")).toMatchObject({ status: "paused", remainingMs: 4321 });
+    expect(onRecoveryError).toHaveBeenCalledExactlyOnceWith(failure);
+    expect(cueSink.play).not.toHaveBeenCalled();
+    const projected = await coordinator.getModuleSnapshot({ moduleId: "timers", overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape" });
+    expect(JSON.stringify(projected)).not.toContain("missing-icon");
+    await coordinator.close();
+  });
+  it("checkpoints crash recovery and saves exact graceful-close time, restoring paused without cues", async () => {
+    let saved: readonly import("@stream-jams/core").TimerRunState[] = [];
+    const recovery = { list: () => structuredClone(saved), replace: (states: typeof saved) => { saved = structuredClone(states); } };
+    const first = setup(undefined, undefined, recovery);
+    await first.coordinator.start("a");
+    await first.time.advance(2500);
+    expect(saved[0]).toMatchObject({ status: "paused", remainingMs: 8000 });
+    const crash = setup(undefined, undefined, recovery);
+    crash.time.nowValue = 1_000_000;
+    await crash.coordinator.restore();
+    expect(crash.coordinator.getState("a")).toMatchObject({ status: "paused", remainingMs: 8000 });
+    expect(crash.cueSink.play).not.toHaveBeenCalled();
+    await first.coordinator.close();
+    expect(saved[0]).toMatchObject({ status: "paused", remainingMs: 7500 });
+    const reopened = setup(undefined, undefined, recovery);
+    await reopened.coordinator.restore();
+    await reopened.coordinator.stop("a");
+    expect(saved).toEqual([]);
+  });
+  it("keeps a paused timer paused even when an event uses start-if-inactive", async () => {
+    const { coordinator } = setup();
+    await coordinator.start("a"); await coordinator.pause("a");
+    expect(await coordinator.adjust("a", { action: "increment", amountMs: 1000 }, "start")).toMatchObject({ state: { status: "paused", remainingMs: 11000 } });
+    expect(await coordinator.adjust("b", { action: "increment", amountMs: 1000 }, "start")).toMatchObject({ state: { status: "running" } });
+  });
+  it("adjusts running deadlines without an old completion and completes paused subtraction at zero", async () => {
+    const { coordinator, time } = setup();
+    await coordinator.start("a");
+    await time.advance(8_000);
+    await coordinator.adjust("a", { action: "increment", amountMs: 5_000 });
+    await time.advance(2_000);
+    expect(coordinator.getState("a")?.status).toBe("running");
+    await coordinator.pause("a");
+    expect(await coordinator.adjust("a", { action: "decrement", amountMs: 20_000 })).toMatchObject({ state: { status: "completed" } });
+    expect(await coordinator.adjust("b", { action: "increment", amountMs: 1000 })).toEqual({ changed: false, state: null });
+    expect(await coordinator.adjust("b", { action: "set", amountMs: 1000 })).toMatchObject({ state: { status: "paused", remainingMs: 1000 } });
+    await expect(coordinator.adjust("b", { action: "set", amountMs: -1 })).rejects.toThrow();
+  });
   it("rejects new commands during configuration replacement without changing timer state", async () => {
     const gate = new RuntimeMaintenanceGate();
     const { coordinator } = setup(undefined, gate);

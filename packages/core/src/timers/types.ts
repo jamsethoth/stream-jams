@@ -12,11 +12,14 @@ export interface TimerDefinitionSnapshot {
 }
 
 export interface TimerDefinition extends TimerDefinitionSnapshot {
+  readonly eventRules?: readonly import("./event-rules.js").TimerEventRule[] | undefined;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
 
-export type TimerDefinitionInput = Omit<TimerDefinitionSnapshot, "id">;
+export type TimerDefinitionInput = Omit<TimerDefinitionSnapshot, "id"> & {
+  readonly eventRules?: readonly import("./event-rules.js").TimerEventRule[] | undefined;
+};
 
 export type TimerRunState =
   | {

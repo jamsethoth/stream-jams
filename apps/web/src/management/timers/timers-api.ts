@@ -1,6 +1,8 @@
 import {
   overlayModuleConfigSchema,
   timerCommandResultSchema,
+  timerAdjustmentSchema,
+  type TimerAdjustment,
   timerDefinitionInputSchema,
   timerDefinitionSchema,
   timerRunStateSchema,
@@ -47,6 +49,7 @@ export interface TimersApi {
   update(id: string, input: TimerDefinitionInput): Promise<TimerDefinition>;
   remove(id: string): Promise<void>;
   command(id: string, command: TimerCommand): Promise<TimerCommandResult>;
+  adjust(id: string, adjustment: TimerAdjustment): Promise<TimerCommandResult>;
   getModuleConfig(): Promise<OverlayModuleConfig<TimersOverlayModuleConfig>>;
   setModuleEnabled(enabled: boolean): Promise<boolean>;
   saveModuleConfig(enabled: boolean, config: TimersOverlayModuleConfig): Promise<OverlayModuleConfig<TimersOverlayModuleConfig>>;
@@ -85,6 +88,7 @@ export function createHttpTimersApi(options: HttpManagementClientOptions = {}): 
     async update(id, input) { return timerDefinitionSchema.parse(await client.putJson(timerPath(id), timerDefinitionInputSchema.parse(input), "Unable to save the timer.")); },
     async remove(id) { await client.deleteRequest(timerPath(id), "Unable to delete the timer."); },
     async command(id, command) { return timerCommandResultSchema.parse(await client.postJson(`${timerPath(id)}/${command}`, undefined, `Unable to ${command} the timer.`)); },
+    async adjust(id, adjustment) { return timerCommandResultSchema.parse(await client.postJson(`${timerPath(id)}/adjust`, timerAdjustmentSchema.parse(adjustment), "Unable to adjust the timer.")); },
     async getModuleConfig() { return parseModuleConfig(await client.getJson("/overlay-modules/timers/config", "Unable to load timer layout.")); },
     async setModuleEnabled(enabled) { return parseModuleConfig(await client.patchJson(
       "/overlay-modules/timers/enabled", { enabled }, "Unable to update the Timers module."

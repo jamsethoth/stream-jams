@@ -1,4 +1,4 @@
-import { timerDefinitionInputSchema, type TimerCommandResult } from "@stream-jams/core";
+import { timerDefinitionInputSchema, timerAdjustmentSchema, type TimerCommandResult } from "@stream-jams/core";
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
 import {
   ActiveTimerDefinitionError,
@@ -16,7 +16,7 @@ export interface TimerRouteDependencies {
   readonly timerManagementService: Pick<TimerManagementService,
     "listDefinitions" | "getDefinition" | "createDefinition" | "updateDefinition" | "deleteDefinition">;
   readonly timerRuntimeCoordinator: Pick<TimerRuntimeCoordinator,
-    "listStates" | "start" | "pause" | "resume" | "stop" | "restart">;
+    "listStates" | "start" | "pause" | "resume" | "stop" | "restart" | "adjust">;
   readonly timerAutomationCredentialService: Pick<TimerAutomationCredentialService,
     "status" | "createOrRotate" | "revoke">;
   readonly outputReadinessService: Pick<OutputReadinessService, "listTimerBrowserSources">;
@@ -30,6 +30,13 @@ export function registerTimerRoutes(app: FastifyInstance, dependencies: TimerRou
   const preHandler = [dependencies.managementRateLimitPreHandler, dependencies.managementAuthPreHandler];
   app.get("/timers", { preHandler }, async () => dependencies.timerManagementService.listDefinitions());
   app.get("/timers/state", { preHandler }, async () => dependencies.timerRuntimeCoordinator.listStates());
+  app.post("/timers/:timerId/adjust", { preHandler }, async (request, reply) => {
+    try {
+      const id = readTimerId(request.params);
+      dependencies.timerManagementService.getDefinition(id);
+      return await dependencies.timerRuntimeCoordinator.adjust(id, timerAdjustmentSchema.parse(request.body));
+    } catch (error) { return sendTimerError(reply, error); }
+  });
   app.get("/timers/browser-sources", { preHandler }, async (request) =>
     dependencies.outputReadinessService.listTimerBrowserSources(`http://${request.headers.host ?? "127.0.0.1"}`));
   app.get("/timers/automation-credential", { preHandler }, async () => dependencies.timerAutomationCredentialService.status());

@@ -563,7 +563,7 @@ it("blocks backup restore while timers are running or paused, then permits resto
   }
 });
 
-it("restores timer definitions but not active timer runs after a runtime restart", async () => {
+it("restores timer definitions and active runs paused after a runtime restart", async () => {
   const testRoot = await mkdtemp(join(tmpdir(), "stream-jams-timer-runtime-"));
   let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
   const options = {
@@ -591,7 +591,11 @@ it("restores timer definitions but not active timer runs after a runtime restart
     await composition.close();
     composition = await createRuntimeAppComposition(options);
     expect(composition.timerManagementService.getDefinition(saved.id)).toMatchObject({ label: "Cat paws", durationMs: 300_000 });
-    expect(composition.timerRuntimeCoordinator.listStates()).toEqual([]);
+    expect(composition.timerRuntimeCoordinator.listStates()).toEqual([expect.objectContaining({ definitionId: saved.id, status: "paused" })]);
+    const restored = composition.timerRuntimeCoordinator.getState(saved.id);
+    if (restored?.status !== "paused") throw new Error("Expected paused timer recovery");
+    expect(restored.remainingMs).toBeGreaterThan(290_000);
+    expect(restored.remainingMs).toBeLessThanOrEqual(300_000);
   } finally {
     await composition?.close();
     await rm(testRoot, { recursive: true, force: true });
