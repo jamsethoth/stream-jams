@@ -45,6 +45,7 @@ describe("OperatorApp", () => {
     const adjust = vi.fn().mockRejectedValueOnce(new Error("Check the local service and retry.")).mockResolvedValue({ changed: true, state: timer });
     render(<OperatorApp api={api()} timersApi={{ listStates: async () => [timer], command: vi.fn(), adjust }} />);
     await screen.findByText("Wear oven mitts");
+    await user.click(screen.getByText("Adjust time"));
     await user.clear(screen.getByLabelText("Time (seconds)")); await user.type(screen.getByLabelText("Time (seconds)"), "42");
     await user.click(screen.getByRole("button", { name: "Apply adjustment" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Check the local service and retry.");

@@ -95,6 +95,48 @@ test.describe.serial("full application visual UX acceptance", () => {
     await captureEvidence(page, "operator-phone-light.png");
   });
 
+  test("operator stays compact with timers at narrow and wide sizes", async ({ page }) => {
+    await page.route(`${runtime.url}/playback/operations`, route => route.fulfill({ json: {
+      ...operatorSnapshot(), recent: [row("alerts", "recent-alert", "Recent follow", "completed")]
+    } }));
+    await page.route(`${runtime.url}/timers/state`, route => route.fulfill({ json: [
+      { status: "paused", definitionId: "tea", generation: "compact", remainingMs: 90000,
+        snapshot: { id: "tea", label: "Tea break", durationMs: 90000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: true, deviceRouteIds: [] } } }
+    ] }));
+    for (const width of [540, 1080, 390]) {
+      await page.setViewportSize({ width, height: 960 });
+      await page.goto(`${runtime.url}/operator`);
+      await expect(page.getByText("Tea break")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Resume", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Apply adjustment" })).not.toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+      const modules = page.locator(".operator-module-item");
+      const moduleRows = await modules.evaluateAll(elements => elements.map(element => {
+        const row = element.getBoundingClientRect();
+        const status = element.querySelector(".management-status-badge")!.getBoundingClientRect();
+        const actions = element.querySelector(".operator-controls")!.getBoundingClientRect();
+        return { height: row.height, statusCenter: status.y + status.height / 2, actionsCenter: actions.y + actions.height / 2 };
+      }));
+      expect(moduleRows[0]!.height).toBeCloseTo(moduleRows[1]!.height, 0);
+      for (const row of moduleRows) expect(row.statusCenter).toBeCloseTo(row.actionsCenter, 0);
+      await expect(modules.getByRole("button", { name: "Pause module" }).first()).toHaveAttribute("title", "Pause module");
+      await expect(modules.getByRole("button", { name: "Clear pending" }).first()).toHaveAttribute("title", "Clear pending");
+      const recent = await page.getByRole("button", { name: "Replay Recent follow in Alerts" }).boundingBox();
+      if (width >= 540) expect(recent!.y + recent!.height).toBeLessThanOrEqual(960);
+      else {
+        await page.getByRole("button", { name: "Replay Recent follow in Alerts" }).scrollIntoViewIfNeeded();
+        await expect(page.getByRole("button", { name: "Replay Recent follow in Alerts" })).toBeInViewport();
+        await page.evaluate(() => window.scrollTo(0, 0));
+      }
+      const current = await page.getByText("Current follow", { exact: true }).locator("xpath=ancestor::article").boundingBox();
+      expect(current!.height).toBeLessThan(100);
+      await captureEvidence(page, `operator-compact-${width}.png`);
+      await page.getByText("Adjust time", { exact: true }).click();
+      await expect(page.getByRole("button", { name: "Apply adjustment" })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    }
+  });
+
   test("configured alert events are primary in the served full application", async ({ page }) => {
     await page.setViewportSize({ width: 1024, height: 768 });
     await page.emulateMedia({ colorScheme: "dark" });

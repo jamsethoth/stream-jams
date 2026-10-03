@@ -88,6 +88,7 @@ test("retains a subathon paused and applies saved event rules and live manual co
     await page.goto(`${runtime.url}/operator`);
     const card = page.getByRole("article").filter({ has: page.getByText("Subathon", { exact: true }) });
     await expect(card.getByRole("button", { name: "Resume", exact: true })).toBeVisible();
+    await card.getByText("Adjust time", { exact: true }).click();
     await card.getByRole("combobox", { name: "Adjustment", exact: true }).selectOption("decrement");
     await card.getByLabel("Time (seconds)").fill("30");
     await card.getByRole("button", { name: "Apply adjustment" }).click();
