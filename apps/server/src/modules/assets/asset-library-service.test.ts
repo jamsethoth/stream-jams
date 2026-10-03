@@ -1,5 +1,7 @@
 import {
   createScreenEffectDocument,
+  compatibilityAlertTextStyle,
+  type AlertEditorDocument,
   screenEffectDocumentSchema,
   type AlertCollection,
   type AlertRule,
@@ -184,12 +186,14 @@ function createFixture(options: {
   readonly rulesAfterDeleteError?: readonly AlertRule[];
   readonly effects?: readonly ScreenEffectDocument[];
   readonly timers?: readonly TimerDefinition[];
+  readonly documents?: ReadonlyMap<string, AlertEditorDocument>;
 } = {}) {
   const assets = new MemoryAssetRepository([asset], options.deleteError);
   const metadata = new MemoryMetadataRepository();
   const store = new MemoryStore();
   const service = new AssetLibraryService({
     assetRepository: assets,
+    findEditorDocuments: async () => options.documents ?? new Map(),
     metadataRepository: metadata,
     assetStore: store,
     alertRepository: {
@@ -328,3 +332,11 @@ function timerDefinition(): TimerDefinition {
     updatedAt: "2026-07-15T08:00:00.000Z"
   };
 }
+
+it("protects font references in saved secondary text documents", async () => {
+  const document = { layers: [{ type: "text", textStyle: { ...compatibilityAlertTextStyle, fontAssetId: "asset-image-1" } }] } as unknown as AlertEditorDocument;
+  const fixture = createFixture({ rules: [{ ...rule, variants: [{ ...rule.variants[0]!, visualAssetId: null }] }], documents: new Map([["variant-follow", document]]) });
+  fixture.assets.records[0] = { ...asset, mediaType: "font", mimeType: "font/ttf" };
+  expect((await fixture.service.getChangeImpact(asset.id)).owners).toEqual([expect.objectContaining({ moduleId: "alerts", ownerId: rule.id })]);
+  await expect(fixture.service.deleteAsset(asset.id)).rejects.toBeInstanceOf(AssetLibraryInUseError);
+});

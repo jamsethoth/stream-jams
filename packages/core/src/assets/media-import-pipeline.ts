@@ -1,6 +1,7 @@
 import type { AssetRepository } from "./repository.js";
 import type { AssetMediaType, AssetRecord } from "./types.js";
 import type { AssetValidator } from "./asset-validator.js";
+import { normalizeAssetMimeType } from "./asset-validator.js";
 
 export interface MediaImportInput {
   readonly assetId?: string;
@@ -86,6 +87,7 @@ export class DefaultMediaImportPipeline implements MediaImportPipeline {
 
     const accepted = {
       ...input,
+      mimeType: normalizeAssetMimeType(input.mimeType, input.originalFileName),
       mediaType: validation.mediaType,
       normalizedExtension: validation.normalizedExtension
     };

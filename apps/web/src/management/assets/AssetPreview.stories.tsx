@@ -30,3 +30,6 @@ export const NativeReadFailure: Story = {
     await expect(canvas.queryByRole("img")).toBeNull();
   }
 };
+
+export const FontLoading: Story = { args: { item: { ...storyAssetLibraryItems[0]!, mediaType: "font", mimeType: "font/woff2", displayName: "Alert font" }, assetApi: createTestMediaPreviewApi(() => new Promise(() => {})) } };
+export const FontUnavailable: Story = { args: { item: { ...storyAssetLibraryItems[0]!, mediaType: "font", mimeType: "font/woff2", displayName: "Alert font" }, assetApi: createTestMediaPreviewApi(async () => { throw new Error("Font unavailable"); }) }, play: async ({ canvasElement }) => { await expect(await within(canvasElement).findByText("Preview unavailable")).toBeVisible(); } };

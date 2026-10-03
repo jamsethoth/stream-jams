@@ -60,6 +60,7 @@ import { AlertAudioOutputs } from "./AlertAudioOutputs.js";
 import { findOverlappingChannelPointAlertNames } from "../channel-point-reward-overlap.js";
 import type { TwitchRewardSampleChoice } from "../TwitchRewardPicker.js";
 import { AlertCanvas, type CanvasBackground } from "./AlertCanvas.js";
+import { AdvancedTypographyControls } from "./AdvancedTypographyControls.js";
 import { AlertEventInspector, alertDocumentConditionError } from "./AlertEventInspector.js";
 import type { AlertPreviewFailure } from "./alert-preview-controller.js";
 import { RgbaColorControl } from "./RgbaColorControl.js";
@@ -162,6 +163,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [setDetail, setSetDetail] = useState<AlertSetDetail | null>(null);
   const [visualAssetMediaTypes, setVisualAssetMediaTypes] = useState<Readonly<Record<string, "image" | "gif" | "video">> | null>(null);
   const [assets, setAssets] = useState<readonly AssetLibraryItem[]>([]);
+  const [warpLayerId, setWarpLayerId] = useState<string | null>(null);
   const [loadedSetId, setLoadedSetId] = useState<string | undefined>(undefined);
   const [ttsProviders, setTtsProviders] = useState<readonly RegisteredProviderView[]>([]);
   const [ttsProvidersLoaded, setTtsProvidersLoaded] = useState(false);
@@ -207,7 +209,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   });
   const activeTtsProvider = ttsProviders.find((provider) => provider.active) ?? null;
   const canvasAssetMediaTypes = useMemo(() => Object.fromEntries(assets.flatMap((asset) =>
-    asset.mediaType === "audio" ? [] : [[asset.id, asset.mediaType]]
+    asset.mediaType === "audio" || asset.mediaType === "font" ? [] : [[asset.id, asset.mediaType]]
   )), [assets]);
   const assetDurations = useMemo(
     () => Object.fromEntries(assets.map((asset) => [asset.id, asset.durationMs])),
@@ -350,7 +352,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setVisualAssetMediaTypes(null);
     void props.managementApi.listAssetLibraryItems().then((items) => {
       if (!active) return;
-      setVisualAssetMediaTypes(Object.fromEntries(items.flatMap((item) => item.mediaType === "audio" ? [] : [[item.id, item.mediaType]])));
+      setVisualAssetMediaTypes(Object.fromEntries(items.flatMap((item) => item.mediaType === "audio" || item.mediaType === "font" ? [] : [[item.id, item.mediaType]])));
     }).catch(
     // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
     () => {
@@ -1069,6 +1071,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           ) : null}
           <AlertCanvas
             assetApi={props.assetApi}
+            warpLayerId={warpLayerId === selectedLayerId ? warpLayerId : null}
+            onWarpDone={() => setWarpLayerId(null)}
+            onWarpChange={(layerId, warp) => updateDocument((current) => updateLayer(current, layerId, (layer) => layer.type === "text" ? { ...layer, textStyle: { ...layer.textStyle, warp } } : layer))}
             assetMediaTypes={canvasAssetMediaTypes}
             background={canvasBackground}
             document={preview ? previewDocument! : document}
@@ -1119,6 +1124,10 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             {tab === "layers" ? (
               <LayerInspector
                 activeTtsProvider={activeTtsProvider}
+                assetApi={props.assetApi}
+                onAssetsChanged={async () => setAssets(await props.managementApi.listAssetLibraryItems())}
+                editingWarp={warpLayerId === selectedLayerId}
+                onEditWarp={(editing) => setWarpLayerId(editing ? selectedLayerId : null)}
                 assets={assets}
                 document={document}
                 onAddAsset={(type) => setPicker({ layerId: null, type })}
@@ -1429,6 +1438,10 @@ export function affectedProfileLabelsForEditor(
 
 function LayerInspector({
   activeTtsProvider,
+  assetApi,
+  onAssetsChanged,
+  editingWarp,
+  onEditWarp,
   assets,
   document,
   onAddAsset,
@@ -1443,6 +1456,10 @@ function LayerInspector({
   ttsProvidersLoaded
 }: {
   readonly activeTtsProvider: RegisteredProviderView | null;
+  readonly assetApi: AssetApi;
+  readonly onAssetsChanged: () => Promise<void>;
+  readonly editingWarp: boolean;
+  readonly onEditWarp: (editing: boolean) => void;
   readonly assets: readonly AssetLibraryItem[];
   readonly document: AlertEditorDocument;
   readonly onAddAsset: (type: "image" | "video" | "audio") => void;
@@ -1545,6 +1562,12 @@ function LayerInspector({
           ) : null}
           {selectedLayer.type === "text" ? (
             <TextStyleControls
+              assetApi={assetApi}
+              assets={assets}
+              onAssetsChanged={onAssetsChanged}
+              editingWarp={editingWarp}
+              onEditWarp={onEditWarp}
+              key={selectedLayer.id}
               layer={selectedLayer}
               onChange={(updatedLayer) => onChange((current) =>
                 updateLayer(current, selectedLayer.id, (layer) => layer.type === "text" ? updatedLayer : layer)
@@ -1617,9 +1640,14 @@ function LayerInspector({
 
 type TextLayer = Extract<AlertLayer, { type: "text" }>;
 
-function TextStyleControls({ layer, onChange }: {
+function TextStyleControls({ layer, onChange, assetApi, assets, onAssetsChanged, editingWarp, onEditWarp }: {
   readonly layer: TextLayer;
   readonly onChange: (layer: TextLayer) => void;
+  readonly assetApi: AssetApi;
+  readonly assets: readonly AssetLibraryItem[];
+  readonly onAssetsChanged: () => Promise<void>;
+  readonly editingWarp: boolean;
+  readonly onEditWarp: (editing: boolean) => void;
 }) {
   const textShadow = layer.textStyle.shadow;
   const boxShadow = layer.boxStyle.shadow;
@@ -1628,6 +1656,7 @@ function TextStyleControls({ layer, onChange }: {
       <details className="alert-editor-inspector__disclosure">
         <summary>Typography</summary>
         <fieldset aria-label="Typography" className="alert-editor-inspector__style">
+        <AdvancedTypographyControls value={layer.textStyle} onChange={(textStyle) => onChange({ ...layer, textStyle })} assetApi={assetApi} assets={assets} onAssetsChanged={onAssetsChanged} editingWarp={editingWarp} onEditWarp={onEditWarp} />
         <label>
           <span>Font preset</span>
           <select

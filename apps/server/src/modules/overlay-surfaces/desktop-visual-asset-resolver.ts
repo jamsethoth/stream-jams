@@ -19,10 +19,15 @@ export class DesktopVisualAssetResolver {
       instructions: desktopVisualBatchSchema.shape.instructions.parse(candidate.instructions)
     };
     const ids = new Set<string>();
-    const referenced = new Map<string, "image" | "gif" | "video">();
+    const referenced = new Map<string, "image" | "gif" | "video" | "font">();
     for (const instruction of input.instructions) {
       if (ids.has(instruction.id) || instruction.moduleId !== input.key.moduleId || instruction.durationMs !== input.timing.endsAtEpochMs - input.timing.startsAtEpochMs) throw unavailable();
       ids.add(instruction.id);
+      const fontId = instruction.text?.textStyle?.fontAssetId;
+      if (fontId) {
+        if (referenced.has(fontId) && referenced.get(fontId) !== "font") throw unavailable();
+        referenced.set(fontId, "font");
+      }
       if (instruction.visual === null) continue;
       const { assetId, mediaType } = instruction.visual;
       if (referenced.has(assetId) && referenced.get(assetId) !== mediaType) throw unavailable();
@@ -33,7 +38,7 @@ export class DesktopVisualAssetResolver {
     const records = this.dependencies.media.records(owner, [...referenced.keys()]);
     for (const [id, kind] of referenced) {
       const record = records.get(id);
-      if (record === undefined || record.id !== id || record.mediaType !== kind || record.mimeType !== ({ image: ["image/png", "image/jpeg", "image/webp"], gif: ["image/gif"], video: ["video/mp4", "video/webm"] }[kind]).find(mime => mime === record.mimeType) ||
+      if (record === undefined || record.id !== id || record.mediaType !== kind || record.mimeType !== ({ image: ["image/png", "image/jpeg", "image/webp"], gif: ["image/gif"], video: ["video/mp4", "video/webm"], font: ["font/ttf", "font/otf", "font/woff", "font/woff2"] }[kind]).find(mime => mime === record.mimeType) ||
           !mediaVersionSnapshotSchema.shape.mimeType.safeParse(record.mimeType).success || !Number.isSafeInteger(record.sizeBytes) || record.sizeBytes <= 0 ||
           record.sizeBytes > defaultAssetValidationPolicy[kind].maxSizeBytes || !/^(?:sha256:)?[a-f0-9]{64}$/i.test(record.checksum)) throw unavailable();
     }

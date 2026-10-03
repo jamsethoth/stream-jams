@@ -1,4 +1,4 @@
-export type AssetMediaType = "image" | "gif" | "video" | "audio";
+export type AssetMediaType = "image" | "gif" | "video" | "audio" | "font";
 
 export interface AssetRecord {
   readonly id: string;

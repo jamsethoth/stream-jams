@@ -202,6 +202,13 @@ export class AlertEditorService {
       : resolved.variant.priority ?? null;
     const saveDocument = alertEditorDocumentSchema.parse({ ...document, priority: selectedPriority });
     validateDocumentForSave(saveDocument, current);
+    const fontIds = [...new Set(saveDocument.layers.flatMap(layer => layer.type === "text" && layer.textStyle.fontAssetId ? [layer.textStyle.fontAssetId] : []))];
+    if (fontIds.length > 0 && this.#options.findAssets !== undefined) {
+      const fonts = await this.#options.findAssets(fontIds);
+      if (fontIds.some(id => fonts.get(id)?.mediaType !== "font")) {
+        throw new AlertEditorValidationError(["A selected text font is missing or incompatible. Choose an available font asset."]);
+      }
+    }
     validateConditionChanges(
       resolved.rule.eventType,
       "Rule",
@@ -505,7 +512,7 @@ export class AlertEditorService {
   async #resolveAssets(document: AlertEditorDocument): Promise<ReadonlyMap<string, AssetRecord>> {
     if (this.#options.findAssets === undefined) return new Map();
     const assetIds = [...new Set(document.layers.flatMap((layer) =>
-      layer.type === "image" || layer.type === "video" || layer.type === "audio" ? [layer.assetId] : []
+      layer.type === "image" || layer.type === "video" || layer.type === "audio" ? [layer.assetId] : layer.type === "text" && layer.textStyle.fontAssetId ? [layer.textStyle.fontAssetId] : []
     ))];
     return this.#options.localMediaService === undefined ? this.#options.findAssets(assetIds) : this.#options.localMediaService.captureAdmission(assetIds);
   }

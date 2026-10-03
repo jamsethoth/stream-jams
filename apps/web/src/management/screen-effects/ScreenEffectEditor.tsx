@@ -400,7 +400,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
             ? current.assets.map((asset) => asset.id === item.id ? item : asset)
             : [...current.assets, item]
         }));
-        if (target === "visual" && mediaType !== "audio") {
+        if (target === "visual" && mediaType !== "audio" && mediaType !== "font") {
           edit((current) => updateEffectVariant(current, selectedVariant.id, (variant) => ({
             ...variant,
             visual: mediaType === "video"

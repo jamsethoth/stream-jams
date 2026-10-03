@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { expect, it, vi } from "vitest";
+import { compatibilityAlertTextStyle, compatibilityAlertTextBoxStyle } from "@stream-jams/core";
 import type { AssetRecord, DesktopVisualBatch, TrustedMediaGrant } from "@stream-jams/core";
 import { DesktopVisualAssetResolver } from "./desktop-visual-asset-resolver.js";
 
@@ -75,4 +76,12 @@ it("renews timer references without repeating integrity work for a transport rev
   expect(result.assets.map(asset => asset.assetId)).toEqual(["asset"]); expect(result.missingAssetIds).toEqual(["missing"]);
   expect(result.presentation.stack.cards.map(card => card.iconAssetId)).toEqual(["asset", null]); expect(media.verifyGroup).not.toHaveBeenCalled();
   await resolver.resolveTimerModule(presentation); expect(media.issueTrustedGrant).toHaveBeenCalledTimes(2);
+});
+
+it("pins and grants fonts for text-only desktop instructions", async () => {
+  const { resolver, media } = harness({ mediaType: "font", mimeType: "font/woff2" });
+  const batch = input();
+  batch.instructions[0] = { ...batch.instructions[0]!, visual: null, text: { text: "Hello", boxStyle: compatibilityAlertTextBoxStyle, layout: { x: 0, y: 0, width: 100, height: 100, zIndex: 0 }, textStyle: { ...compatibilityAlertTextStyle, fontAssetId: "asset" } } };
+  expect((await resolver.resolve(batch)).assets).toHaveLength(1);
+  expect(media.verifyGroup).toHaveBeenCalledWith('["alerts","one"]', ["asset"], expect.any(AbortSignal));
 });
