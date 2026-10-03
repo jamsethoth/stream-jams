@@ -56,6 +56,7 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
   readonly #recovery: TimerRunRepository | undefined;
   readonly #onRecoveryError: ((error: unknown) => void) | undefined;
   #checkpoint: { cancel(): void } | null = null;
+  #recoveryDirty = false;
   readonly #media: LocalMediaService | undefined;
   readonly #entries = new Map<string, RuntimeEntry>();
   readonly #listeners = new Set<(revision: number) => void>();
@@ -118,18 +119,28 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
     const input = timerAdjustmentSchema.parse(candidate);
     let created = false;
     let entry = this.#entries.get(definitionId);
+    let cleanup: Promise<void> | undefined;
     if (entry?.state.status === "completed") {
       if (input.action !== "set" && inactiveBehavior === "ignore") return this.#result(false, entry.state);
-      await this.stop(definitionId);
+      if (input.action === "set" && input.amountMs === 0) return this.stop(definitionId);
+      entry.scheduled?.cancel();
+      this.#entries.delete(definitionId);
+      const generation = entry.state.generation;
+      cleanup = this.#settleCueStop(generation).then(() => this.#media?.release(timerRunOwner(generation)));
       entry = undefined;
     }
     if (entry === undefined) {
       if (input.action !== "set" && inactiveBehavior === "ignore") return this.#result(false, null);
       if (input.action === "set" && input.amountMs === 0) return this.#result(false, null);
-      await this.#startFresh(definitionId, true);
+      // Reserve the new generation before media preparation or old cue cleanup yields.
+      const starting = this.#startFresh(definitionId, true);
+      const reserved = this.#entries.get(definitionId);
+      await Promise.all([starting, cleanup]);
       created = true;
-      entry = this.#entries.get(definitionId);
-      if (entry === undefined) return this.#result(false, null);
+      if (this.#closed || reserved === undefined || this.#entries.get(definitionId) !== reserved) {
+        return this.#result(false, this.#entries.get(definitionId)?.state ?? null);
+      }
+      entry = reserved;
       // New runs are created paused before adjusting; no transient start cue.
     }
     const state = entry.state;
@@ -147,8 +158,10 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
     } else entry.state = { ...state, remainingMs };
     this.#publish();
     if (created && inactiveBehavior === "start" && state.status === "paused") {
-      await this.resume(definitionId);
-      await this.#settleCuePlay("start", entry.state);
+      const resumed = this.resume(definitionId);
+      const cueState = structuredClone(entry.state);
+      await resumed;
+      if (!this.#closed && this.#entries.get(definitionId) === entry) await this.#settleCuePlay("start", cueState);
     }
     return this.#result(true, entry.state);
   }
@@ -257,7 +270,7 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
 
   async close(): Promise<void> {
     if (this.#closed) return;
-    this.#saveRecovery();
+    const recoveryFailure = this.#persistRecovery();
     this.#checkpoint?.cancel();
     this.#checkpoint = null;
     this.#closed = true;
@@ -270,6 +283,7 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
       await this.#media?.release(timerRunOwner(entry.state.generation));
     }));
     await this.#cueSink?.close?.();
+    if (recoveryFailure !== null) throw recoveryFailure.error;
   }
 
   async #startFresh(definitionId: string, paused = false): Promise<TimerCommandResult> {
@@ -353,10 +367,10 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
   }
 
   #publish(): void {
-    this.#saveRecovery();
+    this.#persistRecovery();
     this.#checkpoint?.cancel();
     this.#checkpoint = null;
-    if (this.#recovery !== undefined && [...this.#entries.values()].some(entry => entry.state.status === "running")) {
+    if (this.#needsCheckpoint()) {
       this.#scheduleCheckpoint();
     }
     const revision = ++this.#revision;
@@ -375,15 +389,31 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
     this.#recovery?.replace(states);
   }
 
+  #persistRecovery(): { error: unknown } | null {
+    try {
+      this.#saveRecovery();
+      this.#recoveryDirty = false;
+      return null;
+    } catch (error) {
+      this.#recoveryDirty = true;
+      // error-provenance: allow expected -- retain authoritative transitions and retry persistence, including empty-state removal
+      try { this.#onRecoveryError?.(error); }
+      // error-provenance: allow expected -- a failing diagnostic callback must not escape a timer deadline either
+      catch { /* Recovery remains dirty and will be retried. */ }
+      return { error };
+    }
+  }
+
+  #needsCheckpoint(): boolean {
+    return this.#recovery !== undefined && (this.#recoveryDirty || [...this.#entries.values()].some(entry => entry.state.status === "running"));
+  }
+
   #scheduleCheckpoint(): void {
     this.#checkpoint = this.#scheduler.schedule(1000, () => {
       if (this.#closed) return;
-      try { this.#saveRecovery(); }
-      catch (error) {
-        // error-provenance: allow expected -- checkpoint failure is diagnosed and retried on the next interval
-        this.#onRecoveryError?.(error);
-      }
-      this.#scheduleCheckpoint();
+      this.#checkpoint = null;
+      this.#persistRecovery();
+      if (this.#needsCheckpoint()) this.#scheduleCheckpoint();
     });
   }
 

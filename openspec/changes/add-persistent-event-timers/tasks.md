@@ -22,3 +22,8 @@
 - [x] 5.5 Verify checkpoint failure diagnostics/retry and recovery with missing media or stopped/completed runs.
 - [x] 5.6 Verify Timers and Operator failure/input-retention/retry UX and clear stale errors after success.
 - [x] 5.7 Run affected acceptance checks and repository regression gates; record the evidence.
+
+## 6. Independent review corrections
+- [x] 6.1 Keep runtime transitions and cleanup safe on recovery-write failures; retry dirty paused/empty state with regression coverage.
+- [x] 6.2 Guard pending idle/completed adjustments against replacement generations and shutdown with race regressions.
+- [x] 6.3 Verify affected runtime and rebuilt browser workflows and document recovery failure behavior.

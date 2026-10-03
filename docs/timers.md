@@ -37,6 +37,8 @@ These endpoints are loopback-only, reject browser-origin requests, and accept on
 
 ## Backup and recovery
 
+If a recovery write fails, runtime commands, completion cues, and overlay updates continue. The service reports the failure and retries the latest state once per second, including paused or stopped timers. Reopening after a crash during an unresolved write failure uses the last successful save. Graceful shutdown still cleans up timers and media before reporting a final save failure.
+
 Portable configuration backups include Timer definitions and event rules, profile layout, referenced asset IDs, and named audio-route IDs. They exclude active runs and the automation credential/verifier. Restored timers start idle, named device routes require the same explicit rebinding rules as other routed audio, and a new automation credential must be created. If restore fails and rolls back, the destination's prior operational credential state is restored.
 
 Stop active timers before restoring a backup, including paused timers; a completed timer also blocks restore during its three-second hold. New timer commands are rejected while configuration replacement is underway.

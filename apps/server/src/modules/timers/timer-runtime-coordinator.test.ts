@@ -82,6 +82,82 @@ function setup(definitions = [definition("a"), definition("b", 5_000)], gate?: R
 }
 
 describe("TimerRuntimeCoordinator", () => {
+  it("keeps completion live on a failed recovery write and retries removal without running timers", async () => {
+    let saved: readonly import("@stream-jams/core").TimerRunState[] = [];
+    const replace = vi.fn((states: typeof saved) => { saved = structuredClone(states); });
+    const failure = new Error("disk unavailable");
+    const onRecoveryError = vi.fn();
+    const { coordinator, time, cueSink } = setup([definition("a", 1000)], undefined, { list: () => saved, replace }, { onRecoveryError });
+    const listener = vi.fn(); coordinator.subscribe(listener);
+    await coordinator.start("a");
+    replace.mockImplementationOnce(() => { throw failure; });
+    await expect(time.advance(1000)).resolves.toBeUndefined();
+    expect(coordinator.getState("a")?.status).toBe("completed");
+    expect(saved).toHaveLength(1);
+    expect(onRecoveryError).toHaveBeenCalledWith(failure);
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(cueSink.play).toHaveBeenLastCalledWith(expect.objectContaining({ cue: "end" }));
+    await time.advance(1000); expect(saved).toEqual([]);
+    await time.advance(2000); expect(coordinator.getState("a")).toBeNull();
+    await coordinator.close();
+  });
+  it.each(["stop", "restart", "close"] as const)("does not apply an older idle adjustment after %s", async command => {
+    let release: (() => void) | undefined;
+    const acquire = vi.fn().mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; })).mockResolvedValue(undefined);
+    const media = { acquire, release: vi.fn().mockResolvedValue(undefined) } as unknown as import("../assets/local-media-service.js").LocalMediaService;
+    const { coordinator } = setup(undefined, undefined, undefined, { localMediaService: media });
+    const adjustment = coordinator.adjust("a", { action: "set", amountMs: 2000 });
+    if (command === "close") await coordinator.close();
+    else await coordinator[command]("a");
+    if (command === "stop") await coordinator.start("a");
+    const replacement = coordinator.getState("a");
+    release?.(); await adjustment;
+    expect(coordinator.getState("a")).toEqual(replacement);
+    await coordinator.close();
+  });
+  it("reserves a completed-run adjustment before cue cleanup and never replaces a newer start", async () => {
+    const { coordinator, time, cueSink } = setup([definition("a", 1000)]);
+    await coordinator.start("a"); await time.advance(1000);
+    let release: (() => void) | undefined;
+    vi.mocked(cueSink.stop).mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }));
+    const pending = coordinator.adjust("a", { action: "set", amountMs: 2000 });
+    await coordinator.stop("a"); await coordinator.start("a");
+    const replacement = coordinator.getState("a");
+    release?.(); await pending;
+    expect(coordinator.getState("a")).toEqual(replacement);
+    await coordinator.close();
+  });
+  it.each(["stop", "adjust"] as const)("retries failed %s persistence while preserving transitions and cleanup", async command => {
+    let saved: readonly import("@stream-jams/core").TimerRunState[] = [];
+    const replace = vi.fn((states: typeof saved) => { saved = structuredClone(states); });
+    const { coordinator, time, cueSink } = setup(undefined, undefined, { list: () => saved, replace });
+    await coordinator.start("a"); await coordinator.pause("a");
+    replace.mockImplementationOnce(() => { throw new Error("disk unavailable"); });
+    if (command === "stop") {
+      await coordinator.stop("a"); expect(coordinator.getState("a")).toBeNull();
+      expect(cueSink.stop).toHaveBeenCalledWith("generation-1");
+    } else {
+      await coordinator.adjust("a", { action: "set", amountMs: 2000 });
+      expect(coordinator.getState("a")).toMatchObject({ status: "paused", remainingMs: 2000 });
+    }
+    expect(saved[0]).toMatchObject({ remainingMs: 10000 });
+    await time.advance(1000);
+    if (command === "stop") expect(saved).toEqual([]);
+    else expect(saved[0]).toMatchObject({ remainingMs: 2000 });
+    await coordinator.close();
+  });
+  it("finishes shutdown cleanup before reporting a failed final recovery write", async () => {
+    const replace = vi.fn();
+    const { coordinator, cueSink, time } = setup(undefined, undefined, { list: () => [], replace });
+    await coordinator.start("a");
+    const failure = new Error("disk unavailable"); replace.mockImplementationOnce(() => { throw failure; });
+    await expect(coordinator.close()).rejects.toBe(failure);
+    expect(coordinator.listStates()).toEqual([]);
+    expect(cueSink.stop).toHaveBeenCalledWith("generation-1");
+    const calls = replace.mock.calls.length;
+    await time.advance(20000); expect(replace).toHaveBeenCalledTimes(calls);
+    await expect(coordinator.start("a")).rejects.toThrow();
+  });
   it.each([
     { type: "subscription", amount: 1, tier: "2000", quantityUnit: null, added: 2000 },
     { type: "resubscription", amount: 24, tier: "2000", streakMonths: 12, quantityUnit: null, added: 2000 },

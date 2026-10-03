@@ -132,3 +132,13 @@ UI evidence from the disposable browser acceptance profile:
 
 ![Timer correction editor](persistent-event-timers/timer-editor.png)
 ![Operator timer correction](persistent-event-timers/operator-timer.png)
+
+## Independent PR review corrections (2026-10-02)
+
+Corrected both findings from the independent review of PR #146. Recovery-write failures no longer escape timer deadline callbacks or interrupt runtime notifications and cleanup. Dirty state retries even when every timer is paused or removed; shutdown completes cleanup before reporting a final save failure. Pending idle/completed adjustments retain their reserved run identity and cannot modify a replacement generation after Stop/Start, Restart, or close.
+
+- Both initial regression reproductions failed against the reviewed implementation.
+- Eight new regression cases cover completion/stop/adjust/shutdown write failures and asynchronous adjustment replacement races.
+- The focused timer and runtime-composition suite passed: eight files / 59 tests.
+- Lint, strict typecheck, production build, and route budgets passed.
+- Both rebuilt real-service Playwright workflows passed: persistent event/manual corrections and forced process-crash recovery.
