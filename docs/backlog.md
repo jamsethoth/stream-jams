@@ -43,13 +43,14 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 | BL-024 | Manual intake controls and stream-start/stream-end automation | Deferred | P3 | A real OBS or platform lifecycle integration | [UI decisions](design/ui-refactor-decisions.md) |
 | BL-025 | Multiple active providers and provider-specific alert routing | Low evidence | P3 | Demonstrated need that canonical event matching cannot satisfy | [UI decisions](design/ui-refactor-decisions.md) |
 | BL-026 | Resumable provider setup drafts | Deferred | P3 | Measured abandonment or recovery need in provider setup | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
+| BL-054 | Additional Music sources: Plex and Spotify | Deferred | P2 | Music provider contract and authenticated Pear delivery from BL-028; provider-specific API, authentication and session/endpoint policies | [Music provider design](../openspec/changes/add-music-widget-module/design.md); this proposal includes interface fit checks, not these adapters |
 
 ## Modules, Outputs, And Platform
 
 | ID | Feature | Status | Priority | Dependency or trigger | Detail |
 | --- | --- | --- | --- | --- | --- |
 | BL-027 | Startup module selection/setup wizard | Trigger reached; deferred | P3 | Alerts and Screen Effects now ship; a bounded onboarding workflow still needs approval | [Future-feature notes](future-features.md#startup-module-setup-wizard) |
-| BL-028 | Music widget and additional overlay modules | Deferred | P2 | A separately approved module slice | [Product plan](product-plan.md) |
+| BL-028 | Native Music widget with authenticated Pear Desktop | Planned | P2 | Written-spec review and implementation; Plex/Spotify adapters remain future work | [OpenSpec proposal](../openspec/changes/add-music-widget-module/proposal.md); [design and compatibility choice](../openspec/changes/add-music-widget-module/design.md) |
 | BL-029 | Expanded output management, connected-client history, route-key audit, and OBS-aware readiness | Deferred | P3 | Output workflow outgrows the current Alerts section | [UI decisions](design/ui-refactor-decisions.md) |
 | BL-030 | Desktop installer, signing, durable releases, updater/startup/service integration, and `safeStorage` migration | Deferred | P2 | Separately approved release and credential-migration changes | The runnable folder, tray lifecycle, and authenticated short-lived CI artifact publication are implemented. Installer, signing, durable release publication, automatic updates, startup-at-login, Windows service, and credential migration remain deferred. [Desktop requirements](../openspec/specs/windows-desktop-runtime/spec.md); [Product plan](product-plan.md) |
 | BL-031 | Docker delivery | Deferred | P3 | Supported self-hosted deployment requirement | [Product plan](product-plan.md) |
