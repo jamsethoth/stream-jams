@@ -1,6 +1,6 @@
 # Advanced alert typography verification
 
-Implemented on `codex/alert-typography-warp` from `origin/main` at `38aac9a`. Planning commit: `9bcadf6`. Implementation remains local for review.
+Implemented on `codex/alert-typography-warp` from `origin/main` at `38aac9a`. Planning commit: `9bcadf6`. Publication branch: `codex/advanced-alert-typography`.
 
 ## Delivered
 
@@ -30,4 +30,13 @@ The attempted repository-wide unit run timed out in an existing media-duration e
 
 Real browser GPU rendering and desktop transport/contracts/build were verified; an OBS capture session and physical Electron desktop-overlay acceptance were not run. Strong deformations remain raster based, with a 4096-pixel side cap and bounded geometry, so extreme magnification can soften text.
 
-No push, pull request, merge or production-profile modification was performed.
+The initial implementation was local. Publication was subsequently authorized; no merge or production-profile modification is included.
+
+## Publication verification
+
+- Full Vitest run: **2,633 tests in 305 files passed** (424 seconds). This supersedes the earlier interrupted unit attempt.
+- Repository Node script tests: **96 passed**.
+- Fresh root typecheck, scoped lint excluding the untracked prototype, error provenance, production builds and Storybook build: passed.
+- Fresh Chromium editor and typography workflows: **2 passed**.
+- The stale Vite fixture on port 4173 was terminated after its high CPU usage was identified. A new separate app instance uses its own data directory and an automatically selected unused localhost port.
+- Published UI evidence: [editor screenshot](../../verification/alert-typography/editor.png).
