@@ -26,7 +26,10 @@ export function DesktopOverlayApp({ controller, subscribe }: {
         instructions: snapshot.occurrences.filter(occurrence => occurrence.key.moduleId === layer.moduleId).flatMap(occurrence =>
           occurrence.instructions.map((instruction): OverlayInstruction => ({ ...instruction,
             id: scopedId(occurrence.key, instruction.id), timing: occurrence.timing,
-            visual: instruction.visual === null ? null : { ...instruction.visual, assetId: scopedId(occurrence.key, instruction.visual.assetId) }
+            visual: instruction.visual === null ? null : { ...instruction.visual, assetId: scopedId(occurrence.key, instruction.visual.assetId) },
+            text: instruction.text?.textStyle?.fontAssetId == null ? instruction.text : { ...instruction.text,
+              textStyle: { ...instruction.text.textStyle, fontAssetId: scopedId(occurrence.key, instruction.text.textStyle.fontAssetId) }
+            }
           }))),
         ...(persistent === undefined ? {} : { presentation: { ...persistent.presentation, stack: {
           ...persistent.presentation.stack,

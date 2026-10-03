@@ -40,3 +40,11 @@ The initial implementation was local. Publication was subsequently authorized; n
 - Fresh Chromium editor and typography workflows: **2 passed**.
 - The stale Vite fixture on port 4173 was terminated after its high CPU usage was identified. A new separate app instance uses its own data directory and an automatically selected unused localhost port.
 - Published UI evidence: [editor screenshot](../../verification/alert-typography/editor.png).
+
+## Independent PR review
+
+The independent read-only review of PR #147 at `570783a` found one P2 issue: desktop text retained the original font asset ID although private asset URLs are indexed by occurrence-scoped IDs. Desktop composition now scopes the text font reference alongside visual references. A regression first reproduced empty-URL font fetches, then passed with two simultaneous occurrences using different prepared versions of the same font asset.
+
+- Desktop composition/controller, overlay, font and text-renderer checks: **76 tests in 5 files passed** after the fix; root typecheck and changed-file lint passed.
+- All nine GitHub checks passed on the reviewed head before the fix; the fix is subject to a fresh CI run.
+- No other actionable findings were reported. Physical desktop/OBS acceptance remains the boundary stated above.

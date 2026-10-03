@@ -1,9 +1,51 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { compatibilityAlertTextBoxStyle, compatibilityAlertTextStyle } from "@stream-jams/core";
 import { afterEach, expect, it, vi } from "vitest";
 import { DesktopOverlayApp } from "./DesktopOverlayApp.js";
 import { DesktopOverlayController } from "./desktop-overlay-controller.js";
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+it("loads each occurrence's uploaded font from its own prepared private URL", async () => {
+  const originalFonts = Object.getOwnPropertyDescriptor(document, "fonts");
+  Object.defineProperty(document, "fonts", { configurable: true, value: { add: vi.fn(), delete: vi.fn() } });
+  vi.stubGlobal("FontFace", class { load = async () => this; });
+  const fetchFont = vi.fn(async () => ({ ok: true, blob: async () => ({ size: 1, arrayBuffer: async () => new ArrayBuffer(1) }) }));
+  vi.stubGlobal("fetch", fetchFont);
+  const listeners = new Set<() => void>(); const report = vi.fn();
+  const controller = new DesktopOverlayController({ report, changed: () => { for (const listener of listeners) listener(); },
+    prepareAsset: async asset => ({ url: `blob:font-${asset.reference.snapshot.version}`, dispose() {} }) });
+  const receive = (command: unknown) => controller.receive({ protocolVersion: 1, generation: 1, requestId: crypto.randomUUID(), command });
+  try {
+    render(<DesktopOverlayApp controller={controller} subscribe={listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }} />);
+    await act(async () => {
+      receive({ type: "configure", config: { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "monitor", opacity: 1, layers: [{ moduleId: "alerts", visible: true }] } });
+      for (const revision of ["a", "b"]) {
+        const asset = privateAsset("shared-font", "font/woff2");
+        receive({ type: "prepare", batch: {
+          key: { surfaceId: "desktop:primary", moduleId: "alerts", occurrenceId: revision, generation: 1 }, deferredStart: true,
+          timing: { startsAtEpochMs: Date.now() + 15000, endsAtEpochMs: Date.now() + 20000 },
+          assets: [{ ...asset, reference: { ...asset.reference, snapshot: { ...asset.reference.snapshot, version: revision.repeat(64) } } }],
+          instructions: [{ id: "text", moduleId: "alerts", overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", durationMs: 5000,
+            visual: null, audio: null, tts: null, assetVersions: { "shared-font": revision.repeat(64) }, text: {
+              text: `Prepared ${revision}`, textStyle: { ...compatibilityAlertTextStyle, fontAssetId: "shared-font" }, boxStyle: compatibilityAlertTextBoxStyle,
+              layout: { x: 0, y: 0, width: 400, height: 100, zIndex: 0 }
+            } }]
+        } });
+      }
+    });
+    await waitFor(() => expect(report.mock.calls.filter(call => call[0].result?.type === "ready")).toHaveLength(2));
+    expect(fetchFont).toHaveBeenCalledWith(`blob:font-${"a".repeat(64)}`);
+    expect(fetchFont).toHaveBeenCalledWith(`blob:font-${"b".repeat(64)}`);
+    expect(fetchFont).not.toHaveBeenCalledWith("");
+    expect(screen.getByText("Prepared a")).not.toBeVisible();
+  } finally {
+    cleanup(); controller.dispose();
+    await Promise.resolve();
+    if (originalFonts === undefined) Reflect.deleteProperty(document, "fonts");
+    else Object.defineProperty(document, "fonts", originalFonts);
+  }
+});
 
 it("acknowledges actual decoded readiness and retains the silent video until the committed start", async () => {
   vi.useFakeTimers(); vi.setSystemTime(1000);
@@ -112,6 +154,6 @@ it("renders persistent timer module presentations and their prepared icons", asy
   controller.dispose();
 });
 
-function privateAsset(assetId: string, mimeType: "video/webm" | "image/png"): import("@stream-jams/core").PrivateDesktopMediaAsset {
-  return { assetId, reference: { protocolVersion: 1, handle: `private_${"a".repeat(43)}`, snapshot: { assetId, version: "a".repeat(64), mimeType, sizeBytes: 1, durationMs: mimeType === "image/png" ? null : 1000 } } };
+function privateAsset(assetId: string, mimeType: "video/webm" | "image/png" | "font/woff2"): import("@stream-jams/core").PrivateDesktopMediaAsset {
+  return { assetId, reference: { protocolVersion: 1, handle: `private_${"a".repeat(43)}`, snapshot: { assetId, version: "a".repeat(64), mimeType, sizeBytes: 1, durationMs: mimeType === "video/webm" ? 1000 : null } } };
 }
