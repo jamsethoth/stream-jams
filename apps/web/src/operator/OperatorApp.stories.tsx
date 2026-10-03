@@ -138,7 +138,7 @@ function createApi(value: MergedOperationsSnapshot, overrides: Partial<PlaybackA
     ...overrides
   };
 }
-function createTimersApi(states: readonly TimerRunState[]): OperatorTimersApi { return { listStates: async () => states, command: async () => ({ changed: false, state: null }) }; }
+function createTimersApi(states: readonly TimerRunState[]): OperatorTimersApi { return { listStates: async () => states, adjust: async () => ({ changed: false, state: null }), command: async () => ({ changed: false, state: null }) }; }
 function timerStates(): readonly TimerRunState[] {
   const snapshot = (id: string, label: string) => ({ id, label, durationMs: 60_000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null,
     outputs: { browserSource: true, deviceRouteIds: [] } });

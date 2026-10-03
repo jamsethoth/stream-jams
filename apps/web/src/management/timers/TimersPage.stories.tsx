@@ -20,7 +20,7 @@ const buildApi = (states: readonly TimerRunState[], enabled = true): TimersApi =
     { id: "module:timers:vertical:live", label: "Timers Vertical Live", purpose: "live", overlayId: "default", scope: "module", moduleId: "timers", targetProfileId: "vertical", enabled: true, keyId: null, url: null, status: "create-required", connectionState: "never-connected", lastConnectedAt: null }
   ],
   createBrowserSource: async source => source, regenerateBrowserSource: async source => source,
-  remove: async () => {}, command: async () => ({ changed: false, state: states[0] ?? null }),
+  remove: async () => {}, adjust: async () => ({ changed: false, state: null }), command: async () => ({ changed: false, state: states[0] ?? null }),
   getModuleConfig: async () => ({ moduleId: "timers", enabled, config: structuredClone(timersOverlayModuleDefinition.defaultConfig), updatedAt: definition.updatedAt }),
   setModuleEnabled: async enabled => enabled,
   saveModuleConfig: async (enabled, config) => ({ moduleId: "timers", enabled, config, updatedAt: definition.updatedAt }),
@@ -76,6 +76,30 @@ export const ModuleDisabled: Story = { args: { api: buildApi([], false) }, play:
   await expect(canvas.getByRole("button", { name: "Enable Timers module" })).toBeVisible();
 } };
 export const Paused: Story = { args: { api: buildApi([{ status: "paused", definitionId: definition.id, generation: "pause", snapshot: definition, remainingMs: 30_000 }]) } };
+export const CorrectionFailureAndRetry: Story = {
+  render: args => {
+    let attempts = 0;
+    const state: TimerRunState = { status: "paused", definitionId: definition.id, generation: "retry", snapshot: definition, remainingMs: 30000 };
+    const api: TimersApi = { ...buildApi([state]), adjust: async () => {
+      if (++attempts === 1) throw new Error("Check the local service and retry.");
+      return { changed: true, state };
+    } };
+    return <TimersPage {...args} api={api} />;
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: /Wear oven mitts/ }));
+    const input = canvas.getByLabelText("Time (seconds)");
+    await userEvent.clear(input); await userEvent.type(input, "42");
+    await userEvent.click(canvas.getByRole("button", { name: "Apply adjustment" }));
+    await expect(await canvas.findByRole("alert")).toHaveTextContent("Check the local service and retry.");
+    await expect(input).toHaveValue(42);
+    await expect(canvas.getByRole("button", { name: "Apply adjustment" })).toBeEnabled();
+    await userEvent.click(canvas.getByRole("button", { name: "Apply adjustment" }));
+    await expect(canvas.queryByRole("alert")).not.toBeInTheDocument();
+    await expect(canvas.getByText("Timer adjusted.")).toBeInTheDocument();
+  }
+};
 export const Completed: Story = { args: { api: buildApi([{ status: "completed", definitionId: definition.id, generation: "done", snapshot: definition, completedAtEpochMs: Date.now(), expiresAtEpochMs: Date.now() + 3000 }]) } };
 export const ConfirmCredentialRotation: Story = {
   args: { api: { ...buildApi([]), getAutomationCredential: async () => ({ configured: true, createdAt: definition.createdAt, rotatedAt: null }) } },

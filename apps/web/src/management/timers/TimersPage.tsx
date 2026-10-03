@@ -8,6 +8,8 @@ import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
 import { ManagementHttpError } from "../management-http-client.js";
 import { TimerStackEditor } from "./TimerStackEditor.js";
+import { TimerAdjustmentControls } from "./TimerAdjustmentControls.js";
+import { TimerEventRulesEditor } from "./TimerEventRulesEditor.js";
 import { defaultTimersApi, type TimerAutomationCredentialStatus, type TimerBrowserSource, type TimerCommand, type TimersApi } from "./timers-api.js";
 import "./timers.css";
 
@@ -86,6 +88,12 @@ export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTim
     try { const result = await api.command(id, commandName); const nextStates = await api.listStates(); stateRevisionRef.current += 1; setStates(nextStates); setRefreshError(""); setMessage(result.changed ? `Timer ${commandName}ed.` : "Timer state did not change."); }
     catch (reason) { setError(messageFor(reason)); } finally { setBusy(false); }
   }
+  async function adjust(input: import("@stream-jams/core").TimerAdjustment) {
+    if (selectedId === null) return;
+    setBusy(true); stateRevisionRef.current += 1;
+    try { await api.adjust(selectedId, input); const next = await api.listStates(); stateRevisionRef.current += 1; setStates(next); setRefreshError(""); setError(""); setMessage("Timer adjusted."); }
+    catch (reason) { setError(messageFor(reason)); } finally { setBusy(false); }
+  }
   async function remove() {
     if (selectedId === null || active !== null) return; setBusy(true);
     try { await api.remove(selectedId); setEditorOpen(false); setSelectedId(null); await load(); setMessage("Timer deleted."); }
@@ -148,6 +156,8 @@ export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTim
       {active === null ? null : <p className="timer-editor__notice">This run keeps its current name, duration, assets, and outputs. Saved edits apply next time.</p>}
       <label>Name<input required maxLength={120} value={draft.label} onChange={event => setDraft({ ...draft, label: event.currentTarget.value })} /></label>
       <label>Duration (seconds)<input required min="1" type="number" value={draft.durationMs / 1000} onChange={event => setDraft({ ...draft, durationMs: Math.round(Number(event.currentTarget.value) * 1000) })} /></label>
+      <TimerEventRulesEditor rules={draft.eventRules ?? []} onChange={eventRules => setDraft({ ...draft, eventRules })} />
+      {selectedId === null ? null : <TimerAdjustmentControls disabled={busy} onApply={adjust} />}
       <fieldset><legend>Assets</legend>{(["iconAssetId", "startAudioAssetId", "endAudioAssetId"] as const).map(role => <div className="timer-asset-row" key={role}><span>{role === "iconAssetId" ? "Icon" : role === "startAudioAssetId" ? "Start sound" : "End sound"}</span><code>{draft[role] ?? "None"}</code><button className="button button--secondary button--compact" onClick={() => setPickerRole(role)} type="button">Choose</button>{draft[role] === null ? null : <button className="button button--secondary button--compact" onClick={() => setDraft({ ...draft, [role]: null })} type="button">Clear</button>}</div>)}</fieldset>
       <fieldset className="timer-output-options"><legend>Audio outputs</legend><label className="timer-output-option"><input checked={draft.outputs.browserSource} onChange={event => setDraft({ ...draft, outputs: { ...draft.outputs, browserSource: event.currentTarget.checked } })} type="checkbox" /> Browser Source</label>{routes.map(route => <label className="timer-output-option" key={route.id}><input checked={draft.outputs.deviceRouteIds.includes(route.id)} onChange={() => setDraft({ ...draft, outputs: { ...draft.outputs, deviceRouteIds: draft.outputs.deviceRouteIds.includes(route.id) ? draft.outputs.deviceRouteIds.filter(id => id !== route.id) : [...draft.outputs.deviceRouteIds, route.id] } })} type="checkbox" /> {route.name}</label>)}</fieldset>
       <div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={closeEditor} type="button">Cancel</button>{selected === null ? null : <><button className="button button--secondary" disabled={busy || active?.status !== "running"} onClick={() => void command("pause")} type="button">Pause</button><button className="button button--secondary" disabled={busy || active?.status !== "paused"} onClick={() => void command("resume")} type="button">Resume</button><button className="button button--secondary" disabled={busy || active === null} onClick={() => void command("stop")} type="button">Stop</button><button className="button button--secondary" disabled={busy} onClick={() => void command("restart")} type="button">Restart</button><button className="button button--danger-quiet" disabled={busy || active !== null} onClick={() => void remove()} type="button">Delete</button></>}<button disabled={busy} type="submit">{selected === null ? "Create timer" : "Save timer"}</button></div>
@@ -170,7 +180,7 @@ function BrowserSources({ busy, expanded, onCopy, onCreate, onRegenerate, onTogg
 }
 
 function toInput(definition: TimerDefinition): TimerDefinitionInput { return { label: definition.label, durationMs: definition.durationMs, iconAssetId: definition.iconAssetId,
-  startAudioAssetId: definition.startAudioAssetId, endAudioAssetId: definition.endAudioAssetId, outputs: definition.outputs }; }
+  startAudioAssetId: definition.startAudioAssetId, endAudioAssetId: definition.endAudioAssetId, outputs: definition.outputs, ...(definition.eventRules === undefined ? {} : { eventRules: definition.eventRules }) }; }
 function messageFor(reason: unknown): string {
   if (reason instanceof ManagementHttpError) return [reason.message, reason.nextStep, reason.referenceId === null ? null : `Reference: ${reason.referenceId}`].filter(Boolean).join(" ");
   return reason instanceof Error ? reason.message : "The timer request failed.";

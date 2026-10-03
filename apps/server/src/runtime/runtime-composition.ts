@@ -97,6 +97,8 @@ import {
   type EventIngestionDiagnostic
 } from "../modules/events/event-ingestion-service.js";
 import { EventPipeline } from "../modules/events/event-pipeline.js";
+import { SqliteTimerRunRepository } from "../modules/timers/sqlite-timer-run-repository.js";
+import { TimerEventService } from "../modules/timers/timer-event-service.js";
 import { SqliteOverlayModuleConfigRepository } from "../modules/overlay-modules/sqlite-module-config-repository.js";
 import { LocalOverlayAccessService } from "../modules/overlays/overlay-access-service.js";
 import {
@@ -571,6 +573,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateReferenceId: generateRuntimeReferenceId
   });
   const timerRuntimeCoordinator = new TimerRuntimeCoordinator({
+    recovery: new SqliteTimerRunRepository(database.connection),
+    onRecoveryError: error => { void runtimeLogger.error("Timer recovery or checkpoint failed", {
+      module: "timers", source: "timers.recovery", correlationId: "timers:recovery", processingId: null
+    }, error); },
+    generateGeneration: () => `timer-run-${randomUUID()}`,
     localMediaService,
     assertCommandAvailable: () => maintenanceGate.runConfigurationMutation(() => undefined),
     definitions: timerDefinitionRepository,
@@ -589,6 +596,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     activity: timerRuntimeCoordinator,
     now
   });
+  await timerRuntimeCoordinator.restore();
   const timerAutomationCredentialService = new TimerAutomationCredentialService({
     connection: database.connection,
     now
@@ -791,6 +799,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     }
   });
   const eventPipeline = new EventPipeline({
+    timerEventSink: new TimerEventService(timerDefinitionRepository, timerRuntimeCoordinator),
+    onTimerError: (error, event) => runtimeLogger.error("Timer event handling failed", {
+      module: "timers", source: "timers.event-admission", correlationId: `event:${event.providerId}:${event.id}`,
+      processingId: null, metadata: { eventType: event.type }
+    }, error),
     playbackCoordinator,
     effectTriggerSink: {
       async handleTriggers(triggers) {

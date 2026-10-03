@@ -645,6 +645,7 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   if (currentSchemaVersion === 26) return [19, 20, 21, 22, 23, 24, 25].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 27) return [19, 20, 21, 22, 23, 24, 25, 26].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 29) return [19, 20, 21, 22, 23, 24, 25, 26, 27, 28].includes(archiveSchemaVersion);
+  if (currentSchemaVersion === 30) return [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 28) return [19, 20, 21, 22, 23, 24, 25, 26, 27].includes(archiveSchemaVersion);
   return false;
 }
@@ -680,6 +681,9 @@ function upgradeLegacyConfiguration(
       timer_definitions: [],
       timer_audio_routes: []
     };
+  }
+  if (schemaVersion < 30) {
+    tables = { ...tables, timer_definitions: (tables.timer_definitions ?? []).map(row => ({ ...row, event_rules_json: "[]" })) };
   }
   return tables === configuration.tables ? configuration : { ...configuration, tables };
 }

@@ -8,7 +8,7 @@ Each definition has a stable name and duration, plus optional icon, start sound,
 
 Configure Landscape and Vertical independently. Each profile has a bounded region, vertical or horizontal stacking, and a maximum visible count. The maximum divides the region into stable equal-sized slots, so an underfilled stack does not stretch its timer cards. Long names truncate visually while retaining their accessible name, and additional active timers appear as a `+N more` badge. Browser-source and desktop visibility remain independent surface choices.
 
-One run may be active per definition. Start, pause, resume, stop, or restart it from the Timers page or Operator Console. Restart creates a new generation from the latest saved definition. Editing a definition while it is active does not rename, reroute, or retime that admitted run; the next start/restart uses the saved changes. A completed timer remains visible at zero for three seconds. Active runs are intentionally memory-only and disappear when Stream Jams restarts; definitions and layout persist.
+One run may be active per definition. Start, pause, resume, stop, or restart it from the Timers page or Operator Console. Restart creates a new generation from the latest saved definition. Editing a definition while it is active does not rename, reroute, or retime that admitted run; the next start/restart uses the saved changes. A completed timer remains visible at zero for three seconds. Active runs retain their remaining time and reopen paused. Graceful close saves the current remainder; crash recovery uses the last successful one-second checkpoint, which can retain approximately one extra second under normal scheduling. Offline time is never deducted, and reopening never plays a start cue.
 
 ## Stream Deck and generic HTTP actions
 
@@ -37,7 +37,7 @@ These endpoints are loopback-only, reject browser-origin requests, and accept on
 
 ## Backup and recovery
 
-Portable configuration backups include Timer definitions, profile layout, referenced asset IDs, and named audio-route IDs. They exclude active runs and the automation credential/verifier. Restored timers start idle, named device routes require the same explicit rebinding rules as other routed audio, and a new automation credential must be created. If restore fails and rolls back, the destination's prior operational credential state is restored.
+Portable configuration backups include Timer definitions and event rules, profile layout, referenced asset IDs, and named audio-route IDs. They exclude active runs and the automation credential/verifier. Restored timers start idle, named device routes require the same explicit rebinding rules as other routed audio, and a new automation credential must be created. If restore fails and rolls back, the destination's prior operational credential state is restored.
 
 Stop active timers before restoring a backup, including paused timers; a completed timer also blocks restore during its three-second hold. New timer commands are rejected while configuration replacement is underway.
 
@@ -45,6 +45,16 @@ The Timers page refreshes runtime state and Browser Source connectivity every fi
 
 Timer icons accept still images and GIFs on browser and desktop outputs. Replacing an asset or restoring a backup cannot substitute audio/video for an icon or a non-audio asset for a cue. When a configured stack reaches a profile edge, its entire rendered footprint scales down just enough to retain the overflow badge below vertical stacks or beside horizontal stacks. Space is reserved even without overflow so the capacity-sized cards do not jump when the badge appears.
 
-## Initial boundaries
+## Event rules and manual corrections
 
-Timers count down only. Temporary one-off definitions, count-up/overtime, scheduled starts, automatic Twitch/Streamer.bot event bindings, custom target profiles, overlapping runs of the same definition, LAN access, and a custom Stream Deck plugin are not included. Streamer.bot or Stream Deck can call the generic loopback HTTP API when their own trigger logic should start a timer.
+In a timer editor, add enabled event rules and save the timer. Choose Twitch, Streamer.bot, or any active source, then the event type and action: start, stop, increment, decrement, or restart. Redemption rules can filter a specific reward ID; subscription rules can filter a tier. Rules apply in their saved order through the current event source connection, independently of alert matching.
+
+Start leaves an existing run unchanged. Restart resets to the latest saved duration. Increment/decrement preserve running or paused state. Inactive adjustments default to doing nothing, with options to start or create a paused run from the saved duration before adjusting. For cheers and count-bearing events, a quantity unit applies time per whole unit: 30 seconds per 100 bits adds 60 seconds for 250 bits. Without a quantity unit, each matching event applies the fixed duration. Subs and resubs count as individual events, not subscription months.
+
+Use **Adjust remaining time** in the timer editor or Operator to add, subtract, or set time, then choose **Apply adjustment**. Set on an idle timer creates a paused run; add/subtract on idle timers do nothing. Subtraction clamps at zero and completes the timer with its normal end cue and three-second hold. Manual changes do not alter the saved definition duration. Runtime corrections accept up to thirty days of remaining time.
+
+Duplicate protection retains the existing bounded in-memory event checks. Missed events while disconnected are not automatically recovered, and duplicate protection does not persist across restarts. Manual corrections are available for reconciliation.
+
+## Current boundaries
+
+Timers count down only. Temporary one-off definitions, count-up/overtime, scheduled starts, historical event replay, custom target profiles, overlapping runs of the same definition, LAN access, and a custom Stream Deck plugin are not included. Streamer.bot or Stream Deck can call the generic loopback HTTP API when their own trigger logic should start a timer.

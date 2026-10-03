@@ -1,12 +1,12 @@
 import type { MergedOperationsSnapshot, OperationRow } from "@stream-jams/core";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ManagementHttpError } from "../management/management-http-client.js";
 import { OperatorApp } from "./OperatorApp.js";
 import { PlaybackOperationsConflictError, type PlaybackApi } from "./playback-api.js";
 import type { OperatorTimersApi } from "./timers-api.js";
-const idleTimersApi: OperatorTimersApi = { listStates: async () => [], command: async () => ({ changed: false, state: null }) };
+const idleTimersApi: OperatorTimersApi = { listStates: async () => [], adjust: async () => ({ changed: false, state: null }), command: async () => ({ changed: false, state: null }) };
 
 afterEach(() => {
   cleanup();
@@ -18,7 +18,7 @@ afterEach(() => {
 describe("OperatorApp", () => {
   it("reports timer-only refresh failure independently and clears it on recovery", async () => {
     vi.useFakeTimers();
-    const timersApi: OperatorTimersApi = { listStates: vi.fn().mockRejectedValueOnce(new Error("Timer service unavailable")).mockResolvedValue([]), command: vi.fn() };
+    const timersApi: OperatorTimersApi = { listStates: vi.fn().mockRejectedValueOnce(new Error("Timer service unavailable")).mockResolvedValue([]), adjust: async () => ({ changed: false, state: null }), command: vi.fn() };
     render(<OperatorApp api={api()} timersApi={timersApi} />);
     await act(async () => {});
     expect(screen.getByText("Timer state may be stale")).toBeVisible();
@@ -38,6 +38,23 @@ describe("OperatorApp", () => {
     expect(unsubscribe).toHaveBeenCalledOnce();
   });
 
+  it("retains a failed timer correction, offers diagnostics, and permits retry", async () => {
+    const user = userEvent.setup();
+    const timer = { status: "paused" as const, definitionId: "mitts", generation: "g1", remainingMs: 60000,
+      snapshot: { id: "mitts", label: "Wear oven mitts", durationMs: 60000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: true, deviceRouteIds: [] } } };
+    const adjust = vi.fn().mockRejectedValueOnce(new Error("Check the local service and retry.")).mockResolvedValue({ changed: true, state: timer });
+    render(<OperatorApp api={api()} timersApi={{ listStates: async () => [timer], command: vi.fn(), adjust }} />);
+    await screen.findByText("Wear oven mitts");
+    await user.clear(screen.getByLabelText("Time (seconds)")); await user.type(screen.getByLabelText("Time (seconds)"), "42");
+    await user.click(screen.getByRole("button", { name: "Apply adjustment" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Check the local service and retry.");
+    expect(screen.getByRole("link", { name: "Open diagnostics" })).toBeVisible();
+    expect(screen.getByLabelText("Time (seconds)")).toHaveValue(42);
+    expect(screen.getByRole("button", { name: "Apply adjustment" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Apply adjustment" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(adjust).toHaveBeenNthCalledWith(2, "mitts", { action: "increment", amountMs: 42000 });
+  });
   it("shows simultaneous current items and real per-module pending positions", async () => {
     render(<OperatorApp timersApi={idleTimersApi} api={api()} />);
 
@@ -57,7 +74,7 @@ describe("OperatorApp", () => {
     const running = { status: "running", definitionId: "mitts", generation: "g1", startedAtEpochMs: Date.now(), endsAtEpochMs: Date.now() + 60_000,
       snapshot: { id: "mitts", label: "Wear oven mitts", durationMs: 60_000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null,
         outputs: { browserSource: true, deviceRouteIds: [] } } } as const;
-    const timersApi: OperatorTimersApi = { listStates: vi.fn().mockResolvedValueOnce([running]).mockResolvedValueOnce([]), command: vi.fn(async () => ({ changed: true, state: null })) };
+    const timersApi: OperatorTimersApi = { listStates: vi.fn().mockResolvedValueOnce([running]).mockResolvedValueOnce([]), adjust: async () => ({ changed: false, state: null }), command: vi.fn(async () => ({ changed: true, state: null })) };
     render(<OperatorApp api={api()} timersApi={timersApi} />);
     expect(await screen.findByRole("heading", { name: "Active timers (1)" })).toBeVisible(); expect(screen.getByText("Wear oven mitts")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Stop" }));

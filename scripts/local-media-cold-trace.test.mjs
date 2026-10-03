@@ -24,14 +24,17 @@ test('owned stop allows the observed completed cleanup interval within a bounded
   assert.equal(traceModule.traceStopTimeoutMs, 45000);
 });
 
-function captureFixture({ stopDelayMs = 40, reason = 'stop', complete = true } = {}) {
+function captureFixture({ stopDelayMs = 40, reason = 'stop', complete = true, stopCompletion } = {}) {
   const child = Object.assign(new EventEmitter(), { pid: 12345, stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough() });
   let sessionName, input = '', stopping;
+  let notifyStopStarted;
+  const stopStarted = new Promise(resolve => { notifyStopStarted = resolve; });
   const emit = value => child.stdout.write(`${JSON.stringify({ schemaVersion: 1, sessionName, ...value })}\n`);
   child.stdin.on('data', bytes => { input += bytes; });
   child.stdin.on('finish', () => {
     emit({ status: 'stop-started', stopStartedUtc: new Date().toISOString() });
-    if (complete) stopping = delay(stopDelayMs).then(() => {
+    notifyStopStarted();
+    if (complete) stopping = (stopCompletion ?? delay(stopDelayMs)).then(() => {
       emit({ status: 'stopped', reason, endedUtc: new Date().toISOString(), stopElapsedMs: stopDelayMs });
       child.emit('close', 0);
     });
@@ -43,13 +46,16 @@ function captureFixture({ stopDelayMs = 40, reason = 'stop', complete = true } =
       return child;
     },
     get input() { return input; },
+    stopStarted,
     get stopping() { return stopping; }
   };
 }
 
 test('initial stop awaits delayed native completion, then analyzes the already saved manifest', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'stream-jams-trace-test-'));
-  const capture = captureFixture();
+  let releaseStop;
+  const stopCompletion = new Promise(resolve => { releaseStop = resolve; });
+  const capture = captureFixture({ stopCompletion });
   let analyzed = false;
   const probe = traceModule.createTraceProbe(directory, [], async (_command, args) => {
     const saved = JSON.parse(await readFile(args[args.indexOf('--manifest') + 1], 'utf8'));
@@ -61,9 +67,13 @@ test('initial stop awaits delayed native completion, then analyzes the already s
   try {
     await probe.start();
     const finishing = probe.finish();
-    await delay(20);
+    // finish() saves the manifest before sending stop. Wait for that boundary,
+    // not a guessed filesystem delay, and hold native completion explicitly.
+    await capture.stopStarted;
     assert.equal(analyzed, false);
     assert.ok(await readFile(probe.ownership.manifestPath, 'utf8'));
+    await delay(40);
+    releaseStop();
     const result = await finishing;
     assert.equal(result.status, 'verified-file-read-mapping');
     assert.equal(analyzed, true);
@@ -73,7 +83,7 @@ test('initial stop awaits delayed native completion, then analyzes the already s
     assert.ok(result.traceOwnership.lifecycle.stopWaitElapsedMs >= 40);
     await probe.stop();
     assert.equal(capture.input, 'stop\n');
-  } finally { await capture.stopping; await rm(directory, { recursive: true, force: true }); }
+  } finally { releaseStop(); await capture.stopping; await rm(directory, { recursive: true, force: true }); }
 });
 
 test('unresolved stop fails closed while retaining the manifest, PID and lifecycle', async () => {

@@ -23,7 +23,7 @@ Support retained timers, event-driven controls, and manual corrections without i
 
 ## Migration Plan
 
-Add a recovery table with cascading timer foreign keys and a default-empty rules JSON column. Old definitions remain valid. Existing backups include SQLite state. No destructive downgrade migration.
+Add a recovery table with cascading timer foreign keys and a default-empty rules JSON column. Old definitions remain valid. Configuration backups include definitions and event rules but exclude retained runtime state, preserving their existing portable configuration scope. No destructive downgrade migration.
 
 ## Open Questions
 

@@ -38,7 +38,8 @@ const expectedMigrations = [
   "026-automatic-output-rebinding",
   "027-remove-alert-set-profile-state",
   "028-timer-overlay-module",
-  "029-asset-retirements"
+  "029-asset-retirements",
+  "030-persistent-event-timers"
 ] as const;
 
 const expectedTables = [
@@ -73,6 +74,7 @@ const expectedTables = [
   "timer_audio_routes",
   "timer_automation_credential",
   "timer_definitions",
+  "timer_run_recovery",
   "twitch_accounts"
 ];
 
@@ -83,7 +85,7 @@ describe("Stream Jams SQLite database", () => {
 
     expect(db.prepare("PRAGMA table_info(timer_definitions)").all().map(column => String(column.name))).toEqual([
       "id", "label", "duration_ms", "icon_asset_id", "start_audio_asset_id", "end_audio_asset_id",
-      "browser_source", "created_at", "updated_at"
+      "browser_source", "created_at", "updated_at", "event_rules_json"
     ]);
     expect(db.prepare("PRAGMA table_info(timer_automation_credential)").all().map(column => String(column.name))).toEqual([
       "singleton_id", "verifier", "created_at", "rotated_at", "revoked_at"
@@ -150,7 +152,7 @@ describe("Stream Jams SQLite database", () => {
   it("removes stored Screen Effect animations when upgrading schema 24", () => {
     using database = createInMemoryStreamJamsDatabase();
     const db = database.connection;
-    db.exec("DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements; DELETE FROM schema_migrations WHERE id = '029-asset-retirements'; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;");
+    db.exec("DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements; DELETE FROM schema_migrations WHERE id = '029-asset-retirements'; DROP TABLE timer_run_recovery; DELETE FROM schema_migrations WHERE id = '030-persistent-event-timers'; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;");
     db.prepare("DELETE FROM schema_migrations WHERE id IN (?, ?, ?, ?)").run(
       "025-remove-screen-effect-animations",
       "026-automatic-output-rebinding",
@@ -289,7 +291,7 @@ describe("Stream Jams SQLite database", () => {
   it("defaults existing audio routes to automatic following disabled when migrating schema 25", () => {
     using database = createInMemoryStreamJamsDatabase();
     const db = database.connection;
-    db.exec("DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements; DELETE FROM schema_migrations WHERE id = '029-asset-retirements'; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;");
+    db.exec("DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements; DELETE FROM schema_migrations WHERE id = '029-asset-retirements'; DROP TABLE timer_run_recovery; DELETE FROM schema_migrations WHERE id = '030-persistent-event-timers'; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;");
     db.prepare("DELETE FROM schema_migrations WHERE id IN (?, ?, ?)").run(
       "026-automatic-output-rebinding",
       "027-remove-alert-set-profile-state",
@@ -582,7 +584,7 @@ describe("Stream Jams SQLite database", () => {
       DROP TABLE screen_effect_variants;
       DROP TABLE screen_effects;
       DROP TABLE module_playback_settings;
-      DROP TABLE timer_audio_routes;
+      DROP TABLE timer_run_recovery; DELETE FROM schema_migrations WHERE id = '030-persistent-event-timers'; DROP TABLE timer_audio_routes;
       DROP TABLE timer_definitions;
       DROP TABLE timer_automation_credential;
       ALTER TABLE asset_metadata DROP COLUMN duration_ms;

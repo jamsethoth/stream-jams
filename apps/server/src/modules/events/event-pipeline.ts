@@ -18,6 +18,8 @@ export interface EventPipelineIdGenerator {
 }
 
 export interface EventPipelineOptions {
+  readonly timerEventSink?: { handleEvent(event: NormalizedStreamEvent): Promise<void> };
+  readonly onTimerError?: (error: unknown, event: NormalizedStreamEvent) => void | Promise<void>;
   readonly playbackCoordinator: Pick<PlaybackCoordinator, "enqueueEvent">;
   readonly diagnosticsLogRepository: Pick<
     DiagnosticsLogRepository,
@@ -30,6 +32,8 @@ export interface EventPipelineOptions {
 }
 
 export class EventPipeline implements EventSink {
+  readonly #timerEventSink: EventPipelineOptions["timerEventSink"];
+  readonly #onTimerError: EventPipelineOptions["onTimerError"];
   readonly #playbackCoordinator: Pick<PlaybackCoordinator, "enqueueEvent">;
   readonly #diagnosticsLogRepository: Pick<
     DiagnosticsLogRepository,
@@ -41,6 +45,8 @@ export class EventPipeline implements EventSink {
   readonly #now: () => Date;
 
   constructor(options: EventPipelineOptions) {
+    this.#timerEventSink = options.timerEventSink;
+    this.#onTimerError = options.onTimerError;
     this.#playbackCoordinator = options.playbackCoordinator;
     this.#diagnosticsLogRepository = options.diagnosticsLogRepository;
     this.#generateId = options.generateId;
@@ -54,14 +60,17 @@ export class EventPipeline implements EventSink {
     const correlationId = createCorrelationId(event);
     await this.#appendEventLog(event, "received", correlationId, processingId, null);
     const effectDelivery = this.#deliverEffects(triggers);
+    const timerDelivery = this.#deliverTimers(event);
 
     try {
       const result = await this.#playbackCoordinator.enqueueEvent(event);
       await this.#appendPlaybackRecords(event, result, correlationId, processingId);
       await effectDelivery;
+      await timerDelivery;
       await this.#appendEventLog(event, "processed", correlationId, processingId, null);
     } catch (error) {
       await effectDelivery;
+      await timerDelivery;
       await this.#appendEventLog(
         event,
         "failed",
@@ -75,6 +84,14 @@ export class EventPipeline implements EventSink {
 
   async handleTriggers(triggers: readonly EffectTrigger[]): Promise<void> {
     await this.#deliverEffects(triggers);
+  }
+
+  async #deliverTimers(event: NormalizedStreamEvent): Promise<void> {
+    try { await this.#timerEventSink?.handleEvent(event); }
+    catch (error) {
+      // error-provenance: allow expected -- timer failures are diagnosed independently of alert intake
+      await this.#onTimerError?.(error, event);
+    }
   }
 
   async #deliverEffects(triggers: readonly EffectTrigger[]): Promise<void> {

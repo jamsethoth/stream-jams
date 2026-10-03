@@ -52,8 +52,8 @@ export class SqliteTimerDefinitionRepository implements TimerDefinitionRepositor
       this.connection.prepare(`
         INSERT INTO timer_definitions (
           id, label, duration_ms, icon_asset_id, start_audio_asset_id, end_audio_asset_id,
-          browser_source, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          browser_source, created_at, updated_at, event_rules_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           label = excluded.label,
           duration_ms = excluded.duration_ms,
@@ -61,7 +61,8 @@ export class SqliteTimerDefinitionRepository implements TimerDefinitionRepositor
           start_audio_asset_id = excluded.start_audio_asset_id,
           end_audio_asset_id = excluded.end_audio_asset_id,
           browser_source = excluded.browser_source,
-          updated_at = excluded.updated_at
+          updated_at = excluded.updated_at,
+          event_rules_json = excluded.event_rules_json
       `).run(
         definition.id,
         definition.label,
@@ -71,7 +72,8 @@ export class SqliteTimerDefinitionRepository implements TimerDefinitionRepositor
         definition.endAudioAssetId,
         definition.outputs.browserSource ? 1 : 0,
         definition.createdAt,
-        definition.updatedAt
+        definition.updatedAt,
+        JSON.stringify(definition.eventRules ?? [])
       );
       this.connection.prepare("DELETE FROM timer_audio_routes WHERE timer_id = ?").run(definition.id);
       const insertRoute = this.connection.prepare(
@@ -108,6 +110,7 @@ export class SqliteTimerDefinitionRepository implements TimerDefinitionRepositor
   }
 
   #read(row: TimerRow): TimerDefinition {
+    const eventRules: unknown = JSON.parse(String(row.event_rules_json));
     const routeIds = this.connection.prepare(
       "SELECT route_id FROM timer_audio_routes WHERE timer_id = ? ORDER BY position"
     ).all(String(row.id)).map(route => String(route.route_id));
@@ -120,7 +123,8 @@ export class SqliteTimerDefinitionRepository implements TimerDefinitionRepositor
       endAudioAssetId: row.end_audio_asset_id,
       outputs: { browserSource: row.browser_source === 1, deviceRouteIds: routeIds },
       createdAt: row.created_at,
-      updatedAt: row.updated_at
+      updatedAt: row.updated_at,
+      ...(Array.isArray(eventRules) && eventRules.length === 0 ? {} : { eventRules })
     });
   }
 

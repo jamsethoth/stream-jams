@@ -1,4 +1,6 @@
 import {
+  timerAdjustmentSchema,
+  MAX_TIMER_REMAINING_MS,
   compareTimerRuns,
   projectTimerStack,
   timersOverlayModuleConfigSchema,
@@ -10,6 +12,8 @@ import {
   type TimerDefinitionRepository,
   type TimerRunState
 } from "@stream-jams/core";
+import type { TimerAdjustment } from "@stream-jams/core";
+import type { TimerRunRepository } from "./sqlite-timer-run-repository.js";
 import { snapshotTimerDefinition, TimerDefinitionNotFoundError, type TimerActivityProbe } from "./timer-management-service.js";
 
 import type { LocalMediaService } from "../assets/local-media-service.js";
@@ -30,6 +34,8 @@ export interface TimerCueSink {
 }
 
 interface TimerRuntimeCoordinatorOptions {
+  readonly recovery?: TimerRunRepository;
+  readonly onRecoveryError?: (error: unknown) => void;
   readonly localMediaService?: LocalMediaService;
   readonly definitions: Pick<TimerDefinitionRepository, "findById">;
   readonly config: { getModuleConfig(moduleId: string): Promise<OverlayModuleConfig> };
@@ -47,6 +53,9 @@ interface RuntimeEntry {
 }
 
 export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModuleRuntime {
+  readonly #recovery: TimerRunRepository | undefined;
+  readonly #onRecoveryError: ((error: unknown) => void) | undefined;
+  #checkpoint: { cancel(): void } | null = null;
   readonly #media: LocalMediaService | undefined;
   readonly #entries = new Map<string, RuntimeEntry>();
   readonly #listeners = new Set<(revision: number) => void>();
@@ -62,6 +71,8 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
   #closed = false;
 
   constructor(options: TimerRuntimeCoordinatorOptions) {
+    this.#recovery = options.recovery;
+    this.#onRecoveryError = options.onRecoveryError;
     this.#media = options.localMediaService;
     this.#definitions = options.definitions;
     this.#config = options.config;
@@ -81,6 +92,65 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
   getState(definitionId: string): TimerRunState | null {
     const state = this.#entries.get(definitionId)?.state;
     return state === undefined ? null : structuredClone(state);
+  }
+
+  async restore(): Promise<void> {
+    this.#assertOpen();
+    for (const saved of this.#recovery?.list() ?? []) {
+      if (saved.status !== "paused" || this.#definitions.findById(saved.definitionId) === null) continue;
+      const entry: RuntimeEntry = { state: saved, scheduled: null, iconAvailable: true };
+      this.#entries.set(saved.definitionId, entry);
+      if (this.#media !== undefined) {
+        try {
+          await this.#media.acquire(timerRunOwner(saved.generation), [saved.snapshot.iconAssetId, saved.snapshot.startAudioAssetId, saved.snapshot.endAudioAssetId].filter((id): id is string => id !== null), undefined, true);
+        } catch (error) {
+          // error-provenance: allow expected -- missing restored media is diagnosed without losing retained time
+          entry.iconAvailable = false;
+          this.#onRecoveryError?.(error);
+        }
+      }
+    }
+    this.#publish();
+  }
+
+  async adjust(definitionId: string, candidate: TimerAdjustment, inactiveBehavior: "ignore" | "start" | "paused" = "ignore"): Promise<TimerCommandResult> {
+    this.#assertOpen();
+    const input = timerAdjustmentSchema.parse(candidate);
+    let created = false;
+    let entry = this.#entries.get(definitionId);
+    if (entry?.state.status === "completed") {
+      if (input.action !== "set" && inactiveBehavior === "ignore") return this.#result(false, entry.state);
+      await this.stop(definitionId);
+      entry = undefined;
+    }
+    if (entry === undefined) {
+      if (input.action !== "set" && inactiveBehavior === "ignore") return this.#result(false, null);
+      if (input.action === "set" && input.amountMs === 0) return this.#result(false, null);
+      await this.#startFresh(definitionId, true);
+      created = true;
+      entry = this.#entries.get(definitionId);
+      if (entry === undefined) return this.#result(false, null);
+      // New runs are created paused before adjusting; no transient start cue.
+    }
+    const state = entry.state;
+    if (state.status === "completed") return this.#result(false, state);
+    const oldRemaining = state.status === "paused" ? state.remainingMs : Math.max(0, state.endsAtEpochMs - this.#clock.now());
+    const remainingMs = input.action === "set" ? input.amountMs : Math.min(MAX_TIMER_REMAINING_MS, Math.max(0, oldRemaining + (input.action === "increment" ? input.amountMs : -input.amountMs)));
+    if (remainingMs === oldRemaining && !created) return this.#result(false, state);
+    if (remainingMs === 0) {
+      this.#complete(definitionId, state.generation);
+      return this.#result(true, entry.state);
+    }
+    if (state.status === "running") {
+      entry.state = { ...state, startedAtEpochMs: this.#clock.now(), endsAtEpochMs: this.#clock.now() + remainingMs };
+      this.#scheduleDeadline(definitionId, state.generation);
+    } else entry.state = { ...state, remainingMs };
+    this.#publish();
+    if (created && inactiveBehavior === "start" && state.status === "paused") {
+      await this.resume(definitionId);
+      await this.#settleCuePlay("start", entry.state);
+    }
+    return this.#result(true, entry.state);
   }
 
   async start(definitionId: string): Promise<TimerCommandResult> {
@@ -187,6 +257,9 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
 
   async close(): Promise<void> {
     if (this.#closed) return;
+    this.#saveRecovery();
+    this.#checkpoint?.cancel();
+    this.#checkpoint = null;
     this.#closed = true;
     const entries = [...this.#entries.values()];
     this.#entries.clear();
@@ -199,11 +272,14 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
     await this.#cueSink?.close?.();
   }
 
-  async #startFresh(definitionId: string): Promise<TimerCommandResult> {
+  async #startFresh(definitionId: string, paused = false): Promise<TimerCommandResult> {
     const definition = this.#definitions.findById(definitionId);
     if (definition === null) throw new TimerDefinitionNotFoundError(definitionId);
     const startedAtEpochMs = this.#clock.now();
-    const state: TimerRunState = {
+    const state: TimerRunState = paused ? {
+      status: "paused", definitionId, generation: this.#generateGeneration(),
+      snapshot: snapshotTimerDefinition(definition), remainingMs: definition.durationMs
+    } : {
       status: "running",
       definitionId,
       generation: this.#generateGeneration(),
@@ -234,7 +310,7 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
     }
     this.#scheduleDeadline(definitionId, state.generation);
     this.#publish();
-    await this.#settleCuePlay("start", state);
+    if (!paused) await this.#settleCuePlay("start", state);
     return this.#result(true, state);
   }
 
@@ -254,7 +330,7 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
 
   #complete(definitionId: string, generation: string): void {
     const entry = this.#entries.get(definitionId);
-    if (entry?.state.status !== "running" || entry.state.generation !== generation) return;
+    if (entry === undefined || entry.state.status === "completed" || entry.state.generation !== generation) return;
     entry.scheduled?.cancel();
     const completedAtEpochMs = this.#clock.now();
     entry.state = {
@@ -277,8 +353,38 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
   }
 
   #publish(): void {
+    this.#saveRecovery();
+    this.#checkpoint?.cancel();
+    this.#checkpoint = null;
+    if (this.#recovery !== undefined && [...this.#entries.values()].some(entry => entry.state.status === "running")) {
+      this.#scheduleCheckpoint();
+    }
     const revision = ++this.#revision;
     for (const listener of this.#listeners) listener(revision);
+  }
+
+  #saveRecovery(): void {
+    const states: TimerRunState[] = [];
+    for (const { state } of this.#entries.values()) {
+      if (state.status === "paused") states.push(state);
+      if (state.status === "running") {
+        const remainingMs = Math.max(0, state.endsAtEpochMs - this.#clock.now());
+        if (remainingMs > 0) states.push({ status: "paused", definitionId: state.definitionId, generation: state.generation, snapshot: state.snapshot, remainingMs });
+      }
+    }
+    this.#recovery?.replace(states);
+  }
+
+  #scheduleCheckpoint(): void {
+    this.#checkpoint = this.#scheduler.schedule(1000, () => {
+      if (this.#closed) return;
+      try { this.#saveRecovery(); }
+      catch (error) {
+        // error-provenance: allow expected -- checkpoint failure is diagnosed and retried on the next interval
+        this.#onRecoveryError?.(error);
+      }
+      this.#scheduleCheckpoint();
+    });
   }
 
   #result(changed: boolean, state: TimerRunState | null): TimerCommandResult {

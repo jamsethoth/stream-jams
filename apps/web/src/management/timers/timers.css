@@ -362,3 +362,25 @@
     grid-template-columns: 1fr;
   }
 }
+.timer-adjustment {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin-top: 12px;
+}
+.timer-adjustment label,
+.timer-event-rules label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.timer-event-rules > fieldset {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.timer-event-rules input[type="checkbox"] {
+  width: auto;
+}

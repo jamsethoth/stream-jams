@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { timerEventRulesSchema } from "./event-rules.js";
 import { alertAudioOutputsSchema } from "../audio/schemas.js";
 import {
   isoDateTimeSchema,
@@ -36,11 +37,12 @@ export const timerDefinitionSnapshotSchema = z.object({
 }).strict() satisfies z.ZodType<TimerDefinitionSnapshot>;
 
 export const timerDefinitionSchema = timerDefinitionSnapshotSchema.extend({
+  eventRules: timerEventRulesSchema.optional(),
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema
 }).strict() satisfies z.ZodType<TimerDefinition>;
 
-export const timerDefinitionInputSchema = timerDefinitionSnapshotSchema.omit({ id: true })
+export const timerDefinitionInputSchema = timerDefinitionSnapshotSchema.omit({ id: true }).extend({ eventRules: timerEventRulesSchema.optional() })
   .strict() satisfies z.ZodType<TimerDefinitionInput>;
 
 const runIdentityFields = {
