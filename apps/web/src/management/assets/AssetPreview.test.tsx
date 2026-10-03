@@ -8,7 +8,7 @@ beforeEach(() => {
   vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
   vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 it.each(["image", "audio", "video"] as const)("releases a successfully acquired %s preview after native body failure without retrying", async mediaType => {
   const api = createTestMediaPreviewApi();
@@ -46,4 +46,19 @@ it.each(["asset", "revision"] as const)("resets native failure when the %s chang
   expect(await screen.findByRole("img", { name: "Media preview" })).toHaveAttribute("src");
   expect(screen.queryByText("Preview unavailable")).not.toBeInTheDocument();
   expect(create).toHaveBeenCalledTimes(2);
+});
+
+it("previews fonts as text and removes the loaded FontFace on unmount", async () => {
+  const add = vi.fn(), remove = vi.fn();
+  const fonts = document.fonts;
+  Object.defineProperty(document, "fonts", { configurable: true, value: { add, delete: remove } });
+  class Face { load() { return Promise.resolve(this); } }
+  vi.stubGlobal("FontFace", Face);
+  try {
+    const item = { ...storyAssetLibraryItems[0]!, mediaType: "font" as const, mimeType: "font/ttf", displayName: "My font" };
+    const { unmount } = render(<AssetPreview assetApi={createTestMediaPreviewApi()} item={item} />);
+    expect(await screen.findByText("Aa Bb 123")).toHaveAttribute("aria-label", "My font preview");
+    expect(screen.queryByRole("img")).toBeNull(); expect(add).toHaveBeenCalledOnce();
+    unmount(); expect(remove).toHaveBeenCalledOnce();
+  } finally { Object.defineProperty(document, "fonts", { configurable: true, value: fonts }); }
 });

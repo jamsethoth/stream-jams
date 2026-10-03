@@ -55,7 +55,13 @@ const visualBatch = <T extends z.ZodType<{ assetId: string }>>(assetSchema: T, m
     if (instruction.visual !== null) {
       referenced.add(instruction.visual.assetId);
       const asset = assets.get(instruction.visual.assetId);
-      if (asset === undefined || visualMediaType(mime(asset)) !== instruction.visual.mediaType) fail("Visual asset is missing or has the wrong media kind");
+      if (asset === undefined || !/^(image|video)\//.test(mime(asset)) || visualMediaType(mime(asset)) !== instruction.visual.mediaType) fail("Visual asset is missing or has the wrong media kind");
+    }
+    const fontId = instruction.text?.textStyle?.fontAssetId;
+    if (fontId) {
+      referenced.add(fontId);
+      const asset = assets.get(fontId);
+      if (asset === undefined || !mime(asset).startsWith("font/")) fail("Text font asset is missing or incompatible");
     }
   }
   if (batch.assets.some(asset => !referenced.has(asset.assetId))) fail("Unreferenced assets are not authorized");
@@ -80,7 +86,7 @@ const moduleSync = <T extends z.ZodType<{ assetId: string }>>(assetSchema: T, mi
   for (const card of sync.presentation?.stack.cards ?? []) {
     if (card.iconAssetId === null) continue;
     const asset = card.iconVersion === undefined ? sync.assets.find(asset => asset.assetId === card.iconAssetId) : assets.get(JSON.stringify([card.iconAssetId, card.iconVersion]));
-    if (asset === undefined || visualMediaType(mime(asset)) === "video") fail("Timer icon asset version is missing or has the wrong media kind");
+    if (asset === undefined || !mime(asset).startsWith("image/")) fail("Timer icon asset version is missing or has the wrong media kind");
     else referenced.add(JSON.stringify([asset.assetId, version(asset)]));
   }
   if (sync.assets.some(asset => !referenced.has(JSON.stringify([asset.assetId, version(asset)])))) fail("Unreferenced assets are not authorized");

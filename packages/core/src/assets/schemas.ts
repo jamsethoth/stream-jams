@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { nonEmptyStringSchema, positiveIntegerSchema } from "../shared/schemas.js";
 
-export const assetMediaTypeSchema = z.enum(["image", "gif", "video", "audio"]);
+export const assetMediaTypeSchema = z.enum(["image", "gif", "video", "audio", "font"]);
 
 export const assetRecordSchema = z.object({
   id: nonEmptyStringSchema,

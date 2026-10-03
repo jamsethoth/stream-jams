@@ -76,6 +76,8 @@ export {
   replaceChannelPointRewardSelection
 } from "./alerts/channel-point-reward-selection.js";
 export type * from "./alerts/text-style.js";
+export { alertTextWarpSchema, createDefaultTextWarp, evaluateTextWarp, insertTextWarpSplit, removeTextWarpSplit } from "./alerts/text-warp.js";
+export type { AlertTextWarp } from "./alerts/text-warp.js";
 export {
   alertFontPresets,
   alertFontWeights,

@@ -6,7 +6,7 @@ const identity = z.string().min(1).max(256).refine(value => value.trim() === val
 export const mediaVersionSnapshotSchema = z.object({
   assetId: identity,
   version: z.string().regex(/^[a-f0-9]{64}$/),
-  mimeType: z.enum(["image/png", "image/jpeg", "image/webp", "image/gif", "video/mp4", "video/webm", "audio/mpeg", "audio/wav", "audio/ogg", "audio/webm"]),
+  mimeType: z.enum(["image/png", "image/jpeg", "image/webp", "image/gif", "video/mp4", "video/webm", "audio/mpeg", "audio/wav", "audio/ogg", "audio/webm", "font/ttf", "font/otf", "font/woff", "font/woff2"]),
   sizeBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   durationMs: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable()
 }).strict();

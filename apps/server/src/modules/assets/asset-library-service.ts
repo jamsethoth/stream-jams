@@ -53,6 +53,7 @@ export interface AssetLibraryServiceOptions {
   readonly effectRepository?: Pick<ScreenEffectRepository, "list"> | undefined;
   readonly timerRepository?: Pick<TimerDefinitionRepository, "list"> | undefined;
   readonly deletePersistedAsset?: ((assetId: string) => void) | undefined;
+  readonly findEditorDocuments?: (ids: readonly string[]) => Promise<ReadonlyMap<string, import("@stream-jams/core").AlertEditorDocument>>;
   readonly clock?: () => Date;
   readonly durationCatalog?: AssetDurationCatalog | undefined;
   readonly metadataProbe?: MediaMetadataProbe | undefined;
@@ -309,10 +310,17 @@ export class AssetLibraryService {
   async #deriveUsage(collections: readonly AlertCollection[], rules: readonly AlertRule[]) {
     const collectionNames = new Map(collections.map((collection) => [collection.id, collection.name]));
     const usage = new Map<string, AssetLibraryItem["usage"]["usages"]>();
+    const documents = await this.#options.findEditorDocuments?.(rules.flatMap(rule => [rule.id, ...rule.variants.map(variant => variant.id)])) ?? new Map();
     for (const rule of rules) {
       const referencedAssetIds = new Set(
         rule.variants.flatMap((variant) => [variant.visualAssetId, variant.audioAssetId]).filter((id): id is string => id !== null)
       );
+      for (const editorId of [rule.id, ...rule.variants.map(variant => variant.id)]) {
+        for (const layer of documents.get(editorId)?.layers ?? []) {
+          if (layer.type === "text" && layer.textStyle.fontAssetId) referencedAssetIds.add(layer.textStyle.fontAssetId);
+          if (layer.type === "image" || layer.type === "video" || layer.type === "audio") referencedAssetIds.add(layer.assetId);
+        }
+      }
       if (referencedAssetIds.size === 0) continue;
       const metadata = await this.#options.ruleMetadataRepository.findRule(rule.id);
       const targetProfileIds: readonly TargetProfileId[] = metadata?.targetProfileIds ?? [];

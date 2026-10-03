@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { alertTextWarpSchema } from "./text-warp.js";
 
 export const alertFontPresets = [
   {
@@ -31,7 +32,9 @@ export const alertTextStyleLimits = {
   paddingPx: { min: 0, max: 256 },
   cornerRadiusPx: { min: 0, max: 512 },
   shadowOffsetPx: { min: -256, max: 256 },
-  shadowBlurPx: { min: 0, max: 256 }
+  shadowBlurPx: { min: 0, max: 256 },
+  letterSpacingPx: { min: -20, max: 100 },
+  outlineWidthPx: { min: 0, max: 32 }
 } as const;
 
 export const rgbaColorSchema = z
@@ -96,6 +99,12 @@ export const alertTextStyleSchema = z
     horizontalAlign: z.enum(["left", "center", "right"]),
     verticalAlign: z.enum(["top", "center", "bottom"]),
     color: rgbaColorSchema,
+    fontAssetId: z.string().min(1).nullable().optional(),
+    italic: z.boolean().optional(),
+    underline: z.boolean().optional(),
+    letterSpacingPx: z.number().finite().min(-20).max(100).optional(),
+    outline: z.object({ color: rgbaColorSchema, widthPx: z.number().finite().min(0).max(32) }).strict().nullable().optional(),
+    warp: alertTextWarpSchema.nullable().optional(),
     shadow: alertShadowStyleSchema.nullable()
   })
   .strict();

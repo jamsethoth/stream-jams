@@ -1,6 +1,9 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AssetRecord } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
-import { createInMemoryStreamJamsDatabase } from "../db/database.js";
+import { createInMemoryStreamJamsDatabase, openStreamJamsDatabase } from "../db/database.js";
 import { SqliteAssetRepository } from "./sqlite-asset-repository.js";
 
 describe("SqliteAssetRepository", () => {
@@ -46,4 +49,16 @@ describe("SqliteAssetRepository", () => {
     await expect(repository.findById("asset-image-1")).resolves.toBeNull();
     expect(database.connection.prepare("SELECT asset_id FROM asset_library_metadata").all()).toEqual([]);
   });
+});
+
+it("retains font metadata across database restart", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "stream-jams-font-"));
+  const path = join(directory, "font.sqlite");
+  const record: AssetRecord = { id: "font", originalFileName: "font.woff2", mediaType: "font", mimeType: "font/woff2", sizeBytes: 100, checksum: "a".repeat(64), storagePath: "font/font.woff2", durationMs: null };
+  try {
+    const first = openStreamJamsDatabase(path);
+    await new SqliteAssetRepository(first.connection).save(record); first.close();
+    const second = openStreamJamsDatabase(path);
+    try { await expect(new SqliteAssetRepository(second.connection).findById("font")).resolves.toEqual(record); } finally { second.close(); }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });

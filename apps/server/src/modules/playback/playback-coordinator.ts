@@ -234,8 +234,15 @@ export class PlaybackCoordinator {
     const editorDocuments = await this.#loadEditorDocuments(readyMatches, selectedVariants);
     if (this.#localMediaService !== undefined) {
       const assetIds = [...selectedVariants.values()].flatMap(variant => [variant.visualAssetId, variant.audioAssetId]).filter((id): id is string => id !== null);
-      assetIds.push(...[...editorDocuments.values()].flatMap(document => document.layers.flatMap(layer => layer.type === "image" || layer.type === "video" || layer.type === "audio" ? [layer.assetId] : [])));
-      await this.#localMediaService.captureAdmission(assetIds);
+      assetIds.push(...[...editorDocuments.values()].flatMap(document => document.layers.flatMap(layer => layer.type === "image" || layer.type === "video" || layer.type === "audio" ? [layer.assetId] : layer.type === "text" && layer.textStyle.fontAssetId ? [layer.textStyle.fontAssetId] : [])));
+      const records = await this.#localMediaService.captureAdmission(assetIds);
+      for (const document of editorDocuments.values()) {
+        for (const layer of document.layers) {
+          if (layer.type === "text" && layer.textStyle.fontAssetId && records.get(layer.textStyle.fontAssetId)?.mediaType !== "font") {
+            throw new Error("Selected alert font asset is missing or incompatible.");
+          }
+        }
+      }
     }
     const { documents: resolvedEditorDocuments, assetDurations } = await this.#resolveEditorDurations(editorDocuments);
     const visualAssetMediaTypes = await this.#resolveVisualAssetMediaTypes(
@@ -494,7 +501,7 @@ export class PlaybackCoordinator {
     return this.#localMediaService.runAdmission(async () => {
       const authored = this.#replayDocuments.get(itemId) ?? [];
       const ids = [...new Set([
-        ...item.alerts.flatMap(alert => [alert.overlayInstruction.visual?.assetId, alert.overlayInstruction.audio?.assetId, alert.overlayInstruction.tts?.audioAssetId].filter((id): id is string => id != null)),
+        ...item.alerts.flatMap(alert => [alert.overlayInstruction.visual?.assetId, alert.overlayInstruction.audio?.assetId, alert.overlayInstruction.tts?.audioAssetId, alert.overlayInstruction.text?.textStyle?.fontAssetId].filter((id): id is string => id != null)),
         ...item.audio.flatMap(audio => audio.layers.map(layer => layer.assetId)),
         ...authored.flatMap(collectAlertDurationAssetIds)
       ])];

@@ -123,7 +123,7 @@ export class ManagementOverviewService {
       : [];
     const mediaTypes: Readonly<Record<string, "image" | "gif" | "video">> | null = assets === null
       ? null
-      : Object.fromEntries(assets.flatMap((asset) => asset.mediaType === "audio" ? [] : [[asset.id, asset.mediaType]]));
+      : Object.fromEntries(assets.flatMap((asset) => asset.mediaType === "audio" || asset.mediaType === "font" ? [] : [[asset.id, asset.mediaType]]));
     const items = documents.flatMap(({ alert, document }): HomeAlertConfigurationItem[] => {
       let actionRoute = alertEditorRoute(alert.id, alert.setId, alert.eventType, alert.targetProfileIds[0]);
       if (document === null) {

@@ -130,6 +130,9 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
           throw new InvalidMediaImportError(validation.reason ?? "Invalid media import");
         }
         const mediaType = validation.mediaType;
+        if (impact.owners.length > 0 && (existing.mediaType === "font") !== (mediaType === "font")) {
+          throw new InvalidMediaImportError("Replacement must preserve font compatibility for saved usages.");
+        }
         if (impact.owners.some(owner => owner.moduleId === "timers" && !isTimerAssetCompatible(owner.usageRole ?? "", mediaType))) {
           throw new InvalidMediaImportError("Replacement media is incompatible with an existing timer icon or audio cue.");
         }
