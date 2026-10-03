@@ -12,6 +12,11 @@ The Operator panel SHALL remain usable at 540 x 960 with compact rows and contro
 - **WHEN** the viewport narrows to 390 pixels
 - **THEN** controls remain reachable with wrapping and vertical scrolling without horizontal page overflow
 
+#### Scenario: Consistent module queue controls
+- **WHEN** Alerts and Screen Effects are shown at supported narrow viewport sizes
+- **THEN** each row uses the same identity, status, and action layout without wrapping the Screen Effects action group
+- **AND** pause or resume and clear buttons have accessible names and hover titles when shown as icons
+
 ### Requirement: Compact accessible timer actions
 Timer pause, resume, restart, and stop SHALL have accessible names and hover titles when represented by icons. Manual add, subtract, and set adjustments SHALL be accessible through an expandable keyboard-operable control that retains entered values after a failed request.
 

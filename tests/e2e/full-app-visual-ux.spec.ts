@@ -110,6 +110,17 @@ test.describe.serial("full application visual UX acceptance", () => {
       await expect(page.getByRole("button", { name: "Resume", exact: true })).toBeVisible();
       await expect(page.getByRole("button", { name: "Apply adjustment" })).not.toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+      const modules = page.locator(".operator-module-item");
+      const moduleRows = await modules.evaluateAll(elements => elements.map(element => {
+        const row = element.getBoundingClientRect();
+        const status = element.querySelector(".management-status-badge")!.getBoundingClientRect();
+        const actions = element.querySelector(".operator-controls")!.getBoundingClientRect();
+        return { height: row.height, statusCenter: status.y + status.height / 2, actionsCenter: actions.y + actions.height / 2 };
+      }));
+      expect(moduleRows[0]!.height).toBeCloseTo(moduleRows[1]!.height, 0);
+      for (const row of moduleRows) expect(row.statusCenter).toBeCloseTo(row.actionsCenter, 0);
+      await expect(modules.getByRole("button", { name: "Pause module" }).first()).toHaveAttribute("title", "Pause module");
+      await expect(modules.getByRole("button", { name: "Clear pending" }).first()).toHaveAttribute("title", "Clear pending");
       const recent = await page.getByRole("button", { name: "Replay Recent follow in Alerts" }).boundingBox();
       if (width >= 540) expect(recent!.y + recent!.height).toBeLessThanOrEqual(960);
       else {

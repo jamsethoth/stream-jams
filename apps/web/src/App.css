@@ -1063,12 +1063,14 @@ a:focus-visible {
 .operator-item dt { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .operator-item dd { color: var(--color-text-muted); }
 .operator-module-list { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
-.operator-module-item { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-.operator-module-item .operator-item__summary { flex: 1 1 auto; flex-wrap: wrap; }
+.operator-module-item .operator-item__summary { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; }
+.operator-module-heading { overflow-wrap: anywhere; }
+.operator-module-item .operator-item__summary > .operator-controls { flex-wrap: nowrap; }
+.operator-module-item .management-status-badge { align-self: center; }
 .operator-item__summary > .operator-controls { display: flex; flex-wrap: wrap; gap: 4px; border: 0; background: transparent; padding: 0; }
 .operator-timer-list { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
 .operator-timer-item { min-width: 0; }
-.operator-console .operator-timer-action { display: inline-flex; align-items: center; justify-content: center; width: 32px; padding: 6px; }
+.operator-console .operator-icon-action { display: inline-flex; align-items: center; justify-content: center; width: 32px; padding: 6px; }
 .operator-timer-adjustment { margin-top: 4px; font-size: 12px; }
 .operator-timer-adjustment summary { cursor: pointer; width: fit-content; padding: 4px 0; }
 .operator-timer-adjustment summary:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }

@@ -283,20 +283,20 @@ export function OperatorApp({ api = defaultPlaybackApi, timersApi = defaultOpera
                     if (element === null) moduleHeadingRefs.current.delete(owner.moduleId);
                     else moduleHeadingRefs.current.set(owner.moduleId, element);
                   }} tabIndex={-1}>{moduleLabel(owner.moduleId)}</h3><span>{count} pending</span></div>
+                  <StatusBadge label={owner.paused ? "Module paused" : "Module active"} tone={owner.paused ? "warning" : "positive"} />
                   <div className="operator-controls">
-                    <button className="button button--secondary button--compact" disabled={disabled} onClick={(event) => void runCommand(
+                    <OperatorActionButton label={owner.paused ? "Resume module" : "Pause module"} disabled={disabled} onClick={(button) => void runCommand(
                       `module:${owner.moduleId}:pause`,
                       () => api.setModulePaused(owner.moduleId, !owner.paused),
                       `${moduleLabel(owner.moduleId)} ${owner.paused ? "resumed" : "paused"}.`,
-                      event.currentTarget
-                    )} type="button">{owner.paused ? "Resume module" : "Pause module"}</button>
-                    <button className="button button--danger-quiet button--compact" disabled={disabled || count === 0} onClick={() => {
+                      button
+                    )} />
+                    <OperatorActionButton label="Clear pending" disabled={disabled || count === 0} onClick={() => {
                       clearFallbackFocusRef.current = moduleHeadingRefs.current.get(owner.moduleId) ?? nowPlayingHeadingRef.current;
                       setClearRequest({ moduleId: owner.moduleId, count });
-                    }} type="button">Clear pending</button>
+                    }} />
                   </div>
                 </div>
-                <StatusBadge label={owner.paused ? "Module paused" : "Module active"} tone={owner.paused ? "warning" : "positive"} />
               </article>
             );
           })}
@@ -345,15 +345,15 @@ function OperatorTimerCard({ disabled, onCommand, onAdjust, timer }: { readonly 
   useEffect(() => { if (timer.status !== "running") return; const handle = window.setInterval(() => setNow(Date.now()), 250); return () => window.clearInterval(handle); }, [timer.status]);
   const remaining = timer.status === "running" ? Math.max(0, timer.endsAtEpochMs - now) : timer.status === "paused" ? timer.remainingMs : 0;
   return <article className="operator-item operator-timer-item"><div className="operator-item__summary"><div><strong>{timer.snapshot.label}</strong><span>{formatTimerRemaining(remaining)} · {timer.status}</span></div><div className="operator-controls">
-    {timer.status === "running" ? <TimerAction label="Pause" disabled={disabled} onClick={button => onCommand("pause", button)} /> : timer.status === "paused" ? <TimerAction label="Resume" disabled={disabled} onClick={button => onCommand("resume", button)} /> : null}
-    <TimerAction label="Restart" disabled={disabled} onClick={button => onCommand("restart", button)} />
-    <TimerAction label="Stop" disabled={disabled} onClick={button => onCommand("stop", button)} />
+    {timer.status === "running" ? <OperatorActionButton label="Pause" disabled={disabled} onClick={button => onCommand("pause", button)} /> : timer.status === "paused" ? <OperatorActionButton label="Resume" disabled={disabled} onClick={button => onCommand("resume", button)} /> : null}
+    <OperatorActionButton label="Restart" disabled={disabled} onClick={button => onCommand("restart", button)} />
+    <OperatorActionButton label="Stop" disabled={disabled} onClick={button => onCommand("stop", button)} />
   </div></div><details className="operator-timer-adjustment"><summary>Adjust time</summary><TimerAdjustmentControls disabled={disabled} onApply={onAdjust} /></details></article>;
 }
 
-function TimerAction({ label, disabled, onClick }: { readonly label: "Pause" | "Resume" | "Restart" | "Stop"; readonly disabled: boolean; readonly onClick: (button: HTMLButtonElement) => void }) {
-  const paths = { Pause: "M8 5v14M16 5v14", Resume: "m8 5 11 7-11 7Z", Restart: "M4 10a8 8 0 1 1 1 8M4 4v6h6", Stop: "M6 6h12v12H6Z" };
-  return <button aria-label={label} title={label} className="button button--secondary operator-timer-action" disabled={disabled} onClick={event => onClick(event.currentTarget)} type="button"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={paths[label]} /></svg></button>;
+function OperatorActionButton({ label, disabled, onClick }: { readonly label: "Pause" | "Resume" | "Restart" | "Stop" | "Pause module" | "Resume module" | "Clear pending"; readonly disabled: boolean; readonly onClick: (button: HTMLButtonElement) => void }) {
+  const paths = { Pause: "M8 5v14M16 5v14", Resume: "m8 5 11 7-11 7Z", Restart: "M4 10a8 8 0 1 1 1 8M4 4v6h6", Stop: "M6 6h12v12H6Z", "Pause module": "M8 5v14M16 5v14", "Resume module": "m8 5 11 7-11 7Z", "Clear pending": "M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" };
+  return <button aria-label={label} title={label} className={`button ${label === "Clear pending" ? "button--danger-quiet" : "button--secondary"} operator-icon-action`} disabled={disabled} onClick={event => onClick(event.currentTarget)} type="button"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={paths[label]} /></svg></button>;
 }
 
 function OperatorHeader() {

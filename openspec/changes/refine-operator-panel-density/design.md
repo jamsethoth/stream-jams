@@ -8,7 +8,7 @@ Goals: condense repeated rows and controls, retain all playback metadata and man
 
 ## Decisions
 
-Use Operator-scoped CSS, wrapping metadata, inline module actions, and a small SVG timer button with accessible name and native title. Use native details/summary for timer adjustments so keyboard behavior and retained form values require no additional state. Keep descriptive global safety actions visible. A fixed-size layout was rejected because the panel must resize dynamically.
+Use Operator-scoped CSS, wrapping metadata, and small SVG timer and module action buttons with accessible names and native titles. Module rows use a consistent three-column grid for identity, status, and actions so longer module names do not wrap controls or shift the status below the row. Use native details/summary for timer adjustments so keyboard behavior and retained form values require no additional state. Keep descriptive global safety actions visible. A fixed-size layout was rejected because the panel must resize dynamically.
 
 ## Risks / Trade-offs
 
