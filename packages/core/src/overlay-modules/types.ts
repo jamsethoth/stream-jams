@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import type { OverlayInstruction } from "../overlays/types.js";
-import type { OverlayModulePresentation } from "../timers/types.js";
+import type { OverlayModulePresentation } from "./presentation.js";
 
 export interface OverlayModuleWizardField {
   readonly id: string;

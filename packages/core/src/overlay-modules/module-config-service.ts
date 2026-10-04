@@ -106,8 +106,7 @@ export class DefaultOverlayModuleConfigService implements OverlayModuleConfigSer
       throw new InvalidOverlayModuleConfigError(config.moduleId);
     }
 
-    validateModuleConfig(moduleDefinition, result.data.config);
-    return result.data;
+    return { ...result.data, config: validateModuleConfig(moduleDefinition, result.data.config) };
   }
 }
 

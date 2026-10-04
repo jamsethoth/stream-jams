@@ -37,7 +37,7 @@ export class DesktopModuleSnapshotSink {
       moduleId: "timers", overlayId: "desktop:primary", purpose: "live", scope: "unified", targetProfileId: "landscape"
     });
     if (this.#closed || revision !== this.#revision) return;
-    if (!snapshot.enabled || snapshot.presentation === undefined || snapshot.presentation.stack.cards.length === 0) {
+    if (!snapshot.enabled || snapshot.presentation?.kind !== "timer-stack" || snapshot.presentation.stack.cards.length === 0) {
       await this.dependencies.transport.syncModule({ moduleId: "timers", revision, presentation: null, assets: [] });
       return;
     }

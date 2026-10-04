@@ -9,7 +9,7 @@ import {
 } from "../alerts/text-style.js";
 import { ttsPlaybackInstructionSchema } from "../tts/schemas.js";
 import { mediaVolumeSchema } from "../audio/schemas.js";
-import { overlayModulePresentationSchema } from "../timers/schemas.js";
+import { overlayModulePresentationSchema } from "../overlay-modules/presentation.js";
 import {
   nonEmptyStringSchema,
   nonNegativeIntegerSchema,

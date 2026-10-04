@@ -225,7 +225,7 @@ describe("overlay composition service", () => {
       compositionService.resolveUnifiedOutput({
         overlayId: "overlay-main",
         purpose: "test",
-        enabledModuleIds: ["music"]
+        enabledModuleIds: ["unknown-module"]
       })
     ).rejects.toBeInstanceOf(UnknownOverlayModuleError);
   });

@@ -10,7 +10,6 @@ import {
   positiveIntegerSchema
 } from "../shared/schemas.js";
 import type {
-  OverlayModulePresentation,
   TimerCommandResult,
   TimerDefinition,
   TimerDefinitionInput,
@@ -141,7 +140,5 @@ export const timerStackProjectionSchema = z.object({
   }
 }) satisfies z.ZodType<TimerStackProjection>;
 
-export const overlayModulePresentationSchema = z.object({
-  kind: z.literal("timer-stack"),
-  stack: timerStackProjectionSchema
-}).strict() satisfies z.ZodType<OverlayModulePresentation>;
+/** Compatibility alias; presentation ownership lives with overlay modules. */
+export { overlayModulePresentationSchema } from "../overlay-modules/presentation.js";

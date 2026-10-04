@@ -27,6 +27,7 @@ describe("ProviderManagementService", () => {
   let impacts: Map<string, ProviderActivationImpact>;
   let service: ProviderManagementService;
   let eventSourceSyncCount: number;
+  let musicSourceSyncCount: number;
   let logger: Pick<Logger, "error">;
 
   beforeEach(() => {
@@ -37,6 +38,7 @@ describe("ProviderManagementService", () => {
     secrets = new InMemorySecrets();
     impacts = new Map();
     eventSourceSyncCount = 0;
+    musicSourceSyncCount = 0;
     logger = { error: vi.fn(async () => {}) };
     let id = 0;
     service = new ProviderManagementService({
@@ -45,7 +47,8 @@ describe("ProviderManagementService", () => {
         ["twitch", successfulAdapter("active")],
         ["streamerbot", successfulAdapter("active")],
         ["speakerbot", successfulAdapter(null, [{ id: "Brian", label: "Brian" }])],
-        ["browser-speech", successfulAdapter(null)]
+        ["browser-speech", successfulAdapter(null)],
+        ["pear-desktop", successfulAdapter(null)]
       ]),
       secretStore: secrets,
       getActivationImpact: async (providerId) => impacts.get(providerId) ?? emptyImpact,
@@ -53,6 +56,7 @@ describe("ProviderManagementService", () => {
       onEventSourceChanged: async () => {
         eventSourceSyncCount += 1;
       },
+      onMusicSourceChanged: async () => { musicSourceSyncCount += 1; },
       generateId: () => `provider-${++id}`,
       generateReferenceId: () => "provider-ref-1",
       logger,
@@ -99,6 +103,26 @@ describe("ProviderManagementService", () => {
       externalSubscriptions: []
     });
     expect(secrets.values.get("streamerbot:provider-2:password")).toBe("secret");
+  });
+
+  it("selects Music independently and only notifies the Music source callback", async () => {
+    await service.registerProvider(twitchSetup());
+    const first = await service.registerProvider({ name: "Pear A", kind: "pear-desktop", configuration: {} });
+    const second = await service.registerProvider({ name: "Pear B", kind: "pear-desktop", configuration: {} });
+    expect(first.status).toBe("registered");
+    expect(second.status).toBe("registered");
+    expect(first.provider?.provider).toMatchObject({ capability: "music-source", active: true, intakeState: null });
+    expect(second.provider?.provider.active).toBe(false);
+    expect(eventSourceSyncCount).toBe(1);
+    expect(musicSourceSyncCount).toBe(1);
+    if (second.status !== "registered") throw new Error("Expected second Music source");
+    await service.activateProvider(second.provider.provider.id, false);
+    expect((await repository.findActive("music-source"))?.provider.id).toBe(second.provider.provider.id);
+    expect((await repository.findActive("event-source"))?.provider.kind).toBe("twitch");
+    expect(eventSourceSyncCount).toBe(1);
+    expect(musicSourceSyncCount).toBe(2);
+    await service.deactivateProvider(second.provider.provider.id);
+    expect(musicSourceSyncCount).toBe(3);
   });
 
   it("blocks unsafe activation and requires confirmation when impact contains warnings", async () => {

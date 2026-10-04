@@ -54,6 +54,7 @@ export interface ProviderManagementServiceOptions {
   readonly generateReferenceId: () => string;
   readonly logger?: Pick<Logger, "error"> | undefined;
   readonly onEventSourceChanged?: (() => void | Promise<void>) | undefined;
+  readonly onMusicSourceChanged?: (() => void | Promise<void>) | undefined;
   readonly streamerBotSubscriptions?: StreamerBotSubscriptionRuntime | undefined;
   readonly getVerifiedTwitchBroadcasterId?: (() => Promise<string | null>) | undefined;
   readonly now?: () => Date;
@@ -147,6 +148,7 @@ export class ProviderManagementService {
   readonly #generateReferenceId: () => string;
   readonly #logger: Pick<Logger, "error"> | null;
   readonly #onEventSourceChanged: () => void | Promise<void>;
+  readonly #onMusicSourceChanged: () => void | Promise<void>;
   readonly #streamerBotSubscriptions: StreamerBotSubscriptionRuntime | null;
   readonly #getVerifiedTwitchBroadcasterId: () => Promise<string | null>;
   readonly #now: () => Date;
@@ -162,6 +164,7 @@ export class ProviderManagementService {
     this.#generateReferenceId = options.generateReferenceId;
     this.#logger = options.logger ?? null;
     this.#onEventSourceChanged = options.onEventSourceChanged ?? (() => {});
+    this.#onMusicSourceChanged = options.onMusicSourceChanged ?? (() => {});
     this.#streamerBotSubscriptions = options.streamerBotSubscriptions ?? null;
     this.#getVerifiedTwitchBroadcasterId = options.getVerifiedTwitchBroadcasterId ?? (async () => null);
     this.#now = options.now ?? (() => new Date());
@@ -237,6 +240,9 @@ export class ProviderManagementService {
       if (saved.provider.capability === "event-source" && saved.provider.active) {
         await this.#onEventSourceChanged();
       }
+      if (saved.provider.capability === "music-source" && saved.provider.active) {
+        await this.#onMusicSourceChanged();
+      }
       return providerRegistrationAttemptSchema.parse({
         status: "registered",
         provider: await this.#toDetail(saved),
@@ -303,6 +309,9 @@ export class ProviderManagementService {
     if (target.provider.capability === "event-source") {
       await this.#onEventSourceChanged();
     }
+    if (target.provider.capability === "music-source") {
+      await this.#onMusicSourceChanged();
+    }
 
     return providerActivationResultSchema.parse({
       provider: (await this.#toDetail(activated)).provider,
@@ -324,6 +333,9 @@ export class ProviderManagementService {
     });
     if (target.provider.capability === "event-source") {
       await this.#onEventSourceChanged();
+    }
+    if (target.provider.capability === "music-source" && target.provider.active) {
+      await this.#onMusicSourceChanged();
     }
     return (await this.#toDetail(deactivated)).provider;
   }
@@ -606,5 +618,7 @@ function formatProviderKind(kind: ProviderKind): string {
       return "Speaker.bot";
     case "browser-speech":
       return "Browser Speech";
+    case "pear-desktop":
+      return "Pear Desktop";
   }
 }

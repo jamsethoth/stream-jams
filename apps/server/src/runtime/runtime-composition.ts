@@ -941,11 +941,16 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       if (target === null) {
         return { matchedAlertCount: 0, unmatchedAlertCount: 0, blockers: [], warnings: [] };
       }
+      if (target.provider.capability === "music-source") {
+        return { matchedAlertCount: 0, unmatchedAlertCount: 0, blockers: [], warnings: [] };
+      }
       const activeRules = await alertService.listActiveRules();
       const affectedAlertCount =
         target.provider.capability === "event-source"
           ? activeRules.length
-          : activeRules.filter((rule) => rule.variants.some((variant) => variant.enabled && variant.ttsConfig !== null)).length;
+          : target.provider.capability === "tts"
+            ? activeRules.filter((rule) => rule.variants.some((variant) => variant.enabled && variant.ttsConfig !== null)).length
+            : 0;
       const current = await providerRegistrationRepository.findActive(target.provider.capability);
       const changesProviderKind =
         current !== null && current.provider.id !== target.provider.id && current.provider.kind !== target.provider.kind;
@@ -959,6 +964,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       });
     },
     async getUsedByAlertCount(kind: ProviderKind) {
+      if (kind === "pear-desktop") return 0;
       const activeRules = await alertService.listActiveRules();
       return kind === "speakerbot" || kind === "browser-speech"
         ? activeRules.filter((rule) => rule.variants.some((variant) => variant.enabled && variant.ttsConfig !== null)).length

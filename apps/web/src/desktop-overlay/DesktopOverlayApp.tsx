@@ -31,7 +31,7 @@ export function DesktopOverlayApp({ controller, subscribe }: {
               textStyle: { ...instruction.text.textStyle, fontAssetId: scopedId(occurrence.key, instruction.text.textStyle.fontAssetId) }
             }
           }))),
-        ...(persistent === undefined ? {} : { presentation: { ...persistent.presentation, stack: {
+        ...(persistent === undefined ? {} : persistent.presentation.kind !== "timer-stack" ? { presentation: persistent.presentation } : { presentation: { ...persistent.presentation, stack: {
           ...persistent.presentation.stack,
           cards: persistent.presentation.stack.cards.map(card => ({ ...card, iconAssetId: card.iconAssetId === null ? null :
             scopedModuleAssetId(persistent.moduleId, persistent.revision, moduleAssetKey(card.iconAssetId, card.iconVersion)) }))

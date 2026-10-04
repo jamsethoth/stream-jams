@@ -46,7 +46,7 @@ export function registerManagementProviderRoutes(
     if (!capability.success) {
       return sendHttpError(reply, 400, {
         code: "INVALID_PROVIDER_CAPABILITY",
-        message: "Provider capability must be event-source or tts"
+        message: "Provider capability must be event-source, tts, or music-source"
       });
     }
     return parseList(await overview.listRegisteredProviders(capability.data), registeredProviderViewSchema);

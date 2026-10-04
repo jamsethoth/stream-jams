@@ -49,10 +49,10 @@ export class DesktopVisualAssetResolver {
   }
 
   async resolveTimerModule(candidate: OverlayModulePresentation): Promise<{
-    presentation: OverlayModulePresentation; assets: DesktopModuleSync["assets"]; missingAssetIds: readonly string[];
+    presentation: Extract<OverlayModulePresentation, { kind: "timer-stack" }>; assets: DesktopModuleSync["assets"]; missingAssetIds: readonly string[];
   }> {
     const presentation = overlayModulePresentationSchema.parse(candidate);
-    if (presentation.stack.targetProfileId !== "landscape") throw unavailable();
+    if (presentation.kind !== "timer-stack" || presentation.stack.targetProfileId !== "landscape") throw unavailable();
     const assets: DesktopModuleSync["assets"][number][] = [];
     const missing = new Set<string>();
     const failedVersions = new Set<string>();

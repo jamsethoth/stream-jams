@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type AlertCreateInput,
   type AlertEditorDocument,
+  type ProviderCapability,
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle
 } from "@stream-jams/core";
@@ -90,9 +91,16 @@ describe("management UI contract routes", () => {
     expect(invalidCapability.json()).toEqual({
       error: {
         code: "INVALID_PROVIDER_CAPABILITY",
-        message: "Provider capability must be event-source or tts"
+        message: "Provider capability must be event-source, tts, or music-source"
       }
     });
+  });
+
+  it("lists the independent Music capability through the protected provider route", async () => {
+    const { app, authHeaders } = await createApp();
+    const response = await app.inject({ method: "GET", url: "/management/providers?capability=music-source", headers: authHeaders });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([]);
   });
 
   it("runs protected local settings maintenance commands", async () => {
@@ -746,7 +754,7 @@ async function createApp() {
     metadata: { appName: "stream-jams", version: "0.0.0" },
     managementOverviewService: {
       getHomeSetupSummary: () => service.getHomeSetupSummary(),
-      listRegisteredProviders: (capability: "event-source" | "tts") => service.listRegisteredProviders(capability),
+      listRegisteredProviders: (capability: ProviderCapability) => service.listRegisteredProviders(capability),
       getRegisteredProvider: (providerId: string) => service.getRegisteredProvider(providerId)
     },
     providerManagementService: {
@@ -829,7 +837,7 @@ class StubManagementUiQueryService {
     return { readiness: [], activeAlertSet: null, alertConfiguration: { state: "no-active-set" as const, enabledAlertCount: 0, items: [] }, actionableProblems: [] };
   }
 
-  async listRegisteredProviders(capability: "event-source" | "tts") {
+  async listRegisteredProviders(capability: ProviderCapability) {
     return capability === "event-source"
       ? [
           {

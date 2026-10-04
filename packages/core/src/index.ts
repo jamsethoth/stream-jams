@@ -191,10 +191,10 @@ export {
 } from "./events/schemas.js";
 
 export type * from "./overlay-modules/types.js";
+export type { OverlayModulePresentation } from "./overlay-modules/presentation.js";
 export type * from "./timers/types.js";
 export type * from "./timers/repository.js";
 export {
-  overlayModulePresentationSchema,
   timerCommandResultSchema,
   timerDefinitionSchema,
   timerDefinitionInputSchema,
@@ -206,6 +206,7 @@ export {
   timerStackRegionSchema,
   timersOverlayModuleConfigSchema
 } from "./timers/schemas.js";
+export { overlayModulePresentationSchema } from "./overlay-modules/presentation.js";
 export { compareTimerRuns, formatTimerRemaining, projectTimerStack } from "./timers/projection.js";
 export { timersOverlayModuleDefinition } from "./timers/module-definition.js";
 export { surfaceLayerSchema, surfaceLayersSchema, surfaceConfigurationSchema, surfaceConfigurationUpdateSchema, reconcileSurfaceLayers, validateSurfaceOrder } from "./overlay-modules/surface-configuration.js";
@@ -366,5 +367,6 @@ export * from "./assets/desktop-media-asset.js";
 export * from "./timers/event-rules.js";
 export type * from "./music/types.js";
 export * from "./music/schemas.js";
+export { pearConfigurationSchema, type PearConfiguration } from "./music/pear-configuration.js";
 export * from "./music/module-definition.js";
 export * from "./music/projection.js";

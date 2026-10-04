@@ -313,7 +313,7 @@ describe("TimerRuntimeCoordinator", () => {
     await time.advance(2_000);
     expect(coordinator.listStates().map(state => state.definitionId)).toEqual(["a", "b"]);
     const snapshot = await coordinator.getModuleSnapshot({ moduleId: "timers", overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape" });
-    expect(snapshot.presentation?.stack.cards.map(card => card.definitionId)).toEqual(["a", "b"]);
+    expect(snapshot.presentation?.kind === "timer-stack" ? snapshot.presentation.stack.cards.map(card => card.definitionId) : undefined).toEqual(["a", "b"]);
   });
   it("starts independent timers with immutable definition snapshots and publishes revisions", async () => {
     const { coordinator, cueSink, records } = setup();
@@ -421,7 +421,7 @@ describe("TimerRuntimeCoordinator", () => {
       instructions: [],
       presentation: { kind: "timer-stack", stack: { targetProfileId: "vertical", region: { orientation: "horizontal" } } }
     });
-    expect(snapshot.presentation?.stack.cards.map(card => card.definitionId)).toEqual(["b", "a"]);
+    expect(snapshot.presentation?.kind === "timer-stack" ? snapshot.presentation.stack.cards.map(card => card.definitionId) : undefined).toEqual(["b", "a"]);
   });
 
   it("starts empty, rejects missing definitions, swallows cue failures, and closes owned work", async () => {

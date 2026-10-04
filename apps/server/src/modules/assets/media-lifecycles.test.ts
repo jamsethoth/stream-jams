@@ -47,11 +47,12 @@ it("holds paused and hidden timer versions through replacement and freshly verif
     await runtime.pause("timer"); enabled = false;
     await f.save("icon", "image", null, "new"); await f.save("bell", "audio", 20000, "new");
     const snapshot = await runtime.getModuleSnapshot(snapshotRequest);
-    expect(snapshot.enabled).toBe(false); expect(snapshot.presentation?.stack.cards[0]?.iconVersion).toBe(version);
+    expect(snapshot.enabled).toBe(false); expect(snapshot.presentation?.kind === "timer-stack" ? snapshot.presentation.stack.cards[0]?.iconVersion : undefined).toBe(version);
     expect(f.media.get(timerRunOwner("g1"), "bell").durationMs).toBe(10000);
     expect(await f.store.inspect(original.storagePath)).toBe("available");
     now += 7200000; await runtime.resume("timer");
-    expect((await runtime.getModuleSnapshot(snapshotRequest)).presentation?.stack.cards[0]?.iconVersion).toBe(version);
+    const resumed = await runtime.getModuleSnapshot(snapshotRequest);
+    expect(resumed.presentation?.kind === "timer-stack" ? resumed.presentation.stack.cards[0]?.iconVersion : undefined).toBe(version);
     expect(verification).toHaveBeenCalledTimes(1);
     await runtime.restart("timer");
     expect(verification).toHaveBeenCalledTimes(2);

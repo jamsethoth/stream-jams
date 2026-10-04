@@ -241,6 +241,7 @@ function privateAsset(assetId: string): import("@stream-jams/core").PrivateDeskt
 it("preserves two versions of one timer icon and keeps stable sources through same-revision refresh", async () => {
   const { controller, configure, send, prepareAsset } = harness(); configure();
   const sync = moduleSync(1);
+  if (sync.presentation?.kind !== "timer-stack") throw new Error("Expected a timer fixture");
   sync.presentation!.stack.region.maxVisible = 2;
   const first = privateAsset("icon");
   const second = privateAsset("icon");
