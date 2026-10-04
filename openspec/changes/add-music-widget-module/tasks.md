@@ -1,8 +1,8 @@
 ## 1. Confirm Scope And Baseline
 
-- [ ] 1.1 Obtain written-spec review, resolve the explicitly proposed native-appearance-versus-custom-CSS choice, and record any design amendments before implementation planning/execution.
+- [ ] 1.1 Obtain written-spec review of the updated design, including the user-selected native controls plus Advanced CSS and uploaded branding image, before implementation planning/execution.
 - [ ] 1.2 Refresh origin/main, confirm the target branch/worktree and unimplemented Music scope, and record the source widget commit and supported Pear version in verification evidence.
-- [ ] 1.3 Map each reference widget feature to the new contract/UI and read applicable frontend/module/secret/backup guidance; identify any missing safe-fetch/image-validation primitive and justify an exact maintained dependency only if needed.
+- [ ] 1.3 Map each reference widget feature to the new contract/UI and read applicable frontend/module/secret/backup guidance; evaluate an established CSS parser and any missing safe-fetch/image-validation primitive, documenting maintenance/license/stack fit before adding exact dependencies.
 
 ## 2. Core Contracts And Provider Registration
 
@@ -26,7 +26,8 @@
 - [ ] 4.1 Implement authoritative snapshot revisions, shared appearance epoch, interpolation/projection and transparent stale/disconnected state; test rapid switch, fresh-recipient resync, clock offsets and slow consumers.
 - [ ] 4.2 Implement constrained artwork fetching, destination/redirect/DNS policy, raster validation, bounded cache and opaque references; cover malformed/oversized content, rebinding/private-address rejection, aborts and placeholder behavior.
 - [ ] 4.3 Integrate artwork delivery with management, purpose-scoped browser and private-desktop authorization; test wrong-purpose/revoked keys, arbitrary-URL rejection and obsolete generation access.
-- [ ] 4.4 Extend backup mappings, schema-drift checks and restore behavior for Music config/fonts/metadata; exclude credentials/pairing identity/cache/playback, require fresh pairing and test rollback/secret cleanup failure.
+- [ ] 4.4 Extend backup mappings, schema-drift checks and restore behavior for Music config/CSS/style version/branding images/fonts/metadata; validate style and asset references, exclude credentials/pairing identity/cache/playback, require fresh pairing and test rollback/secret cleanup failure.
+- [ ] 4.5 Add Music branding image/font usages to asset reference, replacement and retirement checks for every profile/view; verify valid replacements refresh authorized versioned delivery and incompatible references are rejected.
 
 ## 5. Management And Shared Rendering
 
@@ -36,6 +37,10 @@
 - [ ] 5.4 Add management mock preview and explicit test-output delivery using the production renderer; prove previews do not activate/change a provider or leak fixture state to live output.
 - [ ] 5.5 Register module/unified output composition and opt-in desktop surface delivery; preserve layer visibility, profile bounds, route-key/private authorization, click-through and no-audio behavior.
 - [ ] 5.6 Add production-component tests and Storybook states/interactions for appearance, long/missing text, unknown duration, empty/loading, pairing denial, auth-required, reconnect, stale status, dirty edits and keyboard accessibility.
+- [ ] 5.7 Implement and test the shared bounded CSS parser/policy, including escaped syntax, custom-property indirection, resource loading, permitted at-rules, selector restrictions and inline validation locations; do not substitute regex-only filtering.
+- [ ] 5.8 Add the versioned styling surface, managed Shadow DOM frame and CSS apply/disable/clear behavior; verify layout/animation/container rules, native-control precedence, reduced motion and isolation from host/sibling content.
+- [ ] 5.9 Add accessible Advanced CSS editing with preview-only drafts, explicit save, last-valid-result preservation and an always-accessible disable action; cover these flows in production-component stories/tests.
+- [ ] 5.10 Add branding image picker/upload, per-profile/full/compact fit/position/opacity, width/height/content insets and aspect-ratio action; render fill/image/content layers with transparent-image and load-failure stories/tests.
 
 ## 6. Automated Integration And Live Acceptance
 
@@ -45,9 +50,12 @@
 - [ ] 6.4 Run lint, typecheck, tests, build, Storybook build/test, applicable Playwright/desktop suites and strict OpenSpec validation; classify and resolve relevant failures without weakening tests.
 - [ ] 6.5 Rebuild/restart affected local services, wait for health, reload management/output and verify the changed workflow against the new build.
 - [ ] 6.6 Record actual Pear version and authenticated pairing/restart/revocation/track/seek/pause/reconnect acceptance, plus OBS browser-source and Windows desktop visual acceptance; mark any unavailable physical check with its exact missing dependency.
+- [ ] 6.7 Add browser acceptance for custom CSS layouts/disable/errors, rejected network-loading CSS with request interception, scope isolation, branded layer ordering, fit modes, independent opacity and no residual branding after idle/disconnect.
+- [ ] 6.8 Verify the same branded custom layout across management preview, module/unified output and private desktop, including saved restart/backup round trips and asset replacement/missing-image recovery.
 
 ## 7. Documentation And Requirement Reconciliation
 
 - [ ] 7.1 Document Pear AUTH_AT_FIRST setup, local transport, endpoint/version compatibility, credential recovery, styling compatibility, output setup and troubleshooting with secret-free examples.
 - [ ] 7.2 Add a short provider onboarding guide covering typed setup/schema registration, adapter normalization/authentication, safe artwork policy and required contract fixtures; describe Plex/Spotify as future design checks only.
 - [ ] 7.3 Reconcile every specification scenario against code/tests and recorded acceptance; sync completed canonical specs and remove only the implemented BL-028 outcome when completion criteria are met.
+- [ ] 7.4 Document supported CSS selectors/variables, precedence, permitted rules, standalone selector migration, recovery and branding-image setup using a checked-in non-secret sample branded layout.

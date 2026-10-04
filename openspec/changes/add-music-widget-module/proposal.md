@@ -9,7 +9,8 @@ Streamers currently run Stream Jams Music Widget separately, with browser-owned 
 - Add a transport-independent music-source contract and one active music provider, independent of event-source and TTS selection. Extend existing provider registration and OS-backed secret storage.
 - Implement Pear Desktop first: explicit pairing, authenticated REST and WebSocket communication, secure credential recovery, bounded reconnect/fallback, and validated normalized snapshots.
 - Correct empty-state, stale-state, polling-idle, and shutdown races identified in the standalone widget. Keep live failures transparent and show actionable diagnostics in management.
-- Proposed compatibility choice for review: replace the optional arbitrary custom CSS file with saved, schema-backed appearance controls and existing uploaded-font assets. Existing CSS files are not automatically portable; see the explicit review note in `design.md`.
+- Combine saved appearance controls with an optional Advanced CSS editor for custom layouts, component visibility, responsive styling and animations. Validate and isolate CSS, document stable widget selectors, and retain the editor content across restarts/backups.
+- Add an uploaded branding image behind the widget components, using existing image assets, transparency, fit/position/opacity controls and separate full/compact presentation. Preview the complete branded widget with the production renderer.
 - Add reusable adapter contract tests and Pear protocol fixtures; use Plex session selection and Spotify OAuth/polling as design checks without shipping those providers in this slice.
 
 ## Capabilities
@@ -30,5 +31,5 @@ None. Existing module configuration, output authorization, durable secret storag
 - `apps/web`: Music management/setup and appearance UI, typed clients, reusable renderer, management preview, Storybook, and browser/desktop presentation handling.
 - `apps/desktop`: Existing private renderer/IPC contracts and lifecycle integration where the new presentation variant requires them; no extra player or local service.
 - Verification: Unit, protocol/contract, migration/restore, HTTP authorization, Storybook, Playwright, and real Pear plus OBS/desktop acceptance.
-- Dependencies: Reuse Zod, `ws`, Fastify, React, existing font assets, and the keyring adapter. Evaluate a maintained library only if required for remote image validation/safe fetching; record concrete need before adding an exact dependency.
+- Dependencies: Reuse Zod, `ws`, Fastify, React, existing image/font assets, and the keyring adapter. Use an established CSS parser for the explicit validation policy; evaluate maintenance, license and stack compatibility before selecting an exact dependency. Evaluate additional image/safe-fetch libraries only for concrete gaps.
 - Scope: No playback controls, audio capture/playback, song requests, queue/history, simultaneous music-provider mixing, Plex/Spotify implementation, or modification of the standalone widget repository. BL-028 becomes the index for this proposal.
