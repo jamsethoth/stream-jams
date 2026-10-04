@@ -31,7 +31,21 @@ test("approves a proof-bound local client and revokes its real credential in Set
   await expect(item.getByRole("checkbox", { name: "playback:mute:alerts" })).not.toBeChecked();
   await page.waitForTimeout(5200);
   await expect(item.getByRole("checkbox", { name: "timers:control" })).not.toBeChecked();
+  let releasePoll!: () => void;
+  let markPollStarted!: () => void;
+  const pollStarted = new Promise<void>(resolve => { markPollStarted = resolve; });
+  const stalledPoll = new Promise<void>(resolve => { releasePoll = resolve; });
+  let intercepted = false;
+  await page.route("**/api/automation/pairings", async route => {
+   if (!intercepted && route.request().method() === "GET") {
+    intercepted = true; markPollStarted(); await stalledPoll; await route.abort();
+   } else await route.continue();
+  });
+  await page.getByRole("button", { name: "Refresh automation" }).click();
+  await pollStarted;
   await item.getByRole("button", { name: `Approve ${clientName}` }).click();
+  await expect(item).toContainText("Waiting for the client to finish pairing.");
+  releasePoll();
   await expect(item).toContainText("Waiting for the client to finish pairing.");
   const exchange = await request.post(`${runtime.url}/automation/v1/pairings/${pairing.id}/exchange`, { data: { verifier } }); expect(exchange.ok()).toBe(true);
   const credential = await exchange.json() as { token: string };

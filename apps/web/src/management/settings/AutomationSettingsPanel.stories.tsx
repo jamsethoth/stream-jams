@@ -37,3 +37,16 @@ export const NoPermissionsSelected: Story = {
     await expect(canvas.getByText("Select at least one permission to approve.")).toBeVisible();
   }
 };
+export const ApproveDuringStalledRefresh: Story = {
+  args: { api: api([pairing]) },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText("A1B2C3D4");
+    const list = fn(args.api!.listPairings);
+    list.mockImplementationOnce(() => new Promise(() => {}));
+    args.api!.listPairings = list;
+    await userEvent.click(canvas.getByRole("button", { name: "Refresh automation" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Approve Stream Deck" }));
+    await expect(await canvas.findByText("Approved. Waiting for the client to finish pairing.")).toBeVisible();
+  }
+};
