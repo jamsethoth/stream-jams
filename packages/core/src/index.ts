@@ -370,3 +370,4 @@ export * from "./music/schemas.js";
 export { pearConfigurationSchema, type PearConfiguration } from "./music/pear-configuration.js";
 export * from "./music/module-definition.js";
 export * from "./music/projection.js";
+export * from "./music/style-policy.js";
