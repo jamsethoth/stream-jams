@@ -217,7 +217,8 @@ export function OperatorApp({ api = defaultPlaybackApi, timersApi = defaultOpera
       <OperatorHeader />
       <section aria-label="Playback safety status" className="operator-status-strip">
         <StatusBadge label={snapshot.paused ? "All queues paused" : "Global playback active"} tone={snapshot.paused ? "warning" : "positive"} />
-        <StatusBadge label={snapshot.muted ? "Audio muted" : "Audio on"} tone={snapshot.muted ? "warning" : "positive"} />
+        <StatusBadge label={(snapshot.moduleMutes?.alerts ?? snapshot.muted) ? "Alerts muted" : "Alerts audio on"} tone={(snapshot.moduleMutes?.alerts ?? snapshot.muted) ? "warning" : "positive"} />
+        <StatusBadge label={(snapshot.moduleMutes?.["screen-effects"] ?? snapshot.muted) ? "Effects muted" : "Effects audio on"} tone={(snapshot.moduleMutes?.["screen-effects"] ?? snapshot.muted) ? "warning" : "positive"} />
         <StatusBadge label={snapshot.doNotDisturb ? "Do-not-disturb on" : "Do-not-disturb off"} tone={snapshot.doNotDisturb ? "warning" : "positive"} />
       </section>
 
@@ -231,9 +232,9 @@ export function OperatorApp({ api = defaultPlaybackApi, timersApi = defaultOpera
         <button className="button button--secondary" disabled={disabled} onClick={(event) => void runCommand(
           snapshot.muted ? "unmute" : "mute",
           snapshot.muted ? api.unmute : api.mute,
-          snapshot.muted ? "Playback audio unmuted." : "Playback audio muted.",
+          snapshot.muted ? "Alerts and Effects audio unmuted." : "Alerts and Effects audio muted.",
           event.currentTarget
-        )} type="button">{snapshot.muted ? "Unmute playback audio" : "Mute playback audio"}</button>
+        )} type="button">{snapshot.muted ? "Unmute Alerts and Effects" : "Mute Alerts and Effects"}</button>
         <button aria-pressed={snapshot.doNotDisturb} className="button button--secondary" disabled={disabled} onClick={(event) => void runCommand(
           "dnd",
           () => api.setDoNotDisturb(!snapshot.doNotDisturb),
@@ -243,7 +244,7 @@ export function OperatorApp({ api = defaultPlaybackApi, timersApi = defaultOpera
       </section>
 
       {snapshot.paused ? <p className="operator-boundary-note">Current playback continues; pending items wait in their owning module queues.</p> : null}
-      {snapshot.muted ? <p className="operator-boundary-note">Browser and device audio are muted. Visuals continue.</p> : null}
+      {snapshot.muted ? <p className="operator-boundary-note">Alerts and Effects audio are muted on browser and device outputs. Visuals and timer cues continue.</p> : null}
       {announcement === "" ? null : <p aria-live="polite" className="operator-announcement" role="status">{announcement}</p>}
       {commandError !== null ? <OperatorErrorBanner error={commandError} title="Playback command failed" /> : refreshError === null ? null : <OperatorErrorBanner error={refreshError} title="Playback state may be stale" />}
 

@@ -60,6 +60,15 @@ describe("FileConfigStore", () => {
     expect(persisted.playback.muted).toBe(true);
   });
 
+  it("retains independent module mute flags after reopening the config store", async () => {
+    const store = new FileConfigStore({ configFilePath, defaultConfig });
+    await store.updateConfig({ playback: { moduleMutes: { alerts: true, "screen-effects": false }, muted: false } });
+    const reopened = await new FileConfigStore({ configFilePath, defaultConfig }).readConfig();
+    expect(reopened.playback.moduleMutes).toEqual({ alerts: true, "screen-effects": false });
+    await store.updateConfig({ playback: { paused: true } });
+    expect((await store.readConfig()).playback.moduleMutes).toEqual({ alerts: true, "screen-effects": false });
+  });
+
   it("does not poison later writes after an invalid update", async () => {
     const store = new FileConfigStore({ configFilePath, defaultConfig });
     await expect(store.updateConfig({ server: { port: -1 } })).rejects.toThrow();

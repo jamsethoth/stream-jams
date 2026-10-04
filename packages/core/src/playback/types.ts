@@ -25,7 +25,12 @@ export interface PlaybackQueueItem {
   readonly completedAt: string | null;
 }
 
+export type MutablePlaybackModuleId = "alerts" | "screen-effects";
+export type ModuleMuteState = Readonly<Record<MutablePlaybackModuleId, boolean>>;
+export const defaultModuleMuteState: ModuleMuteState = { alerts: false, "screen-effects": false };
+
 export interface PlaybackSafetyState {
+  readonly moduleMutes?: ModuleMuteState | undefined;
   readonly paused: boolean;
   readonly muted: boolean;
   readonly doNotDisturb: boolean;

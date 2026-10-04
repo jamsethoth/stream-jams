@@ -8,6 +8,7 @@ Use this map to distinguish current behavior, pending work, and historical evide
 | --- | --- |
 | How do I run or operate the application? | [Runbook](mvp-runbook.md) |
 | How do I configure Timers or Stream Deck HTTP actions? | [Timers](timers.md); [implementation verification and remaining manual acceptance](verification/timers.md) |
+| How do native integrations pair and control timers/queues? | [Local automation API v1](automation-api.md) |
 | What product boundaries are intentional? | [Product plan](product-plan.md); its MVP sections describe the first delivery boundary, and later sections describe approved additions |
 | What is still pending? | [Canonical backlog](backlog.md), including links to planned OpenSpec changes |
 | What implemented behavior is required? | [Canonical OpenSpec capabilities](../openspec/specs); source and tests establish what actually runs when a discrepancy is found |

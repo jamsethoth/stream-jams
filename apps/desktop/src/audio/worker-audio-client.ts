@@ -43,6 +43,7 @@ export class WorkerAudioClient implements DesktopAudioTransport {
     return { ...(result.outputDiagnostics === undefined ? {} : { outputDiagnostics: result.outputDiagnostics }), ...(result.diagnostics === undefined ? {} : { diagnostics: result.diagnostics }), failedRouteIds: result.failedRouteIds, ...(result.failures === undefined ? {} : { failures: result.failures }) };
   }
   async stop(playbackId: string): Promise<void> { await this.#ok({ type: "stop", playbackId }); }
+  async setModuleMutes(moduleMutes: import("@stream-jams/core").ModuleMuteState): Promise<void> { await this.#ok({ type: "set-module-mutes", moduleMutes }); }
   async setMuted(muted: boolean): Promise<void> { await this.#ok({ type: "set-muted", muted }); }
   async testOutput(deviceId: string): Promise<void> { await this.#ok({ type: "test", deviceId }); }
   async retry(): Promise<void> { await this.#ok({ type: "retry" }); }

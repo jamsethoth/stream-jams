@@ -69,6 +69,7 @@ export interface ResolvedAlertAudio {
 }
 
 export interface DeviceAudioBatch {
+  readonly moduleId?: "alerts" | "screen-effects" | "timers" | undefined;
   /** New occurrences carry a shared epoch; absent only for legacy audio callers. */
   readonly timing?: PlaybackTiming | undefined;
   readonly playbackId: string;
@@ -108,6 +109,7 @@ export interface AudioPlaybackSink {
   /** Resolves only after silence is established for this occurrence. */
   stop(playbackId: string): Promise<void>;
   setMuted(muted: boolean): Promise<void>;
+  setModuleMutes?(state: import("../playback/types.js").ModuleMuteState): Promise<void>;
   /** Cancels pending starts and resolves only once every output is silent. */
   close(): Promise<void>;
 }

@@ -46,9 +46,10 @@ test("management opens the focused Operator console and global controls apply re
   await page.keyboard.press("Enter");
   await expect(page.getByRole("button", { name: "Resume all queues" })).toBeFocused();
   await page.getByRole("button", { name: "Resume all queues" }).click();
-  await page.getByRole("button", { name: "Mute playback audio" }).click();
-  await expect(page.getByText("Audio muted", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Unmute playback audio" }).click();
+  await page.getByRole("button", { name: "Mute Alerts and Effects" }).click();
+  await expect(page.getByText("Alerts muted", { exact: true })).toBeVisible();
+  await expect(page.getByText("Effects muted", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Unmute Alerts and Effects" }).click();
   await page.getByRole("button", { name: "Enable do-not-disturb" }).click();
   await expect(page.getByRole("button", { name: "Disable do-not-disturb" })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "Disable do-not-disturb" }).click();

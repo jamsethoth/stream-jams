@@ -364,3 +364,6 @@ export { monitorMediaProgress } from "./audio/media-progress.js";
 export * from "./assets/media-reference.js";
 export * from "./assets/desktop-media-asset.js";
 export * from "./timers/event-rules.js";
+
+export { moduleMuteStateSchema } from "./playback/schemas.js";
+export { defaultModuleMuteState, type ModuleMuteState, type MutablePlaybackModuleId } from "./playback/types.js";
