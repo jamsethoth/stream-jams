@@ -20,6 +20,8 @@ describe("provider management contracts", () => {
       expect(providerSetupInputSchema.safeParse({ name: "Pear", kind: "pear-desktop", configuration: { baseUrl } }).success).toBe(false);
     }
     expect(providerCapabilityForKind("pear-desktop")).toBe("music-source");
+    expect(providerSetupInputSchema.safeParse({ name: "Pear", kind: "pear-desktop", configuration: {}, credential: "raw-secret" }).success).toBe(false);
+    expect(providerSetupInputSchema.parse({ name: "Pear", kind: "pear-desktop", configuration: {}, pairingAttemptId: "pair_opaque_123456" })).toMatchObject({ pairingAttemptId: "pair_opaque_123456" });
   });
   it.each([
     {

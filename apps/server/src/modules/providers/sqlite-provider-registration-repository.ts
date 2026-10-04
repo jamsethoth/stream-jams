@@ -106,6 +106,10 @@ export class SqliteProviderRegistrationRepository {
     return parsed;
   }
 
+  async delete(providerId: string): Promise<void> {
+    this.#connection.prepare("DELETE FROM provider_registrations WHERE id = ?").run(providerId);
+  }
+
   async findById(providerId: string): Promise<ProviderRegistrationRecord | null> {
     const row = this.#connection
       .prepare(`SELECT ${providerColumns} FROM provider_registrations WHERE id = ?`)

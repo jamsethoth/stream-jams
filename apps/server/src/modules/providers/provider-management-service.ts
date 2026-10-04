@@ -21,6 +21,7 @@ import {
   type ProviderSetupInput,
   type ProviderValidationResult,
   type ProviderVoiceTestResult,
+  type PearConfiguration,
   type RegisteredProviderDetail,
   type RegisteredProviderView,
   type SecretRef,
@@ -33,6 +34,7 @@ import type {
   ProviderRegistrationRecord,
   SqliteProviderRegistrationRepository
 } from "./sqlite-provider-registration-repository.js";
+import type { PearPairingClaim, PearPairingService } from "../music/pear-pairing-service.js";
 
 export interface ProviderVoiceTestInput {
   readonly provider: RegisteredProviderDetail;
@@ -48,6 +50,8 @@ export interface ProviderManagementServiceOptions {
   readonly repository: SqliteProviderRegistrationRepository;
   readonly adapters: ReadonlyMap<ProviderKind, ProviderManagementAdapter>;
   readonly secretStore: Pick<SecretStoreBoundary, "setSecret" | "getSecret" | "deleteSecret">;
+  readonly musicPairing?: Pick<PearPairingService, "reserve"> | undefined;
+  readonly validateMusicConnection?: ((config: PearConfiguration, token: string, signal: AbortSignal) => Promise<ProviderValidationResult>) | undefined;
   readonly getActivationImpact: (providerId: string) => Promise<ProviderActivationImpact>;
   readonly getUsedByAlertCount: (kind: ProviderKind) => Promise<number>;
   readonly generateId: () => string;
@@ -142,6 +146,8 @@ export class ProviderManagementService {
   readonly #repository: SqliteProviderRegistrationRepository;
   readonly #adapters: ReadonlyMap<ProviderKind, ProviderManagementAdapter>;
   readonly #secretStore: ProviderManagementServiceOptions["secretStore"];
+  readonly #musicPairing: ProviderManagementServiceOptions["musicPairing"];
+  readonly #validateMusicConnection: ProviderManagementServiceOptions["validateMusicConnection"];
   readonly #getActivationImpact: ProviderManagementServiceOptions["getActivationImpact"];
   readonly #getUsedByAlertCount: ProviderManagementServiceOptions["getUsedByAlertCount"];
   readonly #generateId: () => string;
@@ -158,6 +164,8 @@ export class ProviderManagementService {
     this.#repository = options.repository;
     this.#adapters = options.adapters;
     this.#secretStore = options.secretStore;
+    this.#musicPairing = options.musicPairing;
+    this.#validateMusicConnection = options.validateMusicConnection;
     this.#getActivationImpact = options.getActivationImpact;
     this.#getUsedByAlertCount = options.getUsedByAlertCount;
     this.#generateId = options.generateId;
@@ -172,6 +180,17 @@ export class ProviderManagementService {
 
   async validateProvider(input: ProviderSetupInput): Promise<ProviderValidationResult> {
     const parsed = providerSetupInputSchema.parse(input);
+    if (parsed.kind === "pear-desktop") {
+      if (parsed.pairingAttemptId === undefined || this.#musicPairing === undefined || this.#validateMusicConnection === undefined) {
+        return this.#failedValidation("Pear pairing is required", "Approve a local Pear pairing request before connecting.", "Pair Pear Desktop and retry setup.");
+      }
+      let claim: PearPairingClaim;
+      try { claim = this.#musicPairing.reserve(parsed.pairingAttemptId, parsed.configuration); }
+      catch { return this.#failedValidation("Pear pairing is unavailable", "The pairing request expired, was cancelled, or has already been used.", "Start a new pairing request."); }
+      try {
+        return await this.#validatePear(parsed.configuration, claim.token);
+      } finally { claim.release(); }
+    }
     const adapter = this.#adapters.get(parsed.kind);
     if (adapter === undefined) {
       return this.#failedValidation(
@@ -194,8 +213,17 @@ export class ProviderManagementService {
 
   async registerProvider(input: ProviderSetupInput): Promise<ProviderRegistrationAttempt> {
     const parsed = providerSetupInputSchema.parse(input);
-    const validation = await this.validateProvider(parsed);
+    let claim: PearPairingClaim | null = null;
+    if (parsed.kind === "pear-desktop" && parsed.pairingAttemptId !== undefined && this.#musicPairing !== undefined && this.#validateMusicConnection !== undefined) {
+      try { claim = this.#musicPairing.reserve(parsed.pairingAttemptId, parsed.configuration); }
+      catch { /* Validation below returns a bounded management error. */ }
+    }
+    const validation = claim !== null && parsed.kind === "pear-desktop"
+      ? await this.#validatePear(parsed.configuration, claim.token)
+      : await this.validateProvider(parsed);
+    claim?.assertActive();
     if (!validation.valid) {
+      claim?.release();
       return providerRegistrationAttemptSchema.parse({
         status: "validation-failed",
         provider: null,
@@ -207,8 +235,10 @@ export class ProviderManagementService {
     const active = (await this.#repository.findActive(capability)) === null;
     const providerId = this.#generateId();
     const now = this.#now().toISOString();
-    const secret = providerCredential(parsed);
-    const secretRef = secret === null ? null : createProviderSecretRef(providerId);
+    const secret = parsed.kind === "pear-desktop"
+      ? claim?.token ?? null
+      : providerCredential(parsed);
+    const secretRef = secret === null ? null : createProviderSecretRef(providerId, parsed.kind);
     const record: ProviderRegistrationRecord = {
       provider: {
         id: providerId,
@@ -232,28 +262,51 @@ export class ProviderManagementService {
     };
 
     if (secretRef !== null && secret !== null) {
-      await this.#secretStore.setSecret(secretRef, secret);
+      try {
+        claim?.assertActive();
+        await this.#secretStore.setSecret(secretRef, secret);
+        claim?.assertActive();
+      }
+      catch (error) {
+        await this.#secretStore.deleteSecret(secretRef);
+        claim?.release();
+        throw error;
+      }
     }
 
+    let saved: ProviderRegistrationRecord;
     try {
-      const saved = await this.#repository.save(record);
+      claim?.assertActive();
+      saved = await this.#repository.save(record);
+      claim?.assertActive();
+      claim?.complete();
+    } catch (error) {
+      if (claim !== null) await this.#repository.delete(providerId);
+      if (secretRef !== null) await this.#secretStore.deleteSecret(secretRef);
+      claim?.release();
+      throw error;
+    }
+    try {
       if (saved.provider.capability === "event-source" && saved.provider.active) {
         await this.#onEventSourceChanged();
       }
       if (saved.provider.capability === "music-source" && saved.provider.active) {
         await this.#onMusicSourceChanged();
       }
-      return providerRegistrationAttemptSchema.parse({
-        status: "registered",
-        provider: await this.#toDetail(saved),
-        validation
-      });
-    } catch (error) {
-      if (secretRef !== null) {
-        await this.#secretStore.deleteSecret(secretRef);
-      }
-      throw error;
+    } catch {
+      // The record and its credential are durable. Runtime reconciliation retries separately.
     }
+    return providerRegistrationAttemptSchema.parse({
+      status: "registered", provider: await this.#toDetail(saved), validation
+    });
+  }
+
+  async #validatePear(config: PearConfiguration, token: string): Promise<ProviderValidationResult> {
+    try {
+      const result = providerValidationResultSchema.parse(await this.#validateMusicConnection!(config, token, AbortSignal.timeout(5_000)));
+      if (result.valid) return { ...result, error: null };
+    } catch { /* Never surface upstream credential-bearing diagnostics. */ }
+    return this.#failedValidation("Pear connection failed", "Pear did not confirm a usable music connection.", "Check Pear Desktop and retry pairing.");
   }
 
   async listProviders(capability: ProviderCapability): Promise<readonly RegisteredProviderView[]> {
@@ -594,8 +647,10 @@ function providerCredential(input: ProviderSetupInput): string | null {
     : null;
 }
 
-function createProviderSecretRef(providerId: string): SecretRef {
-  return { namespace: "streamerbot", accountId: providerId, name: "password" };
+function createProviderSecretRef(providerId: string, kind: ProviderKind): SecretRef {
+  return kind === "pear-desktop"
+    ? { namespace: "music", accountId: providerId, name: "access-token" }
+    : { namespace: "streamerbot", accountId: providerId, name: "password" };
 }
 
 function defaultTtsSafety(defaultVoiceId: string | null): TtsProviderSafetySettings {

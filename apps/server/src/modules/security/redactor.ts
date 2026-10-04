@@ -89,7 +89,7 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
   };
 
   function redactUrls(value: string): string {
-    return value.replace(/https?:\/\/[^\s"'<>]+|\/(?:[^\s"'<>?]*)(?:\?[^\s"'<>]*)/g, (candidate) => redactUrl(candidate));
+    return value.replace(/(?:https?|wss?):\/\/[^\s"'<>]+|(?<![:/])\/(?:[^\s"'<>?]*)(?:\?[^\s"'<>]*)/gi, (candidate) => redactUrl(candidate));
   }
 
   function redactUrl(value: string): string {
@@ -104,6 +104,11 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
     }
 
     let changed = false;
+    if (url.username !== "" || url.password !== "") {
+      url.username = replacement;
+      url.password = replacement;
+      changed = true;
+    }
     for (const name of Array.from(url.searchParams.keys())) {
       if (sensitiveUrlParamNames.has(normalizeName(name))) {
         url.searchParams.set(name, replacement);
@@ -112,7 +117,7 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
     }
 
     if (!changed) return value;
-    return /^https?:\/\//i.test(value) ? url.toString() : `${url.pathname}${url.search}${url.hash}`;
+    return /^(?:https?|wss?):\/\//i.test(value) ? url.toString() : `${url.pathname}${url.search}${url.hash}`;
   }
 
   function redactOverlayKeys(value: string): string {

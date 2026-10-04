@@ -161,7 +161,8 @@ export const providerSetupInputSchema = z.discriminatedUnion("kind", [
   }).strict(),
   providerSetupBaseSchema.extend({
     kind: z.literal("pear-desktop"),
-    configuration: pearConfigurationSchema
+    configuration: pearConfigurationSchema,
+    pairingAttemptId: z.string().min(16).max(128).optional()
   }).strict()
 ]);
 

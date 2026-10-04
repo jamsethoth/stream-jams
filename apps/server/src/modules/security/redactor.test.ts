@@ -93,6 +93,19 @@ describe("createRedactor", () => {
     );
   });
 
+  it("redacts Pear credentials in WS, WSS and HTTP URL forms and nested diagnostics", () => {
+    const redactor = createRedactor();
+    const sentinel = "pear-secret-sentinel";
+    const diagnostic = redactor.redact({
+      websocket: `wss://localhost:26538/api/v1/ws?token=${sentinel}`,
+      insecureWebsocket: `ws://localhost:26538/api/v1/ws?token=${sentinel}`,
+      url: `https://pear:${sentinel}@localhost:26538/auth/client`,
+      authorization: `Bearer ${sentinel}`,
+      cause: { message: `Authorization: Bearer ${sentinel}` }
+    });
+    expect(JSON.stringify(diagnostic)).not.toContain(sentinel);
+  });
+
   it("normalizes control characters across nested exception text", () => {
     const redactor = createRedactor();
 

@@ -112,6 +112,7 @@ import { PlaybackOperationsService } from "../modules/playback/playback-operatio
 import { createAlertQueueOwner, createEffectQueueOwner } from "../modules/playback/playback-queue-owners.js";
 import { ManagementOverviewService } from "../modules/providers/management-overview-service.js";
 import { createProviderManagementAdapters } from "../modules/providers/provider-management-adapters.js";
+import { PearPairingService } from "../modules/music/pear-pairing-service.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
 import { evaluateProviderActivationImpact } from "../modules/providers/provider-activation-impact.js";
 import { SqliteProviderRegistrationRepository } from "../modules/providers/sqlite-provider-registration-repository.js";
@@ -925,6 +926,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     unref?.call(twitchValidationInterval);
   }
   cleanups.push(() => (options.cancelRecurring ?? clearInterval)(twitchValidationInterval as ReturnType<typeof setInterval>));
+  const musicPairingService = new PearPairingService({ identityStore: secretStore });
+  cleanups.push(() => musicPairingService.dispose());
   const providerManagementService = new ProviderManagementService({
     repository: providerRegistrationRepository,
     adapters: createProviderManagementAdapters({
@@ -936,6 +939,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       now
     }),
     secretStore,
+    musicPairing: musicPairingService,
     async getActivationImpact(providerId) {
       const target = await providerRegistrationRepository.findById(providerId);
       if (target === null) {
@@ -1411,6 +1415,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     configurationBackupService,
     managementOverviewService,
     providerManagementService,
+    musicPairingService,
     alertSetManagementService,
     alertEditorService,
     managementAssetLibraryService: assetLibraryService,
