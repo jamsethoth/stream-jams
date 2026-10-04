@@ -202,11 +202,11 @@ Paths below are repository-relative. **New** means create; **modify** means exte
 
 **OpenSpec:** 4.4. **Modify:** `apps/server/src/modules/backup/{configuration-backup-service.ts,sqlite-configuration-snapshot-repository.ts,runtime-maintenance-gate.ts}` and tests, relevant backup/config schemas in core, runtime maintenance integration. **New:** `apps/server/src/modules/backup/music-backup.test.ts`.
 
-- [ ] Add round-trip fixture with four brand references, fonts, CSS source/enabled/version and nonsecret provider config. Assert archive omits token/secretRef/client pairing identity/cache/playback. Missing Music restores disabled defaults; supported older appearance fields default to no CSS/no brand. Unsupported archive schema still fails existing compatibility checks.
-- [ ] Run `corepack.cmd pnpm exec vitest run apps/server/src/modules/backup/music-backup.test.ts`; implement mappings and schema-drift checks using existing snapshot/asset packaging infrastructure.
-- [ ] Validate CSS and every asset reference before mutation; malformed CSS/missing media cannot partly restore. Cancel Music before replacement. Restore generates fresh local pairing identity, requires fresh auth and publishes no saved track. Only clean superseded secrets after successful replacement.
-- [ ] Fault-inject database swap, asset install, startup and secret cleanup. Failed replacement restores prior config/runtime/credentials; post-success cleanup failure reports remediation without pretending restore rolled back. Verify WAL companion backup and document binary+database rollback, not an unverified down migration.
-- [ ] Run `corepack.cmd pnpm exec vitest run apps/server/src/modules/backup`; typecheck and commit backup integration.
+- [x] Add round-trip fixture with four brand references, fonts, CSS source/enabled/version and nonsecret provider config. Assert archive omits token/secretRef/client pairing identity/cache/playback. Missing Music restores disabled defaults; supported older appearance fields default to no CSS/no brand. Unsupported archive schema still fails existing compatibility checks.
+- [x] Run `corepack.cmd pnpm exec vitest run apps/server/src/modules/backup/music-backup.test.ts`; implement mappings and schema-drift checks using existing snapshot/asset packaging infrastructure.
+- [x] Validate CSS and every asset reference before mutation; malformed CSS/missing media cannot partly restore. Cancel Music before replacement. Restore generates fresh local pairing identity, requires fresh auth and publishes no saved track. Only clean superseded secrets after successful replacement.
+- [x] Fault-inject database swap, asset install, startup and secret cleanup. Failed replacement restores prior config/runtime/credentials; post-success cleanup failure reports remediation without pretending restore rolled back. Verify WAL companion backup and document binary+database rollback, not an unverified down migration.
+- [x] Run `corepack.cmd pnpm exec vitest run apps/server/src/modules/backup`; typecheck and commit backup integration.
 
 ## Task 15 — Exercise Real Service, Browser And Desktop Boundaries
 
