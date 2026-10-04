@@ -1,5 +1,6 @@
 import { musicLimits, type AssetLibraryItem, type MusicAppearance } from "@stream-jams/core";
-import { MusicNumberField, fitMusicInsets } from "./MusicAppearanceEditor.js";
+import { fitMusicInsets } from "./MusicAppearanceEditor.js";
+import { MusicNumberField } from "./MusicNumberField.js";
 
 export function heightForMusicImage(widthPx: number, image: Pick<AssetLibraryItem, "width" | "height">): number | null {
   if (image.width === null || image.height === null || !Number.isInteger(image.width) || !Number.isInteger(image.height) || image.width <= 0 || image.height <= 0) return null;

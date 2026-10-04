@@ -1,5 +1,7 @@
 import { alertFontPresets, musicLimits, type MusicAppearance, type MusicProfileConfig, type MusicTypography } from "@stream-jams/core";
 import { useEffect, useState } from "react";
+import { MusicNumberField } from "./MusicNumberField.js";
+import { RgbaColorControl } from "../alerts/editor/RgbaColorControl.js";
 
 export type MusicFontRole = "titleFont" | "detailsFont";
 
@@ -65,20 +67,10 @@ function MusicColorField({ label, value, onCommit }: { readonly label: string; r
   const [draft, setDraft] = useState(value);
   const [error, setError] = useState(false);
   useEffect(() => { setDraft(value); setError(false); }, [value]);
-  return <label>{label}<input aria-invalid={error} onChange={event => { setDraft(event.currentTarget.value); setError(false); }} onBlur={() => {
+  return <div className="music-editor__color-control"><RgbaColorControl label={label.replace(/ RGBA$/u, "")} value={value} onChange={onCommit} /><label>{label}<input aria-invalid={error} onChange={event => { setDraft(event.currentTarget.value); setError(false); }} onBlur={() => {
     if (!/^#[0-9a-f]{8}$/iu.test(draft)) { setError(true); return; }
     setError(false); onCommit(draft.toUpperCase());
-  }} value={draft} />{error ? <small role="alert">Use #RRGGBBAA.</small> : null}</label>;
+  }} onKeyDown={event => { if (event.key === "Enter") event.currentTarget.blur(); }} value={draft} />{error ? <small role="alert">Use #RRGGBBAA.</small> : null}</label></div>;
 }
 
-export function MusicNumberField({ label, value, min, max, allowFraction = false, onCommit }: { readonly label: string; readonly value: number; readonly min: number; readonly max: number; readonly allowFraction?: boolean; readonly onCommit: (value: number) => void }) {
-  const [draft, setDraft] = useState(String(value));
-  const [error, setError] = useState(false);
-  useEffect(() => { setDraft(String(value)); setError(false); }, [value]);
-  const commit = () => {
-    const next = Number(draft);
-    if (draft.trim() === "" || !Number.isFinite(next) || (!allowFraction && !Number.isInteger(next)) || next < min || next > max) { setError(true); return; }
-    setError(false); onCommit(next);
-  };
-  return <label>{label}<input aria-invalid={error} max={max} min={min} step={allowFraction ? "any" : 1} onBlur={commit} onChange={event => { setDraft(event.currentTarget.value); setError(false); }} onKeyDown={event => { if (event.key === "Enter") event.currentTarget.blur(); }} type="number" value={draft} />{error ? <small role="alert">Enter a {allowFraction ? "number" : "whole number"} from {min} to {max}.</small> : null}</label>;
-}
+export { MusicNumberField } from "./MusicNumberField.js";

@@ -74,6 +74,16 @@ describe("Music visibility and layout", () => {
       expect(config.profiles.vertical.views.full.widthPx).toBe(1920);
     }
   });
+  it("fits saved component boxes when a target profile clips widget width", () => {
+    const config = createDefaultMusicModuleConfig();
+    const view = config.profiles.vertical.views.full;
+    view.widthPx = 1920;
+    const rect = { x: 1500, y: 20, width: 400, height: 20 };
+    view.componentLayout = { artwork: rect, title: rect, details: rect, progress: rect, time: rect };
+    const projected = projectMusicWidget(snapshot, status, config, "vertical", 10000, 11000)!;
+    expect(projected.profile.views.full.componentLayout?.title).toEqual({ ...rect, x: 680 });
+    expect(config.profiles.vertical.views.full.componentLayout?.title).toEqual(rect);
+  });
   it("fails closed when profile capping consumes the configured content area", () => {
     const config = createDefaultMusicModuleConfig();
     config.profiles.vertical.views.full.widthPx = 1920;

@@ -1,6 +1,6 @@
-import { createMusicViewAppearance, musicModuleConfigSchema, musicPublicAssetReferenceSchema, projectMusicWidget, type AssetLibraryItem, type MusicAssetResolver, type MusicCssConfig, type MusicModuleConfig, type MusicProfileConfig, type MusicSnapshot, type OverlayOutputView } from "@stream-jams/core";
+import { createMusicViewAppearance, fitMusicComponentLayout, musicModuleConfigSchema, musicPublicAssetReferenceSchema, projectMusicWidget, type AssetLibraryItem, type MusicAssetResolver, type MusicCssConfig, type MusicModuleConfig, type MusicProfileConfig, type MusicSnapshot, type OverlayOutputView } from "@stream-jams/core";
 import type { MusicCssValidationResult } from "@stream-jams/core/music-style-policy";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AssetPicker } from "../assets/AssetPicker.js";
 import type { AssetApi } from "../assets/asset-api.js";
 import { useMediaPreviewGroup } from "../assets/use-media-preview-group.js";
@@ -10,10 +10,11 @@ import { actionableError, type AssetLibraryManagementApi } from "../assets/asset
 import type { MusicApi } from "./music-api.js";
 import type { ManagementApi } from "../management-api.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
-import { MusicAppearanceEditor, type MusicFontRole } from "./MusicAppearanceEditor.js";
-import { MusicBrandingEditor } from "./MusicBrandingEditor.js";
-import { MusicCssEditor } from "./MusicCssEditor.js";
-import { MusicWidget } from "../../overlay/components/MusicWidget.js";
+import type { MusicFontRole } from "./MusicAppearanceEditor.js";
+const MusicAppearanceEditor = lazy(() => import("./MusicAppearanceEditor.js").then(module => ({ default: module.MusicAppearanceEditor })));
+const MusicBrandingEditor = lazy(() => import("./MusicBrandingEditor.js").then(module => ({ default: module.MusicBrandingEditor })));
+const MusicCssEditor = lazy(() => import("./MusicCssEditor.js").then(module => ({ default: module.MusicCssEditor })));
+const MusicLayoutEditor = lazy(() => import("./MusicLayoutEditor.js").then(module => ({ default: module.MusicLayoutEditor })));
 import "./music.css";
 
 export type MusicPageApi = Pick<MusicApi, "getMusicConfig" | "saveMusicConfig" | "listMusicOutputs"> & Pick<ManagementApi, "createOverlayOutputKey" | "regenerateOverlayOutputKey"> & AssetLibraryManagementApi;
@@ -35,6 +36,9 @@ export function MusicPage({ api, assetApi }: { readonly api: MusicPageApi; reado
   const [picker, setPicker] = useState<"brand" | MusicFontRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [configurationOpen, setConfigurationOpen] = useState(false);
+  const [cssOpen, setCssOpen] = useState(false);
   const [error, setError] = useState<ReturnType<typeof actionableError> | null>(null);
   const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
   const [validation, setValidation] = useState<MusicCssValidationResult | null>(null);
@@ -111,7 +115,7 @@ export function MusicPage({ api, assetApi }: { readonly api: MusicPageApi; reado
     return { ...result, assets: Object.values(descriptors).map(descriptor => musicPublicAssetReferenceSchema.safeParse(descriptor.snapshot)).filter(candidate => candidate.success).map(candidate => candidate.data) };
   }, [draft, lastValidCss, profileId, view, descriptors]);
   const resolver: MusicAssetResolver = useMemo(() => ({ resolveAsset: asset => descriptors[asset.assetId]?.url ?? null, resolveArtwork: () => null }), [descriptors]);
-  const changeProfile = (next: MusicProfileConfig) => updateDraft(current => ({ ...current, profiles: { ...current.profiles, [profileId]: next } }));
+  const changeProfile = (next: MusicProfileConfig) => updateDraft(current => ({ ...current, profiles: { ...current.profiles, [profileId]: { ...next, views: { full: fitMusicComponentLayout(next.views.full), compact: fitMusicComponentLayout(next.views.compact) } } } }));
   const changeAppearance = (next: NonNullable<typeof appearance>) => { if (profile !== null) changeProfile({ ...profile, views: { ...profile.views, [view]: next } }); };
   async function createOutput(output: OverlayOutputView) {
     if (output.copyableUrlStatus === "regenerate-required" && !window.confirm(`Regenerate the ${output.label} URL? The old URL will stop working.`)) return;
@@ -133,14 +137,22 @@ export function MusicPage({ api, assetApi }: { readonly api: MusicPageApi; reado
   if (loading) return <p role="status">Loading Music appearance…</p>;
   if (draft === null || profile === null || appearance === null) return <div><p role="alert">Music appearance could not be loaded.</p>{error === null ? null : <ManagementErrorBanner error={error} />}</div>;
   return <div className="music-editor">
-    <div className="music-editor__intro"><p>Appearance is saved per output profile and view. Preview uses sample metadata and never connects to a Music source.</p><div className="music-editor__actions"><a href="/manage/music-sources">Music sources</a><a href="/manage/settings">Overlay outputs</a></div></div>
     {error === null ? null : <ManagementErrorBanner error={error} />}
-    <label><input checked={enabled} onChange={event => updateEnabled(event.currentTarget.checked)} type="checkbox" /> Enable Music module after saving</label>
-    <section aria-label="Music output links" className="music-editor__section"><h3>Browser source outputs</h3><p>Open an existing Music live or test output for the selected profile. Output keys remain managed by Stream Jams.</p>
+    <MusicDisclosure title="Browser sources" label="Music output links" open={sourcesOpen} onToggle={() => setSourcesOpen(current => !current)} summary={`${outputs.filter(output => output.targetProfileId === profileId && output.url !== null).length} links ready · ${profileId === "landscape" ? "Landscape" : "Vertical"}`}>
+      <p>One live or test URL per output profile. Create a link, then add it as a browser source in OBS.</p>
       <div className="music-editor__actions">{outputs.filter(output => output.targetProfileId === profileId).map(output => <div key={output.id}><strong>{output.purpose === "live" ? "Live" : "Test"}</strong>{output.url === null ? <button disabled={busy} onClick={() => void createOutput(output)} type="button">{output.copyableUrlStatus === "regenerate-required" ? "Regenerate" : "Create"} {output.purpose} output link</button> : <><a href={output.url} rel="noreferrer" target="_blank">Open {output.purpose} output</a><button onClick={() => void copyOutput(output.url!)} type="button">Copy {output.purpose} output URL</button></>}</div>)}</div>
       {outputs.length === 0 ? <p role="status">No Music outputs were returned. Check the local service and reload this page.</p> : null}
+    </MusicDisclosure>
+    <section aria-label="Music preview" className="music-editor__section"><h3>Preview</h3>
+<div className="music-editor__grid"><label>Output profile<select value={profileId} onChange={event => setProfileId(event.currentTarget.value as typeof profileId)}><option value="landscape">Landscape</option><option value="vertical">Vertical</option></select></label><label>Preview view<select value={view} onChange={event => setView(event.currentTarget.value as typeof view)}><option value="full">Full</option><option value="compact">Compact</option></select></label></div><p>Unsaved changes appear here only. Live output continues using saved settings.</p>
+      {mediaUnavailable ? <p role="status">A preview image or font is unavailable. The native fallback is shown. Reselect the asset to retry.</p> : null}
+      <Suspense fallback={<p role="status">Loading Music preview…</p>}><MusicLayoutEditor key={`${profileId}-${view}`} projection={projection} resolveAsset={resolver} appearance={appearance} onChange={changeAppearance} /></Suspense>
+      <div className="music-editor__actions"><button disabled={!draft.css.enabled} onClick={() => updateDraft(current => ({ ...current, css: { ...current.css, enabled: false } }))} type="button">Disable custom CSS</button><a href="/manage/music-sources">Music sources</a><a href="/manage/settings">Overlay outputs</a></div>
+      <div aria-label="Full preview metadata" className="music-editor__metadata"><strong>{fixture.track?.title}</strong><span>{fixture.track?.artists.join(", ")}</span><span>{fixture.track?.album}</span></div>
     </section>
-    <div className="music-editor__grid"><label>Output profile<select value={profileId} onChange={event => setProfileId(event.currentTarget.value as typeof profileId)}><option value="landscape">Landscape</option><option value="vertical">Vertical</option></select></label><label>Preview view<select value={view} onChange={event => setView(event.currentTarget.value as typeof view)}><option value="full">Full</option><option value="compact">Compact</option></select></label>
+    <MusicDisclosure title="Configuration" open={configurationOpen} onToggle={() => setConfigurationOpen(current => !current)} summary={`${enabled ? "Enabled" : "Disabled"} · ${view === "full" ? "Full" : "Compact"} view`}>
+      <label><input checked={enabled} onChange={event => updateEnabled(event.currentTarget.checked)} type="checkbox" /> Enable Music module after saving</label>
+<div className="music-editor__grid">
       <label>Initial view<select value={profile.initialView} onChange={event => changeProfile({ ...profile, initialView: event.currentTarget.value as typeof profile.initialView })}><option value="full">Full</option><option value="compact">Compact</option></select></label>
       <label>Theme<select value={profile.theme} onChange={event => changeProfile({ ...profile, theme: event.currentTarget.value as typeof profile.theme })}><option value="dark">Dark</option><option value="light">Light</option></select></label>
       <label>Alignment<select value={profile.alignment} onChange={event => changeProfile({ ...profile, alignment: event.currentTarget.value as typeof profile.alignment })}>{["top-left", "top-center", "top-right", "center-left", "center-right", "bottom-left", "bottom-center", "bottom-right"].map(item => <option key={item} value={item}>{item}</option>)}</select></label>
@@ -149,14 +161,14 @@ export function MusicPage({ api, assetApi }: { readonly api: MusicPageApi; reado
       <MusicNumberFieldBridge label="Background opacity (%)" value={profile.backgroundOpacity} min={0} max={100} onCommit={backgroundOpacity => changeProfile({ ...profile, backgroundOpacity })} />
     </div>
     <button onClick={() => changeAppearance({ ...createMusicViewAppearance(profile.theme, view), branding: appearance.branding })} type="button">Reset current view to theme</button>
+    <Suspense fallback={<p role="status">Loading configuration controls…</p>}>
     <MusicAppearanceEditor key={`${profileId}-${view}-appearance`} profile={profile} view={view} onChange={changeProfile} onPickFont={setPicker} />
     <MusicBrandingEditor key={`${profileId}-${view}-branding`} appearance={appearance} image={selectedImage} onChange={changeAppearance} onPick={() => setPicker("brand")} />
-    <MusicCssEditor value={draft.css} validation={validation} checking={checkingCss} onChange={css => updateDraft(current => ({ ...current, css }))} onDisable={() => updateDraft(current => ({ ...current, css: { ...current.css, enabled: false } }))} />
-    <section aria-label="Music preview" className="music-editor__section"><h3>Preview</h3><p>Unsaved changes appear here only. Live output continues using saved settings.</p>
-      {mediaUnavailable ? <p role="status">A preview image or font is unavailable. The native fallback is shown. Reselect the asset to retry.</p> : null}
-      <div className="music-editor__preview"><MusicWidget projection={projection} resolveAsset={resolver} nowEpochMs={fixtureTime} /></div>
-      <div aria-label="Full preview metadata" className="music-editor__metadata"><strong>{fixture.track?.title}</strong><span>{fixture.track?.artists.join(", ")}</span><span>{fixture.track?.album}</span></div>
-    </section>
+    </Suspense>
+    </MusicDisclosure>
+    <MusicDisclosure title="Custom CSS" label="Custom CSS settings" open={cssOpen} onToggle={() => setCssOpen(current => !current)} summary={validation?.valid === false ? "Needs correction" : draft.css.enabled ? "Enabled" : "Disabled"}>
+      <Suspense fallback={<p role="status">Loading CSS editor…</p>}><MusicCssEditor value={draft.css} validation={validation} checking={checkingCss} onChange={css => updateDraft(current => ({ ...current, css }))} onDisable={() => updateDraft(current => ({ ...current, css: { ...current.css, enabled: false } }))} showDisable={false} /></Suspense>
+    </MusicDisclosure>
     <div className="music-editor__save"><span role="status">{dirty ? "Unsaved changes" : "All changes saved"}</span><button disabled={busy || !dirty || checkingCss} onClick={() => void save()} type="button">Save Music appearance</button></div>
     <AssetPicker assetApi={assetApi} compatibleMediaTypes={picker === "brand" ? ["image"] : ["font"]} managementApi={api} onCancel={() => setPicker(null)} onSelect={(assetId, _mediaType, item) => { setAssets(current => [...current.filter(candidate => candidate.id !== item.id), item]); if (picker === "brand") changeAppearance({ ...appearance, branding: { ...appearance.branding, assetId } }); else if (picker !== null) changeAppearance({ ...appearance, [picker]: { ...appearance[picker], fontAssetId: assetId } }); setPicker(null); }} open={picker !== null} selectedAssetId={picker === "brand" ? appearance.branding.assetId : picker === null ? null : appearance[picker].fontAssetId} />
     {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
@@ -164,4 +176,12 @@ export function MusicPage({ api, assetApi }: { readonly api: MusicPageApi; reado
 }
 
 // Keeps the same bounded field behavior for shared profile controls.
-import { MusicNumberField as MusicNumberFieldBridge } from "./MusicAppearanceEditor.js";
+import { MusicNumberField as MusicNumberFieldBridge } from "./MusicNumberField.js";
+
+function MusicDisclosure({ title, label = title, summary, open, onToggle, children }: { readonly title: string; readonly label?: string; readonly summary: string; readonly open: boolean; readonly onToggle: () => void; readonly children: ReactNode }) {
+  const id = `music-${title.toLowerCase().replaceAll(" ", "-")}`;
+  return <section aria-label={label} className="music-editor__section music-editor__disclosure">
+    <div className="music-editor__disclosure-heading"><h3><button aria-controls={id} aria-expanded={open} aria-label={`${open ? "Collapse" : "Expand"} ${title.toLowerCase()}`} className="music-editor__disclosure-toggle" onClick={onToggle} type="button"><span aria-hidden="true">{open ? "−" : "+"}</span> {title}</button></h3><span className="music-editor__summary">{summary}</span></div>
+    {open ? <div id={id} className="music-editor__disclosure-body">{children}</div> : null}
+  </section>;
+}

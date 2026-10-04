@@ -15,6 +15,7 @@ test("unsafe CSS is rejected at the real save boundary and cannot create browser
     await page.goto(`${fixture.url}/manage/modules/music`);
     await expect(page.getByRole("region", { name: "Music preview" }).getByTestId("music-widget")).toBeVisible();
     const original = await fixture.request<{ enabled: boolean; config: Record<string, unknown> }>("/overlay-modules/music/config");
+    await page.getByRole("button", { name: "Expand custom css" }).click();
     const css = page.getByRole("textbox", { name: "Custom CSS" });
     await page.getByLabel("Enable custom CSS").check();
     await css.fill(".sj-title { background-image: url(https://outside.example.invalid/track); }");
@@ -52,6 +53,7 @@ test("unsafe CSS is rejected at the real save boundary and cannot create browser
     expect(scope.outside).not.toBe(scope.inside);
     expect(scope.namespacedAnimation).toBe(true);
     await page.reload();
+    await page.getByRole("button", { name: "Expand custom css" }).click();
     await expect(css).toHaveValue(/letter-spacing: 1px/u);
     await page.emulateMedia({ reducedMotion: "reduce" });
     await expect(page.getByRole("region", { name: "Music preview" }).getByTestId("music-widget")).toBeVisible();

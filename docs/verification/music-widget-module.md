@@ -1,5 +1,21 @@
 # Music widget module verification
 
+## Editor refinement checkpoint (2026-10-04)
+
+The user-requested refinement aligns Music with Alerts: Browser sources first, preview next, then independent Configuration and Custom CSS disclosures. Alerts' RGB/opacity control is paired with validated RGBA input. Native per-component rectangles are saved per profile/view; management-only pointer handles and keyboard/numeric controls use bounded core geometry, while live browser/unified/private-desktop renderers consume the same projection. Old configurations and automatic reset use `componentLayout: null`. Nonempty enabled CSS explicitly disables native visual editing; the recovery button remains beside the preview.
+
+Validation on the current build:
+
+- Focused Music core/management/renderer and backup suite: **125/125** passed; final geometry/projection/editor/backup recheck **20/20** passed after gesture refinements.
+- Root, E2E and desktop TypeScript project builds passed. Scoped ESLint and error-provenance checks passed.
+- Web and private desktop overlay builds passed. Gzip route budgets: bootstrap 68.39/100 KiB, overlay 139.59/150 KiB, operator 131.59/175 KiB, management 249.89/250 KiB.
+- Static Storybook build and tagged Chromium interaction/accessibility checks: **10/10** passed. The first static run exposed a story assertion racing React's effect-driven hex synchronization; assertions now await the visible value.
+- Actual built-service browser tests: new editor **1/1**, CSS/branding/security **2/2**, existing Music integration **10/10** passed. Real mouse drag/resize, keyboard movement, draft-only edits, save/reload/live geometry without guides, CSS recovery and automatic reset are covered. An overlap failure was fixed by placing the selected component above other handles; its real mouse regression passed.
+- Four-view backup round trip now includes manual component rectangles. Core tests cover older defaults, invalid geometry, resize bounds and narrow output projection.
+
+The desktop runnable folder was rebuilt with the existing native DLL unpack policy and verified cached Electron distribution. Packaged Music editor/no-source/safety check **1/1**, native loader and bundled worker checks **2/2** passed. The first Music run reached all assertions but its intentionally dirty preview draft blocked shutdown; the test now restores automatic layout before quitting. Only its identified disposable process was terminated, and the corrected run exited cleanly. This refinement does not claim physical paired Pear approval, OBS pixels or active private-desktop Music acceptance; the previously recorded physical boundary remains pending. No full repository suite or remote CI rerun is claimed for this local refinement.
+
+
 ## Packaged startup correction (2026-10-04)
 
 The user's launch with `NODE_EXTRA_CA_CERTS` exposed a packaging regression. The desktop emergency log recorded service-worker exit 1 before the management window. The real packaged-worker harness captured `ERR_DLOPEN_FAILED` while importing Sharp: its `.node` addon was unpacked, but companion `libvips-42.dll` and `libvips-cpp-8.18.7.dll` were inside ASAR. Windows cannot resolve those virtual files. The earlier startup timeouts cannot be attributed to `LockApp`; its presence alone does not establish a locked session, and the user confirmed active desktop use.

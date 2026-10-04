@@ -2,7 +2,7 @@ import type { z } from "zod";
 import type { MediaVersionSnapshot } from "../assets/media-reference.js";
 import type {
   musicAlignmentSchema, musicAppearanceSchema, musicBrandingSchema, musicCapabilitiesSchema,
-  musicConnectionTestResultSchema, musicCssConfigSchema, musicInsetsSchema, musicModuleConfigSchema,
+  musicConnectionTestResultSchema, musicCssConfigSchema, musicInsetsSchema, musicComponentRectSchema, musicComponentLayoutSchema, musicModuleConfigSchema,
   musicProfileConfigSchema, musicSnapshotSchema, musicStatusSchema, musicThemeSchema, musicTrackSchema,
   musicTypographySchema, musicViewSchema, musicWidgetProjectionSchema, musicPublicAssetReferenceSchema
 } from "./schemas.js";
@@ -18,6 +18,8 @@ export type MusicAppearance = z.infer<typeof musicAppearanceSchema>;
 export type MusicTypography = z.infer<typeof musicTypographySchema>;
 export type MusicBranding = z.infer<typeof musicBrandingSchema>;
 export type MusicInsets = z.infer<typeof musicInsetsSchema>;
+export type MusicComponentRect = z.infer<typeof musicComponentRectSchema>;
+export type MusicComponentLayout = z.infer<typeof musicComponentLayoutSchema>;
 export type MusicCssConfig = z.infer<typeof musicCssConfigSchema>;
 export type MusicView = z.infer<typeof musicViewSchema>;
 export type MusicTheme = z.infer<typeof musicThemeSchema>;

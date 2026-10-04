@@ -1,6 +1,6 @@
 import { createDefaultMusicModuleConfig } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, userEvent, within } from "storybook/test";
+import { expect, fireEvent, userEvent, waitFor, within } from "storybook/test";
 import { createStoryAssetApi, createStoryManagementApi } from "../../stories/mock-apis.js";
 import { storyAssetLibraryItems } from "../../stories/story-fixtures.js";
 import { DirtyNavigationProvider } from "../navigation/dirty-navigation.js";
@@ -8,7 +8,7 @@ import { MusicPage } from "./MusicPage.js";
 
 const baseApi = () => createStoryManagementApi({ listMusicOutputs: async () => [] });
 const meta = {
-  title: "Management/Music Appearance", component: MusicPage, tags: ["music-task-13"],
+  title: "Management/Music Appearance", component: MusicPage, tags: ["music-task-13", "music-editor-refinement"],
   args: { api: baseApi(), assetApi: createStoryAssetApi() },
   decorators: [(Story) => <DirtyNavigationProvider><div className="management-main"><Story /></div></DirtyNavigationProvider>]
 } satisfies Meta<typeof MusicPage>;
@@ -20,7 +20,7 @@ export const Saved: Story = {
 };
 export const EmptyAssets: Story = {
   args: { api: createStoryManagementApi({ listAssetLibraryItems: async () => [], listMusicOutputs: async () => [] }) },
-  play: async ({ canvasElement }) => { await expect(await within(canvasElement).findByText("No image")).toBeVisible(); }
+  play: async ({ canvasElement }) => { const canvas = within(canvasElement); await userEvent.click(await canvas.findByRole("button", { name: "Expand configuration" })); await expect(await canvas.findByText("No image")).toBeVisible(); }
 };
 export const Loading: Story = { args: { api: createStoryManagementApi({ getMusicConfig: () => new Promise(() => undefined) }) } };
 export const LoadError: Story = {
@@ -29,7 +29,7 @@ export const LoadError: Story = {
   play: async ({ canvasElement }) => { await expect(await within(canvasElement).findByText("Unable to load Music appearance")).toBeVisible(); }
 };
 export const DirtyDraft: Story = {
-  play: async ({ canvasElement }) => { const canvas = within(canvasElement); await userEvent.click(await canvas.findByLabelText("Enable Music module after saving")); await expect(canvas.getByText("Unsaved changes")).toBeVisible(); }
+  play: async ({ canvasElement }) => { const canvas = within(canvasElement); await userEvent.click(await canvas.findByRole("button", { name: "Expand configuration" })); await userEvent.click(await canvas.findByLabelText("Enable Music module after saving")); await expect(canvas.getByText("Unsaved changes")).toBeVisible(); }
 };
 export const BrandedAndStyled: Story = {
   args: { api: createStoryManagementApi({ getMusicConfig: async () => {
@@ -38,5 +38,24 @@ export const BrandedAndStyled: Story = {
     config.css = { ...config.css, enabled: true, source: ".sj-title { color: #F4D080; }" };
     return { enabled: true, config };
   }, listMusicOutputs: async () => [] }) },
-  play: async ({ canvasElement }) => { await expect(await within(canvasElement).findByText("Follower burst")).toBeVisible(); }
+  play: async ({ canvasElement }) => { const canvas = within(canvasElement); await userEvent.click(await canvas.findByRole("button", { name: "Expand configuration" })); await expect(await canvas.findByText("Follower burst")).toBeVisible(); }
+};
+
+export const DisclosuresAndColourSelection: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const settings = await canvas.findByRole("button", { name: "Expand configuration" });
+    await expect(settings).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(settings);
+    const color = await canvas.findByLabelText("Title color");
+    fireEvent.change(color, { target: { value: "#123456" } });
+    await waitFor(() => expect(canvas.getByLabelText("Title RGBA")).toHaveValue("#123456FF"));
+    fireEvent.change(canvas.getByLabelText("Title opacity"), { target: { value: "50" } });
+    await waitFor(() => expect(canvas.getByLabelText("Title RGBA")).toHaveValue("#12345680"));
+    await userEvent.click(canvas.getByRole("button", { name: "Collapse configuration" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Expand custom css" }));
+    await expect(await canvas.findByLabelText("Custom CSS")).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Expand configuration" })).toHaveAttribute("aria-expanded", "false");
+    await expect(canvas.getByRole("button", { name: "Disable custom CSS" })).toBeVisible();
+  }
 };

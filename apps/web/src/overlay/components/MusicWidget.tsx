@@ -117,13 +117,24 @@ function MusicContents({ projection, resolveAsset, nowEpochMs, reducedMotion }: 
     padding: ${appearance.paddingYPx}px ${appearance.paddingXPx}px;
     inset: ${appearance.contentInsets.top}px ${appearance.contentInsets.right}px ${appearance.contentInsets.bottom}px ${appearance.contentInsets.left}px;
   }`;
+  const componentLayout = appearance.componentLayout;
+  const componentStyle = componentLayout === null ? "" : `
+    .sj-content[data-component-layout="manual"] { display: block; inset: 0; padding: 0; }
+    .sj-content[data-component-layout="manual"] .sj-copy { position: static; overflow: visible; }
+    .sj-content[data-component-layout="manual"] .sj-progress-track,
+    .sj-content[data-component-layout="manual"] .sj-time { margin-top: 0; }
+    ${(["artwork", "title", "details", "progress", "time"] as const).map(role => {
+      const rect = componentLayout[role];
+      const selector = role === "progress" ? ".sj-progress-track" : role === "time" ? ".sj-time" : `.sj-${role}`;
+      return `.sj-content[data-component-layout="manual"] ${selector} { position: absolute; left: ${rect.x}px; top: ${rect.y}px; width: ${rect.width}px; height: ${rect.height}px; margin: 0; max-width: none; }`;
+    }).join("\n")}`;
   const markFailed = (url: string) => setFailedImages(current => new Set(current).add(url));
   const motionGuard = `*, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
     .sj-title, .sj-artists, .sj-album { white-space: normal !important; max-height: 2.5em !important; }
     .sj-scroll-text { width: auto !important; white-space: normal !important; overflow-wrap: anywhere !important; transform: none !important; }`;
   const reducedMotionCss = `@layer sj-motion, sj-native, sj-custom; @layer sj-motion { @media (prefers-reduced-motion: reduce) { ${motionGuard} } ${reducedMotion ? motionGuard : ""} }`;
   return <>
-    <style>{reducedMotionCss}</style><style>{`@layer sj-native { ${nativeCss} ${savedStyle} }`}</style>
+    <style>{reducedMotionCss}</style><style>{`@layer sj-native { ${nativeCss} ${savedStyle} ${componentStyle} }`}</style>
     {compiled?.key !== cssKey || compiled.css === "" ? null : <style>{`@layer sj-custom { ${compiled.css} }`}</style>}
     <div className="sj-frame" style={{
       borderRadius: appearance.cornerRadiusPx, border: `${appearance.borderWidthPx}px solid ${colors.border}`,
@@ -133,16 +144,18 @@ function MusicContents({ projection, resolveAsset, nowEpochMs, reducedMotion }: 
     }} />
     {showBrand ? <div className="sj-brand-layer"><img className="sj-brand-image" alt="" src={brandUrl} onError={() => markFailed(brandUrl)}
       style={{ objectFit: appearance.branding.fit, objectPosition: `${appearance.branding.xPercent}% ${appearance.branding.yPercent}%`, opacity: appearance.branding.opacity / 100 }} /></div> : null}
-    <div className="sj-content" data-view={projection.view} data-theme={projection.profile.theme}
+    <div className="sj-content" data-view={projection.view} data-theme={projection.profile.theme} data-component-layout={componentLayout === null ? "automatic" : "manual"}
       data-playback-state={projection.snapshot.playbackState} style={contentStyle}>
       {appearance.artworkSizePx > 0 ? <div className="sj-artwork" role="img" aria-label="Album artwork">
         {showArtwork ? <img src={artworkUrl} alt="" onError={() => markFailed(artworkUrl)} /> : null}
       </div> : null}
       <div className="sj-copy">
         <MusicMetadataLine className="sj-title" text={track.title || "Unknown title"} measurementKey={titleMeasurementKey} reducedMotion={reducedMotion} />
-        <MusicMetadataLine className="sj-artists" text={track.artists.filter(Boolean).join(", ") || "Unknown artist"} measurementKey={detailsMeasurementKey} reducedMotion={reducedMotion} />
-        {track.album ? <MusicMetadataLine className="sj-album" text={track.album} measurementKey={detailsMeasurementKey} reducedMotion={reducedMotion} /> : null}
-        {track.attribution ? <a className="sj-attribution" href={track.attribution.url} rel="noopener noreferrer" target="_blank">{track.attribution.label}</a> : null}
+        <div className="sj-details">
+          <MusicMetadataLine className="sj-artists" text={track.artists.filter(Boolean).join(", ") || "Unknown artist"} measurementKey={detailsMeasurementKey} reducedMotion={reducedMotion} />
+          {track.album ? <MusicMetadataLine className="sj-album" text={track.album} measurementKey={detailsMeasurementKey} reducedMotion={reducedMotion} /> : null}
+          {track.attribution ? <a className="sj-attribution" href={track.attribution.url} rel="noopener noreferrer" target="_blank">{track.attribution.label}</a> : null}
+        </div>
         {progress === null ? null : <div className="sj-progress-track" role="progressbar" aria-label="Playback progress" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100}>
           <div className="sj-progress-fill" style={{ width: `${progress}%` }} />
         </div>}

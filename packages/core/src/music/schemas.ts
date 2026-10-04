@@ -73,16 +73,32 @@ export const musicBrandingSchema = z.object({
   assetId: opaqueReference.nullable(), fit: z.enum(["contain", "cover", "fill"]),
   xPercent: boundedInteger(musicLimits.percentage), yPercent: boundedInteger(musicLimits.percentage), opacity: boundedInteger(musicLimits.percentage)
 }).strict();
+export const musicComponentRectSchema = z.object({
+  x: z.number().int().min(0).max(musicLimits.widthPx.max - 1),
+  y: z.number().int().min(0).max(musicLimits.heightPx.max - 1),
+  width: z.number().int().min(1).max(musicLimits.widthPx.max),
+  height: z.number().int().min(1).max(musicLimits.heightPx.max)
+}).strict();
+export const musicComponentLayoutSchema = z.object({
+  artwork: musicComponentRectSchema, title: musicComponentRectSchema, details: musicComponentRectSchema,
+  progress: musicComponentRectSchema, time: musicComponentRectSchema
+}).strict();
 export const musicAppearanceSchema = z.object({
   widthPx: boundedInteger(musicLimits.widthPx), heightPx: boundedInteger(musicLimits.heightPx), artworkSizePx: boundedInteger(musicLimits.artworkSizePx),
   paddingXPx: boundedInteger(musicLimits.spacingPx), paddingYPx: boundedInteger(musicLimits.spacingPx), gapPx: boundedInteger(musicLimits.spacingPx),
   cornerRadiusPx: boundedInteger(musicLimits.cornerRadiusPx), borderWidthPx: boundedInteger(musicLimits.borderWidthPx),
   colors: musicColorsSchema, shadow: musicShadowSchema, titleFont: musicTypographySchema, detailsFont: musicTypographySchema,
   contentInsets: musicInsetsSchema.default({ top: 0, right: 0, bottom: 0, left: 0 }),
-  branding: musicBrandingSchema.default({ assetId: null, fit: "contain", xPercent: 50, yPercent: 50, opacity: 100 })
+  branding: musicBrandingSchema.default({ assetId: null, fit: "contain", xPercent: 50, yPercent: 50, opacity: 100 }),
+  componentLayout: musicComponentLayoutSchema.nullable().default(null)
 }).strict().superRefine((view, context) => {
   if (view.contentInsets.left + view.contentInsets.right >= view.widthPx || view.contentInsets.top + view.contentInsets.bottom >= view.heightPx) {
     context.addIssue({ code: "custom", path: ["contentInsets"], message: "Content insets must leave a positive content area" });
+  }
+  if (view.componentLayout !== null) for (const [role, rect] of Object.entries(view.componentLayout)) {
+    if (rect.x + rect.width > view.widthPx || rect.y + rect.height > view.heightPx) {
+      context.addIssue({ code: "custom", path: ["componentLayout", role], message: "Component must remain inside the widget" });
+    }
   }
 });
 

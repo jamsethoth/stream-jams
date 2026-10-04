@@ -45,6 +45,24 @@ describe("MusicWidget", () => {
     expect(shadow.querySelector(".sj-artwork img")?.getAttribute("src")).toBe("/artwork/art_123");
   });
 
+  it("renders saved per-component boxes through the same live widget without editor guides", () => {
+    const config = createDefaultMusicModuleConfig();
+    config.profiles.landscape.views.full.componentLayout = {
+      artwork: { x: 10, y: 10, width: 120, height: 120 },
+      title: { x: 150, y: 12, width: 400, height: 42 },
+      details: { x: 150, y: 58, width: 400, height: 48 },
+      progress: { x: 150, y: 126, width: 400, height: 6 },
+      time: { x: 150, y: 137, width: 400, height: 20 }
+    };
+    const projected = projectMusicWidget(snapshot, { state: "connected", stale: false, diagnosticReference: null }, config, "landscape", now, now)!;
+    const { container } = render(<MusicWidget projection={projected} resolveAsset={resolver} nowEpochMs={now} />);
+    const shadow = shadowOf(container)!;
+    expect(shadow.querySelector('.sj-content[data-component-layout="manual"]')).not.toBeNull();
+    expect(shadow.querySelector(".sj-details .sj-artists")?.textContent).toBe("Artist");
+    expect(shadow.querySelectorAll("style")[1]?.textContent).toContain(".sj-title { position: absolute; left: 150px; top: 12px; width: 400px; height: 42px");
+    expect(shadow.querySelector('[data-music-edit-handle]')).toBeNull();
+  });
+
   it.each([-300_000, 300_000])("uses server time with a recipient wall-clock offset of %i ms", offset => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     let monotonic = 100;

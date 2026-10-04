@@ -16,12 +16,60 @@ const renderPage = (overrides: Parameters<typeof createStoryManagementApi>[0] = 
   return api;
 };
 
+async function openEditorControls() {
+  fireEvent.click(await screen.findByRole("button", { name: "Expand configuration" }));
+  fireEvent.click(screen.getByRole("button", { name: "Expand custom css" }));
+  fireEvent.click(screen.getByRole("button", { name: "Expand browser sources" }));
+  await screen.findByRole("heading", { name: "Appearance" });
+  await screen.findByLabelText("Custom CSS");
+}
+
 describe("Music appearance", () => {
+  it("orders browser sources, preview, configuration and CSS with independent disclosures", async () => {
+    renderPage();
+    const config = await screen.findByRole("button", { name: "Expand configuration" });
+    const sources = screen.getByRole("region", { name: "Music output links" });
+    const preview = screen.getByRole("region", { name: "Music preview" });
+    const settings = screen.getByRole("region", { name: "Configuration" });
+    const css = screen.getByRole("region", { name: "Custom CSS settings" });
+    expect(sources.compareDocumentPosition(preview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(preview.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(settings.compareDocumentPosition(css) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(config).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(config);
+    expect(await screen.findByLabelText("Widget width (px)")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Expand custom css" })).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(screen.getByRole("button", { name: "Collapse configuration" }));
+    expect(screen.queryByLabelText("Widget width (px)")).toBeNull();
+    expect(screen.getByRole("button", { name: "Disable custom CSS" })).toBeVisible();
+  });
+
+  it("mirrors graphical color and opacity choices with validated RGBA hex input", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await openEditorControls();
+    fireEvent.change(screen.getByLabelText("Title color"), { target: { value: "#123456" } });
+    expect(screen.getByLabelText("Title RGBA")).toHaveValue("#123456FF");
+    fireEvent.change(screen.getByLabelText("Title opacity"), { target: { value: "50" } });
+    expect(screen.getByLabelText("Title RGBA")).toHaveValue("#12345680");
+    const hex = screen.getByLabelText("Title RGBA");
+    await user.clear(hex);
+    await user.type(hex, "#ABCDEF40");
+    await user.tab();
+    expect(screen.getByLabelText("Title color")).toHaveValue("#abcdef");
+    expect(screen.getByLabelText("Title opacity")).toHaveValue("25");
+    await user.clear(hex);
+    await user.type(hex, "invalid");
+    await user.tab();
+    expect(hex).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByLabelText("Title color")).toHaveValue("#abcdef");
+  });
+
   it("keeps profile and view drafts independent, then persists only on Save", async () => {
     const user = userEvent.setup();
     const save = vi.fn(async (enabled, config) => ({ enabled, config }));
     renderPage({ saveMusicConfig: save });
-    await screen.findByRole("heading", { name: "Appearance" });
+    await openEditorControls();
     expect(within(screen.getByRole("region", { name: "Music preview" })).getByTestId("music-widget")).toHaveStyle({ width: "640px", height: "178px" });
     await user.selectOptions(screen.getByLabelText("Preview view"), "compact");
     expect(within(screen.getByRole("region", { name: "Music preview" })).getByTestId("music-widget")).toHaveStyle({ width: "480px", height: "118px" });
@@ -46,6 +94,7 @@ describe("Music appearance", () => {
     const user = userEvent.setup();
     const save = vi.fn(async (enabled, config) => ({ enabled, config }));
     renderPage({ saveMusicConfig: save });
+    await openEditorControls();
     const textarea = await screen.findByLabelText("Custom CSS");
     await user.click(screen.getByLabelText("Enable custom CSS"));
     fireEvent.change(textarea, { target: { value: ".sj-title { color: red; }" } });
@@ -71,7 +120,7 @@ describe("Music appearance", () => {
       { id: "live", overlayId: "default", moduleId: "music", scope: "module", targetProfileId: "landscape", purpose: "live", label: "Music Landscape Live", enabled: false, keyId: "key", url: "http://127.0.0.1:39187/overlay/modules/music/live/example", copyableUrlStatus: "available" },
       { id: "test", overlayId: "default", moduleId: "music", scope: "module", targetProfileId: "landscape", purpose: "test", label: "Music Landscape Test", enabled: false, keyId: "key", url: "http://127.0.0.1:39187/overlay/modules/music/test/example", copyableUrlStatus: "available" }
     ] });
-    await screen.findByRole("heading", { name: "Appearance" });
+    await openEditorControls();
     await user.click(screen.getByRole("button", { name: "Reset current view to theme" }));
     expect(screen.getByLabelText("Custom CSS")).toHaveValue(config.css.source);
     expect(screen.getByText("Image brand-a unavailable")).toBeInTheDocument();
@@ -84,7 +133,7 @@ describe("Music appearance", () => {
     const output = { id: "landscape-live", overlayId: "default", moduleId: "music", scope: "module" as const, targetProfileId: "landscape" as const, purpose: "live" as const, label: "Music Landscape Live", enabled: false, keyId: null, url: null, copyableUrlStatus: "create-required" as const };
     const create = vi.fn(async () => ({ output: { ...output, keyId: "key", url: "http://127.0.0.1:39187/overlay/modules/music/live/example", copyableUrlStatus: "available" as const }, keyId: "key", url: "http://127.0.0.1:39187/overlay/modules/music/live/example" }));
     renderPage({ listMusicOutputs: async () => [output], createOverlayOutputKey: create });
-    await screen.findByRole("heading", { name: "Appearance" });
+    await openEditorControls();
     await user.click(screen.getByRole("button", { name: "Create live output link" }));
     await waitFor(() => expect(create).toHaveBeenCalledWith({ overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId: "landscape" }));
     expect(await screen.findByRole("link", { name: "Open live output" })).toHaveAttribute("href", expect.stringContaining("/live/"));
@@ -102,7 +151,7 @@ describe("Music appearance", () => {
     let complete!: (result: { enabled: boolean; config: ReturnType<typeof createDefaultMusicModuleConfig> }) => void;
     const save = vi.fn((enabled: boolean, config: ReturnType<typeof createDefaultMusicModuleConfig>) => new Promise<{ enabled: boolean; config: ReturnType<typeof createDefaultMusicModuleConfig> }>(resolve => { void enabled; void config; complete = resolve; }));
     renderPage({ saveMusicConfig: save });
-    await screen.findByRole("heading", { name: "Appearance" });
+    await openEditorControls();
     await user.click(screen.getByLabelText("Enable Music module after saving"));
     await user.click(screen.getByRole("button", { name: "Save Music appearance" }));
     await waitFor(() => expect(save).toHaveBeenCalledOnce());
@@ -121,7 +170,7 @@ describe("Music appearance", () => {
     const font = { ...image, id: "font-a", displayName: "Brand font", originalFileName: "brand.woff2", mediaType: "font" as const, mimeType: "font/woff2", width: null, height: null };
     const assetApi = createStoryAssetApi({ createPreview: () => new Promise(() => undefined) });
     renderPage({ listAssetLibraryItems: async () => [image, font] }, assetApi);
-    await screen.findByRole("heading", { name: "Appearance" });
+    await openEditorControls();
     await user.click(screen.getByRole("button", { name: "Choose branding image" }));
     await user.click(await screen.findByRole("button", { name: "Use selected asset" }));
     expect(screen.getByText("Follower burst")).toBeInTheDocument();
@@ -140,7 +189,7 @@ describe("Music appearance", () => {
     window.history.replaceState(null, "", "/manage/modules/music");
     const api = createStoryManagementApi({ listAssetLibraryItems: async () => [], listMusicOutputs: async () => [] });
     render(<DirtyNavigationProvider><MusicNavigationHarness api={api} /></DirtyNavigationProvider>);
-    await screen.findByRole("heading", { name: "Appearance" });
+    await openEditorControls();
     await user.click(screen.getByLabelText("Enable Music module after saving"));
     await user.click(screen.getByRole("button", { name: "Leave Music editor" }));
     expect(screen.getByRole("heading", { name: "Leave with unsaved changes?" })).toBeInTheDocument();
@@ -155,7 +204,7 @@ describe("Music appearance", () => {
     const save = vi.fn((enabled: boolean, config: ReturnType<typeof createDefaultMusicModuleConfig>) => new Promise<{ enabled: boolean; config: ReturnType<typeof createDefaultMusicModuleConfig> }>(resolve => { void enabled; void config; complete = resolve; }));
     const api = createStoryManagementApi({ saveMusicConfig: save, listAssetLibraryItems: async () => [], listMusicOutputs: async () => [] });
     render(<DirtyNavigationProvider><MusicNavigationHarness api={api} /></DirtyNavigationProvider>);
-    await screen.findByRole("heading", { name: "Appearance" });
+    await openEditorControls();
     await user.click(screen.getByLabelText("Enable Music module after saving"));
     await user.click(screen.getByRole("button", { name: "Leave Music editor" }));
     await user.click(screen.getByRole("button", { name: "Save and leave" }));

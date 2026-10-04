@@ -1,5 +1,6 @@
 import { targetProfileDefinitions } from "../management/contracts.js";
 import { overlayTargetProfileIdSchema, type OverlayTargetProfileId } from "../shared/schemas.js";
+import { fitMusicComponentLayout } from "./component-layout.js";
 import { musicLimits, musicModuleConfigSchema, musicSnapshotSchema, musicStatusSchema, musicWidgetProjectionSchema } from "./schemas.js";
 import type { MusicModuleConfig, MusicSnapshot, MusicStatus, MusicWidgetProjection } from "./types.js";
 
@@ -31,9 +32,9 @@ export function projectMusicWidget(
   if (idle && profile.idleMode === "hide") return null;
   const view = idle && profile.idleMode === "compact" ? "compact" : profile.initialView;
   const bounds = targetProfileDefinitions.find(candidate => candidate.id === target.data)!;
-  for (const appearance of Object.values(profile.views)) {
-    appearance.widthPx = Math.min(appearance.widthPx, bounds.width);
-    appearance.heightPx = Math.min(appearance.heightPx, bounds.height);
+  for (const viewId of ["full", "compact"] as const) {
+    const appearance = profile.views[viewId];
+    profile.views[viewId] = fitMusicComponentLayout({ ...appearance, widthPx: Math.min(appearance.widthPx, bounds.width), heightPx: Math.min(appearance.heightPx, bounds.height) });
   }
   const { widthPx: width, heightPx: height } = profile.views[view];
   const x = profile.alignment.endsWith("left") ? 0 : profile.alignment.endsWith("right") ? bounds.width - width : (bounds.width - width) / 2;

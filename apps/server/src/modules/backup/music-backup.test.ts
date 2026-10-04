@@ -30,6 +30,13 @@ function fixture() {
     for (const view of ["full", "compact"] as const) {
       const id = `brand-${profile}-${view}`;
       config.profiles[profile].views[view].branding.assetId = id;
+      config.profiles[profile].views[view].componentLayout = {
+        artwork: { x: 0, y: 0, width: 20, height: 20 },
+        title: { x: 25, y: 0, width: 100, height: 25 },
+        details: { x: 25, y: 30, width: 100, height: 20 },
+        progress: { x: 25, y: 55, width: 100, height: 4 },
+        time: { x: 25, y: 65, width: 100, height: 15 }
+      };
       assets.push(record(id, "image", "image/png"));
     }
   }

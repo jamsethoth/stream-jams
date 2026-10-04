@@ -34,7 +34,7 @@ test("packaged desktop keeps Music opt-in, transparent without a source, and ind
     desktop = await _electron.launch({ executablePath, cwd: root, env, chromiumSandbox: true, timeout: 30_000 });
     child = desktop.process();
     ownedPids.push(...await desktop.evaluate(({ app }) => app.getAppMetrics().map((entry: { pid: number }) => entry.pid)));
-    await windowByUrl(desktop, `http://127.0.0.1:${port}/manage`);
+    const management = await windowByUrl(desktop, `http://127.0.0.1:${port}/manage`);
     const base = `http://127.0.0.1:${port}`;
     const sessionResponse = await fetch(`${base}/auth/management/sessions`, { method: "POST" });
     expect(sessionResponse.ok).toBe(true);
@@ -48,6 +48,13 @@ test("packaged desktop keeps Music opt-in, transparent without a source, and ind
     }
     const defaults = await api<{ enabled: boolean; config: unknown }>("/overlay-modules/music/config");
     expect(defaults.enabled).toBe(false);
+    await management.goto(`${base}/manage/modules/music`);
+    await expect(management.getByRole("button", { name: "Expand configuration" })).toBeVisible();
+    await management.getByRole("button", { name: "Edit component layout" }).click();
+    await expect(management.getByLabel("Title width (px)")).toBeVisible();
+    await expect(management.getByRole("button", { name: "Resize Title", exact: true })).toBeVisible();
+    await management.getByRole("button", { name: "Reset automatic layout" }).click();
+    await expect(management.getByText("All changes saved")).toBeVisible();
     const surfaces = await api<SurfaceSettingsView>("/overlay-surfaces");
     const display = surfaces.desktop.displays[0];
     expect(display).toBeDefined();
