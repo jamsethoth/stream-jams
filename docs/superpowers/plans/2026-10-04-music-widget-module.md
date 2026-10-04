@@ -154,10 +154,10 @@ Paths below are repository-relative. **New** means create; **modify** means exte
 
 **OpenSpec:** 4.5, asset portions of 5.10. **New:** core `asset-references.ts` and tests. **Modify:** `apps/server/src/modules/assets/asset-library-service.ts`, `local-media-service.ts`, `media-preview-service.ts`, corresponding tests, module config validation and existing retirement/replacement integration.
 
-- [ ] Test all four profile/view brand references plus title/detail fonts, including hidden compact settings. Referenced assets cannot be retired/deleted; replacement reports every Music owner and rejects image-to-audio/font-to-image before changing content. Image IDs must exist, be available and be supported raster formats.
-- [ ] Run `corepack.cmd pnpm exec vitest run packages/core/src/music/asset-references.test.ts apps/server/src/modules/assets/asset-library-service.test.ts`; implement `collectMusicAssetReferences` and inject module-config access into the existing asset owner enumeration.
-- [ ] Preserve transparent raster uploads and existing10MiB policy. Use versioned authorized asset delivery for preview/outputs; source changes do not mutate branding. Refresh changed versions on replacement and invalidate outstanding old-version resolutions.
-- [ ] Test missing/deleted-after-load assets produce management errors and safe render fallbacks, while invalid save references are rejected. Run affected asset tests/typecheck and commit `feat: track Music branding and font assets`.
+- [x] Test all four profile/view brand references plus title/detail fonts, including hidden compact settings. Referenced assets cannot be retired/deleted; replacement reports every Music owner and rejects image-to-audio/font-to-image before changing content. Image IDs must exist, be available and be supported raster formats.
+- [x] Run `corepack.cmd pnpm exec vitest run packages/core/src/music/asset-references.test.ts apps/server/src/modules/assets/asset-library-service.test.ts`; implement `collectMusicAssetReferences` and inject module-config access into the existing asset owner enumeration.
+- [x] Preserve transparent raster uploads and existing10MiB policy. Use versioned authorized asset delivery for preview/outputs; source changes do not mutate branding. Refresh changed versions on replacement and invalidate outstanding old-version resolutions.
+- [x] Test missing/deleted-after-load assets produce management errors and safe render fallbacks, while invalid save references are rejected. Run affected asset tests/typecheck and commit `feat: track Music branding and font assets`.
 
 ## Task 10 — Wire Browser And Private Desktop Outputs
 
