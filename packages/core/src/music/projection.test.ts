@@ -45,6 +45,7 @@ describe("Music visibility and layout", () => {
         const projection = projectMusicWidget(observation, status, config, target, 10000, 11000);
         expect(projection?.view).toBe("compact");
         expect(projection?.appearanceStartedAtEpochMs).toBe(10000);
+        expect(projection?.clockReferenceEpochMs).toBe(11000);
       }
     }
     expect(projectMusicWidget({ ...snapshot, track: { ...snapshot.track!, id: "new-track" } }, status, config, "landscape", 11000, 11000)?.view).toBe("full");

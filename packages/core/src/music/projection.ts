@@ -40,6 +40,7 @@ export function projectMusicWidget(
   const y = profile.alignment.startsWith("top") ? 0 : profile.alignment.startsWith("bottom") ? bounds.height - height : (bounds.height - height) / 2;
   const projection = musicWidgetProjectionSchema.safeParse({
     targetProfileId: target.data, snapshot: observation.data, appearanceStartedAtEpochMs,
+    clockReferenceEpochMs: nowEpochMs,
     profile, view, layout: { x, y, width, height, zIndex: 0 }, css: settings.data.css, assets: []
   });
   return projection.success ? projection.data : null;

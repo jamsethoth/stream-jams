@@ -131,7 +131,8 @@ export const musicPublicAssetReferenceSchema = mediaVersionSnapshotSchema.extend
 }).strict();
 export const musicWidgetProjectionSchema = z.object({
   targetProfileId: overlayTargetProfileIdSchema, snapshot: musicSnapshotSchema,
-  appearanceStartedAtEpochMs: milliseconds, profile: musicProfileConfigSchema, view: musicViewSchema,
+  appearanceStartedAtEpochMs: milliseconds, clockReferenceEpochMs: milliseconds.max(Number.MAX_SAFE_INTEGER),
+  profile: musicProfileConfigSchema, view: musicViewSchema,
   layout: overlayElementLayoutSchema.strict(), css: musicCssConfigSchema, assets: z.array(musicPublicAssetReferenceSchema)
 }).strict().superRefine((projection, context) => {
   const bounds = targetProfileDefinitions.find(profile => profile.id === projection.targetProfileId)!;

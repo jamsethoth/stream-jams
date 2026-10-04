@@ -7,7 +7,7 @@ const live: MusicWidgetProjection = {
   targetProfileId: "vertical", snapshot: { providerId: "pear", generation: "owned", revision: 7,
     track: { id: "live", title: "Live track", artists: ["Artist"], album: null, artworkRef: "art_live" },
     playbackState: "playing", positionMs: null, durationMs: null, observedAtEpochMs: 1000, session: null },
-  appearanceStartedAtEpochMs: 1000, profile: config.profiles.vertical, view: "full",
+  appearanceStartedAtEpochMs: 1000, clockReferenceEpochMs: 1000, profile: config.profiles.vertical, view: "full",
   layout: { x: 0, y: 0, width: 640, height: 178, zIndex: 0 }, css: config.css, assets: []
 };
 

@@ -132,8 +132,10 @@ describe("Music appearance configuration", () => {
   });
   it("strictly validates versioned public references without transport URLs", () => {
     const config = createDefaultMusicModuleConfig();
-    const projection = { targetProfileId: "landscape", snapshot: observation, appearanceStartedAtEpochMs: 10000, profile: config.profiles.landscape, view: "full", layout: { x: 0, y: 902, width: 640, height: 178, zIndex: 0 }, css: config.css, assets: [] };
+    const projection = { targetProfileId: "landscape", snapshot: observation, appearanceStartedAtEpochMs: 10000, clockReferenceEpochMs: 11000, profile: config.profiles.landscape, view: "full", layout: { x: 0, y: 902, width: 640, height: 178, zIndex: 0 }, css: config.css, assets: [] };
     expect(musicWidgetProjectionSchema.safeParse(projection).success).toBe(true);
+    expect(musicWidgetProjectionSchema.safeParse({ ...projection, clockReferenceEpochMs: undefined }).success).toBe(false);
+    expect(musicWidgetProjectionSchema.safeParse({ ...projection, clockReferenceEpochMs: Number.MAX_SAFE_INTEGER + 1 }).success).toBe(false);
     expect(musicWidgetProjectionSchema.safeParse({ ...projection, assets: [{ assetId: "brand", version: "a".repeat(64), mimeType: "image/png", sizeBytes: 10, durationMs: null }] }).success).toBe(true);
     expect(musicWidgetProjectionSchema.safeParse({ ...projection, assets: [{ url: "https://example.test" }] }).success).toBe(false);
   });

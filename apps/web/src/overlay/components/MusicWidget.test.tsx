@@ -1,6 +1,6 @@
-import { fireEvent, render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import { createDefaultMusicModuleConfig, projectMusicWidget, type MusicAssetResolver, type MusicSnapshot, type MusicWidgetProjection } from "@stream-jams/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MusicWidget } from "./MusicWidget.js";
 import { StrictMode } from "react";
 
@@ -27,6 +27,38 @@ describe("MusicWidget", () => {
     expect(shadow.querySelector(".sj-time")?.textContent).toBe("0:32 / 2:00");
     expect(shadow.querySelector(".sj-progress-fill")?.getAttribute("style")).toContain("26.666");
     expect(shadow.querySelector(".sj-artwork img")?.getAttribute("src")).toBe("/artwork/art_123");
+  });
+
+  it.each([-300_000, 300_000])("uses server time with a recipient wall-clock offset of %i ms", offset => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    let monotonic = 100;
+    vi.spyOn(performance, "now").mockImplementation(() => monotonic);
+    vi.spyOn(Date, "now").mockReturnValue(now + offset);
+    try {
+      const value = { ...fixture(), clockReferenceEpochMs: now + 1_000 };
+      const view = render(<MusicWidget projection={value} resolveAsset={resolver} />);
+      expect(shadowOf(view.container)?.querySelector(".sj-time")?.textContent).toBe("0:31 / 2:00");
+      monotonic += 2_000;
+      act(() => vi.advanceTimersByTime(2_000));
+      expect(shadowOf(view.container)?.querySelector(".sj-time")?.textContent).toBe("0:33 / 2:00");
+      for (const [revision, playbackState] of [[2, "paused"], [3, "unknown"]] as const) {
+        view.rerender(<MusicWidget projection={{ ...value, snapshot: { ...snapshot, revision, playbackState }, clockReferenceEpochMs: now + 3_000 }} resolveAsset={resolver} />);
+        expect(shadowOf(view.container)?.querySelector(".sj-time")?.textContent).toBe("0:30 / 2:00");
+        monotonic += 1_000;
+        act(() => vi.advanceTimersByTime(1_000));
+        expect(shadowOf(view.container)?.querySelector(".sj-time")?.textContent).toBe("0:30 / 2:00");
+      }
+      // A new recipient gets the already-aged observation, rather than 45 fresh seconds.
+      view.rerender(<MusicWidget projection={{ ...value, snapshot: { ...snapshot, revision: 4 }, clockReferenceEpochMs: now + 44_000 }} resolveAsset={resolver} />);
+      expect(shadowOf(view.container)?.querySelector(".sj-title")?.textContent).toBe("Title");
+      monotonic += 1_001;
+      act(() => vi.advanceTimersByTime(1_001));
+      expect(view.container).toBeEmptyDOMElement();
+      view.unmount();
+    } finally {
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    }
   });
 
   it("renders compact appearance, safe fallbacks and long text without markup", () => {
