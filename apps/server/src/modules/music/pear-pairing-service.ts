@@ -78,9 +78,12 @@ export class PearPairingService {
       } else {
         attempt.status = "denied";
       }
-    }).catch(() => {
+    }).catch(
+      // error-provenance: allow expected -- remote approval failure is represented as denied without leaking Pear diagnostics
+      () => {
       if (attempt.status === "pending") attempt.status = "denied";
-    });
+      }
+    );
     return this.#view(attempt);
   }
 
@@ -131,7 +134,10 @@ export class PearPairingService {
     ++this.#identityEpoch;
     await this.dispose();
     try {
-      await this.#identityPromise?.catch(() => {});
+      await this.#identityPromise?.catch(
+        // error-provenance: allow cleanup -- retiring an identity waits for a failed initial read before replacement
+        () => {}
+      );
       await update();
     } finally {
       this.#identityPromise = null;
@@ -207,6 +213,7 @@ async function requestPearApproval(url: URL, signal: AbortSignal): Promise<PearA
       response.on("end", () => {
         let body: unknown = null;
         try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown; }
+        // error-provenance: allow expected -- Pear denial responses may omit JSON and are mapped by HTTP status
         catch { /* A denial may have no JSON body. */ }
         resolve({ status: response.statusCode ?? 0, body });
       });

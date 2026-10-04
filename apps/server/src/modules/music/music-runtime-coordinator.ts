@@ -106,7 +106,10 @@ export class MusicRuntimeCoordinator {
     this.#source = null; this.#controller = null; this.#generation = null;
     this.#snapshot = null; this.#lastAcceptedRevision = -1; this.#appearanceStartedAtEpochMs = null; this.#status = disconnected;
     this.#cancelDeadline(); this.#publish();
-    this.#transition = this.#transition.catch(() => {}).then(async () => {
+    this.#transition = this.#transition.catch(
+      // error-provenance: allow expected -- an earlier reconciliation failure cannot block a newly requested source
+      () => {}
+    ).then(async () => {
       await oldSource?.stop();
       if (this.#closed || lifecycle !== this.#lifecycle) return;
       const settings = await this.#options.getConfig();
@@ -126,13 +129,16 @@ export class MusicRuntimeCoordinator {
         snapshot => this.#acceptSnapshot(snapshot, lifecycle, selected.providerId, generation),
         status => this.#acceptStatus(status, lifecycle, generation),
         controller.signal
-      ).catch(() => {
+      ).catch(
+        // error-provenance: allow expected -- adapter failure becomes bounded runtime error status after ownership check
+        () => {
         if (!this.#owns(lifecycle, generation)) return;
         if (this.#status.state === "auth-required") return;
         this.#status = { state: "error", stale: false, diagnosticReference: null };
         this.#snapshot = null; this.#appearanceStartedAtEpochMs = null;
         this.#publish();
-      });
+        }
+      );
     });
     return this.#transition;
   }
@@ -147,7 +153,10 @@ export class MusicRuntimeCoordinator {
     this.#snapshot = null; this.#lastAcceptedRevision = -1;
     this.#appearanceStartedAtEpochMs = null; this.#status = disconnected;
     this.#cancelDeadline(); this.#publish();
-    await this.#transition.catch(() => {});
+    await this.#transition.catch(
+      // error-provenance: allow cleanup -- maintenance still drains the source after a failed prior transition
+      () => {}
+    );
     await source?.stop();
   }
 
@@ -157,14 +166,20 @@ export class MusicRuntimeCoordinator {
   }
 
   async stop(): Promise<void> {
-    if (this.#closed) { await this.#transition.catch(() => {}); return; }
+    if (this.#closed) { await this.#transition.catch(
+      // error-provenance: allow cleanup -- repeated stop waits for prior cleanup even after transition failure
+      () => {}
+    ); return; }
     this.#closed = true; ++this.#lifecycle;
     this.#controller?.abort();
     const source = this.#source;
     this.#source = null; this.#controller = null; this.#generation = null;
     this.#snapshot = null; this.#lastAcceptedRevision = -1; this.#appearanceStartedAtEpochMs = null; this.#status = disconnected;
     this.#cancelDeadline(); this.#publish();
-    await this.#transition.catch(() => {});
+    await this.#transition.catch(
+      // error-provenance: allow cleanup -- stop proceeds to drain the source after transition failure
+      () => {}
+    );
     await source?.stop();
     this.#listeners.clear();
   }
@@ -246,7 +261,10 @@ export class MusicRuntimeCoordinator {
     if (this.#activePublication !== null || this.#pendingPublication === null || this.#options.sink === undefined) return;
     const publication = this.#pendingPublication;
     this.#pendingPublication = null;
-    this.#activePublication = Promise.resolve().then(() => this.#options.sink!(publication)).catch(() => {}).then(() => {
+    this.#activePublication = Promise.resolve().then(() => this.#options.sink!(publication)).catch(
+      // error-provenance: allow expected -- a failed recipient publication cannot stall newer pending state
+      () => {}
+    ).then(() => {
       this.#activePublication = null;
       this.#drainPublication();
     });

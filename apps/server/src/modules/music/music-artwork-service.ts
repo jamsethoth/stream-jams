@@ -70,7 +70,9 @@ export class MusicArtworkService {
       this.#cacheBytes += image.bytes.byteLength;
       this.#evict();
       return ref;
-    } catch { return null; }
+    }
+    // error-provenance: allow expected -- rejected or failed remote artwork uses the placeholder
+    catch { return null; }
     finally {
       clearTimeout(timeout);
       signal.removeEventListener("abort", onAbort);
@@ -142,7 +144,10 @@ function withAbort<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
     const aborted = () => reject(signal.reason);
     signal.addEventListener("abort", aborted, { once: true });
-    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", aborted)).catch(() => {});
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", aborted)).catch(
+      // error-provenance: allow cleanup -- the outer promise already observes the original work rejection
+      () => {}
+    );
   });
 }
 
@@ -155,7 +160,9 @@ function parseArtworkUrl(input: string): URL | null {
   try {
     const url = new URL(input);
     return url.protocol === "https:" && hosts.has(url.hostname) && !url.username && !url.password && url.port === "" ? url : null;
-  } catch { return null; }
+  }
+  // error-provenance: allow expected -- malformed artwork URLs are rejected before fetch
+  catch { return null; }
 }
 
 async function resolvePublicAddresses(host: string): Promise<readonly string[]> {
@@ -197,7 +204,9 @@ export async function validateRaster(bytes: Uint8Array): Promise<MusicArtworkRea
     if (metadata.format !== kind || !metadata.width || !metadata.height || metadata.width > 4096 || metadata.height > 4096 || (metadata.pages ?? 1) > 1) return null;
     await decoder.raw().toBuffer();
     return { bytes: Uint8Array.from(bytes), mimeType: kind === "jpeg" ? "image/jpeg" : kind === "png" ? "image/png" : "image/webp" };
-  } catch { return null; }
+  }
+  // error-provenance: allow expected -- corrupt raster data is rejected before delivery
+  catch { return null; }
 }
 
 export function fetchPinnedBytes(url: URL, address: string, signal: AbortSignal): Promise<Uint8Array> {

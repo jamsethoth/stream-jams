@@ -8,7 +8,9 @@ const loopbackBaseUrlSchema = z.string().url().refine((value) => {
       && (host === "localhost" || /^127(?:\.\d{1,3}){3}$/u.test(host) || host === "[::1]")
       && url.username === "" && url.password === "" && url.search === "" && url.hash === ""
       && url.pathname === "/" && url.port !== "0";
-  } catch {
+  }
+  // error-provenance: allow expected -- malformed endpoint input is rejected by schema validation
+  catch {
     return false;
   }
 }, "Pear must use a loopback HTTP(S) base URL without credentials, path, query or fragment");

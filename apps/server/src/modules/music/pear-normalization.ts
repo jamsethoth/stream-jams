@@ -40,7 +40,9 @@ export function extractPearArtworkDescriptor(songInput: unknown): PrivateArtwork
     const url = new URL(imageSrc);
     if (url.protocol !== "https:" || url.username || url.password || !["i.ytimg.com", "lh3.googleusercontent.com"].includes(url.hostname.toLowerCase())) return null;
     return { url: url.toString() };
-  } catch { return null; }
+  }
+  // error-provenance: allow expected -- malformed provider artwork URLs are omitted from normalized state
+  catch { return null; }
 }
 
 export function normalizePearObservation(input: unknown, previous: MusicSnapshot | null, context: PearObservationContext): MusicSnapshot {

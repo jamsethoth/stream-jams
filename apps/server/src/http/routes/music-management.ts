@@ -23,10 +23,12 @@ export function registerMusicManagementRoutes(app: FastifyInstance, dependencies
   });
   app.get("/management/music/pairing/:attemptId", { preHandler }, async (request, reply) => {
     try { return musicPairingAttemptViewSchema.parse(dependencies.pairing.get(readParam(request.params, "attemptId"))); }
+    // error-provenance: allow expected -- unknown opaque pairing IDs have one bounded response
     catch { return sendHttpError(reply, 404, { code: "MUSIC_PAIRING_NOT_FOUND", message: "Music pairing attempt was not found" }); }
   });
   app.delete("/management/music/pairing/:attemptId", { preHandler }, async (request, reply) => {
     try { await dependencies.pairing.cancel(readParam(request.params, "attemptId")); }
+    // error-provenance: allow expected -- cancelling an unknown pairing ID returns the same bounded response
     catch { return sendHttpError(reply, 404, { code: "MUSIC_PAIRING_NOT_FOUND", message: "Music pairing attempt was not found" }); }
     return reply.status(204).send();
   });

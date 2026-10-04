@@ -157,6 +157,7 @@ export class AssetLibraryService {
       if (!musicAssetCompatible(reference, record)) throw new InvalidMusicAssetReferenceError(reference, "incompatible");
       let health: "available" | "missing" | "broken";
       try { health = await this.#options.assetStore.inspect(record.storagePath, record.sizeBytes); }
+      // error-provenance: allow expected -- an unreadable saved Music asset fails closed as unavailable
       catch { health = "broken"; }
       if (health !== "available") {
         throw new InvalidMusicAssetReferenceError(reference, "unavailable");
@@ -190,7 +191,9 @@ export class AssetLibraryService {
           assetId: record.id, version: mediaVersion(record), mimeType: record.mimeType,
           sizeBytes: record.sizeBytes, durationMs: record.durationMs
         }));
-      } catch { missing.add(reference.assetId); }
+      }
+      // error-provenance: allow expected -- asset lookup failure is reported as missing for this profile
+      catch { missing.add(reference.assetId); }
     }
     return { assets, missingAssetIds: [...missing] };
   }

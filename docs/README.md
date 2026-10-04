@@ -8,6 +8,7 @@ Use this map to distinguish current behavior, pending work, and historical evide
 | --- | --- |
 | How do I run or operate the application? | [Runbook](mvp-runbook.md) |
 | How do I configure Timers or Stream Deck HTTP actions? | [Timers](timers.md); [implementation verification and remaining manual acceptance](verification/timers.md) |
+| How do I configure Music and brand its widget? | [Music provider setup](music-providers.md), [styling surface](music-styling.md), and [dated verification/remaining acceptance](verification/music-widget-module.md) |
 | What product boundaries are intentional? | [Product plan](product-plan.md); its MVP sections describe the first delivery boundary, and later sections describe approved additions |
 | What is still pending? | [Canonical backlog](backlog.md), including links to planned OpenSpec changes |
 | What implemented behavior is required? | [Canonical OpenSpec capabilities](../openspec/specs); source and tests establish what actually runs when a discrepancy is found |
@@ -22,7 +23,7 @@ Use this map to distinguish current behavior, pending work, and historical evide
 - `apps/server` owns Fastify, SQLite repositories and migrations, secrets, providers, assets, diagnostics, and runtime composition.
 - `apps/web` serves route-based management, `/operator`, browser-source overlays, and the private desktop-overlay renderer.
 - `apps/desktop` owns the Electron service process, management window, tray, private audio player, and private desktop overlay. Windows x64 runnable-folder packaging and short-lived verified CI artifacts are implemented.
-- Alerts, Screen Effects, and Timers are registered modules. Alerts and Screen Effects retain independent playback queues; Timers use an independent server-authoritative lifecycle. Shared surfaces and global safety controls coordinate their outputs without combining their schedulers.
+- Alerts, Screen Effects, Timers, and Music are registered modules. Music is disabled by default and uses an authenticated selected source with server-authoritative snapshots. Alerts and Screen Effects retain independent playback queues; Timers use an independent server-authoritative lifecycle. Shared surfaces and global safety controls coordinate their outputs without combining their schedulers.
 - Screen Effects supports one active set, unified weighted variants, draft variant removal, media-based duration, fades, and percentage media gain. Per-effect cooldown, default/weighted authoring kinds, and Screen Effect animation controls are no longer current authoring features.
 - Registered local media uses version-pinned bounded streams for management previews, browser sources and private desktop recipients. The [local media specification](../openspec/specs/local-media-streaming/spec.md) defines integrity, ownership and resource bounds; [streaming acceptance](../openspec/changes/stream-local-media/final-acceptance.md) records validation and measurement limits for the change.
 
@@ -44,6 +45,8 @@ The following six changes have all tasks checked at the audited commit. They rem
 Later implemented refinements are also reflected in canonical specs: removal of Screen Effect animation fields in migration 025, draft variant removal in `fec768c`, and holding playback for explicit retry when a local stop acknowledgement fails. Older delta wording must not undo those refinements.
 
 `add-main-branch-changelog` (0/22 tasks) and `add-video-shoutout-overlay-module` (0/23 tasks) are proposals, not implemented features. Neither a root changelog nor a registered `video-shoutout` module exists at the audited commit.
+
+The active `add-music-widget-module` change contains the implemented Music runtime, management, and browser output work. Its [dated delivery record](verification/music-widget-module.md) and [scenario trace](verification/music-widget-scenarios.md) distinguish tested behavior from review fixes and physical Pear/OBS/private desktop checks that remain open. BL-028 stays in the [backlog](backlog.md) until its full acceptance and spec reconciliation are complete; Plex and Spotify remain separate BL-054 work.
 
 ## Historical Records
 

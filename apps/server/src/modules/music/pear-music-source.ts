@@ -99,7 +99,10 @@ export class PearMusicSource implements MusicSourceAdapter {
       if (this.#run === run) this.#run = null;
     });
     this.#run = run;
-    void run.catch(() => {});
+    void run.catch(
+      // error-provenance: allow cleanup -- run-loop status and first-start promise own the failure
+      () => {}
+    );
     return first;
   }
 
@@ -110,7 +113,10 @@ export class PearMusicSource implements MusicSourceAdapter {
     this.#socket?.terminate();
     if (this.#staleTimer !== null) clearTimeout(this.#staleTimer);
     this.#staleTimer = null;
-    if (run !== null) await run.catch(() => {});
+    if (run !== null) await run.catch(
+      // error-provenance: allow cleanup -- stop intentionally drains a failing aborted run
+      () => {}
+    );
     this.#controller = null; this.#socket = null; this.#snapshot = null;
     this.#onSnapshot = null; this.#onStatus = null;
     this.#artwork.clear();
@@ -144,7 +150,10 @@ export class PearMusicSource implements MusicSourceAdapter {
           this.#socket?.terminate(); this.#socket = null;
           if (signal.aborted) break;
           this.#clearLive();
-          await this.#requestInFlight?.catch(() => {});
+          await this.#requestInFlight?.catch(
+            // error-provenance: allow cleanup -- original transport error above controls reconnect status
+            () => {}
+          );
           if (error instanceof PearAuthenticationError) {
             this.#setStatus("auth-required", false);
             if (firstPending) { firstReject(error); firstPending = false; }
@@ -159,7 +168,10 @@ export class PearMusicSource implements MusicSourceAdapter {
           const base = retryDelaysMs[Math.min(failureCount, retryDelaysMs.length - 1)]!;
           failureCount += 1;
           const jitter = Math.max(0, Math.min(1, this.#options.jitter?.() ?? Math.random()));
-          await delay(Math.max(retryAfter ?? 0, Math.round(base * (0.8 + jitter * 0.4))), signal).catch(() => {});
+          await delay(Math.max(retryAfter ?? 0, Math.round(base * (0.8 + jitter * 0.4))), signal).catch(
+            // error-provenance: allow cleanup -- delay rejects only when cancellation ends this generation
+            () => {}
+          );
         }
       }
     } finally {
@@ -262,6 +274,7 @@ export class PearMusicSource implements MusicSourceAdapter {
         });
         response.on("end", () => {
           try { resolve({ observation: { type: "REST_SONG", song: JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown } }); }
+          // error-provenance: allow expected -- raw Pear JSON errors are converted to a credential-safe protocol error
           catch { reject(new PearProtocolError()); }
         });
       });
@@ -282,7 +295,10 @@ export class PearMusicSource implements MusicSourceAdapter {
     });
     let closeReject!: (error: unknown) => void;
     const closed = new Promise<never>((_resolve, reject) => { closeReject = reject; });
-    void closed.catch(() => {});
+    void closed.catch(
+      // error-provenance: allow cleanup -- the racing socket-close promise is observed by reconciliation
+      () => {}
+    );
     return new Promise<OpenSocket>((resolve, reject) => {
       let ready = false; let settled = false;
       const firstTimer = setTimeout(() => fail(new PearProtocolError()), requestTimeoutMs);
@@ -308,7 +324,9 @@ export class PearMusicSource implements MusicSourceAdapter {
             onObservation(value); resolve({ socket, closed }); return;
           }
           if (["PLAYER_INFO", "VIDEO_CHANGED", "PLAYER_STATE_CHANGED", "POSITION_CHANGED"].includes(String(event.type))) onObservation(value);
-        } catch (error) { fail(error instanceof PearProtocolError ? error : new PearProtocolError()); }
+        }
+        // error-provenance: allow expected -- discard upstream message errors that may contain a token-bearing WebSocket URL
+        catch (error) { fail(error instanceof PearProtocolError ? error : new PearProtocolError()); }
       });
       socket.on("unexpected-response", (_request, response) => {
         response.resume();

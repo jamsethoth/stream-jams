@@ -55,7 +55,10 @@ export function MusicSourcesPage({ api, initialProviderId }: { readonly api: Mus
         ? current : nextProviders.find(provider => provider.active)?.id ?? nextProviders[0]?.id ?? null);
       setLoading(false);
     }).catch((cause: unknown) => { if (live) { setError(actionError(cause, "Unable to load Music sources", "Refresh the page and check the local service.")); setLoading(false); } });
-    return () => { live = false; mounted.current = false; generation.current += 1; detailGeneration.current += 1; statusGeneration.current += 1; if (pairRef.current !== null) void api.cancelMusicPairing(pairRef.current).catch(() => undefined); };
+    return () => { live = false; mounted.current = false; generation.current += 1; detailGeneration.current += 1; statusGeneration.current += 1; if (pairRef.current !== null) void api.cancelMusicPairing(pairRef.current).catch(
+      // error-provenance: allow cleanup -- server expiry is authoritative if navigation cancellation fails
+      () => undefined
+    ); };
   }, [api]);
 
   useEffect(() => {
@@ -98,7 +101,10 @@ export function MusicSourcesPage({ api, initialProviderId }: { readonly api: Mus
 
   const selected = providers.find(provider => provider.id === selectedId) ?? null;
   const dirty = pairing !== null || validation !== null;
-  const discard = useCallback(() => { if (pairRef.current !== null) void api.cancelMusicPairing(pairRef.current).catch(() => undefined); pairRef.current = null; generation.current += 1; setBusy(false); setPairing(null); setValidation(null); }, [api]);
+  const discard = useCallback(() => { if (pairRef.current !== null) void api.cancelMusicPairing(pairRef.current).catch(
+    // error-provenance: allow cleanup -- discarded attempt expires server-side if cancellation fails
+    () => undefined
+  ); pairRef.current = null; generation.current += 1; setBusy(false); setPairing(null); setValidation(null); }, [api]);
   useDirtyNavigationSource({ id: "music-source-setup", summary: "Music source setup is in progress.", dirty, save: null, discard });
 
   function cancelPairing() {
@@ -110,7 +116,10 @@ export function MusicSourcesPage({ api, initialProviderId }: { readonly api: Mus
     setBusy(false);
     setPairing(null);
     setValidation(null);
-    if (id !== null) void api.cancelMusicPairing(id).catch(() => undefined);
+    if (id !== null) void api.cancelMusicPairing(id).catch(
+      // error-provenance: allow cleanup -- abandoned attempt expires server-side after cancellation failure
+      () => undefined
+    );
   }
 
   function selectSource(id: string | null) {

@@ -192,6 +192,7 @@ export class ProviderManagementService {
       }
       let claim: PearPairingClaim;
       try { claim = this.#musicPairing.reserve(parsed.pairingAttemptId, parsed.configuration); }
+      // error-provenance: allow expected -- invalid/used pairing claims return bounded setup guidance
       catch { return this.#failedValidation("Pear pairing is unavailable", "The pairing request expired, was cancelled, or has already been used.", "Start a new pairing request."); }
       try {
         return await this.#validatePear(parsed.configuration, claim.token);
@@ -222,6 +223,7 @@ export class ProviderManagementService {
     let claim: PearPairingClaim | null = null;
     if (parsed.kind === "pear-desktop" && parsed.pairingAttemptId !== undefined && this.#musicPairing !== undefined && this.#validateMusicConnection !== undefined) {
       try { claim = this.#musicPairing.reserve(parsed.pairingAttemptId, parsed.configuration); }
+      // error-provenance: allow expected -- invalid claim follows the ordinary failed-validation path below
       catch { /* Validation below returns a bounded management error. */ }
     }
     const validation = claim !== null && parsed.kind === "pear-desktop"
@@ -299,7 +301,9 @@ export class ProviderManagementService {
       if (saved.provider.capability === "music-source" && saved.provider.active) {
         await this.#onMusicSourceChanged();
       }
-    } catch {
+    }
+    // error-provenance: allow expected -- committed registration stays durable while runtime retries independently
+    catch {
       // The record and its credential are durable. Runtime reconciliation retries separately.
     }
     return providerRegistrationAttemptSchema.parse({
@@ -310,7 +314,10 @@ export class ProviderManagementService {
   /** Replace an existing Pear credential without changing its registration or active selection. */
   replaceMusicCredential(providerId: string, input: MusicCredentialReplacementInput): Promise<MusicCredentialReplacementResult> {
     const result = this.#pendingMusicCredentialMutation.then(() => this.#replaceMusicCredential(providerId, input));
-    this.#pendingMusicCredentialMutation = result.catch(() => undefined);
+    this.#pendingMusicCredentialMutation = result.catch(
+      // error-provenance: allow expected -- caller observes replacement error; serialized queue remains usable
+      () => undefined
+    );
     return result;
   }
 
@@ -322,6 +329,7 @@ export class ProviderManagementService {
     }
     let claim: PearPairingClaim;
     try { claim = this.#musicPairing.reserve(parsed.pairingAttemptId, parsed.configuration); }
+    // error-provenance: allow expected -- rejected replacement claim returns bounded setup guidance
     catch { return { validation: await this.#failedValidation("Pear pairing is unavailable", "The pairing request expired, was cancelled, or has already been used.", "Start a new pairing request."), runtimeReconcilePending: false, credentialRetirementPending: false }; }
     const newSecretRef: SecretRef = { namespace: "music", accountId: providerId, name: `access-token-${randomBytes(16).toString("hex")}` };
     let attemptedSave = false;
@@ -348,10 +356,14 @@ export class ProviderManagementService {
       claim.complete();
       // The repository now durably points at the new credential. Runtime errors cannot undo it.
       let runtimeReconcilePending = false;
-      try { if (current.provider.active) await this.#onMusicSourceChanged(); } catch { runtimeReconcilePending = true; }
+      try { if (current.provider.active) await this.#onMusicSourceChanged(); }
+      // error-provenance: allow expected -- committed credential remains valid; management reports pending runtime retry
+      catch { runtimeReconcilePending = true; }
       let credentialRetirementPending = false;
       if (current.secretRef !== null) {
-        try { await this.#secretStore.deleteSecret(current.secretRef); } catch { credentialRetirementPending = true; }
+        try { await this.#secretStore.deleteSecret(current.secretRef); }
+        // error-provenance: allow cleanup -- new credential is durable; management reports old-secret retirement pending
+        catch { credentialRetirementPending = true; }
       }
       return musicCredentialReplacementResultSchema.parse({ validation, runtimeReconcilePending, credentialRetirementPending });
     } catch (error) {
@@ -383,7 +395,9 @@ export class ProviderManagementService {
     try {
       const result = providerValidationResultSchema.parse(await this.#validateMusicConnection!(config, token, AbortSignal.timeout(5_000)));
       if (result.valid) return { ...result, error: null };
-    } catch { /* Never surface upstream credential-bearing diagnostics. */ }
+    }
+    // error-provenance: allow expected -- upstream connection errors may contain credentials; return bounded guidance
+    catch { /* Never surface upstream credential-bearing diagnostics. */ }
     return this.#failedValidation("Pear connection failed", "Pear did not confirm a usable music connection.", "Check Pear Desktop and retry pairing.");
   }
 

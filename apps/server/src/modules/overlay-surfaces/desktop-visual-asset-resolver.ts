@@ -102,8 +102,13 @@ export class DesktopVisualAssetResolver {
           asset.grant.snapshot.sizeBytes !== reference.sizeBytes) throw unavailable();
       }
       return { presentation, assets, missingAssetIds: [], ownerId };
-    } catch {
-      await this.dependencies.media.release(ownerId).catch(() => {});
+    }
+    // error-provenance: allow expected -- missing private media is replaced with a bounded native fallback
+    catch {
+      await this.dependencies.media.release(ownerId).catch(
+        // error-provenance: allow cleanup -- best-effort release after the failed acquisition/verification
+        () => {}
+      );
       return { presentation: { ...presentation, widget: { ...presentation.widget, assets: [] } }, assets: [], missingAssetIds: ids, ownerId: null };
     }
   }

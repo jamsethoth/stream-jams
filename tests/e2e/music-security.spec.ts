@@ -72,20 +72,47 @@ test("uploaded branding uses authorized output URLs and backup restores appearan
     }, body: bytes });
     expect(imported.ok, `Asset import: ${imported.status}`).toBe(true);
     const asset = await imported.json() as { id: string };
+    const fontBytes = await readFile(resolve("apps/web/node_modules/storybook/assets/browser/nunito-sans-regular.woff2"));
+    const importedFont = await fetch(`${fixture.url}/assets/import`, { method: "POST", headers: {
+      ...fixture.headers, "content-type": "application/octet-stream", "x-stream-jams-file-name": "nunito-sans-regular.woff2", "x-stream-jams-mime-type": "font/woff2"
+    }, body: fontBytes });
+    expect(importedFont.ok, `Font import: ${importedFont.status}`).toBe(true);
+    const font = await importedFont.json() as { id: string };
     const saved = await fixture.request<{ config: MusicModuleConfig }>("/overlay-modules/music/config");
     const branded = structuredClone(saved.config);
     branded.profiles.landscape.views.full.branding.assetId = asset.id;
     branded.profiles.landscape.views.full.branding.fit = "contain";
     branded.profiles.landscape.views.full.branding.opacity = 35;
+    branded.profiles.landscape.views.full.titleFont.fontAssetId = font.id;
+    branded.profiles.landscape.views.full.detailsFont.fontAssetId = font.id;
     branded.profiles.vertical.views.compact.branding.assetId = asset.id;
+    branded.profiles.landscape.backgroundOpacity = 0;
+    branded.css = { source: await readFile(resolve("docs/examples/music-branding.css"), "utf8"), enabled: true, styleContractVersion: 1 };
     await fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: branded });
     const live = await fixture.request<{ url: string }>("/management/overlay-outputs/keys", "POST", { overlayId: "default", moduleId: "music", scope: "module", purpose: "live", targetProfileId: "landscape" });
     const unified = await fixture.request<{ url: string }>("/management/overlay-outputs/keys", "POST", { overlayId: "default", moduleId: null, scope: "unified", purpose: "live", targetProfileId: null });
+    await page.goto(`${fixture.url}/manage/modules/music`);
+    const preview = page.getByRole("region", { name: "Music preview" }).getByTestId("music-widget");
+    await expect(preview.locator(".sj-brand-image")).toBeVisible();
+    await expect(preview.locator(".sj-progress-track")).toHaveCSS("position", "absolute");
+    await expect(preview.locator(".sj-frame")).toHaveCSS("opacity", "0");
+    await expect(preview.locator(".sj-brand-image")).toHaveCSS("opacity", "0.35");
+    await expect(preview.locator(".sj-content")).toHaveCSS("opacity", "1");
+    await expect.poll(() => preview.locator(".sj-title").evaluate(element => getComputedStyle(element).fontFamily)).toContain("sj-music-");
+    const previewImage = preview.locator(".sj-brand-image");
+    expect(await previewImage.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
     await page.goto(live.url);
     const image = page.getByTestId("music-widget").locator(".sj-brand-image");
     await expect(image).toBeVisible();
     await expect(image).toHaveCSS("object-fit", "contain");
     await expect(image).toHaveCSS("opacity", "0.35");
+    await expect.poll(() => page.getByTestId("music-widget").locator(".sj-title").evaluate(element => getComputedStyle(element).fontFamily)).toContain("sj-music-");
+    await expect(page.getByTestId("music-widget").locator(".sj-progress-track")).toHaveCSS("position", "absolute");
+    const layers = await page.getByTestId("music-widget").evaluate(host => {
+      const root = host.shadowRoot!;
+      return [".sj-frame", ".sj-brand-layer", ".sj-content"].map(selector => Number(getComputedStyle(root.querySelector(selector)!).zIndex));
+    });
+    expect(layers).toEqual([0, 1, 2]);
     expect(await image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
     const privateUrl = await image.getAttribute("src");
     expect(privateUrl).toMatch(/\/overlay\/.*\/assets\//u);
@@ -93,6 +120,44 @@ test("uploaded branding uses authorized output URLs and backup restores appearan
     expect(denied.status()).toBeGreaterThanOrEqual(400);
     const unifiedPage = await context.newPage(); await unifiedPage.goto(unified.url);
     await expect(unifiedPage.getByTestId("music-widget").locator(".sj-brand-image")).toBeVisible();
+    await expect(unifiedPage.getByTestId("music-widget").locator(".sj-progress-track")).toHaveCSS("position", "absolute");
+    const changed = structuredClone(branded);
+    changed.profiles.landscape.views.full.branding.fit = "cover";
+    changed.profiles.landscape.views.full.branding.xPercent = 10;
+    changed.profiles.landscape.views.full.branding.yPercent = 90;
+    changed.profiles.landscape.views.full.contentInsets.left = 24;
+    await fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: changed });
+    await expect(image).toHaveCSS("object-fit", "cover");
+    await expect(image).toHaveCSS("object-position", "10% 90%");
+    await expect(page.getByTestId("music-widget").locator(".sj-content")).toHaveCSS("left", "24px");
+    changed.profiles.landscape.views.full.branding.fit = "fill";
+    await fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: changed });
+    await expect(image).toHaveCSS("object-fit", "fill");
+    const originalBrandUrl = await image.getAttribute("src");
+    const replacement = await fetch(`${fixture.url}/assets/${asset.id}/replace`, { method: "POST", headers: {
+      ...fixture.headers, "content-type": "application/octet-stream", "x-stream-jams-file-name": "tiny-image-new.png",
+      "x-stream-jams-mime-type": "image/png", "x-stream-jams-confirm-impact": "true"
+    }, body: bytes });
+    expect(replacement.ok, `Asset replacement: ${replacement.status}`).toBe(true);
+    await expect.poll(() => image.getAttribute("src")).not.toBe(originalBrandUrl);
+    await expect(image).toBeVisible();
+    await page.route("**/overlay/**/assets/**", route => route.abort());
+    await page.reload();
+    await expect(page.getByTestId("music-widget").locator(".sj-brand-image")).toHaveCount(0);
+    await expect(page.getByTestId("music-widget").locator(".sj-frame")).toBeVisible();
+    await expect(page.getByTestId("music-widget").locator(".sj-title")).toContainText("Branded Track");
+    changed.profiles.landscape.idleMode = "hide";
+    changed.profiles.landscape.idleAfterSeconds = 1;
+    await fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: changed });
+    await expect(page.getByTestId("music-widget")).toHaveCount(0, { timeout: 10_000 });
+    await expect(unifiedPage.getByTestId("music-widget")).toHaveCount(0);
+    changed.profiles.landscape.idleMode = "none";
+    await fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: changed });
+    fixture.pear.setSong({ status: 200, body: { videoId: "brand-recovery", title: "Recovered Brand", artist: "Fixture", songDuration: 60, elapsedSeconds: 0 } });
+    await expect(page.getByTestId("music-widget").locator(".sj-title")).toContainText("Recovered Brand", { timeout: 10_000 });
+    fixture.pear.setSong({ status: 204 });
+    await expect(page.getByTestId("music-widget")).toHaveCount(0, { timeout: 10_000 });
+    await expect(unifiedPage.getByTestId("music-widget")).toHaveCount(0);
     // Backup preflight requires the standard starter alert set to have been initialized.
     await fixture.request("/management/alert-sets");
     const archive = await fixture.request<Record<string, unknown>>("/management/settings/backup");

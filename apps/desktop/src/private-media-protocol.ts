@@ -128,7 +128,9 @@ export class PrivateMediaProtocol {
         let offset = 0;
         for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
         return new Response(bytes, { headers: { "Content-Type": mime!, "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff" } });
-      } catch { return fail(404); }
+      }
+      // error-provenance: allow expected -- private media failures have one uniform not-found response
+      catch { return fail(404); }
       finally { entry.controllers.delete(controller); request.signal.removeEventListener("abort", onAbort); }
     }
     if (this.#destroyed || !["GET", "HEAD"].includes(request.method) || url.protocol !== `${this.options.scheme}:` ||
