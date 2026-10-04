@@ -479,6 +479,12 @@ function createManagementApi(): ManagementApi {
   };
 
   return {
+    beginMusicPairing: vi.fn(async () => ({ attemptId: "pair_test", status: "pending" as const, expiresAt: "2026-07-16T18:00:00.000Z" })),
+    getMusicPairing: vi.fn(async () => ({ attemptId: "pair_test", status: "approved" as const, expiresAt: "2026-07-16T18:00:00.000Z" })),
+    cancelMusicPairing: vi.fn(async () => undefined),
+    getMusicStatus: vi.fn(async () => ({ enabled: false, selectedProviderId: null, status: { state: "disconnected" as const, stale: false, diagnosticReference: null }, missingAssetIds: { landscape: [], vertical: [] } })),
+    reconnectMusicSource: vi.fn(async () => ({ enabled: false, selectedProviderId: null, status: { state: "disconnected" as const, stale: false, diagnosticReference: null }, missingAssetIds: { landscape: [], vertical: [] } })),
+    replaceMusicCredential: vi.fn(async () => ({ validation: { valid: true, connectionState: "connected" as const, intakeState: null, validatedAt: "2026-07-15T05:00:00.000Z", availableVoices: [], error: null }, runtimeReconcilePending: false, credentialRetirementPending: false })),
     reportClientException: vi.fn(async input => ({ referenceId: input.referenceId })),
     getHomeSetupSummary: vi.fn(async () => ({
       readiness: [

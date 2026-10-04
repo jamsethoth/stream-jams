@@ -74,6 +74,7 @@ import {
   type TwitchCustomRewardCatalog
 } from "@stream-jams/core";
 import { createManagementHttpClient, type HttpManagementClientOptions } from "./management-http-client.js";
+import { createMusicApi, type MusicApi } from "./music/music-api.js";
 
 export interface ServerConfigView {
   readonly host: string;
@@ -258,7 +259,7 @@ export type TwitchAuthPollResultView =
   | { readonly status: "connected"; readonly connection: Extract<TwitchConnectionStatusView, { readonly connected: true }> }
   | { readonly status: "failed"; readonly code: "TWITCH_OAUTH_DENIED" | "TWITCH_OAUTH_EXPIRED"; readonly message: string };
 
-export interface ManagementApi {
+export interface ManagementApi extends MusicApi {
   reportClientException(input: ClientExceptionReport): Promise<ClientExceptionReportResult>;
   getHomeSetupSummary(): Promise<HomeSetupSummary>;
   getTwitchStatus(): Promise<TwitchConnectionStatusView>;
@@ -294,8 +295,8 @@ export interface ManagementApi {
   activateAlertSet(setId: string, confirmWarnings?: boolean): Promise<AlertSetActivationResult>;
   markStarterAlertSetReviewComplete(setId: string): Promise<AlertSetOverview>;
   setManagedAlertEnabled(alertId: string, enabled: boolean): Promise<AlertSetDetail>;
-  getOverlayModuleEnabled(moduleId: "alerts" | "timers"): Promise<boolean>;
-  setOverlayModuleEnabled(moduleId: "alerts" | "timers", enabled: boolean): Promise<boolean>;
+  getOverlayModuleEnabled(moduleId: "alerts" | "timers" | "music"): Promise<boolean>;
+  setOverlayModuleEnabled(moduleId: "alerts" | "timers" | "music", enabled: boolean): Promise<boolean>;
   deleteAlertSet(setId: string): Promise<void>;
   getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument>;
   getAlertVariationAuthoringContext(alertId: string): Promise<AlertVariationAuthoringContext>;
@@ -375,6 +376,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
   }
 
   return {
+    ...createMusicApi(client),
     reportClientException(input) {
       return postContract(
         "/management/diagnostics/client-errors",
@@ -865,7 +867,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
   };
 }
 
-function parseOverlayModuleEnabled(candidate: unknown, moduleId: "alerts" | "timers"): boolean {
+function parseOverlayModuleEnabled(candidate: unknown, moduleId: "alerts" | "timers" | "music"): boolean {
   if (typeof candidate !== "object" || candidate === null) throw new TypeError("Invalid overlay module status response");
   const value = candidate as Record<string, unknown>;
   if (value.moduleId !== moduleId || typeof value.enabled !== "boolean") throw new TypeError("Invalid overlay module status response");

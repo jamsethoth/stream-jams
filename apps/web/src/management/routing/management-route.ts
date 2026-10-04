@@ -2,6 +2,7 @@ export type ManagementRouteId =
   | "home"
   | "event-sources"
   | "tts-providers"
+  | "music-sources"
   | "modules-alerts"
   | "modules-screen-effects"
   | "modules-timers"
@@ -54,6 +55,7 @@ const routeDefinitions: Record<ManagementRouteId, ManagementRouteDefinition> = {
     "TTS providers",
     "Register, test, and activate text-to-speech services."
   ),
+  "music-sources": route("music-sources", "Music sources", "/manage/music-sources", "Music sources", "Pair Pear Desktop, validate sources, and monitor Music connection status."),
   "modules-alerts": route(
     "modules-alerts",
     "Modules",
@@ -137,6 +139,7 @@ export const managementPrimaryRoutes: readonly ManagementRouteDefinition[] = [
   routeDefinitions.home,
   routeDefinitions["event-sources"],
   routeDefinitions["tts-providers"],
+  routeDefinitions["music-sources"],
   routeDefinitions["modules-alerts"],
   routeDefinitions.assets,
   routeDefinitions.diagnostics,
@@ -207,7 +210,7 @@ export function parseManagementRoute(pathname: string): ManagementRoute {
   return {
     id,
     ...(id === "modules-timers" && search.get("ownerId") ? { ownerId: search.get("ownerId")! } : {}),
-    ...(id === "event-sources" || id === "tts-providers" ? {
+    ...(id === "event-sources" || id === "tts-providers" || id === "music-sources" ? {
       ...(providerId === undefined ? {} : { providerId }),
       ...(setup === undefined ? {} : { setup })
     } : {}),

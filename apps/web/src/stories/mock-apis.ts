@@ -43,6 +43,12 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async listRegisteredProviders() {
       return [];
     },
+    async beginMusicPairing() { return { attemptId: "pair_story", status: "pending" as const, expiresAt: "2026-07-16T18:00:00.000Z" }; },
+    async getMusicPairing() { return { attemptId: "pair_story", status: "approved" as const, expiresAt: "2026-07-16T18:00:00.000Z" }; },
+    async cancelMusicPairing() {},
+    async getMusicStatus() { return { enabled: false, selectedProviderId: null, status: { state: "disconnected" as const, stale: false, diagnosticReference: null }, missingAssetIds: { landscape: [], vertical: [] } }; },
+    async reconnectMusicSource() { return { enabled: false, selectedProviderId: null, status: { state: "disconnected" as const, stale: false, diagnosticReference: null }, missingAssetIds: { landscape: [], vertical: [] } }; },
+    async replaceMusicCredential() { return { validation: { valid: true, connectionState: "connected" as const, intakeState: null, validatedAt: "2026-07-15T05:00:00.000Z", availableVoices: [], error: null }, runtimeReconcilePending: false, credentialRetirementPending: false }; },
     async validateProvider(input) {
       return {
         valid: true,

@@ -1,9 +1,12 @@
+import { randomBytes } from "node:crypto";
 import {
   evaluateProviderActivation,
   providerActivationImpactSchema,
   providerActivationResultSchema,
   providerCapabilityForKind,
   providerRegistrationAttemptSchema,
+  musicCredentialReplacementInputSchema,
+  musicCredentialReplacementResultSchema,
   providerSetupInputSchema,
   providerValidationResultSchema,
   providerVoiceTestResultSchema,
@@ -22,6 +25,8 @@ import {
   type ProviderValidationResult,
   type ProviderVoiceTestResult,
   type PearConfiguration,
+  type MusicCredentialReplacementInput,
+  type MusicCredentialReplacementResult,
   type RegisteredProviderDetail,
   type RegisteredProviderView,
   type SecretRef,
@@ -159,6 +164,7 @@ export class ProviderManagementService {
   readonly #getVerifiedTwitchBroadcasterId: () => Promise<string | null>;
   readonly #now: () => Date;
   #pendingStreamerBotSubscriptionMutation: Promise<unknown> = Promise.resolve();
+  #pendingMusicCredentialMutation: Promise<unknown> = Promise.resolve();
 
   constructor(options: ProviderManagementServiceOptions) {
     this.#repository = options.repository;
@@ -301,6 +307,78 @@ export class ProviderManagementService {
     });
   }
 
+  /** Replace an existing Pear credential without changing its registration or active selection. */
+  replaceMusicCredential(providerId: string, input: MusicCredentialReplacementInput): Promise<MusicCredentialReplacementResult> {
+    const result = this.#pendingMusicCredentialMutation.then(() => this.#replaceMusicCredential(providerId, input));
+    this.#pendingMusicCredentialMutation = result.catch(() => undefined);
+    return result;
+  }
+
+  async #replaceMusicCredential(providerId: string, input: MusicCredentialReplacementInput): Promise<MusicCredentialReplacementResult> {
+    const parsed = musicCredentialReplacementInputSchema.parse(input);
+    const record = await this.#requireRecord(providerId);
+    if (record.provider.kind !== "pear-desktop" || this.#musicPairing === undefined || this.#validateMusicConnection === undefined) {
+      throw new MusicCredentialReplacementUnavailableError();
+    }
+    let claim: PearPairingClaim;
+    try { claim = this.#musicPairing.reserve(parsed.pairingAttemptId, parsed.configuration); }
+    catch { return { validation: await this.#failedValidation("Pear pairing is unavailable", "The pairing request expired, was cancelled, or has already been used.", "Start a new pairing request."), runtimeReconcilePending: false, credentialRetirementPending: false }; }
+    const newSecretRef: SecretRef = { namespace: "music", accountId: providerId, name: `access-token-${randomBytes(16).toString("hex")}` };
+    let attemptedSave = false;
+    let previousForRollback: ProviderRegistrationRecord | null = null;
+    try {
+      const validation = await this.#validatePear(parsed.configuration, claim.token);
+      claim.assertActive();
+      if (!validation.valid) return { validation, runtimeReconcilePending: false, credentialRetirementPending: false };
+      await this.#secretStore.setSecret(newSecretRef, claim.token);
+      claim.assertActive();
+      const current = await this.#requireRecord(providerId);
+      if (current.provider.kind !== "pear-desktop") throw new MusicCredentialReplacementUnavailableError();
+      previousForRollback = current;
+      claim.assertActive();
+      attemptedSave = true;
+      await this.#repository.save({
+        ...current,
+        configuration: parsed.configuration,
+        secretRef: newSecretRef,
+        provider: { ...current.provider, connectionState: validation.connectionState, validatedAt: validation.validatedAt, error: null },
+        updatedAt: this.#now().toISOString()
+      });
+      claim.assertActive();
+      claim.complete();
+      // The repository now durably points at the new credential. Runtime errors cannot undo it.
+      let runtimeReconcilePending = false;
+      try { if (current.provider.active) await this.#onMusicSourceChanged(); } catch { runtimeReconcilePending = true; }
+      let credentialRetirementPending = false;
+      if (current.secretRef !== null) {
+        try { await this.#secretStore.deleteSecret(current.secretRef); } catch { credentialRetirementPending = true; }
+      }
+      return musicCredentialReplacementResultSchema.parse({ validation, runtimeReconcilePending, credentialRetirementPending });
+    } catch (error) {
+      if (attemptedSave && previousForRollback !== null) {
+        const afterFailure = await this.#repository.findById(providerId);
+        if (afterFailure?.secretRef?.name === newSecretRef.name) {
+          await this.#repository.save({
+            ...afterFailure,
+            configuration: previousForRollback.configuration,
+            secretRef: previousForRollback.secretRef,
+            provider: {
+              ...afterFailure.provider,
+              connectionState: previousForRollback.provider.connectionState,
+              validatedAt: previousForRollback.provider.validatedAt,
+              error: previousForRollback.provider.error
+            },
+            updatedAt: this.#now().toISOString()
+          });
+        }
+      }
+      await this.#secretStore.deleteSecret(newSecretRef);
+      throw error;
+    } finally {
+      claim.release();
+    }
+  }
+
   async #validatePear(config: PearConfiguration, token: string): Promise<ProviderValidationResult> {
     try {
       const result = providerValidationResultSchema.parse(await this.#validateMusicConnection!(config, token, AbortSignal.timeout(5_000)));
@@ -335,7 +413,7 @@ export class ProviderManagementService {
     }
 
     const result = await this.#repository.activate(providerId);
-    const activated = await this.#repository.save({
+    const activated = target.provider.capability === "music-source" ? result.provider : await this.#repository.save({
       ...result.provider,
       provider: {
         ...result.provider.provider,
@@ -375,7 +453,9 @@ export class ProviderManagementService {
 
   async deactivateProvider(providerId: string): Promise<RegisteredProviderView> {
     const target = await this.#requireRecord(providerId);
-    const deactivated = await this.#repository.save({
+    const deactivated = target.provider.capability === "music-source"
+      ? await this.#repository.deactivateMusic(providerId)
+      : await this.#repository.save({
       ...target,
       provider: {
         ...target.provider,
@@ -384,6 +464,7 @@ export class ProviderManagementService {
       },
       updatedAt: this.#now().toISOString()
     });
+    if (deactivated === null) throw new ProviderRegistrationNotFoundError(providerId);
     if (target.provider.capability === "event-source") {
       await this.#onEventSourceChanged();
     }
@@ -591,6 +672,11 @@ export class ProviderManagementService {
     });
     return error;
   }
+}
+
+export class MusicCredentialReplacementUnavailableError extends Error {
+  readonly code = "MUSIC_CREDENTIAL_REPLACEMENT_UNAVAILABLE";
+  constructor() { super("This registration cannot be re-paired with Pear Desktop"); }
 }
 
 type StreamerBotConfiguration = Extract<

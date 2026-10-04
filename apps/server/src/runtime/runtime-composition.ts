@@ -117,6 +117,7 @@ import { createProviderManagementAdapters } from "../modules/providers/provider-
 import { PearPairingService } from "../modules/music/pear-pairing-service.js";
 import { PearMusicSource, validatePearMusicConnection } from "../modules/music/pear-music-source.js";
 import { MusicRuntimeCoordinator } from "../modules/music/music-runtime-coordinator.js";
+import { MusicManagementService } from "../modules/music/music-management-service.js";
 import { MusicArtworkService } from "../modules/music/music-artwork-service.js";
 import { MusicOutputRuntime } from "../modules/music/music-output-runtime.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
@@ -1164,6 +1165,15 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     durationCatalog: assetDurationCatalog,
     metadataProbe: mediaMetadataProbe
   });
+  const musicManagementService = new MusicManagementService({
+    providers: providerRegistrationRepository,
+    runtime: musicRuntimeCoordinator,
+    getConfig: async () => {
+      const module = await overlayModuleConfigService.getModuleConfig("music");
+      return { enabled: module.enabled, config: module.config };
+    },
+    assets: assetLibraryService
+  });
   const configurationBackupService = new ConfigurationBackupService({
     deferRetiredAssetCleanup: true,
     appVersion: createAppVersion().version,
@@ -1506,6 +1516,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     managementOverviewService,
     providerManagementService,
     musicPairingService,
+    musicManagementService,
     alertSetManagementService,
     alertEditorService,
     managementAssetLibraryService: assetLibraryService,
