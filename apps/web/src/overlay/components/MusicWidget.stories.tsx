@@ -38,6 +38,7 @@ authored.css = { source: `@keyframes rise { from { transform: translateY(12px); 
 export const CustomGridAndAnimation: Story = { args: { projection: authored, resolveAsset: localAsset, nowEpochMs: now } };
 
 const long = projection(createDefaultMusicModuleConfig(), { ...observation, track: { ...track, title: "A Very Long Track Name Across the Broadcast Canvas That Must Stay Within Its Bounds", artists: ["First Artist", "Second Artist", "Third Artist"], album: null } });
+export const LongTextScrolls: Story = { args: { projection: long, resolveAsset: localAsset, nowEpochMs: now } };
 export const LongTextReducedMotion: Story = { args: { projection: long, resolveAsset: localAsset, nowEpochMs: now, reducedMotion: true } };
 
 const missing = projection();

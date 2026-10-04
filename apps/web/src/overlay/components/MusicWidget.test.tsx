@@ -76,6 +76,90 @@ describe("MusicWidget", () => {
     expect(shadow.querySelector(".sj-album")).toBeNull();
   });
 
+  it("scrolls only measured overflowing metadata and responds to text, width and reduced-motion changes", () => {
+    const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    const originalScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    let textWidth = 280;
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get() { return this.classList.contains("sj-title") ? 100 : 0; } });
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", { configurable: true, get() { return this.classList.contains("sj-scroll-text") ? textWidth : 0; } });
+    try {
+      const longTitle = "A title that cannot fit the available title width";
+      const first = fixture({ ...snapshot, track: { ...snapshot.track!, title: longTitle } });
+      const view = render(<MusicWidget projection={first} resolveAsset={resolver} nowEpochMs={now} />);
+      const title = shadowOf(view.container)!.querySelector(".sj-title") as HTMLElement;
+      expect(title.dataset.overflow).toBe("true");
+      expect(title.dataset.scroll).toBe("true");
+      expect(title.style.getPropertyValue("--sj-scroll-distance")).toBe("180px");
+      expect(title.textContent).toBe(longTitle);
+      textWidth = 80;
+      fireEvent.resize(window);
+      expect(title.dataset.overflow).toBe("false");
+      expect(title.dataset.scroll).toBe("false");
+      textWidth = 280;
+      view.rerender(<MusicWidget projection={{ ...first, snapshot: { ...first.snapshot, revision: 2, track: { ...first.snapshot.track!, title: "Changed long title" } } }} resolveAsset={resolver} nowEpochMs={now} reducedMotion />);
+      const changed = shadowOf(view.container)!.querySelector(".sj-title") as HTMLElement;
+      expect(changed.dataset.overflow).toBe("true");
+      expect(changed.dataset.scroll).toBe("false");
+      expect(changed.title).toBe("Changed long title");
+      view.unmount();
+    } finally {
+      if (originalClientWidth === undefined) Reflect.deleteProperty(HTMLElement.prototype, "clientWidth"); else Object.defineProperty(HTMLElement.prototype, "clientWidth", originalClientWidth);
+      if (originalScrollWidth === undefined) Reflect.deleteProperty(HTMLElement.prototype, "scrollWidth"); else Object.defineProperty(HTMLElement.prototype, "scrollWidth", originalScrollWidth);
+    }
+  });
+
+  it("remeasures after resize and font events, then releases observers and listeners", () => {
+    const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    const originalScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    const originalFonts = Object.getOwnPropertyDescriptor(document, "fonts");
+    const observers: { targets: Element[]; callback: ResizeObserverCallback; disconnect: () => void }[] = [];
+    const disconnectMocks: Array<ReturnType<typeof vi.fn<() => void>>> = [];
+    let textWidth = 80;
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get() { return this.classList.contains("sj-title") ? 100 : 0; } });
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", { configurable: true, get() { return this.classList.contains("sj-scroll-text") ? textWidth : 0; } });
+    const fontListeners = new Set<EventListenerOrEventListenerObject>();
+    const removeFontListener = vi.fn((_: string, listener: EventListenerOrEventListenerObject) => fontListeners.delete(listener));
+    Object.defineProperty(document, "fonts", { configurable: true, value: {
+      addEventListener: (_: string, listener: EventListenerOrEventListenerObject) => fontListeners.add(listener), removeEventListener: removeFontListener
+    } });
+    vi.stubGlobal("ResizeObserver", class {
+      private readonly record: typeof observers[number];
+      constructor(callback: ResizeObserverCallback) {
+        const disconnect = vi.fn<() => void>();
+        this.record = { targets: [], callback, disconnect };
+        observers.push(this.record);
+        disconnectMocks.push(disconnect);
+      }
+      observe(target: Element) { this.record.targets.push(target); }
+      disconnect() { this.record.disconnect(); }
+    });
+    const removeWindowListener = vi.spyOn(window, "removeEventListener");
+    try {
+      const view = render(<MusicWidget projection={fixture()} resolveAsset={resolver} nowEpochMs={now} />);
+      const title = shadowOf(view.container)!.querySelector(".sj-title") as HTMLElement;
+      expect(title.dataset.scroll).toBe("false");
+      const titleObserver = observers.find(observer => observer.targets.includes(title))!;
+      expect(titleObserver.targets).toHaveLength(2);
+      textWidth = 260;
+      act(() => titleObserver.callback([], {} as ResizeObserver));
+      expect(title.dataset.scroll).toBe("true");
+      textWidth = 70;
+      act(() => { for (const listener of fontListeners) if (typeof listener === "function") listener(new Event("loadingdone")); });
+      expect(title.dataset.scroll).toBe("false");
+      view.unmount();
+      expect(disconnectMocks.every(disconnect => disconnect.mock.calls.length === 1)).toBe(true);
+      expect(fontListeners.size).toBe(0);
+      expect(removeFontListener).toHaveBeenCalled();
+      expect(removeWindowListener).toHaveBeenCalledWith("resize", expect.any(Function));
+    } finally {
+      removeWindowListener.mockRestore();
+      vi.unstubAllGlobals();
+      if (originalFonts === undefined) Reflect.deleteProperty(document, "fonts"); else Object.defineProperty(document, "fonts", originalFonts);
+      if (originalClientWidth === undefined) Reflect.deleteProperty(HTMLElement.prototype, "clientWidth"); else Object.defineProperty(HTMLElement.prototype, "clientWidth", originalClientWidth);
+      if (originalScrollWidth === undefined) Reflect.deleteProperty(HTMLElement.prototype, "scrollWidth"); else Object.defineProperty(HTMLElement.prototype, "scrollWidth", originalScrollWidth);
+    }
+  });
+
   it("keeps unknown timing unknown and pauses the progress clock", () => {
     const unknown = { ...snapshot, durationMs: null, positionMs: null, playbackState: "paused" as const };
     const view = render(<MusicWidget projection={fixture(unknown)} resolveAsset={resolver} nowEpochMs={now + 5_000} />);

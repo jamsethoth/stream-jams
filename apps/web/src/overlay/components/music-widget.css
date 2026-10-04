@@ -8,7 +8,15 @@
 .sj-artwork { flex: 0 0 var(--sj-art-size); width: var(--sj-art-size); height: var(--sj-art-size); border-radius: 6px; overflow: hidden; background: var(--sj-artwork-placeholder-color); }
 .sj-artwork img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .sj-copy { min-width: 0; flex: 1; overflow: hidden; }
-.sj-title, .sj-artists, .sj-album { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.sj-title, .sj-artists, .sj-album { overflow: hidden; white-space: nowrap; max-width: 100%; }
+.sj-scroll-text { display: block; width: max-content; white-space: nowrap; }
+.sj-title[data-scroll="true"] .sj-scroll-text,
+.sj-artists[data-scroll="true"] .sj-scroll-text,
+.sj-album[data-scroll="true"] .sj-scroll-text { animation: sj-native-metadata-scroll var(--sj-scroll-duration) ease-in-out infinite; }
+@keyframes sj-native-metadata-scroll {
+  0%, 10%, 90%, 100% { transform: translateX(0); }
+  45%, 55% { transform: translateX(calc(-1 * var(--sj-scroll-distance))); }
+}
 .sj-title { color: var(--sj-title-color); font: var(--sj-title-style) var(--sj-title-weight) var(--sj-title-size)/1.2 var(--sj-title-font); letter-spacing: var(--sj-title-spacing); text-decoration: var(--sj-title-decoration); }
 .sj-artists, .sj-album, .sj-time, .sj-attribution { color: var(--sj-details-color); font: var(--sj-details-style) var(--sj-details-weight) var(--sj-details-size)/1.3 var(--sj-details-font); letter-spacing: var(--sj-details-spacing); text-decoration: var(--sj-details-decoration); }
 .sj-album { opacity: .84; }

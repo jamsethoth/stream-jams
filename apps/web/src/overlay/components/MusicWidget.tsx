@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { useCallback, useEffect, useId, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { alertFontPresets, getMusicPositionMs, musicLimits, musicWidgetProjectionSchema } from "@stream-jams/core";
 import type { MusicAssetResolver, MusicPublicAssetReference, MusicTypography, MusicWidgetProjection } from "@stream-jams/core";
 import nativeCss from "./music-widget.css?inline";
@@ -91,6 +91,9 @@ function MusicContents({ projection, resolveAsset, nowEpochMs, reducedMotion }: 
   const showArtwork = artworkUrl !== "" && !failedImages.has(artworkUrl);
   const titleFont = useMusicFont(assetUrl(appearance.titleFont.fontAssetId), nativeFont(appearance.titleFont));
   const detailsFont = useMusicFont(assetUrl(appearance.detailsFont.fontAssetId), nativeFont(appearance.detailsFont));
+  const layoutMeasurementKey = `${projection.layout.width}:${projection.layout.height}:${appearance.paddingXPx}:${appearance.paddingYPx}:${Object.values(appearance.contentInsets).join(":")}`;
+  const titleMeasurementKey = `${layoutMeasurementKey}:${titleFont}:${appearance.titleFont.fontSizePx}:${appearance.titleFont.fontWeight}:${appearance.titleFont.letterSpacingPx}`;
+  const detailsMeasurementKey = `${layoutMeasurementKey}:${detailsFont}:${appearance.detailsFont.fontSizePx}:${appearance.detailsFont.fontWeight}:${appearance.detailsFont.letterSpacingPx}`;
   const position = getMusicPositionMs(projection.snapshot, nowEpochMs);
   const duration = projection.snapshot.durationMs;
   const progress = position === null || duration === null || duration <= 0 ? null : Math.min(100, position / duration * 100);
@@ -111,7 +114,10 @@ function MusicContents({ projection, resolveAsset, nowEpochMs, reducedMotion }: 
     inset: ${appearance.contentInsets.top}px ${appearance.contentInsets.right}px ${appearance.contentInsets.bottom}px ${appearance.contentInsets.left}px;
   }`;
   const markFailed = (url: string) => setFailedImages(current => new Set(current).add(url));
-  const reducedMotionCss = `@layer sj-motion, sj-native, sj-custom; @layer sj-motion { @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } } ${reducedMotion ? "*, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }" : ""} }`;
+  const motionGuard = `*, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+    .sj-title, .sj-artists, .sj-album { white-space: normal !important; max-height: 2.5em !important; }
+    .sj-scroll-text { width: auto !important; white-space: normal !important; overflow-wrap: anywhere !important; transform: none !important; }`;
+  const reducedMotionCss = `@layer sj-motion, sj-native, sj-custom; @layer sj-motion { @media (prefers-reduced-motion: reduce) { ${motionGuard} } ${reducedMotion ? motionGuard : ""} }`;
   return <>
     <style>{reducedMotionCss}</style><style>{`@layer sj-native { ${nativeCss} ${savedStyle} }`}</style>
     {compiled?.key !== cssKey || compiled.css === "" ? null : <style>{`@layer sj-custom { ${compiled.css} }`}</style>}
@@ -129,9 +135,9 @@ function MusicContents({ projection, resolveAsset, nowEpochMs, reducedMotion }: 
         {showArtwork ? <img src={artworkUrl} alt="" onError={() => markFailed(artworkUrl)} /> : null}
       </div> : null}
       <div className="sj-copy">
-        <div className="sj-title" dir="auto" title={track.title}>{track.title || "Unknown title"}</div>
-        <div className="sj-artists" dir="auto" title={track.artists.join(", ")}>{track.artists.filter(Boolean).join(", ") || "Unknown artist"}</div>
-        {track.album ? <div className="sj-album" dir="auto" title={track.album}>{track.album}</div> : null}
+        <MusicMetadataLine className="sj-title" text={track.title || "Unknown title"} measurementKey={titleMeasurementKey} reducedMotion={reducedMotion} />
+        <MusicMetadataLine className="sj-artists" text={track.artists.filter(Boolean).join(", ") || "Unknown artist"} measurementKey={detailsMeasurementKey} reducedMotion={reducedMotion} />
+        {track.album ? <MusicMetadataLine className="sj-album" text={track.album} measurementKey={detailsMeasurementKey} reducedMotion={reducedMotion} /> : null}
         {track.attribution ? <a className="sj-attribution" href={track.attribution.url} rel="noopener noreferrer" target="_blank">{track.attribution.label}</a> : null}
         {progress === null ? null : <div className="sj-progress-track" role="progressbar" aria-label="Playback progress" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100}>
           <div className="sj-progress-fill" style={{ width: `${progress}%` }} />
@@ -140,6 +146,51 @@ function MusicContents({ projection, resolveAsset, nowEpochMs, reducedMotion }: 
       </div>
     </div>
   </>;
+}
+
+function MusicMetadataLine({ className, text, measurementKey, reducedMotion }: {
+  readonly className: "sj-title" | "sj-artists" | "sj-album";
+  readonly text: string;
+  readonly measurementKey: string;
+  readonly reducedMotion: boolean;
+}) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLSpanElement>(null);
+  const [overflowPx, setOverflowPx] = useState(0);
+  useLayoutEffect(() => {
+    let active = true;
+    const viewport = viewportRef.current;
+    const content = textRef.current;
+    if (viewport === null || content === null) return;
+    const measure = () => {
+      if (!active) return;
+      const excess = content.scrollWidth - viewport.clientWidth;
+      const next = viewport.clientWidth > 0 && excess > 1 ? Math.ceil(excess) : 0;
+      setOverflowPx(current => current === next ? current : next);
+    };
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(viewport);
+    observer?.observe(content);
+    window.addEventListener("resize", measure);
+    const fonts = document.fonts;
+    if (typeof fonts?.addEventListener === "function") fonts.addEventListener("loadingdone", measure);
+    return () => {
+      active = false;
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+      if (typeof fonts?.removeEventListener === "function") fonts.removeEventListener("loadingdone", measure);
+    };
+  }, [text, measurementKey, reducedMotion]);
+  const overflow = overflowPx > 0;
+  const scroll = overflow && !reducedMotion;
+  const style = {
+    "--sj-scroll-distance": `${overflowPx}px`,
+    "--sj-scroll-duration": `${Math.max(8, 4 + (overflowPx * 2) / 40)}s`
+  } as CSSProperties;
+  return <div className={className} data-overflow={overflow} data-scroll={scroll} dir="auto" title={text} ref={viewportRef} style={style}>
+    <span className="sj-scroll-text" ref={textRef}>{text}</span>
+  </div>;
 }
 
 function useMusicFont(url: string, fallback: string): string {
