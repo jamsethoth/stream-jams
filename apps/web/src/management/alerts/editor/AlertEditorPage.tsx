@@ -179,6 +179,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [fitRequestId, setFitRequestId] = useState(0);
   const [showSafeArea, setShowSafeArea] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
+  const [snapToGrid, setSnapToGrid] = useState(true);
+  const [snapToAlignment, setSnapToAlignment] = useState(true);
   const [canvasBackground, setCanvasBackground] = useState<CanvasBackground>({ mode: "checkerboard", color: "#1a1e23" });
   const [sampleId, setSampleId] = useState<string | null>(null);
   const [sampleDraft, setSampleDraft] = useState("{}");
@@ -1053,6 +1055,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
               <button aria-label="Redo" className="button button--secondary button--compact" disabled={editor.future.length === 0} onClick={redo} type="button">Redo</button>
               <button aria-label="Toggle safe area and center guides" aria-pressed={showSafeArea} className="button button--secondary button--compact" onClick={() => setShowSafeArea((current) => !current)} type="button">Guides</button>
               <button aria-label="Toggle canvas grid" aria-pressed={showGrid} className="button button--secondary button--compact" onClick={() => setShowGrid((current) => !current)} type="button">Grid</button>
+              <label className="alert-editor-page__snap-control"><input checked={snapToGrid} onChange={event => setSnapToGrid(event.currentTarget.checked)} type="checkbox" />Snap to grid</label>
+              <label className="alert-editor-page__snap-control"><input checked={snapToAlignment} onChange={event => setSnapToAlignment(event.currentTarget.checked)} type="checkbox" />Snap to alignment</label>
               <label className="alert-editor-page__canvas-background"><span>Canvas background</span><select aria-label="Canvas background" onChange={(event) => { const mode = event.currentTarget.value as CanvasBackground["mode"]; setCanvasBackground((current) => ({ ...current, mode })); }} value={canvasBackground.mode}><option value="checkerboard">Checkerboard</option><option value="neutral">Neutral</option><option value="test">Test color</option></select></label>
               {canvasBackground.mode === "test" ? <label className="alert-editor-page__test-background"><span>Test background color</span><input aria-label="Test background color" onChange={(event) => setCanvasBackground({ mode: "test", color: event.currentTarget.value })} type="color" value={canvasBackground.color} /></label> : null}
               <button aria-label="Zoom out" className="button button--secondary button--compact" disabled={canvasView.zoom <= 25} onClick={() => updateCurrentCanvasView({ ...canvasView, zoom: Math.max(25, canvasView.zoom - 25) })} type="button">-</button>
@@ -1091,6 +1095,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             samplePayload={samplePayload ?? {}}
             selectedLayerId={selectedLayerId}
             showGrid={showGrid}
+            snapToGrid={snapToGrid}
+            snapToAlignment={snapToAlignment}
             showSafeArea={showSafeArea}
             {...(storedCanvasView === undefined ? {} : { viewState: storedCanvasView })}
           />

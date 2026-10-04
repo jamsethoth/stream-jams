@@ -15,6 +15,13 @@ const boxes: Record<string, DOMRect> = {
   "sj-artwork": box(16, 16, 144, 144), "sj-title": box(182, 24, 300, 36), "sj-details": box(182, 66, 442, 44),
   "sj-progress-track": box(182, 120, 442, 5), "sj-time": box(182, 132, 442, 16)
 };
+function mockLayoutGeometry() {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    return Object.entries(boxes).find(([name]) => this.classList.contains(name))?.[1] ?? box(0, 0, 0, 0);
+  });
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) { return this.classList.contains("music-layout-editor__viewport") ? 700 : 0; });
+  Object.defineProperty(HTMLElement.prototype, "setPointerCapture", { configurable: true, value: vi.fn() });
+}
 
 function Fixture({ css = false }: { readonly css?: boolean }) {
   const [appearance, setAppearance] = useState<MusicAppearance>(() => createDefaultMusicModuleConfig().profiles.landscape.views.full);
@@ -35,15 +42,13 @@ describe("MusicLayoutEditor", () => {
   });
 
   it("seeds exact rendered boxes, mirrors pointer and keyboard edits in numeric fields, cancels and resets", async () => {
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-      return Object.entries(boxes).find(([name]) => this.classList.contains(name))?.[1] ?? box(0, 0, 0, 0);
-    });
-    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) { return this.classList.contains("music-layout-editor__viewport") ? 700 : 0; });
-    Object.defineProperty(HTMLElement.prototype, "setPointerCapture", { configurable: true, value: vi.fn() });
+    mockLayoutGeometry();
     const user = userEvent.setup();
     render(<Fixture />);
     expect(screen.getByTestId("saved-layout")).toHaveTextContent("null");
     await user.click(screen.getByRole("button", { name: "Edit component layout" }));
+    await user.click(screen.getByRole("checkbox", { name: "Snap to grid" }));
+    await user.click(screen.getByRole("checkbox", { name: "Snap to alignment" }));
     const saved = () => JSON.parse(screen.getByTestId("saved-layout").textContent ?? "null") as MusicComponentLayout;
     expect(saved().title).toEqual({ x: 182, y: 24, width: 300, height: 36 });
     expect(screen.getByRole("spinbutton", { name: "Title X (px)" })).toHaveValue(182);
@@ -70,6 +75,46 @@ describe("MusicLayoutEditor", () => {
     expect(saved().title.x).toBe(170);
     await user.click(screen.getByRole("button", { name: "Reset automatic layout" }));
     expect(screen.getByTestId("saved-layout")).toHaveTextContent("null");
+  });
+
+  it("snaps pointer moves and resizes while toggles govern guides and free movement", async () => {
+    mockLayoutGeometry();
+    const user = userEvent.setup();
+    const view = render(<Fixture />);
+    await user.click(screen.getByRole("button", { name: "Edit component layout" }));
+    const grid = screen.getByRole("checkbox", { name: "Snap to grid" });
+    const alignment = screen.getByRole("checkbox", { name: "Snap to alignment" });
+    expect(grid).toBeChecked(); expect(alignment).toBeChecked();
+    const saved = () => JSON.parse(screen.getByTestId("saved-layout").textContent ?? "null") as MusicComponentLayout;
+    const move = screen.getByRole("button", { name: "Move Title" });
+    fireEvent.pointerDown(move, { pointerId: 3, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(move, { pointerId: 3, clientX: 106, clientY: 100 });
+    expect(saved().title.x).toBe(190);
+    expect(view.container.querySelector("[data-snap-axis]")).toBeNull();
+    fireEvent.pointerUp(move, { pointerId: 3 });
+    expect(view.container.querySelector("[data-snap-axis]")).toBeNull();
+    fireEvent.pointerDown(move, { pointerId: 4, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(move, { pointerId: 4, clientX: 93, clientY: 100 });
+    expect(saved().title.x).toBe(182);
+    expect(view.container.querySelector('[data-snap-axis="x"][data-snap-position="182"]')).not.toBeNull();
+    fireEvent.pointerCancel(move, { pointerId: 4 });
+    expect(saved().title.x).toBe(190);
+    expect(view.container.querySelector("[data-snap-axis]")).toBeNull();
+    await user.click(grid); await user.click(alignment);
+    fireEvent.pointerDown(move, { pointerId: 5, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(move, { pointerId: 5, clientX: 106, clientY: 100 });
+    expect(saved().title.x).toBe(196);
+    expect(view.container.querySelector("[data-snap-axis]")).toBeNull();
+    fireEvent.pointerUp(move, { pointerId: 5 });
+    await user.click(grid);
+    const resize = screen.getByRole("button", { name: "Resize Title" });
+    fireEvent.pointerDown(resize, { pointerId: 6, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(resize, { pointerId: 6, clientX: 93, clientY: 100 });
+    expect(saved().title.x).toBe(196);
+    expect(saved().title.width).toBe(294);
+    expect(view.container.querySelector("[data-snap-axis]")).toBeNull();
+    fireEvent.pointerUp(resize, { pointerId: 6 });
+    expect(view.container.querySelector("[data-snap-axis]")).toBeNull();
   });
 
   it("warns and disables native handles while custom CSS can override geometry", () => {

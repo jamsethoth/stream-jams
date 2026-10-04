@@ -1,6 +1,7 @@
 import { clampMusicComponentRect, moveMusicComponentRect, musicComponentRoles, resizeMusicComponentRect, type MusicAppearance, type MusicAssetResolver, type MusicComponentLayout, type MusicComponentRect, type MusicComponentRole, type MusicWidgetProjection } from "@stream-jams/core";
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { MusicWidget } from "../../overlay/components/MusicWidget.js";
+import { snapEditorRect } from "../editor/snapping.js";
 import { MusicNumberField } from "./MusicNumberField.js";
 import "./music-layout-editor.css";
 
@@ -23,6 +24,9 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
   const [availableWidth, setAvailableWidth] = useState(700);
   const [editing, setEditing] = useState(false);
   const [selected, setSelected] = useState<MusicComponentRole>("title");
+  const [snapGrid, setSnapGrid] = useState(true);
+  const [snapAlignment, setSnapAlignment] = useState(true);
+  const [guides, setGuides] = useState<ReturnType<typeof snapEditorRect>["guides"]>([]);
   const customCssActive = projection?.css.enabled === true && projection.css.source.trim() !== "";
   const displayed = projection?.profile.views[projection.view] ?? appearance;
   const bounds = { width: displayed.widthPx, height: displayed.heightPx };
@@ -88,6 +92,7 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
     setSelected(role);
     event.currentTarget.focus();
     event.currentTarget.setPointerCapture(event.pointerId);
+    setGuides([]);
     gesture.current = { pointerId: event.pointerId, role, mode, clientX: event.clientX, clientY: event.clientY,
       startRect: appearance.componentLayout[role], startLayout: appearance.componentLayout };
   };
@@ -98,16 +103,30 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
     const factor = bounds.width / Math.max(1, stageWidth);
     const dx = Math.round((event.clientX - active.clientX) * factor);
     const dy = Math.round((event.clientY - active.clientY) * factor);
-    const next = active.mode === "move"
+    const raw = active.mode === "move"
       ? moveMusicComponentRect(active.startRect, dx, dy, bounds)
       : resizeMusicComponentRect(active.startRect, dx, dy, bounds);
+    const observed = projection?.snapshot;
+    const visiblePeer = (role: MusicComponentRole) => {
+      if (role === "artwork") return displayed.artworkSizePx > 0 && projection?.view !== "compact";
+      if (role === "progress") return observed !== undefined && observed.durationMs !== null && observed.durationMs > 0 && observed.positionMs !== null;
+      if (role === "time") return observed !== undefined && observed.durationMs !== null;
+      return true;
+    };
+    const snapped = snapGrid || snapAlignment ? snapEditorRect(raw, {
+      mode: active.mode, bounds, peers: musicComponentRoles.filter(role => role !== active.role && visiblePeer(role)).map(role => active.startLayout[role]),
+      grid: snapGrid, alignment: snapAlignment, scale: 1 / factor
+    }) : null;
+    const next = snapped?.rect ?? raw;
+    setGuides(snapped?.guides ?? []);
     updateRect(active.role, next);
   };
   const endGesture = (event: PointerEvent<HTMLButtonElement>) => {
-    if (gesture.current?.pointerId === event.pointerId) gesture.current = null;
+    if (gesture.current?.pointerId === event.pointerId) { gesture.current = null; setGuides([]); }
   };
   const cancelGesture = () => {
     const active = gesture.current;
+    setGuides([]);
     if (active === null) return;
     gesture.current = null;
     onChange({ ...appearance, componentLayout: active.startLayout });
@@ -140,9 +159,9 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
   return <div className="music-layout-editor">
     <div className="music-layout-editor__toolbar">
       <span>{appearance.componentLayout === null ? "Automatic component layout" : "Custom component layout"}</span>
-      {editing ? <button onClick={() => { gesture.current = null; setEditing(false); }} type="button">Done editing</button>
+      {editing ? <button onClick={() => { gesture.current = null; setGuides([]); setEditing(false); }} type="button">Done editing</button>
         : <button disabled={customCssActive || projection === null} onClick={beginEditing} type="button">Edit component layout</button>}
-      {appearance.componentLayout === null ? null : <button onClick={() => { gesture.current = null; setEditing(false); onChange({ ...appearance, componentLayout: null }); }} type="button">Reset automatic layout</button>}
+      {appearance.componentLayout === null ? null : <button onClick={() => { gesture.current = null; setGuides([]); setEditing(false); onChange({ ...appearance, componentLayout: null }); }} type="button">Reset automatic layout</button>}
     </div>
     {customCssActive ? <p className="music-layout-editor__warning" role="status">Custom CSS can override component positions. Disable custom CSS to edit native component layout.</p> : null}
     <div className="music-layout-editor__viewport" ref={shellRef}>
@@ -162,9 +181,16 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
               onPointerDown={event => beginGesture(role, "resize", event)} onPointerMove={moveGesture} onPointerUp={endGesture} type="button" /> : null}
           </div>;
         }) : null}
+        {editing && gesture.current !== null ? guides.map((guide, index) => <div aria-hidden="true" className={`music-layout-editor__guide music-layout-editor__guide--${guide.axis}`}
+          data-snap-axis={guide.axis} data-snap-position={guide.position} key={`${guide.axis}:${guide.position}:${index}`}
+          style={guide.axis === "x" ? { left: guide.position * scale } : { top: guide.position * scale }} />) : null}
       </div>}
     </div>
     {editing && !customCssActive && activeRect !== null ? <div className="music-layout-editor__inspector">
+      <div className="music-layout-editor__snapping">
+        <label><input checked={snapGrid} onChange={event => { setSnapGrid(event.currentTarget.checked); setGuides([]); }} type="checkbox" /> Snap to grid</label>
+        <label><input checked={snapAlignment} onChange={event => { setSnapAlignment(event.currentTarget.checked); setGuides([]); }} type="checkbox" /> Snap to alignment</label>
+      </div>
       <div aria-label="Music component" className="music-layout-editor__roles">{musicComponentRoles.map(role => <button aria-pressed={selected === role} key={role} onClick={() => setSelected(role)} type="button">{labels[role]}</button>)}</div>
       <div className="music-layout-editor__fields">
         <MusicNumberField label={`${labels[selected]} X (px)`} value={activeRect.x} min={0} max={bounds.width - activeRect.width} onCommit={value => setField("x", value)} />

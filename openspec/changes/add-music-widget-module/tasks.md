@@ -62,7 +62,7 @@
 
 ## Final acceptance boundary
 
-Tasks 5.5, 6.3, 6.4, 6.6 and 6.8 remain **[blocked]** for physical/private-desktop acceptance, not missing implementation. Browser output, authorization, CSS/branding, restore and provider-art paths have automated evidence in [verification](../../../docs/verification/music-widget-module.md) and the [62-scenario map](../../../docs/verification/music-widget-scenarios.md). The full software gates passed at their recorded checkpoints, with affected checks after later corrections. The packaged startup failure was traced to native companion DLLs inside ASAR and corrected; packaged no-source Music and Timer checks subsequently passed. Pear HTTPS and AUTH_AT_FIRST rejection are verified; actual approval/revocation and OBS/private desktop Music pixels remain pending. LockApp process presence does not establish that Windows is locked. Required remaining dependencies are an isolated native-host SecretStore or authorized disposable keyring namespace, an actual paired source and interactive physical acceptance. BL-028 remains only for this acceptance boundary; BL-054 remains future provider work. Canonical spec synchronization records implemented software behavior, not physical certification.
+Tasks 5.5, 6.3, 6.4, 6.6 and 6.8 remain **[blocked]** for physical/private-desktop acceptance, not missing implementation. Browser output, authorization, CSS/branding, restore and provider-art paths have automated evidence in [verification](../../../docs/verification/music-widget-module.md) and the [66-scenario map](../../../docs/verification/music-widget-scenarios.md). The full software gates passed at their recorded checkpoints, with affected checks after later corrections. The packaged startup failure was traced to native companion DLLs inside ASAR and corrected; packaged no-source Music and Timer checks subsequently passed. Pear HTTPS and AUTH_AT_FIRST rejection are verified; actual approval/revocation and OBS/private desktop Music pixels remain pending. LockApp process presence does not establish that Windows is locked. Required remaining dependencies are an isolated native-host SecretStore or authorized disposable keyring namespace, an actual paired source and interactive physical acceptance. BL-028 remains only for this acceptance boundary; BL-054 remains future provider work. Canonical spec synchronization records implemented software behavior, not physical certification.
 
 
 ## 8. User-Requested Editor Refinement
@@ -73,3 +73,10 @@ See [editor refinement](editor-refinement.md).
 - [x] 8.2 Mirror graphical RGB/opacity controls and validated RGBA hex input without committing invalid values.
 - [x] 8.3 Add bounded saved component layout, management-only drag/resize/keyboard editing, numeric geometry and automatic-layout reset.
 - [x] 8.4 Verify draft/save/reload/live and backup/default compatibility, proportional Storybook/browser coverage, builds/budgets, typecheck/lint and strict specs; rebuild the desktop runnable folder and synchronize the completed requirement.
+
+
+## 9. Approved Shared Snapping Refinement
+
+- [x] 9.1 Share bounded pointer move/resize snapping with a 10px grid, screen-space alignment tolerance and eligible peer/canvas targets.
+- [x] 9.2 Add independent default-enabled snapping toggles and transient guides to Music and Alerts, preserving exact numeric/keyboard edits and draft/save behavior.
+- [x] 9.3 Verify geometry, UI, browser workflow, Storybook and affected package checks; synchronize the capability/current UX and rebuild the runnable desktop app.

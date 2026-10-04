@@ -53,6 +53,8 @@ test("packaged desktop keeps Music opt-in, transparent without a source, and ind
     await management.getByRole("button", { name: "Edit component layout" }).click();
     await expect(management.getByLabel("Title width (px)")).toBeVisible();
     await expect(management.getByRole("button", { name: "Resize Title", exact: true })).toBeVisible();
+    await expect(management.getByRole("checkbox", { name: "Snap to grid" })).toBeChecked();
+    await expect(management.getByRole("checkbox", { name: "Snap to alignment" })).toBeChecked();
     await management.getByRole("button", { name: "Reset automatic layout" }).click();
     await expect(management.getByText("All changes saved")).toBeVisible();
     const surfaces = await api<SurfaceSettingsView>("/overlay-surfaces");

@@ -35,6 +35,18 @@ export const EditNativeParts: Story = { render: () => <Example />, play: async (
   await expect(canvas.getByRole("spinbutton", { name: "Title X (px)" })).toHaveValue(182);
 } };
 
+export const SnapNativeParts: Story = { tags: ["editor-snapping"], render: () => <Example />, play: async ({ canvasElement }) => {
+  const canvas = within(canvasElement);
+  await userEvent.click(canvas.getByRole("button", { name: "Edit component layout" }));
+  const grid = canvas.getByRole("checkbox", { name: "Snap to grid" });
+  const alignment = canvas.getByRole("checkbox", { name: "Snap to alignment" });
+  await expect(grid).toBeChecked();
+  await expect(alignment).toBeChecked();
+  await userEvent.click(alignment);
+  await expect(alignment).not.toBeChecked();
+  await expect(canvas.getByRole("button", { name: "Move Title" })).toBeVisible();
+} };
+
 export const CustomCssBlocksHandles: Story = { render: () => <Example customCss />, play: async ({ canvasElement }) => {
   const canvas = within(canvasElement);
   await expect(canvas.getByRole("button", { name: "Edit component layout" })).toBeDisabled();

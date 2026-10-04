@@ -4,7 +4,7 @@ import type { AssetApi } from "./assets/AssetManager.js";
 import { AssetManager } from "./assets/AssetManager.js";
 import { AlertSetsPage } from "./alerts/AlertSetsPage.js";
 import { AlertSafetyPage } from "./alerts/safety/AlertSafetyPage.js";
-import { AlertEditorPage } from "./alerts/editor/AlertEditorPage.js";
+const AlertEditorPage = lazy(() => import("./alerts/editor/AlertEditorPage.js").then(module => ({ default: module.AlertEditorPage })));
 import { DiagnosticsPanel } from "./diagnostics/DiagnosticsPanel.js";
 import { PageHeader } from "./foundation/PageHeader.js";
 import { StatusBadge } from "./foundation/StatusBadge.js";
@@ -160,6 +160,7 @@ function RouteContent({
       return <AlertSafetyPage managementApi={managementApi} />;
     case "alert-editor":
       return route.alertId === undefined ? null : (
+        <Suspense fallback={<p role="status">Loading alert editor…</p>}>
         <AlertEditorPage
           audioApi={audioApi}
           alertId={route.alertId}
@@ -172,6 +173,7 @@ function RouteContent({
           onOpenAlert={(alertId, targetProfileId) => onNavigate({ id: "alert-editor", alertId, ...(route.setId === undefined ? {} : { setId: route.setId }), targetProfileId })}
           targetProfileId={route.targetProfileId}
         />
+        </Suspense>
       );
     case "screen-effect-editor":
       return route.effectId === undefined ? null : (

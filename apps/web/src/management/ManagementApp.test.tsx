@@ -6,6 +6,8 @@ import userEvent from "@testing-library/user-event";
 import { createDefaultMusicModuleConfig, type AssetLibraryItem, type DiagnosticsWorkspaceView } from "@stream-jams/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ManagementApp as ProductionManagementApp, type ManagementAppProps } from "./ManagementApp.js";
+// These routing checks should not race the editor's cold Vite module transform.
+import "./alerts/editor/AlertEditorPage.js";
 import { createStoryAudioApi } from "../stories/audio-fixtures.js";
 import type { AssetApi } from "./assets/AssetManager.js";
 import type { ManagementApi } from "./management-api.js";

@@ -1157,3 +1157,9 @@
     display: none;
   }
 }
+
+.alert-editor-page__snap-control { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.alert-editor-page__snap-control input { width: auto; }
+.alert-canvas__snap-guide { position: absolute; z-index: 10001; pointer-events: none; background: var(--color-focus); }
+.alert-canvas__snap-guide--x { top: 0; bottom: 0; width: 1px; }
+.alert-canvas__snap-guide--y { left: 0; right: 0; height: 1px; }

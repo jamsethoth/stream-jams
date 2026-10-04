@@ -539,17 +539,19 @@ Canvas supports:
 - Checkerboard/neutral background to communicate transparency.
 - Toggleable test background color.
 
-MVP snapping:
+Snapping (shared with Music component layout; approved October 4, 2026):
 
-- Grid.
-- Canvas edges.
-- Center lines.
+- Independent `Snap to grid` and `Snap to alignment` toggles, default enabled.
+- A 10-pixel canvas grid; grid visibility remains a separate control.
+- Canvas edges/centers and visible peer component edges/horizontal and vertical centers.
+- Alignment takes precedence over grid within five screen pixels, adjusted for zoom.
+- Resizing keeps the leading position fixed; bounds/minimum sizes still apply.
+- Alignment guides appear only during pointer gestures and never in live output.
+- Numeric and keyboard changes remain exact and bypass snapping. Toggling snapping does not dirty the document.
 
 Backlog:
 
 - Percent/responsive units.
-- Snapping to other layers.
-- Snapping off toggle.
 
 Layers outside safe area do not block saving.
 

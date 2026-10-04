@@ -6,7 +6,8 @@ import { useMediaPreviewGroup } from "../../assets/use-media-preview-group.js";
 import { AlertTextContent } from "../../../overlay/components/AlertTextContent.js";
 import { TextWarpEditor } from "./TextWarpEditor.js";
 import { overlayPresetAnimationStyle } from "../../../overlay/components/OverlaySurface.js";
-import { snapLayerGeometry, type CanvasViewState, type LayerGeometry } from "./editor-state.js";
+import { type CanvasViewState, type LayerGeometry } from "./editor-state.js";
+import { snapEditorRect, type SnapGuide } from "../../editor/snapping.js";
 import { renderAlertTemplatePreview } from "./template-preview.js";
 
 export interface CanvasBackground {
@@ -36,6 +37,8 @@ interface AlertCanvasProps {
   readonly samplePayload: Record<string, unknown>;
   readonly selectedLayerId: string | null;
   readonly showGrid?: boolean;
+  readonly snapToGrid?: boolean;
+  readonly snapToAlignment?: boolean;
   readonly showSafeArea?: boolean;
   readonly viewState?: CanvasViewState;
   /** @deprecated Use viewState for profile-specific zoom and pan state. */
@@ -65,6 +68,8 @@ export function AlertCanvas(props: AlertCanvasProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const processedFitRequestRef = useRef(0);
   const operationRef = useRef<PointerOperation | null>(null);
+  const [snapGuides, setSnapGuides] = useState<readonly SnapGuide[]>([]);
+  useEffect(() => { operationRef.current = null; setSnapGuides([]); }, [props.profileId, props.preview]);
   const layouts = new Map(profile.layerLayouts.map((layout) => [layout.layerId, layout]));
   const warpLayer = !props.preview && props.warpLayerId === props.selectedLayerId ? props.document.layers.find((layer) => layer.id === props.warpLayerId && layer.visible && layer.type === "text") : undefined;
   const warpLayout = warpLayer === undefined ? undefined : layouts.get(warpLayer.id);
@@ -127,12 +132,19 @@ export function AlertCanvas(props: AlertCanvasProps) {
           width: Math.max(24, operation.startGeometry.width + deltaX),
           height: Math.max(24, operation.startGeometry.height + deltaY)
         };
-    const constrained = constrainGeometry(snapLayerGeometry(raw, props.profileId), dimensions);
-    props.onGeometryChange(operation.layerId, constrained);
+    const peers = props.document.layers.flatMap(layer => {
+      const layout = layouts.get(layer.id);
+      const visual = layer.type === "text" || layer.type === "image" || layer.type === "video" || layer.type === "shape";
+      return layer.id !== operation.layerId && layer.visible && visual && layout !== undefined ? [layout] : [];
+    });
+    const snapped = snapEditorRect(raw, { mode: operation.mode, bounds: dimensions, peers,
+      grid: props.snapToGrid ?? true, alignment: props.snapToAlignment ?? true, scale: rect.width / dimensions.width, minSize: 24 });
+    setSnapGuides(snapped.guides);
+    props.onGeometryChange(operation.layerId, snapped.rect);
   }
 
   function endOperation(event: ReactPointerEvent<HTMLElement>) {
-    if (operationRef.current?.pointerId === event.pointerId) operationRef.current = null;
+    if (operationRef.current?.pointerId === event.pointerId) { operationRef.current = null; setSnapGuides([]); }
   }
 
   return (
@@ -199,6 +211,8 @@ export function AlertCanvas(props: AlertCanvasProps) {
                   onPointerDown={(event) => beginOperation(event, layer.id, "move")}
                   onPointerMove={continueOperation}
                   onPointerUp={endOperation}
+                  onPointerCancel={endOperation}
+                  onLostPointerCapture={endOperation}
                   role="button"
                   style={layerStyle(
                     layout,
@@ -229,10 +243,14 @@ export function AlertCanvas(props: AlertCanvasProps) {
                     onPointerDown={(event) => beginOperation(event, layer.id, "resize")}
                     onPointerMove={continueOperation}
                     onPointerUp={endOperation}
+                    onPointerCancel={endOperation}
+                    onLostPointerCapture={endOperation}
                   />}
                 </div>
               );
             })}
+          {snapGuides.map(guide => <div aria-hidden="true" className={`alert-canvas__snap-guide alert-canvas__snap-guide--${guide.axis}`} key={`${guide.axis}:${guide.position}`}
+            style={guide.axis === "x" ? { left: `${guide.position / dimensions.width * 100}%` } : { top: `${guide.position / dimensions.height * 100}%` }} />)}
           {warpLayer?.type === "text" && warpLayer.textStyle.warp && warpLayout ? <div className="alert-canvas__warp-surface" style={{ ...layerStyle(warpLayout, dimensions, null, props.document.durationMs, 0), zIndex: 10000 }}>
             <TextWarpEditor key={`${props.profileId}:${warpLayer.id}`} warp={draftWarp?.layerId === warpLayer.id ? draftWarp.value : warpLayer.textStyle.warp}
               onPreview={(value) => setDraftWarp(value === null ? null : { layerId: warpLayer.id, value })}

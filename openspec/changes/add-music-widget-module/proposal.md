@@ -13,12 +13,16 @@ Streamers currently run Stream Jams Music Widget separately, with browser-owned 
 - Add an uploaded branding image behind the widget components, using existing image assets, transparency, fit/position/opacity controls and separate full/compact presentation. Preview the complete branded widget with the production renderer.
 - Add reusable adapter contract tests and Pear protocol fixtures; use Plex session selection and Spotify OAuth/polling as design checks without shipping those providers in this slice.
 
+- Extend Music and Alerts editing with independent grid/alignment snapping controls and transient peer/canvas guides, using shared bounded pointer geometry. This user-approved refinement promotes those snapping controls from BL-016 while leaving responsive units and custom profiles deferred.
+
 ## Capabilities
 
 ### New Capabilities
 
 - `music-source-providers`: Provider lifecycle, durable registration, authenticated Pear communication, normalized music state, safe artwork access, and extensibility contracts.
 - `music-widget-overlay`: Saved presentation, preview, live/test rendering, output composition, and provider-independent widget behavior.
+
+- `editor-snapping`: User-approved refinement sharing optional grid and visible-component alignment snapping between Music and Alerts.
 
 ### Modified Capabilities
 

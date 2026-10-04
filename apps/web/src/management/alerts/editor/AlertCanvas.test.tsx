@@ -4,7 +4,7 @@ import {
   compatibilityAlertTextStyle,
   type AlertEditorDocument
 } from "@stream-jams/core";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AssetApi } from "../../assets/asset-api.js";
@@ -309,6 +309,66 @@ describe("AlertCanvas", () => {
     expect(onGeometryChange).toHaveBeenNthCalledWith(1, "layer-shape", expect.objectContaining({ x: 193, y: 108 }));
     expect(onGeometryChange).toHaveBeenNthCalledWith(2, "layer-shape", expect.objectContaining({ x: 192, y: 118 }));
   });
+  it("snaps pointer moves to visible peers, separates switches, and clears gesture guides", () => {
+    const capture = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "setPointerCapture");
+    Object.defineProperty(HTMLElement.prototype, "setPointerCapture", { configurable: true, value: vi.fn() });
+    const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 960, bottom: 540, width: 960, height: 540, toJSON: () => ({}) });
+    try {
+      const document: AlertEditorDocument = { ...editorDocument,
+        layers: [...editorDocument.layers, { ...editorDocument.layers[0]!, id: "peer", name: "Peer", order: 1 }],
+        targetProfiles: editorDocument.targetProfiles.map(profile => profile.id === "landscape" ? { ...profile, layerLayouts: [...profile.layerLayouts, { layerId: "peer", x: 300, y: 400, width: 120, height: 100, zIndex: 2 }] } : profile) };
+      const onGeometryChange = vi.fn();
+      const props = { assetApi, document, onGeometryChange, onSelectLayer: vi.fn(), preview: false, profileId: "landscape" as const, samplePayload: {}, selectedLayerId: "layer-shape" };
+      const { container, rerender } = render(<AlertCanvas {...props} snapToGrid={false} />);
+      const layer = screen.getByRole("button", { name: "Badge layer" });
+      fireEvent.pointerDown(layer, { pointerId: 1, clientX: 0, clientY: 0 });
+      fireEvent.pointerMove(layer, { pointerId: 1, clientX: 52, clientY: 0 });
+      expect(onGeometryChange).toHaveBeenLastCalledWith("layer-shape", expect.objectContaining({ x: 300, y: 108 }));
+      expect(container.querySelector(".alert-canvas__snap-guide--x")).toHaveStyle({ left: "15.625%" });
+      fireEvent.pointerUp(layer, { pointerId: 1 });
+      expect(container.querySelector(".alert-canvas__snap-guide")).toBeNull();
+      rerender(<AlertCanvas {...props} snapToGrid={false} snapToAlignment={false} />);
+      fireEvent.pointerDown(layer, { pointerId: 2, clientX: 0, clientY: 0 });
+      fireEvent.pointerMove(layer, { pointerId: 2, clientX: 52, clientY: 0 });
+      expect(onGeometryChange).toHaveBeenLastCalledWith("layer-shape", expect.objectContaining({ x: 296, y: 108 }));
+      rerender(<AlertCanvas {...props} snapToGrid snapToAlignment={false} showGrid={false} />);
+      fireEvent.pointerMove(layer, { pointerId: 2, clientX: 52, clientY: 0 });
+      expect(onGeometryChange).toHaveBeenLastCalledWith("layer-shape", expect.objectContaining({ x: 300, y: 110 }));
+      expect(container.querySelector(".alert-canvas__grid")).toBeNull();
+      fireEvent.pointerCancel(layer, { pointerId: 2 });
+      expect(container.querySelector(".alert-canvas__snap-guide")).toBeNull();
+      const hiddenPeerDocument = { ...document, layers: document.layers.map(candidate => candidate.id === "peer" ? { ...candidate, visible: false } : candidate) };
+      rerender(<AlertCanvas {...props} document={hiddenPeerDocument} snapToGrid={false} />);
+      fireEvent.pointerDown(layer, { pointerId: 3, clientX: 0, clientY: 0 });
+      fireEvent.pointerMove(layer, { pointerId: 3, clientX: 52, clientY: 0 });
+      expect(onGeometryChange).toHaveBeenLastCalledWith("layer-shape", expect.objectContaining({ x: 296, y: 108 }));
+      expect(container.querySelector(".alert-canvas__snap-guide")).toBeNull();
+      fireEvent.pointerUp(layer, { pointerId: 3 });
+      const speechPeerDocument = { ...document, layers: document.layers.map(candidate => candidate.id === "peer" ? {
+        id: candidate.id, name: "Speech", type: "tts" as const, visible: true, order: candidate.order, animation: candidate.animation,
+        enabled: true, providerId: "browser-speech", template: "Nonvisual peer"
+      } : candidate) };
+      rerender(<AlertCanvas {...props} document={speechPeerDocument} snapToGrid={false} />);
+      fireEvent.pointerDown(layer, { pointerId: 5, clientX: 0, clientY: 0 });
+      fireEvent.pointerMove(layer, { pointerId: 5, clientX: 52, clientY: 0 });
+      expect(onGeometryChange).toHaveBeenLastCalledWith("layer-shape", expect.objectContaining({ x: 296, y: 108 }));
+      expect(container.querySelector(".alert-canvas__snap-guide")).toBeNull();
+      fireEvent.pointerUp(layer, { pointerId: 5 });
+      rerender(<AlertCanvas {...props} snapToGrid={false} />);
+      const handle = layer.querySelector(".alert-canvas__resize-handle")!;
+      fireEvent.pointerDown(handle, { pointerId: 4, clientX: 0, clientY: 0 });
+      fireEvent.pointerMove(handle, { pointerId: 4, clientX: -123, clientY: 0 });
+      expect(onGeometryChange).toHaveBeenLastCalledWith("layer-shape", expect.objectContaining({ x: 192, y: 108, width: 228, height: 270 }));
+      expect(container.querySelector(".alert-canvas__snap-guide--x")).toHaveStyle({ left: "21.875%" });
+      rerender(<AlertCanvas {...props} profileId="vertical" />);
+      expect(container.querySelector(".alert-canvas__snap-guide")).toBeNull();
+    } finally {
+      cleanup(); rect.mockRestore();
+      if (capture === undefined) Reflect.deleteProperty(HTMLElement.prototype, "setPointerCapture");
+      else Object.defineProperty(HTMLElement.prototype, "setPointerCapture", capture);
+    }
+  });
+
 });
 
 const assetApi: AssetApi = {

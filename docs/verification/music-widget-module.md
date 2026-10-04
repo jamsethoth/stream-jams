@@ -1,5 +1,22 @@
 # Music widget module verification
 
+## Shared snapping checkpoint (2026-10-04)
+
+The approved refinement is implemented in Music and Alerts with independent default-enabled **Snap to grid** and **Snap to alignment** controls. One framework-independent management helper snaps pointer gestures to a 10-pixel grid or the nearest visible peer/canvas edges and horizontal/vertical centers. Alignment tolerance is five screen pixels at the current zoom; nearest alignment wins before grid. Resize anchors and per-editor minimum sizes remain bounded. Hidden, audio, speech, self and other-profile peers are excluded. Active guides are pointer-inert and clear after a gesture; manual and keyboard edits bypass snapping. Preferences do not dirty saved documents.
+
+Affected validation:
+
+- Shared geometry, Music gestures, Alerts gestures and legacy editor-state suite **38/38** passed. Final resize-anchor/center correction recheck **18/18** passed; nonvisual speech peer regression **8/8** passed.
+- Management route suite **32/32** passed; Music page **11/11** passed. The first cold lazy-route test raced Vite's module transform; routing test setup now preloads the real editor without changing its assertions.
+- Actual built-service Playwright: Music/Alerts snapping and existing Music editor workflow **3/3** passed. Expanded move/resize assertions for both editors subsequently passed **2/2**; free movement, peer priority, transient guides, exact keyboard changes and saved/reloaded rectangles were observed.
+- Static Storybook build and tagged Chromium interaction/accessibility checks **2/2** passed. Final speech-target filtering was then covered by the focused canvas regression and rebuilt production bundle.
+- Root, E2E and desktop TypeScript builds, scoped ESLint and error provenance passed. Web and private-overlay builds passed. The initial management budget failure (250.49 KiB) was resolved by loading AlertEditorPage only on its route, with an accessible loading state. Final gzip budgets: bootstrap 68.42/100 KiB, overlay 140.86/150 KiB, operator 131.62/175 KiB and management 209.93/250 KiB.
+
+The runnable Windows folder was rebuilt with the verified cached Electron distribution. Packaged Music snapping controls/no-source/safety, native loader and worker lifecycle checks passed **3/3** in disposable profiles and exited cleanly.
+
+The shared snapping capability is synchronized, and BL-016 retains only responsive units/custom profiles/cross-profile assistance. This local checkpoint does not claim a full repository suite, remote CI or the remaining physical Pear/OBS acceptance.
+
+
 ## Editor refinement checkpoint (2026-10-04)
 
 The user-requested refinement aligns Music with Alerts: Browser sources first, preview next, then independent Configuration and Custom CSS disclosures. Alerts' RGB/opacity control is paired with validated RGBA input. Native per-component rectangles are saved per profile/view; management-only pointer handles and keyboard/numeric controls use bounded core geometry, while live browser/unified/private-desktop renderers consume the same projection. Old configurations and automatic reset use `componentLayout: null`. Nonempty enabled CSS explicitly disables native visual editing; the recovery button remains beside the preview.

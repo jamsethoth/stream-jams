@@ -26,7 +26,7 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 | BL-013 | Additional bounded animation presets | Deferred | P2 | Stable style and animation contracts | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
 | BL-014 | Alert version history, rollback, soft delete, and selective recovery | Deferred | P2 | Existing backup/restore plus a bounded history policy | [Future-feature notes](future-features.md#alert-version-history-and-rollback) |
 | BL-015 | Asset version history and restore | Deferred | P3 | BL-014 recovery model | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
-| BL-016 | Responsive units, richer snapping, custom profiles, and optional cross-profile layout assistance | Deferred | P3 | Measured need beyond fixed landscape and vertical profiles | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
+| BL-016 | Responsive units, custom profiles, and optional cross-profile layout assistance | Deferred | P3 | Measured need beyond fixed landscape and vertical profiles | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
 | BL-017 | Translation-ready management UI, selected locales, contrast checks, and alert reduced-motion guidance | Deferred | P3 | Named target locales and accessibility acceptance criteria | Product decision, 2026-07-20 |
 | BL-018 | Constrained per-layer timeline and keyframe editor | Long-term | P3 | Preset animations prove insufficient; the implemented text-style contract and BL-013 are stable | Must remain schema-validated and exclude arbitrary code. |
 | BL-019 | Full provider-event simulation and persisted custom sample library | Deferred | P3 | Stable normalized catalogs and Diagnostics simulation boundary | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
