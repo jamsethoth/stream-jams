@@ -177,3 +177,27 @@ Management SHALL expose Music source setup, pair/test/reconnect, selection, modu
 #### Scenario: Runtime refresh fails with unsaved appearance edits
 - **WHEN** status polling fails while appearance edits are dirty
 - **THEN** edits are preserved, stale status is labeled, and saving or discarding remains an explicit user action
+
+
+### Requirement: Music Editing Follows Shared Module Patterns
+The system SHALL place Browser sources above the production-renderer preview, followed by separate collapsible Configuration and Custom CSS panels. Graphical RGB/opacity controls and validated RGBA hex input SHALL edit the same saved appearance draft. An explicit preview Edit layout mode SHALL support bounded independent movement and resizing of artwork, title, details, progress and time, with equivalent numeric geometry controls and reset to automatic layout. Old configuration SHALL default to automatic layout. Guides SHALL remain management-only; authored layout SHALL use the same production renderer in all outputs and remain a draft until Save.
+
+#### Scenario: Module controls are disclosed independently
+- **WHEN** Music appearance opens or a user expands one panel
+- **THEN** Browser sources precede Preview, Configuration and Custom CSS; the other panels retain independent disclosure state, and Disable custom CSS remains accessible outside the CSS panel
+
+#### Scenario: Colour selection and hex stay synchronized
+- **WHEN** a user changes RGB, opacity or a valid RGBA hex value
+- **THEN** the other controls and preview reflect the same draft colour; invalid hex retains the last valid colour and displays a validation error
+
+#### Scenario: Preview movement matches numeric geometry
+- **WHEN** a user enables Edit layout and moves or resizes a Music component
+- **THEN** numeric geometry reflects the bounded widget-local rectangle, keyboard and numeric edits use the same contract, cancellation restores the prior gesture state, and live output changes only after Save
+
+#### Scenario: Authored layout survives configuration boundaries
+- **WHEN** configuration saves, reloads, restores from backup, resizes its widget or projects to a narrower output profile
+- **THEN** authored component rectangles are retained or bounded to the resulting widget; older configuration and Reset use automatic layout, and live output contains no editor guides
+
+#### Scenario: Custom CSS overrides are explicit during visual editing
+- **WHEN** custom CSS is enabled
+- **THEN** the editor explains that CSS can override native geometry and prevents misleading drag handles; disabling CSS preserves its source and permits native layout editing
