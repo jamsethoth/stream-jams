@@ -12,6 +12,35 @@ const input = {
 };
 
 describe("EmergencyLogWriter", () => {
+  it.each([false, true])("redacts URL credentials and all capability types when stderr fallback is %s", (failFile) => {
+    const lines: string[] = [];
+    const writer = new EmergencyLogWriter({
+      filePath: "C:/logs/emergency.jsonl",
+      appendFile: (_path, data) => {
+        if (failFile) throw new Error("emergency file unavailable");
+        lines.push(data);
+      },
+      writeStderr: (data) => { lines.push(data); }
+    });
+
+    writer.write({
+      ...input,
+      message: "Failed ws://secret-user:secret-password@localhost:8080/events med_private-media tmr_private-timer",
+      originalException: new Error('Provider {"authentication":"challenge-secret"}', {
+        cause: new Error("//nested-user:nested-password@localhost/events?token=nested-token")
+      }),
+      loggerException: new Error("wss://logger-user:logger-password@localhost/events ovl_private-overlay")
+    });
+
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0] ?? "")).toMatchObject({ emergency: true, referenceId: input.referenceId });
+    for (const secret of ["secret-user", "secret-password", "med_private-media", "tmr_private-timer", "challenge-secret",
+      "nested-user", "nested-password", "nested-token", "logger-user", "logger-password", "ovl_private-overlay"]) {
+      expect(lines[0]).not.toContain(secret);
+    }
+    expect(lines[0]).toContain("ws://localhost:8080/events");
+  });
+
   it("writes one independently sanitized bounded synchronous record", () => {
     const lines: string[] = [];
     const writer = new EmergencyLogWriter({

@@ -256,6 +256,20 @@ export const ValidationFailure: Story = {
   }
 };
 
+export const StreamerBotAuthenticationRequired: Story = {
+  args: { managementApi: providerApi([]) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
+    await userEvent.selectOptions(canvas.getByLabelText("Provider type"), "streamerbot");
+    await userEvent.click(canvas.getByRole("button", { name: "Continue" }));
+    await expect(canvas.getByRole("button", { name: "Test connection" })).toBeDisabled();
+    await expect(canvas.getByRole("checkbox", { name: "Allow an unauthenticated local connection" })).not.toBeChecked();
+    await userEvent.click(canvas.getByRole("checkbox", { name: "Allow an unauthenticated local connection" }));
+    await expect(canvas.getByRole("button", { name: "Test connection" })).toBeEnabled();
+  }
+};
+
 export const TwitchConnectionRequired: Story = {
   args: { managementApi: providerApi([]) },
   play: async ({ canvasElement }) => {

@@ -1,5 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "composite": true, "types": ["node"], "tsBuildInfoFile": "../../dist/desktop-tests.tsbuildinfo" },
-  "include": ["*.ts"]
+  "include": ["*.ts", "fixtures/**/*.ts"],
+  "references": [{ "path": "../../packages/core" }, { "path": "../../apps/server" }]
 }

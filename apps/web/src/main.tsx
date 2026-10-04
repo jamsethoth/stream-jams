@@ -1,3 +1,4 @@
+import "./csp-schema-validation.js";
 import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { resolveWebRouteShell, type WebRouteShell } from "./route-shell.js";

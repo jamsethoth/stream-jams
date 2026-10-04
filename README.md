@@ -14,7 +14,11 @@ Stream Jams pins its package manager with `packageManager: "pnpm@11.2.2"` in `pa
 corepack enable
 corepack prepare pnpm@11.2.2 --activate
 pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm test:unit
 ```
+
+On Windows, use `corepack.cmd pnpm` if pnpm is not directly available. Run the root typecheck after a clean install before unit tests: it builds shared package outputs used by workspace imports. Missing dependencies or shared outputs are setup failures; install from the lockfile and build them before interpreting test results.
 
 ## Workspace Build Model
 
@@ -29,6 +33,12 @@ The current build model intentionally stays simple:
 Turborepo is a possible future addition if the workspace grows enough to need task-graph caching, affected-package execution, or faster CI feedback. It is not part of the MVP toolchain yet.
 
 ## Playwright E2E Tests
+
+`corepack.cmd pnpm test:security` builds prerequisites and runs real provider transport/persistent-runtime tests, production browser workflows with actual management APIs, packaged renderers, native SQLite/keyring, and installed vendor/OBS acceptance. `test:security:portable` runs the portable transport/runtime/browser portion; `test:security:installed` requires Windows plus `STREAM_JAMS_TEST_STREAMERBOT_DIR`, `STREAM_JAMS_TEST_SPEAKERBOT_DIR`, and `STREAM_JAMS_TEST_OBS_DIR` pointing to installed binary directories. The harness copies only vendor binaries into disposable profiles, seeds synthetic credentials, and removes its profiles/processes. Missing installed-app prerequisites fail explicitly. Installed vendor/OBS tests use their own config and are excluded from ordinary `test:desktop`. Current observed vendor fixtures support Streamer.bot 1.0.7 settings schema 34 and Speaker.bot 0.1.7 settings schema 8; reviewed vendor schema changes are required for other versions. Speaker acceptance uses the observed `sapi5` engine and an installed Windows SAPI voice at volume zero, proving a nonempty WAV rather than audible output.
+
+Provider activation replaces the active selection while retaining inactive saved provider credentials. There is currently no provider deletion API. Backup/restore tests verify secret exclusion and reconnect requirements instead of assuming credentials are deleted when a provider becomes inactive.
+
+See the [provider security acceptance record](docs/verification/provider-security.md) for the automated matrix, actual results, and physical verification limits.
 
 Run E2E tests directly on supported Playwright hosts with:
 
@@ -53,3 +63,5 @@ PLAYWRIGHT_WEB_SERVER_HOST=0.0.0.0 PLAYWRIGHT_BASE_URL=http://hostmachine:4173 P
 `PLAYWRIGHT_WEB_SERVER_HOST=0.0.0.0` is only for Docker-backed local E2E execution. Normal local execution keeps the default `127.0.0.1` Vite bind address.
 
 The Docker helper derives its image tag from the installed `@playwright/test` version. Keep that dependency, `pnpm-lock.yaml`, and the image tags in `.github/workflows/ci.yml` aligned when upgrading Playwright; package manifests and the workflow are the authoritative version references.
+
+Security operations: `corepack.cmd pnpm audit:dependencies` checks moderate, high, and critical dependency advisories without advisory exceptions; the blocking workflow retains its report on failure. `corepack.cmd pnpm security:provision` verifies pinned official vendor archives for disposable installed acceptance. `corepack.cmd pnpm security:exposure -- --pid <local-service-PID>` prints read-only Windows listener/firewall evidence; remote reachability remains unproven and no live configuration is changed. See the [verification record](docs/verification/provider-security.md) for current findings and prerequisites.

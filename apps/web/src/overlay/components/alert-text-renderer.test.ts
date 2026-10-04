@@ -1,3 +1,4 @@
+vi.mock("pixi.js/unsafe-eval", () => ({}));
 import { compatibilityAlertTextBoxStyle, compatibilityAlertTextStyle, createDefaultTextWarp } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
 const fake = vi.hoisted(() => ({ renderer: { canvas: {}, resize: vi.fn(), render: vi.fn(), destroy: vi.fn() }, created: vi.fn() }));

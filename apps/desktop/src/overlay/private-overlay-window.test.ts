@@ -100,7 +100,9 @@ it("serves only the three staged renderer resources and denies permissions and d
     const handler = s.protocol.handle.mock.calls[0]![1];
     const response = await handler({ url: "stream-jams-overlay://surface/", method: "GET" });
     expect(response.status).toBe(200);
-    expect(response.headers.get("Content-Security-Policy")).toContain("connect-src 'none'");
+    expect(response.headers.get("Content-Security-Policy")).toContain("connect-src stream-jams-overlay://surface/media/;");
+    expect(response.headers.get("Content-Security-Policy")).toContain("font-src 'self';");
+    expect(response.headers.get("Content-Security-Policy")).not.toMatch(/https?:|wss?:|data:|blob:|unsafe-eval/);
     expect(response.headers.get("Content-Security-Policy")).toContain("media-src 'self'");
     expect(response.headers.get("Content-Security-Policy")).toContain("img-src 'self'");
     expect(native.reads).toHaveLength(1);

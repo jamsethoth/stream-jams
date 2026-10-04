@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { defaultLogSettings, type LogContext, type Redactor } from "@stream-jams/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRedactor } from "../security/redactor.js";
+import { EmergencyLogWriter } from "./emergency-log-writer.js";
 import { RuntimeJsonlLogger } from "./runtime-jsonl-logger.js";
 
 const temporaryDirectories: string[] = [];
@@ -19,6 +20,57 @@ afterEach(async () => {
 });
 
 describe("RuntimeJsonlLogger", () => {
+  it.each(["serialize", "redact", "append"] as const)(
+    "keeps secrets out of emergency file and stderr after primary %s failure",
+    async (failureStage) => {
+      for (const failEmergencyFile of [false, true]) {
+        const fileLines: string[] = [];
+        const stderrLines: string[] = [];
+        const stageFailure = new Error("Primary failed for wss://logger-user:logger-password@localhost:8080/events tmr_logger-secret");
+        const emergencyWriter = new EmergencyLogWriter({
+          filePath: "C:/logs/emergency.jsonl",
+          appendFile: (_path, data) => {
+            if (failEmergencyFile) throw new Error("Emergency file unavailable");
+            fileLines.push(data);
+          },
+          writeStderr: (data) => { stderrLines.push(data); }
+        });
+        const logger = new RuntimeJsonlLogger({
+          logDirectory: "C:/logs", settings: defaultLogSettings,
+          redactor: failureStage === "redact"
+            ? { redact() { throw stageFailure; }, redactText(value: string) { return value; } }
+            : createRedactor(),
+          emergencyWriter,
+          fileSystem: {
+            async mkdir() {},
+            async appendFile() { throw stageFailure; },
+            async readdir() { return []; },
+            async readFile() { return ""; }
+          },
+          serialize: failureStage === "serialize" ? () => { throw stageFailure; } : undefined,
+          now: () => new Date("2026-05-31T02:15:30.000Z")
+        });
+
+        await expect(logger.error(
+          "Failed ws://message-user:message-password@localhost:8080/events med_message-secret",
+          baseContext,
+          new Error('Provider {"authentication":"challenge-secret"}', {
+            cause: new Error("//cause-user:cause-password@localhost/events ovl_cause-secret")
+          })
+        )).resolves.toBeUndefined();
+
+        expect(fileLines).toHaveLength(failEmergencyFile ? 0 : 1);
+        expect(stderrLines).toHaveLength(failEmergencyFile ? 1 : 0);
+        const output = [...fileLines, ...stderrLines].join("");
+        expect(JSON.parse(output)).toMatchObject({ emergency: true, referenceId: "corr_123" });
+        for (const secret of ["logger-user", "logger-password", "tmr_logger-secret", "message-user", "message-password",
+          "med_message-secret", "challenge-secret", "cause-user", "cause-password", "ovl_cause-secret"]) {
+          expect(output).not.toContain(secret);
+        }
+      }
+    }
+  );
+
   it("retains valid evidence around malformed records and reports corruption without exposing damaged text", async () => {
     const logDirectory = await createTemporaryDirectory();
     const now = new Date("2026-05-31T02:15:30.000Z");

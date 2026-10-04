@@ -2,6 +2,57 @@ import { describe, expect, it } from "vitest";
 import { createRedactor } from "./redactor.js";
 
 describe("createRedactor", () => {
+  it.each(["http", "https", "ws", "wss", "HTTPS"])("removes URL user information from %s URLs", (scheme) => {
+    const redactor = createRedactor();
+    const output = redactor.redactText(`Connect ${scheme}://user%40name:p%3Assword@localhost:8080/events?view=public#status`);
+
+    expect(output).toBe(`Connect ${scheme}://localhost:8080/events?view=public#status`);
+  });
+
+  it("fails closed for malformed credential URLs with encoded query secrets", () => {
+    const output = createRedactor().redactText("wss://user:secret@[invalid]/events?access%5ftoken=hidden");
+    expect(output).toBe("[REDACTED]");
+  });
+
+  it("removes protocol-relative and malformed URL credentials while preserving safe destinations", () => {
+    const redactor = createRedactor();
+
+    expect(redactor.redactText("Connect //username:password@[::1]:8080/events?token=opaque&view=public"))
+      .toBe("Connect //[::1]:8080/events?token=%5BREDACTED%5D&view=public");
+    expect(redactor.redactText("Failed wss://username:password@[invalid]:8080/events"))
+      .toBe("Failed wss://[invalid]:8080/events");
+    expect(redactor.redactText("http://localhost:8080/events ws://localhost:8080/events"))
+      .toBe("http://localhost:8080/events ws://localhost:8080/events");
+  });
+
+  it("redacts authentication and credential fields in objects and encoded JSON text", () => {
+    const redactor = createRedactor();
+    const payload = {
+      request: "Authenticate",
+      authentication: "challenge-response-secret",
+      credentials: { username: "secret-user", value: "credential-secret" },
+      public: "retained"
+    };
+
+    expect(redactor.redact(payload)).toEqual({
+      request: "Authenticate", authentication: "[REDACTED]", credentials: "[REDACTED]", public: "retained"
+    });
+    expect(JSON.parse(redactor.redactText(JSON.stringify(payload)))).toEqual({
+      request: "Authenticate", authentication: "[REDACTED]", credentials: "[REDACTED]", public: "retained"
+    });
+    expect(redactor.redactText('Provider failed: {"authentication":"response-secret","credential":"escaped \\" secret"}'))
+      .toBe('Provider failed: {"authentication":"[REDACTED]","credential":"[REDACTED]"}');
+  });
+
+  it("redacts complete OAuth header parameter lists and quoted credential assignments", () => {
+    const redactor = createRedactor();
+
+    expect(redactor.redactText('Authorization: OAuth oauth_consumer_key="consumer-secret", oauth_token="oauth-secret", oauth_signature="signature-secret"; status=failed'))
+      .toBe("Authorization: OAuth [REDACTED]; status=failed");
+    expect(redactor.redactText('authentication="challenge response" credential=opaque-secret'))
+      .toBe("authentication=[REDACTED] credential=[REDACTED]");
+  });
+
   it("redacts media capabilities in URLs and ordinary text", () => {
     const redactor = createRedactor();
     expect(redactor.redactText("/media/med_private-capability grant med_other_capability"))

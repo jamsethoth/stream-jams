@@ -1,6 +1,21 @@
 name: Dependency Audit
 
 on:
+  pull_request:
+    paths:
+      - '**/package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/dependency-audit.yml'
+      - 'scripts/dependency-audit*'
+  push:
+    branches: [main]
+    paths:
+      - '**/package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/dependency-audit.yml'
+      - 'scripts/dependency-audit*'
   schedule:
     - cron: "23 9 * * 1"
   workflow_dispatch:
@@ -17,7 +32,6 @@ jobs:
     name: pnpm-audit
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true
 
     steps:
       - name: Checkout repository
@@ -41,21 +55,22 @@ jobs:
 
       - name: Run pnpm audit
         id: audit
-        run: pnpm audit --audit-level high --json > pnpm-audit.json
-        continue-on-error: true
+        run: pnpm audit:dependencies
 
       - name: Write audit summary
+        if: always()
         run: |
           {
             echo "## pnpm audit"
             echo
-            echo "- Command: \`pnpm audit --audit-level high --json\`"
+            echo "- Command: \`pnpm audit:dependencies\` (native moderate-severity JSON audit plus strict evaluator)"
             echo "- Step outcome: \`${{ steps.audit.outcome }}\`"
             echo
-            echo "This workflow is intentionally non-blocking until the current dependency vulnerability baseline is triaged."
+            echo "Moderate, high and critical advisories and registry failures block this workflow. No advisory exceptions are accepted."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload audit report
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: pnpm-audit-report

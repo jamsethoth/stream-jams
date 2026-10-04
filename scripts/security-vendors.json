@@ -1,0 +1,5 @@
+{
+  "streamerbot": { "version": "1.0.7", "url": "https://streamer.bot/api/releases/streamer.bot/1.0.7/download", "sha256": "47a4e56f7a8a3e5f09ec16a5ba14c50e034dd98d67d2dc1ec89a671994c1f5c5", "executable": "Streamer.bot.exe", "environment": "STREAM_JAMS_TEST_STREAMERBOT_DIR" },
+  "speakerbot": { "version": "0.1.7", "url": "https://streamer.bot/api/releases/speaker.bot/0.1.7/download", "sha256": "7ba8cb065c43800050c4888b2a4c86eee05c4200bd364022acc81dff9a72074c", "executable": "Speaker.bot.exe", "environment": "STREAM_JAMS_TEST_SPEAKERBOT_DIR" },
+  "obs": { "version": "32.2.2", "url": "https://github.com/obsproject/obs-studio/releases/download/32.2.2/OBS-Studio-32.2.2-Windows-x64.zip", "sha256": "4d6e40e3ab155f56b30de517380566a206d74b63cdf5ad49aa596924768f97e1", "executable": "bin/64bit/obs64.exe", "environment": "STREAM_JAMS_TEST_OBS_DIR" }
+}

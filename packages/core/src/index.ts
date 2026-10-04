@@ -364,3 +364,5 @@ export { monitorMediaProgress } from "./audio/media-progress.js";
 export * from "./assets/media-reference.js";
 export * from "./assets/desktop-media-asset.js";
 export * from "./timers/event-rules.js";
+
+export * from "./management/local-websocket-connection.js";

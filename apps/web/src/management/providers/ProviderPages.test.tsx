@@ -116,6 +116,9 @@ describe("provider pages", () => {
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.clear(screen.getByLabelText("Connection name"));
     await user.type(screen.getByLabelText("Connection name"), "Local Streamer.bot");
+    expect(screen.getByRole("button", { name: "Test connection" })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "Allow an unauthenticated local connection" })).not.toBeChecked();
+    await user.click(screen.getByRole("checkbox", { name: "Allow an unauthenticated local connection" }));
     await user.click(screen.getByRole("button", { name: "Test connection" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Start Streamer.bot's WebSocket server");
@@ -458,6 +461,7 @@ describe("provider pages", () => {
     expect(screen.getByRole("heading", { name: "Configure Streamer.bot" })).toHaveFocus();
     await user.clear(screen.getByLabelText("Connection name"));
     await user.type(screen.getByLabelText("Connection name"), "Local Streamer.bot");
+    await user.click(screen.getByRole("checkbox", { name: "Allow an unauthenticated local connection" }));
     await user.click(screen.getByRole("button", { name: "Test connection" }));
     expect(await screen.findByRole("heading", { name: "Review event source" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Review event source" })).toHaveFocus();

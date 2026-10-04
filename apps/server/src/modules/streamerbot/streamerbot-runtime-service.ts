@@ -299,7 +299,7 @@ export class StreamerBotRuntimeService {
       configuration: record.configuration
     });
     if (!parsed.success || parsed.data.kind !== "streamerbot") {
-      await this.#recordIssue("error", "Streamer.bot connection configuration is invalid", "error");
+      await this.#recordIssue("error", "Streamer.bot connection settings must be replaced with a loopback host and path-only endpoint", "error");
       return null;
     }
 
@@ -309,10 +309,15 @@ export class StreamerBotRuntimeService {
       protocol: parsed.data.configuration.protocol,
       host: parsed.data.configuration.host,
       port: parsed.data.configuration.port,
-      endpoint: parsed.data.configuration.endpoint
+      endpoint: parsed.data.configuration.endpoint,
+      allowUnauthenticatedLocalConnection: parsed.data.configuration.allowUnauthenticatedLocalConnection
     } satisfies StreamerBotConnectionInput;
 
     if (record.secretRef === null) {
+      if (!parsed.data.configuration.allowUnauthenticatedLocalConnection) {
+        await this.#recordIssue("error", "Streamer.bot requires a password or explicit consent for an unauthenticated local connection. Replace its connection settings.", "error");
+        return null;
+      }
       return connection;
     }
 

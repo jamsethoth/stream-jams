@@ -13,7 +13,11 @@ export function renderWarpedText(target: HTMLCanvasElement, raster: HTMLCanvasEl
   const render = async () => {
     if (!isActive()) return null;
     clearTimeout(idle);
-    shared ??= import("pixi.js").then(async pixi => ({ pixi, renderer: await pixi.autoDetectRenderer({ width: 1, height: 1, backgroundAlpha: 0, preference: "webgl", antialias: true }) }));
+    shared ??= import("pixi.js").then(async pixi => {
+      // Pixi's documented CSP adapter uses static shader/uniform functions instead of eval.
+      await import("pixi.js/unsafe-eval");
+      return { pixi, renderer: await pixi.autoDetectRenderer({ width: 1, height: 1, backgroundAlpha: 0, preference: "webgl", antialias: true }) };
+    });
     const pending = shared;
     let resources: Awaited<NonNullable<typeof shared>>;
     try { resources = await pending; } catch (error) { if (shared === pending) shared = undefined; throw error; }

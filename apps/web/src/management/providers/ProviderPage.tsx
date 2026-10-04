@@ -12,6 +12,7 @@ import type {
   StreamerBotSubscriptionSelection,
   TtsProviderSafetySettings
 } from "@stream-jams/core";
+import { providerSetupInputSchema } from "@stream-jams/core";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
@@ -57,6 +58,7 @@ interface SetupDraft {
   readonly port: number;
   readonly endpoint: string;
   readonly credential: string;
+  readonly allowUnauthenticatedLocalConnection: boolean;
 }
 
 interface TwitchAuthorizationViewState {
@@ -1039,7 +1041,13 @@ function ProviderSetupWizard({
         }
       }
 
-      const result = await managementApi.validateProvider(toSetupInput(draft));
+      const setup = providerSetupInputSchema.safeParse(toSetupInput(draft));
+      if (!setup.success) {
+        setValidation(null);
+        setRequestError(actionableError(null, "Provider connection settings are invalid", "Use a loopback host (127.0.0.1, localhost, or ::1), a valid port, and a path-only endpoint without credentials, query strings, or fragments."));
+        return;
+      }
+      const result = await managementApi.validateProvider(setup.data);
       setValidation(result);
       if (result.valid) {
         setStep("review");
@@ -1250,7 +1258,8 @@ function ProviderSetupWizard({
             ) : null}
             {websocket ? (
               <>
-                <p className="provider-page__setup-description">Enable the provider's WebSocket server before testing this connection.</p>
+                <p className="provider-page__setup-description">Enable the provider's WebSocket server. Use only 127.0.0.1, localhost, or ::1 and a path-only endpoint. Local ws transport and authentication are separate settings.</p>
+                {draft.kind === "speakerbot" ? <p>Speaker.bot documents no native WebSocket authentication. Keep its server restricted to this computer.</p> : null}
                 <label>
                   <span>Protocol</span>
                   <select value={draft.protocol} onChange={(event) => updateDraft({ ...draft, protocol: event.currentTarget.value as "ws" | "wss" })}>
@@ -1273,10 +1282,18 @@ function ProviderSetupWizard({
               </>
             ) : null}
             {draft.kind === "streamerbot" ? (
+              <>
+              <p>Enable Authentication and Enforce in Streamer.bot's WebSocket server, then enter its password. Authentication does not encrypt local ws traffic.</p>
               <label>
-                <span>Password (optional)</span>
+                <span>Password</span>
                 <input autoComplete="new-password" onChange={(event) => updateDraft({ ...draft, credential: event.currentTarget.value })} type="password" value={draft.credential} />
               </label>
+              <label>
+                <input checked={draft.allowUnauthenticatedLocalConnection} onChange={(event) => updateDraft({ ...draft, allowUnauthenticatedLocalConnection: event.currentTarget.checked })} type="checkbox" />
+                <span>Allow an unauthenticated local connection</span>
+              </label>
+              <p>Choose this only if you intentionally disabled authentication on the local Streamer.bot server.</p>
+              </>
             ) : null}
           </div>
         ) : null}
@@ -1308,7 +1325,7 @@ function ProviderSetupWizard({
           {step === "configure" && !reconnecting ? (
             <>
               <button className="provider-page__secondary-action" disabled={busy} onClick={() => setStep("select")} type="button">Back</button>
-              <button disabled={busy || twitchStatusLoading || draft.name.trim().length === 0} onClick={() => void validate()} type="button">
+              <button disabled={busy || twitchStatusLoading || draft.name.trim().length === 0 || (draft.kind === "streamerbot" && !draft.credential && !draft.allowUnauthenticatedLocalConnection)} onClick={() => void validate()} type="button">
                 {busy ? "Testing..." : draft.kind === "twitch" && twitchStatus?.connected !== true ? "Check connection" : "Test connection"}
               </button>
             </>
@@ -1357,7 +1374,8 @@ function createDraft(kind: ProviderKind): SetupDraft {
     host: "127.0.0.1",
     port: kind === "speakerbot" ? 7680 : 8080,
     endpoint: "/",
-    credential: ""
+    credential: "",
+    allowUnauthenticatedLocalConnection: false
   };
 }
 
@@ -1376,7 +1394,7 @@ function toSetupInput(draft: SetupDraft): ProviderSetupInput {
     endpoint: draft.endpoint.trim()
   };
   return draft.kind === "streamerbot"
-    ? { kind: "streamerbot", name, configuration, credential: draft.credential || null }
+    ? { kind: "streamerbot", name, configuration: { ...configuration, allowUnauthenticatedLocalConnection: draft.allowUnauthenticatedLocalConnection }, credential: draft.credential || null }
     : { kind: "speakerbot", name, configuration };
 }
 

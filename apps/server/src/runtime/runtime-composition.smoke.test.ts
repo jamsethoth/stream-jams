@@ -768,7 +768,7 @@ describe("runtime app composition smoke", () => {
       payload: {
         name: "Streamer.bot",
         kind: "streamerbot",
-        configuration: { protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/" }
+        configuration: { protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/", allowUnauthenticatedLocalConnection: true }
       }
     });
     const providerId = (registration.json() as { readonly provider: { readonly provider: { readonly id: string } } })
@@ -1058,7 +1058,7 @@ describe("runtime app composition smoke", () => {
       payload: {
         name: "Streamer.bot",
         kind: "streamerbot",
-        configuration: { protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/" }
+        configuration: { protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/", allowUnauthenticatedLocalConnection: true }
       }
     });
     expect(streamerBotRegistration.statusCode).toBe(201);

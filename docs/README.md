@@ -14,6 +14,7 @@ Use this map to distinguish current behavior, pending work, and historical evide
 | What work is being proposed or completed? | [Active OpenSpec changes](../openspec/changes); task completion and archive status are distinct |
 | What are the frontend conventions? | [Frontend guide](ai/frontend-agent-guide.md), [UI guidelines](ui-guidelines.md), [design tokens](design-tokens.md), and [UX spec](design/ui-refactor-mvp-ux-spec.md) |
 | What versions and checks are authoritative? | [Root manifest](../package.json), package manifests, lockfile, TypeScript configurations, and [CI workflow](../.github/workflows/ci.yml) |
+| How is provider security exercised against real runtimes and installed apps? | [Provider security acceptance](verification/provider-security.md), a dated matrix with commands, prerequisites, results, and physical verification limits |
 | What was physically or interactively verified? | Dated records under [verification](verification), especially [desktop](verification/windows-desktop-tray-runtime.md), [shared surfaces](verification/shared-desktop-overlay.md), and [Screen Effects](verification/screen-effects.md) |
 
 ## Implemented Repository Shape

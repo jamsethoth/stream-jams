@@ -130,7 +130,10 @@ class StreamerBotProviderAdapter implements ProviderManagementAdapter {
       throw new Error("Streamer.bot validation received the wrong provider configuration.");
     }
 
-    const url = buildStreamerBotWebSocketUrl(input.configuration);
+    if (!input.credential && !input.configuration.allowUnauthenticatedLocalConnection) {
+      throw new Error("Enter a Streamer.bot password or explicitly allow an unauthenticated local connection.");
+    }
+    buildStreamerBotWebSocketUrl(input.configuration);
     const client = new StreamerBotClient({
       socketFactory: this.socketFactory,
       onEvent() {},
@@ -144,17 +147,18 @@ class StreamerBotProviderAdapter implements ProviderManagementAdapter {
       host: input.configuration.host,
       port: input.configuration.port,
       endpoint: input.configuration.endpoint,
+      allowUnauthenticatedLocalConnection: input.configuration.allowUnauthenticatedLocalConnection,
       ...(input.credential === undefined ? {} : { password: input.credential })
     });
 
     try {
       await waitForStreamerBotConnection(client, this.timeoutMs);
       return successfulValidation(this.now, "inactive");
-    } catch (error) {
-      const cause = error instanceof Error ? error.message : "unknown connection error";
+    }
+    // error-provenance: allow expected -- untrusted provider errors may contain credentials; this management boundary returns bounded setup guidance
+    catch {
       throw new Error(
-        `Streamer.bot at ${url} could not be validated: ${cause}. Start Streamer.bot, enable its WebSocket server, verify ${url}, then retry.`,
-        { cause: error }
+        `Streamer.bot could not be validated. Enable its local WebSocket server and verify Authentication and Enforce settings, then retry.`
       );
     } finally {
       client.disconnect();
@@ -177,11 +181,11 @@ class SpeakerBotProviderAdapter implements ProviderManagementAdapter {
     try {
       await this.client.validateConnection(url);
       return successfulValidation(this.now, null);
-    } catch (error) {
-      const cause = error instanceof Error ? error.message : "unknown connection error";
+    }
+    // error-provenance: allow expected -- untrusted provider errors may contain credentials; this management boundary returns bounded setup guidance
+    catch {
       throw new Error(
-        `Speaker.bot at ${url} could not be validated: ${cause}. Start Speaker.bot, enable its WebSocket server, verify ${url}, then retry.`,
-        { cause: error }
+        "Speaker.bot could not be validated. Enable its local WebSocket server and verify the connection settings, then retry."
       );
     }
   }

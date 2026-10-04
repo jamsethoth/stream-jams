@@ -13,6 +13,24 @@ import {
 } from "./streamerbot-runtime-service.js";
 
 describe("StreamerBotRuntimeService", () => {
+  it("blocks unsafe legacy connection fields without dialing or exposing them", async () => {
+    const client = new FakeClient({ Twitch: supportedEvents });
+    const active = registration();
+    const service = runtime({ client, active: { ...active, configuration: { ...active.configuration, host: "user:secret-sentinel@remote.example" } } });
+    await service.syncActiveRegistration();
+    expect(client.connectInputs).toEqual([]);
+    expect(service.getStatus().state).toBe("error");
+    expect(JSON.stringify(service.getStatus())).not.toContain("secret-sentinel");
+  });
+
+  it("requires explicit local consent when no password is stored", async () => {
+    const client = new FakeClient({ Twitch: supportedEvents });
+    const active = registration();
+    const service = runtime({ client, active: { ...active, configuration: { ...active.configuration, allowUnauthenticatedLocalConnection: false } } });
+    await service.syncActiveRegistration();
+    expect(client.connectInputs).toEqual([]);
+    expect(service.getStatus().message).toContain("explicit consent");
+  });
   it("connects the active registration, resolves its secret, and preserves the discovered category key", async () => {
     const client = new FakeClient({
       tWiTcH: [...supportedEvents, "ChatMessage"]
@@ -35,6 +53,7 @@ describe("StreamerBotRuntimeService", () => {
       host: "127.0.0.1",
       port: 8080,
       endpoint: "/",
+      allowUnauthenticatedLocalConnection: true,
       password: "secret-password"
     }]);
     expect(client.subscriptions).toEqual([{
@@ -599,6 +618,7 @@ function registration(options: {
           host: "127.0.0.1",
           port: 8080,
           endpoint: "/",
+          allowUnauthenticatedLocalConnection: true,
           twitchBroadcasterId: options.twitchBroadcasterId ?? null,
           externalSubscriptions: options.externalSubscriptions ?? []
         }

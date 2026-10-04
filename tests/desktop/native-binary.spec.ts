@@ -74,3 +74,35 @@ test("packaged server composition starts and closes under Electron's Node runtim
     expect(result.stdout).toContain("packaged composition passed");
   } finally { await rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); }
 });
+
+test("packaged keyring persists across independent processes and cleans up from the parent", async () => {
+  const root = resolve("apps/desktop/out/Stream Jams-win32-x64");
+  const service = `stream-jams-public-security-fixture-${randomUUID()}`;
+  const account = randomUUID();
+  const code = `
+    const {createRequire} = require('node:module');
+    const req = createRequire(process.argv[1]);
+    const nativeReq = createRequire(req.resolve('@stream-jams/server/runtime'));
+    const {Entry} = nativeReq('@napi-rs/keyring');
+    const entry = new Entry(process.argv[2],process.argv[3]);
+    const operation = process.argv[4];
+    if (operation === 'write') entry.setPassword('deliberately-public-fixture');
+    else if (operation === 'read') {
+      if (entry.getPassword() !== 'deliberately-public-fixture') throw new Error('Cross-process persistence failed');
+    } else if (operation === 'absent') {
+      if (entry.getPassword() !== null) throw new Error('Parent cleanup left a credential');
+    } else entry.deletePassword();
+    console.log('keyring:'+operation+':passed');
+  `;
+  const child = (operation: string) => promisify(execFile)(resolve(root, "Stream Jams.exe"), ["-e", code, resolve(root, "resources/app.asar/package.json"), service, account, operation], {
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, windowsHide: true, timeout: 20_000
+  });
+  try {
+    expect((await child("write")).stdout).toContain("keyring:write:passed");
+    expect((await child("read")).stdout).toContain("keyring:read:passed");
+  } finally {
+    // Parent owns cleanup even if the independent reader exits unsuccessfully.
+    expect((await child("delete")).stdout).toContain("keyring:delete:passed");
+    expect((await child("absent")).stdout).toContain("keyring:absent:passed");
+  }
+});

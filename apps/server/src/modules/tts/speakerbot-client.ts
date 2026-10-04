@@ -1,3 +1,4 @@
+import { buildLocalWebSocketUrl, validateLocalWebSocketUrl } from "@stream-jams/core";
 import { randomUUID } from "node:crypto";
 import type { StreamerBotSocket } from "../streamerbot/streamerbot-client.js";
 
@@ -36,7 +37,7 @@ export class SpeakerBotClient {
   validateConnection(url: string): Promise<void> {
     let socket: SpeakerBotSocket;
     try {
-      socket = this.#socketFactory(url);
+      socket = this.#socketFactory(validateLocalWebSocketUrl(url));
     } catch (cause) {
       return Promise.reject(new Error("Speaker.bot WebSocket connection failed", { cause }));
     }
@@ -67,7 +68,7 @@ export class SpeakerBotClient {
     const id = this.#generateRequestId();
     let socket: SpeakerBotSocket;
     try {
-      socket = this.#socketFactory(url);
+      socket = this.#socketFactory(validateLocalWebSocketUrl(url));
     } catch (cause) {
       return Promise.reject(new Error("Speaker.bot WebSocket connection failed", { cause }));
     }
@@ -126,11 +127,12 @@ export class SpeakerBotClient {
 }
 
 export function buildSpeakerBotWebSocketUrl(input: SpeakerBotConnectionInput = {}): string {
-  const url = new URL(`${input.protocol ?? "ws"}://${input.host ?? "127.0.0.1"}`);
-  url.port = String(input.port ?? 7680);
-  const endpoint = input.endpoint?.replace(/^\/+|\/+$/g, "") ?? "";
-  url.pathname = endpoint.length === 0 ? "/" : `/${endpoint}`;
-  return url.toString();
+  return buildLocalWebSocketUrl({
+    protocol: input.protocol ?? "ws",
+    host: input.host ?? "127.0.0.1",
+    port: input.port ?? 7680,
+    endpoint: input.endpoint ?? "/"
+  });
 }
 
 function parseResponse(data: unknown): Record<string, unknown> | null {

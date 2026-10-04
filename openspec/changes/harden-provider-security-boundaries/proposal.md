@@ -23,4 +23,10 @@ The October 3 security audit reproduced credential-bearing connection fields esc
 
 ## Impact
 
-Core provider contracts; server provider clients, persistence views, backups, diagnostics, and HTML responses; provider setup UI and tests. No new dependencies, remote-provider support, production data edits, or publishing. Existing non-local or credential-bearing configurations fail closed and require replacement through provider setup.
+Core provider contracts; server provider clients, persistence views, backups, diagnostics, and HTML responses; provider setup UI and tests. No remote-provider support or production data edits. Dependency remediation and pull-request publication with hosted verification are authorized; merging and branch-protection changes are excluded. Existing non-local or credential-bearing configurations fail closed and require replacement through provider setup.
+
+## Authorized automation follow-up
+
+- Patch audited transitive dependencies and make moderate-or-higher dependency audit failures blocking without advisory exceptions on manifest/lockfile changes.
+- Provision pinned vendor binaries in disposable Windows CI and run installed security acceptance; missing capabilities fail explicitly.
+- Add a read-only Windows listener/firewall exposure report with explicit Node PID selection and unknown remote reachability. No live configuration changes.

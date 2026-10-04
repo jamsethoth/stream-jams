@@ -10,3 +10,7 @@ Management HTML SHALL deny framing by other pages and enforce a Content Security
 #### Scenario: Supported app workflows remain functional
 - **WHEN** the operator uses management media, fonts, editing, provider setup, and supported browser-source output
 - **THEN** required resources work under the policy without weakening authorization or displaying live overlay errors
+
+#### Scenario: Production browser acceptance uses real APIs
+- **WHEN** acceptance uploads media and a custom font, saves and reloads a nonidentity text warp, and sends scoped browser-source playback through a built disposable runtime
+- **THEN** persisted content renders nontransparent pixels with the font loaded, no unexpected CSP violations occur, and management framing is denied

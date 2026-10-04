@@ -6,7 +6,7 @@ The user approved implementation of audit findings 1-5. This change hardens exis
 
 Goals: prevent credentials entering public connection configuration, enforce local connections, complete authentication before event intake, preserve secret redaction when logging fails, and protect the management browser surface.
 
-Non-goals: TLS termination/proxies, remote connections, third-party server configuration changes, inventing authentication not supported by Speaker.bot, unrelated audit hardening, or publishing.
+Non-goals: TLS termination/proxies, remote connections, third-party server configuration changes, inventing authentication not supported by Speaker.bot, unrelated audit hardening, merging, or branch-protection changes.
 
 ## Decisions
 
@@ -16,6 +16,7 @@ Non-goals: TLS termination/proxies, remote connections, third-party server confi
 4. Keep normal and emergency redaction equivalent for URL user information and generated capabilities. Test filesystem failure with injected in-memory sinks; no real credentials are used.
 5. Apply restrictive response CSP and anti-framing to management HTML. Permit required local assets, styles, fonts, media/blobs, and workers only as demonstrated by browser tests. Preserve OBS/browser-source rendering and scoped authentication.
 6. Use existing dependencies. Install from the frozen lockfile, test negative cases first, then focused checks, full unit/script tests, typecheck, lint, builds, Storybook, browser acceptance, and a disposable live instance. Independent redaction and HTML-policy edits can be delegated to separate agents; provider contracts/runtime/UI stay together.
+7. Configure browser Zod validation without JIT before loading schemas, so capability probing does not emit CSP eval violations. Private renderers preflight custom fonts through FontFace and permit `font-src 'self'` plus only `connect-src stream-jams-overlay://surface/media/`; media authorization remains scoped. Actual packaged-renderer and OBS pixels verify these paths.
 
 ## Research
 
@@ -28,6 +29,10 @@ Verified 2026-10-03 using official docs:
 
 ## Risks / Trade-offs
 
+### Durable acceptance automation
+
+Extend regression coverage with real local provider servers and disposable persistent runtimes. Exercise HTTP management sessions and CSRF, legacy settings, authentication and restart, secret removal, backup validation/restore, and rejection without database mutation. Built browser acceptance uses actual management and scoped overlay APIs plus uploaded media/fonts and saved warp rendering; it captures CSP violations and proves anti-framing. A single command builds prerequisites and runs transport, lifecycle, browser, and focused packaged desktop acceptance. Missing required capabilities are explicit failures, never silent skips. Fixtures own temporary profiles and clean them up; production data is excluded.
+
 - Previously accepted remote/credential-bearing configurations stop working -> fail closed with safe setup guidance; do not mutate live user data during development.
 - Existing unauthenticated Streamer.bot configurations require replacement/review with explicit consent -> explain in setup and release notes.
 - CSP can block necessary rendering resources -> regression test management and overlays against the actual production build and make only specific allowances.
@@ -36,3 +41,14 @@ Verified 2026-10-03 using official docs:
 ## Migration Plan
 
 No schema migration is required for optional configuration fields. Existing unsafe settings remain blocked from connecting/exporting. Existing provider credentials remain in the OS store. Rollback is code-only; no automatic secret migration or data deletion.
+
+## Operational acceptance follow-up
+
+Use exact patched pnpm overrides and the native moderate-severity audit exit status, without ignores or a custom allowlist. Preserve JSON evidence and an always-run summary even when the audit or registry fails. Trigger the blocking gate for root/nested manifests, workspace, lockfile and workflow changes, weekly and manually.
+
+A separate Windows hosted workflow provisions pinned vendor releases into ephemeral owned directories and runs installed acceptance, including a callable before-release entry point. Preserve the ordinary CI workflow. A read-only exposure command selects exact application names and explicit Node PIDs, reports listeners and firewall evidence, and labels remote reachability unknown; it never changes live settings or firewall rules.
+
+
+The October 4 accepted remediation removes the vulnerable dependency chain instead of retaining an advisory exception: pin all Electron Forge packages to 8.0.1, which removes the Forge fast-glob → micromatch → braces packaging path. Pin fast-uri 3.1.8, ip-address 10.7.1, and brace-expansion 1.1.21/5.0.12 for the remaining moderate findings. Remove the exception policy/evaluator, and block native audit findings at moderate or higher without advisory exceptions. Retain raw JSON and summaries on failure, including registry errors. Preserve the October 3 exception evidence only in dated verification records.
+
+Publication is authorized as a pull request followed by hosted CI verification. Verify the exact pushed candidate SHA across ordinary CI, dependency audit, and installed Windows acceptance; no merge or branch-protection change is authorized. There is no release pipeline, so callable/manual installed acceptance remains the exact-SHA before-release contract. Local remediation and hosted outcomes remain pending until recorded from actual results.

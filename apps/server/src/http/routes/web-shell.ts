@@ -27,6 +27,21 @@ interface ViteManifestEntry {
 type ViteManifest = Record<string, ViteManifestEntry>;
 
 const manifestRelativePath = ".vite/manifest.json";
+// Authored previews use inline styles and locally created media/font blobs.
+// Executable code stays in the built app; Pixi image decoding uses blob workers.
+const managementContentSecurityPolicy = [
+  "default-src 'none'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' blob:",
+  "media-src 'self' blob:",
+  "connect-src 'self' blob:",
+  "worker-src 'self' blob:",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'none'"
+].join("; ");
 
 export function registerWebShellRoutes(app: FastifyInstance, dependencies: WebShellRouteDependencies): WebShellRenderer {
   const renderer =
@@ -44,9 +59,9 @@ export function registerWebShellRoutes(app: FastifyInstance, dependencies: WebSh
   app.get("/", async (_request, reply) => reply.redirect("/manage", 302));
   app.get("/legacy", async (_request, reply) => reply.redirect("/manage", 302));
   app.get("/legacy/*", async (_request, reply) => reply.redirect("/manage", 302));
-  app.get("/manage", async (_request, reply) => sendHtml(reply, await renderer.renderManagementShell()));
-  app.get("/manage/*", async (_request, reply) => sendHtml(reply, await renderer.renderManagementShell()));
-  app.get("/operator", async (_request, reply) => sendHtml(reply, await renderer.renderManagementShell()));
+  app.get("/manage", async (_request, reply) => sendManagementHtml(reply, await renderer.renderManagementShell()));
+  app.get("/manage/*", async (_request, reply) => sendManagementHtml(reply, await renderer.renderManagementShell()));
+  app.get("/operator", async (_request, reply) => sendManagementHtml(reply, await renderer.renderManagementShell()));
 
   return renderer;
 }
@@ -57,6 +72,11 @@ export function createViteManifestWebShellRenderer(input: { readonly webBuildDir
 
 export function sendHtml(reply: FastifyReply, html: string): FastifyReply {
   return reply.header("referrer-policy", "no-referrer").type("text/html; charset=utf-8").send(html);
+}
+
+function sendManagementHtml(reply: FastifyReply, html: string): FastifyReply {
+  reply.header("content-security-policy", managementContentSecurityPolicy).header("x-frame-options", "DENY");
+  return sendHtml(reply, html);
 }
 
 class ViteManifestWebShellRenderer implements WebShellRenderer {
