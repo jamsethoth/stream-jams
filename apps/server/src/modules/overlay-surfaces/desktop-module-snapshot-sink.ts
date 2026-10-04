@@ -10,7 +10,7 @@ export interface DesktopModuleSnapshotSinkDependencies {
   readonly assets: Pick<DesktopVisualAssetResolver, "resolveTimerModule">;
   readonly music?: {
     readonly runtime: OverlayModuleRuntime;
-    readonly coordinator: Pick<MusicRuntimeCoordinator, "getCurrentArtwork">;
+    readonly coordinator: Pick<MusicRuntimeCoordinator, "getCurrentArtwork" | "revision">;
     readonly assets: Pick<DesktopVisualAssetResolver, "resolveMusicModule" | "releaseMusicOwner">;
     readonly artwork: Pick<MusicArtworkService, "resolve" | "issueGrant" | "revokeRecipient">;
   };
@@ -36,8 +36,10 @@ export class DesktopModuleSnapshotSink {
     const music = this.dependencies.music;
     if (this.#closed || music === undefined) return;
     const revision = ++this.#musicRevision;
+    const sourceRevision = music.coordinator.revision;
+    const obsolete = () => this.#closed || revision !== this.#musicRevision || sourceRevision !== music.coordinator.revision;
     const surface = (await this.dependencies.surfaces.list()).find(candidate => candidate.kind === "desktop");
-    if (this.#closed || revision !== this.#musicRevision) return;
+    if (obsolete()) return;
     const visible = surface?.kind === "desktop" && surface.enabled && surface.displayId !== null &&
       surface.layers.some(layer => layer.moduleId === "music" && layer.visible);
     const clear = async () => {
@@ -45,19 +47,20 @@ export class DesktopModuleSnapshotSink {
       const previous = this.#musicOwner;
       this.#musicOwner = null;
       if (previous !== null) await music.assets.releaseMusicOwner(previous);
+      if (obsolete()) return;
       await this.dependencies.transport.syncModule({ moduleId: "music", revision, presentation: null, assets: [], artwork: null });
     };
     if (!visible) { await clear(); return; }
     const snapshot = await music.runtime.getModuleSnapshot({ moduleId: "music", overlayId: "desktop:primary", purpose: "live", scope: "unified", targetProfileId: "landscape" });
-    if (this.#closed || revision !== this.#musicRevision) return;
+    if (obsolete()) return;
     if (!snapshot.enabled || snapshot.presentation?.kind !== "music-widget") { await clear(); return; }
     const resolved = await music.assets.resolveMusicModule(snapshot.presentation);
-    if (this.#closed || revision !== this.#musicRevision) {
+    if (obsolete()) {
       if (resolved.ownerId !== null) await music.assets.releaseMusicOwner(resolved.ownerId);
       return;
     }
     const currentSurface = (await this.dependencies.surfaces.list()).find(candidate => candidate.kind === "desktop");
-    if (this.#closed || revision !== this.#musicRevision) {
+    if (obsolete()) {
       if (resolved.ownerId !== null) await music.assets.releaseMusicOwner(resolved.ownerId);
       return;
     }
@@ -72,12 +75,12 @@ export class DesktopModuleSnapshotSink {
     if (current !== null && current.ref === resolved.presentation.widget.snapshot.track?.artworkRef &&
       current.owner.generation === resolved.presentation.widget.snapshot.generation) {
       const ref = await music.artwork.resolve(current.descriptor, current.owner, AbortSignal.timeout(5000));
-      if (this.#closed || revision !== this.#musicRevision) {
+      if (obsolete()) {
         if (resolved.ownerId !== null) await music.assets.releaseMusicOwner(resolved.ownerId);
         return;
       }
       const grantSurface = (await this.dependencies.surfaces.list()).find(candidate => candidate.kind === "desktop");
-      if (this.#closed || revision !== this.#musicRevision) {
+      if (obsolete()) {
         if (resolved.ownerId !== null) await music.assets.releaseMusicOwner(resolved.ownerId);
         return;
       }
@@ -91,7 +94,7 @@ export class DesktopModuleSnapshotSink {
       const handle = ref === null ? null : music.artwork.issueGrant(ref, current.owner, "desktop-music:desktop:primary", expiresAt);
       if (handle !== null) artwork = { ref: current.ref, grant: { handle, expiresAt } };
     }
-    if (this.#closed || revision !== this.#musicRevision) {
+    if (obsolete()) {
       if (resolved.ownerId !== null) await music.assets.releaseMusicOwner(resolved.ownerId);
       return;
     }
@@ -101,7 +104,7 @@ export class DesktopModuleSnapshotSink {
       if (resolved.ownerId !== null) await music.assets.releaseMusicOwner(resolved.ownerId);
       throw error;
     }
-    if (this.#closed || revision !== this.#musicRevision) {
+    if (obsolete()) {
       if (resolved.ownerId !== null) await music.assets.releaseMusicOwner(resolved.ownerId);
       return;
     }

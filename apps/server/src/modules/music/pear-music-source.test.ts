@@ -144,11 +144,41 @@ describe("PearMusicSource lifecycle", () => {
     const statuses: MusicStatus[] = [];
     vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
     const started = source.start(() => {}, value => statuses.push(value), new AbortController().signal);
+    void started.catch(() => {});
     await vi.waitFor(() => expect(statuses.at(-1)?.state).toBe("reconnecting"));
     fixture!.setSong({ status: 204 });
     await vi.advanceTimersByTimeAsync(4_000);
     expect(fixture!.requests).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1_100);
+    vi.useRealTimers();
+    await started;
+    expect(fixture!.requests).toHaveLength(2);
+  });
+
+  it.each(["90", "date"])("honors Retry-After beyond 60 seconds (%s)", async header => {
+    const source = await create("poll");
+    fixture!.setSong({ status: 503, retryAfter: header === "date" ? new Date(Date.now() + 90_000).toUTCString() : header });
+    const statuses: MusicStatus[] = [];
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
+    const started = source.start(() => {}, value => statuses.push(value), new AbortController().signal);
+    void started.catch(() => {});
+    await vi.waitFor(() => expect(statuses.at(-1)?.state).toBe("reconnecting"));
+    fixture!.setSong({ status: 204 });
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect(fixture!.requests).toHaveLength(1);
+    await source.stop();
+    await expect(started).rejects.toThrow();
+    expect(fixture!.requests).toHaveLength(1);
+  });
+
+  it.each(["nonsense", "-5"])("uses bounded backoff for invalid Retry-After (%s)", async header => {
+    const source = await create("poll"); fixture!.setSong({ status: 503, retryAfter: header });
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
+    const started = source.start(() => {}, () => {}, new AbortController().signal);
+    void started.catch(() => {});
+    await vi.waitFor(() => expect(fixture!.requests).toHaveLength(1));
+    fixture!.setSong({ status: 204 });
+    await vi.advanceTimersByTimeAsync(2_000);
     vi.useRealTimers();
     await started;
     expect(fixture!.requests).toHaveLength(2);

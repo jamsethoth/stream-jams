@@ -19,6 +19,22 @@ const fixture = (observation: MusicSnapshot = snapshot): MusicWidgetProjection =
 const shadowOf = (container: HTMLElement) => container.querySelector(".music-widget-host")?.shadowRoot;
 
 describe("MusicWidget", () => {
+  it("keeps the same host, shadow content and CSS across ordinary observation revisions", () => {
+    const first = fixture();
+    const view = render(<MusicWidget projection={first} resolveAsset={resolver} nowEpochMs={now} />);
+    const host = view.container.querySelector(".music-widget-host");
+    const shadow = host!.shadowRoot!;
+    const title = shadow.querySelector(".sj-title");
+    const nativeStyle = shadow.querySelectorAll("style")[1];
+    view.rerender(<MusicWidget projection={{ ...first, clockReferenceEpochMs: now + 3_000,
+      snapshot: { ...first.snapshot, revision: 2, observedAtEpochMs: now + 3_000, positionMs: 33_000 } }}
+      resolveAsset={resolver} nowEpochMs={now + 3_000} />);
+    expect(view.container.querySelector(".music-widget-host")).toBe(host);
+    expect(host!.shadowRoot).toBe(shadow);
+    expect(shadow.querySelector(".sj-title")).toBe(title);
+    expect(shadow.querySelectorAll("style")[1]).toBe(nativeStyle);
+    expect(shadow.querySelector(".sj-time")?.textContent).toBe("0:33 / 2:00");
+  });
   it("renders full native layout and advances a known position from the observation clock", () => {
     const { container } = render(<MusicWidget projection={fixture()} resolveAsset={resolver} nowEpochMs={now + 2_000} />);
     const shadow = shadowOf(container)!;

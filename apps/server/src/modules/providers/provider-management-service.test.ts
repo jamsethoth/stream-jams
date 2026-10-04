@@ -21,6 +21,7 @@ import {
 } from "./provider-management-service.js";
 import { SqliteProviderRegistrationRepository } from "./sqlite-provider-registration-repository.js";
 import { PearPairingService } from "../music/pear-pairing-service.js";
+import { RuntimeMaintenanceGate, RuntimeMaintenanceUnavailableError } from "../backup/runtime-maintenance-gate.js";
 
 describe("ProviderManagementService", () => {
   let database: StreamJamsDatabase;
@@ -134,6 +135,91 @@ describe("ProviderManagementService", () => {
     expect(musicSourceSyncCount).toBe(2);
     await service.deactivateProvider(second.provider.provider.id);
     expect(musicSourceSyncCount).toBe(3);
+  });
+
+  it("keeps a whole admitted Pear registration inside the restore exclusion gate", async () => {
+    const gate = new RuntimeMaintenanceGate();
+    let release!: () => void;
+    let entered!: () => void;
+    const blocked = new Promise<void>(resolve => { release = resolve; });
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const guarded = new ProviderManagementService({
+      repository, adapters: new Map(), secretStore: secrets, musicPairing: pairing,
+      validateMusicConnection: async () => { entered(); await blocked; return { valid: true, connectionState: "connected", intakeState: null,
+        validatedAt: "2026-07-15T12:00:00.000Z", availableVoices: [], error: null }; },
+      getActivationImpact: async () => emptyImpact, getUsedByAlertCount: async () => 0,
+      generateId: () => "guarded-pear", generateReferenceId: () => "ref-guarded",
+      runMusicMutation: work => gate.runIntake(work)
+    });
+    const registration = guarded.registerProvider(await pearSetup("Pear"));
+    await started;
+    await expect(gate.runMaintenance(async () => "restore")).rejects.toBeInstanceOf(RuntimeMaintenanceUnavailableError);
+    release();
+    expect((await registration).status).toBe("registered");
+    expect(await gate.runMaintenance(async () => "restore")).toBe("restore");
+  });
+
+  it("counts queued replacements through old-secret retirement before restore can begin", async () => {
+    const initial = await service.registerProvider(await pearSetup("Pear"));
+    if (initial.status !== "registered") throw new Error("Expected registration");
+    const id = initial.provider.provider.id;
+    const first = await pearSetup("Pear");
+    const second = await pearSetup("Pear");
+    if (first.kind !== "pear-desktop" || second.kind !== "pear-desktop" || first.pairingAttemptId === undefined || second.pairingAttemptId === undefined) throw new Error("Expected pairings");
+    const gate = new RuntimeMaintenanceGate();
+    const guarded = new ProviderManagementService({
+      repository, adapters: new Map(), secretStore: secrets, musicPairing: pairing,
+      validateMusicConnection: async () => ({ valid: true, connectionState: "connected", intakeState: null,
+        validatedAt: "2026-07-15T12:00:00.000Z", availableVoices: [], error: null }),
+      getActivationImpact: async () => emptyImpact, getUsedByAlertCount: async () => 0,
+      generateId: () => "unused", generateReferenceId: () => "ref-guarded",
+      onMusicSourceChanged: async () => {}, runMusicMutation: work => gate.runIntake(work)
+    });
+    let release!: () => void;
+    let entered!: () => void;
+    const blocked = new Promise<void>(resolve => { release = resolve; });
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const originalDelete = secrets.deleteSecret.bind(secrets);
+    secrets.deleteSecret = async ref => {
+      if (ref.namespace === "music" && ref.name === "access-token") { entered(); await blocked; }
+      await originalDelete(ref);
+    };
+    const replaceOne = guarded.replaceMusicCredential(id, { pairingAttemptId: first.pairingAttemptId, configuration: pearConfigurationSchema.parse(first.configuration) });
+    await started;
+    const replaceTwo = guarded.replaceMusicCredential(id, { pairingAttemptId: second.pairingAttemptId, configuration: pearConfigurationSchema.parse(second.configuration) });
+    try {
+      expect(gate.activeIntakeCount).toBe(2);
+      await expect(gate.runMaintenance(async () => "restore")).rejects.toBeInstanceOf(RuntimeMaintenanceUnavailableError);
+    } finally { release(); }
+    expect((await replaceOne).validation.valid).toBe(true);
+    expect((await replaceTwo).validation.valid).toBe(true);
+    const current = await repository.findById(id);
+    expect([...secrets.values.keys()].filter(key => key.includes("access-token"))).toEqual([`music:${id}:${current?.secretRef?.name}`]);
+    expect(await gate.runMaintenance(async () => "restore")).toBe("restore");
+  });
+
+  it("holds Music selection and its runtime callback inside restore exclusion", async () => {
+    const first = await service.registerProvider(await pearSetup("Pear A"));
+    const second = await service.registerProvider(await pearSetup("Pear B"));
+    if (first.status !== "registered" || second.status !== "registered") throw new Error("Expected registrations");
+    const gate = new RuntimeMaintenanceGate();
+    let release!: () => void;
+    let entered!: () => void;
+    const blocked = new Promise<void>(resolve => { release = resolve; });
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const guarded = new ProviderManagementService({
+      repository, adapters: new Map(), secretStore: secrets,
+      getActivationImpact: async () => emptyImpact, getUsedByAlertCount: async () => 0,
+      generateId: () => "unused", generateReferenceId: () => "ref-guarded",
+      onMusicSourceChanged: async () => { entered(); await blocked; },
+      runMusicMutation: work => gate.runIntake(work)
+    });
+    const selecting = guarded.activateProvider(second.provider.provider.id, false);
+    await started;
+    try { await expect(gate.runMaintenance(async () => "restore")).rejects.toBeInstanceOf(RuntimeMaintenanceUnavailableError); }
+    finally { release(); }
+    expect((await selecting).provider.id).toBe(second.provider.provider.id);
+    expect(await gate.runMaintenance(async () => "restore")).toBe("restore");
   });
 
   it("re-pairs a Music registration with a fresh secret ref while preserving its identity and selection", async () => {

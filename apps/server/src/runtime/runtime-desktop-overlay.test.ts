@@ -13,6 +13,7 @@ import {
 import { InMemorySecretStore } from "@stream-jams/test-support";
 import { afterEach, expect, it, vi } from "vitest";
 import { createRuntimeAppComposition, type RuntimeAppComposition } from "./runtime-composition.js";
+import { DesktopModuleSnapshotSink } from "../modules/overlay-surfaces/desktop-module-snapshot-sink.js";
 
 const roots: string[] = [];
 const runtimes: RuntimeAppComposition[] = [];
@@ -126,6 +127,30 @@ async function setup(withMedia = false) {
   }
   return { runtime, transport, configure, ingest, settled, assetId, pngBytes };
 }
+
+it("coalesces production Music output work while a desktop composition is blocked", async () => {
+  const { runtime } = await setup();
+  let release!: () => void;
+  let entered!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const original = DesktopModuleSnapshotSink.prototype.syncMusic;
+  let calls = 0;
+  const spy = vi.spyOn(DesktopModuleSnapshotSink.prototype, "syncMusic").mockImplementation(async function (this: DesktopModuleSnapshotSink) {
+    calls += 1;
+    if (calls === 1) { entered(); await blocked; }
+    await original.call(this);
+  });
+  try {
+    const first = runtime.musicRuntimeCoordinator.reconcile();
+    await started;
+    await Promise.all(Array.from({ length: 30 }, () => runtime.musicRuntimeCoordinator.reconcile()));
+    expect(calls).toBe(1);
+    release();
+    await first;
+    await vi.waitFor(() => expect(calls).toBe(2));
+  } finally { release(); spy.mockRestore(); }
+});
 
 it.each(["twitch", "streamerbot"] as const)("resolves a saved active reviewed Landscape alert from %s without any OBS client", async provider => {
   const { transport, configure, ingest, settled } = await setup();

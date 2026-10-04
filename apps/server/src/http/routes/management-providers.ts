@@ -52,17 +52,17 @@ export function registerManagementProviderRoutes(
     return parseList(await overview.listRegisteredProviders(capability.data), registeredProviderViewSchema);
   });
 
-  app.post("/management/providers/validate", { preHandler }, async (request) =>
-    providerValidationResultSchema.parse(
-      await providers.validateProvider(providerSetupInputSchema.parse(request.body))
-    )
-  );
+  app.post("/management/providers/validate", { preHandler }, async (request, reply) => {
+    try {
+      return providerValidationResultSchema.parse(await providers.validateProvider(providerSetupInputSchema.parse(request.body)));
+    } catch (error) { return sendProviderCommandError(reply, error); }
+  });
 
   app.post("/management/providers", { preHandler }, async (request, reply) => {
-    const result = providerRegistrationAttemptSchema.parse(
-      await providers.registerProvider(providerSetupInputSchema.parse(request.body))
-    );
-    return reply.status(result.status === "registered" ? 201 : 422).send(result);
+    try {
+      const result = providerRegistrationAttemptSchema.parse(await providers.registerProvider(providerSetupInputSchema.parse(request.body)));
+      return reply.status(result.status === "registered" ? 201 : 422).send(result);
+    } catch (error) { return sendProviderCommandError(reply, error); }
   });
 
   app.get("/management/providers/:providerId", { preHandler }, async (request, reply) => {

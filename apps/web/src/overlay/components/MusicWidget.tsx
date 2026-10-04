@@ -20,8 +20,8 @@ export function MusicWidget({ projection, resolveAsset, nowEpochMs, reducedMotio
   const parsed = musicWidgetProjectionSchema.safeParse(projection);
   if (!parsed.success || parsed.data.snapshot.track === null) return null;
   const frame = parsed.data;
-  const receiptKey = `${frame.snapshot.providerId}:${frame.snapshot.generation}:${frame.snapshot.revision}:${frame.clockReferenceEpochMs}`;
-  return <ClockedMusicWidget key={receiptKey} frame={frame} resolveAsset={resolveAsset} nowEpochMs={nowEpochMs} reducedMotion={reducedMotion} />;
+  const generationKey = `${frame.snapshot.providerId}:${frame.snapshot.generation}`;
+  return <ClockedMusicWidget key={generationKey} frame={frame} resolveAsset={resolveAsset} nowEpochMs={nowEpochMs} reducedMotion={reducedMotion} />;
 }
 
 function ClockedMusicWidget({ frame, resolveAsset, nowEpochMs, reducedMotion }: {
@@ -34,9 +34,13 @@ function ClockedMusicWidget({ frame, resolveAsset, nowEpochMs, reducedMotion }: 
   const attachHost = useCallback((node: HTMLDivElement | null) => {
     setShadow(node === null ? null : node.shadowRoot ?? node.attachShadow({ mode: "open" }));
   }, []);
-  const [receivedAtMonotonicMs] = useState(() => performance.now());
+  const receipt = useRef({ revision: frame.snapshot.revision, reference: frame.clockReferenceEpochMs, monotonicMs: performance.now() });
   const [clock, setClock] = useState(() => performance.now());
   const playing = frame.snapshot.playbackState === "playing";
+  useLayoutEffect(() => {
+    receipt.current = { revision: frame.snapshot.revision, reference: frame.clockReferenceEpochMs, monotonicMs: performance.now() };
+    setClock(performance.now());
+  }, [frame.snapshot.revision, frame.clockReferenceEpochMs]);
   useEffect(() => {
     if (nowEpochMs !== undefined) return;
     setClock(performance.now());
@@ -45,7 +49,7 @@ function ClockedMusicWidget({ frame, resolveAsset, nowEpochMs, reducedMotion }: 
   }, [playing, nowEpochMs]);
   // The server's projection time anchors every recipient; only elapsed time is local.
   // The bound is enough to force stale clearing even if a recipient sleeps for days.
-  const elapsedMs = Math.min(musicLimits.staleAfterMs + 1, Math.max(0, clock - receivedAtMonotonicMs));
+  const elapsedMs = Math.min(musicLimits.staleAfterMs + 1, Math.max(0, clock - receipt.current.monotonicMs));
   const now = nowEpochMs ?? frame.clockReferenceEpochMs + elapsedMs;
   if (!Number.isFinite(now) || now < 0 || now - frame.snapshot.observedAtEpochMs > musicLimits.staleAfterMs) return null;
   return <div className="music-widget-host" data-testid="music-widget" style={{

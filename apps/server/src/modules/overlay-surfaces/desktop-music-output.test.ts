@@ -22,7 +22,7 @@ it("admits Music only on the selected visible private surface and revokes its ar
     runtime: { getModuleSnapshot: async () => ({ moduleId: "timers", enabled: true, instructions: [] }) },
     assets: { resolveTimerModule: vi.fn() },
     music: { runtime: { getModuleSnapshot: async () => ({ moduleId: "music", enabled: true, instructions: [], presentation }) },
-      coordinator: { getCurrentArtwork: () => ({ ref: "art_provider", owner, descriptor }) },
+      coordinator: { revision: 1, getCurrentArtwork: () => ({ ref: "art_provider", owner, descriptor }) },
       assets: { resolveMusicModule: async () => ({ presentation, assets: [], missingAssetIds: [], ownerId: "music-owner" }), releaseMusicOwner },
       artwork: { resolve: async () => "art_cached", issueGrant, revokeRecipient } } });
   await sink.syncMusic();
@@ -51,7 +51,7 @@ it("drops an old asynchronous Music resolution after the layer becomes hidden", 
   const sink = new DesktopModuleSnapshotSink({ transport: { syncModule }, surfaces: { list: async () => [surface] },
     runtime: { getModuleSnapshot: async () => ({ moduleId: "timers", enabled: true, instructions: [] }) }, assets: { resolveTimerModule: vi.fn() },
     music: { runtime: { getModuleSnapshot: async () => ({ moduleId: "music", enabled: true, instructions: [], presentation }) },
-      coordinator: { getCurrentArtwork: () => ({ ref: "art_provider", owner, descriptor }) },
+      coordinator: { revision: 1, getCurrentArtwork: () => ({ ref: "art_provider", owner, descriptor }) },
       assets: { resolveMusicModule: () => new Promise(resolve => { finish = resolve; }), releaseMusicOwner },
       artwork: { resolve: async () => "art_cached", issueGrant, revokeRecipient: vi.fn() } } });
   const first = sink.syncMusic();
@@ -61,5 +61,25 @@ it("drops an old asynchronous Music resolution after the layer becomes hidden", 
   expect(issueGrant).not.toHaveBeenCalled();
   expect(releaseMusicOwner).toHaveBeenCalledWith("old-owner");
   expect(syncModule.mock.calls.map(([sync]) => sync.revision)).toEqual([2]);
+  await sink.close();
+});
+
+it("drops a resolved desktop Music frame when its coordinator revision becomes obsolete", async () => {
+  let finish!: (value: { presentation: typeof presentation; assets: []; missingAssetIds: []; ownerId: string }) => void;
+  const coordinator = { revision: 1, getCurrentArtwork: () => ({ ref: "art_provider", owner, descriptor }) };
+  const releaseMusicOwner = vi.fn<(owner: string) => Promise<void>>(async () => {});
+  const syncModule = vi.fn<(sync: DesktopModuleSync) => Promise<void>>(async () => {});
+  const sink = new DesktopModuleSnapshotSink({ transport: { syncModule }, surfaces: { list: async () => [desktop(true)] },
+    runtime: { getModuleSnapshot: async () => ({ moduleId: "timers", enabled: true, instructions: [] }) }, assets: { resolveTimerModule: vi.fn() },
+    music: { runtime: { getModuleSnapshot: async () => ({ moduleId: "music", enabled: true, instructions: [], presentation }) },
+      coordinator, assets: { resolveMusicModule: () => new Promise(resolve => { finish = resolve; }), releaseMusicOwner },
+      artwork: { resolve: async () => "art_cached", issueGrant: vi.fn(() => null), revokeRecipient: vi.fn() } } });
+  const work = sink.syncMusic();
+  await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+  coordinator.revision = 2;
+  finish({ presentation, assets: [], missingAssetIds: [], ownerId: "old-owner" });
+  await work;
+  expect(syncModule).not.toHaveBeenCalled();
+  expect(releaseMusicOwner).toHaveBeenCalledWith("old-owner");
   await sink.close();
 });

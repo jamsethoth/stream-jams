@@ -6,6 +6,8 @@ import { InMemorySecretStore, startPearProtocolFixture, type PearProtocolFixture
 import { createDefaultAppConfig } from "../../apps/server/dist/config/default-config.js";
 import { FileConfigStore } from "../../apps/server/dist/config/file-config-store.js";
 import { startLocalRuntime, type StartedLocalRuntime } from "../../apps/server/dist/runtime/start-local-runtime.js";
+import type { MusicArtworkServiceOptions } from "../../apps/server/dist/modules/music/music-artwork-service.js";
+import type { DesktopOverlayTransport } from "../../packages/core/dist/index.js";
 
 async function unusedPort(): Promise<number> {
   const server = createServer();
@@ -17,16 +19,20 @@ async function unusedPort(): Promise<number> {
 }
 
 /** Built service and protocol peer with no access to the user's profile or keyring. */
-export async function startMusicTestRuntime() {
+export async function startMusicTestRuntime(musicArtworkNetwork?: Pick<MusicArtworkServiceOptions, "resolveAddresses" | "fetchBytes">,
+  secretStore: InMemorySecretStore = new InMemorySecretStore(), desktopOverlayTransport?: DesktopOverlayTransport) {
   const root = await mkdtemp(join(tmpdir(), "stream-jams-music-acceptance-"));
   const pear = await startPearProtocolFixture();
   const port = await unusedPort();
   const config = { ...createDefaultAppConfig(root), server: { host: "127.0.0.1" as const, port } };
+  const configStore = new FileConfigStore({ configFilePath: join(root, "config.json"), defaultConfig: config });
   const options = {
     homeDirectory: root,
     webBuildDirectory: resolve("apps/web/dist"),
-    configStore: new FileConfigStore({ configFilePath: join(root, "config.json"), defaultConfig: config }),
-    environment: {}, secretStore: new InMemorySecretStore()
+    configStore,
+    environment: {}, secretStore,
+    ...(musicArtworkNetwork === undefined ? {} : { musicArtworkNetwork }),
+    ...(desktopOverlayTransport === undefined ? {} : { desktopOverlayTransport })
   };
   let runtime: StartedLocalRuntime | null = null;
   try { runtime = await startLocalRuntime(options); }
@@ -72,7 +78,7 @@ export async function startMusicTestRuntime() {
     return saved.provider.provider.id;
   }
   return {
-    root, pear: pear as PearProtocolFixture, url: base, headers, request, pair, register,
+    root, pear: pear as PearProtocolFixture, url: base, headers, request, pair, register, configStore,
     get runtime() { return current(); },
     async restart() { await current().close(); runtime = await startLocalRuntime(options); Object.assign(headers, await sessionHeaders()); },
     async close() { try { await runtime?.close(); } finally { runtime = null; await pear.close(); await rm(root, { recursive: true, force: true }); } }

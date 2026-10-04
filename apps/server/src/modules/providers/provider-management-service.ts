@@ -57,6 +57,8 @@ export interface ProviderManagementServiceOptions {
   readonly secretStore: Pick<SecretStoreBoundary, "setSecret" | "getSecret" | "deleteSecret">;
   readonly musicPairing?: Pick<PearPairingService, "reserve"> | undefined;
   readonly validateMusicConnection?: ((config: PearConfiguration, token: string, signal: AbortSignal) => Promise<ProviderValidationResult>) | undefined;
+  /** Own the complete async Pear lifecycle, including queued writes and postcommit cleanup. */
+  readonly runMusicMutation?: <T>(work: () => Promise<T>) => Promise<T>;
   readonly getActivationImpact: (providerId: string) => Promise<ProviderActivationImpact>;
   readonly getUsedByAlertCount: (kind: ProviderKind) => Promise<number>;
   readonly generateId: () => string;
@@ -153,6 +155,7 @@ export class ProviderManagementService {
   readonly #secretStore: ProviderManagementServiceOptions["secretStore"];
   readonly #musicPairing: ProviderManagementServiceOptions["musicPairing"];
   readonly #validateMusicConnection: ProviderManagementServiceOptions["validateMusicConnection"];
+  readonly #runMusicMutation: NonNullable<ProviderManagementServiceOptions["runMusicMutation"]>;
   readonly #getActivationImpact: ProviderManagementServiceOptions["getActivationImpact"];
   readonly #getUsedByAlertCount: ProviderManagementServiceOptions["getUsedByAlertCount"];
   readonly #generateId: () => string;
@@ -172,6 +175,7 @@ export class ProviderManagementService {
     this.#secretStore = options.secretStore;
     this.#musicPairing = options.musicPairing;
     this.#validateMusicConnection = options.validateMusicConnection;
+    this.#runMusicMutation = options.runMusicMutation ?? (work => work());
     this.#getActivationImpact = options.getActivationImpact;
     this.#getUsedByAlertCount = options.getUsedByAlertCount;
     this.#generateId = options.generateId;
@@ -186,6 +190,10 @@ export class ProviderManagementService {
 
   async validateProvider(input: ProviderSetupInput): Promise<ProviderValidationResult> {
     const parsed = providerSetupInputSchema.parse(input);
+    return parsed.kind === "pear-desktop" ? this.#runMusicMutation(() => this.#validateProvider(parsed)) : this.#validateProvider(parsed);
+  }
+
+  async #validateProvider(parsed: ReturnType<typeof providerSetupInputSchema.parse>): Promise<ProviderValidationResult> {
     if (parsed.kind === "pear-desktop") {
       if (parsed.pairingAttemptId === undefined || this.#musicPairing === undefined || this.#validateMusicConnection === undefined) {
         return this.#failedValidation("Pear pairing is required", "Approve a local Pear pairing request before connecting.", "Pair Pear Desktop and retry setup.");
@@ -220,6 +228,10 @@ export class ProviderManagementService {
 
   async registerProvider(input: ProviderSetupInput): Promise<ProviderRegistrationAttempt> {
     const parsed = providerSetupInputSchema.parse(input);
+    return parsed.kind === "pear-desktop" ? this.#runMusicMutation(() => this.#registerProvider(parsed)) : this.#registerProvider(parsed);
+  }
+
+  async #registerProvider(parsed: ReturnType<typeof providerSetupInputSchema.parse>): Promise<ProviderRegistrationAttempt> {
     let claim: PearPairingClaim | null = null;
     if (parsed.kind === "pear-desktop" && parsed.pairingAttemptId !== undefined && this.#musicPairing !== undefined && this.#validateMusicConnection !== undefined) {
       try { claim = this.#musicPairing.reserve(parsed.pairingAttemptId, parsed.configuration); }
@@ -228,7 +240,7 @@ export class ProviderManagementService {
     }
     const validation = claim !== null && parsed.kind === "pear-desktop"
       ? await this.#validatePear(parsed.configuration, claim.token)
-      : await this.validateProvider(parsed);
+      : await this.#validateProvider(parsed);
     claim?.assertActive();
     if (!validation.valid) {
       claim?.release();
@@ -313,6 +325,10 @@ export class ProviderManagementService {
 
   /** Replace an existing Pear credential without changing its registration or active selection. */
   replaceMusicCredential(providerId: string, input: MusicCredentialReplacementInput): Promise<MusicCredentialReplacementResult> {
+    return this.#runMusicMutation(() => this.#queueMusicCredentialReplacement(providerId, input));
+  }
+
+  #queueMusicCredentialReplacement(providerId: string, input: MusicCredentialReplacementInput): Promise<MusicCredentialReplacementResult> {
     const result = this.#pendingMusicCredentialMutation.then(() => this.#replaceMusicCredential(providerId, input));
     this.#pendingMusicCredentialMutation = result.catch(
       // error-provenance: allow expected -- caller observes replacement error; serialized queue remains usable
@@ -417,6 +433,13 @@ export class ProviderManagementService {
 
   async activateProvider(providerId: string, confirmWarnings: boolean): Promise<ProviderActivationResult> {
     const target = await this.#requireRecord(providerId);
+    return target.provider.capability === "music-source"
+      ? this.#runMusicMutation(() => this.#activateProvider(providerId, confirmWarnings))
+      : this.#activateProvider(providerId, confirmWarnings);
+  }
+
+  async #activateProvider(providerId: string, confirmWarnings: boolean): Promise<ProviderActivationResult> {
+    const target = await this.#requireRecord(providerId);
     const impact = await this.getActivationImpact(providerId);
     const decision = evaluateProviderActivation(impact);
     if (!decision.allowed) {
@@ -466,6 +489,13 @@ export class ProviderManagementService {
   }
 
   async deactivateProvider(providerId: string): Promise<RegisteredProviderView> {
+    const target = await this.#requireRecord(providerId);
+    return target.provider.capability === "music-source"
+      ? this.#runMusicMutation(() => this.#deactivateProvider(providerId))
+      : this.#deactivateProvider(providerId);
+  }
+
+  async #deactivateProvider(providerId: string): Promise<RegisteredProviderView> {
     const target = await this.#requireRecord(providerId);
     const deactivated = target.provider.capability === "music-source"
       ? await this.#repository.deactivateMusic(providerId)

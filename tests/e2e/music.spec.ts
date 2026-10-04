@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { startMusicTestRuntime } from "./music-test-runtime.js";
+import { InMemorySecretStore } from "../../packages/test-support/dist/index.js";
+import type { DesktopOverlayTransport, MusicModuleConfig } from "../../packages/core/dist/index.js";
 
 const song = { videoId: "music-fixture-1", title: "Disposable Pear Track", artist: "Fixture Artist", album: "Fixture Album", songDuration: 180, elapsedSeconds: 12, isPaused: false };
 type Key = { keyId: string; url: string };
@@ -145,5 +147,180 @@ test("transient pause, mute, skip, replay and DND do not command the Pear player
     expect(replay.status()).toBeGreaterThanOrEqual(400);
     await expect(title).toContainText(song.title);
     expect(fixture.pear.requests.every(request => request.path.startsWith("/auth/") || request.path === "/api/v1/song")).toBe(true);
+  } finally { await fixture.close(); }
+});
+
+test("provider artwork crosses the actual adapter, raster cache and authorized browser image route", async ({ page, context }) => {
+  test.setTimeout(90_000);
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==", "base64");
+  const fetches: string[] = [];
+  const fixture = await startMusicTestRuntime({
+    resolveAddresses: async () => ["8.8.8.8"],
+    fetchBytes: async (url, address) => { fetches.push(`${url.hostname}:${address}`); return png; }
+  });
+  try {
+    fixture.pear.setSong({ status: 200, body: { ...song, imageSrc: "https://i.ytimg.com/vi/fixture/default.jpg" } });
+    await fixture.register();
+    const saved = await fixture.request<{ config: unknown }>("/overlay-modules/music/config");
+    await fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: saved.config });
+    const live = await fixture.request<Key>("/management/overlay-outputs/keys", "POST", output("live"));
+    await page.goto(live.url);
+    const image = page.getByTestId("music-widget").locator(".sj-artwork img");
+    await expect(image).toBeVisible();
+    await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(1);
+    expect(fetches).toEqual(["i.ytimg.com:8.8.8.8"]);
+    expect(fixture.runtime.composition.musicArtworkService.counts.entries).toBe(1);
+    const imageUrl = await image.getAttribute("src");
+    expect(imageUrl).toMatch(/\/overlay\/modules\/music\/live\/.*\/artwork\/art_/u);
+    const direct = await context.request.get(`${fixture.url}${imageUrl}`);
+    expect(direct.status()).toBe(200);
+    expect(direct.headers()["content-type"]).toContain("image/png");
+    expect(JSON.stringify(await fixture.request("/management/music/status"))).not.toContain("ytimg");
+    const replacementSource = await fixture.register("Second artwork source");
+    await fixture.request(`/management/providers/${replacementSource}/activate`, "POST", {});
+    await expect.poll(() => image.getAttribute("src")).not.toBe(imageUrl);
+    const newImageUrl = await image.getAttribute("src");
+    await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(1);
+    expect((await context.request.get(`${fixture.url}${imageUrl}`)).status()).toBeGreaterThanOrEqual(400);
+    fixture.pear.setSong({ status: 204 });
+    await expect(page.getByTestId("music-widget")).toHaveCount(0);
+    const obsolete = await context.request.get(`${fixture.url}${newImageUrl}`);
+    expect(obsolete.status()).toBeGreaterThanOrEqual(400);
+  } finally { await fixture.close(); }
+});
+
+test("restore refuses an admitted Pear keyring mutation, then removes its credential on successful retry", async ({ page }) => {
+  test.setTimeout(90_000);
+  const secrets = new InMemorySecretStore();
+  const fixture = await startMusicTestRuntime(undefined, secrets);
+  try {
+    fixture.pear.setSong({ status: 200, body: song });
+    await fixture.request("/management/alert-sets");
+    const archive = await fixture.request<Record<string, unknown>>("/management/settings/backup");
+    const preflight = await fixture.request<{ archiveId: string; state: string }>("/management/settings/backup/preflight", "POST", archive);
+    expect(preflight.state).toBe("valid");
+    let release!: () => void;
+    let entered!: () => void;
+    const blocked = new Promise<void>(resolve => { release = resolve; });
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const originalSet = secrets.setSecret.bind(secrets);
+    secrets.setSecret = async (ref, value) => {
+      if (ref.namespace === "music" && ref.name === "access-token") { entered(); await blocked; }
+      await originalSet(ref, value);
+    };
+    const registration = fixture.register();
+    await started;
+    const request = { archive, archiveId: preflight.archiveId, confirmation: "RESTORE", regenerateRouteKeys: true };
+    try {
+      const refused = await page.request.post(`${fixture.url}/management/settings/backup/restore`, { headers: fixture.headers, data: request });
+      expect(refused.status()).toBe(409);
+      expect(await refused.text()).not.toContain("throwaway-token");
+    } finally { release(); }
+    expect(await registration).toBeTruthy();
+    expect([...secrets.values.keys()].some(key => key.includes(":access-token"))).toBe(true);
+    await fixture.request("/management/settings/backup/restore", "POST", request);
+    expect((await fixture.request<unknown[]>("/management/providers?capability=music-source"))).toHaveLength(0);
+    expect([...secrets.values.keys()].some(key => key.includes(":access-token"))).toBe(false);
+    expect(await fixture.register("Fresh pairing after restore")).toBeTruthy();
+  } finally { await fixture.close(); }
+});
+
+test("failed restore excludes a concurrent credential replacement and retains the rollback credential", async ({ page }) => {
+  test.setTimeout(90_000);
+  const secrets = new InMemorySecretStore();
+  const fixture = await startMusicTestRuntime(undefined, secrets);
+  try {
+    fixture.pear.setSong({ status: 200, body: song });
+    const providerId = await fixture.register();
+    await fixture.request("/management/alert-sets");
+    const archive = await fixture.request<Record<string, unknown>>("/management/settings/backup");
+    const preflight = await fixture.request<{ archiveId: string; state: string }>("/management/settings/backup/preflight", "POST", archive);
+    expect(preflight.state).toBe("valid");
+    const claim = await fixture.pair();
+    const oldCredentialKeys = [...secrets.values.keys()].filter(key => key.includes(":access-token"));
+    expect(oldCredentialKeys).toHaveLength(1);
+    let release!: () => void;
+    let entered!: () => void;
+    const blocked = new Promise<void>(resolve => { release = resolve; });
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const originalUpdate = fixture.configStore.updateConfig.bind(fixture.configStore);
+    fixture.configStore.updateConfig = async () => { entered(); await blocked; throw new Error("planned restore failure"); };
+    const restoring = page.request.post(`${fixture.url}/management/settings/backup/restore`, { headers: fixture.headers,
+      data: { archive, archiveId: preflight.archiveId, confirmation: "RESTORE", regenerateRouteKeys: true } });
+    await started;
+    try {
+      const replacement = await page.request.post(`${fixture.url}/management/music/providers/${providerId}/credential`, { headers: fixture.headers,
+        data: { pairingAttemptId: claim.pairingAttemptId, configuration: claim.configuration } });
+      expect(replacement.status()).toBe(409);
+    } finally { release(); }
+    const failed = await restoring;
+    expect(failed.status()).toBeGreaterThanOrEqual(400);
+    fixture.configStore.updateConfig = originalUpdate;
+    expect([...secrets.values.keys()].filter(key => key.includes(":access-token"))).toEqual(oldCredentialKeys);
+    expect((await fixture.request<Array<{ id: string }>>("/management/providers?capability=music-source"))).toHaveLength(1);
+    expect((await fixture.request<{ valid: boolean }>("/management/providers/validate", "POST", { kind: "pear-desktop", name: "retry", ...claim })).valid).toBe(true);
+  } finally { await fixture.close(); }
+});
+
+test("blocked production desktop sync coalesces revisions and retains a pending test-output config refresh", async ({ page }) => {
+  test.setTimeout(90_000);
+  let blocked = false;
+  let release!: () => void;
+  let entered!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  let musicSyncs = 0;
+  const transport: DesktopOverlayTransport = {
+    configure: async () => {}, prepare: async () => "ready", start: async () => {}, stop: async () => {}, retry: async () => {}, close: async () => {},
+    getStatus: async () => ({ available: true, state: "ready", message: null,
+      displays: [{ id: "monitor", label: "Test monitor", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }] }),
+    syncModule: async sync => { if (sync.moduleId === "music" && blocked) { musicSyncs += 1; if (musicSyncs === 1) { entered(); await gate; } } }
+  };
+  const fixture = await startMusicTestRuntime(undefined, new InMemorySecretStore(), transport);
+  try {
+    fixture.pear.setSong({ status: 200, body: song });
+    await fixture.register();
+    const saved = await fixture.request<{ config: MusicModuleConfig }>("/overlay-modules/music/config");
+    await fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: saved.config });
+    const testKey = await fixture.request<Key>("/management/overlay-outputs/keys", "POST", output("test"));
+    await page.goto(testKey.url);
+    await expect(page.getByTestId("music-widget")).toBeVisible();
+    blocked = true;
+    const first = fixture.runtime.composition.musicRuntimeCoordinator.reconcile();
+    await started;
+    const changed = structuredClone(saved.config);
+    changed.profiles.landscape.views.full.colors.title = "#112233FF";
+    const saving = fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: changed });
+    await expect.poll(async () => (await fixture.request<{ config: MusicModuleConfig }>("/overlay-modules/music/config")).config.profiles.landscape.views.full.colors.title).toBe("#112233FF");
+    const revisions = await Promise.all(Array.from({ length: 30 }, () => fixture.runtime.composition.musicRuntimeCoordinator.reconcile()));
+    expect(revisions).toHaveLength(30);
+    expect(musicSyncs).toBe(1);
+    release();
+    await Promise.all([first, saving]);
+    await expect.poll(() => musicSyncs).toBe(2);
+    await expect(page.getByTestId("music-widget").locator(".sj-title")).toHaveCSS("color", "rgb(17, 34, 51)");
+  } finally { release(); await fixture.close(); }
+});
+
+test("normal three-second Pear observations keep the same scrolling DOM and animation clock", async ({ page }) => {
+  test.setTimeout(50_000);
+  const fixture = await startMusicTestRuntime();
+  try {
+    fixture.pear.setSong({ status: 200, body: { ...song, title: "Long observation title ".repeat(20) } });
+    await fixture.register();
+    const saved = await fixture.request<{ config: unknown }>("/overlay-modules/music/config");
+    await fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: saved.config });
+    const live = await fixture.request<Key>("/management/overlay-outputs/keys", "POST", output("live"));
+    await page.goto(live.url);
+    const title = page.getByTestId("music-widget").locator(".sj-title");
+    await expect(title).toHaveAttribute("data-scroll", "true");
+    const element = await title.elementHandle();
+    const before = await title.locator(".sj-scroll-text").evaluate(node => Number(node.getAnimations()[0]?.currentTime ?? -1));
+    const polls = fixture.pear.requests.filter(request => request.path === "/api/v1/song").length;
+    await expect.poll(() => fixture.pear.requests.filter(request => request.path === "/api/v1/song").length, { timeout: 10_000 }).toBeGreaterThan(polls);
+    const current = await title.elementHandle();
+    expect(await element!.evaluate((node, comparison) => node === comparison, current)).toBe(true);
+    const after = await title.locator(".sj-scroll-text").evaluate(node => Number(node.getAnimations()[0]?.currentTime ?? -1));
+    expect(after).toBeGreaterThan(before + 1_000);
   } finally { await fixture.close(); }
 });

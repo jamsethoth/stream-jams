@@ -119,7 +119,7 @@ import { PearMusicSource, validatePearMusicConnection } from "../modules/music/p
 import { MusicRuntimeCoordinator } from "../modules/music/music-runtime-coordinator.js";
 import { MusicManagementService } from "../modules/music/music-management-service.js";
 import { saveValidatedMusicConfig } from "../modules/music/music-config-save.js";
-import { MusicArtworkService } from "../modules/music/music-artwork-service.js";
+import { MusicArtworkService, type MusicArtworkServiceOptions } from "../modules/music/music-artwork-service.js";
 import { MusicOutputRuntime } from "../modules/music/music-output-runtime.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
 import { evaluateProviderActivationImpact } from "../modules/providers/provider-activation-impact.js";
@@ -202,6 +202,8 @@ export interface RuntimeAppCompositionOptions {
   readonly configStore?: ConfigStore;
   readonly portAvailability?: PortAvailabilityChecker;
   readonly secretStore?: SecretStore;
+  /** In-process artwork transport for disposable acceptance; normal runtime keeps pinned DNS and HTTPS. */
+  readonly musicArtworkNetwork?: Pick<MusicArtworkServiceOptions, "resolveAddresses" | "fetchBytes">;
   readonly twitchApiClient?: TwitchApiClient;
   readonly twitchRewardApiClient?: TwitchRewardApiClient;
   readonly twitchEventSubApiClient?: TwitchEventSubApiClient;
@@ -960,6 +962,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   cleanups.push(() => musicRuntimeCoordinator.stop());
   await musicRuntimeCoordinator.reconcile();
   const musicArtworkService = new MusicArtworkService({
+    ...options.musicArtworkNetwork,
     isCurrentOwner: owner => musicRuntimeCoordinator.generation === owner.generation
       && musicRuntimeCoordinator.getCurrentArtwork()?.owner.providerId === owner.providerId,
     isCurrentDescriptor: (url, owner) => {
@@ -1040,6 +1043,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       (await twitchAccountRepository.findConnectedAccount())?.accountId ?? null,
     onEventSourceChanged: syncEventSourceRuntime,
     onMusicSourceChanged: () => musicRuntimeCoordinator.reconcile(),
+    runMusicMutation: work => maintenanceGate.runIntake(work),
     now
   });
   const alertSetMetadataRepository = new SqliteAlertSetMetadataRepository(database.connection);
@@ -1399,6 +1403,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const unsubscribeTimerOutputs = timerRuntimeCoordinator.subscribe(() => { void trackRuntimeWork(queueTimerOutputSync); });
   const syncMusicOutputs = async (includeTest: boolean) => {
     const revision = musicRuntimeCoordinator.revision;
+    const generation = musicRuntimeCoordinator.generation;
     const moduleIds = overlayModuleRegistry.listModules().map(module => module.id);
     await Promise.all(overlayGateway.clients.filter(client =>
       (includeTest || client.purpose === "live") && (client.scope === "unified" || client.moduleId === "music")
@@ -1407,12 +1412,46 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         ? await overlayCompositionService.resolveModuleOutput({ moduleId: "music", overlayId: client.overlayId, purpose: client.purpose,
           ...(client.targetProfileId == null ? {} : { targetProfileId: client.targetProfileId }) })
         : await overlayCompositionService.resolveUnifiedOutput({ overlayId: client.overlayId, purpose: client.purpose, enabledModuleIds: moduleIds });
-      if (client.purpose === "test" || musicRuntimeCoordinator.revision === revision) overlayGateway.deliverComposition(client.id, composition);
+      if (musicRuntimeCoordinator.revision === revision && musicRuntimeCoordinator.generation === generation) overlayGateway.deliverComposition(client.id, composition);
     }));
+    if (musicRuntimeCoordinator.revision !== revision || musicRuntimeCoordinator.generation !== generation) return;
     await desktopModuleSnapshotSink?.syncMusic();
   };
-  const queueMusicOutputSync = (includeTest = false) => trackRuntimeWork(() => syncMusicOutputs(includeTest));
-  const unsubscribeMusicOutputs = musicRuntimeCoordinator.subscribe(() => { void queueMusicOutputSync(); });
+  let activeMusicOutputSync: Promise<void> | null = null;
+  let activeMusicIncludesTest = false;
+  let pendingMusicOutputSync: { includeTest: boolean; promise: Promise<void>; resolve(): void; reject(error: unknown): void } | null = null;
+  const launchMusicOutputSync = (includeTest: boolean): Promise<void> => {
+    activeMusicIncludesTest = includeTest;
+    const work = trackRuntimeWork(() => syncMusicOutputs(includeTest));
+    activeMusicOutputSync = work;
+    const finish = () => {
+      activeMusicOutputSync = null;
+      const pending = pendingMusicOutputSync;
+      pendingMusicOutputSync = null;
+      if (pending !== null) {
+        const next = launchMusicOutputSync(pending.includeTest);
+        void next.then(pending.resolve, pending.reject);
+      }
+    };
+    void work.then(finish, finish);
+    return work;
+  };
+  const queueMusicOutputSync = (includeTest = false): Promise<void> => {
+    if (activeMusicOutputSync === null) return launchMusicOutputSync(includeTest);
+    if (pendingMusicOutputSync === null) {
+      let resolve!: () => void;
+      let reject!: (error: unknown) => void;
+      const promise = new Promise<void>((accept, fail) => { resolve = accept; reject = fail; });
+      pendingMusicOutputSync = { includeTest: includeTest || activeMusicIncludesTest, promise, resolve, reject };
+    } else {
+      pendingMusicOutputSync.includeTest ||= includeTest;
+    }
+    return pendingMusicOutputSync.promise;
+  };
+  const unsubscribeMusicOutputs = musicRuntimeCoordinator.subscribe(() => { void queueMusicOutputSync().catch(
+    // error-provenance: allow expected -- trackRuntimeWork records the output failure; a later revision retries
+    () => {}
+  ); });
   for (const surface of await surfaceRepository.list()) {
     if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
   }

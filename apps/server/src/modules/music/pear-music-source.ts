@@ -350,12 +350,21 @@ export class PearMusicSource implements MusicSourceAdapter {
 function parseRetryAfter(value: string | string[] | undefined, now: number): number | null {
   if (Array.isArray(value) || !value) return null;
   const seconds = Number(value);
-  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(60_000, seconds * 1_000);
+  if (Number.isFinite(seconds)) return seconds >= 0 ? Math.min(Number.MAX_SAFE_INTEGER, seconds * 1_000) : null;
   const date = Date.parse(value);
-  return Number.isFinite(date) ? Math.min(60_000, Math.max(0, date - now)) : null;
+  return Number.isFinite(date) ? Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, date - now)) : null;
 }
 
-function delay(ms: number, signal: AbortSignal): Promise<void> {
+async function delay(ms: number, signal: AbortSignal): Promise<void> {
+  let remaining = ms;
+  do {
+    const chunk = Math.min(remaining, 2_147_483_647);
+    await delayChunk(chunk, signal);
+    remaining -= chunk;
+  } while (remaining > 0);
+}
+
+function delayChunk(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) { reject(signal.reason); return; }
     const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, ms);
