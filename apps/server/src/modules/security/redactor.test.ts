@@ -161,4 +161,26 @@ describe("createRedactor", () => {
       }
     });
   });
+  it.each(["http://", "https://", "ws://", "wss://", "//"])("strips raw and encoded quoted credentials before URL matching: %s", prefix => {
+    for (const password of ["p'ass", 'p"ass', 'p",ass', 'p"}ass', 'p"]ass', "p'}ass", '123"}ass', '123"]ass', '123","x":"secret', 'p%27ass', 'p%22ass']) {
+      const output = createRedactor().redactText(`Provider ${prefix}alice:${password}@localhost:8080/events?token=query-secret&view=raw finished`);
+      expect(output).toContain(`${prefix}localhost:8080/events`);
+      expect(output).toContain("view=raw finished");
+      expect(output).not.toContain(password);
+      expect(output).not.toContain("alice:");
+      expect(output).not.toContain("query-secret");
+      expect(createRedactor().redactText(`${prefix}alice:${password}@[invalid]/events`)).toBe(`${prefix}[invalid]/events`);
+    }
+  });
+  it("preserves outer quotes, JSON boundaries, unrelated email and multiple URLs", () => {
+    const redactor = createRedactor();
+    const json = 'Provider {"url":"wss://localhost:8080","email":"alice@example.test"}';
+    expect(redactor.redactText(json)).toBe(json);
+    const nested = 'Provider {"nested":{"url":"wss://localhost:8080"},"email":"alice@example.test"}';
+    expect(redactor.redactText(nested)).toBe(nested);
+    expect(redactor.redactText('Provider "wss://alice:p"ass@localhost/events" done alice@example.test')).toBe('Provider "wss://localhost/events" done alice@example.test');
+    expect(redactor.redactText("'ws://alice:p'ass@localhost' and https://bob:p%22ass@safe.test/path done" )).toBe("'ws://localhost' and https://safe.test/path done");
+    expect(redactor.redactText('Provider {"url":"wss://alice:p",ass@localhost/events","email":"alice@example.test"}')).toBe('Provider {"url":"wss://localhost/events","email":"alice@example.test"}');
+    expect(redactor.redactText("GET /events?token=hidden&view=raw")).toContain("view=raw");
+  });
 });

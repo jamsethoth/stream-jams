@@ -1,3 +1,6 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import { EmergencyLogWriter } from "./emergency-log-writer.js";
 
@@ -112,5 +115,21 @@ describe("EmergencyLogWriter", () => {
     expect(output).not.toContain("cleanup-secret");
     expect(output).not.toContain("outer-secret");
     expect(output).not.toContain("credential-secret");
+  });
+  it("strips quoted credentials from real emergency files and stderr including nested causes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "stream-jams-quote-emergency-"));
+    const filePath = join(root, "emergency.jsonl");
+    try {
+      const entry = { ...input, message: "Provider wss://alice:p'ass@localhost/events", originalException: new Error('ws://bob:p",ass@[invalid]/events', { cause: new Error("https://cause:p%22ass@safe.test/events?token=query-secret") }), loggerException: new Error('http://logger:p"ass@localhost/logs') };
+      new EmergencyLogWriter({ filePath }).write(entry);
+      const stderr: string[] = [];
+      new EmergencyLogWriter({ filePath, appendFile: () => { throw new Error("unavailable"); }, writeStderr: data => { stderr.push(data); } }).write(entry);
+      for (const output of [await readFile(filePath, "utf8"), stderr.join("")]) {
+        expect(output).toContain("wss://localhost/events");
+        expect(output).toContain("ws://[invalid]/events");
+        expect(output).toContain("https://safe.test/events");
+        for (const secret of ["alice:", "bob:", "cause:", "logger:", "p'ass", "query-secret"]) expect(output).not.toContain(secret);
+      }
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

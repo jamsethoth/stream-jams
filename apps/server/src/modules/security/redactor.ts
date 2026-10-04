@@ -86,7 +86,7 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
       catch { /* Redact incomplete frames and ordinary text below. */ }
     }
 
-    const normalized = normalizeControlCharacters(value).replace(jsonStringPropertyPattern, (match, quotedName: string) => {
+    const normalized = stripUrlUserInformation(normalizeControlCharacters(value)).replace(jsonStringPropertyPattern, (match, quotedName: string) => {
       let name: string;
       try { name = JSON.parse(quotedName) as string; }
       // error-provenance: allow expected -- malformed quoted names still receive textual redaction
@@ -140,6 +140,30 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
   }
 }
 
+function stripUrlUserInformation(value: string): string {
+  return value.replace(/((?:https?|wss?):\/\/|\/\/)([^\s<>/?#]*)/gi, (_match, prefix: string, authority: string) => {
+    const parsedAuthority = (candidate: string): URL | null => {
+      try { return new URL(`${prefix === "//" ? "http://" : prefix}${candidate}`); }
+      // error-provenance: allow expected -- malformed diagnostic authorities still receive bounded textual stripping
+      catch { return null; }
+    };
+    // A valid full authority containing credentials wins over apparent JSON syntax
+    // inside a password (including a numeric password and embedded property text).
+    const full = parsedAuthority(authority);
+    if (full !== null && /^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])$/.test(full.hostname) && (full.username !== "" || full.password !== "")) return prefix + authority.slice(authority.lastIndexOf("@") + 1);
+    let end = authority.length;
+    for (let index = 0; index < authority.length; index += 1) {
+      if (authority[index] !== '"' && authority[index] !== "'") continue;
+      const suffix = authority.slice(index + 1);
+      const beforeQuote = parsedAuthority(authority.slice(0, index));
+      const credentialFreePrefix = beforeQuote !== null && beforeQuote.hostname !== "" && beforeQuote.username === "" && beforeQuote.password === "";
+      const jsonBoundary = /^(?:[}\]]+)(?:$|,)/.test(suffix) || /^,\s*"[^"\r\n]*"\s*:\s*"(?:\\.|[^"\\])*"(?:[}\],]|$)/.test(suffix);
+      if (suffix.length === 0 || (credentialFreePrefix && jsonBoundary)) { end = index; break; }
+    }
+    const userInformationEnd = authority.slice(0, end).lastIndexOf("@");
+    return prefix + (userInformationEnd < 0 ? authority : authority.slice(userInformationEnd + 1));
+  });
+}
 function normalizeControlCharacters(value: string): string {
   // eslint-disable-next-line no-control-regex -- logs must not retain control bytes
   return value.replace(/[\u0000-\u001F\u007F]/g, " ");

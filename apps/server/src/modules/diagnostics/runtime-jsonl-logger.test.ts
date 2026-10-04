@@ -20,6 +20,17 @@ afterEach(async () => {
 });
 
 describe("RuntimeJsonlLogger", () => {
+  it("strips raw quoted credentials from messages and nested exceptions in the real JSONL file", async () => {
+    const logDirectory = await createTemporaryDirectory();
+    const logger = new RuntimeJsonlLogger({ logDirectory, settings: defaultLogSettings, redactor: createRedactor(), now: () => new Date("2026-10-04T00:00:00.000Z") });
+    await logger.error("Provider wss://alice:p'ass@localhost/events", baseContext, new Error('ws://bob:p",ass@[invalid]/events', { cause: new Error('https://cause:p"ass@safe.test/events?token=query-secret') }));
+    const output = await readFile(join(logDirectory, "runtime-2026100400.jsonl"), "utf8");
+    expect(output).toContain("wss://localhost/events");
+    expect(output).toContain("ws://[invalid]/events");
+    expect(output).toContain("https://safe.test/events");
+    for (const secret of ["alice:", "bob:", "cause:", "p'ass", "query-secret"]) expect(output).not.toContain(secret);
+  });
+
   it.each(["serialize", "redact", "append"] as const)(
     "keeps secrets out of emergency file and stderr after primary %s failure",
     async (failureStage) => {
