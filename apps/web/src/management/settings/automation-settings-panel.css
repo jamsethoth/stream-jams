@@ -5,3 +5,7 @@
 .automation-settings__item h5 { font-size: 1rem; }
 .automation-settings__actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .automation-settings__code { font-family: monospace; font-size: 1.25rem; }
+
+.automation-settings__scopes { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.automation-settings__scopes legend { margin-bottom: 8px; }
+.automation-settings__scopes label { display: flex; align-items: center; gap: 8px; }

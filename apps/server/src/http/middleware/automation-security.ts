@@ -1,3 +1,4 @@
+import { RuntimeMaintenanceUnavailableError } from "../../modules/backup/runtime-maintenance-gate.js";
 import type { FastifyRequest, FastifyReply, preHandlerHookHandler } from "fastify";
 import type { AutomationCredentialService, AutomationGrant, AutomationScope } from "../../modules/automation/automation-credential-service.js";
 import { sendHttpError } from "../errors.js";
@@ -19,7 +20,13 @@ export function createAutomationSecurityPreHandler(options: { readonly credentia
   return async (request, reply) => {
     await (machine as (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>)(request, reply);
     if (reply.sent) return;
-    const bearer = extractBearerToken(request.headers.authorization); const grant = bearer === null ? null : options.credentials.verify(bearer);
+    const bearer = extractBearerToken(request.headers.authorization);
+    let grant: AutomationGrant | null;
+    try { grant = bearer === null ? null : options.credentials.verify(bearer); }
+    catch (error) {
+      if (error instanceof RuntimeMaintenanceUnavailableError) return sendHttpError(reply, 409, { code: "AUTOMATION_MAINTENANCE_ACTIVE", message: "Configuration maintenance is active. Wait and refresh." });
+      throw error;
+    }
     if (grant === null) return sendHttpError(reply, 401, { code: "AUTOMATION_UNAUTHORIZED", message: "A valid scoped automation credential is required" });
     if (options.requiredScopes?.some(scope => !grant.scopes.includes(scope))) return sendHttpError(reply, 403, { code: "AUTOMATION_SCOPE_REQUIRED", message: "The automation grant lacks required scopes" });
     grants.set(request, grant);

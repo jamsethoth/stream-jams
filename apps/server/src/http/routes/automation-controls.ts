@@ -42,7 +42,7 @@ export function registerAutomationControlRoutes(app:FastifyInstance,d:Automation
 function sendError(reply:FastifyReply,error:unknown):FastifyReply {
  if(error instanceof AutomationControlError)return sendHttpError(reply,error.statusCode,{code:error.code,message:error.message});
  if(error instanceof z.ZodError)return sendHttpError(reply,400,{code:"AUTOMATION_INVALID_INPUT",message:"Invalid automation command. Refresh the connection and check action settings."});
- if(error instanceof TimerGenerationConflictError||error instanceof PlaybackOperationsConflictError)return sendHttpError(reply,409,{code:"AUTOMATION_STATE_CONFLICT",message:"The target changed. Refresh before issuing another command."});
+ if (error instanceof TimerGenerationConflictError || error instanceof PlaybackOperationsConflictError)return sendHttpError(reply,409,{code:"AUTOMATION_STATE_CONFLICT",message:"The target changed. Refresh before issuing another command."});
  if(error instanceof RuntimeMaintenanceUnavailableError)return sendHttpError(reply,409,{code:"AUTOMATION_MAINTENANCE_ACTIVE",message:"Configuration maintenance is active. Wait and refresh."});
  if(error instanceof UnknownPlaybackOwnerError)return sendHttpError(reply,404,{code:"AUTOMATION_MODULE_NOT_FOUND",message:"Playback module not found."});
  throw error;

@@ -181,8 +181,9 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
 
   #guardActive(definitionId: string, generation: string): RuntimeEntry | undefined {
     const entry = this.#resolveDeadline(definitionId);
-    if (entry === undefined || entry.state.status === "completed") return undefined;
+    if (entry === undefined) return undefined;
     if (entry.state.generation !== generation) throw new TimerGenerationConflictError();
+    if (entry.state.status === "completed") return undefined;
     return entry;
   }
 

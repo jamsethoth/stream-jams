@@ -50,6 +50,8 @@ Queue pause blocks next item; current finishes. Skip binds the displayed occurre
 
 Errors are `{error:{code,message}}`. 400 invalid input; 401 invalid/revoked credential or invalid proof; 403 wrong peer/Host/Origin or insufficient scope; 404 missing resource/pairing; 409 runtime/state conflict, unapproved exchange or maintenance; 429 rate limit with Retry-After. Internal failures include a diagnostic reference through the normal server error boundary.
 
+During configuration maintenance, credential verification, grant listing, and both management/self revocation return 409 `AUTOMATION_MAINTENANCE_ACTIVE` without changing grant state. Verification can claim a first-use grant or expire an unclaimed grant, so these writes share the restore guard. Resume reads with bounded backoff after maintenance; revocation requires a new deliberate request.
+
 Never automatically retry commands after timeout/disconnect/uncertain errors. Refresh and show Outcome unknown. Refreshed state cannot prove whether an adjustment occurred. A 409 requires a new deliberate gesture based on refreshed state. Stop client polling on revoked credentials, back off reads, and never replay offline presses. There are no durable command receipts/idempotency keys. Successful live timer transition does not guarantee a recovery checkpoint reached disk; diagnostics report checkpoint failures.
 
 ## Verification boundary

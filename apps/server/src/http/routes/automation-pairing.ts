@@ -23,7 +23,7 @@ export function registerAutomationPairingRoutes(app: FastifyInstance, d: Automat
  app.get("/api/automation/pairings/:pairingId", management, async (req, reply) => { try { return s.getPairing(params.parse(req.params).pairingId); } catch (e) { return error(reply, e); } });
  app.post("/api/automation/pairings/:pairingId/approve", management, async (req, reply) => { try { return s.approve(params.parse(req.params).pairingId, req.body); } catch (e) { return error(reply, e); } });
  app.post("/api/automation/pairings/:pairingId/deny", management, async (req, reply) => { try { emptyBody.parse(req.body ?? {}); return s.deny(params.parse(req.params).pairingId); } catch (e) { return error(reply, e); } });
- app.get("/api/automation/grants", management, async () => s.listGrants());
+ app.get("/api/automation/grants", management, async (_req, reply) => { try { return s.listGrants(); } catch (e) { return error(reply, e); } });
  app.post("/api/automation/grants/:grantId/revoke", management, async (req, reply) => { try { emptyBody.parse(req.body ?? {}); return { revoked: s.revoke(z.object({ grantId: z.uuid() }).parse(req.params).grantId) }; } catch (e) { return error(reply, e); } });
 }
 function error(reply: FastifyReply, e: unknown): FastifyReply { if (e instanceof RuntimeMaintenanceUnavailableError) return sendHttpError(reply, 409, { code: "AUTOMATION_MAINTENANCE_ACTIVE", message: "Configuration maintenance is active. Wait and refresh." }); if (e instanceof AutomationCredentialError) return sendHttpError(reply, e.statusCode, { code: e.code, message: e.message }); if (e instanceof z.ZodError) return sendHttpError(reply, 400, { code: "AUTOMATION_INVALID_INPUT", message: "Invalid automation input" }); throw e; }

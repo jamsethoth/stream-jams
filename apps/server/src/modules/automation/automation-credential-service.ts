@@ -42,9 +42,9 @@ export class AutomationCredentialService {
   }
   verify(token: string): AutomationGrant | null { this.expireUnclaimed(); if (!/^sja_[A-Za-z0-9_-]{43}$/u.test(token)) return null; const stored = this.repository.findByHash(hash(token)); if (stored === null || stored.revokedAt !== null) return null; if (stored.claimedAt === null) this.repository.claim(stored.id, new Date(this.#now()).toISOString()); return grantView(stored); }
   listGrants(): readonly AutomationGrant[] { this.expireUnclaimed(); return this.repository.list(); }
-  revoke(id: string): boolean { return this.repository.revoke(id, new Date(this.#now()).toISOString()); }
+  revoke(id: string): boolean { this.#assertAvailable(); return this.repository.revoke(id, new Date(this.#now()).toISOString()); }
   clearPending(): void { this.#pending.clear(); }
-  private expireUnclaimed(): void { this.repository.expireUnclaimed(new Date(this.#now() - 300_000).toISOString(), new Date(this.#now()).toISOString()); }
+  private expireUnclaimed(): void { this.#assertAvailable(); this.repository.expireUnclaimed(new Date(this.#now() - 300_000).toISOString(), new Date(this.#now()).toISOString()); }
   private prune(): void { for (const [id, p] of this.#pending) if (p.expiresMs <= this.#now()) this.#pending.delete(id); }
   private pending(id: string): Pending { this.prune(); const p = this.#pending.get(id); if (!p) throw new AutomationCredentialError(404, "AUTOMATION_PAIRING_UNAVAILABLE", "Pairing request is unavailable"); return p; }
   private prove(id: string, verifier: string): Pending { proofInputSchema.parse({ verifier }); const p = this.pending(id); if (!timingSafeEqual(Buffer.from(hash(verifier)), Buffer.from(p.challenge))) throw new AutomationCredentialError(401, "AUTOMATION_PAIRING_PROOF_REQUIRED", "Valid pairing proof is required"); return p; }

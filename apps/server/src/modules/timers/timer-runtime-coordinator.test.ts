@@ -128,6 +128,36 @@ describe("TimerRuntimeCoordinator", () => {
     expect(await coordinator.togglePaused()).toEqual({ changed: false, states: [] });
     await coordinator.close();
   });
+  it.each(["reset", "stop", "adjust"] as const)("rejects stale %s after a replacement completes while the same generation remains inactive", async action => {
+    const { coordinator, time, cueSink } = setup([definition("a", 1000)]);
+    const command = (generation: string) => action === "reset"
+      ? coordinator.reset("a", generation)
+      : action === "stop" ? coordinator.stopActive("a", generation)
+        : coordinator.adjustActive("a", { action: "increment", amountMs: 1000 }, generation);
+    try {
+      await coordinator.start("a");
+      await coordinator.restart("a");
+      await time.advance(1000);
+      const completed = coordinator.getState("a");
+      expect(completed).toMatchObject({ status: "completed", generation: "generation-2" });
+      await expect(command("generation-1")).rejects.toThrow("Timer generation changed");
+      expect(await command("generation-2")).toEqual({ changed: false, state: completed });
+      expect(coordinator.getState("a")).toEqual(completed);
+      expect(vi.mocked(cueSink.play).mock.calls.filter(([input]) => input.cue === "end")).toHaveLength(1);
+      await time.advance(3000);
+      expect(await command("generation-1")).toEqual({ changed: false, state: null });
+    } finally { await coordinator.close(); }
+  });
+  it("guards the replacement generation after resolving its overdue deadline", async () => {
+    const { coordinator, time } = setup([definition("a", 1000)]);
+    try {
+      await coordinator.start("a"); await coordinator.restart("a");
+      time.nowValue += 1000;
+      await expect(coordinator.reset("a", "generation-1")).rejects.toThrow("Timer generation changed");
+      expect(coordinator.getState("a")).toMatchObject({ status: "completed", generation: "generation-2" });
+      expect((await coordinator.reset("a", "generation-2")).changed).toBe(false);
+    } finally { await coordinator.close(); }
+  });
   it("keeps completed stop inactive and guards reset and adjustment replacements", async () => {
     const { coordinator, time } = setup([definition("a", 1000)]);
     await coordinator.start("a"); await time.advance(1000);

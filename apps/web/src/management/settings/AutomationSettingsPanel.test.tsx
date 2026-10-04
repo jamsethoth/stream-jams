@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AutomationSettingsPanel } from "./AutomationSettingsPanel.js";
@@ -28,6 +28,51 @@ describe("AutomationSettingsPanel", () => {
     await user.click(screen.getByRole("button", { name: "Revoke Deck client" }));
     expect(client.revoke).toHaveBeenCalledWith(grant.id);
     expect(await screen.findByText("Access revoked")).toBeInTheDocument();
+  });
+  it("approves only selected permissions and enforces read dependencies", async () => {
+    const client = api(); const user = userEvent.setup();
+    vi.mocked(client.listPairings).mockResolvedValue([{ ...pairing, scopes: ["timers:read", "timers:control", "playback:read", "playback:mute:alerts"] }]);
+    render(<AutomationSettingsPanel api={client} />);
+    await user.click(await screen.findByRole("checkbox", { name: "timers:read" }));
+    expect(screen.getByRole("checkbox", { name: "timers:control" })).not.toBeChecked();
+    await user.click(screen.getByRole("checkbox", { name: "timers:control" }));
+    expect(screen.getByRole("checkbox", { name: "timers:read" })).toBeChecked();
+    await user.click(screen.getByRole("checkbox", { name: "playback:read" }));
+    expect(screen.getByRole("checkbox", { name: "playback:mute:alerts" })).not.toBeChecked();
+    await user.click(screen.getByRole("checkbox", { name: "timers:read" }));
+    expect(screen.getByRole("button", { name: "Approve Stream Deck" })).toBeDisabled();
+    expect(screen.getByText("Select at least one permission to approve.")).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "playback:mute:alerts" }));
+    expect(screen.getByRole("checkbox", { name: "playback:read" })).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Approve Stream Deck" }));
+    expect(client.approve).toHaveBeenCalledWith(pairing.id, ["playback:read", "playback:mute:alerts"]);
+  });
+  it("preserves a subset through polling and stale recovery without selecting added scopes", async () => {
+    vi.useFakeTimers();
+    const client = api(); render(<AutomationSettingsPanel api={client} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    fireEvent.click(screen.getByRole("checkbox", { name: "timers:control" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(screen.getByRole("checkbox", { name: "timers:control" })).not.toBeChecked();
+    vi.mocked(client.listPairings).mockRejectedValueOnce(new Error("Offline"));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Refresh automation" })); });
+    vi.mocked(client.listPairings).mockResolvedValue([{ ...pairing, scopes: [...pairing.scopes, "playback:read"] }]);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Refresh automation" })); });
+    expect(screen.getByRole("checkbox", { name: "timers:control" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "playback:read" })).not.toBeChecked();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Approve Stream Deck" })); });
+    expect(client.approve).toHaveBeenCalledWith(pairing.id, ["timers:read"]);
+  });
+  it("defaults new pairing and API identities to their requested scopes", async () => {
+    const first = api(); const view = render(<AutomationSettingsPanel api={first} />);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "timers:control" }));
+    vi.mocked(first.listPairings).mockResolvedValue([{ ...pairing, id: grant.id }]);
+    await userEvent.click(screen.getByRole("button", { name: "Refresh automation" }));
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "timers:control" })).toBeChecked());
+    fireEvent.click(screen.getByRole("checkbox", { name: "timers:control" }));
+    const second = api(); vi.mocked(second.listPairings).mockResolvedValue([{ ...pairing, id: grant.id }]);
+    view.rerender(<AutomationSettingsPanel api={second} />);
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "timers:control" })).toBeChecked());
   });
   it("denies and does not approve implicitly", async () => {
     const client = api(); render(<AutomationSettingsPanel api={client} />);

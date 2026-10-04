@@ -1,3 +1,5 @@
+import { RuntimeMaintenanceGate, RuntimeMaintenanceUnavailableError } from "../backup/runtime-maintenance-gate.js";
+import { SqliteConfigurationSnapshotRepository } from "../backup/sqlite-configuration-snapshot-repository.js";
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { createInMemoryStreamJamsDatabase } from "../db/database.js";
@@ -50,4 +52,22 @@ it("blocks pairing mutations during maintenance without consuming proof requests
  expect(() => service.createPairing(input)).toThrow("maintenance"); expect(() => service.approve(pending.id, { scopes: ["timers:read"] })).toThrow("maintenance"); expect(() => service.deny(pending.id)).toThrow("maintenance");
  blocked = false; service.approve(pending.id, { scopes: ["timers:read"] }); blocked = true; expect(() => service.exchange(pending.id, verifier)).toThrow("maintenance");
  blocked = false; expect(service.exchange(pending.id, verifier).token).toMatch(/^sja_/u);
+});
+it("guards revoke, expiry and first-use claim writes during real maintenance and rollback", async () => {
+ using db = createInMemoryStreamJamsDatabase(); let now = 0;
+ const gate = new RuntimeMaintenanceGate(); const repository = new SqliteAutomationGrantRepository(db.connection);
+ const service = new AutomationCredentialService(repository, { now: () => now, assertAvailable: () => gate.runConfigurationMutation(() => undefined) });
+ const exchange = () => { const p = service.createPairing(input); service.approve(p.id, { scopes: ["timers:read"] }); return service.exchange(p.id, verifier); };
+ const claimed = exchange(); service.verify(claimed.token); const unclaimed = exchange();
+ const snapshot = new SqliteConfigurationSnapshotRepository(db.connection); const restorePoint = snapshot.captureRestorePoint();
+ await gate.runMaintenance(async () => {
+  expect(() => service.revoke(claimed.grant.id)).toThrow(RuntimeMaintenanceUnavailableError);
+  expect(() => service.verify(unclaimed.token)).toThrow(RuntimeMaintenanceUnavailableError);
+  now = 300_000;
+  expect(() => service.listGrants()).toThrow(RuntimeMaintenanceUnavailableError);
+  expect(repository.findByHash(createHash("sha256").update(claimed.token).digest("base64url"))?.revokedAt).toBeNull();
+  expect(repository.findByHash(createHash("sha256").update(unclaimed.token).digest("base64url"))?.revokedAt).toBeNull();
+  snapshot.restoreRestorePoint(restorePoint);
+ });
+ expect(service.revoke(claimed.grant.id)).toBe(true); expect(service.verify(claimed.token)).toBeNull(); expect(service.verify(unclaimed.token)).toBeNull();
 });

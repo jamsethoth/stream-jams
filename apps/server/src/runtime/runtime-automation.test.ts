@@ -1,3 +1,6 @@
+import { createDefaultAppConfig } from "../config/default-config.js";
+import { FileConfigStore } from "../config/file-config-store.js";
+import type { ConfigStore } from "@stream-jams/core";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -189,5 +192,87 @@ it("persists claimed grants across restart and invalidates credentials, pairings
   } finally {
     await composition.close();
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("rejects both revoke routes during an actual failed restore and preserves successful revocation across rollback", async () => {
+  const root = await mkdtemp(join(tmpdir(), "stream-jams-revocation-restore-"));
+  const fileStore = new FileConfigStore({ configFilePath: join(root, "config.json"), defaultConfig: createDefaultAppConfig(root) });
+  let failRestore = false;
+  let entered = () => {};
+  let release = () => {};
+  const enteredRestore = new Promise<void>(resolve => { entered = resolve; });
+  const releaseRestore = new Promise<void>(resolve => { release = resolve; });
+  const configStore: ConfigStore = {
+    readConfig: () => fileStore.readConfig(),
+    async updateConfig(patch) {
+      if (failRestore) {
+        failRestore = false; entered(); await releaseRestore;
+        throw new Error("Injected configuration write failure to exercise real restore rollback");
+      }
+      return fileStore.updateConfig(patch);
+    }
+  };
+  const composition = await createRuntimeAppComposition({ homeDirectory: root, webBuildDirectory: await createWebBuildFixture(root), environment: {}, secretStore: new InMemorySecretStore(), configStore });
+  try {
+    const app = composition.app;
+    const native = { host: "127.0.0.1:39187" };
+    const sessionResponse = await app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const session = sessionResponse.json() as { id: string; csrfToken: string };
+    const management = { authorization: `Bearer ${session.id}`, "x-stream-jams-csrf": session.csrfToken };
+    const scopes = ["timers:read"];
+    const verifier = "c".repeat(43);
+    async function pair() {
+      const pairing = await app.inject({ method: "POST", url: "/automation/v1/pairings", headers: native, payload: { clientName: "Restore race", scopes, codeChallenge: createHash("sha256").update(verifier).digest("base64url") } });
+      expect(pairing.statusCode, pairing.body).toBe(201);
+      const approved = await app.inject({ method: "POST", url: `/api/automation/pairings/${pairing.json().id}/approve`, headers: management, payload: { scopes } });
+      expect(approved.statusCode, approved.body).toBe(200);
+      const exchanged = await app.inject({ method: "POST", url: `/automation/v1/pairings/${pairing.json().id}/exchange`, headers: native, payload: { verifier } });
+      expect(exchanged.statusCode, exchanged.body).toBe(200);
+      return exchanged.json() as { token: string; grant: { id: string } };
+    }
+    const active = await pair();
+    const alreadyRevoked = await pair();
+    const unclaimed = await pair();
+    const machine = { ...native, authorization: `Bearer ${active.token}` };
+    expect((await app.inject({ url: "/automation/v1/state", headers: machine })).statusCode).toBe(200);
+    const success = await app.inject({ method: "POST", url: `/api/automation/grants/${alreadyRevoked.grant.id}/revoke`, headers: management, payload: {} });
+    expect(success.statusCode, success.body).toBe(200); expect(success.json()).toEqual({ revoked: true });
+    const revokedRecord = composition.database.connection.prepare("SELECT * FROM automation_grants WHERE id = ?").get(alreadyRevoked.grant.id);
+    const set = await app.inject({ method: "POST", url: "/management/alert-sets", headers: management, payload: { name: "Restore race backup" } });
+    expect(set.statusCode, set.body).toBe(201);
+    composition.database.connection.prepare("UPDATE alert_collections SET enabled = 1").run();
+    const archiveResponse = await app.inject({ url: "/management/settings/backup", headers: management });
+    expect(archiveResponse.statusCode, archiveResponse.body).toBe(200);
+    const archive = archiveResponse.json();
+    const preflight = await app.inject({ method: "POST", url: "/management/settings/backup/preflight", headers: management, payload: archive });
+    expect(preflight.json().state).toBe("valid");
+    failRestore = true;
+    const restoring = app.inject({ method: "POST", url: "/management/settings/backup/restore", headers: management, payload: { archive, archiveId: preflight.json().archiveId, confirmation: "RESTORE", regenerateRouteKeys: true } });
+    await enteredRestore;
+    try {
+      const during = composition.database.connection.prepare("SELECT * FROM automation_grants ORDER BY id").all();
+      for (const response of [
+        await app.inject({ method: "POST", url: `/api/automation/grants/${active.grant.id}/revoke`, headers: management, payload: {} }),
+        await app.inject({ method: "POST", url: "/automation/v1/grants/self/revoke", headers: machine, payload: {} }),
+        await app.inject({ url: "/api/automation/grants", headers: management }),
+        await app.inject({ url: "/automation/v1/state", headers: { ...native, authorization: `Bearer ${unclaimed.token}` } })
+      ]) {
+        expect(response.statusCode, response.body).toBe(409);
+        expect(response.json()).toMatchObject({ error: { code: "AUTOMATION_MAINTENANCE_ACTIVE" } });
+      }
+      expect(composition.database.connection.prepare("SELECT * FROM automation_grants ORDER BY id").all()).toEqual(during);
+    } finally { release(); }
+    const failed = await restoring;
+    expect(failed.statusCode, failed.body).toBe(409);
+    expect(failed.json()).toMatchObject({ error: { code: "RESTORE_FAILED" } });
+    expect(composition.database.connection.prepare("SELECT * FROM automation_grants WHERE id = ?").get(alreadyRevoked.grant.id)).toEqual(revokedRecord);
+    expect((await app.inject({ url: "/automation/v1/state", headers: { ...native, authorization: `Bearer ${alreadyRevoked.token}` } })).statusCode).toBe(401);
+    expect((await app.inject({ url: "/automation/v1/state", headers: machine })).statusCode).toBe(200);
+    const after = await app.inject({ method: "POST", url: "/automation/v1/grants/self/revoke", headers: machine, payload: {} });
+    expect(after.statusCode, after.body).toBe(200); expect(after.json()).toEqual({ revoked: true });
+    expect((await app.inject({ url: "/automation/v1/state", headers: machine })).statusCode).toBe(401);
+  } finally {
+    release(); await composition.close(); await rm(root, { recursive: true, force: true });
   }
 });
