@@ -149,6 +149,29 @@ describe("OverlaySurface", () => {
 });
 
 describe("OverlayApp transport integration", () => {
+  it("preserves streamed playback across timer compositions, but honors stop and module disable", async () => {
+    AppFakeWebSocket.instances.length = 0;
+    window.history.replaceState(null, "", "/overlay/unified/live/ovl_fixture");
+    vi.stubGlobal("WebSocket", AppFakeWebSocket);
+    const snapshot: OverlayComposition = { overlayId: "default", purpose: "live", scope: "unified", modules: ["alerts", "screen-effects", "timers"].map(moduleId => ({ moduleId, enabled: true, instructions: [] })) };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => snapshot }));
+    render(<OverlayApp />);
+    await act(async () => { AppFakeWebSocket.instances[0]!.emitOpen(); AppFakeWebSocket.instances[0]!.emitMessage({ type: "overlay.playback.audio-state", muted: false }); });
+    const socket = AppFakeWebSocket.instances[0]!;
+    for (const moduleId of ["alerts", "screen-effects", "timers"]) {
+      act(() => socket.emitMessage({ type: "overlay.playback", instruction: { ...createInstruction(moduleId, { text: `Playing ${moduleId}` }), moduleId, purpose: "live", scope: "unified" } }));
+    }
+    expect(await screen.findByText("Playing alerts")).toBeVisible();
+    act(() => socket.emitMessage({ type: "overlay.composition", composition: snapshot }));
+    for (const moduleId of ["alerts", "screen-effects", "timers"]) expect(screen.getByText(`Playing ${moduleId}`)).toBeVisible();
+    act(() => socket.emitMessage({ type: "overlay.playback.stop", instructionIds: ["alerts"] }));
+    act(() => socket.emitMessage({ type: "overlay.composition", composition: snapshot }));
+    expect(screen.queryByText("Playing alerts")).toBeNull();
+    act(() => socket.emitMessage({ type: "overlay.composition", composition: { ...snapshot, modules: snapshot.modules.map(module => ({ ...module, enabled: false })) } }));
+    expect(screen.queryByText("Playing screen-effects")).toBeNull();
+    act(() => socket.emitMessage({ type: "overlay.composition", composition: snapshot }));
+    expect(screen.queryByText("Playing screen-effects")).toBeNull();
+  });
   it("rebootstraps and completes fresh prepared playback after the real client socket reconnects", async () => {
     AppFakeWebSocket.instances.length = 0;
     window.history.replaceState(null, "", "/overlay/modules/alerts/live/ovl_live?profile=landscape");

@@ -1,3 +1,7 @@
+import { AutomationControlService } from "../modules/automation/automation-control-service.js";
+import { AutomationCredentialService } from "../modules/automation/automation-credential-service.js";
+import { SqliteAutomationGrantRepository } from "../modules/automation/sqlite-automation-grant-repository.js";
+import { createAutomationMachinePreHandler, createAutomationSecurityPreHandler } from "../http/middleware/automation-security.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdir, statfs } from "node:fs/promises";
 import { join } from "node:path";
@@ -440,11 +444,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const defaultTwitchApiClient = new DefaultTwitchApiClient();
   const twitchApiClient = options.twitchApiClient ?? defaultTwitchApiClient;
   const twitchRewardApiClient = options.twitchRewardApiClient ?? defaultTwitchApiClient;
+  let currentModuleMutes = initialConfig.playback.moduleMutes ?? { alerts: false, "screen-effects": false };
   const overlayGateway = new OverlayGateway({
     overlayAccessService,
     generateClientId: options.generateOverlayClientId ?? generateOverlayClientId,
     clock: now,
-    initialPlaybackMuted: initialConfig.playback.muted,
+    initialModuleMutes: currentModuleMutes,
     onTransportDiagnostic(diagnostic) {
       const { exception, ...metadata } = diagnostic;
       void (exception === null
@@ -499,7 +504,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const playbackQueue = new DefaultPlaybackQueue({
     onRelease: itemId => { void trackRuntimeWork(() => localMediaService.release(effectOccurrenceKey("alerts", itemId))); },
     generateId: generatePlaybackQueueItemId,
-    initialSafetyState: initialConfig.playback,
+    initialSafetyState: { ...initialConfig.playback, muted: currentModuleMutes.alerts, moduleMutes: currentModuleMutes },
     initialModulePaused: initialAlertModuleSettings.paused
   });
   const effectQueue = new DefaultEffectQueue({
@@ -510,7 +515,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   let desktopAudioSink: DesktopAudioSink | undefined;
   if (options.desktopAudioTransport !== undefined) {
     try {
-      await options.desktopAudioTransport.setMuted(initialConfig.playback.muted);
+      await options.desktopAudioTransport.setMuted(false);
+      await options.desktopAudioTransport.setModuleMutes?.(currentModuleMutes);
     } catch (error) {
       try { await options.desktopAudioTransport.close(); }
       catch (cleanupError) {
@@ -537,7 +543,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const audioOutputService = new AudioOutputService({
     routes: audioOutputRouteRepository,
     ...(audioDeviceHost === undefined ? {} : { host: audioDeviceHost }),
-    isMuted: () => playbackQueue.getSnapshot().muted,
+    isMuted: () => currentModuleMutes.alerts,
     runMutation: work => maintenanceGate.runConfigurationMutation(() => runInTransaction(database.connection, work)),
     runTest: work => maintenanceGate.runIntake(work),
     logger: runtimeLogger,
@@ -692,7 +698,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       const snapshot = playbackQueue.getSnapshot();
       return {
         paused: snapshot.paused,
-        muted: snapshot.muted,
+        muted: currentModuleMutes["screen-effects"],
         doNotDisturb: snapshot.doNotDisturb
       };
     },
@@ -778,15 +784,22 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         }
       })
     ],
-    initialSafety: initialConfig.playback,
+    initialSafety: { ...initialConfig.playback, moduleMutes: currentModuleMutes, muted: currentModuleMutes.alerts && currentModuleMutes["screen-effects"] },
     persistSafety: async (patch) => {
       const { playback } = await configStore.updateConfig({ playback: patch });
       return playback;
     },
     applySafety: async (state) => {
-      await playbackCoordinator.applySafetyState(state);
-      await effectPlaybackCoordinator.startNext();
-      options.desktopHost?.onPlaybackStateChanged(state);
+      currentModuleMutes = state.moduleMutes ?? { alerts: false, "screen-effects": false };
+      const failures: unknown[] = [];
+      try {
+        await playbackCoordinator.applySafetyState({ ...state, moduleMutes: currentModuleMutes, muted: currentModuleMutes.alerts });
+      } catch (error) { failures.push(error); }
+      try { await effectPlaybackCoordinator.startNext(); }
+      catch (error) { failures.push(error); }
+      try { options.desktopHost?.onPlaybackStateChanged(state); }
+      catch (error) { failures.push(error); }
+      if (failures.length > 0) throw new AggregateError(failures, "Playback policy saved but some outputs failed to reconcile");
     },
     onSafetyApplyFailure: async () => {
       await runtimeLogger.error("Playback safety was saved but a local output did not acknowledge the change.", {
@@ -798,6 +811,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       });
     }
   });
+  const automationCredentialService = new AutomationCredentialService(new SqliteAutomationGrantRepository(database.connection), { now: () => now().getTime(), assertAvailable: () => maintenanceGate.runConfigurationMutation(() => undefined) });
+  const automationLimiter = new LocalManagementRateLimiter({ maxRequests: 240, windowMs: 60_000 });
+  const automationMachinePreHandler = createAutomationMachinePreHandler({ limiter: automationLimiter });
+  const automationAuthPreHandler = createAutomationSecurityPreHandler({ credentials: automationCredentialService, limiter: automationLimiter });
+  const automationControlService = new AutomationControlService({ timers: timerRuntimeCoordinator, definitions: timerManagementService, playback: playbackOperationsService, now: () => now().getTime(), runCommand: work => maintenanceGate.runIntake(work) });
   const eventPipeline = new EventPipeline({
     timerEventSink: new TimerEventService(timerDefinitionRepository, timerRuntimeCoordinator),
     onTimerError: (error, event) => runtimeLogger.error("Timer event handling failed", {
@@ -1156,6 +1174,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       ]);
       playbackQueue.setModulePaused(alertSettings.paused);
       effectQueue.setModulePaused(effectSettings.paused);
+      automationCredentialService.clearPending();
+      automationControlService.invalidateRuntime();
       await playbackOperationsService.restoreSafety(playback);
     },
     assetDurationCatalog,
@@ -1436,6 +1456,10 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     timerAutomationCredentialService,
     outputReadinessService,
     timerAutomationAuthPreHandler,
+    automationCredentialService,
+    automationMachinePreHandler,
+    automationAuthPreHandler,
+    automationControlService,
     effectSets: effectManagementService,
     managementAuthPreHandler: createManagementSecurityPreHandler({
       sessionService: managementSessionService,

@@ -184,3 +184,15 @@ describe("createRedactor", () => {
     expect(redactor.redactText("GET /events?token=hidden&view=raw")).toContain("view=raw");
   });
 });
+it("redacts scoped automation tokens and pairing proof in fields, text and URLs", () => {
+ const r = createRedactor(); expect(r.redact({ verifier: "proof", codeChallenge: "hash", text: "sja_private" })).toEqual({ verifier: "[REDACTED]", codeChallenge: "[REDACTED]", text: "[REDACTED]" });
+ expect(r.redactText("verifier=proof codeChallenge=hash sja_private")).toBe("verifier=[REDACTED] codeChallenge=[REDACTED] [REDACTED]");
+ expect(r.redactText("/pair?verifier=proof&code_challenge=hash")).not.toContain("proof");
+});
+
+it("combines quoted URL credentials with scoped automation tokens and pairing proof redaction", () => {
+    const output = createRedactor().redactText('Provider wss://alice:p"}ass@localhost/events?verifier=url-proof&code_challenge=url-challenge sja_pairingSecret verifier=plain-proof codeChallenge=plain-challenge {"verifier":"json-proof","codeChallenge":"json-challenge"}');
+    expect(output).toContain("wss://localhost/events");
+    for (const secret of ['alice:', 'p"}ass', 'url-proof', 'url-challenge', 'sja_pairingSecret', 'plain-proof', 'plain-challenge', 'json-proof', 'json-challenge']) expect(output).not.toContain(secret);
+    expect(createRedactor().redact({ verifier: "proof", codeChallenge: "challenge", nested: "sja_nestedSecret" })).toEqual({ verifier: "[REDACTED]", codeChallenge: "[REDACTED]", nested: "[REDACTED]" });
+});

@@ -1,4 +1,4 @@
-import { playbackTimingDiagnosticsSchema, playbackTimingMilestoneSchema, type PlaybackTimingDiagnostics, type PlaybackTimingMilestone, serializeException, overlayCompositionSchema, surfaceConfigurationSchema, type OverlayComposition, type SurfaceLayer } from "@stream-jams/core";
+import { moduleMuteStateSchema, type ModuleMuteState, playbackTimingDiagnosticsSchema, playbackTimingMilestoneSchema, type PlaybackTimingDiagnostics, type PlaybackTimingMilestone, serializeException, overlayCompositionSchema, surfaceConfigurationSchema, type OverlayComposition, type SurfaceLayer } from "@stream-jams/core";
 import type {
   OverlayAccessDenialReason,
   OverlayAccessService,
@@ -82,6 +82,7 @@ export interface OverlayGatewayDependencies {
   readonly onClientDisconnected?: (clientId: string) => void;
   readonly onPlaybackReport?: (report: OverlayGatewayPlaybackReport) => void;
   readonly initialPlaybackMuted?: boolean;
+  readonly initialModuleMutes?: ModuleMuteState;
 }
 
 interface RegisteredOverlayGatewayClient extends OverlayGatewayClient {
@@ -109,6 +110,7 @@ type OverlayGatewayMessage =
     }
   | {
       readonly type: "overlay.playback.audio-state";
+      readonly moduleMutes?: ModuleMuteState;
       readonly muted: boolean;
     }
   | {
@@ -138,6 +140,7 @@ export class OverlayGateway {
   readonly #recentClientsByOutput = new Map<string, OverlayGatewayClientState>();
   readonly #preparations = new Map<string, PlaybackPreparation>();
   #playbackMuted: boolean;
+  #moduleMutes: ModuleMuteState | undefined;
   readonly #surfaceLayers = new Map<string, readonly SurfaceLayer[]>();
 
   constructor(dependencies: OverlayGatewayDependencies) {
@@ -147,6 +150,7 @@ export class OverlayGateway {
     this.#clock = dependencies.clock ?? (() => new Date());
     this.#onClientDisconnected = dependencies.onClientDisconnected ?? (() => undefined);
     this.#onPlaybackReport = dependencies.onPlaybackReport ?? (() => undefined);
+    this.#moduleMutes = dependencies.initialModuleMutes;
     this.#playbackMuted = dependencies.initialPlaybackMuted ?? false;
   }
 
@@ -214,7 +218,8 @@ export class OverlayGateway {
     });
     this.#send(client, {
       type: "overlay.playback.audio-state",
-      muted: this.#playbackMuted
+      muted: this.#playbackMuted,
+      ...(this.#moduleMutes === undefined ? {} : { moduleMutes: this.#moduleMutes })
     });
     const layers = this.#surfaceLayers.get(registration.overlayId);
     if (registration.scope === "unified" && layers !== undefined) {
@@ -361,7 +366,18 @@ export class OverlayGateway {
     catch (error) { this.#sendFailed(clientId, error); return false; }
   }
 
+  setModuleMutes(state: ModuleMuteState): void {
+    this.#moduleMutes = moduleMuteStateSchema.parse(state);
+    this.#playbackMuted = state.alerts && state["screen-effects"];
+    let failed = false;
+    for (const client of this.#clients.values()) {
+      if (!this.#send(client, { type: "overlay.playback.audio-state", muted: this.#playbackMuted, moduleMutes: this.#moduleMutes })) failed = true;
+    }
+    if (failed) throw new Error("Browser audio mute policy could not be delivered to every connected output.");
+  }
+
   setPlaybackMuted(muted: boolean): void {
+    if (this.#moduleMutes !== undefined) { this.setModuleMutes({ ...this.#moduleMutes, alerts: muted }); return; }
     this.#playbackMuted = muted;
     for (const client of this.#clients.values()) {
       this.#send(client, { type: "overlay.playback.audio-state", muted });

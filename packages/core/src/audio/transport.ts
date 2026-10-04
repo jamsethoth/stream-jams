@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { moduleMuteStateSchema } from "../playback/schemas.js";
 import { trustedAudioMediaAssetSchema, privateAudioMediaAssetSchema } from "../assets/desktop-media-asset.js";
 import { audioOutputDeviceSchema, audioRouteIdSchema, deviceAudioBatchSchema, deviceAudioResultSchema, explicitAudioDeviceIdSchema } from "./schemas.js";
 import type { AudioDeviceHost, DeviceAudioResult } from "./types.js";
@@ -33,6 +34,7 @@ export const audioTransportCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("play"), payload: audioPlaybackPayloadSchema }).strict(),
   z.object({ type: z.literal("stop"), playbackId: audioRouteIdSchema }).strict(),
   z.object({ type: z.literal("set-muted"), muted: z.boolean() }).strict(),
+  z.object({ type: z.literal("set-module-mutes"), moduleMutes: moduleMuteStateSchema }).strict(),
   z.object({ type: z.literal("test"), deviceId: explicitAudioDeviceIdSchema }).strict(),
   z.object({ type: z.literal("retry") }).strict(),
   z.object({ type: z.literal("close") }).strict()
@@ -52,6 +54,7 @@ export interface DesktopAudioTransport extends AudioDeviceHost {
   play(payload: AudioPlaybackPayload): Promise<DeviceAudioResult>;
   stop(playbackId: string): Promise<void>;
   setMuted(muted: boolean): Promise<void>;
+  setModuleMutes?(state: import("../playback/types.js").ModuleMuteState): Promise<void>;
   retry(): Promise<void>;
   close(): Promise<void>;
 }

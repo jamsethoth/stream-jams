@@ -379,9 +379,9 @@ export class EffectPlaybackCoordinator {
       if (prepared.batches.length > 0) state.hadRecipient = true;
       const handles = await Promise.allSettled(prepared.batches.map(batch => {
         const sink = this.#audioPlaybackSink!;
-        return sink.prepare === undefined ? Promise.resolve({ start: (startsAtEpochMs: number) => sink.play({ ...batch,
+        return sink.prepare === undefined ? Promise.resolve({ start: (startsAtEpochMs: number) => sink.play({ ...batch, moduleId: "screen-effects",
           muted: this.#getSafety().muted, timing: { startsAtEpochMs, endsAtEpochMs: startsAtEpochMs + batch.durationMs } }) })
-          : sink.prepare({ ...batch, muted: this.#getSafety().muted });
+          : sink.prepare({ ...batch, moduleId: "screen-effects", muted: this.#getSafety().muted });
       }));
       if (!allowed()) return () => {};
       for (const handle of handles) if (handle.status === "rejected") {

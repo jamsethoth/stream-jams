@@ -32,6 +32,8 @@ import { timerOverlayModuleMigration } from "./migrations/028-timer-overlay-modu
 import { assetRetirementsMigration } from "./migrations/029-asset-retirements.js";
 import { persistentEventTimersMigration } from "./migrations/030-persistent-event-timers.js";
 
+import { automationGrantsMigration } from "./migrations/031-automation-grants.js";
+
 export interface StreamJamsMigration {
   readonly id: string;
   readonly sql: string;
@@ -73,7 +75,8 @@ const migrations = [
   removeAlertSetProfileStateMigration,
   timerOverlayModuleMigration,
   assetRetirementsMigration,
-  persistentEventTimersMigration
+  persistentEventTimersMigration,
+  automationGrantsMigration
 ] satisfies readonly StreamJamsMigration[];
 
 export const currentSchemaVersion = migrations.length;

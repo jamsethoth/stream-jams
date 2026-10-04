@@ -2,15 +2,18 @@ import type { Redactor } from "@stream-jams/core";
 
 const defaultReplacement = "[REDACTED]";
 const overlayKeyPattern = /ovl_[A-Za-z0-9_-]+/g;
+const scopedAutomationTokenPattern = /sja_[A-Za-z0-9_-]+/g;
 const timerAutomationTokenPattern = /tmr_[A-Za-z0-9_-]+/g;
 const mediaGrantPattern = /med_[A-Za-z0-9_-]+/g;
 const authorizationValuePattern = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi;
 const oauthAuthorizationValuePattern = /\bOAuth\s+(?:[A-Za-z][\w-]*\s*=\s*(?:"(?:\\.|[^"\\])*"|[^,;\s]+)(?:\s*,\s*)?)+/gi;
 const standaloneApiKeyPattern = /\bsk-[A-Za-z0-9_-]+\b/g;
 const authorizationAssignmentPattern = /\b(authorization)\s*([:=])\s*(?!(?:Bearer|Basic|OAuth)\b)[^\s,;&]+/gi;
-const credentialAssignmentPattern = /\b(authentication|credentials?|password|passwd|token|access[-_ ]?token|refresh[-_ ]?token|secret|client[-_ ]?secret|api[-_ ]?key)\s*[:=]\s*(?:bearer\s+)?(?:"(?:\\.|[^"\\])*"|'[^']*'|[^\s,;&]+)/gi;
+const credentialAssignmentPattern = /\b(verifier|code[-_ ]?challenge|authentication|credentials?|password|passwd|token|access[-_ ]?token|refresh[-_ ]?token|secret|client[-_ ]?secret|api[-_ ]?key)\s*[:=]\s*(?:bearer\s+)?(?:"(?:\\.|[^"\\])*"|'[^']*'|[^\s,;&]+)/gi;
 const jsonStringPropertyPattern = /("(?:\\.|[^"\\])*")\s*:\s*"(?:\\.|[^"\\])*"/g;
 const sensitiveNamePatterns = [
+  /verifier/i,
+  /code[-_]?challenge/i,
   /authorization/i,
   /authentication/i,
   /credential/i,
@@ -27,6 +30,9 @@ const sensitiveNamePatterns = [
 ];
 const sensitiveUrlParamNames = new Set(
   [
+  "verifier",
+  "codeChallenge",
+  "code_challenge",
   "access_token",
   "refresh_token",
   "token",
@@ -101,7 +107,8 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
       .replace(credentialAssignmentPattern, (_match, name: string) => `${name}=${replacement}`)
       .replace(overlayKeyPattern, replacement)
       .replace(timerAutomationTokenPattern, replacement)
-      .replace(mediaGrantPattern, replacement));
+      .replace(mediaGrantPattern, replacement)
+      .replace(scopedAutomationTokenPattern, replacement));
   }
 
   return {

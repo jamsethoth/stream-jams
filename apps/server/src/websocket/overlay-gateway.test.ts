@@ -722,3 +722,15 @@ class RecordingSocket implements OverlayGatewaySocket {
     this.closed = { code, reason };
   }
 }
+
+
+it("reports failed mute delivery and bootstraps replacement clients with the saved module policy", async () => {
+  const route = { overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", rawKey: "ovl_moduleLive" } as const;
+  const gateway = createGateway({ allowed: [route] });
+  const socket = new RecordingSocket(); await gateway.registerClient(socket, route);
+  socket.send = () => { throw new Error("output disconnected"); };
+  const moduleMutes = { alerts: true, "screen-effects": false };
+  expect(() => gateway.setModuleMutes(moduleMutes)).toThrow("could not be delivered");
+  const replacement = new RecordingSocket(); await gateway.registerClient(replacement, route);
+  expect(replacement.messages.at(-1)).toEqual({ type: "overlay.playback.audio-state", muted: false, moduleMutes });
+});

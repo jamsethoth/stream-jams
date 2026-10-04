@@ -151,7 +151,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
     return {
       marker: restorePointMarker,
       tables: Object.fromEntries(
-        [...tableDefinitions.map((definition) => definition.name), "overlay_keys", "twitch_accounts", "timer_automation_credential"].map((name) => [
+        [...tableDefinitions.map((definition) => definition.name), "overlay_keys", "twitch_accounts", "timer_automation_credential", "automation_grants"].map((name) => [
           name,
           this.connection.prepare(`SELECT * FROM ${name}`).all().map(toPlainRecord)
         ])
@@ -168,6 +168,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
       this.connection.prepare("DELETE FROM overlay_keys").run();
       this.connection.prepare("DELETE FROM twitch_accounts").run();
       this.connection.prepare("DELETE FROM timer_automation_credential").run();
+      this.connection.prepare("DELETE FROM automation_grants").run();
       for (const definition of [...tableDefinitions].reverse()) {
         this.connection.prepare(`DELETE FROM ${definition.name}`).run();
       }
@@ -177,6 +178,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
       insertCapturedRows(this.connection, "overlay_keys", restorePoint.tables.overlay_keys ?? []);
       insertCapturedRows(this.connection, "twitch_accounts", restorePoint.tables.twitch_accounts ?? []);
       insertCapturedRows(this.connection, "timer_automation_credential", restorePoint.tables.timer_automation_credential ?? []);
+      insertCapturedRows(this.connection, "automation_grants", restorePoint.tables.automation_grants ?? []);
     });
   }
 
@@ -254,6 +256,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
       this.connection.prepare("DELETE FROM overlay_keys").run();
       this.connection.prepare("DELETE FROM twitch_accounts").run();
       this.connection.prepare("DELETE FROM timer_automation_credential").run();
+      this.connection.prepare("DELETE FROM automation_grants").run();
       for (const definition of [...tableDefinitions].reverse()) {
         this.connection.prepare(`DELETE FROM ${definition.name}`).run();
       }

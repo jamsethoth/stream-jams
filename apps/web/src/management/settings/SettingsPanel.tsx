@@ -20,6 +20,8 @@ import { DesktopSettingsPanel } from "./DesktopSettingsPanel.js";
 import { OverlaySurfacesPanel, type OverlaySurfacesPanelHandle } from "./OverlaySurfacesPanel.js";
 import type { SurfaceSettingsApi } from "./overlay-surfaces-api.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
+import { AutomationSettingsPanel } from "./AutomationSettingsPanel.js";
+import type { AutomationSettingsApi } from "./automation-api.js";
 import "./settings-panel.css";
 
 type SettingsApi = Pick<
@@ -28,6 +30,7 @@ type SettingsApi = Pick<
 >;
 
 export interface SettingsPanelProps {
+  readonly automationApi?: AutomationSettingsApi | undefined;
   readonly audioApi?: AudioApi | undefined;
   readonly surfaceApi?: SurfaceSettingsApi | undefined;
   readonly managementApi: SettingsApi;
@@ -35,7 +38,7 @@ export interface SettingsPanelProps {
 
 const defaultServerConfig: ServerConfigView = { host: "127.0.0.1", port: 39187 };
 
-export function SettingsPanel({ audioApi = defaultAudioApi, surfaceApi, managementApi }: SettingsPanelProps) {
+export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfaceApi, managementApi }: SettingsPanelProps) {
   const audioPanelRef = useRef<AudioOutputsPanelHandle>(null);
   const surfacesPanelRef = useRef<OverlaySurfacesPanelHandle>(null);
   const [surfacesDirty, setSurfacesDirty] = useState(false);
@@ -54,6 +57,7 @@ export function SettingsPanel({ audioApi = defaultAudioApi, surfaceApi, manageme
   const [busy, setBusy] = useState(false);
   const [maintenanceBusy, setMaintenanceBusy] = useState<"open-data-folder" | "clear-old-logs" | null>(null);
   const [audioDirty, setAudioDirty] = useState(false);
+  const [automationOpen, setAutomationOpen] = useState(window.location.hash === "#automation" || new URLSearchParams(window.location.search).has("automationPairing"));
   const [serverOpen, setServerOpen] = useState(false);
   const [audioOpen, setAudioOpen] = useState(window.location.hash === "#audio-outputs");
   const [surfacesOpen, setSurfacesOpen] = useState(window.location.hash === "#overlay-surfaces");
@@ -343,6 +347,11 @@ export function SettingsPanel({ audioApi = defaultAudioApi, surfaceApi, manageme
       <details className="settings-page__disclosure" onToggle={(event) => setSurfacesOpen(event.currentTarget.open)} open={surfacesOpen}>
         <summary><span className="settings-page__summary-content"><strong>Overlay surfaces · {summaryText(surfaceSummary, "configured")}{surfacesDirty ? " · Unsaved" : ""}</strong></span></summary>
         <OverlaySurfacesPanel api={surfaceApi} manageNavigation={false} onDirtyChange={setSurfacesDirty} onSummaryChange={setSurfaceSummary} ref={surfacesPanelRef} />
+      </details>
+
+      <details className="settings-page__disclosure" id="automation" onToggle={event => setAutomationOpen(event.currentTarget.open)} open={automationOpen}>
+        <summary><span className="settings-page__summary-content"><strong>Automation</strong><small>Local client pairing and permissions</small></span></summary>
+        {automationOpen ? <AutomationSettingsPanel api={automationApi} /> : null}
       </details>
 
       <details className="settings-page__disclosure" id="backup-restore" onToggle={(event) => setDataOpen(event.currentTarget.open)} open={dataOpen}>

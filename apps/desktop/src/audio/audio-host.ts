@@ -16,6 +16,7 @@ export class AudioHost implements DesktopAudioTransport {
   #prepared = new Map<string, { playbackId: string; generation: number; durationMs: number; timer: ReturnType<typeof setTimeout> }>();
   #mediaOwners = new Map<string, string>();
   #starts = new Set<{ playbackId: string; cancelled: boolean }>();
+  #moduleMutes: import("@stream-jams/core").ModuleMuteState | undefined;
   #muted = true;
   #owned = false;
   #failures = 0;
@@ -31,6 +32,7 @@ export class AudioHost implements DesktopAudioTransport {
     this.serviceLost();
     this.#owned = true;
     this.#muted = true;
+    this.#moduleMutes = undefined;
     this.#failures = 0; this.#retryAt = 0;
     this.#startLease();
   }
@@ -56,6 +58,7 @@ export class AudioHost implements DesktopAudioTransport {
       case "play": return { type: "played", ...await this.play(command.payload) };
       case "stop": await this.stop(command.playbackId); break;
       case "set-muted": await this.setMuted(command.muted); break;
+      case "set-module-mutes": await this.setModuleMutes(command.moduleMutes); break;
       case "test": await this.testOutput(command.deviceId); break;
       case "retry": await this.retry(); break;
       case "close": await this.close(); break;
@@ -132,6 +135,15 @@ export class AudioHost implements DesktopAudioTransport {
       this.#discard(false, error);
     }
   }
+  async setModuleMutes(moduleMutes: import("@stream-jams/core").ModuleMuteState): Promise<void> {
+    this.#moduleMutes = { ...moduleMutes };
+    this.#muted = false;
+    if (this.#port === null) return;
+    try {
+      const result = await this.#request({ type: "set-module-mutes", moduleMutes }, 2000);
+      if (result.type !== "ok") { this.#discard(true); throw unavailable(); }
+    } catch (error) { this.#discard(false, error); throw unavailable(error); }
+  }
   async setMuted(muted: boolean): Promise<void> {
     this.#muted = muted;
     if (this.#port === null) return;
@@ -185,7 +197,7 @@ export class AudioHost implements DesktopAudioTransport {
           timer = setTimeout(() => reject(unavailable()), 5000);
         })]);
         if (this.#port !== port || generation !== this.#generation) throw unavailable();
-        const result = await this.#request({ type: "initialize", protocolVersion: 1, muted: this.#muted }, 2000);
+        const result = await this.#request({ type: "initialize", protocolVersion: 1, muted: this.#muted, ...(this.#moduleMutes === undefined ? {} : { moduleMutes: this.#moduleMutes }) }, 2000);
         if (result.type !== "ok") throw unavailable();
       }
       catch (error) {

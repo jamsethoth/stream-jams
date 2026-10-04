@@ -1994,3 +1994,20 @@ function audioFixture() {
   };
   return { finished, sink, dependencies: { audioPlaybackSink: sink, audioOutputService } };
 }
+
+
+it("tries every mute output and propagates failure after attempting both transports", async () => {
+  const audio = audioFixture();
+  const device = vi.fn(async () => { throw new Error("device unavailable"); });
+  const browser = vi.fn(() => { throw new Error("socket unavailable"); });
+  const coordinator = createCoordinator({ ...audio.dependencies,
+    audioPlaybackSink: { ...audio.sink, setModuleMutes: device },
+    overlayPlaybackSink: { deliverPlaybackInstruction: vi.fn(), setModuleMutes: browser }
+  });
+  const moduleMutes = { alerts: true, "screen-effects": false };
+  await expect(coordinator.applySafetyState({ paused: false, muted: true, doNotDisturb: false, moduleMutes })).rejects.toBeInstanceOf(AggregateError);
+  expect(device).toHaveBeenCalledExactlyOnceWith(moduleMutes);
+  expect(browser).toHaveBeenCalledExactlyOnceWith(moduleMutes);
+  expect(coordinator.getSnapshot().muted).toBe(true);
+  await coordinator.close();
+});

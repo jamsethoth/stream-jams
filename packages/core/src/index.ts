@@ -366,3 +366,5 @@ export * from "./assets/desktop-media-asset.js";
 export * from "./timers/event-rules.js";
 
 export * from "./management/local-websocket-connection.js";
+export { moduleMuteStateSchema } from "./playback/schemas.js";
+export { defaultModuleMuteState, type ModuleMuteState, type MutablePlaybackModuleId } from "./playback/types.js";

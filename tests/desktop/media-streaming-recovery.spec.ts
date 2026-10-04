@@ -17,7 +17,7 @@ test("@hardware hidden muted streaming survives slow preparation, recipient fail
   const executablePath = resolve("apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");
   const packageSha256 = createHash("sha256").update(await readFile(resolve("apps/desktop/out/Stream Jams-win32-x64/resources/app.asar"))).digest("hex");
   const configPath = join(root, "config.json");
-  await writeFile(configPath, JSON.stringify({ server: { host: "127.0.0.1", port }, storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") }, playback: { paused: false, muted: true, doNotDisturb: false } }));
+  await writeFile(configPath, JSON.stringify({ server: { host: "127.0.0.1", port }, storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") }, playback: { paused: false, muted: true, moduleMutes: { alerts: true, "screen-effects": true }, doNotDisturb: false } }));
   const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
   delete env.ELECTRON_RUN_AS_NODE;
   Object.assign(env, { STREAM_JAMS_CONFIG_PATH: configPath, STREAM_JAMS_DESKTOP_USER_DATA_PATH: join(root, "electron"), STREAM_JAMS_SHUTDOWN_LOG: join(root, "shutdown.jsonl") });
@@ -60,7 +60,7 @@ test("@hardware hidden muted streaming survives slow preparation, recipient fail
     let devices = await api<{ available: boolean; devices: { deviceId: string }[] }>("/audio/devices");
     if (!devices.available) { await api("/audio/retry", "POST", {}); devices = await api("/audio/devices"); }
     expect(devices.available).toBe(true);
-    expect(devices.devices.length, "Requires two explicitly enumerated outputs; playback remains globally muted").toBeGreaterThanOrEqual(2);
+    expect(devices.devices.length, "Requires two explicitly enumerated outputs; Alerts and Effects playback remains muted").toBeGreaterThanOrEqual(2);
     const selected = devices.devices.slice(0, 2);
     const routes = await Promise.all(selected.map((device, index) => api<{ id: string }>("/audio/routes", "POST", { name: `Silent recovery ${index}`, deviceId: device.deviceId })));
     const bytes = await readFile(resolve("tests/fixtures/media/neutral-with-audio.webm"));

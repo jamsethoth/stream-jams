@@ -23,6 +23,7 @@ export function OverlayApp() {
   const [preparingIds, setPreparingIds] = useState<ReadonlySet<string>>(new Set());
   const seenIdsRef = useRef(new Set<string>());
   const preparedIdsRef = useRef(new Set<string>());
+  const [moduleMutes, setModuleMutes] = useState<import("@stream-jams/core").ModuleMuteState | undefined>();
   const [muted, setMuted] = useState<boolean | null>(null);
   const connectionRef = useRef<OverlayClientConnection | null>(null);
   const compositionReceivedRef = useRef(false);
@@ -59,7 +60,13 @@ export function OverlayApp() {
           );
           pendingMutationsRef.current = [];
           compositionReceivedRef.current = true;
-          setComposition(composition);
+          // Timer snapshots replace declarative state, not in-flight streamed playback.
+          setComposition(current => ({ ...composition, modules: composition.modules.map(module => {
+            const streamed = module.enabled ? current?.modules.find(previous => previous.moduleId === module.moduleId)?.instructions.filter(instruction =>
+              seenIdsRef.current.has(instruction.id) && !module.instructions.some(next => next.id === instruction.id)
+            ) ?? [] : [];
+            return { ...module, instructions: [...module.instructions, ...streamed] };
+          }) }));
         } else if (message.type === "start") {
           if (!preparedIdsRef.current.delete(message.instructionId)) return;
           setComposition(current => current === null ? null : { ...current, modules: current.modules.map(module => ({ ...module,
@@ -79,6 +86,7 @@ export function OverlayApp() {
           else setComposition((current) => appendInstruction(current, route, message.instruction));
         } else if (message.type === "audio-state") {
           setMuted(message.muted);
+          setModuleMutes(message.moduleMutes);
         } else if (message.type === "surface-layers") {
           if (route.scope !== "unified") return;
           if (!compositionReceivedRef.current) queueMutation(message);
@@ -145,6 +153,7 @@ export function OverlayApp() {
       composition={composition}
       preparingInstructionIds={preparingIds}
       muted={muted}
+      moduleMutes={moduleMutes}
       onPlaybackEvent={onPlaybackEvent}
       resolveAssetUrl={resolveOverlayAssetUrl}
     />

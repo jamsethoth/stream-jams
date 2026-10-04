@@ -21,6 +21,10 @@ import type { LocalMediaService } from "../assets/local-media-service.js";
 const MAX_SCHEDULE_DELAY_MS = 2_147_483_647;
 const COMPLETION_HOLD_MS = 3_000;
 
+export class TimerGenerationConflictError extends Error {
+  constructor() { super("Timer generation changed"); this.name = "TimerGenerationConflictError"; }
+}
+
 export interface TimerClock { now(): number; }
 
 export interface TimerScheduler {
@@ -114,11 +118,92 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
     this.#publish();
   }
 
+  async activate(definitionId: string, expectedGeneration: string | null): Promise<TimerCommandResult> {
+    this.#assertOpen();
+    const entry = this.#resolveDeadline(definitionId);
+    if (entry !== undefined && entry.state.generation !== expectedGeneration) throw new TimerGenerationConflictError();
+    if (entry?.state.status === "running") return this.pause(definitionId);
+    if (entry?.state.status === "paused") return this.resume(definitionId);
+    if (entry !== undefined) return this.restart(definitionId);
+    return this.#startFresh(definitionId);
+  }
+
+  async reset(definitionId: string, generation: string): Promise<TimerCommandResult> {
+    this.#assertOpen();
+    const entry = this.#guardActive(definitionId, generation);
+    if (entry === undefined) return this.#result(false, this.#entries.get(definitionId)?.state ?? null);
+    const definition = this.#definitions.findById(definitionId);
+    if (definition === null) throw new TimerDefinitionNotFoundError(definitionId);
+    const state = entry.state;
+    if (state.status === "completed") return this.#result(false, state);
+    const snapshot = { ...state.snapshot, durationMs: definition.durationMs };
+    const now = this.#clock.now();
+    entry.state = state.status === "running"
+      ? { ...state, snapshot, startedAtEpochMs: now, endsAtEpochMs: now + definition.durationMs }
+      : { ...state, snapshot, remainingMs: definition.durationMs };
+    const changed = JSON.stringify(state) !== JSON.stringify(entry.state);
+    if (changed) { this.#scheduleDeadline(definitionId, generation); this.#publish(); }
+    return this.#result(changed, entry.state);
+  }
+
+  async stopActive(definitionId: string, generation: string): Promise<TimerCommandResult> {
+    this.#assertOpen();
+    const entry = this.#guardActive(definitionId, generation);
+    if (entry === undefined) return this.#result(false, this.#entries.get(definitionId)?.state ?? null);
+    return this.stop(definitionId);
+  }
+
+  async adjustActive(definitionId: string, candidate: TimerAdjustment, generation: string): Promise<TimerCommandResult> {
+    this.#assertOpen();
+    const input = timerAdjustmentSchema.parse(candidate);
+    if (input.action === "set" || input.amountMs <= 0) throw new Error("Active adjustment requires a positive increment or decrement");
+    const entry = this.#guardActive(definitionId, generation);
+    if (entry === undefined) return this.#result(false, this.#entries.get(definitionId)?.state ?? null);
+    return this.adjust(definitionId, input);
+  }
+
+  async togglePaused(): Promise<{ changed: boolean; states: readonly TimerRunState[] }> {
+    this.#assertOpen();
+    for (const id of this.#entries.keys()) this.#resolveDeadline(id);
+    const running = [...this.#entries.values()].some(entry => entry.state.status === "running");
+    let changed = false;
+    const now = this.#clock.now();
+    // Use synchronous transitions and one captured time for the entire batch.
+    for (const [id, entry] of this.#entries) {
+      if (entry.state.status === (running ? "running" : "paused")) {
+        if (running) this.#pause(id, now);
+        else this.#resume(id, now);
+        changed = true;
+      }
+    }
+    return { changed, states: this.listStates() };
+  }
+
+  #guardActive(definitionId: string, generation: string): RuntimeEntry | undefined {
+    const entry = this.#resolveDeadline(definitionId);
+    if (entry === undefined) return undefined;
+    if (entry.state.generation !== generation) throw new TimerGenerationConflictError();
+    if (entry.state.status === "completed") return undefined;
+    return entry;
+  }
+
+  #resolveDeadline(definitionId: string): RuntimeEntry | undefined {
+    const entry = this.#entries.get(definitionId);
+    if (entry?.state.status === "running" && entry.state.endsAtEpochMs <= this.#clock.now()) this.#complete(definitionId, entry.state.generation);
+    if (entry?.state.status === "completed" && entry.state.expiresAtEpochMs <= this.#clock.now()) {
+      entry.scheduled?.cancel();
+      this.#entries.delete(definitionId);
+      this.#publish();
+      void this.#media?.release(timerRunOwner(entry.state.generation));
+    }
+    return this.#entries.get(definitionId);
+  }
+
   async adjust(definitionId: string, candidate: TimerAdjustment, inactiveBehavior: "ignore" | "start" | "paused" = "ignore"): Promise<TimerCommandResult> {
     this.#assertOpen();
     const input = timerAdjustmentSchema.parse(candidate);
     let created = false;
-    let entry = this.#entries.get(definitionId);
+    let entry = this.#resolveDeadline(definitionId);
     let cleanup: Promise<void> | undefined;
     if (entry?.state.status === "completed") {
       if (input.action !== "set" && inactiveBehavior === "ignore") return this.#result(false, entry.state);
@@ -168,16 +253,20 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
 
   async start(definitionId: string): Promise<TimerCommandResult> {
     this.#assertOpen();
-    const existing = this.#entries.get(definitionId);
+    const existing = this.#resolveDeadline(definitionId);
     if (existing !== undefined) return this.#result(false, existing.state);
     return this.#startFresh(definitionId);
   }
 
   async pause(definitionId: string): Promise<TimerCommandResult> {
     this.#assertOpen();
-    const entry = this.#entries.get(definitionId);
+    return this.#pause(definitionId, this.#clock.now());
+  }
+
+  #pause(definitionId: string, now: number): TimerCommandResult {
+    const entry = this.#resolveDeadline(definitionId);
     if (entry?.state.status !== "running") return this.#result(false, entry?.state ?? null);
-    const remainingMs = Math.max(0, entry.state.endsAtEpochMs - this.#clock.now());
+    const remainingMs = Math.max(0, entry.state.endsAtEpochMs - now);
     if (remainingMs === 0) {
       this.#complete(definitionId, entry.state.generation);
       return this.#result(true, this.#entries.get(definitionId)?.state ?? null);
@@ -197,9 +286,12 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
 
   async resume(definitionId: string): Promise<TimerCommandResult> {
     this.#assertOpen();
-    const entry = this.#entries.get(definitionId);
+    return this.#resume(definitionId, this.#clock.now());
+  }
+
+  #resume(definitionId: string, startedAtEpochMs: number): TimerCommandResult {
+    const entry = this.#resolveDeadline(definitionId);
     if (entry?.state.status !== "paused") return this.#result(false, entry?.state ?? null);
-    const startedAtEpochMs = this.#clock.now();
     entry.state = {
       status: "running",
       definitionId,
@@ -215,7 +307,7 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
 
   async stop(definitionId: string): Promise<TimerCommandResult> {
     this.#assertOpen();
-    const entry = this.#entries.get(definitionId);
+    const entry = this.#resolveDeadline(definitionId);
     if (entry === undefined) return this.#result(false, null);
     entry.scheduled?.cancel();
     this.#entries.delete(definitionId);
@@ -227,7 +319,7 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
 
   async restart(definitionId: string): Promise<TimerCommandResult> {
     this.#assertOpen();
-    const existing = this.#entries.get(definitionId);
+    const existing = this.#resolveDeadline(definitionId);
     let cleanup: Promise<void> | undefined;
     if (existing !== undefined) {
       existing.scheduled?.cancel();
@@ -324,8 +416,8 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
     }
     this.#scheduleDeadline(definitionId, state.generation);
     this.#publish();
-    if (!paused) await this.#settleCuePlay("start", state);
-    return this.#result(true, state);
+    if (!paused && entry.state.status === "running") await this.#settleCuePlay("start", entry.state);
+    return this.#result(true, this.#entries.get(definitionId)?.state ?? null);
   }
 
   #scheduleDeadline(definitionId: string, generation: string): void {
