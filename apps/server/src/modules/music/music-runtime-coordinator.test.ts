@@ -37,6 +37,23 @@ function fixture() {
 }
 
 describe("MusicRuntimeCoordinator", () => {
+  it("drains live Music before maintenance and resumes from fresh provider state", async () => {
+    const f = fixture(); f.setEnabled(true); await f.runtime.reconcile();
+    const first = f.sources[0]!;
+    first.onStatus?.(connected); first.onSnapshot?.(snapshot(f.runtime.generation!, 1, 1000));
+    await f.runtime.suspendForMaintenance();
+    expect(first.signal?.aborted).toBe(true);
+    expect(first.stopCount).toBe(1);
+    expect(f.runtime.getProjection("landscape")).toBeNull();
+    await f.runtime.reconcile();
+    expect(f.sources).toHaveLength(1);
+    await f.runtime.resumeAfterMaintenance();
+    expect(f.sources).toHaveLength(2);
+    expect(f.runtime.getProjection("landscape")).toBeNull();
+    first.onStatus?.(connected); first.onSnapshot?.(snapshot("old", 99, 1000));
+    expect(f.runtime.getProjection("landscape")).toBeNull();
+    await f.runtime.stop();
+  });
   it("never opens a source on disabled startup, and opens the selected source when enabled", async () => {
     const f = fixture();
     await f.runtime.reconcile();

@@ -20,6 +20,49 @@ function setup(response: Promise<{ status: number; body: unknown }>) {
 }
 
 describe("PearPairingService", () => {
+  it("uses a rotated restore identity instead of its cached client ID and cancels old approvals", async () => {
+    let stored = "old-client";
+    const urls: string[] = [];
+    const service = new PearPairingService({
+      identityStore: { getSecret: async () => stored, setSecret: async (_ref, value) => { stored = value; } },
+      generateId: (() => { let next = 0; return () => `attempt-${++next}`; })(),
+      requestApproval: async url => { urls.push(url.pathname); return new Promise(() => {}); }
+    });
+    try {
+      const old = await service.begin(config);
+      stored = "new-client";
+      await service.invalidateIdentity();
+      expect(() => service.get(old.attemptId)).toThrow("not found");
+      await service.begin(config);
+      expect(urls).toEqual(["/auth/old-client", "/auth/new-client"]);
+    } finally { await service.dispose(); }
+  });
+
+  it("waits for an in-flight client ID creation before rotating and rejects its late begin", async () => {
+    let finishRead!: (value: string | null) => void;
+    let stored: string | null = null;
+    let firstRead = true;
+    const urls: string[] = [];
+    const service = new PearPairingService({
+      identityStore: {
+        getSecret: async () => firstRead ? new Promise(resolve => { firstRead = false; finishRead = resolve; }) : stored,
+        setSecret: async (_ref, value) => { stored = value; }
+      },
+      generateClientId: () => "old-created-id",
+      requestApproval: async url => { urls.push(url.pathname); return { status: 403, body: null }; }
+    });
+    try {
+      const lateBegin = service.begin(config);
+      const rejected = expect(lateBegin).rejects.toThrow("identity changed");
+      const rotation = service.changeIdentity(async () => { stored = "restored-new-id"; });
+      finishRead(null);
+      await rotation;
+      await rejected;
+      await service.begin(config);
+      expect(stored).toBe("restored-new-id");
+      expect(urls).toEqual(["/auth/restored-new-id"]);
+    } finally { await service.dispose(); }
+  });
   it("holds an approved token server-side and exposes an opaque status", async () => {
     const { service, secrets } = setup(Promise.resolve({ status: 200, body: { accessToken: "sentinel-secret" } }));
     const begun = await service.begin(config);

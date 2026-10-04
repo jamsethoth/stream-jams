@@ -43,6 +43,8 @@ export class PearPairingService {
   readonly #now: () => number;
   readonly #requestApproval: (url: URL, signal: AbortSignal) => Promise<PearApprovalResponse>;
   #identityPromise: Promise<string> | null = null;
+  #identityEpoch = 0;
+  #identityChanging = false;
   #pendingBegins = 0;
 
   constructor(options: PearPairingServiceOptions) {
@@ -52,12 +54,15 @@ export class PearPairingService {
   }
 
   async begin(input: PearConfiguration): Promise<MusicPairingAttemptView> {
+    if (this.#identityChanging) throw new Error("Pear pairing identity is changing");
+    const identityEpoch = this.#identityEpoch;
     const config = parsePearConfiguration(input);
     this.#makeRoom();
     this.#pendingBegins += 1;
     let clientId: string;
     try { clientId = await this.#stableClientId(); }
     finally { this.#pendingBegins -= 1; }
+    if (this.#identityChanging || identityEpoch !== this.#identityEpoch) throw new Error("Pear pairing identity changed; begin pairing again");
     const id = this.#options.generateId?.() ?? `pair_${randomBytes(24).toString("base64url")}`;
     const abort = new AbortController();
     const expiresAt = this.#now() + lifetimeMs;
@@ -112,6 +117,26 @@ export class PearPairingService {
   async dispose(): Promise<void> {
     for (const attempt of this.#attempts.values()) this.#end(attempt, "cancelled");
     this.#attempts.clear();
+  }
+
+  /** Drop cached identity and pending approvals after restore changes the local client ID. */
+  async invalidateIdentity(): Promise<void> {
+    await this.changeIdentity(async () => {});
+  }
+
+  /** Serialize identity replacement with any in-flight initial keyring read/write. */
+  async changeIdentity(update: () => Promise<void>): Promise<void> {
+    if (this.#identityChanging) throw new Error("Pear pairing identity is already changing");
+    this.#identityChanging = true;
+    ++this.#identityEpoch;
+    await this.dispose();
+    try {
+      await this.#identityPromise?.catch(() => {});
+      await update();
+    } finally {
+      this.#identityPromise = null;
+      this.#identityChanging = false;
+    }
   }
 
   #expire(id: string): void {

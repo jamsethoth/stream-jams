@@ -1249,6 +1249,29 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         ]);
       }
     },
+    musicRestore: {
+      async captureCredentials() {
+        const registrations = await providerRegistrationRepository.list("music-source");
+        return {
+          identity: await secretStore.getSecret({ namespace: "music", accountId: "pear-desktop", name: "client-id" }),
+          secretRefs: registrations.flatMap(registration => registration.secretRef === null ? [] : [registration.secretRef])
+        };
+      },
+      suspend: () => musicRuntimeCoordinator.suspendForMaintenance(),
+      resume: () => musicRuntimeCoordinator.resumeAfterMaintenance(),
+      async rotateIdentity() {
+        await musicPairingService.changeIdentity(() =>
+          secretStore.setSecret({ namespace: "music", accountId: "pear-desktop", name: "client-id" }, randomUUID())
+        );
+      },
+      async restoreIdentity(identity) {
+        const ref = { namespace: "music", accountId: "pear-desktop", name: "client-id" } as const;
+        await musicPairingService.changeIdentity(() => identity === null
+          ? secretStore.deleteSecret(ref)
+          : secretStore.setSecret(ref, identity));
+      },
+      deleteOldSecret: ref => secretStore.deleteSecret(ref)
+    },
     runExclusive: (work) => maintenanceGate.runMaintenance(() => localMediaService.maintenance(work))
   });
   const managementOverviewService = new ManagementOverviewService({

@@ -52,6 +52,7 @@ export class MusicRuntimeCoordinator {
   #pendingPublication: MusicRuntimePublication | null = null;
   #listeners = new Set<(revision: number) => void>();
   #closed = false;
+  #suspended = false;
 
   constructor(options: MusicRuntimeCoordinatorOptions) {
     this.#options = options;
@@ -98,7 +99,7 @@ export class MusicRuntimeCoordinator {
 
   /** Invalidate synchronously so late callbacks cannot win while an old adapter is stopping. */
   reconcile(): Promise<void> {
-    if (this.#closed) return Promise.resolve();
+    if (this.#closed || this.#suspended) return Promise.resolve();
     const lifecycle = ++this.#lifecycle;
     const oldSource = this.#source;
     this.#controller?.abort();
@@ -134,6 +135,25 @@ export class MusicRuntimeCoordinator {
       });
     });
     return this.#transition;
+  }
+
+  /** Drain the live source before a portable restore replaces its registration. */
+  async suspendForMaintenance(): Promise<void> {
+    this.#suspended = true;
+    ++this.#lifecycle;
+    this.#controller?.abort();
+    const source = this.#source;
+    this.#source = null; this.#controller = null; this.#generation = null;
+    this.#snapshot = null; this.#lastAcceptedRevision = -1;
+    this.#appearanceStartedAtEpochMs = null; this.#status = disconnected;
+    this.#cancelDeadline(); this.#publish();
+    await this.#transition.catch(() => {});
+    await source?.stop();
+  }
+
+  resumeAfterMaintenance(): Promise<void> {
+    this.#suspended = false;
+    return this.reconcile();
   }
 
   async stop(): Promise<void> {
