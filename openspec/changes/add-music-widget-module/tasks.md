@@ -1,12 +1,12 @@
 ## 1. Confirm Scope And Baseline
 
 - [x] 1.1 Obtain written-spec review of the updated design, including the user-selected native controls plus Advanced CSS and uploaded branding image, before implementation planning/execution. Approved October 4, 2026; [implementation plan](../../../docs/superpowers/plans/2026-10-04-music-widget-module.md).
-- [ ] 1.2 Refresh origin/main, confirm the target branch/worktree and unimplemented Music scope, and record the source widget commit and supported Pear version in verification evidence.
-- [ ] 1.3 Map each reference widget feature to the new contract/UI and read applicable frontend/module/secret/backup guidance; evaluate an established CSS parser and any missing safe-fetch/image-validation primitive, documenting maintenance/license/stack fit before adding exact dependencies.
+- [x] 1.2 Refresh origin/main, confirm the target branch/worktree and unimplemented Music scope, and record the source widget commit and supported Pear version in verification evidence.
+- [x] 1.3 Map each reference widget feature to the new contract/UI and read applicable frontend/module/secret/backup guidance; evaluate an established CSS parser and any missing safe-fetch/image-validation primitive, documenting maintenance/license/stack fit before adding exact dependencies.
 
 ## 2. Core Contracts And Provider Registration
 
-- [ ] 2.1 Add bounded Music track/snapshot/status/capability/config schemas and adapter interfaces with positive, negative, empty, unknown-duration and malformed-input tests.
+- [x] 2.1 Add bounded Music track/snapshot/status/capability/config schemas and adapter interfaces with positive, negative, empty, unknown-duration and malformed-input tests.
 - [ ] 2.2 Move the shared module presentation contract out of timer ownership, preserve timer-stack behavior, add music-widget and update all browser/private-desktop validators with compatibility tests.
 - [ ] 2.3 Extend provider kinds/capabilities and add the next SQLite migration for registration constraints/indexes; verify existing providers and one-active-per-capability invariants survive migration/failure.
 - [ ] 2.4 Add music selection/config repository/service integration, independent activation/deactivation and disabled module defaults with restart and source-switch tests.
