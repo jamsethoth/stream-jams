@@ -14,12 +14,12 @@
 
 ## 3. Pear Pairing And Authenticated Adapter
 
-- [ ] 3.1 Implement typed loopback endpoint/config validation, stable local pairing identity, matched HTTP/WS schemes and explicit cancellable 60-second pairing; cover allow, deny, timeout, cancellation and rejected endpoints.
+- [x] 3.1 Implement typed loopback endpoint/config validation, stable local pairing identity, matched HTTP/WS schemes and explicit cancellable 60-second pairing; cover allow, deny, timeout, cancellation and rejected endpoints.
 - [ ] 3.2 Integrate provisional server-only credentials with durable SecretStore and validated registration; cover store/database failures, compensation, reconnect and explicit credential replacement without exposing token material.
 - [ ] 3.3 Implement authenticated REST observation and WS initialization requiring validated PLAYER_INFO; cover empty initialization, selected-transport testing, 1008/401/403 and WS-only unsupported endpoints.
 - [ ] 3.4 Implement auto/authenticated polling fallback, serialized polling, bounded reconnect, freshness reconciliation, generation ownership and complete disposal; cover rate limiting and no auth downgrade.
 - [ ] 3.5 Port and strengthen Pear normalization for full/partial metadata, pause/resume, seeks and missing fields; add regressions for HTTP 204 clearing, publication after disconnect and polling-driven idle reset.
-- [ ] 3.6 Test redaction of HTTP/WS/WSS query tokens, authorization metadata, nested exceptions and credential references through diagnostics and management responses.
+- [x] 3.6 Test redaction of HTTP/WS/WSS query tokens, authorization metadata, nested exceptions and credential references through diagnostics and management responses.
 
 ## 4. Music Runtime Artwork And Persistence
 
