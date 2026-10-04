@@ -118,6 +118,7 @@ import { PearPairingService } from "../modules/music/pear-pairing-service.js";
 import { PearMusicSource, validatePearMusicConnection } from "../modules/music/pear-music-source.js";
 import { MusicRuntimeCoordinator } from "../modules/music/music-runtime-coordinator.js";
 import { MusicManagementService } from "../modules/music/music-management-service.js";
+import { saveValidatedMusicConfig } from "../modules/music/music-config-save.js";
 import { MusicArtworkService } from "../modules/music/music-artwork-service.js";
 import { MusicOutputRuntime } from "../modules/music/music-output-runtime.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
@@ -1468,7 +1469,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
           const parsed = musicModuleConfigSchema.safeParse(input.config);
           if (parsed.success) await assetLibraryService.validateMusicAssetReferences(parsed.data);
         }
-        return overlayModuleConfigService.saveModuleConfig(input);
+        return saveValidatedMusicConfig(overlayModuleConfigService, input);
       });
       const config = input.moduleId === "music" ? await localMediaService.mutate(save) : await save();
       if (config.moduleId === "screen-effects" && !config.enabled) {

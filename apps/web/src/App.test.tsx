@@ -1,5 +1,5 @@
 import { createTestMediaPreviewApi } from "./test-support/media-preview-fixture.js";
-import type { AssetRecord } from "./management/assets/asset-api.js";
+import { createDefaultMusicModuleConfig, type AssetRecord } from "@stream-jams/core";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
@@ -29,6 +29,9 @@ describe("App", () => {
 
 function createManagementApi(): ManagementApi {
   return {
+    async getMusicConfig() { return { enabled: false, config: createDefaultMusicModuleConfig() }; },
+    async saveMusicConfig(enabled, config) { return { enabled, config }; },
+    async listMusicOutputs() { return []; },
     async beginMusicPairing() { return { attemptId: "pair_test", status: "pending", expiresAt: "2026-07-16T18:00:00.000Z" }; },
     async getMusicPairing() { return { attemptId: "pair_test", status: "approved", expiresAt: "2026-07-16T18:00:00.000Z" }; },
     async cancelMusicPairing() {},

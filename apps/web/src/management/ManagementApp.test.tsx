@@ -3,7 +3,7 @@ import { createStoryEffectSets } from "../stories/screen-effect-set-fixtures.js"
 import type { AssetRecord } from "./assets/asset-api.js";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { AssetLibraryItem, DiagnosticsWorkspaceView } from "@stream-jams/core";
+import { createDefaultMusicModuleConfig, type AssetLibraryItem, type DiagnosticsWorkspaceView } from "@stream-jams/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ManagementApp as ProductionManagementApp, type ManagementAppProps } from "./ManagementApp.js";
 import { createStoryAudioApi } from "../stories/audio-fixtures.js";
@@ -479,6 +479,9 @@ function createManagementApi(): ManagementApi {
   };
 
   return {
+    getMusicConfig: vi.fn(async () => ({ enabled: false, config: createDefaultMusicModuleConfig() })),
+    saveMusicConfig: vi.fn(async (enabled, config) => ({ enabled, config })),
+    listMusicOutputs: vi.fn(async () => []),
     beginMusicPairing: vi.fn(async () => ({ attemptId: "pair_test", status: "pending" as const, expiresAt: "2026-07-16T18:00:00.000Z" })),
     getMusicPairing: vi.fn(async () => ({ attemptId: "pair_test", status: "approved" as const, expiresAt: "2026-07-16T18:00:00.000Z" })),
     cancelMusicPairing: vi.fn(async () => undefined),

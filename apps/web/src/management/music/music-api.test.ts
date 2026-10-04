@@ -1,3 +1,4 @@
+import { createDefaultMusicModuleConfig } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
 import type { ManagementHttpClient } from "../management-http-client.js";
 import { createMusicApi } from "./music-api.js";
@@ -32,5 +33,24 @@ describe("Music API", () => {
   it("rejects an invalid status response at the client boundary", async () => {
     const api = createMusicApi({ getJson: async () => ({ ...status, token: "private" }) } as unknown as ManagementHttpClient);
     await expect(api.getMusicStatus()).rejects.toThrow();
+  });
+
+  it("round-trips Music config through the generic module endpoint and validates output links", async () => {
+    const config = createDefaultMusicModuleConfig();
+    const getJson = vi.fn(async (path: string) => path.endsWith("/config") ? { enabled: false, config } : [
+      { id: "music-live", label: "Music Landscape Live", overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId: "landscape", enabled: false, keyId: null, url: null, copyableUrlStatus: "create-required" },
+      { id: "alerts-live", moduleId: "alerts" }
+    ]);
+    const putJson = vi.fn(async () => ({ enabled: true, config }));
+    const api = createMusicApi({ getJson, putJson } as unknown as ManagementHttpClient);
+    expect((await api.getMusicConfig()).config).toEqual(config);
+    expect((await api.saveMusicConfig(true, config)).enabled).toBe(true);
+    expect(putJson).toHaveBeenCalledWith("/overlay-modules/music/config", { enabled: true, config }, expect.any(String));
+    expect((await api.listMusicOutputs()).map(output => output.id)).toEqual(["music-live"]);
+  });
+
+  it("rejects malformed Music output metadata", async () => {
+    const api = createMusicApi({ getJson: async () => [{ moduleId: "music", url: "https://unexpected.example/" }] } as unknown as ManagementHttpClient);
+    await expect(api.listMusicOutputs()).rejects.toThrow(/Music output response is invalid/u);
   });
 });

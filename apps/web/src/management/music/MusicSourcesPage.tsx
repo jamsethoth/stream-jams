@@ -187,6 +187,7 @@ export function MusicSourcesPage({ api, initialProviderId }: { readonly api: Mus
   if (loading) return <p role="status">Loading Music sources…</p>;
   if (error !== null && status === null) return <ManagementErrorBanner error={error} />;
   return <div className="provider-page">
+    <p><a href="/manage/modules/music">Edit Music appearance and branding</a></p>
     <section aria-label="Music status">
       <p><strong>Music module:</strong> {status?.enabled ? "Enabled" : "Disabled"}</p>
       <p><strong>Selected source:</strong> {providers.find(provider => provider.id === status?.selectedProviderId)?.name ?? "None"}</p>

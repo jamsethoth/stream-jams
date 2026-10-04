@@ -64,8 +64,15 @@ describe("management route model", () => {
       "modules-alerts",
       "modules-screen-effects",
       "modules-timers",
+      "modules-music",
       "alert-safety"
     ]);
+  });
+
+  it("round-trips the Music appearance route", () => {
+    expect(formatManagementRoute({ id: "modules-music" })).toBe("/manage/modules/music");
+    expect(parseManagementRoute("/manage/modules/music")).toEqual({ id: "modules-music" });
+    expect(getManagementRouteDefinition({ id: "modules-music" }).breadcrumbs).toEqual(["Modules", "Music"]);
   });
 
   it("round-trips focused Screen Effect editor routes", () => {

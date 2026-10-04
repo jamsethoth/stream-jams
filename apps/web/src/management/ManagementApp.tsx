@@ -15,6 +15,7 @@ import { ManagementNavigation } from "./navigation/ManagementNavigation.js";
 import { EventSourcesPage } from "./providers/EventSourcesPage.js";
 import { TtsProvidersPage } from "./providers/TtsProvidersPage.js";
 const MusicSourcesPage = lazy(() => import("./music/MusicSourcesPage.js").then(module => ({ default: module.MusicSourcesPage })));
+const MusicPage = lazy(() => import("./music/MusicPage.js").then(module => ({ default: module.MusicPage })));
 import {
   getManagementRouteDefinition,
   parseManagementRoute,
@@ -147,6 +148,8 @@ function RouteContent({
       return <TtsProvidersPage initialProviderId={route.providerId} managementApi={managementApi} openSetupOnLoad={route.setup === "add"} />;
     case "music-sources":
       return <Suspense fallback={<p role="status">Loading Music sources…</p>}><MusicSourcesPage api={managementApi} initialProviderId={route.providerId} /></Suspense>;
+    case "modules-music":
+      return <Suspense fallback={<p role="status">Loading Music appearance…</p>}><MusicPage api={managementApi} assetApi={assetApi} /></Suspense>;
     case "modules-alerts":
       return <AlertSetsPage initialSetId={route.setId} managementApi={managementApi} onEditAlert={(alert) => onNavigate({ id: "alert-editor", alertId: alert.id, setId: alert.setId, eventType: alert.eventType, targetProfileId: alert.targetProfileIds[0] ?? "landscape" })} />;
     case "modules-screen-effects":
