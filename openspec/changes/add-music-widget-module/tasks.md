@@ -32,14 +32,14 @@
 ## 5. Management And Shared Rendering
 
 - [x] 5.1 Add typed Music setup/status/config clients and a Music sources integration workflow for pairing, testing, selection and reconnect; preserve validation-before-registration and refresh stale status at least every five seconds.
-- [ ] 5.2 Add Music module management with enablement, profile layouts, view/theme/opacity/alignment/idle settings, saved appearance controls, dirty-state handling and output links.
+- [x] 5.2 Add Music module management with enablement, profile layouts, view/theme/opacity/alignment/idle settings, saved appearance controls, dirty-state handling and output links.
 - [x] 5.3 Implement shared React full/compact Music rendering, metadata/artwork fallback, progress, scrolling/reduced-motion text and approved custom appearance using existing font assets.
 - [ ] 5.4 Add management mock preview and explicit test-output delivery using the production renderer; prove previews do not activate/change a provider or leak fixture state to live output.
 - [ ] 5.5 Register module/unified output composition and opt-in desktop surface delivery; preserve layer visibility, profile bounds, route-key/private authorization, click-through and no-audio behavior.
-- [ ] 5.6 Add production-component tests and Storybook states/interactions for appearance, long/missing text, unknown duration, empty/loading, pairing denial, auth-required, reconnect, stale status, dirty edits and keyboard accessibility.
+- [x] 5.6 Add production-component tests and Storybook states/interactions for appearance, long/missing text, unknown duration, empty/loading, pairing denial, auth-required, reconnect, stale status, dirty edits and keyboard accessibility.
 - [x] 5.7 Implement and test the shared bounded CSS parser/policy, including escaped syntax, custom-property indirection, resource loading, permitted at-rules, selector restrictions and inline validation locations; do not substitute regex-only filtering.
 - [ ] 5.8 Add the versioned styling surface, managed Shadow DOM frame and CSS apply/disable/clear behavior; verify layout/animation/container rules, native-control precedence, reduced motion and isolation from host/sibling content.
-- [ ] 5.9 Add accessible Advanced CSS editing with preview-only drafts, explicit save, last-valid-result preservation and an always-accessible disable action; cover these flows in production-component stories/tests.
+- [x] 5.9 Add accessible Advanced CSS editing with preview-only drafts, explicit save, last-valid-result preservation and an always-accessible disable action; cover these flows in production-component stories/tests.
 - [x] 5.10 Add branding image picker/upload, per-profile/full/compact fit/position/opacity, width/height/content insets and aspect-ratio action; render fill/image/content layers with transparent-image and load-failure stories/tests.
 
 ## 6. Automated Integration And Live Acceptance
