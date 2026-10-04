@@ -13,6 +13,7 @@ function setup() {
   let current = true;
   let currentUrl = descriptor.url;
   let revoked = false;
+  let desktopVisible = true;
   let clock = 1000;
   const service = new MusicArtworkService({
     isCurrentOwner: candidate => current && candidate.providerId === owner.providerId && candidate.generation === owner.generation,
@@ -37,9 +38,11 @@ function setup() {
         targetProfileId: request.targetProfileId ?? null, keyHash: "hash", routeKeySecretRef: null,
         createdAt: "2026-01-01T00:00:00Z", revokedAt: null
       } } : { authorized: false as const, reason: "key-mismatch" as const };
-    } }
+    } },
+    isDesktopMusicVisible: async () => desktopVisible
   });
-  return { app, service, setCurrent(value: boolean) { current = value; }, setUrl(value: string) { currentUrl = value; }, advance(ms: number) { clock += ms; }, revoke() { revoked = true; } };
+  return { app, service, setCurrent(value: boolean) { current = value; }, setUrl(value: string) { currentUrl = value; },
+    setDesktopVisible(value: boolean) { desktopVisible = value; }, advance(ms: number) { clock += ms; }, revoke() { revoked = true; } };
 }
 
 describe("music artwork HTTP delivery", () => {
@@ -63,12 +66,15 @@ describe("music artwork HTTP delivery", () => {
   });
 
   it("denies arbitrary URLs, old descriptors, revoked generations and expired desktop grants", async () => {
-    const { app, service, setCurrent, setUrl, advance } = setup();
+    const { app, service, setCurrent, setUrl, setDesktopVisible, advance } = setup();
     try {
       const ref = await service.resolve(descriptor, owner, new AbortController().signal);
       expect(ref).toMatch(/^art_/);
-      const handle = service.issueGrant(ref!, owner, "desktop-music", 1100)!;
+      const handle = service.issueGrant(ref!, owner, "desktop-music:desktop:primary", 1100)!;
       expect((await app.inject({ url: `/media/music-artwork/${handle}` })).statusCode).toBe(200);
+      setDesktopVisible(false);
+      expect((await app.inject({ url: `/media/music-artwork/${handle}` })).statusCode).toBe(404);
+      setDesktopVisible(true);
       advance(100);
       expect((await app.inject({ url: `/media/music-artwork/${handle}` })).statusCode).toBe(404);
       expect((await app.inject({ url: `/management/music/artwork/${encodeURIComponent(descriptor.url)}`, headers: { authorization: "Bearer management" } })).statusCode).toBe(404);
@@ -77,7 +83,7 @@ describe("music artwork HTTP delivery", () => {
       setCurrent(false);
       expect((await app.inject({ url: `/overlay/modules/music/live/valid/artwork/${sourceRef}` })).statusCode).toBe(404);
       await service.clearGeneration(owner);
-      expect(await service.readGrant(handle, "desktop-music")).toBeNull();
+      expect(await service.readGrant(handle, "desktop-music:desktop:primary")).toBeNull();
     } finally { await app.close(); }
   });
 });

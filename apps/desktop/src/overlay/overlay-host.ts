@@ -6,7 +6,7 @@ import type { DesktopDiagnosticInput } from "../desktop-diagnostics.js";
 type Configuration = Extract<SurfaceConfiguration, { kind: "desktop" }>;
 type RendererFailure = Pick<DesktopOverlayDiagnostic, "kind" | "reason" | "exitCode"> & { readonly operation?: DesktopOverlayDiagnostic["operation"] };
 export interface OverlayRendererCallbacks { onReply(candidate: unknown): void; onDestroyed(failure?: RendererFailure): void; onUnavailable(failure?: RendererFailure): void }
-export interface OverlayRendererPort { load(): Promise<void>; send(request: OverlayRendererRequest): void; destroy(): void; issueMedia(ownerId: string, grant: TrustedMediaGrant): PrivateMediaReference; revokeMediaOwner(ownerId: string): void }
+export interface OverlayRendererPort { load(): Promise<void>; send(request: OverlayRendererRequest): void; destroy(): void; issueMedia(ownerId: string, grant: TrustedMediaGrant): PrivateMediaReference; issueArtwork?(ownerId: string, grant: { handle: string; expiresAt: number }): string; revokeMediaOwner(ownerId: string): void }
 type Occurrence = { key: VisualRecipientKey; endsAt: number; durationMs: number; deferredStart: boolean; state: "preparing" | "prepared" | "started" | "stopping"; timer: ReturnType<typeof setTimeout> };
 type Pending = { retireOwner?: string; resolve(reply: DesktopVisualReply): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout>; key: string | null; record: Occurrence | undefined; expected: DesktopVisualReply["type"] };
 
@@ -271,10 +271,18 @@ export class OverlayHost implements DesktopOverlayTransport {
     if (command.type === "sync-module") {
       const owner = JSON.stringify(["module", command.moduleId, command.revision]);
       // Acquire the new revision before releasing any earlier presentation.
-      const assets = command.assets.map(asset => ({ assetId: asset.assetId, reference: this.#port!.issueMedia(owner, asset.grant) }));
-      this.#moduleOwners.set(command.moduleId, owner);
-      if (command.presentation === null) this.#port.revokeMediaOwner(owner);
-      return privateDesktopVisualCommandSchema.parse({ ...command, assets });
+      try {
+        const assets = command.assets.map(asset => ({ assetId: asset.assetId, reference: this.#port!.issueMedia(owner, asset.grant) }));
+        const artwork = command.artwork == null ? null : { ref: command.artwork.ref,
+          handle: this.#port.issueArtwork?.(owner, command.artwork.grant) ?? unavailableArtwork() };
+        const translated = privateDesktopVisualCommandSchema.parse({ ...command, assets, artwork });
+        this.#moduleOwners.set(command.moduleId, owner);
+        if (command.presentation === null) this.#port.revokeMediaOwner(owner);
+        return translated;
+      } catch (error) {
+        this.#port.revokeMediaOwner(owner);
+        throw error;
+      }
     }
     return command;
   }
@@ -352,6 +360,7 @@ export class OverlayHost implements DesktopOverlayTransport {
     };
   }
 }
+function unavailableArtwork(): never { throw new Error("Private artwork transport is unavailable"); }
 function identity(key: VisualRecipientKey): string { return JSON.stringify([key.surfaceId, key.moduleId, key.occurrenceId, key.generation]); }
 function unavailable(cause?: unknown): Error {
   return new Error("Desktop overlay is unavailable. Future requests recover automatically; Retry can restore it immediately.", cause === undefined ? undefined : { cause });

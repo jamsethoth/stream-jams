@@ -98,7 +98,7 @@ describe("MusicArtworkService", () => {
     const ref = await service.resolve({ url }, owner, new AbortController().signal);
     currentUrl = `${url}?next`;
     expect(await service.read(ref!, owner)).toBeNull();
-    expect(service.issueGrant(ref!, owner, "desktop-music", Date.now() + 1000)).toBeNull();
+    expect(service.issueGrant(ref!, owner, "desktop-music:desktop:primary", Date.now() + 1000)).toBeNull();
   });
 
   it("evicts after 32 items and clears generation plus its private grants", async () => {
@@ -107,12 +107,15 @@ describe("MusicArtworkService", () => {
     for (let index = 0; index < 33; index++) refs.push((await service.resolve({ url: `${url}?n=${index}` }, owner, new AbortController().signal))!);
     expect(service.counts.entries).toBe(32);
     expect(await service.read(refs[0]!, owner)).toBeNull();
-    const handle = service.issueGrant(refs[1]!, owner, "desktop-music", Date.now() + 1000)!;
+    const handle = service.issueGrant(refs[1]!, owner, "desktop-music:desktop:primary", Date.now() + 1000)!;
+    expect(service.issueGrant(refs[1]!, owner, "desktop-music:other-output", Date.now() + 1000)).toBeNull();
     expect(await service.readGrant(handle, "desktop-other")).toBeNull();
-    expect(await service.readGrant(handle, "desktop-music")).not.toBeNull();
+    expect(await service.readGrant(handle, "desktop-music:desktop:primary")).not.toBeNull();
+    service.revokeRecipient("desktop-music:desktop:primary");
+    expect(await service.readGrant(handle, "desktop-music:desktop:primary")).toBeNull();
     await service.clearGeneration(owner);
     expect(service.counts).toEqual({ entries: 0, bytes: 0 });
-    expect(await service.readGrant(handle, "desktop-music")).toBeNull();
+    expect(await service.readGrant(handle, "desktop-music:desktop:primary")).toBeNull();
   });
 
   it("enforces the 16 MiB cache cap and grant expiry", async () => {
@@ -126,9 +129,9 @@ describe("MusicArtworkService", () => {
     expect(service.counts.bytes).toBeLessThanOrEqual(16 * 1024 * 1024);
     expect(service.counts.entries).toBeLessThan(32);
     const current = await service.resolve({ url: `${url}?last` }, owner, new AbortController().signal);
-    const handle = service.issueGrant(current!, owner, "desktop-music", 1100)!;
+    const handle = service.issueGrant(current!, owner, "desktop-music:desktop:primary", 1100)!;
     clock = 1100;
-    expect(await service.readGrant(handle, "desktop-music")).toBeNull();
+    expect(await service.readGrant(handle, "desktop-music:desktop:primary")).toBeNull();
     expect(service.issueGrant(current!, owner, "overlay", 1200)).toBeNull();
     expect(ref).not.toBeNull();
   });

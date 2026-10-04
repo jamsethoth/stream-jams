@@ -6,6 +6,8 @@ describe("createRedactor", () => {
     const redactor = createRedactor();
     expect(redactor.redactText("/media/med_private-capability grant med_other_capability"))
       .toBe("/media/[REDACTED] grant [REDACTED]");
+    expect(redactor.redactText("/media/music-artwork/mart_private-capability grant mart_other_capability"))
+      .toBe("/media/music-artwork/[REDACTED] grant [REDACTED]");
   });
   it("redacts nested secrets, auth headers, URLs, and overlay route keys without mutating input", () => {
     const input = {

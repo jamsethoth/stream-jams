@@ -6,6 +6,21 @@ function create(fetcher: typeof fetch = vi.fn(async () => new Response("media"))
   return new PrivateMediaProtocol({ scheme: "stream-jams-audio", host: "player", trustedServiceOrigin: "http://127.0.0.1:1234", generation: 1, recipientId: "audio-player", fetch: fetcher });
 }
 describe("private media protocol", () => {
+  it("proxies private Music artwork only for its owned surface and revokes on hiding", async () => {
+    const fetcher = vi.fn(async () => new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "Content-Type": "image/png" } }));
+    const adapter = new PrivateMediaProtocol({ scheme: "stream-jams-overlay", host: "surface", trustedServiceOrigin: "http://127.0.0.1:1234",
+      generation: 1, recipientId: "desktop:primary", fetch: fetcher });
+    const source = { handle: `mart_${"a".repeat(43)}`, expiresAt: Date.now() + 60_000 };
+    const handle = adapter.issueArtwork("music-revision", source);
+    const url = `stream-jams-overlay://surface/music-artwork/${handle}`;
+    expect(handle).not.toContain("mart_");
+    expect((await adapter.handle(new Request(url))).status).toBe(200);
+    expect(fetcher).toHaveBeenCalledWith(`http://127.0.0.1:1234/media/music-artwork/${source.handle}`, expect.objectContaining({ redirect: "error" }));
+    expect((await adapter.handle(new Request(url.replace("surface", "wrong-output")))).status).toBe(404);
+    adapter.revokeOwner("music-revision");
+    expect((await adapter.handle(new Request(url))).status).toBe(404);
+    adapter.destroy();
+  });
   it("forwards only range/validators to its fixed origin with a distinct private handle", async () => {
     const fetcher = vi.fn(async () => new Response("part", { status: 206, headers: { "Content-Type": "video/mp4", "Content-Range": "bytes 0-3/100", "Set-Cookie": "secret", "Access-Control-Allow-Origin": "*" } }));
     const adapter = create(fetcher);

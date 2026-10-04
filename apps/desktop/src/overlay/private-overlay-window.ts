@@ -87,6 +87,14 @@ export class PrivateOverlayWindow implements OverlayRendererPort {
     if (this.#media === undefined) throw new Error("Private overlay media is unavailable");
     return this.#media.issue(ownerId, grant);
   }
+  issueArtwork(ownerId: string, grant: { handle: string; expiresAt: number }): string {
+    if (this.#destroying) throw new Error("Private artwork ownership is unavailable");
+    if (this.#media === undefined && typeof this.mediaOptions === "function") {
+      this.#media = new PrivateMediaProtocol({ ...this.mediaOptions(), scheme: OVERLAY_PLAYER_SCHEME, host: "surface", recipientId: this.config.id });
+    }
+    if (this.#media === undefined) throw new Error("Private overlay media is unavailable");
+    return this.#media.issueArtwork(ownerId, grant);
+  }
   revokeMediaOwner(ownerId: string): void { this.#media?.revokeOwner(ownerId); }
   send(candidate: OverlayRendererRequest): void {
     const request = overlayRendererRequestSchema.parse(candidate);

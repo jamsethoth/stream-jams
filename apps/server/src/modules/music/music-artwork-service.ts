@@ -92,7 +92,7 @@ export class MusicArtworkService {
     for (const [handle, grant] of this.#grants) if (grant.expiresAt <= now) this.#grants.delete(handle);
     if (!this.#options.isCurrentOwner(owner) || !this.#entries.has(ref) || !sameOwner(this.#entries.get(ref)!.owner, owner)
       || !this.#isCurrentDescriptor(this.#entries.get(ref)!.url, owner)
-      || recipient !== "desktop-music" || !Number.isSafeInteger(expiresAt) || expiresAt <= now || expiresAt - now > 3_600_000) return null;
+      || recipient !== "desktop-music:desktop:primary" || !Number.isSafeInteger(expiresAt) || expiresAt <= now || expiresAt - now > 3_600_000) return null;
     for (const [handle, grant] of this.#grants) if (grant.ref === ref && grant.recipient === recipient && sameOwner(grant.owner, owner)) {
       this.#grants.set(handle, { ...grant, expiresAt });
       return handle;
@@ -116,6 +116,10 @@ export class MusicArtworkService {
     for (const pending of this.#pending.values()) if (sameOwner(pending.owner, owner)) pending.controller.abort();
     for (const [ref, entry] of this.#entries) if (sameOwner(entry.owner, owner)) this.#remove(ref);
     for (const [handle, grant] of this.#grants) if (sameOwner(grant.owner, owner)) this.#grants.delete(handle);
+  }
+
+  revokeRecipient(recipient: string): void {
+    for (const [handle, grant] of this.#grants) if (grant.recipient === recipient) this.#grants.delete(handle);
   }
 
   #remove(ref: string): void {

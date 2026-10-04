@@ -118,6 +118,7 @@ import { PearPairingService } from "../modules/music/pear-pairing-service.js";
 import { PearMusicSource, validatePearMusicConnection } from "../modules/music/pear-music-source.js";
 import { MusicRuntimeCoordinator } from "../modules/music/music-runtime-coordinator.js";
 import { MusicArtworkService } from "../modules/music/music-artwork-service.js";
+import { MusicOutputRuntime } from "../modules/music/music-output-runtime.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
 import { evaluateProviderActivationImpact } from "../modules/providers/provider-activation-impact.js";
 import { SqliteProviderRegistrationRepository } from "../modules/providers/sqlite-provider-registration-repository.js";
@@ -1299,6 +1300,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     }, input.exception);
     return { referenceId: input.referenceId };
   };
+  const musicOutputRuntime = new MusicOutputRuntime({
+    runtime: musicRuntimeCoordinator,
+    assets: assetLibraryService,
+    getConfig: async () => (await overlayModuleConfigService.getModuleConfig("music")).config as import("@stream-jams/core").MusicModuleConfig,
+    now: () => now().getTime()
+  });
   const overlayModuleRuntimes = new Map<string, OverlayModuleRuntime>([
     ["alerts", {
       async getModuleSnapshot() {
@@ -1308,7 +1315,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       }
     }],
     ["screen-effects", effectPlaybackCoordinator],
-    ["timers", timerRuntimeCoordinator]
+    ["timers", timerRuntimeCoordinator],
+    ["music", musicOutputRuntime]
   ]);
   const overlayCompositionService = new DefaultOverlayCompositionService({
     surfaceRepository,
@@ -1326,6 +1334,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     surfaces: surfaceRepository,
     runtime: timerRuntimeCoordinator,
     assets: desktopVisualAssetResolver,
+    music: { runtime: musicOutputRuntime, coordinator: musicRuntimeCoordinator, assets: desktopVisualAssetResolver, artwork: musicArtworkService },
     logger: runtimeLogger,
     generateReferenceId: generateRuntimeReferenceId
   });
@@ -1354,6 +1363,22 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     return pending;
   };
   const unsubscribeTimerOutputs = timerRuntimeCoordinator.subscribe(() => { void trackRuntimeWork(queueTimerOutputSync); });
+  const syncMusicOutputs = async (includeTest: boolean) => {
+    const revision = musicRuntimeCoordinator.revision;
+    const moduleIds = overlayModuleRegistry.listModules().map(module => module.id);
+    await Promise.all(overlayGateway.clients.filter(client =>
+      (includeTest || client.purpose === "live") && (client.scope === "unified" || client.moduleId === "music")
+    ).map(async client => {
+      const composition = client.scope === "module"
+        ? await overlayCompositionService.resolveModuleOutput({ moduleId: "music", overlayId: client.overlayId, purpose: client.purpose,
+          ...(client.targetProfileId == null ? {} : { targetProfileId: client.targetProfileId }) })
+        : await overlayCompositionService.resolveUnifiedOutput({ overlayId: client.overlayId, purpose: client.purpose, enabledModuleIds: moduleIds });
+      if (client.purpose === "test" || musicRuntimeCoordinator.revision === revision) overlayGateway.deliverComposition(client.id, composition);
+    }));
+    await desktopModuleSnapshotSink?.syncMusic();
+  };
+  const queueMusicOutputSync = (includeTest = false) => trackRuntimeWork(() => syncMusicOutputs(includeTest));
+  const unsubscribeMusicOutputs = musicRuntimeCoordinator.subscribe(() => { void queueMusicOutputSync(); });
   for (const surface of await surfaceRepository.list()) {
     if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
   }
@@ -1367,7 +1392,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     moduleIds: () => overlayModuleRegistry.listModules().map(module => module.id),
     changed: async surface => {
       if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
-      if (surface.kind === "desktop") await queueTimerOutputSync();
+      if (surface.kind === "desktop") await Promise.all([queueTimerOutputSync(), queueMusicOutputSync()]);
     },
     runMutation: work => maintenanceGate.runIntake(work),
     logger: runtimeLogger,
@@ -1377,6 +1402,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     try {
       await surfaceSettingsService.initializeDesktop();
       await queueTimerOutputSync();
+      await queueMusicOutputSync();
     } catch (error) {
       await runtimeLogger.error("Desktop overlay could not be reconciled or configured. Other outputs remain available.", {
         module: "overlay-surfaces", source: "desktop-overlay.configure.failed", correlationId: generateRuntimeReferenceId(), processingId: null,
@@ -1439,7 +1465,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         await effectPlaybackCoordinator.disable();
       }
       if (config.moduleId === "timers") await queueTimerOutputSync();
-      if (config.moduleId === "music") await (config.enabled ? musicRuntimeCoordinator.refreshConfig() : musicRuntimeCoordinator.reconcile());
+      if (config.moduleId === "music") { await (config.enabled ? musicRuntimeCoordinator.refreshConfig() : musicRuntimeCoordinator.reconcile()); await queueMusicOutputSync(true); }
       return config;
     },
     async setModuleEnabled(moduleId, enabled) {
@@ -1450,7 +1476,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         await effectPlaybackCoordinator.disable();
       }
       if (config.moduleId === "timers") await queueTimerOutputSync();
-      if (config.moduleId === "music") await (config.enabled ? musicRuntimeCoordinator.refreshConfig() : musicRuntimeCoordinator.reconcile());
+      if (config.moduleId === "music") { await (config.enabled ? musicRuntimeCoordinator.refreshConfig() : musicRuntimeCoordinator.reconcile()); await queueMusicOutputSync(true); }
       return config;
     }
   };
@@ -1502,6 +1528,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     localMediaService,
     musicArtworkService,
     musicRuntimeCoordinator,
+    isDesktopMusicVisible: async () => (await surfaceRepository.list()).some(surface => surface.kind === "desktop" && surface.enabled && surface.displayId !== null &&
+      surface.layers.some(layer => layer.moduleId === "music" && layer.visible)),
+    onAssetReplaced: async () => { await queueMusicOutputSync(true); },
     mediaPreviewService,
     assetLibraryService,
     playbackCoordinator,
@@ -1568,6 +1597,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   cleanups.push(() => timerRuntimeCoordinator.close());
   cleanups.push(async () => {
     unsubscribeTimerOutputs();
+    unsubscribeMusicOutputs();
     await timerOutputSyncTail;
     await desktopModuleSnapshotSink?.close();
   });

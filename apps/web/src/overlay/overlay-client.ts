@@ -143,6 +143,16 @@ export function createOverlayAssetUrl(route: ParsedOverlayRoute, assetId: string
   return `/overlay/unified/${route.purpose}/${encodeURIComponent(route.rawKey)}/assets/${encodedAssetId}${versionQuery === "" ? "" : `?${versionQuery}`}`;
 }
 
+/** Opaque provider artwork is served only by a live, purpose-scoped output. */
+export function createOverlayMusicArtworkUrl(route: ParsedOverlayRoute, artworkRef: string): string {
+  if (route.purpose !== "live" || !/^[-_A-Za-z0-9]{1,512}$/.test(artworkRef)) return "";
+  if (route.scope === "module") {
+    if (route.moduleId !== "music") return "";
+    return `/overlay/modules/music/live/${encodeURIComponent(route.rawKey)}/artwork/${encodeURIComponent(artworkRef)}${targetProfileQuery(route.targetProfileId)}`;
+  }
+  return `/overlay/unified/live/${encodeURIComponent(route.rawKey)}/music/artwork/${encodeURIComponent(artworkRef)}`;
+}
+
 export function createOverlayPlaybackReporter(socket: OverlaySocketLike): OverlayPlaybackReporter {
   return {
     reportReady(instructionId: string) { sendIfOpen(socket, { type: "overlay.playback.ready", instructionId }); },

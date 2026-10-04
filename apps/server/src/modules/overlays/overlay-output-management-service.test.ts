@@ -13,6 +13,13 @@ import {
 } from "./overlay-output-management-service.js";
 
 describe("OverlayOutputManagementService", () => {
+  it("lists Music live and test outputs for Landscape and Vertical", async () => {
+    const { service } = createService([]);
+    const outputs = await service.listOutputs("http://127.0.0.1:39187");
+    expect(outputs.filter(output => output.moduleId === "music").map(output => [output.targetProfileId, output.purpose])).toEqual([
+      [null, "live"], [null, "test"], ["landscape", "live"], ["landscape", "test"], ["vertical", "live"], ["vertical", "test"]
+    ]);
+  });
   it("lists independent Alerts outputs for both target profiles and purposes", async () => {
     const { service } = createService([]);
 

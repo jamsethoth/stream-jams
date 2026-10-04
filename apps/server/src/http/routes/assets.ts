@@ -31,6 +31,7 @@ export interface AssetRouteDependencies {
   readonly localMediaService?: LocalMediaService;
   readonly assetLibraryService?: Pick<AssetLibraryService, "registerAsset" | "getChangeImpact" | "completeReplacement">;
   readonly mediaPreviewService?: Pick<MediaPreviewService, "invalidateAsset">;
+  readonly onAssetReplaced?: (assetId: string) => Promise<void>;
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
   readonly overlayAccessService?: Pick<OverlayAccessService, "verifyRouteAccess">;
@@ -159,7 +160,10 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
       }
       });
       // Release strict preview grants after the serialized media mutation has committed.
-      if (replacedAssetId !== null) await dependencies.mediaPreviewService?.invalidateAsset(replacedAssetId);
+      if (replacedAssetId !== null) {
+        await dependencies.mediaPreviewService?.invalidateAsset(replacedAssetId);
+        await dependencies.onAssetReplaced?.(replacedAssetId);
+      }
       return result;
     });
   }

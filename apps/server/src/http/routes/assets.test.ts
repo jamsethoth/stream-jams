@@ -161,7 +161,9 @@ describe("asset routes", () => {
   });
   it("invalidates strict Music previews after a compatible asset replacement", async () => {
     const invalidated: string[] = [];
-    const { app, authHeaders } = await createAppWithAssets({ musicRole: "branding", onAssetInvalidated: async id => { invalidated.push(id); } });
+    const published: string[] = [];
+    const { app, authHeaders } = await createAppWithAssets({ musicRole: "branding", onAssetInvalidated: async id => { invalidated.push(id); },
+      onAssetReplaced: async id => { published.push(id); } });
     await app.inject({ method: "POST", url: "/assets/import", headers: {
       ...authHeaders, "content-type": "application/octet-stream", "x-stream-jams-file-name": "brand.png", "x-stream-jams-mime-type": "image/png"
     }, payload: pngBytes });
@@ -171,6 +173,7 @@ describe("asset routes", () => {
     }, payload: replacementPngBytes });
     expect(replacement.statusCode).toBe(200);
     expect(invalidated).toEqual(["asset_1"]);
+    expect(published).toEqual(["asset_1"]);
   });
   afterEach(async () => {
     await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { force: true, recursive: true })));
@@ -535,6 +538,7 @@ async function createAppWithAssets(options: {
   readonly timerRole?: "icon" | "start-audio" | "end-audio";
   readonly musicRole?: "branding" | "title-font" | "details-font";
   readonly onAssetInvalidated?: (assetId: string) => Promise<void>;
+  readonly onAssetReplaced?: (assetId: string) => Promise<void>;
 } = {}) {
   const assetDirectory = await createTemporaryAssetDirectory();
   const repository = new InMemoryAssetRepository();
@@ -604,6 +608,7 @@ async function createAppWithAssets(options: {
       }
     },
     ...(options.onAssetInvalidated === undefined ? {} : { mediaPreviewService: { invalidateAsset: options.onAssetInvalidated } }),
+    ...(options.onAssetReplaced === undefined ? {} : { onAssetReplaced: options.onAssetReplaced }),
     managementAuthPreHandler: createTestManagementSecurity(managementSessionService),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
     ...(options.overlayAccessService === undefined ? {} : { overlayAccessService: options.overlayAccessService })

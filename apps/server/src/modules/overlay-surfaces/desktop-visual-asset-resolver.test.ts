@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { expect, it, vi } from "vitest";
-import { compatibilityAlertTextStyle, compatibilityAlertTextBoxStyle } from "@stream-jams/core";
+import { compatibilityAlertTextStyle, compatibilityAlertTextBoxStyle, createDefaultMusicModuleConfig, projectMusicWidget } from "@stream-jams/core";
 import type { AssetRecord, DesktopVisualBatch, TrustedMediaGrant } from "@stream-jams/core";
 import { DesktopVisualAssetResolver } from "./desktop-visual-asset-resolver.js";
 
@@ -17,6 +17,8 @@ function harness(record: Partial<AssetRecord> = {}) {
   const media = {
     records: vi.fn((owner: string, ids: readonly string[]) => { void owner; void ids; return records; }),
     hasOwner: vi.fn(() => false),
+    acquire: vi.fn(async () => records),
+    release: vi.fn(async () => {}),
     shareVersion: vi.fn((_owner: string, _source: string, id: string) => { if (!records.has(id)) throw new Error("missing"); }),
     verifyGroup: vi.fn(async (_owner: string, ids: readonly string[]) => { for (const id of ids) if (records.get(id)?.checksum !== checksum) throw new Error("integrity"); }),
     issueTrustedGrant: vi.fn((_owner: string, assetId: string, _recipient: string, expiresAt: number): TrustedMediaGrant => {
@@ -84,4 +86,21 @@ it("pins and grants fonts for text-only desktop instructions", async () => {
   batch.instructions[0] = { ...batch.instructions[0]!, visual: null, text: { text: "Hello", boxStyle: compatibilityAlertTextBoxStyle, layout: { x: 0, y: 0, width: 100, height: 100, zIndex: 0 }, textStyle: { ...compatibilityAlertTextStyle, fontAssetId: "asset" } } };
   expect((await resolver.resolve(batch)).assets).toHaveLength(1);
   expect(media.verifyGroup).toHaveBeenCalledWith('["alerts","one"]', ["asset"], expect.any(AbortSignal));
+});
+
+it("pins current Music brand and font versions for the private desktop only", async () => {
+  const { resolver, media } = harness();
+  const config = createDefaultMusicModuleConfig();
+  const projection = projectMusicWidget({ providerId: "pear", generation: "g", revision: 1,
+    track: { id: "track", title: "Title", artists: ["Artist"], album: null, artworkRef: null },
+    playbackState: "playing", positionMs: null, durationMs: null, observedAtEpochMs: 1000, session: null },
+    { state: "connected", stale: false, diagnosticReference: null }, config, "landscape", 1000, 1000)!;
+  const reference = { assetId: "asset", version: "a".repeat(64), mimeType: "image/png" as const, sizeBytes: 3, durationMs: null };
+  const result = await resolver.resolveMusicModule({ kind: "music-widget", widget: { ...projection, assets: [reference] } });
+  expect(result.assets).toHaveLength(1);
+  expect(result.ownerId).not.toBeNull();
+  expect(media.acquire).toHaveBeenCalledWith(result.ownerId, ["asset"], expect.any(Number), false, { asset: reference.version });
+  expect(media.issueTrustedGrant).toHaveBeenCalledWith(result.ownerId, "asset", "desktop-music:desktop:primary", expect.any(Number));
+  await resolver.releaseMusicOwner(result.ownerId!);
+  expect(media.release).toHaveBeenCalledWith(result.ownerId);
 });

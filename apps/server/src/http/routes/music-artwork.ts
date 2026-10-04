@@ -12,6 +12,7 @@ export interface MusicArtworkRouteDependencies {
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
   readonly overlayAccessService: Pick<OverlayAccessService, "verifyRouteAccess">;
+  readonly isDesktopMusicVisible?: () => Promise<boolean>;
 }
 
 /** Only current live artwork is deliverable. Preview/test fixtures never consume the live source. */
@@ -25,7 +26,8 @@ export function registerMusicArtworkRoutes(app: FastifyInstance, dependencies: M
   app.get("/overlay/unified/:purpose/:overlayKey/music/artwork/:ref", { preHandler: unifiedAuth }, (request, reply) => sendCurrent(request, reply, dependencies));
   app.get("/media/music-artwork/:handle", async (request, reply) => {
     const handle = parameter(request, "handle");
-    return sendBytes(reply, await dependencies.musicArtworkService.readGrant(handle, "desktop-music"));
+    if (dependencies.isDesktopMusicVisible === undefined || !await dependencies.isDesktopMusicVisible()) return sendBytes(reply, null);
+    return sendBytes(reply, await dependencies.musicArtworkService.readGrant(handle, "desktop-music:desktop:primary"));
   });
 }
 

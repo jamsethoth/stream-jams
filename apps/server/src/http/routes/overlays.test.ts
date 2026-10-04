@@ -12,6 +12,29 @@ import { LocalOverlayAccessService } from "../../modules/overlays/overlay-access
 import { OverlayGateway } from "../../websocket/overlay-gateway.js";
 
 describe("overlay routes", () => {
+  it("requires exact Music output purpose and profile keys for both browser routes", async () => {
+    const access = createAccessService(["ovl_musicLive", "ovl_musicTest", "ovl_unified"]);
+    const live = await access.createKey({ overlayId: "default", moduleId: "music", purpose: "live", scope: "module", targetProfileId: "vertical" });
+    const test = await access.createKey({ overlayId: "default", moduleId: "music", purpose: "test", scope: "module", targetProfileId: "landscape" });
+    const unified = await access.createKey({ overlayId: "default", moduleId: null, purpose: "live", scope: "unified" });
+    const compositions = new RecordingOverlayCompositionService();
+    const app = createServerApp({ metadata: { appName: "stream-jams", version: "1.2.3" }, overlayAccessService: access,
+      overlayCompositionService: compositions, overlayModuleRegistry: createRegistry(["music"]), webShellRenderer: createTestWebShellRenderer() });
+    try {
+      expect((await app.inject({ url: `/overlay/modules/music/live/${live.rawKey}/composition?profile=vertical` })).statusCode).toBe(200);
+      expect((await app.inject({ url: `/overlay/modules/music/test/${test.rawKey}/composition?profile=landscape` })).statusCode).toBe(200);
+      expect((await app.inject({ url: `/overlay/unified/live/${unified.rawKey}/composition` })).statusCode).toBe(200);
+      for (const url of [`/overlay/modules/music/test/${live.rawKey}/composition?profile=vertical`,
+        `/overlay/modules/music/live/${test.rawKey}/composition?profile=landscape`,
+        `/overlay/modules/music/live/${live.rawKey}/composition?profile=landscape`,
+        `/overlay/unified/test/${unified.rawKey}/composition`]) {
+        expect((await app.inject({ url })).statusCode).toBe(401);
+      }
+      await access.revokeKey(live.record.id);
+      expect((await app.inject({ url: `/overlay/modules/music/live/${live.rawKey}/composition?profile=vertical` })).statusCode).toBe(401);
+      expect(compositions.moduleRequests.map(request => [request.purpose, request.targetProfileId])).toEqual([["live", "vertical"], ["test", "landscape"]]);
+    } finally { await app.close(); }
+  });
   it("serves a module overlay shell and composition through a module route key", async () => {
     const overlayAccessService = createAccessService(["ovl_moduleLive"]);
     const created = await overlayAccessService.createKey({
