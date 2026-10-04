@@ -1442,16 +1442,17 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       let resolve!: () => void;
       let reject!: (error: unknown) => void;
       const promise = new Promise<void>((accept, fail) => { resolve = accept; reject = fail; });
+      void promise.catch(
+        // error-provenance: allow expected -- the tracked output work records failure; awaiting config callers still receive rejection
+        () => {}
+      );
       pendingMusicOutputSync = { includeTest: includeTest || activeMusicIncludesTest, promise, resolve, reject };
     } else {
       pendingMusicOutputSync.includeTest ||= includeTest;
     }
     return pendingMusicOutputSync.promise;
   };
-  const unsubscribeMusicOutputs = musicRuntimeCoordinator.subscribe(() => { void queueMusicOutputSync().catch(
-    // error-provenance: allow expected -- trackRuntimeWork records the output failure; a later revision retries
-    () => {}
-  ); });
+  const unsubscribeMusicOutputs = musicRuntimeCoordinator.subscribe(() => { void queueMusicOutputSync(); });
   for (const surface of await surfaceRepository.list()) {
     if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
   }

@@ -152,6 +152,36 @@ it("coalesces production Music output work while a desktop composition is blocke
   } finally { release(); spy.mockRestore(); }
 });
 
+it("bounds rejection observers under many Music revisions and recovers after output failure", async () => {
+  const { runtime } = await setup();
+  let release!: () => void;
+  let entered!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const original = DesktopModuleSnapshotSink.prototype.syncMusic;
+  let calls = 0;
+  const sink = vi.spyOn(DesktopModuleSnapshotSink.prototype, "syncMusic").mockImplementation(async function (this: DesktopModuleSnapshotSink) {
+    calls += 1;
+    if (calls === 1) { entered(); await blocked; throw new Error("planned Music output failure"); }
+    await original.call(this);
+  });
+  const reactions = vi.spyOn(Promise.prototype, "catch");
+  try {
+    await runtime.musicRuntimeCoordinator.reconcile();
+    await started;
+    reactions.mockClear();
+    await Promise.all(Array.from({ length: 300 }, () => runtime.musicRuntimeCoordinator.reconcile()));
+    const observers = new Map<unknown, number>();
+    for (const promise of reactions.mock.contexts) observers.set(promise, (observers.get(promise) ?? 0) + 1);
+    expect(Math.max(0, ...observers.values())).toBeLessThanOrEqual(1);
+    expect(calls).toBe(1);
+    release();
+    await vi.waitFor(() => expect(calls).toBe(2));
+    await runtime.musicRuntimeCoordinator.reconcile();
+    await vi.waitFor(() => expect(calls).toBe(3));
+  } finally { release(); reactions.mockRestore(); sink.mockRestore(); }
+});
+
 it.each(["twitch", "streamerbot"] as const)("resolves a saved active reviewed Landscape alert from %s without any OBS client", async provider => {
   const { transport, configure, ingest, settled } = await setup();
   await configure(true);
