@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./music-style-policy": {
+      "types": "./dist/music/style-policy.d.ts",
+      "default": "./dist/music/style-policy.js"
     }
   },
   "scripts": {

@@ -1,0 +1,20 @@
+:host { display: block; position: relative; width: 100%; height: 100%; overflow: hidden; isolation: isolate; contain: layout paint style; }
+*, *::before, *::after { box-sizing: border-box; }
+.sj-frame, .sj-brand-layer, .sj-content { position: absolute; }
+.sj-frame { inset: 0; z-index: 0; }
+.sj-brand-layer { inset: 0; z-index: 1; overflow: hidden; }
+.sj-brand-image { display: block; width: 100%; height: 100%; }
+.sj-content { z-index: 2; display: flex; align-items: center; gap: var(--sj-gap); overflow: hidden; min-width: 0; min-height: 0; color: var(--sj-title-color); container-type: inline-size; }
+.sj-artwork { flex: 0 0 var(--sj-art-size); width: var(--sj-art-size); height: var(--sj-art-size); border-radius: 6px; overflow: hidden; background: var(--sj-artwork-placeholder-color); }
+.sj-artwork img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.sj-copy { min-width: 0; flex: 1; overflow: hidden; }
+.sj-title, .sj-artists, .sj-album { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.sj-title { color: var(--sj-title-color); font: var(--sj-title-style) var(--sj-title-weight) var(--sj-title-size)/1.2 var(--sj-title-font); letter-spacing: var(--sj-title-spacing); text-decoration: var(--sj-title-decoration); }
+.sj-artists, .sj-album, .sj-time, .sj-attribution { color: var(--sj-details-color); font: var(--sj-details-style) var(--sj-details-weight) var(--sj-details-size)/1.3 var(--sj-details-font); letter-spacing: var(--sj-details-spacing); text-decoration: var(--sj-details-decoration); }
+.sj-album { opacity: .84; }
+.sj-attribution { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sj-progress-track { width: 100%; height: 5px; margin-top: 12px; border-radius: 5px; overflow: hidden; background: var(--sj-progress-track-color); }
+.sj-progress-fill { height: 100%; background: var(--sj-progress-fill-color); }
+.sj-time { margin-top: 4px; font-size: 12px; }
+.sj-content[data-view="compact"] .sj-artwork { display: none; }
+.sj-content[data-view="compact"] .sj-album { display: none; }

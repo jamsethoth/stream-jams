@@ -1,9 +1,9 @@
-import { desktopVisualRendererRequestSchema, privateVisualMediaUrl, serializeException, type PrivateDesktopModuleSync as DesktopModuleSync, type PrivateDesktopMediaAsset as DesktopVisualAsset, type PrivateDesktopVisualBatch as DesktopVisualBatch, type DesktopVisualRendererReply, type DesktopVisualRendererRequest, type OverlayModulePresentation, type OverlayPlaybackFailure, type PlaybackTiming, type SurfaceConfiguration, type VisualRecipientKey } from "@stream-jams/core";
+import { desktopVisualRendererRequestSchema, privateVisualMediaUrl, serializeException, type PrivateDesktopModuleSync as DesktopModuleSync, type PrivateDesktopMusicArtwork, type PrivateDesktopMediaAsset as DesktopVisualAsset, type PrivateDesktopVisualBatch as DesktopVisualBatch, type DesktopVisualRendererReply, type DesktopVisualRendererRequest, type OverlayModulePresentation, type OverlayPlaybackFailure, type PlaybackTiming, type SurfaceConfiguration, type VisualRecipientKey } from "@stream-jams/core";
 type Configuration = Extract<SurfaceConfiguration, { kind: "desktop" }>;
 export interface DesktopOverlaySnapshot {
   config: Configuration;
   occurrences: readonly { key: VisualRecipientKey; timing: PlaybackTiming; instructions: DesktopVisualBatch["instructions"]; assetUrls: ReadonlyMap<string, string>; preparing?: boolean }[];
-  modules: readonly { moduleId: DesktopModuleSync["moduleId"]; revision: number; presentation: OverlayModulePresentation; assetUrls: ReadonlyMap<string, string> }[];
+  modules: readonly { moduleId: DesktopModuleSync["moduleId"]; revision: number; presentation: OverlayModulePresentation; assetUrls: ReadonlyMap<string, string>; artwork: PrivateDesktopMusicArtwork | null }[];
 }
 export interface DesktopOverlayControllerDependencies {
   report(reply: DesktopVisualRendererReply): void;
@@ -131,7 +131,9 @@ export class DesktopOverlayController {
     const latest = this.#moduleRevisions.get(sync.moduleId) ?? -1;
     if (sync.revision < latest) { this.#report(envelope, { type: "ok" }); return; }
     const existing = this.#modules.get(sync.moduleId);
-    if (sync.revision === latest && existing !== undefined && sync.presentation !== null && sync.assets.length === existing.assetUrls.size && sync.assets.every(asset => existing.assetUrls.get(moduleAssetKey(asset.assetId, asset.reference.snapshot.version)) === privateVisualMediaUrl(asset.reference))) {
+    if (sync.revision === latest && existing !== undefined && sync.presentation !== null && sync.assets.length === existing.assetUrls.size &&
+      sync.artwork?.handle === existing.artwork?.handle && sync.artwork?.ref === existing.artwork?.ref &&
+      sync.assets.every(asset => existing.assetUrls.get(moduleAssetKey(asset.assetId, asset.reference.snapshot.version)) === privateVisualMediaUrl(asset.reference))) {
       this.#report(envelope, { type: "ok" }); return;
     }
     this.#moduleRevisions.set(sync.moduleId, sync.revision);
@@ -141,7 +143,7 @@ export class DesktopOverlayController {
       this.#removeModule(sync.moduleId); this.#publish(); this.#report(envelope, { type: "ok" }); return;
     }
     if (!this.#snapshot.config.enabled || this.#snapshot.config.displayId === null) {
-      this.#report(envelope, null, failure("Desktop timer snapshot could not be admitted.")); return;
+      this.#report(envelope, null, failure("Desktop module snapshot could not be admitted.")); return;
     }
     const load: ModuleLoad = { envelope, revision: sync.revision, cancelled: false, resources: [] };
     this.#moduleLoads.set(sync.moduleId, load);
@@ -156,13 +158,13 @@ export class DesktopOverlayController {
       this.#moduleLoads.delete(sync.moduleId);
       this.#removeModule(sync.moduleId);
       this.#modules.set(sync.moduleId, { moduleId: sync.moduleId, revision: sync.revision, presentation: sync.presentation,
-        assetUrls: urls, resources: load.resources });
+        assetUrls: urls, artwork: sync.artwork ?? null, resources: load.resources });
       this.#publish(); this.#report(envelope, { type: "ok" });
     } catch (error) {
       if (load.cancelled || this.#disposed || this.#moduleLoads.get(sync.moduleId) !== load) return;
       if (this.#moduleLoads.get(sync.moduleId) === load) this.#moduleLoads.delete(sync.moduleId);
       this.#releaseModuleLoad(load);
-      this.#report(envelope, null, failure("Desktop timer icons could not be prepared.", error));
+      this.#report(envelope, null, failure(sync.moduleId === "timers" ? "Desktop timer icons could not be prepared." : "Desktop Music assets could not be prepared.", error));
     }
   }
 
@@ -278,7 +280,7 @@ export class DesktopOverlayController {
   #publish(config = this.#snapshot.config): void {
     this.#snapshot = { config, occurrences: [...this.#records.values()].filter(record => record.state === "active" || (record.view.preparing === true && ["decoding", "ready", "scheduled"].includes(record.state))).map(record => record.view),
       modules: [...this.#modules.values()].map(record => ({ moduleId: record.moduleId, revision: record.revision,
-        presentation: record.presentation, assetUrls: record.assetUrls })) };
+        presentation: record.presentation, assetUrls: record.assetUrls, artwork: record.artwork })) };
     this.dependencies.changed();
   }
   #report(envelope: Envelope, result: DesktopVisualRendererReply["result"], failure?: OverlayPlaybackFailure): void {

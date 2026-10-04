@@ -220,8 +220,8 @@ export type { OverlayPlaybackFailure, OverlayPlaybackFailureStage } from "./over
 export { prepareTimedMedia, TimedMediaPreparationError } from "./audio/prepare-timed-media.js";
 export { prepareMediaAtStart } from "./audio/prepare-media-at-start.js";
 export type { TimedMediaElement } from "./audio/prepare-timed-media.js";
-export { desktopModuleSyncSchema, desktopVisualInstructionSchema, desktopVisualAssetSchema, desktopVisualBatchSchema, desktopVisualCommandSchema, desktopVisualReplySchema, desktopVisualRendererRequestSchema, desktopVisualRendererReplySchema, privateDesktopVisualBatchSchema, privateDesktopModuleSyncSchema, privateDesktopVisualCommandSchema, visualMediaType } from "./overlays/desktop-visual-transport.js";
-export type { DesktopModuleSync, DesktopVisualBatch, DesktopVisualAsset, DesktopVisualCommand, DesktopVisualReply, PrivateDesktopVisualBatch, PrivateDesktopModuleSync, PrivateDesktopVisualCommand, DesktopOverlayTransport, DesktopVisualRendererRequest, DesktopVisualRendererReply } from "./overlays/desktop-visual-transport.js";
+export { desktopModuleSyncSchema, desktopVisualInstructionSchema, desktopVisualAssetSchema, desktopVisualBatchSchema, desktopVisualCommandSchema, desktopVisualReplySchema, desktopVisualRendererRequestSchema, desktopVisualRendererReplySchema, privateDesktopVisualBatchSchema, privateDesktopModuleSyncSchema, privateDesktopVisualCommandSchema, privateDesktopMusicArtworkUrl, visualMediaType } from "./overlays/desktop-visual-transport.js";
+export type { DesktopModuleSync, DesktopVisualBatch, DesktopVisualAsset, DesktopVisualCommand, DesktopVisualReply, PrivateDesktopVisualBatch, PrivateDesktopModuleSync, PrivateDesktopMusicArtwork, PrivateDesktopVisualCommand, DesktopOverlayTransport, DesktopVisualRendererRequest, DesktopVisualRendererReply } from "./overlays/desktop-visual-transport.js";
 export { VisualRecipientLedger } from "./overlays/visual-recipient-ledger.js";
 export { selectedDesktopDisplaySchema, desktopOverlayDiagnosticSchema, desktopOverlayStatusSchema, surfaceSettingsViewSchema } from "./overlays/desktop-overlay-status.js";
 export type { SelectedDesktopDisplay, DesktopOverlayDiagnostic, DesktopOverlayStatus, SurfaceSettingsView, DesktopBindingState } from "./overlays/desktop-overlay-status.js";
@@ -370,5 +370,4 @@ export * from "./music/schemas.js";
 export { pearConfigurationSchema, type PearConfiguration } from "./music/pear-configuration.js";
 export * from "./music/module-definition.js";
 export * from "./music/projection.js";
-export * from "./music/style-policy.js";
 export * from "./music/asset-references.js";

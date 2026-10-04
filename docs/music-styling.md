@@ -33,4 +33,6 @@ Qualified style rules and validated `@media`, `@supports`, `@container`, and `@k
 
 Preview, save and restore use the same validator. An invalid draft leaves the last valid preview and saved live style in place. If persisted CSS unexpectedly fails validation at runtime, the renderer falls back to native styling; the operator can disable custom CSS from outside the styled widget.
 
+Code that validates or compiles Music CSS imports `validateMusicCss` or `compileMusicCss` from `@stream-jams/core/music-style-policy`. The renderer loads that same shared policy only when enabled CSS has nonempty source, keeping the ordinary overlay and management route bundles within their budgets. A changed or disabled style discards an obsolete compile result.
+
 To adapt a standalone widget stylesheet, replace document-wide `:root`, `body` and `#app` rules with `.sj-content`; move relevant values to native controls where possible. Replace old internal selectors with the documented `.sj-*` parts. There is no automatic stylesheet import or byte-for-byte compatibility promise. Contract changes require a style version and migration path.

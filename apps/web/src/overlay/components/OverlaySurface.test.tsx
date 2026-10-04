@@ -8,6 +8,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OverlaySurface } from "./OverlaySurface.js";
+import { createDefaultMusicModuleConfig, projectMusicWidget } from "@stream-jams/core";
 
 beforeEach(() => {
   vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
@@ -859,6 +860,23 @@ describe("OverlaySurface", () => {
       ...module, surfaceLayer: { visible: false, zIndex: 3 }
     })) }} onPlaybackEvent={onPlaybackEvent} resolveAssetUrl={() => "/asset"} />);
     expect(screen.queryByRole("list", { name: "Active timers" })).toBeNull();
+  });
+
+  it("dispatches Music inside its visible layer and clears the entire host when hidden", () => {
+    const now = Date.now();
+    const widget = projectMusicWidget({ providerId: "pear", generation: "gen", revision: 1, track: {
+      id: "track", title: "Now Playing", artists: ["Artist"], album: null, artworkRef: "art_ref"
+    }, playbackState: "paused", positionMs: null, durationMs: null, observedAtEpochMs: now, session: null },
+    { state: "connected", stale: false, diagnosticReference: null }, createDefaultMusicModuleConfig(), "landscape", now, now)!;
+    const music: OverlayComposition = { overlayId: "default", purpose: "live", scope: "unified", targetProfileId: "landscape",
+      modules: [{ moduleId: "music", enabled: true, instructions: [], surfaceLayer: { visible: true, zIndex: 4 }, presentation: { kind: "music-widget", widget } }] };
+    const onPlaybackEvent = vi.fn();
+    const view = render(<OverlaySurface composition={music} resolveAssetUrl={() => ""} resolveMusicAsset={{ resolveAsset: () => null, resolveArtwork: () => "/art" }} onPlaybackEvent={onPlaybackEvent} />);
+    expect(view.container.querySelector(".music-widget-host")?.shadowRoot?.querySelector(".sj-title")?.textContent).toBe("Now Playing");
+    expect(onPlaybackEvent).not.toHaveBeenCalled();
+    view.rerender(<OverlaySurface composition={{ ...music, modules: music.modules.map(module => ({ ...module, surfaceLayer: { visible: false, zIndex: 4 } })) }}
+      resolveAssetUrl={() => ""} resolveMusicAsset={{ resolveAsset: () => null, resolveArtwork: () => "/art" }} />);
+    expect(view.container.querySelector(".music-widget-host")).toBeNull();
   });
 });
 
