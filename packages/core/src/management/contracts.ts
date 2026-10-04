@@ -801,7 +801,7 @@ export const assetLibraryItemSchema = z.object({
     ownerId: nonEmptyStringSchema,
     ownerName: nonEmptyStringSchema,
     variantId: nonEmptyStringSchema.nullable(),
-    usageRole: z.enum(["icon", "start-audio", "end-audio"]).optional()
+    usageRole: z.enum(["icon", "start-audio", "end-audio", "branding", "title-font", "details-font"]).optional()
   }).strict()).optional()
 });
 
@@ -818,7 +818,7 @@ export const assetChangeImpactSchema = z.object({
     ownerId: nonEmptyStringSchema,
     ownerName: nonEmptyStringSchema,
     variantId: nonEmptyStringSchema.nullable(),
-    usageRole: z.enum(["icon", "start-audio", "end-audio"]).optional()
+    usageRole: z.enum(["icon", "start-audio", "end-audio", "branding", "title-font", "details-font"]).optional()
   }).strict()).default([]),
   canDelete: z.boolean(),
   requiresConfirmation: z.boolean(),

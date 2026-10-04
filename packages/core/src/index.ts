@@ -152,7 +152,7 @@ export {
 export type * from "./assets/repository.js";
 export type * from "./assets/asset-validator.js";
 export type * from "./assets/media-import-pipeline.js";
-export { DefaultAssetValidator, defaultAssetValidationPolicy } from "./assets/asset-validator.js";
+export { DefaultAssetValidator, defaultAssetValidationPolicy, normalizeAssetMimeType } from "./assets/asset-validator.js";
 export { DefaultMediaImportPipeline, InvalidMediaImportError } from "./assets/media-import-pipeline.js";
 export { assetMediaTypeSchema, assetRecordSchema, assetValidationResultSchema } from "./assets/schemas.js";
 
@@ -371,3 +371,4 @@ export { pearConfigurationSchema, type PearConfiguration } from "./music/pear-co
 export * from "./music/module-definition.js";
 export * from "./music/projection.js";
 export * from "./music/style-policy.js";
+export * from "./music/asset-references.js";

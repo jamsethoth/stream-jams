@@ -171,7 +171,7 @@ export class LocalMediaService {
     });
   }
 
-  acquire(owner: string, assetIds: readonly string[], expiresAt?: number, allowMissing = false): Promise<ReadonlyMap<string, AssetRecord>> {
+  acquire(owner: string, assetIds: readonly string[], expiresAt?: number, allowMissing = false, expectedVersions?: Readonly<Record<string, string>>): Promise<ReadonlyMap<string, AssetRecord>> {
     if (this.#closed || this.#maintenanceCount > 0) return Promise.reject(new MediaUnavailableError());
     return this.#exclusive(async () => {
       if (this.#closed || this.#maintenanceCount > 0 || this.#owners.has(owner)) throw new MediaUnavailableError();
@@ -179,6 +179,10 @@ export class LocalMediaService {
       if (expiresAt !== undefined && (!Number.isSafeInteger(expiresAt) || expiresAt <= this.#now() || expiresAt - this.#now() > 3600000)) throw new MediaUnavailableError();
       const records = await this.options.assets.findManyByIds([...new Set(assetIds)]);
       if (!allowMissing && new Set(assetIds).size !== records.size) throw new MediaUnavailableError();
+      if (expectedVersions !== undefined && assetIds.some(id => {
+        const record = records.get(id);
+        return record === undefined || mediaVersion(record) !== expectedVersions[id];
+      })) throw new MediaUnavailableError();
       const snapshot = new Map([...records].map(([id, record]) => [id, Object.freeze({ ...record })]));
       const timer = expiresAt === undefined ? undefined : setTimeout(() => {
         void this.release(owner).catch((error: unknown) => this.options.onCleanupError?.(error));
@@ -186,6 +190,14 @@ export class LocalMediaService {
       timer?.unref();
       this.#owners.set(owner, { records: snapshot, controller: new AbortController(), verified: new Map(), ...(timer === undefined ? {} : { timer }) });
       return new Map(snapshot);
+    });
+  }
+
+  currentVersion(assetId: string): Promise<string | null> {
+    return this.#exclusive(async () => {
+      if (this.#closed || this.#maintenanceCount > 0) throw new MediaUnavailableError();
+      const record = (await this.options.assets.findManyByIds([assetId])).get(assetId);
+      return record === undefined ? null : mediaVersion(record);
     });
   }
 

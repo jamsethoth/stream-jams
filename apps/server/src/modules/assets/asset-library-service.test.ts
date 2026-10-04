@@ -1,5 +1,6 @@
 import {
   createScreenEffectDocument,
+  createDefaultMusicModuleConfig,
   compatibilityAlertTextStyle,
   type AlertEditorDocument,
   screenEffectDocumentSchema,
@@ -10,7 +11,7 @@ import {
   type TimerDefinition
 } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
-import { AssetLibraryInUseError, AssetLibraryService, type AssetLibraryMetadata } from "./asset-library-service.js";
+import { AssetLibraryInUseError, AssetLibraryService, InvalidMusicAssetReferenceError, type AssetLibraryMetadata } from "./asset-library-service.js";
 
 describe("AssetLibraryService", () => {
   it("builds searchable metadata, health, and set/event/profile usage summaries", async () => {
@@ -103,6 +104,67 @@ describe("AssetLibraryService", () => {
     await expect(fixture.service.deleteAsset("asset-image-1")).rejects.toBeInstanceOf(AssetLibraryInUseError);
   });
 
+  it("reports each Music view and font owner and blocks deletion even when compact is hidden", async () => {
+    const music = createDefaultMusicModuleConfig();
+    for (const profile of ["landscape", "vertical"] as const) for (const view of ["full", "compact"] as const) {
+      music.profiles[profile].views[view].branding.assetId = asset.id;
+    }
+    music.profiles.landscape.views.compact.titleFont.fontAssetId = asset.id;
+    music.profiles.landscape.views.compact.detailsFont.fontAssetId = asset.id;
+    const fixture = createFixture({ rules: [], music });
+    const impact = await fixture.service.getChangeImpact(asset.id);
+    expect(impact.canDelete).toBe(false);
+    expect(impact.owners).toHaveLength(6);
+    expect(impact.owners).toEqual(expect.arrayContaining([
+      { moduleId: "music", ownerId: "vertical", ownerName: "Music vertical", variantId: "compact", usageRole: "branding" },
+      { moduleId: "music", ownerId: "landscape", ownerName: "Music landscape", variantId: "compact", usageRole: "title-font" },
+      { moduleId: "music", ownerId: "landscape", ownerName: "Music landscape", variantId: "compact", usageRole: "details-font" }
+    ]));
+    await expect(fixture.service.deleteAsset(asset.id)).rejects.toBeInstanceOf(AssetLibraryInUseError);
+  });
+
+  it("rejects missing, unavailable and incompatible Music references before save", async () => {
+    const music = createDefaultMusicModuleConfig();
+    music.profiles.vertical.views.compact.branding.assetId = asset.id;
+    const fixture = createFixture({ rules: [] });
+    await expect(fixture.service.validateMusicAssetReferences(music)).resolves.toBeUndefined();
+    fixture.store.health = "missing";
+    await expect(fixture.service.validateMusicAssetReferences(music)).rejects.toBeInstanceOf(InvalidMusicAssetReferenceError);
+    fixture.store.health = "available";
+    fixture.assets.records[0] = { ...asset, mimeType: "image/gif", mediaType: "gif" };
+    await expect(fixture.service.validateMusicAssetReferences(music)).rejects.toBeInstanceOf(InvalidMusicAssetReferenceError);
+    fixture.assets.records.splice(0);
+    await expect(fixture.service.validateMusicAssetReferences(music)).rejects.toBeInstanceOf(InvalidMusicAssetReferenceError);
+  });
+
+  it("rejects image assets in Music font roles and converts inspect failure into an invalid save", async () => {
+    const music = createDefaultMusicModuleConfig();
+    music.profiles.landscape.views.full.titleFont.fontAssetId = asset.id;
+    const fixture = createFixture({ rules: [] });
+    await expect(fixture.service.validateMusicAssetReferences(music)).rejects.toMatchObject({ reason: "incompatible" });
+    music.profiles.landscape.views.full.titleFont.fontAssetId = null;
+    music.profiles.landscape.views.full.branding.assetId = asset.id;
+    fixture.store.health = "broken";
+    await expect(fixture.service.validateMusicAssetReferences(music)).rejects.toMatchObject({ reason: "unavailable" });
+  });
+
+  it("resolves current versioned Music assets and reports references lost after load", async () => {
+    const music = createDefaultMusicModuleConfig();
+    music.profiles.landscape.views.full.branding.assetId = asset.id;
+    music.profiles.landscape.views.compact.branding.assetId = asset.id;
+    music.profiles.vertical.views.full.branding.assetId = "other";
+    const fixture = createFixture({ rules: [] });
+    const first = await fixture.service.resolveMusicAssets(music, "landscape");
+    expect(first.assets).toEqual([expect.objectContaining({ assetId: asset.id, mimeType: "image/png", version: expect.stringMatching(/^[a-f0-9]{64}$/) })]);
+    expect(first.missingAssetIds).toEqual([]);
+    fixture.assets.records[0] = { ...asset, checksum: "sha256:new", storagePath: "image/new.png" };
+    const second = await fixture.service.resolveMusicAssets(music, "landscape");
+    expect(second.assets[0]?.version).not.toBe(first.assets[0]?.version);
+    fixture.store.health = "missing";
+    expect(await fixture.service.resolveMusicAssets(music, "landscape")).toEqual({ assets: [], missingAssetIds: [asset.id] });
+  });
+
+
   it("keeps unassigned rules with no target profiles visible to deletion guards", async () => {
     const unassignedRule = { ...rule, collectionIds: [] };
     const fixture = createFixture({ rules: [unassignedRule], targetProfileIds: [] });
@@ -187,6 +249,7 @@ function createFixture(options: {
   readonly effects?: readonly ScreenEffectDocument[];
   readonly timers?: readonly TimerDefinition[];
   readonly documents?: ReadonlyMap<string, AlertEditorDocument>;
+  readonly music?: ReturnType<typeof createDefaultMusicModuleConfig>;
 } = {}) {
   const assets = new MemoryAssetRepository([asset], options.deleteError);
   const metadata = new MemoryMetadataRepository();
@@ -220,6 +283,7 @@ function createFixture(options: {
     timerRepository: {
       list() { return options.timers ?? []; }
     },
+    getMusicConfig: async () => options.music ?? null,
     clock: () => new Date("2026-07-15T08:00:00.000Z")
   });
   return { service, assets, metadata, store };
@@ -246,12 +310,13 @@ class MemoryMetadataRepository {
 }
 
 class MemoryStore {
+  health: "available" | "missing" | "broken" = "available";
   readonly deleted: string[] = [];
   readonly staged: string[] = [];
   readonly committed: string[] = [];
   readonly rolledBack: string[] = [];
   readonly reads: [string, number][] = [];
-  async inspect() { return "available" as const; }
+  async inspect() { return this.health; }
   async delete(storagePath: string) { this.deleted.push(storagePath); }
   async readBounded(storagePath: string, maxBytes: number) { this.reads.push([storagePath, maxBytes]); return new Uint8Array([1, 2, 3, 4]); }
   async stageDelete(storagePath: string) {

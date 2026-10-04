@@ -20,6 +20,7 @@ import {
   isStreamerBotSubscriptionAvailable,
   overlayScopeSchema,
   pearConfigurationSchema,
+  musicModuleConfigSchema,
   type ActionableManagementError,
   type AlertEditorErrorReportInput,
   type AudioDeviceHost,
@@ -1153,6 +1154,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     alertRepository,
     effectRepository,
     timerRepository: timerDefinitionRepository,
+    getMusicConfig: async () => (await overlayModuleConfigService.getModuleConfig("music")).config as import("@stream-jams/core").MusicModuleConfig,
     ruleMetadataRepository: alertSetMetadataRepository,
     deletePersistedAsset: assetId => maintenanceGate.runConfigurationMutation(
       () => runInTransaction(database.connection, () => assetRepository.deleteSync(assetId))
@@ -1425,9 +1427,14 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const runtimeOverlayModuleConfigService: OverlayModuleConfigService = {
     getModuleConfig: (moduleId) => overlayModuleConfigService.getModuleConfig(moduleId),
     async saveModuleConfig(input) {
-      const config = await maintenanceGate.runConfigurationMutation(
-        () => overlayModuleConfigService.saveModuleConfig(input)
-      );
+      const save = async () => maintenanceGate.runConfigurationMutation(async () => {
+        if (input.moduleId === "music") {
+          const parsed = musicModuleConfigSchema.safeParse(input.config);
+          if (parsed.success) await assetLibraryService.validateMusicAssetReferences(parsed.data);
+        }
+        return overlayModuleConfigService.saveModuleConfig(input);
+      });
+      const config = input.moduleId === "music" ? await localMediaService.mutate(save) : await save();
       if (config.moduleId === "screen-effects" && !config.enabled) {
         await effectPlaybackCoordinator.disable();
       }

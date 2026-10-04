@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { LocalMediaService } from "./local-media-service.js";
+import { LocalMediaService, mediaVersion } from "./local-media-service.js";
 import { MediaPreviewService } from "./media-preview-service.js";
 import { LocalManagementSessionService } from "../auth/management-session-service.js";
 
@@ -31,6 +31,19 @@ it("renews the same URL and immutable duration after replacement, then aborts re
     expect(() => f.media.resolveForDelivery(first.url.slice(7))).toThrow("unavailable");
     await expect(f.previews.renew(f.session.id, first.id)).rejects.toThrow("unavailable");
   } finally { await f.close(); vi.useRealTimers(); }
+});
+it("requires the current version for Music previews and invalidates strict previews on replacement", async () => {
+  const f = await fixture();
+  try {
+    const reference = { assetId: "asset", version: mediaVersion(record), mimeType: "video/mp4" as const, sizeBytes: record.sizeBytes, durationMs: record.durationMs };
+    const first = await f.previews.createVersioned(f.session.id, reference);
+    expect(first.snapshot.version).toBe(reference.version);
+    f.assets.findManyByIds.mockResolvedValue(new Map([["asset", { ...record, storagePath: "new.mp4", durationMs: 4000 }]]));
+    await expect(f.previews.createVersioned(f.session.id, reference)).rejects.toThrow("unavailable");
+    await f.previews.invalidateAsset("asset");
+    expect(() => f.media.resolveForDelivery(first.url.slice(7))).toThrow("unavailable");
+    await expect(f.previews.renew(f.session.id, first.id)).rejects.toThrow("unavailable");
+  } finally { await f.close(); }
 });
 it("caps expiry at the session deadline and rejects expired renewal without reviving ownership", async () => {
   vi.useFakeTimers();

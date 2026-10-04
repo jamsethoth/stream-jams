@@ -4,7 +4,7 @@ import type {
   musicAlignmentSchema, musicAppearanceSchema, musicBrandingSchema, musicCapabilitiesSchema,
   musicConnectionTestResultSchema, musicCssConfigSchema, musicInsetsSchema, musicModuleConfigSchema,
   musicProfileConfigSchema, musicSnapshotSchema, musicStatusSchema, musicThemeSchema, musicTrackSchema,
-  musicTypographySchema, musicViewSchema, musicWidgetProjectionSchema
+  musicTypographySchema, musicViewSchema, musicWidgetProjectionSchema, musicPublicAssetReferenceSchema
 } from "./schemas.js";
 
 export type MusicSnapshot = z.infer<typeof musicSnapshotSchema>;
@@ -23,6 +23,7 @@ export type MusicView = z.infer<typeof musicViewSchema>;
 export type MusicTheme = z.infer<typeof musicThemeSchema>;
 export type MusicAlignment = z.infer<typeof musicAlignmentSchema>;
 export type MusicWidgetProjection = z.infer<typeof musicWidgetProjectionSchema>;
+export type MusicPublicAssetReference = z.infer<typeof musicPublicAssetReferenceSchema>;
 
 /** Server construction supplies ownership; adapters publish complete bounded observations only. */
 export interface MusicSourceAdapter {

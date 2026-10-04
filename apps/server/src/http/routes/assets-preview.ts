@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest, preHandlerHookHandler } from "fastify";
+import { mediaVersionSnapshotSchema } from "@stream-jams/core";
 import type { MediaPreviewService } from "../../modules/assets/media-preview-service.js";
 import { MediaCapacityError, MediaUnavailableError } from "../../modules/assets/local-media-service.js";
 import { extractBearerToken } from "../middleware/management-bearer-token.js";
@@ -13,7 +14,17 @@ export function registerAssetPreviewRoutes(app: FastifyInstance, dependencies: A
   const preHandler = [dependencies.managementRateLimitPreHandler, dependencies.managementAuthPreHandler];
   app.post("/assets/:assetId/preview", { preHandler }, async (request, reply) => {
     reply.header("cache-control", "no-store").header("referrer-policy", "no-referrer");
-    try { return reply.status(201).send(await dependencies.mediaPreviewService.create(session(request), parameter(request, "assetId"))); }
+    const assetId = parameter(request, "assetId");
+    const snapshot = request.body === undefined ? null : mediaVersionSnapshotSchema.safeParse(
+      typeof request.body === "object" && request.body !== null && "snapshot" in request.body
+        ? (request.body as { snapshot: unknown }).snapshot : null
+    );
+    if (snapshot !== null && (!snapshot.success || snapshot.data.assetId !== assetId)) {
+      return sendHttpError(reply, 400, { code: "INVALID_ASSET_PREVIEW_REQUEST", message: "Select a valid asset version." });
+    }
+    try { return reply.status(201).send(snapshot === null
+      ? await dependencies.mediaPreviewService.create(session(request), assetId)
+      : await dependencies.mediaPreviewService.createVersioned(session(request), snapshot.data)); }
     catch (error) { if (error instanceof MediaCapacityError) return sendHttpError(reply, 503, { code: "MEDIA_CAPACITY", message: error.message }); if (error instanceof MediaUnavailableError) return unavailable(reply); throw error; }
   });
   app.post("/assets/previews/:previewId/renew", { preHandler }, async (request, reply) => {
