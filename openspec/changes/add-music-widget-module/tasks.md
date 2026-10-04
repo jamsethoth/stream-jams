@@ -15,7 +15,7 @@
 ## 3. Pear Pairing And Authenticated Adapter
 
 - [x] 3.1 Implement typed loopback endpoint/config validation, stable local pairing identity, matched HTTP/WS schemes and explicit cancellable 60-second pairing; cover allow, deny, timeout, cancellation and rejected endpoints.
-- [ ] 3.2 Integrate provisional server-only credentials with durable SecretStore and validated registration; cover store/database failures, compensation, reconnect and explicit credential replacement without exposing token material.
+- [x] 3.2 Integrate provisional server-only credentials with durable SecretStore and validated registration; cover store/database failures, compensation, reconnect and explicit credential replacement without exposing token material.
 - [x] 3.3 Implement authenticated REST observation and WS initialization requiring validated PLAYER_INFO; cover empty initialization, selected-transport testing, 1008/401/403 and WS-only unsupported endpoints.
 - [x] 3.4 Implement auto/authenticated polling fallback, serialized polling, bounded reconnect, freshness reconciliation, generation ownership and complete disposal; cover rate limiting and no auth downgrade.
 - [x] 3.5 Port and strengthen Pear normalization for full/partial metadata, pause/resume, seeks and missing fields; add regressions for HTTP 204 clearing, publication after disconnect and polling-driven idle reset.
@@ -31,7 +31,7 @@
 
 ## 5. Management And Shared Rendering
 
-- [ ] 5.1 Add typed Music setup/status/config clients and a Music sources integration workflow for pairing, testing, selection and reconnect; preserve validation-before-registration and refresh stale status at least every five seconds.
+- [x] 5.1 Add typed Music setup/status/config clients and a Music sources integration workflow for pairing, testing, selection and reconnect; preserve validation-before-registration and refresh stale status at least every five seconds.
 - [ ] 5.2 Add Music module management with enablement, profile layouts, view/theme/opacity/alignment/idle settings, saved appearance controls, dirty-state handling and output links.
 - [ ] 5.3 Implement shared React full/compact Music rendering, metadata/artwork fallback, progress, scrolling/reduced-motion text and approved custom appearance using existing font assets.
 - [ ] 5.4 Add management mock preview and explicit test-output delivery using the production renderer; prove previews do not activate/change a provider or leak fixture state to live output.
@@ -40,7 +40,7 @@
 - [x] 5.7 Implement and test the shared bounded CSS parser/policy, including escaped syntax, custom-property indirection, resource loading, permitted at-rules, selector restrictions and inline validation locations; do not substitute regex-only filtering.
 - [ ] 5.8 Add the versioned styling surface, managed Shadow DOM frame and CSS apply/disable/clear behavior; verify layout/animation/container rules, native-control precedence, reduced motion and isolation from host/sibling content.
 - [ ] 5.9 Add accessible Advanced CSS editing with preview-only drafts, explicit save, last-valid-result preservation and an always-accessible disable action; cover these flows in production-component stories/tests.
-- [ ] 5.10 Add branding image picker/upload, per-profile/full/compact fit/position/opacity, width/height/content insets and aspect-ratio action; render fill/image/content layers with transparent-image and load-failure stories/tests.
+- [x] 5.10 Add branding image picker/upload, per-profile/full/compact fit/position/opacity, width/height/content insets and aspect-ratio action; render fill/image/content layers with transparent-image and load-failure stories/tests.
 
 ## 6. Automated Integration And Live Acceptance
 
