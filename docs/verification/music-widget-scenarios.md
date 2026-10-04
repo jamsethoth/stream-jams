@@ -1,6 +1,6 @@
 # Music scenario trace (2026-10-04)
 
-This maps all **57** named scenarios in the active [provider](../../openspec/changes/add-music-widget-module/specs/music-source-providers/spec.md) and [widget](../../openspec/changes/add-music-widget-module/specs/music-widget-overlay/spec.md) deltas to a named automated test or an explicitly pending physical check. Each source link lands on the named `it`/`test` case; a protocol fixture is not an installed Pear/OBS/desktop observation. See the [delivery record](music-widget-module.md) for commands and limits. `P` and `W` preserve the order in their respective delta spec. A row with `[blocked]` has automated evidence but still needs the stated physical prerequisite.
+This maps all **57** named scenarios in the [canonical provider](../../openspec/specs/music-source-providers/spec.md) and [widget](../../openspec/specs/music-widget-overlay/spec.md) capabilities, synced from the active change's deltas, to a named automated test or an explicitly pending physical check. Each source link lands on the named `it`/`test` case; a protocol fixture is not an installed Pear/OBS/desktop observation. See the [delivery record](music-widget-module.md) for commands and limits. `P` and `W` preserve the order in their respective specs. A row with `[blocked]` has automated evidence but still needs the stated physical prerequisite.
 
 | ID | Provider scenario | Named test / remaining acceptance |
 | --- | --- | --- |

@@ -9,6 +9,7 @@ Use this map to distinguish current behavior, pending work, and historical evide
 | How do I run or operate the application? | [Runbook](mvp-runbook.md) |
 | How do I configure Timers or Stream Deck HTTP actions? | [Timers](timers.md); [implementation verification and remaining manual acceptance](verification/timers.md) |
 | How do I configure Music and brand its widget? | [Music provider setup](music-providers.md), [styling surface](music-styling.md), and [dated verification/remaining acceptance](verification/music-widget-module.md) |
+| What Music behavior is required? | [Canonical Music source](../openspec/specs/music-source-providers/spec.md) and [widget/output](../openspec/specs/music-widget-overlay/spec.md) capabilities; [scenario trace](verification/music-widget-scenarios.md) identifies remaining physical checks |
 | What product boundaries are intentional? | [Product plan](product-plan.md); its MVP sections describe the first delivery boundary, and later sections describe approved additions |
 | What is still pending? | [Canonical backlog](backlog.md), including links to planned OpenSpec changes |
 | What implemented behavior is required? | [Canonical OpenSpec capabilities](../openspec/specs); source and tests establish what actually runs when a discrepancy is found |
@@ -46,7 +47,7 @@ Later implemented refinements are also reflected in canonical specs: removal of 
 
 `add-main-branch-changelog` (0/22 tasks) and `add-video-shoutout-overlay-module` (0/23 tasks) are proposals, not implemented features. Neither a root changelog nor a registered `video-shoutout` module exists at the audited commit.
 
-The active `add-music-widget-module` change contains the implemented Music runtime, management, and browser output work. Its [dated delivery record](verification/music-widget-module.md) and [scenario trace](verification/music-widget-scenarios.md) distinguish tested behavior from review fixes and physical Pear/OBS/private desktop checks that remain open. BL-028 stays in the [backlog](backlog.md) until its full acceptance and spec reconciliation are complete; Plex and Spotify remain separate BL-054 work.
+The active `add-music-widget-module` change has its software behavior synced into the canonical Music source and widget specs. Its [dated delivery record](verification/music-widget-module.md) and [scenario trace](verification/music-widget-scenarios.md) distinguish completed automated checks from physical Pear/OBS/private desktop acceptance that remains open. BL-028 stays in the [backlog](backlog.md) until that required acceptance is complete; Plex and Spotify remain separate BL-054 work.
 
 ## Historical Records
 
