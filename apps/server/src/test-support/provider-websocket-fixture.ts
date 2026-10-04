@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { createServer } from "node:https";
 import { once } from "node:events";
 import { WebSocket, WebSocketServer } from "ws";
@@ -7,7 +6,7 @@ export interface ProviderFixtureOptions {
   readonly kind: "streamerbot" | "speakerbot";
   readonly host?: "127.0.0.1" | "::1";
   readonly tls?: { readonly key: string | Buffer; readonly cert: string | Buffer };
-  readonly password?: string;
+  readonly expectedAuthentication?: string;
   /** Disable automatic Hello and request replies for deterministic hostile peers. */
   readonly autoRespond?: boolean;
   readonly enforce?: boolean;
@@ -30,19 +29,19 @@ export async function startProviderFixture(options: ProviderFixtureOptions) {
   };
   server.on("connection", socket => {
     const connection = connections.push(socket) - 1;
-    let ready = options.password === undefined;
+    let ready = options.expectedAuthentication === undefined;
     socket.on("error", () => {});
     socket.on("message", data => {
       const message = JSON.parse(String(data)) as Record<string, unknown>;
       requests.push({ connection, message });
       if (options.autoRespond === false) return;
-      const authenticated = options.password === undefined || message.authentication === auth(options.password);
+      const authenticated = options.expectedAuthentication === undefined || message.authentication === options.expectedAuthentication;
       if (message.request === "Authenticate") { ready = authenticated; send({ id: message.id, status: authenticated ? "ok" : "error" }, connection); }
       else if (!ready && options.enforce !== false) send({ id: message.id, status: "error" }, connection);
       else send({ id: message.id, status: "ok", info: { name: "Fixture" }, events: { Twitch: ["Follow"] } }, connection);
     });
     if (options.kind === "streamerbot" && options.autoRespond !== false) {
-      send({ request: "Hello", info: { name: "Fixture" }, ...(options.password === undefined ? {} : { authentication: { salt: "fixture-salt", challenge: "fixture-challenge" } }) }, connection);
+      send({ request: "Hello", info: { name: "Fixture" }, ...(options.expectedAuthentication === undefined ? {} : { authentication: { salt: "fixture-salt", challenge: "fixture-challenge" } }) }, connection);
     }
   });
   return {
@@ -69,8 +68,13 @@ export async function waitForProvider(condition: () => boolean, label = "provide
   }
 }
 
-function auth(password: string): string {
-  // Test peer mirrors the documented challenge-response; no password is persisted.
-  const digest = (value: string) => createHash("sha256").update(value).digest("base64");
-  return digest(digest(password + "fixture-salt") + "fixture-challenge");
-}
+// Public synthetic known-answer vectors calculated independently once:
+// base64(SHA256(base64(SHA256(password + salt)) + challenge)).
+// The peer never hashes passwords or imports the production authentication helper.
+export const providerAuthenticationVectors = {
+  "fixture-password": "c2JC/0iz1OnAFlxoRN7VPCl01BBUOZN+YaBU0/FEYwM=",
+  "required": "O1VKkrQo/F5uN8iItDVl3S87v4oTXrjRq9Dg2Uu30ls=",
+  "synthetic-lifecycle-password": "fo5ml4R/SQHw8eG5ep7ewPFxXzCQAPDO0FeHWgRM2tk=",
+  "backup-password-sentinel": "wEizXJZOK7dMGpSy+om4o5c0yS87z6NkJSu/EBqwkWM=",
+  "public-fixture-password": "nrGUCfae2paUiObpx0OKlcGsjalTlTMSXs1xIHkGUdM="
+} as const;

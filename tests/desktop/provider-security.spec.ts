@@ -63,17 +63,28 @@ test("packaged management and browser-source renderers preserve CSP-safe warped 
     };
     const set = await api("/management/alert-sets", "POST", { name: "Packaged security fixture" }) as { id: string };
     const alert = await api(`/management/alert-sets/${set.id}/alerts`, "POST", { name: "Warp fixture", eventType: "follow" }) as { id: string };
-    const fontBytes = await readFile(resolve("apps/web/node_modules/storybook/assets/browser/nunito-sans-regular.woff2"));
-    const imported = await fetch(`${base}/assets/import`, { method: "POST", headers: { ...headers, "content-type": "application/octet-stream", "x-stream-jams-file-name": "fixture.woff2", "x-stream-jams-mime-type": "font/woff2" }, body: fontBytes });
-    expect(imported.status).toBe(201);
-    const font = await imported.json() as { id: string };
     const original = alertEditorDocumentSchema.parse(await api(`/management/alerts/${alert.id}/editor`));
-    const alertDocument = alertEditorDocumentSchema.parse({ ...original, enabled: true, durationMs: 10000,
-      layers: [{ id: "message", name: "Message", type: "text", visible: true, order: 0, template: "Packaged {actor.displayName}", textStyle: { ...compatibilityAlertTextStyle, fontAssetId: font.id, warp: { ...createDefaultTextWarp(), points: createDefaultTextWarp().points.map((point, index) => index === 4 ? { ...point, x: .65 } : point) }, color: "#FF00FFFF" }, boxStyle: compatibilityAlertTextBoxStyle, animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 300, delayMs: 0, easing: "ease-out" } }],
+    let alertDocument = alertEditorDocumentSchema.parse({ ...original, enabled: true, durationMs: 10000,
+      layers: [{ id: "message", name: "Message", type: "text", visible: true, order: 0, template: "Packaged {actor.displayName}", textStyle: { ...compatibilityAlertTextStyle, warp: { ...createDefaultTextWarp(), points: createDefaultTextWarp().points.map((point, index) => index === 4 ? { ...point, x: .65 } : point) }, color: "#FF00FFFF" }, boxStyle: compatibilityAlertTextBoxStyle, animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 300, delayMs: 0, easing: "ease-out" } }],
       targetProfiles: [{ id: "landscape", enabled: true, reviewState: "ready", layerLayouts: [{ layerId: "message", x: 100, y: 300, width: 1000, height: 280, zIndex: 0 }] }, { id: "vertical", enabled: false, reviewState: "ready", layerLayouts: [] }],
       samplePayloads: [{ id: "fixture", label: "Fixture", kind: "built-in", payload: { actor: { displayName: "Font" } } }]
     });
     await api(`/management/alerts/${alert.id}/editor`, "PUT", { document: alertDocument });
+    await management.goto(`${base}/manage/modules/alerts/editor/${alert.id}?profile=landscape`);
+    await management.getByRole("button", { name: "Message Text", exact: true }).click();
+    await management.locator("summary").filter({ hasText: "Typography" }).click();
+    const fontImported = management.waitForResponse(response => response.request().method() === "POST" && response.url().endsWith("/assets/import"));
+    await management.getByLabel("Upload reusable font", { exact: true }).setInputFiles(resolve("apps/web/node_modules/storybook/assets/browser/nunito-sans-regular.woff2"));
+    const importedFont = await fontImported;
+    expect(importedFont.status()).toBe(201);
+    const font = await importedFont.json() as { id: string };
+    await expect(management.getByLabel("Uploaded font", { exact: true })).not.toHaveValue("");
+    await expect(management.getByLabel("Uploaded font", { exact: true })).toHaveValue(font.id);
+    const editorSaved = management.waitForResponse(response => response.request().method() === "PUT" && response.url().endsWith(`/management/alerts/${alert.id}/editor`));
+    await management.getByRole("button", { name: "Save", exact: true }).click();
+    expect((await editorSaved).status()).toBe(200);
+    alertDocument = alertEditorDocumentSchema.parse(await api(`/management/alerts/${alert.id}/editor`));
+    expect(alertDocument.layers[0]).toMatchObject({ type: "text", textStyle: { fontAssetId: font.id } });
     await management.goto(`${base}/manage/modules/alerts/editor/${alert.id}?profile=landscape`);
     const preview = management.getByRole("region", { name: "Landscape alert canvas" }).getByRole("img", { name: "Packaged Font" });
     await expect(preview).toBeVisible();

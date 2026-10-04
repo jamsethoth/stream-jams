@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from "vitest";
 import { configurationBackupArchiveSchema, type ProviderRegistrationAttempt } from "@stream-jams/core";
 import { createProviderSecurityRuntimeFixture } from "../test-support/provider-security-runtime-fixture.js";
-import { startProviderFixture, waitForProvider } from "../test-support/provider-websocket-fixture.js";
+import { providerAuthenticationVectors, startProviderFixture, waitForProvider } from "../test-support/provider-websocket-fixture.js";
 import { SqliteConfigurationSnapshotRepository } from "../modules/backup/sqlite-configuration-snapshot-repository.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -25,7 +25,7 @@ async function register(runtime: Awaited<ReturnType<typeof fixture>>, port: numb
 }
 
 it("authenticates real sockets, persists restart state, and fails closed when the stored password disappears", async () => {
-  const peer = await startProviderFixture({ kind: "streamerbot", password: "synthetic-lifecycle-password" });
+  const peer = await startProviderFixture({ kind: "streamerbot", expectedAuthentication: providerAuthenticationVectors["synthetic-lifecycle-password"] });
   cleanups.push(peer.close);
   const runtime = await fixture();
   const id = await register(runtime, peer.port, "synthetic-lifecycle-password");
@@ -115,7 +115,7 @@ it("exports portable consent without secrets, restores into a second runtime, an
   cleanups.push(peer.close);
   const runtime = await fixture();
   const id = await register(runtime, peer.port);
-  const authenticatedPeer = await startProviderFixture({ kind: "streamerbot", password: "backup-password-sentinel" });
+  const authenticatedPeer = await startProviderFixture({ kind: "streamerbot", expectedAuthentication: providerAuthenticationVectors["backup-password-sentinel"] });
   cleanups.push(authenticatedPeer.close);
   const authenticatedId = await register(runtime, authenticatedPeer.port, "backup-password-sentinel");
   expect((await runtime.request(`/management/providers/${authenticatedId}/activate`, "POST", { confirmWarnings: true })).status).toBe(200);

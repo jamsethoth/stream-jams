@@ -1,6 +1,6 @@
 import { testProviderTls } from "../../test-support/provider-tls/transport-test.js";
 import { afterEach, describe, expect, it } from "vitest";
-import { startProviderFixture, waitForProvider } from "../../test-support/provider-websocket-fixture.js";
+import { providerAuthenticationVectors, startProviderFixture, waitForProvider } from "../../test-support/provider-websocket-fixture.js";
 import { StreamerBotClient } from "./streamerbot-client.js";
 import { createNodeStreamerBotSocket } from "./node-streamerbot-socket.js";
 
@@ -19,7 +19,7 @@ function client(peer: Awaited<ReturnType<typeof fixture>>, input: { password?: s
 describe("real Streamer.bot transport", () => {
   testProviderTls("streamerbot");
   it.each(["127.0.0.1", "::1"] as const)("authenticates and reauthenticates/re-subscribes once on %s", async host => {
-    const peer = await fixture({ kind: "streamerbot", host, password: "fixture-password" });
+    const peer = await fixture({ kind: "streamerbot", host, expectedAuthentication: providerAuthenticationVectors["fixture-password"] });
     const { bot, ids } = client(peer, { password: "fixture-password" });
     await waitForProvider(() => bot.getStatus().state === "connected");
     await bot.subscribe([{ sourceKey: "Twitch", eventTypes: ["Follow"] }]);
@@ -33,7 +33,7 @@ describe("real Streamer.bot transport", () => {
     expect(peer.requests.filter(item => item.message.request === "Subscribe")).toHaveLength(2);
   });
   it.each([undefined, "wrong"])("rejects missing or wrong password %s", async password => {
-    const peer = await fixture({ kind: "streamerbot", password: "required" });
+    const peer = await fixture({ kind: "streamerbot", expectedAuthentication: providerAuthenticationVectors["required"] });
     const { bot, ids } = client(peer, password === undefined ? {} : { password });
     await waitForProvider(() => bot.getStatus().lastErrorAt !== null);
     peer.sendEvent("blocked");

@@ -12,8 +12,10 @@ import { registerWebShellRoutes } from "../../apps/server/src/http/routes/web-sh
 const webBuildDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "../../apps/web/dist");
 const app = createBaseServerApp({ metadata: { appName: "stream-jams", version: "e2e" } });
 registerWebShellRoutes(app, { webBuildDirectory });
-app.get("/assets/font-fixture/file", async (_request, reply) => reply.type("font/woff2").send(await readFile(new URL("../../apps/web/node_modules/storybook/assets/browser/nunito-sans-regular.woff2", import.meta.url))));
-app.get("/csp-fixture-video.mp4", async (_request, reply) => reply.type("video/mp4").send(await readFile(new URL("../../apps/web/public/storybook-assets/tiny-video.mp4", import.meta.url))));
+const publicFontBytes = await readFile(new URL("../../apps/web/node_modules/storybook/assets/browser/nunito-sans-regular.woff2", import.meta.url));
+const publicVideoBytes = await readFile(new URL("../../apps/web/public/storybook-assets/tiny-video.mp4", import.meta.url));
+app.get("/assets/font-fixture/file", (_request, reply) => reply.type("font/woff2").send(publicFontBytes));
+app.get("/csp-fixture-video.mp4", (_request, reply) => reply.type("video/mp4").send(publicVideoBytes));
 
 let productionUrl = "";
 

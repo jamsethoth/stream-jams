@@ -18,6 +18,9 @@ test("actual portable OBS browser renders scoped warped font pixels without mana
   const coord = join(root, "coord");
   const runtime = await createProviderSecurityRuntimeFixture();
   let child: ChildProcess | undefined;
+  let lastSyntheticScreenshot: Uint8Array | undefined;
+  let playbackTriggered = false;
+  let failureSnapshot: unknown;
   const failures: unknown[] = [];
   try {
     await Promise.all([mkdir(coord, { recursive: true }), cp(join(installed, "bin"), join(portable, "bin"), { recursive: true }), cp(join(installed, "data/obs-studio"), join(portable, "data/obs-studio"), { recursive: true }), cp(join(installed, "data/libobs"), join(portable, "data/libobs"), { recursive: true }), cp(join(installed, "data/obs-scripting"), join(portable, "data/obs-scripting"), { recursive: true })]);
@@ -39,12 +42,24 @@ test("actual portable OBS browser renders scoped warped font pixels without mana
     const api = async (path: string, method = "GET", body?: unknown) => { const result = await runtime.request(path, method, body); expect(result.ok, `${path}: ${result.status} ${result.ok ? "" : await result.clone().text()}`).toBe(true); return result.json(); };
     const set = await api("/management/alert-sets", "POST", { name: "OBS fixture" }) as { id: string };
     const alert = await api(`/management/alert-sets/${set.id}/alerts`, "POST", { name: "OBS text", eventType: "follow" }) as { id: string };
-    const bytes = await readFile(resolve("apps/web/node_modules/storybook/assets/browser/nunito-sans-regular.woff2"));
-    const imported = await fetch(`${runtime.runtime.url}/assets/import`, { method: "POST", headers: { ...runtime.headers, "content-type": "application/octet-stream", "x-stream-jams-file-name": "obs-fixture.woff2", "x-stream-jams-mime-type": "font/woff2" }, body: bytes });
-    expect(imported.status).toBe(201); const font = await imported.json() as { id: string };
     const original = alertEditorDocumentSchema.parse(await api(`/management/alerts/${alert.id}/editor`));
-    const alertDocument = alertEditorDocumentSchema.parse({ ...original, enabled: true, durationMs: 30000, layers: [{ id: "text", name: "Message", type: "text", visible: true, order: 0, template: "OBS {actor.displayName}", textStyle: { ...compatibilityAlertTextStyle, fontAssetId: font.id, fontSizePx: 96, color: "#FF00FFFF", warp: { ...createDefaultTextWarp(), points: createDefaultTextWarp().points.map((point, index) => index === 4 ? { ...point, x: .65 } : point) } }, boxStyle: compatibilityAlertTextBoxStyle, animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 300, delayMs: 0, easing: "ease-out" } }], targetProfiles: [{ id: "landscape", enabled: true, reviewState: "ready", layerLayouts: [{ layerId: "text", x: 100, y: 200, width: 1200, height: 300, zIndex: 0 }] }, { id: "vertical", enabled: false, reviewState: "ready", layerLayouts: [] }] });
+    let alertDocument = alertEditorDocumentSchema.parse({ ...original, enabled: true, durationMs: 30000, layers: [{ id: "text", name: "Message", type: "text", visible: true, order: 0, template: "OBS {actor.displayName}", textStyle: { ...compatibilityAlertTextStyle, fontSizePx: 96, color: "#FF00FFFF", warp: { ...createDefaultTextWarp(), points: createDefaultTextWarp().points.map((point, index) => index === 4 ? { ...point, x: .65 } : point) } }, boxStyle: compatibilityAlertTextBoxStyle, animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 300, delayMs: 0, easing: "ease-out" } }], targetProfiles: [{ id: "landscape", enabled: true, reviewState: "ready", layerLayouts: [{ layerId: "text", x: 100, y: 200, width: 1200, height: 300, zIndex: 0 }] }, { id: "vertical", enabled: false, reviewState: "ready", layerLayouts: [] }] });
     await api(`/management/alerts/${alert.id}/editor`, "PUT", { document: alertDocument });
+    await page.goto(`${runtime.runtime.url}/manage/modules/alerts/editor/${alert.id}?profile=landscape`);
+    await page.getByRole("button", { name: "Message Text", exact: true }).click();
+    await page.locator("summary").filter({ hasText: "Typography" }).click();
+    const fontImported = page.waitForResponse(response => response.request().method() === "POST" && response.url().endsWith("/assets/import"));
+    await page.getByLabel("Upload reusable font", { exact: true }).setInputFiles(resolve("apps/web/node_modules/storybook/assets/browser/nunito-sans-regular.woff2"));
+    const importedFont = await fontImported;
+    expect(importedFont.status()).toBe(201);
+    const font = await importedFont.json() as { id: string };
+    await expect(page.getByLabel("Uploaded font", { exact: true })).not.toHaveValue("");
+    await expect(page.getByLabel("Uploaded font", { exact: true })).toHaveValue(font.id);
+    const editorSaved = page.waitForResponse(response => response.request().method() === "PUT" && response.url().endsWith(`/management/alerts/${alert.id}/editor`));
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    expect((await editorSaved).status()).toBe(200);
+    alertDocument = alertEditorDocumentSchema.parse(await api(`/management/alerts/${alert.id}/editor`));
+    expect(alertDocument.layers[0]).toMatchObject({ type: "text", textStyle: { fontAssetId: font.id } });
     const key = await api("/management/overlay-outputs/keys", "POST", { scope: "module", moduleId: "alerts", purpose: "live", targetProfileId: "landscape" }) as { url: string };
     const overlayResponse = await fetch(key.url); expect(overlayResponse.headers.get("x-frame-options")).toBeNull();
     expect((await fetch(`${runtime.runtime.url}/manage`)).headers.get("x-frame-options")).toBe("DENY");
@@ -63,6 +78,7 @@ test("actual portable OBS browser renders scoped warped font pixels without mana
       const result = JSON.parse(await readFile(join(coord, `capture-${id}.json`), "utf8")) as { path: string };
       expect(resolve(result.path).startsWith(resolve(root) + sep), "OBS screenshots must stay in the owned portable profile").toBe(true);
       const image = await readFile(result.path);
+      lastSyntheticScreenshot = image;
       return page.evaluate(async base64 => {
         const image = new Image(); image.src = `data:image/png;base64,${base64}`; await image.decode();
         const canvas = document.createElement("canvas"); canvas.width = image.width; canvas.height = image.height;
@@ -74,6 +90,7 @@ test("actual portable OBS browser renders scoped warped font pixels without mana
     };
     expect(await capture("baseline")).toBe(0);
     await api(`/management/alerts/${alert.id}/editor/test`, "POST", { document: alertDocument, targetProfileId: "landscape", samplePayload: { actor: { displayName: "Pink fixture" } }, includeAudio: false, includeTts: false });
+    playbackTriggered = true;
     await expect.poll(() => capture(`render-${Date.now()}`), { timeout: 20000 }).toBeGreaterThan(100);
     const logs = await readdir(join(config, "logs"));
     const log = await readFile(join(config, "logs", logs.sort().at(-1)!), "utf8");
@@ -82,7 +99,14 @@ test("actual portable OBS browser renders scoped warped font pixels without mana
     expect(log).not.toMatch(/Error loading script|Failed to load.*frontend-tools/iu);
     const listeners = await promisify(execFile)("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `$obsOwnedIds=[System.Collections.Generic.HashSet[int]]::new(); $null=$obsOwnedIds.Add(${child.pid}); $obsProcesses=Get-CimInstance Win32_Process; for($i=0;$i -lt 10;$i++){foreach($p in $obsProcesses){if($obsOwnedIds.Contains([int]$p.ParentProcessId)){$null=$obsOwnedIds.Add([int]$p.ProcessId)}}}; ConvertTo-Json -Compress -InputObject @(Get-NetTCPConnection -State Listen | Where-Object {$obsOwnedIds.Contains([int]$_.OwningProcess)} | Select-Object LocalAddress,LocalPort)`], { windowsHide: true, timeout: 10000 });
     expect(listeners.stdout.trim()).toBe("[]");
-  } catch (error) { failures.push(error); } finally {
+  } catch (error) {
+    failures.push(error);
+    try {
+      const clients = await runtime.request("/management/overlay-clients");
+      const diagnostics = await runtime.request("/diagnostics?limit=100");
+      failureSnapshot = { playbackTriggered, clientsStatus: clients.status, clients: await clients.json(), diagnosticsStatus: diagnostics.status, diagnostics: await diagnostics.json() };
+    } catch (snapshotError) { failures.push(snapshotError); }
+  } finally {
     try {
     if (child?.pid !== undefined && child.exitCode === null) {
       await promisify(execFile)("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `$obsTestProcess=Get-Process -Id ${child.pid}; $null=$obsTestProcess.CloseMainWindow(); if(-not $obsTestProcess.WaitForExit(5000)){ $obsOwned=Get-CimInstance Win32_Process -Filter 'ProcessId=${child.pid}'; if(-not $obsOwned.ExecutablePath.StartsWith('${portable.replaceAll("'", "''")}')){throw 'Owned OBS executable path mismatch'}; taskkill.exe /PID ${child.pid} /T /F | Out-Null; if(-not $obsTestProcess.WaitForExit(5000)){throw 'Owned OBS did not exit'} }`], { windowsHide: true, timeout: 20000 });
@@ -92,6 +116,8 @@ test("actual portable OBS browser renders scoped warped font pixels without mana
     try {
     if (failures.length) {
       const redactor = createRedactor();
+      if (lastSyntheticScreenshot !== undefined) await writeFile(test.info().outputPath("last-synthetic-source.png"), lastSyntheticScreenshot);
+      if (failureSnapshot !== undefined) await writeFile(test.info().outputPath("runtime-status.json"), redactor.redactText(JSON.stringify(failureSnapshot, null, 2)));
       const safeLogs = test.info().outputPath("obs-logs"); await mkdir(safeLogs, { recursive: true });
       for (const file of await readdir(join(portable, "config/obs-studio/logs")).catch(() => [] as string[])) {
         await writeFile(join(safeLogs, file), redactor.redactText(await readFile(join(portable, "config/obs-studio/logs", file), "utf8")));
@@ -102,7 +128,11 @@ test("actual portable OBS browser renders scoped warped font pixels without mana
       }
     }
     } catch (error) { failures.push(error); }
-    await runtime.close();
+    try {
+      await runtime.stop();
+      if (failures.length) await writeFile(test.info().outputPath("runtime-logs.txt"), createRedactor().redactText(await runtime.readLogs()));
+    } catch (error) { failures.push(error); }
+    finally { await runtime.close(); }
     if (child === undefined || child.exitCode !== null) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
   if (failures.length) throw new AggregateError(failures, `OBS acceptance failed; owned evidence retained if process exit unconfirmed: ${root}`);

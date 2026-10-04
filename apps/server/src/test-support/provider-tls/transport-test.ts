@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { expect, it } from "vitest";
-import { startProviderFixture } from "../provider-websocket-fixture.js";
+import { providerAuthenticationVectors, startProviderFixture } from "../provider-websocket-fixture.js";
 
 export function testProviderTls(kind: "streamerbot" | "speakerbot"): void {
   it.each(["trusted", "untrusted", "expired", "wrong-san"])("enforces WSS certificates: %s", async mode => {
@@ -16,7 +16,7 @@ export function testProviderTls(kind: "streamerbot" | "speakerbot"): void {
     if (mode === "expired") expect(Date.parse(parsedCertificate.validTo), "Expired fixture must remain expired").toBeLessThan(now);
     else expect(Date.parse(parsedCertificate.validTo), "Regenerate expired test fixture instead of blaming production TLS").toBeGreaterThan(now);
     expect(parsedCertificate.checkIP("127.0.0.1") !== undefined).toBe(mode !== "wrong-san");
-    const peer = await startProviderFixture({ kind, ...(kind === "streamerbot" ? { password: "public-fixture-password" } : {}), tls: {
+    const peer = await startProviderFixture({ kind, ...(kind === "streamerbot" ? { expectedAuthentication: providerAuthenticationVectors["public-fixture-password"] } : {}), tls: {
       key: await readFile(new URL(`${name}-key.pem`, import.meta.url)),
       cert: certificate
     } });
