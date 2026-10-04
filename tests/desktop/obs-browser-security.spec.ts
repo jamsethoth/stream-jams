@@ -11,9 +11,10 @@ import { createProviderSecurityRuntimeFixture } from "../../apps/server/src/test
 test.use({ trace: "off", screenshot: "off", video: "off" });
 test("actual portable OBS browser renders scoped warped font pixels without management framing", async ({ page }) => {
   const renderer = process.env.STREAM_JAMS_TEST_OBS_RENDERER;
-  if (renderer !== undefined && renderer !== "d3d11") throw new Error("STREAM_JAMS_TEST_OBS_RENDERER must be unset or d3d11.");
-  const rendererArguments = renderer === "d3d11" ? ["--enable-gpu", "--use-gl=angle", "--use-angle=d3d11"] : [];
-  await test.info().attach("controlled-renderer-mode", { body: JSON.stringify({ mode: renderer ?? "default", arguments: rendererArguments, scope: "owned test OBS only; no GPU blocklist bypass or guaranteed WARP support", sources: ["https://github.com/obsproject/obs-browser/blob/3f0a2cdf378939ebe3c6f9ab36d4ea100c25aac2/browser-app.cpp#L61-L68", "https://raw.githubusercontent.com/chromium/chromium/127.0.6533.120/ui/gl/gl_display.cc", "https://raw.githubusercontent.com/google/angle/e323abb5b08e13ebb3f0d1c59a680f60ecdfcfea/src/libANGLE/renderer/d3d/d3d11/Renderer11.cpp"] }, null, 2), contentType: "application/json" });
+  if (renderer !== undefined && renderer !== "d3d11-ci") throw new Error("STREAM_JAMS_TEST_OBS_RENDERER must be unset or d3d11-ci.");
+  if (renderer === "d3d11-ci" && process.env.GITHUB_ACTIONS !== "true") throw new Error("d3d11-ci is restricted to GITHUB_ACTIONS=true and the Microsoft Basic Render Driver.");
+  const rendererArguments = renderer === "d3d11-ci" ? ["--enable-gpu", "--use-gl=angle", "--use-angle=d3d11", "--ignore-gpu-blocklist"] : [];
+  await test.info().attach("controlled-renderer-mode", { body: JSON.stringify({ mode: renderer ?? "default", arguments: rendererArguments, scope: "owned synthetic loopback OBS only; GPU compatibility override, not a cybersecurity policy override; no guaranteed WARP support", sources: ["https://raw.githubusercontent.com/chromium/chromium/127.0.6533.120/gpu/config/software_rendering_list.json", "https://github.com/obsproject/obs-browser/blob/3f0a2cdf378939ebe3c6f9ab36d4ea100c25aac2/browser-app.cpp#L61-L68", "https://raw.githubusercontent.com/chromium/chromium/127.0.6533.120/ui/gl/gl_display.cc", "https://raw.githubusercontent.com/google/angle/e323abb5b08e13ebb3f0d1c59a680f60ecdfcfea/src/libANGLE/renderer/d3d/d3d11/Renderer11.cpp"] }, null, 2), contentType: "application/json" });
   const installed = process.env.STREAM_JAMS_TEST_OBS_DIR;
   if (installed === undefined) throw new Error("Set STREAM_JAMS_TEST_OBS_DIR to an installed OBS 32.2.2 directory; this acceptance requires real OBS with browser and Lua scripting");
   await access(join(installed, "bin/64bit/obs64.exe"));
@@ -67,6 +68,9 @@ test("actual portable OBS browser renders scoped warped font pixels without mana
     const key = await api("/management/overlay-outputs/keys", "POST", { scope: "module", moduleId: "alerts", purpose: "live", targetProfileId: "landscape" }) as { url: string };
     const overlayResponse = await fetch(key.url); expect(overlayResponse.headers.get("x-frame-options")).toBeNull();
     expect((await fetch(`${runtime.runtime.url}/manage`)).headers.get("x-frame-options")).toBe("DENY");
+    const runtimeOrigin = new URL(runtime.runtime.url);
+    const overlayUrl = new URL(key.url);
+    if (runtimeOrigin.protocol !== "http:" || runtimeOrigin.hostname !== "127.0.0.1" || overlayUrl.origin !== runtimeOrigin.origin) throw new Error("Owned OBS acceptance requires its fixed loopback runtime origin.");
     await writeFile(join(coord, "url.txt"), key.url);
     const executable = join(portable, "bin/64bit/obs64.exe");
     child = spawn(executable, [...rendererArguments, "--portable", "--multi", "--minimize-to-tray", "--disable-updater", "--only-bundled-plugins", "--disable-missing-files-check", "--profile", "SecurityTest", "--collection", "SecurityTest"], { cwd: dirname(executable), windowsHide: true, stdio: "ignore" });
@@ -75,6 +79,12 @@ test("actual portable OBS browser renders scoped warped font pixels without mana
       if (child!.exitCode !== null) throw new Error(`Owned OBS exited ${child!.exitCode} before browser readiness`);
       return access(join(coord, "ready.json")).then(() => true, () => false);
     }, { timeout: 30000 }).toBe(true);
+    if (renderer === "d3d11-ci") {
+      const startupLogs = await readdir(join(config, "logs"));
+      const startupLog = await readFile(join(config, "logs", startupLogs.sort().at(-1)!), "utf8");
+      if (!/Loading up D3D11 on adapter Microsoft Basic Render Driver\b/iu.test(startupLog)) throw new Error("d3d11-ci requires OBS startup confirmation of Microsoft Basic Render Driver before synthetic playback.");
+      await test.info().attach("verified-ci-software-adapter", { body: "Microsoft Basic Render Driver confirmed in owned OBS startup log before synthetic playback.", contentType: "text/plain" });
+    }
     await expect.poll(async () => (await api("/management/overlay-clients") as unknown[]).length, { timeout: 30000 }).toBeGreaterThan(0);
     const capture = async (id: string) => {
       await writeFile(join(coord, "request.txt"), id);

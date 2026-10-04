@@ -40,7 +40,7 @@ jobs:
         run: pnpm build
       - name: Run real installed vendor and OBS acceptance
         env:
-          STREAM_JAMS_TEST_OBS_RENDERER: d3d11
+          STREAM_JAMS_TEST_OBS_RENDERER: d3d11-ci
         run: pnpm exec playwright test --config playwright.security-installed.config.ts
       - name: Retain sanitized failure evidence
         if: failure()
