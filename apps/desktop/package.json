@@ -17,8 +17,8 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
-    "@electron-forge/core": "7.11.2",
-    "@electron-forge/shared-types": "7.11.2",
+    "@electron-forge/core": "8.0.1",
+    "@electron-forge/shared-types": "8.0.1",
     "electron": "44.4.4",
     "typescript": "6.0.3",
     "vite": "8.3.0"

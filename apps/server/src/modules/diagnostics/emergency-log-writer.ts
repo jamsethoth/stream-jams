@@ -1,6 +1,10 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { serializeException, type SerializedException } from "@stream-jams/core";
+import { createRedactor } from "../security/redactor.js";
+
+// This pure redactor has no logger dependency and is independent of the primary logger's injected instance.
+const emergencyRedactor = createRedactor();
 
 export interface EmergencyLogInput {
   readonly timestamp: string;
@@ -112,15 +116,10 @@ function sanitizeExceptionNode(value: SerializedException): SerializedException 
 }
 
 function sanitizeText(value: string, limit: number): string {
-  const normalized = value
-    // eslint-disable-next-line no-control-regex -- normalize control bytes before writing emergency JSONL
-    .replace(/[\u0000-\u001F\u007F]/g, " ")
-    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, (_match, scheme: string) => `${scheme} [REDACTED]`)
-    .replace(/\bsk-[A-Za-z0-9_-]+\b/g, "[REDACTED]")
-    .replace(/ovl_[A-Za-z0-9_-]+/g, "[REDACTED]")
-    .replace(/\b(authorization)\s*([:=])\s*(?!(?:Bearer|Basic)\b)[^\s,;&]+/gi, "$1$2[REDACTED]")
-    .replace(/\b(credentials?|password|passwd|token|access[-_ ]?token|refresh[-_ ]?token|secret|client[-_ ]?secret|api[-_ ]?key)\s*[:=]\s*(?:bearer\s+)?[^\s,;&]+/gi, "$1=[REDACTED]")
-    .replace(/([?&](?:access_token|refresh_token|token|api_key|apikey|key|signature|sig|x-amz-signature|x-amz-credential|x-amz-security-token|key-pair-id)=)[^&\s]+/gi, "$1[REDACTED]");
+  let normalized: string;
+  try { normalized = emergencyRedactor.redactText(value); }
+  // error-provenance: allow expected -- omit unsafe text if even independent redaction fails
+  catch { normalized = "[REDACTED]"; }
   if (normalized.length <= limit) return normalized;
   const marker = "…[truncated]";
   return `${normalized.slice(0, limit - marker.length)}${marker}`;

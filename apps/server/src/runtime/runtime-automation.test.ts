@@ -161,6 +161,9 @@ it("persists claimed grants across restart and invalidates credentials, pairings
     const exported = await composition.app.inject({ url: "/management/settings/backup", headers: management });
     expect(exported.statusCode, exported.body).toBe(200);
     const archive = exported.json();
+    expect(exported.body).not.toContain(credential.token);
+    expect(exported.body).not.toContain(credential.grant.id);
+    expect(exported.body).not.toContain("automation_grants");
     const preflight = await composition.app.inject({ method: "POST", url: "/management/settings/backup/preflight", headers: management, payload: archive });
     expect(preflight.statusCode, preflight.body).toBe(200);
     expect(preflight.json().state).toBe("valid");

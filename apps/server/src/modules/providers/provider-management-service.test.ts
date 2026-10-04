@@ -95,10 +95,38 @@ describe("ProviderManagementService", () => {
       host: "127.0.0.1",
       port: 8080,
       endpoint: "/",
+      allowUnauthenticatedLocalConnection: false,
       twitchBroadcasterId: null,
       externalSubscriptions: []
     });
     expect(secrets.values.get("streamerbot:provider-2:password")).toBe("secret");
+  });
+
+  it("blocks setup without authentication and persists explicit local consent", async () => {
+    const setup = streamerBotSetup();
+    if (setup.kind !== "streamerbot") throw new Error("Expected Streamer.bot setup");
+    const blocked = await service.registerProvider({ ...setup, credential: null });
+    expect(blocked.status).toBe("validation-failed");
+    const allowed = await service.registerProvider({ ...setup, credential: null, configuration: { ...setup.configuration, allowUnauthenticatedLocalConnection: true } });
+    expect(allowed.status).toBe("registered");
+    if (allowed.status !== "registered") throw new Error("Expected registration");
+    expect((await service.getProvider(allowed.provider.provider.id)).configuration.allowUnauthenticatedLocalConnection).toBe(true);
+    expect(secrets.values.size).toBe(0);
+  });
+
+  it("masks unsafe legacy connection fields and errors in list and detail responses", async () => {
+    const registered = await service.registerProvider(streamerBotSetup());
+    if (registered.status !== "registered") throw new Error("Expected registration");
+    const sentinel = "credential-sentinel";
+    database.connection.prepare("UPDATE provider_registrations SET non_secret_config_json = ?, error_json = ? WHERE id = ?").run(
+      JSON.stringify({ protocol: "ws", host: `user:${sentinel}@example.com`, port: 8080, endpoint: "/" }),
+      JSON.stringify({ ...managementError("Legacy failure"), cause: sentinel }), registered.provider.provider.id
+    );
+    const detail = await service.getProvider(registered.provider.provider.id);
+    expect(detail.configuration).toEqual({});
+    expect(detail.provider.error?.nextStep).toContain("Replace");
+    expect(JSON.stringify(detail)).not.toContain(sentinel);
+    expect(JSON.stringify(await service.listProviders("event-source"))).not.toContain(sentinel);
   });
 
   it("blocks unsafe activation and requires confirmation when impact contains warnings", async () => {
@@ -240,7 +268,9 @@ describe("ProviderManagementService", () => {
         return runtimeMutation();
       }
     });
-    const registered = await service.registerProvider(streamerBotSetup());
+    const setup = streamerBotSetup();
+    if (setup.kind !== "streamerbot") throw new Error("Expected Streamer.bot setup");
+    const registered = await service.registerProvider({ ...setup, credential: null, configuration: { ...setup.configuration, allowUnauthenticatedLocalConnection: true } });
     if (registered.status !== "registered") throw new Error("Expected Streamer.bot registration");
 
     await expect(service.getStreamerBotSubscriptions(registered.provider.provider.id)).resolves.toMatchObject({
@@ -268,6 +298,7 @@ describe("ProviderManagementService", () => {
     });
     await expect(service.getProvider(registered.provider.provider.id)).resolves.toMatchObject({
       configuration: {
+        allowUnauthenticatedLocalConnection: true,
         twitchBroadcasterId: "broadcaster-1",
         externalSubscriptions: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }]
       }

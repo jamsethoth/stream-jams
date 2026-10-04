@@ -45,6 +45,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Audit dependencies
+        run: pnpm audit:dependencies
+
       - name: Lint
         run: pnpm lint
 
@@ -53,7 +56,13 @@ jobs:
 
       - name: Test
         run: pnpm test
-
+      - name: Upload validation dependency audit
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-dependency-audit
+          path: pnpm-audit.json
+          if-no-files-found: ignore
   build:
     name: build
     runs-on: ubuntu-latest
@@ -271,4 +280,4 @@ jobs:
       - name: Review dependency changes
         uses: actions/dependency-review-action@v5
         with:
-          fail-on-severity: high
+          fail-on-severity: moderate

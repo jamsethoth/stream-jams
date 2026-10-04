@@ -6,13 +6,17 @@ const scopedAutomationTokenPattern = /sja_[A-Za-z0-9_-]+/g;
 const timerAutomationTokenPattern = /tmr_[A-Za-z0-9_-]+/g;
 const mediaGrantPattern = /med_[A-Za-z0-9_-]+/g;
 const authorizationValuePattern = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi;
+const oauthAuthorizationValuePattern = /\bOAuth\s+(?:[A-Za-z][\w-]*\s*=\s*(?:"(?:\\.|[^"\\])*"|[^,;\s]+)(?:\s*,\s*)?)+/gi;
 const standaloneApiKeyPattern = /\bsk-[A-Za-z0-9_-]+\b/g;
-const authorizationAssignmentPattern = /\b(authorization)\s*([:=])\s*(?!(?:Bearer|Basic)\b)[^\s,;&]+/gi;
-const credentialAssignmentPattern = /\b(verifier|code[-_ ]?challenge|credentials?|password|passwd|token|access[-_ ]?token|refresh[-_ ]?token|secret|client[-_ ]?secret|api[-_ ]?key)\s*[:=]\s*(?:bearer\s+)?[^\s,;&]+/gi;
+const authorizationAssignmentPattern = /\b(authorization)\s*([:=])\s*(?!(?:Bearer|Basic|OAuth)\b)[^\s,;&]+/gi;
+const credentialAssignmentPattern = /\b(verifier|code[-_ ]?challenge|authentication|credentials?|password|passwd|token|access[-_ ]?token|refresh[-_ ]?token|secret|client[-_ ]?secret|api[-_ ]?key)\s*[:=]\s*(?:bearer\s+)?(?:"(?:\\.|[^"\\])*"|'[^']*'|[^\s,;&]+)/gi;
+const jsonStringPropertyPattern = /("(?:\\.|[^"\\])*")\s*:\s*"(?:\\.|[^"\\])*"/g;
 const sensitiveNamePatterns = [
   /verifier/i,
   /code[-_]?challenge/i,
   /authorization/i,
+  /authentication/i,
+  /credential/i,
   /proxy[-_]?authorization/i,
   /api[-_]?key/i,
   /access[-_]?token/i,
@@ -79,14 +83,32 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
   }
 
   function redactText(value: string): string {
-    return redactTimerAutomationTokens(redactOverlayKeys(
-      redactUrls(normalizeControlCharacters(value).replace(authorizationValuePattern, (_match, scheme: string) => `${scheme} ${replacement}`).replace(
-        standaloneApiKeyPattern,
-        replacement
-      )
-        .replace(authorizationAssignmentPattern, (_match, name: string, separator: string) => `${name}${separator}${replacement}`)
-        .replace(credentialAssignmentPattern, (_match, name: string) => `${name}=${replacement}`)))
-    ).replace(mediaGrantPattern, replacement).replace(scopedAutomationTokenPattern, replacement);
+    // Exception text can contain a serialized provider frame rather than an object.
+    if (/^\s*[[{]/.test(value)) {
+      try {
+        return JSON.stringify(redactValue(JSON.parse(value) as unknown));
+      }
+      // error-provenance: allow expected -- non-JSON text still passes through textual redaction
+      catch { /* Redact incomplete frames and ordinary text below. */ }
+    }
+
+    const normalized = stripUrlUserInformation(normalizeControlCharacters(value)).replace(jsonStringPropertyPattern, (match, quotedName: string) => {
+      let name: string;
+      try { name = JSON.parse(quotedName) as string; }
+      // error-provenance: allow expected -- malformed quoted names still receive textual redaction
+      catch { return match; }
+      return isSensitiveName(name, configuredSecretNames) ? `${quotedName}:${JSON.stringify(replacement)}` : match;
+    });
+    return redactUrls(normalized
+      .replace(oauthAuthorizationValuePattern, `OAuth ${replacement}`)
+      .replace(authorizationValuePattern, (_match, scheme: string) => `${scheme} ${replacement}`)
+      .replace(standaloneApiKeyPattern, replacement)
+      .replace(authorizationAssignmentPattern, (_match, name: string, separator: string) => `${name}${separator}${replacement}`)
+      .replace(credentialAssignmentPattern, (_match, name: string) => `${name}=${replacement}`)
+      .replace(overlayKeyPattern, replacement)
+      .replace(timerAutomationTokenPattern, replacement)
+      .replace(mediaGrantPattern, replacement)
+      .replace(scopedAutomationTokenPattern, replacement));
   }
 
   return {
@@ -95,18 +117,20 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
   };
 
   function redactUrls(value: string): string {
-    return value.replace(/https?:\/\/[^\s"'<>]+|\/(?:[^\s"'<>?]*)(?:\?[^\s"'<>]*)/g, (candidate) => redactUrl(candidate));
+    return value.replace(/(?:https?|wss?):\/\/[^\s"'<>]+|\/\/[^\s"'<>]+|\/(?:[^\s"'<>?]*)(?:\?[^\s"'<>]*)/gi, (candidate) => redactUrl(candidate));
   }
 
   function redactUrl(value: string): string {
+    // Strip user information before parsing so even a malformed destination cannot leak it.
+    const safeValue = value.replace(/^((?:https?|wss?):\/\/|\/\/)[^/?#]*@/i, "$1");
     let url: URL;
 
     try {
-      url = new URL(value, "http://stream-jams.local");
+      url = new URL(safeValue, "http://stream-jams.local");
     }
     // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
     catch {
-      return value;
+      return safeValue.includes("?") ? replacement : safeValue;
     }
 
     let changed = false;
@@ -117,19 +141,36 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
       }
     }
 
-    if (!changed) return value;
-    return /^https?:\/\//i.test(value) ? url.toString() : `${url.pathname}${url.search}${url.hash}`;
-  }
-
-  function redactOverlayKeys(value: string): string {
-    return value.replace(overlayKeyPattern, replacement);
-  }
-
-  function redactTimerAutomationTokens(value: string): string {
-    return value.replace(timerAutomationTokenPattern, replacement);
+    if (!changed) return safeValue;
+    if (/^(?:https?|wss?):\/\//i.test(safeValue)) return url.toString();
+    return `${safeValue.startsWith("//") ? `//${url.host}` : ""}${url.pathname}${url.search}${url.hash}`;
   }
 }
 
+function stripUrlUserInformation(value: string): string {
+  return value.replace(/((?:https?|wss?):\/\/|\/\/)([^\s<>/?#]*)/gi, (_match, prefix: string, authority: string) => {
+    const parsedAuthority = (candidate: string): URL | null => {
+      try { return new URL(`${prefix === "//" ? "http://" : prefix}${candidate}`); }
+      // error-provenance: allow expected -- malformed diagnostic authorities still receive bounded textual stripping
+      catch { return null; }
+    };
+    // A valid full authority containing credentials wins over apparent JSON syntax
+    // inside a password (including a numeric password and embedded property text).
+    const full = parsedAuthority(authority);
+    if (full !== null && /^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])$/.test(full.hostname) && (full.username !== "" || full.password !== "")) return prefix + authority.slice(authority.lastIndexOf("@") + 1);
+    let end = authority.length;
+    for (let index = 0; index < authority.length; index += 1) {
+      if (authority[index] !== '"' && authority[index] !== "'") continue;
+      const suffix = authority.slice(index + 1);
+      const beforeQuote = parsedAuthority(authority.slice(0, index));
+      const credentialFreePrefix = beforeQuote !== null && beforeQuote.hostname !== "" && beforeQuote.username === "" && beforeQuote.password === "";
+      const jsonBoundary = /^(?:[}\]]+)(?:$|,)/.test(suffix) || /^,\s*"[^"\r\n]*"\s*:\s*"(?:\\.|[^"\\])*"(?:[}\],]|$)/.test(suffix);
+      if (suffix.length === 0 || (credentialFreePrefix && jsonBoundary)) { end = index; break; }
+    }
+    const userInformationEnd = authority.slice(0, end).lastIndexOf("@");
+    return prefix + (userInformationEnd < 0 ? authority : authority.slice(userInformationEnd + 1));
+  });
+}
 function normalizeControlCharacters(value: string): string {
   // eslint-disable-next-line no-control-regex -- logs must not retain control bytes
   return value.replace(/[\u0000-\u001F\u007F]/g, " ");

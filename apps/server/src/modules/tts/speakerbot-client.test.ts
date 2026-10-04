@@ -14,6 +14,13 @@ describe("SpeakerBotClient", () => {
     vi.useRealTimers();
   });
 
+  it.each(["ws://remote.test/", "ws://user:secret@localhost/", "ws://127.1/", "ws://localhost/?secret=x"])("rejects unsafe raw URL before creating sockets: %s", async (url) => {
+    const harness = createHarness();
+    await expect(harness.client.validateConnection(url)).rejects.toThrow("Speaker.bot WebSocket connection failed");
+    await expect(harness.client.speak(url, { voice: "voice", message: "text", badWordFilter: true })).rejects.toThrow("Speaker.bot WebSocket connection failed");
+    expect(harness.urls).toEqual([]);
+  });
+
   it("sends the official Speak request and resolves its matching response", async () => {
     const harness = createHarness();
     const request = harness.client.speak(buildSpeakerBotWebSocketUrl(), {

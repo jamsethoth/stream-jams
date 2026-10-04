@@ -1,5 +1,6 @@
 import {
   evaluateProviderActivation,
+  localWebSocketConnectionSchema,
   providerActivationImpactSchema,
   providerActivationResultSchema,
   providerCapabilityForKind,
@@ -169,6 +170,9 @@ export class ProviderManagementService {
 
   async validateProvider(input: ProviderSetupInput): Promise<ProviderValidationResult> {
     const parsed = providerSetupInputSchema.parse(input);
+    if (parsed.kind === "streamerbot" && !parsed.credential && !parsed.configuration.allowUnauthenticatedLocalConnection) {
+      return this.#failedValidation("Streamer.bot authentication must be configured", "A password or explicit local unauthenticated consent is required.", "Enable Authentication and Enforce in Streamer.bot and enter the password, or explicitly allow an unauthenticated local connection.");
+    }
     const adapter = this.#adapters.get(parsed.kind);
     if (adapter === undefined) {
       return this.#failedValidation(
@@ -180,10 +184,12 @@ export class ProviderManagementService {
 
     try {
       return providerValidationResultSchema.parse(await adapter.validate(parsed));
-    } catch (error) {
+    }
+    // error-provenance: allow expected -- adapter error text may contain provider credentials; record only the bounded management failure
+    catch {
       return this.#failedValidation(
         `${formatProviderKind(parsed.kind)} validation failed`,
-        error instanceof Error ? error.message : "The provider returned an unknown validation error.",
+        "The provider connection could not be validated.",
         "Check the provider connection settings, make sure its local server is running, and retry."
       );
     }
@@ -389,6 +395,7 @@ export class ProviderManagementService {
           host: configuration.host,
           port: configuration.port,
           endpoint: configuration.endpoint,
+          allowUnauthenticatedLocalConnection: configuration.allowUnauthenticatedLocalConnection,
           twitchBroadcasterId: parsed.twitchBroadcasterId,
           externalSubscriptions: parsed.externalSubscriptions
         },
@@ -465,12 +472,25 @@ export class ProviderManagementService {
   }
 
   async #toDetail(record: ProviderRegistrationRecord): Promise<RegisteredProviderDetail> {
+    const localProvider = record.provider.kind === "streamerbot" || record.provider.kind === "speakerbot";
+    const validConnection = !localProvider || localWebSocketConnectionSchema.safeParse({
+      protocol: record.configuration.protocol,
+      host: record.configuration.host,
+      port: record.configuration.port,
+      endpoint: record.configuration.endpoint
+    }).success;
+    const unsafeError = validConnection ? null : await this.#managementError(
+      "Provider connection settings require replacement",
+      "The saved connection is not a supported credential-free local connection.",
+      "Replace the provider with a loopback host and a path-only endpoint."
+    );
     return registeredProviderDetailSchema.parse({
       provider: {
         ...record.provider,
+        ...(!validConnection ? { connectionState: "error", intakeState: record.provider.capability === "event-source" ? "inactive" : null, error: unsafeError } : {}),
         usedByAlertCount: await this.#getUsedByAlertCount(record.provider.kind)
       },
-      configuration: record.configuration,
+      configuration: validConnection ? record.configuration : {},
       availableVoices: record.availableVoices,
       ttsSafety: record.ttsSafety
     });

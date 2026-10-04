@@ -407,6 +407,7 @@ describe("ManagementApp", () => {
     await user.selectOptions(within(dialog).getByLabelText("Provider type"), "streamerbot");
     await user.click(within(dialog).getByRole("button", { name: "Continue" }));
     expect(within(dialog).queryByRole("button", { name: "Register event source" })).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole("checkbox", { name: "Allow an unauthenticated local connection" }));
     await user.click(within(dialog).getByRole("button", { name: "Test connection" }));
     expect(await within(dialog).findByText("Connection test passed.")).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Register event source" }));

@@ -1,0 +1,52 @@
+name: Installed security acceptance
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['apps/**', 'packages/**', 'tests/**', 'scripts/**', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.nvmrc', 'playwright*.ts', '.github/workflows/security-installed.yml']
+  push:
+    branches: [main]
+    paths: ['apps/**', 'packages/**', 'tests/**', 'scripts/**', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.nvmrc', 'playwright*.ts', '.github/workflows/security-installed.yml']
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installed-security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installed-security:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Enable Corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.2.2 --activate
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm exec playwright install chromium
+      - name: Provision verified official vendor archives
+        run: node scripts/provision-security-vendors.mjs
+      - name: Build production artifacts
+        run: pnpm build
+      - name: Run real installed vendor and OBS acceptance
+        env:
+          STREAM_JAMS_TEST_OBS_RENDERER: d3d11-ci
+        run: pnpm exec playwright test --config playwright.security-installed.config.ts
+      - name: Retain sanitized failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: installed-security-failure-evidence
+          path: test-results/security-installed/**
+          if-no-files-found: ignore
+          retention-days: 7

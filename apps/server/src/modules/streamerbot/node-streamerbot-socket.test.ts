@@ -41,7 +41,7 @@ describe("createNodeStreamerBotSocket", () => {
     });
 
     try {
-      client.connect({ host: "127.0.0.1", port: address.port });
+      client.connect({ host: "127.0.0.1", port: address.port, allowUnauthenticatedLocalConnection: true });
       await waitFor(() => client.getStatus().state === "connected");
 
       await expect(client.getEvents()).resolves.toMatchObject({ Twitch: ["Follow", "Raid"] });

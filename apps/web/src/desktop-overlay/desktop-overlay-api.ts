@@ -9,6 +9,30 @@ declare global { interface Window { streamJamsOverlayHost?: DesktopOverlayBridge
 
 /** Native elements stream only the fixed private session origin. */
 export function prepareDesktopVisualAsset(asset: PrivateDesktopMediaAsset): Promise<{ url: string; dispose(): void }> {
+  if (asset.reference.snapshot.mimeType.startsWith("font/")) {
+    const url = privateVisualMediaUrl(asset.reference);
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const dispose = () => { window.clearTimeout(timeout); };
+      const finish = (ready: boolean) => {
+        if (settled) return;
+        settled = true;
+        dispose();
+        if (ready) resolve({ url, dispose });
+        else reject(new Error("Desktop visual media could not be prepared"));
+      };
+      const timeout = window.setTimeout(() => finish(false), 5000);
+      try {
+        // Detached decoding probe: AlertText owns registration and font-cache lifetime.
+        const font = new FontFace("stream-jams-private-font-preflight", `url("${url}")`);
+        void font.load().then(() => finish(true), () => finish(false));
+      }
+      // error-provenance: allow expected -- private font decoding failures become a bounded preparation error
+      catch {
+        finish(false);
+      }
+    });
+  }
   return new Promise((resolve, reject) => {
     const url = privateVisualMediaUrl(asset.reference);
     const element = asset.reference.snapshot.mimeType.startsWith("video/") ? document.createElement("video") : new Image();
