@@ -1,0 +1,20 @@
+# Scoped Automation Controls Implementation Plan
+> Execute with GPT-6.1 Sol low-reasoning subagents. User explicitly approved design and requested implementation; do not re-request approval.
+**Goal:** Deliver the approved secure local automation API and module mute semantics in Stream Jams.
+**Architecture:** Domain services own state transitions; Fastify exposes scoped DTOs. Pairing/grants are isolated from runtime controls. Existing rendering/audio receive independent module mute.
+**Tech Stack:** Existing TypeScript, Fastify, Zod, SQLite, React, Electron.
+**Spec:** openspec/changes/add-scoped-automation-controls/design.md and specs/scoped-automation/spec.md.
+## Global Constraints
+No plugin repository edits, no new dependency without need, no push/merge/publish. Preserve strict types and existing management/overlay security. No command retry or durable replay. One final review (user global instruction overrides skill's per-task review expansion).
+## Review Focus
+Wrong proof/revoked grant; generation replacement during hold; expired deadline reset; audio module cross-talk; stale queue clear. Each owned task must test these with real boundaries.
+## Task 1: Timer runtime
+Owner timer agent. Files apps/server/src/modules/timers/timer-runtime-coordinator.ts and matching tests; add automation methods and exported local error type. Expose activate(id, expectedGeneration), reset(id, generation), stopActive(id,generation), adjustActive(id,input,generation), togglePaused(). Parent checks runtime identity at service boundary. Inactive target no-op; active replacement conflict. Existing methods and event paths must share safe synchronous transition boundaries. Return TimerCommandResult; bulk returns changed plus states. Test latest-duration reset, cues, snapshots, expired states, generation and async cleanup races, mixed bulk/recovery. Write failing tests, implement, run affected tests.
+## Task 2: Pairing/grants
+Owner security agent. Files new modules/automation credential service/repository, routes/automation-pairing.ts, middleware/automation-security.ts, migration and backup exclusions. Do not modify runtime-composition.ts or create-app.ts (parent integrates). Service owns pending proof requests, explicit approve, exchange, verify, list/revoke; scope allowlist from spec. Route dependencies inject management security. Tests real SQLite and Fastify plus replay/expiry/Origin/Host/scope/export. Send exact interfaces to parent early. Write failing tests, implement, run affected tests.
+## Task 3: Module mute
+Owner mute agent. Files core playback/audio contracts, server playback/audio/effects, desktop/audio, web overlay/dashboard/tray as needed. Avoid timer coordinator, automation files, runtime-composition.ts and create-app.ts; send integration helper/patch instructions to parent. Replace global hidden mute with independent Alerts/Effects persisted flags; cues independent; All operates both. Include migration/schema/config needed; coordinate migration number with security agent (security next free, mute next+1). Existing global UI maps All, tray label truthful. Read frontend skill before UI. Test simultaneous audio modules, current/future changes, output failures and cues, plus typed/build checks. Send exact integration needs early.
+## Task 4: API composition and pairing UI
+Owner parent. Add automation control service and state serialization with scopes, guards, pending queue revision, output application reporting. Register security/pairing/runtime services in composition/create-app. Build approval/list/revoke UI through typed clients and real component Storybook tests. Document final API. Integration tests use disposable runtimes/databases; Playwright actual approval/control flow.
+## Task 5: Verification/handoff
+All affected gates, one independent review then fix findings. Verify disposable live workflow from rebuilt code. Update tasks and evidence; no publication. SDK storage/physical hardware acceptance remains separate plugin dependency; distinguish unrun physical audio checks from automated coverage.
