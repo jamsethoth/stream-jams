@@ -1,3 +1,4 @@
+import { BrowserSourcesPanel } from "../foundation/BrowserSourcesPanel.js";
 import {
   duplicateScreenEffect,
   type ScreenEffectSet,
@@ -162,13 +163,10 @@ export function ScreenEffectsPage({ api, onEdit, initialSetId, generateId = defa
   const visibleDocuments = documents.filter((document) => `${document.name} ${document.category ?? ""}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
 
   return <div className="screen-effects-page">
-    <section aria-labelledby="screen-effects-browser-title" className="management-card screen-effects-browser-sources">
-      <header className="screen-effects-section-header"><h2 id="screen-effects-browser-title"><button aria-controls="screen-effects-sources-content" aria-expanded={sourcesExpanded} className="screen-effects-disclosure" onClick={() => setSourcesExpanded((value) => !value)} type="button"><span aria-hidden="true">{sourcesExpanded ? "−" : "+"}</span> Browser sources</button></h2><span>{browserSources.filter((source) => source.status === "available").length} of {browserSources.length} URLs available</span></header>
-      {sourcesExpanded ? <div id="screen-effects-sources-content">
+    <BrowserSourcesPanel detailsId="screen-effects-sources-content" expanded={sourcesExpanded} onToggle={() => setSourcesExpanded(value => !value)} readyCount={browserSources.filter(source => source.status === "available").length} needsSetupCount={browserSources.filter(source => source.status !== "available").length}>
       <p>Screen Effects uses its own module source or an enabled unified source. Keep Browser Source audio separate from visual surface membership.</p>
       {browserSources.length === 0 ? <p>No Screen Effects Browser Source output is registered.</p> : <ul>{browserSources.map((source) => <li key={source.id}><div><strong>{source.label}</strong><span>{source.status === "available" ? "URL available" : source.status.replace("-", " ")}</span></div>{source.url === null ? null : <MaskedValue label={`${source.label} Browser Source URL`} value={source.url} />}<div className="screen-effects-list__actions">{source.status === "create-required" ? <button className="button button--primary" disabled={busy} onClick={() => void createBrowserSource(source)} type="button">Create URL</button> : <button className="button button--danger" disabled={busy} onClick={() => { setRegenerateConfirmation(""); setConfirmation({ kind: "regenerate", source }); }} type="button">Regenerate URL</button>}</div></li>)}</ul>}
-      </div> : null}
-    </section>
+    </BrowserSourcesPanel>
 
     <section aria-labelledby="screen-effects-inventory-title" className="management-card screen-effects-inventory">
       <header className="screen-effects-section-header">

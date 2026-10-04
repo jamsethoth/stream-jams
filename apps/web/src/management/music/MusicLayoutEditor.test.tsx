@@ -117,6 +117,37 @@ describe("MusicLayoutEditor", () => {
     expect(view.container.querySelector("[data-snap-axis]")).toBeNull();
   });
 
+  it("resizes widget bounds independently, clamps components, and cancels a pointer resize", async () => {
+    mockLayoutGeometry();
+    const user = userEvent.setup();
+    render(<Fixture />);
+    await user.click(screen.getByRole("button", { name: "Resize widget" }));
+    const handle = screen.getByRole("button", { name: "Resize overall widget" });
+    const width = screen.getByRole("spinbutton", { name: "Preview widget width (px)" });
+    const height = screen.getByRole("spinbutton", { name: "Preview widget height (px)" });
+    fireEvent.keyDown(handle, { key: "ArrowRight" });
+    expect(width).toHaveValue(641);
+    fireEvent.keyDown(handle, { key: "ArrowDown", shiftKey: true });
+    expect(height).toHaveValue(188);
+    fireEvent.pointerDown(handle, { pointerId: 9, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(handle, { pointerId: 9, clientX: 121, clientY: 112 });
+    expect(width).toHaveValue(660);
+    fireEvent.keyDown(handle, { key: "Escape" });
+    expect(width).toHaveValue(641); expect(height).toHaveValue(188);
+    await user.click(screen.getByRole("checkbox", { name: "Snap to grid" }));
+    fireEvent.pointerDown(handle, { pointerId: 10, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(handle, { pointerId: 10, clientX: 121, clientY: 112 });
+    expect(width).toHaveValue(662);
+    fireEvent.pointerCancel(handle, { pointerId: 10 });
+    expect(width).toHaveValue(641);
+    await user.click(screen.getByRole("button", { name: "Edit component layout" }));
+    await user.clear(width); await user.type(width, "160"); fireEvent.blur(width);
+    const layout = JSON.parse(screen.getByTestId("saved-layout").textContent ?? "null") as MusicComponentLayout;
+    expect(layout.title.x + layout.title.width).toBeLessThanOrEqual(160);
+    fireEvent.keyDown(handle, { key: "ArrowLeft", shiftKey: true });
+    expect(width).toHaveValue(160);
+  });
+
   it("warns and disables native handles while custom CSS can override geometry", () => {
     render(<Fixture css />);
     expect(screen.getByRole("button", { name: "Edit component layout" })).toBeDisabled();

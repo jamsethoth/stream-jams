@@ -1,3 +1,4 @@
+import { BrowserSourcesPanel } from "../foundation/BrowserSourcesPanel.js";
 import {
   alertStarterTemplates,
   type ActionableManagementError,
@@ -1200,68 +1201,41 @@ function BrowserSources({
   const needsSetupCount = sources.length - readyCount;
 
   return (
-    <section aria-label="Browser sources" className="alert-sets-page__browser-source-band" id="browser-sources">
-      <div className="alert-sets-page__browser-source-row">
-        <div className="alert-sets-page__browser-source-heading">
-          <h2>
-            <button
-              aria-controls="browser-source-details"
-              aria-expanded={expanded}
-              aria-label={`${expanded ? "Collapse" : "Expand"} browser sources`}
-              className="alert-sets-page__browser-source-toggle"
-              onClick={onToggle}
-              type="button"
-            >
-              <span aria-hidden="true">{expanded ? "\u2212" : "+"}</span>
-              <span>Browser sources</span>
-            </button>
-          </h2>
-          <p>One live URL per target profile.</p>
-        </div>
-        <div aria-label="Browser source summary" className="alert-sets-page__browser-source-summary">
-          {readyCount > 0 ? <span className="alert-sets-page__browser-source-count alert-sets-page__browser-source-count--ready">{readyCount} ready</span> : null}
-          {needsSetupCount > 0 ? <span className="alert-sets-page__browser-source-count alert-sets-page__browser-source-count--warning">{needsSetupCount} needs setup</span> : null}
-          {refreshError === null ? null : <span className="alert-sets-page__browser-source-count alert-sets-page__browser-source-count--error">Status refresh failed</span>}
-        </div>
+    <BrowserSourcesPanel id="browser-sources" detailsId="browser-source-details" expanded={expanded} onToggle={onToggle} readyCount={readyCount} needsSetupCount={needsSetupCount} refreshFailed={refreshError !== null}>
+      <p className={`alert-sets-page__status-freshness${refreshError === null ? "" : " alert-sets-page__status-freshness--stale"}`} role="status">
+        {refreshError === null
+          ? statusUpdatedAt === null ? "Connection status has not loaded." : `Connection status updated ${formatDateTime(statusUpdatedAt)}`
+          : statusUpdatedAt === null ? "Connection status stale." : `Connection status stale. Last updated ${formatDateTime(statusUpdatedAt)}`}
+      </p>
+      {refreshError === null ? null : <ManagementErrorBanner error={refreshError} />}
+      <div className="alert-sets-page__source-list">
+        {sources.map((source) => {
+          const label = formatProfile(source.targetProfileId);
+          const dimensions = targetProfileDimensions[source.targetProfileId];
+          const revealed = revealedSourceIds.has(source.id);
+          const ready = source.copyableUrlStatus === "available";
+          const listenerStatus = source.connectionState === "connected"
+            ? "Listening now"
+            : source.lastConnectedAt === null
+              ? "Not listening. No connection recorded."
+              : `Not listening. Last seen ${formatDateTime(source.lastConnectedAt)}`;
+          return (
+            <article aria-label={`${label} browser source`} className="alert-sets-page__source" key={source.id}>
+              <div className="alert-sets-page__source-heading"><strong>{label}</strong><StatusBadge label={ready ? "Ready" : "Needs setup"} tone={ready ? "positive" : "warning"} /></div>
+              <p className="alert-sets-page__source-telemetry">{listenerStatus}</p>
+              <p className="alert-sets-page__source-dimensions"><strong>{dimensions.width} x {dimensions.height}</strong></p>
+              <p className="alert-sets-page__source-guidance">Add a Browser source in OBS at {dimensions.width} x {dimensions.height}, then paste this URL.</p>
+              {source.url === null ? <p className="alert-sets-page__source-missing">Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source`} readOnly value={source.url} /> : <code className="alert-sets-page__source-masked">{maskRouteKey(source.url)}</code>}
+              <div className="alert-sets-page__row-actions">
+                {source.copyableUrlStatus === "create-required" ? <button disabled={busy} onClick={() => onCreate(source)} type="button">Create URL</button> : null}
+                {source.url === null ? null : <><button aria-label={`${revealed ? "Hide" : "Reveal"} ${label} URL`} className="button button--secondary" onClick={() => onToggleReveal(source)} type="button">{revealed ? "Hide" : "Reveal"}</button><button aria-label={`Copy ${label} URL`} className="button button--secondary" onClick={() => onCopy(source)} type="button">Copy</button></>}
+                {source.copyableUrlStatus !== "create-required" ? <button aria-label={`Regenerate ${label} URL`} className="button button--danger" disabled={busy} onClick={() => onRegenerate(source)} type="button">Regenerate</button> : null}
+              </div>
+            </article>
+          );
+        })}
       </div>
-      {expanded ? (
-        <div className="alert-sets-page__browser-source-details" id="browser-source-details">
-          <p className={`alert-sets-page__status-freshness${refreshError === null ? "" : " alert-sets-page__status-freshness--stale"}`} role="status">
-            {refreshError === null
-              ? statusUpdatedAt === null ? "Connection status has not loaded." : `Connection status updated ${formatDateTime(statusUpdatedAt)}`
-              : statusUpdatedAt === null ? "Connection status stale." : `Connection status stale. Last updated ${formatDateTime(statusUpdatedAt)}`}
-          </p>
-          {refreshError === null ? null : <ManagementErrorBanner error={refreshError} />}
-          <div className="alert-sets-page__source-list">
-            {sources.map((source) => {
-              const label = formatProfile(source.targetProfileId);
-              const dimensions = targetProfileDimensions[source.targetProfileId];
-              const revealed = revealedSourceIds.has(source.id);
-              const ready = source.copyableUrlStatus === "available";
-              const listenerStatus = source.connectionState === "connected"
-                ? "Listening now"
-                : source.lastConnectedAt === null
-                  ? "Not listening. No connection recorded."
-                  : `Not listening. Last seen ${formatDateTime(source.lastConnectedAt)}`;
-              return (
-                <article aria-label={`${label} browser source`} className="alert-sets-page__source" key={source.id}>
-                  <div className="alert-sets-page__source-heading"><strong>{label}</strong><StatusBadge label={ready ? "Ready" : "Needs setup"} tone={ready ? "positive" : "warning"} /></div>
-                  <p className="alert-sets-page__source-telemetry">{listenerStatus}</p>
-                  <p className="alert-sets-page__source-dimensions"><strong>{dimensions.width} x {dimensions.height}</strong></p>
-                  <p className="alert-sets-page__source-guidance">Add a Browser source in OBS at {dimensions.width} x {dimensions.height}, then paste this URL.</p>
-                  {source.url === null ? <p className="alert-sets-page__source-missing">Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source`} readOnly value={source.url} /> : <code className="alert-sets-page__source-masked">{maskRouteKey(source.url)}</code>}
-                  <div className="alert-sets-page__row-actions">
-                    {source.copyableUrlStatus === "create-required" ? <button disabled={busy} onClick={() => onCreate(source)} type="button">Create URL</button> : null}
-                    {source.url === null ? null : <><button aria-label={`${revealed ? "Hide" : "Reveal"} ${label} URL`} className="button button--secondary" onClick={() => onToggleReveal(source)} type="button">{revealed ? "Hide" : "Reveal"}</button><button aria-label={`Copy ${label} URL`} className="button button--secondary" onClick={() => onCopy(source)} type="button">Copy</button></>}
-                    {source.copyableUrlStatus !== "create-required" ? <button aria-label={`Regenerate ${label} URL`} className="button button--danger" disabled={busy} onClick={() => onRegenerate(source)} type="button">Regenerate</button> : null}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
-    </section>
+    </BrowserSourcesPanel>
   );
 }
 

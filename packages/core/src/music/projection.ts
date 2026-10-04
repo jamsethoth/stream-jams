@@ -50,3 +50,15 @@ export function projectMusicWidget(
 function isEpoch(value: number): boolean {
   return Number.isFinite(value) && value >= 0;
 }
+
+
+/** Apply only at the private desktop recipient boundary; browser alignment stays independent. */
+export function applyMusicDesktopPlacement(projection: MusicWidgetProjection, config: MusicModuleConfig): MusicWidgetProjection {
+  const position = config.desktopPlacement[projection.view];
+  if (position === null || projection.targetProfileId !== "landscape") return projection;
+  const bounds = targetProfileDefinitions.find(profile => profile.id === "landscape")!;
+  return { ...projection, layout: { ...projection.layout,
+    x: Math.min(position.x, bounds.width - projection.layout.width),
+    y: Math.min(position.y, bounds.height - projection.layout.height)
+  } };
+}

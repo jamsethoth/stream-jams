@@ -1,0 +1,19 @@
+.music-desktop-placement { display: grid; gap: 12px; min-width: 0; }
+.music-desktop-placement p { margin: 0; }
+.music-desktop-placement fieldset { border: 0; display: grid; gap: 12px; margin: 0; padding: 0; min-width: 0; }
+.music-desktop-placement legend { padding: 0 0 8px; }
+.music-desktop-placement__viewport { border: 1px solid var(--color-border); background: var(--color-surface-subtle); padding: 12px; overflow: auto; min-width: 0; }
+.music-desktop-placement__stage { position: relative; isolation: isolate; background: var(--color-canvas); }
+.music-desktop-placement__scaled { position: absolute; inset: 0 auto auto 0; transform-origin: top left; }
+.music-desktop-placement__move { position: absolute; z-index: 3; border: 2px solid var(--color-accent); background: transparent; padding: 0; cursor: move; touch-action: none; }
+.music-desktop-placement__move:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.music-desktop-placement__guide { position: absolute; z-index: 4; pointer-events: none; background: var(--color-info); }
+.music-desktop-placement__guide--x { top: 0; bottom: 0; width: 1px; }
+.music-desktop-placement__guide--y { left: 0; right: 0; height: 1px; }
+
+.music-desktop-placement__move:hover, .music-desktop-placement__move:disabled { background: transparent; }
+
+.music-desktop-placement label { display: grid; gap: 6px; font-size: 13px; }
+.music-desktop-placement input[type="number"], .music-desktop-placement select { background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: 4px; color: var(--color-text); font: inherit; min-height: 38px; padding: 6px 10px; width: 100%; }
+.music-desktop-placement .button { justify-self: start; }
+.music-desktop-placement .music-layout-editor__snapping label { display: inline-flex; }

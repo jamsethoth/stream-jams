@@ -140,3 +140,13 @@ describe("Music appearance configuration", () => {
     expect(musicWidgetProjectionSchema.safeParse({ ...projection, assets: [{ url: "https://example.test" }] }).success).toBe(false);
   });
 });
+
+
+it("defaults legacy desktop placement and rejects malformed positions", () => {
+  const config = createDefaultMusicModuleConfig();
+  const legacy = { ...config } as Record<string, unknown>; delete legacy.desktopPlacement;
+  expect(musicModuleConfigSchema.parse(legacy).desktopPlacement).toEqual({ full: null, compact: null });
+  for (const position of [{ x: -1, y: 0 }, { x: 0, y: -1 }, { x: 1921, y: 0 }, { x: 0, y: 1081 }, { x: 0.5, y: 0 }, { x: 0, y: 0, token: "unexpected" }]) {
+    expect(musicModuleConfigSchema.safeParse({ ...config, desktopPlacement: { full: position, compact: null } }).success).toBe(false);
+  }
+});

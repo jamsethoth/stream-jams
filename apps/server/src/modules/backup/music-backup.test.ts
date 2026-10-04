@@ -25,6 +25,7 @@ const tokenRef: SecretRef = { namespace: "music", accountId: "pear-one", name: "
 
 function fixture() {
   const config = createDefaultMusicModuleConfig();
+  config.desktopPlacement = { full: { x: 123, y: 234 }, compact: { x: 12, y: 34 } };
   const assets: AssetRecord[] = [];
   for (const profile of ["landscape", "vertical"] as const) {
     for (const view of ["full", "compact"] as const) {

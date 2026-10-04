@@ -63,3 +63,14 @@ it("composes Music on both module profiles and a visible unified layer", async (
   expect(unified.modules[0].surfaceLayer).toEqual({ visible: true, zIndex: 0 });
   expect(unified.modules[0].instructions).toEqual([]);
 });
+
+
+it("uses desktop placement only for the private desktop recipient", async () => {
+  const saved = createDefaultMusicModuleConfig(); saved.desktopPlacement.full = { x: 123, y: 234 };
+  const projection = { ...live, targetProfileId: "landscape" as const };
+  const output = new MusicOutputRuntime({ runtime: { getProjection: () => projection, revision: 1 }, assets: { resolveMusicAssets: async () => ({ assets: [], missingAssetIds: [] }) }, getConfig: async () => saved });
+  const desktop = await output.getModuleSnapshot({ moduleId: "music", overlayId: "desktop:primary", purpose: "live", scope: "unified", targetProfileId: "landscape" });
+  const browser = await output.getModuleSnapshot({ moduleId: "music", overlayId: "default", purpose: "live", scope: "unified", targetProfileId: "landscape" });
+  expect(desktop.presentation?.kind === "music-widget" && desktop.presentation.widget.layout).toMatchObject({ x: 123, y: 234 });
+  expect(browser.presentation?.kind === "music-widget" && browser.presentation.widget.layout).toMatchObject({ x: 0, y: 0 });
+});

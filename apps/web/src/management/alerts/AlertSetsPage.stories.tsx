@@ -22,7 +22,7 @@ export const ActiveSet: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const browserSources = await canvas.findByRole("region", { name: "Browser sources" });
-    await expect(browserSources).toHaveClass("alert-sets-page__browser-source-band");
+    await expect(browserSources).toHaveClass("browser-sources-panel");
     await expect(within(browserSources).getByRole("button", { name: "Expand browser sources" })).toHaveAttribute("aria-expanded", "false");
     const alertSets = canvas.getByRole("region", { name: "Alert sets" });
     const selectedSet = canvas.getByRole("region", { name: "Default alert set" });

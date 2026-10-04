@@ -1,8 +1,9 @@
-import { clampMusicComponentRect, moveMusicComponentRect, musicComponentRoles, resizeMusicComponentRect, type MusicAppearance, type MusicAssetResolver, type MusicComponentLayout, type MusicComponentRect, type MusicComponentRole, type MusicWidgetProjection } from "@stream-jams/core";
+import { musicLimits, targetProfileDefinitions, clampMusicComponentRect, moveMusicComponentRect, musicComponentRoles, resizeMusicComponentRect, type MusicAppearance, type MusicAssetResolver, type MusicComponentLayout, type MusicComponentRect, type MusicComponentRole, type MusicWidgetProjection } from "@stream-jams/core";
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { MusicWidget } from "../../overlay/components/MusicWidget.js";
 import { snapEditorRect } from "../editor/snapping.js";
 import { MusicNumberField } from "./MusicNumberField.js";
+import { resizeMusicAppearance } from "./music-widget-size.js";
 import "./music-layout-editor.css";
 
 export interface MusicLayoutEditorProps {
@@ -21,6 +22,8 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
   const shellRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const gesture = useRef<Gesture | null>(null);
+  const widgetGesture = useRef<{ pointerId: number; clientX: number; clientY: number; factor: number; appearance: MusicAppearance } | null>(null);
+  const [resizingWidget, setResizingWidget] = useState(false);
   const [availableWidth, setAvailableWidth] = useState(700);
   const [editing, setEditing] = useState(false);
   const [selected, setSelected] = useState<MusicComponentRole>("title");
@@ -30,6 +33,9 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
   const customCssActive = projection?.css.enabled === true && projection.css.source.trim() !== "";
   const displayed = projection?.profile.views[projection.view] ?? appearance;
   const bounds = { width: displayed.widthPx, height: displayed.heightPx };
+  const target = targetProfileDefinitions.find(profile => profile.id === projection?.targetProfileId);
+  const maxWidth = Math.min(musicLimits.widthPx.max, target?.width ?? musicLimits.widthPx.max);
+  const maxHeight = Math.min(musicLimits.heightPx.max, target?.height ?? musicLimits.heightPx.max);
   const scale = Math.min(1, Math.max(0.5, availableWidth / bounds.width));
   const preview = projection === null ? null : {
     ...projection,
@@ -47,6 +53,34 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
     observer.observe(shell);
     return () => observer.disconnect();
   }, []);
+
+  const resizeWidget = (width: number, height: number, start = appearance) => onChange(resizeMusicAppearance(start, width, height, maxWidth, maxHeight));
+  const cancelWidgetResize = () => {
+    const active = widgetGesture.current;
+    widgetGesture.current = null;
+    if (active !== null) onChange(active.appearance);
+  };
+  const beginWidgetResize = (event: PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault(); event.stopPropagation(); event.currentTarget.focus();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    widgetGesture.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY,
+      factor: bounds.width / Math.max(1, stageRef.current?.getBoundingClientRect().width ?? bounds.width * scale), appearance };
+  };
+  const moveWidgetResize = (event: PointerEvent<HTMLButtonElement>) => {
+    const active = widgetGesture.current;
+    if (active === null || active.pointerId !== event.pointerId) return;
+    const width = active.appearance.widthPx + (event.clientX - active.clientX) * active.factor;
+    const height = active.appearance.heightPx + (event.clientY - active.clientY) * active.factor;
+    resizeWidget(snapGrid ? Math.round(width / 10) * 10 : width, snapGrid ? Math.round(height / 10) * 10 : height, active.appearance);
+  };
+  const widgetKeys = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === "Escape") { event.preventDefault(); cancelWidgetResize(); return; }
+    const step = event.shiftKey ? 10 : 1;
+    const delta: Record<string, readonly [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+    const direction = delta[event.key];
+    if (direction === undefined) return;
+    event.preventDefault(); resizeWidget(appearance.widthPx + direction[0], appearance.heightPx + direction[1]);
+  };
 
   const updateRect = (role: MusicComponentRole, rect: MusicComponentRect) => {
     if (appearance.componentLayout === null) return;
@@ -158,6 +192,7 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
 
   return <div className="music-layout-editor">
     <div className="music-layout-editor__toolbar">
+      <button aria-pressed={resizingWidget} disabled={customCssActive || projection === null} onClick={() => { widgetGesture.current = null; setResizingWidget(current => !current); }} type="button">Resize widget</button>
       <span>{appearance.componentLayout === null ? "Automatic component layout" : "Custom component layout"}</span>
       {editing ? <button onClick={() => { gesture.current = null; setGuides([]); setEditing(false); }} type="button">Done editing</button>
         : <button disabled={customCssActive || projection === null} onClick={beginEditing} type="button">Edit component layout</button>}
@@ -169,6 +204,7 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
         <div className="music-layout-editor__scaled" style={{ width: bounds.width, height: bounds.height, transform: `scale(${scale})` }}>
           <MusicWidget projection={preview} resolveAsset={resolveAsset} nowEpochMs={preview.clockReferenceEpochMs} reducedMotion={editing} />
         </div>
+        {resizingWidget && !customCssActive ? <><div aria-hidden="true" className="music-layout-editor__widget-outline" /><button aria-label="Resize overall widget" className="music-layout-editor__resize music-layout-editor__widget-resize" onPointerDown={beginWidgetResize} onPointerMove={moveWidgetResize} onPointerUp={event => { if (widgetGesture.current?.pointerId === event.pointerId) widgetGesture.current = null; }} onPointerCancel={cancelWidgetResize} onLostPointerCapture={cancelWidgetResize} onKeyDown={widgetKeys} type="button" /></> : null}
         {editing && !customCssActive && appearance.componentLayout !== null ? musicComponentRoles.map(role => {
           const rect = appearance.componentLayout![role];
           return <div className={`music-layout-editor__box${selected === role ? " is-selected" : ""}`} key={role}
@@ -186,11 +222,15 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
           style={guide.axis === "x" ? { left: guide.position * scale } : { top: guide.position * scale }} />) : null}
       </div>}
     </div>
-    {editing && !customCssActive && activeRect !== null ? <div className="music-layout-editor__inspector">
-      <div className="music-layout-editor__snapping">
-        <label><input checked={snapGrid} onChange={event => { setSnapGrid(event.currentTarget.checked); setGuides([]); }} type="checkbox" /> Snap to grid</label>
-        <label><input checked={snapAlignment} onChange={event => { setSnapAlignment(event.currentTarget.checked); setGuides([]); }} type="checkbox" /> Snap to alignment</label>
+    {resizingWidget && !customCssActive ? <div className="music-layout-editor__inspector">
+      <div className="music-layout-editor__fields">
+        <MusicNumberField label="Preview widget width (px)" value={appearance.widthPx} min={musicLimits.widthPx.min} max={maxWidth} onCommit={width => resizeWidget(width, appearance.heightPx)} />
+        <MusicNumberField label="Preview widget height (px)" value={appearance.heightPx} min={musicLimits.heightPx.min} max={maxHeight} onCommit={height => resizeWidget(appearance.widthPx, height)} />
       </div>
+      <p>Drag the outer corner to resize the widget. Arrow keys adjust by 1 px; hold Shift for 10 px. Components keep their size and position where they fit.</p>
+    </div> : null}
+    {(editing || resizingWidget) && !customCssActive ? <div className="music-layout-editor__snapping"><label><input checked={snapGrid} onChange={event => { setSnapGrid(event.currentTarget.checked); setGuides([]); }} type="checkbox" /> Snap to grid</label>{editing ? <label><input checked={snapAlignment} onChange={event => { setSnapAlignment(event.currentTarget.checked); setGuides([]); }} type="checkbox" /> Snap to alignment</label> : null}</div> : null}
+    {editing && !customCssActive && activeRect !== null ? <div className="music-layout-editor__inspector">
       <div aria-label="Music component" className="music-layout-editor__roles">{musicComponentRoles.map(role => <button aria-pressed={selected === role} key={role} onClick={() => setSelected(role)} type="button">{labels[role]}</button>)}</div>
       <div className="music-layout-editor__fields">
         <MusicNumberField label={`${labels[selected]} X (px)`} value={activeRect.x} min={0} max={bounds.width - activeRect.width} onCommit={value => setField("x", value)} />

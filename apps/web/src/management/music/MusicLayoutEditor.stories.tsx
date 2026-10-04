@@ -52,3 +52,13 @@ export const CustomCssBlocksHandles: Story = { render: () => <Example customCss 
   await expect(canvas.getByRole("button", { name: "Edit component layout" })).toBeDisabled();
   await expect(canvas.getByText(/Disable custom CSS to edit native component layout/u)).toBeVisible();
 } };
+
+export const ResizeWidget: Story = { tags: ["widget-size"], render: () => <Example />, play: async ({ canvasElement }) => {
+  const canvas = within(canvasElement);
+  await userEvent.click(canvas.getByRole("button", { name: "Resize widget" }));
+  const handle = canvas.getByRole("button", { name: "Resize overall widget" });
+  await handle.focus(); await userEvent.keyboard("{ArrowRight}");
+  await expect(canvas.getByRole("spinbutton", { name: "Preview widget width (px)" })).toHaveValue(641);
+  await userEvent.keyboard("{Shift>}{ArrowDown}{/Shift}");
+  await expect(canvas.getByRole("spinbutton", { name: "Preview widget height (px)" })).toHaveValue(188);
+} };

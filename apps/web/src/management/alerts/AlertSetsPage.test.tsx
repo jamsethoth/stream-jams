@@ -114,7 +114,7 @@ describe("AlertSetsPage", () => {
     render(<AlertSetsPage managementApi={alertSetsApi()} onEditAlert={vi.fn()} />);
 
     const browserSources = await screen.findByRole("region", { name: "Browser sources" });
-    expect(browserSources).toHaveClass("alert-sets-page__browser-source-band");
+    expect(browserSources).toHaveClass("browser-sources-panel");
     const alertSets = screen.getByRole("region", { name: "Alert sets" });
     expect(alertSets).not.toContainElement(browserSources);
     expect(within(browserSources).getByText("1 ready")).toBeInTheDocument();

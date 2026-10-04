@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultMusicModuleConfig, musicSnapshotSchema } from "./schemas.js";
-import { getMusicPositionMs, projectMusicWidget } from "./projection.js";
+import { applyMusicDesktopPlacement, getMusicPositionMs, projectMusicWidget } from "./projection.js";
 import type { MusicSnapshot, MusicStatus } from "./types.js";
 
 const snapshot: MusicSnapshot = { providerId: "provider-1", generation: "generation-1", revision: 1, track: { id: "track-1", title: "Title", artists: ["Artist"], album: null, artworkRef: null }, playbackState: "playing", positionMs: 1000, durationMs: null, observedAtEpochMs: 10000, session: null };
@@ -94,4 +94,20 @@ describe("Music visibility and layout", () => {
     config.profiles.landscape.views.full.contentInsets = { left: 80, right: 80, top: 0, bottom: 0 };
     expect(projectMusicWidget(snapshot, status, config, "landscape", 10000, 11000)).toBeNull();
   });
+});
+
+
+it("defaults desktop placement to alignment and clamps authored positions without mutating browser layout", () => {
+  const config = createDefaultMusicModuleConfig();
+  const browser = projectMusicWidget(snapshot, status, config, "landscape", 10000, 10000)!;
+  expect(config.desktopPlacement).toEqual({ full: null, compact: null });
+  expect(applyMusicDesktopPlacement(browser, config)).toEqual(browser);
+  config.desktopPlacement.full = { x: 1900, y: 1000 };
+  const desktop = applyMusicDesktopPlacement(browser, config);
+  expect(desktop.layout).toMatchObject({ x: 1280, y: 902 });
+  expect(browser.layout).toMatchObject({ x: 0, y: 902 });
+  config.desktopPlacement.compact = { x: 45, y: 67 };
+  config.profiles.landscape.initialView = "compact";
+  const compact = projectMusicWidget(snapshot, status, config, "landscape", 10000, 10000)!;
+  expect(applyMusicDesktopPlacement(compact, config).layout).toMatchObject({ x: 45, y: 67 });
 });

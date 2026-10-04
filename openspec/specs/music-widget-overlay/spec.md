@@ -206,3 +206,23 @@ The system SHALL place Browser sources above the production-renderer preview, fo
 #### Scenario: Custom CSS overrides are explicit during visual editing
 - **WHEN** custom CSS is enabled
 - **THEN** the editor explains that CSS can override native geometry and prevents misleading drag handles; disabling CSS preserves its source and permits native layout editing
+
+
+### Requirement: Independent Music desktop placement
+The Music editor SHALL provide a full-overlay desktop placement preview with graphical drag movement, exact numeric coordinates and keyboard movement. Full and compact desktop views SHALL save independent positions, support optional grid and canvas edge/center snapping, and remain independent of browser-source placement. Desktop positions SHALL apply only to the private desktop recipient and remain inside the logical canvas after widget-size changes.
+
+#### Scenario: Desktop dragging remains an unsaved draft
+- **WHEN** the user drags Music in the desktop preview or edits its coordinates
+- **THEN** the preview and coordinates agree, pointer movement respects enabled snapping, keyboard/numeric edits remain exact, cancellation restores the starting position, and live output changes only after Save
+
+#### Scenario: Saved placement reaches only desktop output
+- **WHEN** Music desktop placement is saved and reloaded
+- **THEN** the selected desktop view retains its bounded position while browser outputs and the other desktop view keep their saved placement
+
+#### Scenario: Existing configurations retain alignment
+- **WHEN** a configuration without desktop placement loads or desktop placement is reset
+- **THEN** desktop output uses the existing profile alignment, and large requested offsets are clamped to the current widget and canvas dimensions
+
+#### Scenario: Desktop setup and CSS conflicts remain explicit
+- **WHEN** desktop output is disabled, hidden, unavailable or its status refresh fails, or custom CSS overrides native geometry
+- **THEN** management shows actionable setup/status information and shared Overlay settings, marks retained status stale after failure, disables native positioning while custom CSS is active, and does not automatically enable output

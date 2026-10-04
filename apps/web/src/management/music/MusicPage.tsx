@@ -1,3 +1,4 @@
+import { BrowserSourcesPanel } from "../foundation/BrowserSourcesPanel.js";
 import { createMusicViewAppearance, fitMusicComponentLayout, musicModuleConfigSchema, musicPublicAssetReferenceSchema, projectMusicWidget, type AssetLibraryItem, type MusicAssetResolver, type MusicCssConfig, type MusicModuleConfig, type MusicProfileConfig, type MusicSnapshot, type OverlayOutputView } from "@stream-jams/core";
 import type { MusicCssValidationResult } from "@stream-jams/core/music-style-policy";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -15,6 +16,8 @@ const MusicAppearanceEditor = lazy(() => import("./MusicAppearanceEditor.js").th
 const MusicBrandingEditor = lazy(() => import("./MusicBrandingEditor.js").then(module => ({ default: module.MusicBrandingEditor })));
 const MusicCssEditor = lazy(() => import("./MusicCssEditor.js").then(module => ({ default: module.MusicCssEditor })));
 const MusicLayoutEditor = lazy(() => import("./MusicLayoutEditor.js").then(module => ({ default: module.MusicLayoutEditor })));
+const MusicDesktopPlacement = lazy(() => import("./MusicDesktopPlacement.js").then(module => ({ default: module.MusicDesktopPlacement })));
+import type { SurfaceSettingsApi } from "../settings/overlay-surfaces-api.js";
 import "./music.css";
 
 export type MusicPageApi = Pick<MusicApi, "getMusicConfig" | "saveMusicConfig" | "listMusicOutputs"> & Pick<ManagementApi, "createOverlayOutputKey" | "regenerateOverlayOutputKey"> & AssetLibraryManagementApi;
@@ -25,7 +28,7 @@ const fixture: MusicSnapshot = {
   playbackState: "playing", positionMs: 45_000, durationMs: 180_000, observedAtEpochMs: fixtureTime, session: null
 };
 
-export function MusicPage({ api, assetApi }: { readonly api: MusicPageApi; readonly assetApi: AssetApi }) {
+export function MusicPage({ api, assetApi, surfaceApi }: { readonly api: MusicPageApi; readonly assetApi: AssetApi; readonly surfaceApi?: Pick<SurfaceSettingsApi, "load"> | undefined }) {
   const [saved, setSaved] = useState<{ enabled: boolean; config: MusicModuleConfig } | null>(null);
   const [draft, setDraft] = useState<MusicModuleConfig | null>(null);
   const [enabled, setEnabled] = useState(false);
@@ -39,6 +42,7 @@ export function MusicPage({ api, assetApi }: { readonly api: MusicPageApi; reado
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [configurationOpen, setConfigurationOpen] = useState(false);
   const [cssOpen, setCssOpen] = useState(false);
+  const [desktopOpen, setDesktopOpen] = useState(false);
   const [error, setError] = useState<ReturnType<typeof actionableError> | null>(null);
   const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
   const [validation, setValidation] = useState<MusicCssValidationResult | null>(null);
@@ -105,7 +109,8 @@ export function MusicPage({ api, assetApi }: { readonly api: MusicPageApi; reado
   const profile = draft?.profiles[profileId] ?? null;
   const appearance = profile?.views[view] ?? null;
   const selectedImage = assets.find(item => item.id === appearance?.branding.assetId && item.mediaType === "image" && item.health === "available") ?? null;
-  const requiredIds = appearance === null ? [] : [appearance.branding.assetId, appearance.titleFont.fontAssetId, appearance.detailsFont.fontAssetId].filter((id): id is string => id !== null);
+  const desktopAssetIds = desktopOpen && draft !== null ? Object.values(draft.profiles.landscape.views).flatMap(item => [item.branding.assetId, item.titleFont.fontAssetId, item.detailsFont.fontAssetId]) : [];
+  const requiredIds = [...(appearance === null ? [] : [appearance.branding.assetId, appearance.titleFont.fontAssetId, appearance.detailsFont.fontAssetId]), ...desktopAssetIds].filter((id): id is string => id !== null);
   const { descriptors, unavailable: mediaUnavailable } = useMediaPreviewGroup(assetApi, requiredIds);
   const projection = useMemo(() => {
     if (draft === null) return null;
@@ -138,11 +143,11 @@ export function MusicPage({ api, assetApi }: { readonly api: MusicPageApi; reado
   if (draft === null || profile === null || appearance === null) return <div><p role="alert">Music appearance could not be loaded.</p>{error === null ? null : <ManagementErrorBanner error={error} />}</div>;
   return <div className="music-editor">
     {error === null ? null : <ManagementErrorBanner error={error} />}
-    <MusicDisclosure title="Browser sources" label="Music output links" open={sourcesOpen} onToggle={() => setSourcesOpen(current => !current)} summary={`${outputs.filter(output => output.targetProfileId === profileId && output.url !== null).length} links ready · ${profileId === "landscape" ? "Landscape" : "Vertical"}`}>
+    <BrowserSourcesPanel label="Music output links" detailsId="music-browser-sources" expanded={sourcesOpen} onToggle={() => setSourcesOpen(current => !current)} readyCount={outputs.filter(output => output.targetProfileId === profileId && output.url !== null).length} needsSetupCount={outputs.filter(output => output.targetProfileId === profileId && output.url === null).length} description="One live or test URL per output profile." context={profileId === "landscape" ? "Landscape" : "Vertical"}>
       <p>One live or test URL per output profile. Create a link, then add it as a browser source in OBS.</p>
       <div className="music-editor__actions">{outputs.filter(output => output.targetProfileId === profileId).map(output => <div key={output.id}><strong>{output.purpose === "live" ? "Live" : "Test"}</strong>{output.url === null ? <button disabled={busy} onClick={() => void createOutput(output)} type="button">{output.copyableUrlStatus === "regenerate-required" ? "Regenerate" : "Create"} {output.purpose} output link</button> : <><a href={output.url} rel="noreferrer" target="_blank">Open {output.purpose} output</a><button onClick={() => void copyOutput(output.url!)} type="button">Copy {output.purpose} output URL</button></>}</div>)}</div>
       {outputs.length === 0 ? <p role="status">No Music outputs were returned. Check the local service and reload this page.</p> : null}
-    </MusicDisclosure>
+    </BrowserSourcesPanel>
     <section aria-label="Music preview" className="music-editor__section"><h3>Preview</h3>
 <div className="music-editor__grid"><label>Output profile<select value={profileId} onChange={event => setProfileId(event.currentTarget.value as typeof profileId)}><option value="landscape">Landscape</option><option value="vertical">Vertical</option></select></label><label>Preview view<select value={view} onChange={event => setView(event.currentTarget.value as typeof view)}><option value="full">Full</option><option value="compact">Compact</option></select></label></div><p>Unsaved changes appear here only. Live output continues using saved settings.</p>
       {mediaUnavailable ? <p role="status">A preview image or font is unavailable. The native fallback is shown. Reselect the asset to retry.</p> : null}
@@ -150,6 +155,9 @@ export function MusicPage({ api, assetApi }: { readonly api: MusicPageApi; reado
       <div className="music-editor__actions"><button disabled={!draft.css.enabled} onClick={() => updateDraft(current => ({ ...current, css: { ...current.css, enabled: false } }))} type="button">Disable custom CSS</button><a href="/manage/music-sources">Music sources</a><a href="/manage/settings">Overlay outputs</a></div>
       <div aria-label="Full preview metadata" className="music-editor__metadata"><strong>{fixture.track?.title}</strong><span>{fixture.track?.artists.join(", ")}</span><span>{fixture.track?.album}</span></div>
     </section>
+    <MusicDisclosure title="Desktop overlay placement" open={desktopOpen} onToggle={() => setDesktopOpen(current => !current)} summary={draft.desktopPlacement.full === null && draft.desktopPlacement.compact === null ? "Uses alignment" : "Custom desktop position"}>
+      <Suspense fallback={<p role="status">Loading desktop placement…</p>}><MusicDesktopPlacement config={draft} snapshot={fixture} now={fixtureTime} resolveAsset={resolver} surfaceApi={surfaceApi} onChange={next => updateDraft(() => next)} /></Suspense>
+    </MusicDisclosure>
     <MusicDisclosure title="Configuration" open={configurationOpen} onToggle={() => setConfigurationOpen(current => !current)} summary={`${enabled ? "Enabled" : "Disabled"} · ${view === "full" ? "Full" : "Compact"} view`}>
       <label><input checked={enabled} onChange={event => updateEnabled(event.currentTarget.checked)} type="checkbox" /> Enable Music module after saving</label>
 <div className="music-editor__grid">

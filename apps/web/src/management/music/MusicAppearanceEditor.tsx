@@ -5,14 +5,8 @@ import { RgbaColorControl } from "../alerts/editor/RgbaColorControl.js";
 
 export type MusicFontRole = "titleFont" | "detailsFont";
 
-export function fitMusicInsets(view: MusicAppearance): MusicAppearance {
-  const insets = { ...view.contentInsets };
-  insets.left = Math.min(insets.left, view.widthPx - 1);
-  insets.right = Math.min(insets.right, view.widthPx - insets.left - 1);
-  insets.top = Math.min(insets.top, view.heightPx - 1);
-  insets.bottom = Math.min(insets.bottom, view.heightPx - insets.top - 1);
-  return { ...view, contentInsets: insets };
-}
+import { fitMusicInsets } from "./music-widget-size.js";
+export { fitMusicInsets } from "./music-widget-size.js";
 
 interface Props {
   readonly profile: MusicProfileConfig;

@@ -167,8 +167,9 @@ it("uses only the matching private Music artwork grant and clears it with the mo
   render(<DesktopOverlayApp controller={controller} subscribe={listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }} />);
   act(() => receive({ type: "configure", config: { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "monitor", opacity: 1,
     layers: [{ moduleId: "music", visible: true }] } }));
-  await act(async () => receive({ type: "sync-module", moduleId: "music", revision: 1, presentation: { kind: "music-widget", widget }, assets: [],
+  await act(async () => receive({ type: "sync-module", moduleId: "music", revision: 1, presentation: { kind: "music-widget", widget: { ...widget, layout: { ...widget.layout, x: 123, y: 234 } } }, assets: [],
     artwork: { ref: "art_ref", handle: `private_${"a".repeat(43)}` } }));
+  expect(document.querySelector(".music-widget-host")).toHaveStyle({ left: "123px", top: "234px" });
   const shadow = document.querySelector(".music-widget-host")?.shadowRoot;
   expect(shadow?.querySelector(".sj-title")?.textContent).toBe("Desktop song");
   expect(shadow?.querySelector(".sj-artwork img")?.getAttribute("src")).toBe(`stream-jams-overlay://surface/music-artwork/private_${"a".repeat(43)}`);

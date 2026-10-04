@@ -80,3 +80,11 @@ See [editor refinement](editor-refinement.md).
 - [x] 9.1 Share bounded pointer move/resize snapping with a 10px grid, screen-space alignment tolerance and eligible peer/canvas targets.
 - [x] 9.2 Add independent default-enabled snapping toggles and transient guides to Music and Alerts, preserving exact numeric/keyboard edits and draft/save behavior.
 - [x] 9.3 Verify geometry, UI, browser workflow, Storybook and affected package checks; synchronize the capability/current UX and rebuild the runnable desktop app.
+
+
+## 10. Approved Independent Desktop Placement
+
+- [x] 10.1 Add backward-compatible full/compact desktop coordinates and private-recipient-only projection, preserving browser alignment and bounded layout.
+- [x] 10.2 Add a desktop canvas placement panel with drag/numeric/keyboard edits, optional grid/alignment snapping, cancellation, reset and explicit desktop setup/CSS states.
+- [x] 10.3 Verify schemas, output boundaries, renderer positioning, backup round trip, saved browser workflow and production Storybook accessibility; synchronize the capability and guidance.
+- [x] 10.4 Rebuild the desktop candidate and verify the packaged placement controls without changing the running user profile.

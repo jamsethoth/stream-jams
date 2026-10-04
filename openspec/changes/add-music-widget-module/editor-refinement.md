@@ -16,3 +16,20 @@ User request, October 4, 2026: align Music with the Alerts module, place browser
 Affected schema, geometry, renderer, editor and management tests; actual Storybook interaction/a11y/console checks; built-service Playwright drag/numeric/save/reload/live parity; web/desktop overlay build, route budgets, strict TypeScript, changed-file lint and OpenSpec validation. Rebuild the desktop runnable folder after the frontend change so the user's current executable reflects the updated editor. Physical authenticated provider acceptance remains separately recorded.
 
 Applicable UX sections: Alerts Browser Sources, Alert Editor Canvas/Inspector, Assets, Target Profiles, Save/Auto-Save and Error Handling. This refinement implements requested Music editing behavior within the current local-first module; future providers and a general-purpose graphics editor remain deferred.
+
+
+## Shared Browser Sources presentation (2026-10-04)
+
+Alerts, Screen Effects, Timers and Music must use the same compact Browser Sources band: boxed expand/collapse icon, heading typography, subtitle indentation, readiness summary, detail separator and responsive stacking. Share the production presentation component so module styles cannot diverge. Preserve module-specific URL actions, output scopes, credential masking and disclosure state. This is a presentation refinement of existing management surfaces, with no provider or output-contract changes.
+
+Validate all four real module routes at desktop and narrow widths, including keyboard expansion/collapse, and cover collapsed, expanded, empty and refresh-failure states in Storybook.
+
+
+## Graphical widget bounds (2026-10-04)
+
+Expose an independent Resize widget mode in the Music preview with an outer corner handle and matching width/height inputs. Pointer resize uses the current grid preference and a scale captured at pointer-down; keyboard arrows remain exact (Shift = 10 px). Escape or pointer cancellation restores the complete starting appearance. Clamp dimensions to the schema and selected output profile, fit content insets and component rectangles, and preserve font sizes. Keep automatic layout automatic until component editing is explicitly enabled. Outer handles remain management-only and disabled with active custom CSS. Existing Save and per-profile/per-view persistence apply.
+
+
+## Independent desktop placement (approved 2026-10-04)
+
+Add a collapsible Desktop overlay placement panel in Music with a 1920×1080 logical desktop preview, drag movement, precise X/Y fields, independent grid/alignment snapping and transient edge/center guides. Save nullable positions independently for full/compact desktop views in Music config, defaulting legacy settings to existing alignment. Apply positions only at the private desktop recipient boundary; browser projections retain their profile alignment. Clamp positions when appearance sizes change. Reset restores alignment. Render desktop availability, display, enablement and Music visibility status with a link to shared Overlay settings. Preview is an unsaved draft and uses the production widget; CSS recovery remains available. No automatic desktop enablement or changes to display selection.

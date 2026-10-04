@@ -132,8 +132,12 @@ export const musicCssConfigSchema = z.object({
   source: z.string().refine(source => new TextEncoder().encode(source).byteLength <= musicLimits.cssBytes, "CSS exceeds the 32 KiB UTF-8 limit").default(""),
   enabled: z.boolean().default(false), styleContractVersion: z.literal(1).default(1)
 }).strict();
+export const musicDesktopPositionSchema = z.object({ x: z.number().int().min(0).max(1920), y: z.number().int().min(0).max(1080) }).strict();
+export const musicDesktopPlacementSchema = z.object({ full: musicDesktopPositionSchema.nullable().default(null), compact: musicDesktopPositionSchema.nullable().default(null) }).strict();
+
 export const musicModuleConfigSchema = z.object({
   version: z.literal(1).default(1),
+  desktopPlacement: musicDesktopPlacementSchema.default({ full: null, compact: null }),
   profiles: z.object({ landscape: musicProfileConfigSchema, vertical: musicProfileConfigSchema }).strict(),
   css: musicCssConfigSchema.default({ source: "", enabled: false, styleContractVersion: 1 })
 }).strict();

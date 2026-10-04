@@ -1,5 +1,5 @@
 import {
-  projectMusicWidget,
+  applyMusicDesktopPlacement, projectMusicWidget,
   type MusicModuleConfig, type MusicSnapshot, type MusicWidgetProjection,
   type OverlayModuleRuntime, type OverlayModuleSnapshot, type OverlayModuleSnapshotRequest,
   type OverlayTargetProfileId
@@ -27,12 +27,15 @@ export class MusicOutputRuntime implements OverlayModuleRuntime {
     const revision = this.dependencies.runtime.revision;
     const projection = request.purpose === "test" ? await this.#fixture(targetProfileId) : this.dependencies.runtime.getProjection(targetProfileId);
     if (projection === null) return { moduleId: "music", enabled: true, instructions: [] };
-    const { assets } = await this.dependencies.assets.resolveMusicAssets(await this.dependencies.getConfig(), targetProfileId);
+    const config = await this.dependencies.getConfig();
+    const placed = request.overlayId === "desktop:primary" && request.scope === "unified" && request.purpose === "live"
+      ? applyMusicDesktopPlacement(projection, config) : projection;
+    const { assets } = await this.dependencies.assets.resolveMusicAssets(config, targetProfileId);
     if (request.purpose === "live" && this.dependencies.runtime.revision !== revision) {
       return { moduleId: "music", enabled: true, instructions: [] };
     }
     return { moduleId: "music", enabled: true, instructions: [], presentation: {
-      kind: "music-widget", widget: { ...projection, assets: [...assets] }
+      kind: "music-widget", widget: { ...placed, assets: [...assets] }
     } };
   }
 

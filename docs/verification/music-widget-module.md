@@ -1,3 +1,27 @@
+## Independent desktop placement checkpoint (2026-10-04)
+
+Music now includes a Desktop overlay placement disclosure with a production-renderer preview on the 1920×1080 logical canvas. Users drag the whole widget, edit exact X/Y coordinates or use arrows (Shift = 10 px), with independent grid/alignment toggles and transient edge/center guides. Escape restores the starting position. Full/compact desktop positions save independently; Reset and older configs retain alignment. Widget-size changes clamp positions. The private recipient applies desktop coordinates; browser output stays independent. Desktop state, display, enablement and Music visibility are visible with shared Overlay settings, explicit CSS guards and stale-status recovery. Opening this editor does not enable output.
+
+Focused core/server/editor/private-renderer tests passed **51/51**; backup and positioned private-renderer rechecks passed **14/14**. Actual built-service desktop transport/browser isolation and graphical widget-size workflows passed **2/2**. The final placement workflow recheck and visual inspection passed **1/1**, including a 390px layout. Scoped production Storybook interaction/accessibility/console checks passed **4/4**, including ready, disabled, failed-status and custom-CSS states. Root/E2E/desktop TypeScript, changed-file ESLint, error provenance, strict active OpenSpec validation, web/private-overlay builds and route budgets passed. Canonical Music placement requirements and the 70-scenario trace are synchronized.
+
+The runnable candidate is `apps/desktop/out/music-placement/Stream Jams-win32-x64`. A packaged disposable-profile check exercised keyboard movement, numeric save and reload, then exited cleanly. Its first immediate value assertion raced React rendering; awaited Playwright assertions passed without changing product behavior. The normal user app is still running the earlier package and was not replaced or interrupted. Authenticated installed-Pear/OBS/physical-display acceptance remains separately pending.
+
+## Graphical widget size checkpoint (2026-10-04)
+
+Music preview includes an independent Resize widget mode, outer corner handle and matching width/height inputs. Dragging respects grid snapping; arrows adjust by 1 px or 10 px with Shift. Escape, pointer cancellation and lost capture restore the initial appearance. Dimensions respect schema and output-profile bounds. Shrinking fits insets and existing component rectangles without changing fonts; automatic layout remains automatic. Changes stay in the current profile/view draft until Save. Custom CSS disables native size handles.
+
+Focused editor, geometry and Music page tests passed **17/17**. Built-service resizing save/reload plus existing Music/Alerts snapping Playwright passed **3/3**. The new Storybook resize interaction/accessibility scenario passed **1/1**. Web/E2E TypeScript, scoped ESLint, error provenance, production web/Storybook builds and route budgets passed.
+
+The desktop candidate was built in `apps/desktop/out/widget-size/Stream Jams-win32-x64` to preserve the running user app. A disposable packaged-profile check exercised Resize widget and exact keyboard width changes, reset the draft and exited cleanly. Switching the normal app to this candidate awaits the user closing the current app; the running original package was not replaced.
+
+## Browser Sources presentation checkpoint (2026-10-04)
+
+Alerts, Screen Effects, Timers and Music now share `BrowserSourcesPanel`, based on the Alerts compact band. The boxed disclosure icon, typography, padding, summary colors and responsive header are shared; each module retains its output setup controls. Screen Effects source-list styling follows the shared panel. Summary markup now uses an accessible group role, including empty output states.
+
+Affected module unit tests passed **72/72**. Web/E2E TypeScript, scoped ESLint, error provenance, production web build and route budgets passed. Built-service Playwright passed **1/1**, comparing all four panels at 1280 and 390 pixels and exercising Enter/Space expansion/collapse with no panel overflow. Storybook production build and scoped interaction/accessibility checks passed **5/5** (collapsed, expanded, empty, refresh failure and narrow states).
+
+After the user closed the app, the Windows folder was repackaged. Packaged Music startup, native DLL loading and utility-worker lifecycle checks passed **3/3** in disposable profiles. The normal app was restarted with `NODE_EXTRA_CA_CERTS` pointing to the Pear public certificate; `/health` returned `ok`, and the running service served the new shared Browser Sources CSS.
+
 # Music widget module verification
 
 ## Shared snapping checkpoint (2026-10-04)
