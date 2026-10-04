@@ -19,6 +19,7 @@ import {
   createDefaultOverlayModuleRegistry,
   isStreamerBotSubscriptionAvailable,
   overlayScopeSchema,
+  pearConfigurationSchema,
   type ActionableManagementError,
   type AlertEditorErrorReportInput,
   type AudioDeviceHost,
@@ -113,7 +114,8 @@ import { createAlertQueueOwner, createEffectQueueOwner } from "../modules/playba
 import { ManagementOverviewService } from "../modules/providers/management-overview-service.js";
 import { createProviderManagementAdapters } from "../modules/providers/provider-management-adapters.js";
 import { PearPairingService } from "../modules/music/pear-pairing-service.js";
-import { validatePearMusicConnection } from "../modules/music/pear-music-source.js";
+import { PearMusicSource, validatePearMusicConnection } from "../modules/music/pear-music-source.js";
+import { MusicRuntimeCoordinator } from "../modules/music/music-runtime-coordinator.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
 import { evaluateProviderActivationImpact } from "../modules/providers/provider-activation-impact.js";
 import { SqliteProviderRegistrationRepository } from "../modules/providers/sqlite-provider-registration-repository.js";
@@ -218,6 +220,7 @@ export interface RuntimeAppComposition {
   readonly effectPlaybackCoordinator: EffectPlaybackCoordinator;
   readonly timerManagementService: TimerManagementService;
   readonly timerRuntimeCoordinator: TimerRuntimeCoordinator;
+  readonly musicRuntimeCoordinator: MusicRuntimeCoordinator;
   readonly playbackOperationsService: PlaybackOperationsService;
   readonly app: FastifyInstance;
   readonly configStore: ConfigStore;
@@ -929,6 +932,27 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   cleanups.push(() => (options.cancelRecurring ?? clearInterval)(twitchValidationInterval as ReturnType<typeof setInterval>));
   const musicPairingService = new PearPairingService({ identityStore: secretStore });
   cleanups.push(() => musicPairingService.dispose());
+  const musicRuntimeCoordinator = new MusicRuntimeCoordinator({
+    getConfig: async () => {
+      const module = await overlayModuleConfigService.getModuleConfig("music");
+      return { enabled: module.enabled, config: module.config };
+    },
+    getActiveSource: async () => {
+      const active = await providerRegistrationRepository.findActive("music-source");
+      if (active?.provider.kind !== "pear-desktop" || active.secretRef === null) return null;
+      const token = await secretStore.getSecret(active.secretRef);
+      if (token === null) return null;
+      const parsed = pearConfigurationSchema.safeParse(active.configuration);
+      return parsed.success ? { providerId: active.provider.id, configuration: parsed.data, token } : null;
+    },
+    createSource: (selected, generation) => new PearMusicSource({
+      config: selected.configuration, token: selected.token, providerId: selected.providerId, generation,
+      now: () => now().getTime()
+    }),
+    now: () => now().getTime()
+  });
+  cleanups.push(() => musicRuntimeCoordinator.stop());
+  await musicRuntimeCoordinator.reconcile();
   const providerManagementService = new ProviderManagementService({
     repository: providerRegistrationRepository,
     adapters: createProviderManagementAdapters({
@@ -983,6 +1007,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     getVerifiedTwitchBroadcasterId: async () =>
       (await twitchAccountRepository.findConnectedAccount())?.accountId ?? null,
     onEventSourceChanged: syncEventSourceRuntime,
+    onMusicSourceChanged: () => musicRuntimeCoordinator.reconcile(),
     now
   });
   const alertSetMetadataRepository = new SqliteAlertSetMetadataRepository(database.connection);
@@ -1379,6 +1404,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         await effectPlaybackCoordinator.disable();
       }
       if (config.moduleId === "timers") await queueTimerOutputSync();
+      if (config.moduleId === "music") await (config.enabled ? musicRuntimeCoordinator.refreshConfig() : musicRuntimeCoordinator.reconcile());
       return config;
     },
     async setModuleEnabled(moduleId, enabled) {
@@ -1389,6 +1415,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         await effectPlaybackCoordinator.disable();
       }
       if (config.moduleId === "timers") await queueTimerOutputSync();
+      if (config.moduleId === "music") await (config.enabled ? musicRuntimeCoordinator.refreshConfig() : musicRuntimeCoordinator.reconcile());
       return config;
     }
   };
@@ -1516,6 +1543,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     effectPlaybackCoordinator,
     timerManagementService,
     timerRuntimeCoordinator,
+    musicRuntimeCoordinator,
     playbackOperationsService,
     configStore,
     database,
