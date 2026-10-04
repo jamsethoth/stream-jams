@@ -74,6 +74,33 @@ describe("AutomationSettingsPanel", () => {
     view.rerender(<AutomationSettingsPanel api={second} />);
     await waitFor(() => expect(screen.getByRole("checkbox", { name: "timers:control" })).toBeChecked());
   });
+  it.each(["approve", "deny", "revoke"] as const)("refreshes after %s without waiting for an outstanding poll", async action => {
+    const client = api(); const user = userEvent.setup();
+    render(<AutomationSettingsPanel api={client} />);
+    await screen.findByText("A1B2C3D4");
+    let release!: (value: readonly AutomationPairingView[]) => void;
+    vi.mocked(client.listPairings).mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+    await user.click(screen.getByRole("button", { name: "Refresh automation" }));
+    const label = action === "approve" ? "Approve Stream Deck" : action === "deny" ? "Deny Stream Deck" : "Revoke Deck client";
+    await user.click(screen.getByRole("button", { name: label }));
+    const status = action === "approve" ? "Approved. Waiting for the client to finish pairing." : action === "deny" ? "Pairing denied." : "Access revoked";
+    expect(await screen.findByText(status, { selector: "article p" })).toBeInTheDocument();
+    expect(client.listPairings).toHaveBeenCalledTimes(3);
+    await act(async () => { release([pairing]); });
+    expect(screen.getByText(status, { selector: "article p" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+  it("ignores an obsolete poll failure after an action refresh", async () => {
+    const client = api(); const user = userEvent.setup();
+    render(<AutomationSettingsPanel api={client} />); await screen.findByText("A1B2C3D4");
+    let reject!: (reason: Error) => void;
+    vi.mocked(client.listPairings).mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+    await user.click(screen.getByRole("button", { name: "Refresh automation" }));
+    await user.click(screen.getByRole("button", { name: "Approve Stream Deck" }));
+    expect(await screen.findByText("Approved. Waiting for the client to finish pairing.")).toBeInTheDocument();
+    await act(async () => { reject(new Error("Obsolete poll failed")); });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
   it("denies and does not approve implicitly", async () => {
     const client = api(); render(<AutomationSettingsPanel api={client} />);
     await userEvent.click(await screen.findByRole("button", { name: "Deny Stream Deck" }));

@@ -51,7 +51,7 @@ export function AutomationSettingsPanel({ api = defaultAutomationSettingsApi }: 
     setBusy(true); setNotice(null); sequence.current++;
     try { await work(); if (mounted.current) { setNotice(message); setError(null); } }
     catch (cause) { if (mounted.current) setError(actionable("Automation action could not be confirmed", cause)); }
-    finally { if (mounted.current) { setBusy(false); void load(); } }
+    finally { if (mounted.current) { setBusy(false); fetching.current = null; void load(); } }
   }
   return <section aria-labelledby="automation-heading" className="automation-settings settings-page__section">
     <div className="settings-page__section-heading"><div><h3 id="automation-heading">Automation permissions</h3><p>Approve local clients only after matching the comparison code shown in that client. Client names are self-reported.</p></div><button disabled={busy} onClick={() => void load()} type="button">Refresh automation</button></div>
