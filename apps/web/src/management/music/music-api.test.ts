@@ -39,6 +39,7 @@ describe("Music API", () => {
     const config = createDefaultMusicModuleConfig();
     const getJson = vi.fn(async (path: string) => path.endsWith("/config") ? { enabled: false, config } : [
       { id: "music-live", label: "Music Landscape Live", overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId: "landscape", enabled: false, keyId: null, url: null, copyableUrlStatus: "create-required" },
+      { id: "music-legacy", label: "Music Live", overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId: null, enabled: false, keyId: null, url: null, copyableUrlStatus: "create-required" },
       { id: "alerts-live", moduleId: "alerts" }
     ]);
     const putJson = vi.fn(async () => ({ enabled: true, config }));

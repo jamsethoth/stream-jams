@@ -38,7 +38,8 @@ export function createMusicApi(client: ManagementHttpClient): MusicApi {
     async listMusicOutputs() {
       const response = await client.getJson<unknown>("/management/overlay-outputs", "Unable to load Music output links.");
       if (!Array.isArray(response)) throw new Error("Music output response is invalid. Reload the page and retry.");
-      const music = response.filter(item => typeof item === "object" && item !== null && "moduleId" in item && item.moduleId === "music");
+      // The service also returns a legacy profile-less Music URL. This editor only exposes fixed profiles.
+      const music = response.filter(item => typeof item === "object" && item !== null && "moduleId" in item && item.moduleId === "music" && ("targetProfileId" in item ? item.targetProfileId !== null : true));
       if (!music.every(isMusicOutput)) throw new Error("Music output response is invalid. Reload the page and retry.");
       return music;
     },
