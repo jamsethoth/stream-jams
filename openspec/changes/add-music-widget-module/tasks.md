@@ -10,15 +10,15 @@
 - [x] 2.2 Move the shared module presentation contract out of timer ownership, preserve timer-stack behavior, add music-widget and update all browser/private-desktop validators with compatibility tests.
 - [x] 2.3 Extend provider kinds/capabilities and add the next SQLite migration for registration constraints/indexes; verify existing providers and one-active-per-capability invariants survive migration/failure.
 - [ ] 2.4 Add music selection/config repository/service integration, independent activation/deactivation and disabled module defaults with restart and source-switch tests.
-- [ ] 2.5 Add a reusable adapter contract harness with push, polling-only and selected-session fixtures; prove renderer-independent snapshots and idempotent cancellation/stop.
+- [x] 2.5 Add a reusable adapter contract harness with push, polling-only and selected-session fixtures; prove renderer-independent snapshots and idempotent cancellation/stop.
 
 ## 3. Pear Pairing And Authenticated Adapter
 
 - [x] 3.1 Implement typed loopback endpoint/config validation, stable local pairing identity, matched HTTP/WS schemes and explicit cancellable 60-second pairing; cover allow, deny, timeout, cancellation and rejected endpoints.
 - [ ] 3.2 Integrate provisional server-only credentials with durable SecretStore and validated registration; cover store/database failures, compensation, reconnect and explicit credential replacement without exposing token material.
-- [ ] 3.3 Implement authenticated REST observation and WS initialization requiring validated PLAYER_INFO; cover empty initialization, selected-transport testing, 1008/401/403 and WS-only unsupported endpoints.
-- [ ] 3.4 Implement auto/authenticated polling fallback, serialized polling, bounded reconnect, freshness reconciliation, generation ownership and complete disposal; cover rate limiting and no auth downgrade.
-- [ ] 3.5 Port and strengthen Pear normalization for full/partial metadata, pause/resume, seeks and missing fields; add regressions for HTTP 204 clearing, publication after disconnect and polling-driven idle reset.
+- [x] 3.3 Implement authenticated REST observation and WS initialization requiring validated PLAYER_INFO; cover empty initialization, selected-transport testing, 1008/401/403 and WS-only unsupported endpoints.
+- [x] 3.4 Implement auto/authenticated polling fallback, serialized polling, bounded reconnect, freshness reconciliation, generation ownership and complete disposal; cover rate limiting and no auth downgrade.
+- [x] 3.5 Port and strengthen Pear normalization for full/partial metadata, pause/resume, seeks and missing fields; add regressions for HTTP 204 clearing, publication after disconnect and polling-driven idle reset.
 - [x] 3.6 Test redaction of HTTP/WS/WSS query tokens, authorization metadata, nested exceptions and credential references through diagnostics and management responses.
 
 ## 4. Music Runtime Artwork And Persistence
