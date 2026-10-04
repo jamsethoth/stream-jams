@@ -42,7 +42,7 @@ test("bundled utility worker starts, acknowledges persisted mute, and exits afte
     });
     expect(observation.messages, JSON.stringify(observation)).toEqual(expect.arrayContaining([expect.objectContaining({ type: "ready" })]));
     expect(observation.messages).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: "audio-request", command: { type: "set-muted", muted: false } })
+      expect.objectContaining({ type: "audio-request", command: { type: "set-module-mutes", moduleMutes: { alerts: false, "screen-effects": false } } })
     ]));
     await desktop.evaluate((_electron, requestId) => {
       const state = globalThis as typeof globalThis & { ownedWorker: { postMessage(message: unknown): void } };

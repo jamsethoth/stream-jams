@@ -68,6 +68,7 @@ bridge?.onCommand(candidate => {
     if (request.generation < generation) return;
     generation = request.generation;
     player.initialize(generation, request.command.muted);
+    if (request.command.moduleMutes !== undefined) player.setModuleMutes(request.command.moduleMutes);
   } else if (request.generation !== generation) return;
   const reply = (result: AudioRendererReply["result"], exception?: AudioRendererReply["exception"]) => bridge.report({ protocolVersion: 1, generation: request.generation, requestId: request.requestId, result, ...(exception === undefined ? {} : { exception }) });
   void (async () => {
@@ -79,6 +80,7 @@ bridge?.onCommand(candidate => {
       case "play": reply({ type: "played", ...deviceAudioResultSchema.parse(await player.play({ generation, ...request.command.payload })) }); break;
       case "stop": player.stop(request.command.playbackId); reply({ type: "ok" }); break;
       case "set-muted": player.setMuted(request.command.muted); reply({ type: "ok" }); break;
+      case "set-module-mutes": player.setModuleMutes(request.command.moduleMutes); reply({ type: "ok" }); break;
       case "initialize": reply({ type: "ok" }); break;
     }
   })().catch((error: unknown) => { player.close(); reply(null, serializeException(error)); });

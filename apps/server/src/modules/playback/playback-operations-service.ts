@@ -1,5 +1,8 @@
 import {
   mergeOperations,
+  defaultModuleMuteState,
+  type ModuleMuteState,
+  type MutablePlaybackModuleId,
   playbackSafetyStateSchema,
   type MergedOperationsSnapshot,
   type PlaybackSafetyState,
@@ -38,6 +41,7 @@ export class PlaybackOperationsService {
   readonly #onSafetyApplyFailure: NonNullable<PlaybackOperationsServiceOptions["onSafetyApplyFailure"]> | null;
   #safety: PlaybackSafetyState;
   #pendingSafetyMutation: Promise<unknown> = Promise.resolve();
+  #muteOutputStatus: { status: "applied" | "failed"; message: string | null } = { status: "applied", message: null };
   #revision = 0;
   #fingerprint: string | null = null;
 
@@ -48,7 +52,7 @@ export class PlaybackOperationsService {
       owners.set(owner.moduleId, owner);
     }
     this.#owners = owners;
-    this.#safety = playbackSafetyStateSchema.parse(options.initialSafety);
+    this.#safety = normalizeSafety(options.initialSafety);
     this.#persistSafety = options.persistSafety;
     this.#applySafety = options.applySafety;
     this.#onSafetyApplyFailure = options.onSafetyApplyFailure ?? null;
@@ -65,6 +69,41 @@ export class PlaybackOperationsService {
     return mergeOperations(ownerSnapshots, this.#safety, this.#revision);
   }
 
+  getModuleMuteState(): ModuleMuteState { return { ...(this.#safety.moduleMutes ?? defaultModuleMuteState) }; }
+
+  getMuteOutputStatus(): Readonly<{ status: "applied" | "failed"; message: string | null }> { return { ...this.#muteOutputStatus }; }
+
+  setModulesMuted(moduleIds: readonly MutablePlaybackModuleId[], muted: boolean): Promise<MergedOperationsSnapshot> {
+    return this.#serialize(async () => {
+      const moduleMutes = { ...this.getModuleMuteState() };
+      for (const id of moduleIds) {
+        if (id !== "alerts" && id !== "screen-effects") throw new UnknownPlaybackOwnerError(id);
+        moduleMutes[id] = muted;
+      }
+      return this.#setSafety({ moduleMutes, muted: moduleMutes.alerts && moduleMutes["screen-effects"] });
+    });
+  }
+
+  toggleModulesMuted(moduleIds: readonly MutablePlaybackModuleId[]): Promise<MergedOperationsSnapshot> {
+    return this.#serialize(async () => {
+      const moduleMutes = { ...this.getModuleMuteState() };
+      const muted = !moduleIds.every(id => moduleMutes[id]);
+      for (const id of moduleIds) {
+        if (id !== "alerts" && id !== "screen-effects") throw new UnknownPlaybackOwnerError(id);
+        moduleMutes[id] = muted;
+      }
+      return this.#setSafety({ moduleMutes, muted: moduleMutes.alerts && moduleMutes["screen-effects"] });
+    });
+  }
+
+  #serialize<T>(action: () => Promise<T>): Promise<T> {
+    const result = this.#pendingSafetyMutation.then(action);
+    this.#pendingSafetyMutation = result.catch(
+      // error-provenance: allow expected -- keep the mutation queue available after an unsuccessful command
+      () => undefined);
+    return result;
+  }
+
   setSafety(patch: Partial<PlaybackSafetyState>): Promise<MergedOperationsSnapshot> {
     const result = this.#pendingSafetyMutation.then(() => this.#setSafety(patch));
     this.#pendingSafetyMutation = result.catch(
@@ -74,12 +113,16 @@ export class PlaybackOperationsService {
   }
 
   async #setSafety(patch: Partial<PlaybackSafetyState>): Promise<MergedOperationsSnapshot> {
+    if (patch.muted !== undefined && patch.moduleMutes === undefined) {
+      patch = { ...patch, moduleMutes: { alerts: patch.muted, "screen-effects": patch.muted } };
+    }
     const candidate = playbackSafetyStateSchema.parse({ ...this.#safety, ...patch });
-    const persisted = playbackSafetyStateSchema.parse(await this.#persistSafety(patch));
+    const persisted = normalizeSafety(await this.#persistSafety(patch));
     if (
       persisted.paused !== candidate.paused
       || persisted.muted !== candidate.muted
       || persisted.doNotDisturb !== candidate.doNotDisturb
+      || JSON.stringify(persisted.moduleMutes) !== JSON.stringify(candidate.moduleMutes)
     ) {
       throw new Error("Persisted playback safety state did not match the requested state");
     }
@@ -88,10 +131,12 @@ export class PlaybackOperationsService {
     return this.getSnapshot();
   }
 
-  async restoreSafety(state: PlaybackSafetyState): Promise<MergedOperationsSnapshot> {
-    this.#safety = playbackSafetyStateSchema.parse(state);
-    await this.#applySafetyAndReport(this.#safety);
-    return this.getSnapshot();
+  restoreSafety(state: PlaybackSafetyState): Promise<MergedOperationsSnapshot> {
+    return this.#serialize(async () => {
+      this.#safety = normalizeSafety(state);
+      await this.#applySafetyAndReport(this.#safety);
+      return this.getSnapshot();
+    });
   }
 
   async skip(moduleId: string, occurrenceId: string): Promise<MergedOperationsSnapshot> {
@@ -138,9 +183,29 @@ export class PlaybackOperationsService {
     return this.getSnapshot();
   }
 
-  async setModulePaused(moduleId: string, paused: boolean): Promise<MergedOperationsSnapshot> {
+  setModulePaused(moduleId: string, paused: boolean): Promise<MergedOperationsSnapshot> {
+    return this.#serialize(async () => {
+      await this.#owner(moduleId).setPaused(paused);
+      return this.getSnapshot();
+    });
+  }
+
+  toggleModulePaused(moduleId: string): Promise<MergedOperationsSnapshot> {
+    return this.#serialize(async () => {
+      const owner = this.#owner(moduleId);
+      await owner.setPaused(!owner.snapshot().paused);
+      return this.getSnapshot();
+    });
+  }
+
+  async clearPendingGuarded(moduleId: string, expectedPendingCount: number, expectedPendingIds: readonly string[]): Promise<MergedOperationsSnapshot> {
     const owner = this.#owner(moduleId);
-    await owner.setPaused(paused);
+    const rows = owner.snapshot().queued;
+    if (rows.length !== expectedPendingCount || JSON.stringify(rows.map(row => row.occurrenceId)) !== JSON.stringify(expectedPendingIds)) {
+      throw this.#conflict("The pending queue changed before it could be cleared.");
+    }
+    const removed = await owner.clearPending();
+    if (removed !== expectedPendingCount) throw this.#conflict("The pending queue changed before it could be cleared.");
     return this.getSnapshot();
   }
 
@@ -157,7 +222,9 @@ export class PlaybackOperationsService {
   async #applySafetyAndReport(state: PlaybackSafetyState): Promise<void> {
     try {
       await this.#applySafety(state);
+      this.#muteOutputStatus = { status: "applied", message: null };
     } catch (error) {
+      this.#muteOutputStatus = { status: "failed", message: "Saved mute policy could not be applied to every output. Retry output recovery." };
       try {
         await this.#onSafetyApplyFailure?.(error);
       }
@@ -168,4 +235,10 @@ export class PlaybackOperationsService {
       }
     }
   }
+}
+
+function normalizeSafety(state: PlaybackSafetyState): PlaybackSafetyState {
+  const parsed = playbackSafetyStateSchema.parse(state);
+  const moduleMutes = parsed.moduleMutes ?? { ...defaultModuleMuteState };
+  return { ...parsed, moduleMutes, muted: moduleMutes.alerts && moduleMutes["screen-effects"] };
 }

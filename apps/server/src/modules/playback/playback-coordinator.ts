@@ -58,6 +58,7 @@ export interface OverlayPlaybackInstructionSink {
   preparePlaybackInstruction?(instruction: OverlayInstruction): Promise<{ readonly deliveredClientIds: readonly string[]; start(startsAtEpochMs: number): void }>;
   deliverPlaybackInstruction(instruction: OverlayInstruction): { readonly deliveredClientIds: readonly string[] } | void;
   setPlaybackMuted?(muted: boolean): void;
+  setModuleMutes?(state: import("@stream-jams/core").ModuleMuteState): void;
   stopPlaybackInstructions?(instructionIds: readonly string[]): void;
 }
 
@@ -478,19 +479,27 @@ export class PlaybackCoordinator {
 
   async applySafetyState(state: PlaybackSafetyState): Promise<PlaybackQueueSnapshot> {
     const snapshot = this.#deliverCurrent(this.#queue.setSafetyState(state));
+    const failures: unknown[] = [];
     try {
-      this.#overlayPlaybackSink?.setPlaybackMuted?.(snapshot.muted);
+      if (state.moduleMutes !== undefined) this.#overlayPlaybackSink?.setModuleMutes?.(state.moduleMutes);
+      else this.#overlayPlaybackSink?.setPlaybackMuted?.(snapshot.muted);
     } catch (error) {
       void this.#recordOverlayTransportFailure(
         "Browser overlay mute state could not be updated.",
         "overlay.playback.mute-failed",
         error
       );
+      failures.push(error);
       // A browser transport failure must not prevent device mute from being applied.
     }
-    await Promise.allSettled([
-      this.#audioPlaybackSink?.setMuted(snapshot.muted)
-    ]);
+    try {
+      if (state.moduleMutes !== undefined && this.#audioPlaybackSink !== null) {
+        if (this.#audioPlaybackSink.setModuleMutes === undefined) throw new Error("Device audio module mute is unavailable.");
+        await this.#audioPlaybackSink.setModuleMutes(state.moduleMutes);
+      }
+      else await this.#audioPlaybackSink?.setMuted(snapshot.muted);
+    } catch (error) { failures.push(error); }
+    if (failures.length > 0) throw new AggregateError(failures, "Playback mute could not be applied to every output.");
     return snapshot;
   }
 
@@ -702,7 +711,7 @@ export class PlaybackCoordinator {
         if (selected.unavailableRouteIds.length > 0) void this.#recordDeviceAudioFailure(item.id, selected.unavailableRouteIds);
         const batches = await Promise.all(selected.batches.map(async batch => {
           try {
-            const prepared = await this.#audioPlaybackSink!.prepare?.({ ...batch, muted: this.#queue.getSnapshot().muted });
+            const prepared = await this.#audioPlaybackSink!.prepare?.({ ...batch, moduleId: "alerts", muted: this.#queue.getSnapshot().muted });
             return { batch, prepared };
           } catch (error) {
             void this.#recordDeviceAudioFailure(item.id, batch.destinations.flatMap(destination => destination.routeIds), error);
@@ -756,7 +765,7 @@ export class PlaybackCoordinator {
       await Promise.allSettled(batches.map(async ({ batch, prepared }) => {
         if (!active()) return;
         try {
-          const result = await (prepared === undefined ? this.#audioPlaybackSink!.play({ ...batch, timing: { startsAtEpochMs, endsAtEpochMs: startsAtEpochMs + batch.durationMs }, muted: this.#queue.getSnapshot().muted }) : prepared.start(startsAtEpochMs));
+          const result = await (prepared === undefined ? this.#audioPlaybackSink!.play({ ...batch, moduleId: "alerts", timing: { startsAtEpochMs, endsAtEpochMs: startsAtEpochMs + batch.durationMs }, muted: this.#queue.getSnapshot().muted }) : prepared.start(startsAtEpochMs));
           if (result.failedRouteIds.length > 0) void this.#recordDeviceAudioFailure(item.id, result.failedRouteIds);
         } catch (error) {
           requiresExplicitStop = true;

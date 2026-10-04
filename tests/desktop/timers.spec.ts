@@ -20,7 +20,7 @@ test("packaged desktop keeps Timer generations synchronized and quits with a lon
   await writeFile(join(root, "config.json"), JSON.stringify({
     server: { host: "127.0.0.1", port },
     storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") },
-    playback: { paused: false, muted: true, doNotDisturb: false }
+    playback: { paused: false, muted: true, moduleMutes: { alerts: true, "screen-effects": true }, doNotDisturb: false }
   }));
   const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
   delete env.ELECTRON_RUN_AS_NODE;

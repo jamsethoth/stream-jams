@@ -92,6 +92,7 @@ interface PreparedStart {
 }
 
 interface ActiveOccurrence {
+  readonly moduleId: "alerts" | "screen-effects" | "timers";
   readonly key: string;
   readonly generation: number;
   readonly playbackId: string;
@@ -157,6 +158,7 @@ export class DeviceAudioPlayer {
   readonly #active = new Map<string, ActiveOccurrence>();
   readonly #prepared = new Map<string, { playbackId: string; gate: PreparedStart; result: Promise<DeviceAudioResult>; timer: ReturnType<typeof setTimeout> }>();
   #activeGeneration: number | null = null;
+  #moduleMutes: import("@stream-jams/core").ModuleMuteState | null = null;
   #currentMuted = false;
   #devicePollTimer: ReturnType<typeof setInterval> | null = null;
   #enumerationInFlight: Promise<readonly AudioOutputDevice[] | null> | null = null;
@@ -230,6 +232,7 @@ export class DeviceAudioPlayer {
     }
 
     const occurrence: ActiveOccurrence = {
+      moduleId: request.batch.moduleId ?? "alerts",
       key,
       generation: request.generation,
       playbackId: request.batch.playbackId,
@@ -282,7 +285,7 @@ export class DeviceAudioPlayer {
           attempt.updateEnvelope = updateEnvelope;
           updateEnvelope();
           attempt.envelopeTimer = setInterval(updateEnvelope, 25);
-          element.muted = this.#currentMuted;
+          element.muted = this.#isMuted(occurrence.moduleId);
           this.#startAttempt(occurrence, attempt, request.deadlineMs, request.startDeadlineMs, request.batch.timing, layer.volume > 1, gate, layer.playbackDurationMs ?? request.batch.durationMs);
         }
         // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
@@ -330,6 +333,16 @@ export class DeviceAudioPlayer {
         this.#updateDevicePolling();
       });
     }
+  }
+
+  setModuleMutes(state: import("@stream-jams/core").ModuleMuteState): void {
+    this.#moduleMutes = { ...state };
+    this.#applyMute();
+  }
+
+  #isMuted(moduleId: "alerts" | "screen-effects" | "timers"): boolean {
+    if (moduleId === "timers") return false;
+    return this.#moduleMutes?.[moduleId] ?? this.#currentMuted;
   }
 
   setMuted(muted: boolean): void {
@@ -487,7 +500,7 @@ export class DeviceAudioPlayer {
           if (this.#now() >= Math.min(startDeadlineMs, timing.endsAtEpochMs)) { attempt.finish("failed"); return; }
         }
         if (gate === undefined) attempt.preparationDurationMs = Math.min(300000, Math.max(0, this.#now() - preparationStartedAt));
-        attempt.element.muted = this.#currentMuted;
+        attempt.element.muted = this.#isMuted(occurrence.moduleId);
         attempt.stage = "play";
         if (gate !== undefined) attempt.startTimer = setTimeout(() => attempt.finish("failed", new Error("Audio play deadline exceeded.")), START_TIMEOUT_MS);
         const playPromise = attempt.element.play();
@@ -546,7 +559,7 @@ export class DeviceAudioPlayer {
   #applyMute(): void {
     for (const occurrence of this.#active.values()) {
       for (const attempt of occurrence.attempts) {
-        if (!attempt.terminal) attempt.element.muted = this.#currentMuted;
+        if (!attempt.terminal) attempt.element.muted = this.#isMuted(occurrence.moduleId);
       }
     }
   }

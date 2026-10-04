@@ -368,3 +368,9 @@ export const Preparing: Story = {
   },
   parameters: { docs: { description: { story: "Prepared content remains transparent and silent until the shared scheduled start." } } }
 };
+
+
+export const AlertsMutedEffectsAudible: Story = {
+  args: { composition: mediaOverlayComposition, moduleMutes: { alerts: true, "screen-effects": false }, resolveAssetUrl },
+  parameters: { docs: { description: { story: "Alerts stay visible with their audio muted. Effects and timer cues keep their own audio policy." } } }
+};

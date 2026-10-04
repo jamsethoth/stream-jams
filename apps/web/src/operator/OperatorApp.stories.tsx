@@ -205,3 +205,14 @@ function row(moduleId: string, occurrenceId: string, name: string, status: Opera
     moduleQueuePosition
   };
 }
+
+
+export const AlertsMutedEffectsAudible: Story = {
+  args: { api: createApi({ ...emptySnapshot(), moduleMutes: { alerts: true, "screen-effects": false }, muted: false }) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText("Alerts muted")).toBeVisible();
+    await expect(canvas.getByText("Effects audio on")).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Mute Alerts and Effects" })).toBeVisible();
+  }
+};

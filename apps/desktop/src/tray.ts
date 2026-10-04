@@ -8,7 +8,7 @@ export interface TrayActions { open(): void; mute(muted: boolean): void; quit():
 export function trayTemplate(actions: TrayActions, snapshot: ServiceSnapshot | null): MenuItemConstructorOptions[] {
   return [
     { label: "Open Stream Jams", click: actions.open },
-    { label: snapshot?.muted ? "Unmute alerts" : "Mute alerts", enabled: snapshot !== null, click: () => actions.mute(!snapshot?.muted) },
+    { label: snapshot?.muted ? "Unmute Alerts and Effects" : "Mute Alerts and Effects", enabled: snapshot !== null, click: () => actions.mute(!snapshot?.muted) },
     { type: "separator" },
     { label: "Quit", click: actions.quit }
   ];

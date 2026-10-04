@@ -825,3 +825,28 @@ it("gives each selected route its full five seconds after different actual play 
 });
 
 function privateAsset(assetId: string, mimeType: "audio/wav" | "audio/ogg"): AudioPlayerAsset { return { assetId, reference: { protocolVersion: 1, handle: `private_${"A".repeat(43)}`, snapshot: { assetId, mimeType, version: "a".repeat(64), sizeBytes: 3, durationMs: 1000 } } }; }
+
+
+it("mutes simultaneous and future audio by owner while timer cues progress independently", async () => {
+  vi.useFakeTimers(); vi.setSystemTime(1000);
+  const audio = createHarness(); audio.player.initialize(1, false);
+  const playing = ["alerts", "screen-effects", "timers"].map((moduleId, index) => audio.player.play({
+    generation: 1, batch: batch({ moduleId: moduleId as "alerts" | "screen-effects" | "timers", playbackId: `owner-${index}`,
+      layers: [batch().layers[0]!], destinations: [batch().destinations[0]!] }), assets, deadlineMs: Date.now() + 10000
+  }));
+  try {
+    await flushStarts();
+    audio.player.setModuleMutes({ alerts: true, "screen-effects": false });
+    expect(audio.elements.map(element => element.muted)).toEqual([true, false, false]);
+    audio.player.setModuleMutes({ alerts: true, "screen-effects": true });
+    expect(audio.elements.map(element => element.muted)).toEqual([true, true, false]);
+    playing.push(audio.player.play({ generation: 1, batch: batch({ moduleId: "screen-effects", playbackId: "future",
+      layers: [batch().layers[0]!], destinations: [batch().destinations[0]!] }), assets, deadlineMs: Date.now() + 10000 }));
+    await flushStarts(); expect(audio.elements[3]!.mutedAtPlay).toEqual([true]);
+    audio.player.setModuleMutes({ alerts: false, "screen-effects": true });
+    expect(audio.elements.map(element => element.muted)).toEqual([false, true, false, true]);
+    expect(audio.elements.every(element => element.pauseCount === 0)).toBe(true);
+    await vi.advanceTimersByTimeAsync(10000);
+    expect((await Promise.all(playing)).every(result => result.failedRouteIds.length === 0)).toBe(true);
+  } finally { audio.player.close(); vi.useRealTimers(); }
+});

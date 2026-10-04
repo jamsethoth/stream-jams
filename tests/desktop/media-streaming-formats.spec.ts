@@ -26,7 +26,7 @@ test.beforeAll(async () => {
   const address = listener.address(); if (address === null || typeof address === "string") throw new Error("No disposable port");
   const port = address.port; await new Promise<void>(done => listener.close(() => done())); base = `http://127.0.0.1:${port}`;
   const configPath = join(profile, "config.json");
-  await writeFile(configPath, JSON.stringify({ server: { host: "127.0.0.1", port }, storage: { dataDirectory: join(profile, "data"), assetDirectory: join(profile, "assets") }, playback: { paused: false, muted: true, doNotDisturb: false } }));
+  await writeFile(configPath, JSON.stringify({ server: { host: "127.0.0.1", port }, storage: { dataDirectory: join(profile, "data"), assetDirectory: join(profile, "assets") }, playback: { paused: false, muted: true, moduleMutes: { alerts: true, "screen-effects": true }, doNotDisturb: false } }));
   const executablePath = resolve("apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");
   evidence.packageSha256 = createHash("sha256").update(await readFile(join(dirname(executablePath), "resources/app.asar"))).digest("hex");
   evidence.profile = profile;

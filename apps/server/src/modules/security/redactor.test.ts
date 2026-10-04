@@ -111,3 +111,8 @@ describe("createRedactor", () => {
     });
   });
 });
+it("redacts scoped automation tokens and pairing proof in fields, text and URLs", () => {
+ const r = createRedactor(); expect(r.redact({ verifier: "proof", codeChallenge: "hash", text: "sja_private" })).toEqual({ verifier: "[REDACTED]", codeChallenge: "[REDACTED]", text: "[REDACTED]" });
+ expect(r.redactText("verifier=proof codeChallenge=hash sja_private")).toBe("verifier=[REDACTED] codeChallenge=[REDACTED] [REDACTED]");
+ expect(r.redactText("/pair?verifier=proof&code_challenge=hash")).not.toContain("proof");
+});

@@ -20,6 +20,18 @@ vi.mock("./overlay-surfaces-api.js", () => ({ defaultSurfaceSettingsApi: {
 describe("SettingsPanel", () => {
   afterEach(() => { cleanup(); window.history.replaceState(null, "", "/manage/settings"); });
 
+  it("loads automation only when expanded and opens approval hash links", async () => {
+    const automationApi = { listPairings: vi.fn(async () => []), listGrants: vi.fn(async () => []), approve: vi.fn(), deny: vi.fn(), revoke: vi.fn() };
+    const view = render(<SettingsPanel audioApi={createAudioApi()} managementApi={createManagementApi()} automationApi={automationApi} />);
+    await screen.findByText("Automation"); expect(automationApi.listPairings).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByText("Automation"));
+    expect(await screen.findByText("No paired clients.")).toBeInTheDocument();
+    view.unmount(); window.history.replaceState(null, "", "/manage/settings#automation");
+    render(<SettingsPanel audioApi={createAudioApi()} managementApi={createManagementApi()} automationApi={automationApi} />);
+    expect((await screen.findByText("Automation")).closest("details")).toHaveAttribute("open");
+    expect(await screen.findByText("No paired clients.")).toBeInTheDocument();
+  });
+
   it("collapses advanced settings and preserves server edits across disclosure toggles", async () => {
     const user = userEvent.setup();
     render(<SettingsPanel audioApi={createAudioApi()} managementApi={createManagementApi()} />);

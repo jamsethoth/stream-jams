@@ -10,5 +10,6 @@ The separate Stream Deck plugin needs scoped local controls without management c
 ### New Capabilities
 - `scoped-automation`: Pairing, authorization, state and command contract for local integrations.
 ### Modified Capabilities
+- `alert-playback-operator-controls`: Independent Alerts/Effects mute and truthful All control; timer cues independent.
 ## Impact
 Core timer/playback contracts; Fastify routes, SQLite grants, runtime composition; browser/desktop audio; management approval and tray/dashboard controls. No new third-party dependency planned. Separate plugin repository remains unchanged.

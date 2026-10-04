@@ -907,3 +907,22 @@ function simulateProgress(element: HTMLMediaElement): void {
   const start = Date.now();
   Object.defineProperty(element, "currentTime", { configurable: true, get: () => (Date.now() - start) / 1000 });
 }
+
+
+it("updates each browser sound by module without stopping visuals or timer cues", async () => {
+  vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+  const modules = ["alerts", "screen-effects", "timers"].map(moduleId => ({ moduleId, enabled: true, instructions: [{
+    ...instruction(), id: moduleId, moduleId, audio: { assetId: "clip", volume: 1 }
+  }] }));
+  const value: OverlayComposition = { ...composition(instruction()), modules };
+  const { container, rerender } = render(<OverlaySurface composition={value} moduleMutes={{ alerts: true, "screen-effects": false }} resolveAssetUrl={() => "/clip.wav"} />);
+  await act(async () => {});
+  expect([...container.querySelectorAll("audio")].map(media => media.muted)).toEqual([true, false, false]);
+  expect(container.querySelectorAll("[data-testid^=overlay-module-]")).toHaveLength(3);
+  rerender(<OverlaySurface composition={value} moduleMutes={{ alerts: true, "screen-effects": true }} resolveAssetUrl={() => "/clip.wav"} />);
+  await act(async () => {});
+  expect([...container.querySelectorAll("audio")].map(media => media.muted)).toEqual([true, true, false]);
+  rerender(<OverlaySurface composition={value} moduleMutes={{ alerts: false, "screen-effects": true }} resolveAssetUrl={() => "/clip.wav"} />);
+  await act(async () => {});
+  expect([...container.querySelectorAll("audio")].map(media => media.muted)).toEqual([false, true, false]);
+});

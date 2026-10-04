@@ -82,6 +82,110 @@ function setup(definitions = [definition("a"), definition("b", 5_000)], gate?: R
 }
 
 describe("TimerRuntimeCoordinator", () => {
+  it("does not resurrect activation during pending replacement cleanup", async () => {
+    const { coordinator, time, cueSink } = setup([definition("a", 1000)]);
+    await coordinator.start("a"); await time.advance(1000);
+    let release: (() => void) | undefined;
+    vi.mocked(cueSink.stop).mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }));
+    const pending = coordinator.activate("a", "generation-1");
+    await coordinator.stopActive("a", "generation-2");
+    release?.(); await pending;
+    expect(coordinator.getState("a")).toBeNull();
+    await coordinator.close();
+  });
+  it("keeps a later management replacement during guarded stop cleanup", async () => {
+    const { coordinator, cueSink } = setup();
+    await coordinator.start("a");
+    let release: (() => void) | undefined;
+    vi.mocked(cueSink.stop).mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }));
+    const pending = coordinator.stopActive("a", "generation-1");
+    await coordinator.start("a"); const replacement = coordinator.getState("a");
+    release?.(); await pending;
+    expect(coordinator.getState("a")).toEqual(replacement);
+    await coordinator.close();
+  });
+  it("resets running deadlines and rejects invalid active adjustments", async () => {
+    const { coordinator, records, time } = setup();
+    await coordinator.start("a"); time.nowValue += 500;
+    records.set("a", definition("a", 2000));
+    expect((await coordinator.reset("a", "generation-1")).state).toMatchObject({ status: "running", startedAtEpochMs: 1500, endsAtEpochMs: 3500 });
+    for (const input of [{ action: "set", amountMs: 1000 }, { action: "increment", amountMs: 0 }, { action: "increment", amountMs: 1.5 }, { action: "increment", amountMs: 2592000001 }] as const) {
+      await expect(coordinator.adjustActive("a", input, "generation-1")).rejects.toThrow();
+    }
+    await time.advance(2000);
+    expect(coordinator.getState("a")?.status).toBe("completed");
+    await coordinator.close();
+  });
+  it("toggles recovered paused runs without offline deduction or start cues", async () => {
+    let saved: readonly import("@stream-jams/core").TimerRunState[] = [{ status: "paused", definitionId: "a", generation: "recovered", snapshot: snapshotTimerDefinition(definition("a")), remainingMs: 4321 }];
+    const { coordinator, cueSink } = setup(undefined, undefined, { list: () => saved, replace: states => { saved = structuredClone(states); } });
+    await coordinator.restore();
+    expect((await coordinator.togglePaused()).states).toEqual([expect.objectContaining({ status: "running", generation: "recovered", endsAtEpochMs: 5321 })]);
+    expect(cueSink.play).not.toHaveBeenCalled();
+    await coordinator.togglePaused();
+    expect(saved).toEqual([expect.objectContaining({ status: "paused", remainingMs: 4321 })]);
+    await coordinator.stopActive("a", "recovered");
+    expect(await coordinator.togglePaused()).toEqual({ changed: false, states: [] });
+    await coordinator.close();
+  });
+  it("keeps completed stop inactive and guards reset and adjustment replacements", async () => {
+    const { coordinator, time } = setup([definition("a", 1000)]);
+    await coordinator.start("a"); await time.advance(1000);
+    expect((await coordinator.stopActive("a", "generation-1")).changed).toBe(false);
+    await coordinator.restart("a");
+    await expect(coordinator.reset("a", "generation-1")).rejects.toThrow("generation");
+    await expect(coordinator.adjustActive("a", { action: "increment", amountMs: 1000 }, "generation-1")).rejects.toThrow("generation");
+    expect(coordinator.getState("a")?.generation).toBe("generation-2");
+    await coordinator.close();
+  });
+  it("activates running to paused and paused to running without replaying start cues", async () => {
+    const { coordinator, cueSink, time } = setup();
+    expect((await coordinator.activate("a", null)).state?.status).toBe("running");
+    time.nowValue += 500;
+    expect((await coordinator.activate("a", "generation-1")).state).toMatchObject({ status: "paused", remainingMs: 9500 });
+    time.nowValue += 1000;
+    expect((await coordinator.activate("a", "generation-1")).state).toMatchObject({ status: "running", endsAtEpochMs: 12000 });
+    expect(cueSink.play).toHaveBeenCalledTimes(1);
+    await coordinator.close();
+  });
+  it("guards replacements and leaves inactive commands unchanged", async () => {
+    const { coordinator } = setup();
+    expect(await coordinator.reset("a", "old")).toEqual({ changed: false, state: null });
+    await coordinator.activate("a", null);
+    await expect(coordinator.stopActive("a", "old")).rejects.toThrow("generation");
+    await expect(coordinator.activate("a", null)).rejects.toThrow("generation");
+    await coordinator.close();
+  });
+  it("resets only duration and timing silently from the latest saved definition", async () => {
+    const { coordinator, records, cueSink } = setup();
+    await coordinator.start("a"); await coordinator.pause("a");
+    const before = coordinator.getState("a")!;
+    records.set("a", { ...definition("a", 20000), label: "Changed" });
+    const result = await coordinator.reset("a", before.generation);
+    expect(result.state).toEqual({ ...before, snapshot: { ...before.snapshot, durationMs: 20000 }, remainingMs: 20000 });
+    expect(cueSink.play).toHaveBeenCalledTimes(1);
+    await coordinator.close();
+  });
+  it("resolves overdue deadlines before reset, adjustment and activation", async () => {
+    const { coordinator, time, cueSink } = setup([definition("a", 1000)]);
+    await coordinator.start("a"); time.nowValue += 1000;
+    expect((await coordinator.reset("a", "generation-1")).changed).toBe(false);
+    expect((await coordinator.adjustActive("a", { action: "increment", amountMs: 1000 }, "generation-1")).changed).toBe(false);
+    expect((await coordinator.activate("a", "generation-1")).state).toMatchObject({ status: "running", generation: "generation-2" });
+    expect(vi.mocked(cueSink.play).mock.calls.map(([input]) => input.cue)).toEqual(["start", "end", "start"]);
+    await coordinator.close();
+  });
+  it("bulk toggles mixed runs and completes paused subtraction once", async () => {
+    const { coordinator, cueSink } = setup();
+    await coordinator.start("a"); await coordinator.start("b"); await coordinator.pause("b");
+    expect((await coordinator.togglePaused()).states.every(state => state.status === "paused")).toBe(true);
+    expect((await coordinator.togglePaused()).states.every(state => state.status === "running")).toBe(true);
+    await coordinator.pause("a");
+    await coordinator.adjustActive("a", { action: "decrement", amountMs: 10000 }, "generation-1");
+    await coordinator.adjustActive("a", { action: "decrement", amountMs: 10000 }, "generation-1");
+    expect(vi.mocked(cueSink.play).mock.calls.filter(([input]) => input.cue === "end")).toHaveLength(1);
+    await coordinator.close();
+  });
   it("keeps completion live on a failed recovery write and retries removal without running timers", async () => {
     let saved: readonly import("@stream-jams/core").TimerRunState[] = [];
     const replace = vi.fn((states: typeof saved) => { saved = structuredClone(states); });

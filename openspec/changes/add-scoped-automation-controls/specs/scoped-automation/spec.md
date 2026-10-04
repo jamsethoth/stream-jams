@@ -33,3 +33,7 @@ The API SHALL expose version, capabilities, limits, runtime identity, ordered re
 #### Scenario: Stale runtime
 - **WHEN** a command carries a prior runtime identity
 - **THEN** it fails without mutation and the client can refresh the documented snapshot
+
+#### Scenario: Timer snapshots preserve ongoing playback
+- **WHEN** a timer changes while the unified browser output has active Alert, Effect or timer-cue playback
+- **THEN** the composition update preserves those media elements and their playback progress until normal completion or explicit stop, while disabled or removed modules remain suppressed

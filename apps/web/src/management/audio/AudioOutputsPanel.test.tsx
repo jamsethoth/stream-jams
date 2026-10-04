@@ -190,7 +190,7 @@ describe("AudioOutputsPanel", () => {
     render(<AudioOutputsPanel audioApi={api} />);
 
     await user.click(await screen.findByRole("button", { name: "Test Headphones" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("test completed while global alert audio was muted");
+    expect(await screen.findByRole("status")).toHaveTextContent("test completed while Alerts audio was muted");
   });
 });
 

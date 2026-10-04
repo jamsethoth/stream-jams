@@ -19,7 +19,7 @@ app.whenReady().then(() => {
     // This worker-only fixture has no audio renderer. Acknowledge just the
     // required lifecycle controls; never claim that playback was performed.
     if (message.type === "audio-request") {
-      const lifecycle = message.command.type === "set-muted" || message.command.type === "close";
+      const lifecycle = ["set-muted", "set-module-mutes", "close"].includes(message.command.type);
       worker.postMessage({
         type: "audio-response", generation: message.generation,
         requestId: message.requestId, result: lifecycle ? { type: "ok" } : null

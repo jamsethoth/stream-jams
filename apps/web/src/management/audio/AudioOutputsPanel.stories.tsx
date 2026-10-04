@@ -82,7 +82,7 @@ export const TestCompletedWhileMuted: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Test Headphones" }));
-    await expect(await canvas.findByRole("status")).toHaveTextContent("test completed while global alert audio was muted");
+    await expect(await canvas.findByRole("status")).toHaveTextContent("test completed while Alerts audio was muted");
   }
 };
 

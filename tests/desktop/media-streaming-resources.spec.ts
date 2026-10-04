@@ -34,7 +34,7 @@ test("@hardware Forge streaming uses bounded reference IPC across 1/25/100 MiB r
   const port = address.port;
   await new Promise<void>((accept, reject) => listener.close(error => error ? reject(error) : accept()));
   const base = `http://127.0.0.1:${port}`;
-  await writeFile(join(root, "config.json"), JSON.stringify({ server: { host: "127.0.0.1", port }, storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") }, playback: { paused: false, muted: true, doNotDisturb: false } }));
+  await writeFile(join(root, "config.json"), JSON.stringify({ server: { host: "127.0.0.1", port }, storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") }, playback: { paused: false, muted: true, moduleMutes: { alerts: true, "screen-effects": true }, doNotDisturb: false } }));
   const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
   delete env.ELECTRON_RUN_AS_NODE;
   Object.assign(env, { STREAM_JAMS_CONFIG_PATH: join(root, "config.json"), STREAM_JAMS_DESKTOP_USER_DATA_PATH: join(root, "electron"), STREAM_JAMS_SHUTDOWN_LOG: join(root, "shutdown.jsonl") });

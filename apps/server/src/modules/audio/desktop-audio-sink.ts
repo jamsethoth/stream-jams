@@ -161,6 +161,11 @@ export class DesktopAudioSink implements AudioPlaybackSink {
     }
   }
 
+  async setModuleMutes(state: import("@stream-jams/core").ModuleMuteState): Promise<void> {
+    if (this.#transport.setModuleMutes === undefined) throw new Error("Desktop audio module mute is unavailable.");
+    await this.#transport.setModuleMutes(state);
+  }
+
   setMuted(muted: boolean): Promise<void> {
     return this.#transport.setMuted(muted);
   }

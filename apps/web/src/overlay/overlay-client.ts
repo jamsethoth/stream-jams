@@ -1,3 +1,4 @@
+import { moduleMuteStateSchema } from "@stream-jams/core";
 import { serializeException, overlayInstructionSchema, overlayCompositionSchema, surfaceLayersSchema, type SurfaceLayer } from "@stream-jams/core";
 import type {
   OverlayPlaybackFailure,
@@ -47,6 +48,7 @@ export type OverlayClientMessage =
     }
   | {
       readonly type: "audio-state";
+      readonly moduleMutes?: import("@stream-jams/core").ModuleMuteState;
       readonly muted: boolean;
     }
   | {
@@ -292,6 +294,7 @@ function parseOverlaySocketMessage(data: unknown, reportInvalid: (instructionId:
     readonly instructionId?: unknown;
     readonly startsAtEpochMs?: unknown;
     readonly muted?: unknown;
+    readonly moduleMutes?: unknown;
     readonly instructionIds?: unknown;
     readonly message?: unknown;
     readonly layers?: unknown;
@@ -320,7 +323,9 @@ function parseOverlaySocketMessage(data: unknown, reportInvalid: (instructionId:
   }
 
   if (candidate.type === "overlay.playback.audio-state" && typeof candidate.muted === "boolean") {
-    return { type: "audio-state", muted: candidate.muted };
+    if (candidate.moduleMutes === undefined) return { type: "audio-state", muted: candidate.muted };
+    const moduleMutes = moduleMuteStateSchema.safeParse(candidate.moduleMutes);
+    return moduleMutes.success ? { type: "audio-state", muted: candidate.muted, moduleMutes: moduleMutes.data } : null;
   }
 
   if (

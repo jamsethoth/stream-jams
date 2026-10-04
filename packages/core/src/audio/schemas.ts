@@ -75,6 +75,7 @@ export const audioDestinationSchema = z.object({
   routeIds: uniqueIds.refine(ids => ids.length > 0, "Choose at least one route")
 }).strict();
 export const deviceAudioBatchSchema = z.object({
+  moduleId: z.enum(["alerts", "screen-effects", "timers"]).optional(),
   timing: playbackTimingSchema.optional(),
   playbackId: audioRouteIdSchema,
   documentId: audioRouteIdSchema,

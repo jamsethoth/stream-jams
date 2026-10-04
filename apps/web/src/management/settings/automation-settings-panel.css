@@ -1,0 +1,7 @@
+.automation-settings { padding-inline: 4px 20px; }
+.automation-settings h4, .automation-settings h5 { margin: 0; }
+.automation-settings__item { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--color-border); border-radius: 8px; overflow-wrap: anywhere; }
+.automation-settings__item p, .automation-settings__item ul { margin: 0; }
+.automation-settings__item h5 { font-size: 1rem; }
+.automation-settings__actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.automation-settings__code { font-family: monospace; font-size: 1.25rem; }

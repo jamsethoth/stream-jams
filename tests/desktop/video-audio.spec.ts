@@ -32,7 +32,7 @@ test(mode === "decoder"
   const configPath = join(root, "config.json");
   await writeFile(configPath, JSON.stringify({ server: { host: "127.0.0.1", port },
     storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") },
-    playback: { paused: false, muted: true, doNotDisturb: false } }));
+    playback: { paused: false, muted: true, moduleMutes: { alerts: true, "screen-effects": true }, doNotDisturb: false } }));
   for (const clip of clips) await writeFile(join(root, `${clip.withAudio ? "markers" : "trackless"}.${format.extension}`), clip.bytes);
   const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
   delete env.ELECTRON_RUN_AS_NODE;
