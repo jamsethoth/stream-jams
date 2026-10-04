@@ -1,6 +1,6 @@
 ## 1. Confirm Scope And Baseline
 
-- [ ] 1.1 Obtain written-spec review of the updated design, including the user-selected native controls plus Advanced CSS and uploaded branding image, before implementation planning/execution.
+- [x] 1.1 Obtain written-spec review of the updated design, including the user-selected native controls plus Advanced CSS and uploaded branding image, before implementation planning/execution. Approved October 4, 2026; [implementation plan](../../../docs/superpowers/plans/2026-10-04-music-widget-module.md).
 - [ ] 1.2 Refresh origin/main, confirm the target branch/worktree and unimplemented Music scope, and record the source widget commit and supported Pear version in verification evidence.
 - [ ] 1.3 Map each reference widget feature to the new contract/UI and read applicable frontend/module/secret/backup guidance; evaluate an established CSS parser and any missing safe-fetch/image-validation primitive, documenting maintenance/license/stack fit before adding exact dependencies.
 
