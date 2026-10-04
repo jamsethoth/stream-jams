@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -7,6 +7,18 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron, expect, test } from "@playwright/test";
+
+test("packaged Sharp addon and companion DLLs are accessible to the Windows loader", async () => {
+  const nativeDirectory = "node_modules/@stream-jams/server/node_modules/sharp/node_modules/@img/sharp-win32-x64/lib";
+  const files = await readdir(resolve("apps/desktop/.stage", nativeDirectory));
+  const nativeFiles = files.filter((name) => /\.(node|dll)$/i.test(name));
+  expect(nativeFiles.some((name) => name.endsWith(".node"))).toBe(true);
+  expect(nativeFiles.some((name) => name.endsWith(".dll"))).toBe(true);
+  for (const name of nativeFiles) {
+    // ASAR virtual files cannot satisfy dependencies loaded by Windows itself.
+    await access(resolve("apps/desktop/out/Stream Jams-win32-x64/resources/app.asar.unpacked", nativeDirectory, name));
+  }
+});
 
 test("bundled utility worker starts, acknowledges persisted mute, and exits after stop", async () => {
   const root = await mkdtemp(join(tmpdir(), "stream-jams-utility-test-"));

@@ -2,7 +2,7 @@ import { access, mkdtemp, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { SurfaceSettingsView } from "../../packages/core/dist/index.js";
+import type { SurfaceSettingsView, TimerDefinition } from "../../packages/core/dist/index.js";
 import { _electron, expect, test, type ElectronApplication } from "@playwright/test";
 import { finishDesktop, windowByUrl, withCleanup } from "./audio-harness.js";
 
@@ -56,10 +56,22 @@ test("packaged desktop keeps Music opt-in, transparent without a source, and ind
     await api(`/overlay-surfaces/${surface.id}`, "PUT", {
       id: surface.id, kind: surface.kind, enabled: true, displayId: display!.id,
       autoFollowDisplayName: surface.autoFollowDisplayName, opacity: surface.opacity,
-      layers: surface.layers.map(layer => layer.moduleId === "music" ? { ...layer, visible: true } : layer)
+      layers: surface.layers.map(layer => layer.moduleId === "music" || layer.moduleId === "timers" ? { ...layer, visible: true } : layer)
     });
     await api("/overlay-modules/music/config", "PUT", { enabled: true, config: defaults.config });
+    // The host creates a window only for renderable content. Empty Music must
+    // not create one; a silent timer gives the remaining assertions a surface.
+    expect(desktop.windows().some(page => page.url() === "stream-jams-overlay://surface/")).toBe(false);
+    const timers = await api<{ config: unknown }>("/overlay-modules/timers/config");
+    await api("/overlay-modules/timers/config", "PUT", { enabled: true, config: timers.config });
+    const timer = await api<TimerDefinition>("/timers", "POST", {
+      label: "Music independence surface", durationMs: 120_000,
+      iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null,
+      outputs: { browserSource: false, deviceRouteIds: [] }
+    });
+    await api(`/timers/${timer.id}/start`, "POST");
     const overlay = await windowByUrl(desktop, "stream-jams-overlay://surface/");
+    await expect(overlay.getByText(timer.label, { exact: true })).toBeVisible();
     await expect(overlay.getByTestId("music-widget")).toHaveCount(0);
     for (const [route, body] of [["/playback/pause", undefined], ["/playback/unmute", undefined], ["/playback/skip", undefined], ["/playback/do-not-disturb", { enabled: true }]] as const) {
       await api(route, "POST", body);
@@ -72,7 +84,11 @@ test("packaged desktop keeps Music opt-in, transparent without a source, and ind
     expect(windowState).toMatchObject({ focusable: false, focused: false, visible: true });
     const latest = await api<SurfaceSettingsView>("/overlay-surfaces");
     const active = latest.surfaces.find(candidate => candidate.kind === "desktop")!;
-    await api(`/overlay-surfaces/${active.id}`, "PUT", { ...active, layers: active.layers.map(layer => layer.moduleId === "music" ? { ...layer, visible: false } : layer) });
+    await api(`/overlay-surfaces/${active.id}`, "PUT", {
+      id: active.id, kind: active.kind, enabled: active.enabled, displayId: active.displayId,
+      autoFollowDisplayName: active.autoFollowDisplayName, opacity: active.opacity,
+      layers: active.layers.map(layer => layer.moduleId === "music" ? { ...layer, visible: false } : layer)
+    });
     await expect(overlay.getByTestId("music-widget")).toHaveCount(0);
     await api("/overlay-modules/music/config", "PUT", { enabled: false, config: defaults.config });
   }, () => finishDesktop(desktop, root, ownedPids, child));

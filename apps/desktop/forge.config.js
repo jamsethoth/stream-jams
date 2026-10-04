@@ -8,7 +8,9 @@ export default {
     executableName: "Stream Jams",
     // One archive avoids thousands of cold filesystem reads. Native libraries
     // remain real files so dlopen never extracts them during startup.
-    asar: { unpack: "**/*.node" },
+    // Windows also loads companion DLLs directly (not through Electron's ASAR
+    // filesystem), including Sharp's libvips dependencies beside its addon.
+    asar: { unpack: "**/*.{node,dll}" },
     prune: false,
     icon: resolve(import.meta.dirname, "assets/tray.ico")
   },
