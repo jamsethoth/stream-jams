@@ -10,6 +10,10 @@ import { createProviderSecurityRuntimeFixture } from "../../apps/server/src/test
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 test("actual portable OBS browser renders scoped warped font pixels without management framing", async ({ page }) => {
+  const renderer = process.env.STREAM_JAMS_TEST_OBS_RENDERER;
+  if (renderer !== undefined && renderer !== "d3d11") throw new Error("STREAM_JAMS_TEST_OBS_RENDERER must be unset or d3d11.");
+  const rendererArguments = renderer === "d3d11" ? ["--enable-gpu", "--use-gl=angle", "--use-angle=d3d11"] : [];
+  await test.info().attach("controlled-renderer-mode", { body: JSON.stringify({ mode: renderer ?? "default", arguments: rendererArguments, scope: "owned test OBS only; no GPU blocklist bypass or guaranteed WARP support", sources: ["https://github.com/obsproject/obs-browser/blob/3f0a2cdf378939ebe3c6f9ab36d4ea100c25aac2/browser-app.cpp#L61-L68", "https://raw.githubusercontent.com/chromium/chromium/127.0.6533.120/ui/gl/gl_display.cc", "https://raw.githubusercontent.com/google/angle/e323abb5b08e13ebb3f0d1c59a680f60ecdfcfea/src/libANGLE/renderer/d3d/d3d11/Renderer11.cpp"] }, null, 2), contentType: "application/json" });
   const installed = process.env.STREAM_JAMS_TEST_OBS_DIR;
   if (installed === undefined) throw new Error("Set STREAM_JAMS_TEST_OBS_DIR to an installed OBS 32.2.2 directory; this acceptance requires real OBS with browser and Lua scripting");
   await access(join(installed, "bin/64bit/obs64.exe"));
@@ -65,7 +69,7 @@ test("actual portable OBS browser renders scoped warped font pixels without mana
     expect((await fetch(`${runtime.runtime.url}/manage`)).headers.get("x-frame-options")).toBe("DENY");
     await writeFile(join(coord, "url.txt"), key.url);
     const executable = join(portable, "bin/64bit/obs64.exe");
-    child = spawn(executable, ["--portable", "--multi", "--minimize-to-tray", "--disable-updater", "--only-bundled-plugins", "--disable-missing-files-check", "--profile", "SecurityTest", "--collection", "SecurityTest"], { cwd: dirname(executable), windowsHide: true, stdio: "ignore" });
+    child = spawn(executable, [...rendererArguments, "--portable", "--multi", "--minimize-to-tray", "--disable-updater", "--only-bundled-plugins", "--disable-missing-files-check", "--profile", "SecurityTest", "--collection", "SecurityTest"], { cwd: dirname(executable), windowsHide: true, stdio: "ignore" });
     await expect.poll(async () => {
       const error = await readFile(join(coord, "error.txt"), "utf8").catch(() => null); if (error !== null) throw new Error(error);
       if (child!.exitCode !== null) throw new Error(`Owned OBS exited ${child!.exitCode} before browser readiness`);
