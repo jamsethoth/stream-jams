@@ -113,6 +113,7 @@ import { createAlertQueueOwner, createEffectQueueOwner } from "../modules/playba
 import { ManagementOverviewService } from "../modules/providers/management-overview-service.js";
 import { createProviderManagementAdapters } from "../modules/providers/provider-management-adapters.js";
 import { PearPairingService } from "../modules/music/pear-pairing-service.js";
+import { validatePearMusicConnection } from "../modules/music/pear-music-source.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
 import { evaluateProviderActivationImpact } from "../modules/providers/provider-activation-impact.js";
 import { SqliteProviderRegistrationRepository } from "../modules/providers/sqlite-provider-registration-repository.js";
@@ -940,6 +941,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     }),
     secretStore,
     musicPairing: musicPairingService,
+    validateMusicConnection: (config, token, signal) => validatePearMusicConnection(config, token, signal, now),
     async getActivationImpact(providerId) {
       const target = await providerRegistrationRepository.findById(providerId);
       if (target === null) {
