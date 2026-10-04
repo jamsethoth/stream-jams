@@ -135,11 +135,11 @@ Paths below are repository-relative. **New** means create; **modify** means exte
 
 **OpenSpec:** 4.1, remaining 2.4. **New:** server `music-runtime-coordinator.ts` and test. **Modify:** `apps/server/src/runtime/runtime-composition.ts`, module registry/config callbacks, provider activation callbacks and relevant runtime tests.
 
-- [ ] Test disabled startup opens no connection, enable starts selected source, switching immediately clears old projection, and an old source completing after switch cannot overwrite it. Assert snapshots never persist as restart truth. At most one request/retry timer/latest pending publication survives a slow consumer.
-- [ ] Run `corepack.cmd pnpm exec vitest run apps/server/src/modules/music/music-runtime-coordinator.test.ts` and confirm failures before implementing coordinator ownership and sink publication.
-- [ ] Track accepted generation/revision plus server-owned appearance epoch. Increment publication identity for clear/config changes too; never reuse an old generation. Repeated polling, pause/resume and new recipients retain epoch; new track or genuine recovery resets it. Arm stale expiry even if no additional events arrive; clear immediately on disconnect/auth failure.
-- [ ] Test abort during shutdown/source switch/config update, rejection of out-of-order revisions and reconciliation after management activation. Register shutdown with existing tracked runtime lifecycle; awaited stop removes requests/sockets/listeners/timers.
-- [ ] Run focused tests, runtime composition tests and typecheck; commit `feat: coordinate Music runtime lifecycle`.
+- [x] Test disabled startup opens no connection, enable starts selected source, switching immediately clears old projection, and an old source completing after switch cannot overwrite it. Assert snapshots never persist as restart truth. At most one request/retry timer/latest pending publication survives a slow consumer.
+- [x] Run `corepack.cmd pnpm exec vitest run apps/server/src/modules/music/music-runtime-coordinator.test.ts` and confirm failures before implementing coordinator ownership and sink publication.
+- [x] Track accepted generation/revision plus server-owned appearance epoch. Increment publication identity for clear/config changes too; never reuse an old generation. Repeated polling, pause/resume and new recipients retain epoch; new track or genuine recovery resets it. Arm stale expiry even if no additional events arrive; clear immediately on disconnect/auth failure.
+- [x] Test abort during shutdown/source switch/config update, rejection of out-of-order revisions and reconciliation after management activation. Register shutdown with existing tracked runtime lifecycle; awaited stop removes requests/sockets/listeners/timers.
+- [x] Run focused tests, runtime composition tests and typecheck; commit `feat: coordinate Music runtime lifecycle`.
 
 ## Task 8 — Bound And Authorize Provider Artwork
 

@@ -9,7 +9,7 @@
 - [x] 2.1 Add bounded Music track/snapshot/status/capability/config schemas and adapter interfaces with positive, negative, empty, unknown-duration and malformed-input tests.
 - [x] 2.2 Move the shared module presentation contract out of timer ownership, preserve timer-stack behavior, add music-widget and update all browser/private-desktop validators with compatibility tests.
 - [x] 2.3 Extend provider kinds/capabilities and add the next SQLite migration for registration constraints/indexes; verify existing providers and one-active-per-capability invariants survive migration/failure.
-- [ ] 2.4 Add music selection/config repository/service integration, independent activation/deactivation and disabled module defaults with restart and source-switch tests.
+- [x] 2.4 Add music selection/config repository/service integration, independent activation/deactivation and disabled module defaults with restart and source-switch tests.
 - [x] 2.5 Add a reusable adapter contract harness with push, polling-only and selected-session fixtures; prove renderer-independent snapshots and idempotent cancellation/stop.
 
 ## 3. Pear Pairing And Authenticated Adapter
@@ -23,7 +23,7 @@
 
 ## 4. Music Runtime Artwork And Persistence
 
-- [ ] 4.1 Implement authoritative snapshot revisions, shared appearance epoch, interpolation/projection and transparent stale/disconnected state; test rapid switch, fresh-recipient resync, clock offsets and slow consumers.
+- [x] 4.1 Implement authoritative snapshot revisions, shared appearance epoch, interpolation/projection and transparent stale/disconnected state; test rapid switch, fresh-recipient resync, clock offsets and slow consumers.
 - [ ] 4.2 Implement constrained artwork fetching, destination/redirect/DNS policy, raster validation, bounded cache and opaque references; cover malformed/oversized content, rebinding/private-address rejection, aborts and placeholder behavior.
 - [ ] 4.3 Integrate artwork delivery with management, purpose-scoped browser and private-desktop authorization; test wrong-purpose/revoked keys, arbitrary-URL rejection and obsolete generation access.
 - [ ] 4.4 Extend backup mappings, schema-drift checks and restore behavior for Music config/CSS/style version/branding images/fonts/metadata; validate style and asset references, exclude credentials/pairing identity/cache/playback, require fresh pairing and test rollback/secret cleanup failure.
