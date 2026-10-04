@@ -48,14 +48,18 @@
 - [x] 6.2 Add Playwright coverage for setup/test/selection, saved appearance and preview, polling idle regression, module/unified routes, key denial/revocation and recovery; exercise real production components and service boundaries.
 - [ ] 6.3 Add focused desktop coverage for the new presentation variant, authorized artwork/font loading, explicit surface membership, shutdown and independent alert/Music behavior.
 - [ ] 6.4 Run lint, typecheck, tests, build, Storybook build/test, applicable Playwright/desktop suites and strict OpenSpec validation; classify and resolve relevant failures without weakening tests.
-- [ ] 6.5 Rebuild/restart affected local services, wait for health, reload management/output and verify the changed workflow against the new build.
+- [x] 6.5 Rebuild/restart affected local services, wait for health, reload management/output and verify the changed workflow against the new build.
 - [ ] 6.6 Record actual Pear version and authenticated pairing/restart/revocation/track/seek/pause/reconnect acceptance, plus OBS browser-source and Windows desktop visual acceptance; mark any unavailable physical check with its exact missing dependency.
-- [ ] 6.7 Add browser acceptance for custom CSS layouts/disable/errors, rejected network-loading CSS with request interception, scope isolation, branded layer ordering, fit modes, independent opacity and no residual branding after idle/disconnect.
+- [x] 6.7 Add browser acceptance for custom CSS layouts/disable/errors, rejected network-loading CSS with request interception, scope isolation, branded layer ordering, fit modes, independent opacity and no residual branding after idle/disconnect.
 - [ ] 6.8 Verify the same branded custom layout across management preview, module/unified output and private desktop, including saved restart/backup round trips and asset replacement/missing-image recovery.
 
 ## 7. Documentation And Requirement Reconciliation
 
-- [ ] 7.1 Document Pear AUTH_AT_FIRST setup, local transport, endpoint/version compatibility, credential recovery, styling compatibility, output setup and troubleshooting with secret-free examples.
-- [ ] 7.2 Add a short provider onboarding guide covering typed setup/schema registration, adapter normalization/authentication, safe artwork policy and required contract fixtures; describe Plex/Spotify as future design checks only.
-- [ ] 7.3 Reconcile every specification scenario against code/tests and recorded acceptance; sync completed canonical specs and remove only the implemented BL-028 outcome when completion criteria are met.
-- [ ] 7.4 Document supported CSS selectors/variables, precedence, permitted rules, standalone selector migration, recovery and branding-image setup using a checked-in non-secret sample branded layout.
+- [x] 7.1 Document Pear AUTH_AT_FIRST setup, local transport, endpoint/version compatibility, credential recovery, styling compatibility, output setup and troubleshooting with secret-free examples.
+- [x] 7.2 Add a short provider onboarding guide covering typed setup/schema registration, adapter normalization/authentication, safe artwork policy and required contract fixtures; describe Plex/Spotify as future design checks only.
+- [x] 7.3 Reconcile every specification scenario against code/tests and recorded acceptance; sync completed canonical specs and remove only the implemented BL-028 outcome when completion criteria are met.
+- [x] 7.4 Document supported CSS selectors/variables, precedence, permitted rules, standalone selector migration, recovery and branding-image setup using a checked-in non-secret sample branded layout.
+
+## Final acceptance boundary
+
+Tasks 5.5, 6.3, 6.4, 6.6 and 6.8 remain **[blocked]** for physical/private-desktop acceptance, not missing implementation. Browser output, authorization, CSS/branding, restore and provider-art paths have automated evidence in [verification](../../../docs/verification/music-widget-module.md) and the [57-scenario map](../../../docs/verification/music-widget-scenarios.md). The full software gates passed at their recorded checkpoints, with affected checks after the final correction; packaged desktop Music/Timers reached 0/2 because the management window did not open while Windows was locked. Required dependencies are an unlocked interactive session, Pear configured for authenticated approval, running OBS, and an isolated native-host SecretStore or authorized disposable keyring namespace. Installed Pear 3.12.0 and OBS 32.2.2 were observed; credential-free API probes do not establish AUTH_AT_FIRST enforcement. BL-028 remains only for this acceptance boundary; BL-054 remains future provider work. Canonical spec synchronization records implemented software behavior, not physical certification.
