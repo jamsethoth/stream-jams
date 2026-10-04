@@ -116,6 +116,7 @@ import { createProviderManagementAdapters } from "../modules/providers/provider-
 import { PearPairingService } from "../modules/music/pear-pairing-service.js";
 import { PearMusicSource, validatePearMusicConnection } from "../modules/music/pear-music-source.js";
 import { MusicRuntimeCoordinator } from "../modules/music/music-runtime-coordinator.js";
+import { MusicArtworkService } from "../modules/music/music-artwork-service.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
 import { evaluateProviderActivationImpact } from "../modules/providers/provider-activation-impact.js";
 import { SqliteProviderRegistrationRepository } from "../modules/providers/sqlite-provider-registration-repository.js";
@@ -221,6 +222,7 @@ export interface RuntimeAppComposition {
   readonly timerManagementService: TimerManagementService;
   readonly timerRuntimeCoordinator: TimerRuntimeCoordinator;
   readonly musicRuntimeCoordinator: MusicRuntimeCoordinator;
+  readonly musicArtworkService: MusicArtworkService;
   readonly playbackOperationsService: PlaybackOperationsService;
   readonly app: FastifyInstance;
   readonly configStore: ConfigStore;
@@ -953,6 +955,32 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   cleanups.push(() => musicRuntimeCoordinator.stop());
   await musicRuntimeCoordinator.reconcile();
+  const musicArtworkService = new MusicArtworkService({
+    isCurrentOwner: owner => musicRuntimeCoordinator.generation === owner.generation
+      && musicRuntimeCoordinator.getCurrentArtwork()?.owner.providerId === owner.providerId,
+    isCurrentDescriptor: (url, owner) => {
+      const current = musicRuntimeCoordinator.getCurrentArtwork();
+      return current?.owner.generation === owner.generation && current.owner.providerId === owner.providerId && current.descriptor.url === url;
+    }
+  });
+  let artworkGeneration = musicRuntimeCoordinator.generation;
+  let artworkProvider = musicRuntimeCoordinator.getCurrentArtwork()?.owner.providerId ?? null;
+  const unsubscribeArtwork = musicRuntimeCoordinator.subscribe(() => {
+    const next = musicRuntimeCoordinator.generation;
+    const current = musicRuntimeCoordinator.getCurrentArtwork();
+    if (next !== artworkGeneration && artworkGeneration !== null && artworkProvider !== null) {
+      void musicArtworkService.clearGeneration({ providerId: artworkProvider, generation: artworkGeneration });
+    }
+    if (next === artworkGeneration && current === null && artworkGeneration !== null && artworkProvider !== null) {
+      void musicArtworkService.clearGeneration({ providerId: artworkProvider, generation: artworkGeneration });
+    }
+    artworkGeneration = next;
+    artworkProvider = current?.owner.providerId ?? artworkProvider;
+  });
+  cleanups.push(async () => {
+    unsubscribeArtwork();
+    if (artworkGeneration !== null && artworkProvider !== null) await musicArtworkService.clearGeneration({ providerId: artworkProvider, generation: artworkGeneration });
+  });
   const providerManagementService = new ProviderManagementService({
     repository: providerRegistrationRepository,
     adapters: createProviderManagementAdapters({
@@ -1465,6 +1493,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     mediaImportPipeline,
     assetStore,
     localMediaService,
+    musicArtworkService,
+    musicRuntimeCoordinator,
     mediaPreviewService,
     assetLibraryService,
     playbackCoordinator,
@@ -1544,6 +1574,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     timerManagementService,
     timerRuntimeCoordinator,
     musicRuntimeCoordinator,
+    musicArtworkService,
     playbackOperationsService,
     configStore,
     database,

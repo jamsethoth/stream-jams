@@ -70,6 +70,13 @@ export class MusicRuntimeCoordinator {
     const source = this.#source as (MusicSourceAdapter & { getArtworkDescriptor?: (ref: string, owner: Pick<MusicSnapshot, "providerId" | "generation">) => PrivateArtworkDescriptor | null }) | null;
     return source?.getArtworkDescriptor?.(ref, owner) ?? null;
   }
+  getCurrentArtwork(): { readonly ref: string; readonly owner: Pick<MusicSnapshot, "providerId" | "generation">; readonly descriptor: PrivateArtworkDescriptor } | null {
+    if (this.#status.state !== "connected" || this.#status.stale || this.#snapshot?.track?.artworkRef == null) return null;
+    const ref = this.#snapshot.track.artworkRef;
+    const owner = { providerId: this.#snapshot.providerId, generation: this.#snapshot.generation };
+    const descriptor = this.getArtworkDescriptor(ref, owner);
+    return descriptor === null ? null : { ref, owner, descriptor };
+  }
   subscribe(listener: (revision: number) => void): () => void {
     this.#listeners.add(listener);
     try { listener(this.#revision); }
