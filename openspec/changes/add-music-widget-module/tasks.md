@@ -24,8 +24,8 @@
 ## 4. Music Runtime Artwork And Persistence
 
 - [x] 4.1 Implement authoritative snapshot revisions, shared appearance epoch, interpolation/projection and transparent stale/disconnected state; test rapid switch, fresh-recipient resync, clock offsets and slow consumers.
-- [ ] 4.2 Implement constrained artwork fetching, destination/redirect/DNS policy, raster validation, bounded cache and opaque references; cover malformed/oversized content, rebinding/private-address rejection, aborts and placeholder behavior.
-- [ ] 4.3 Integrate artwork delivery with management, purpose-scoped browser and private-desktop authorization; test wrong-purpose/revoked keys, arbitrary-URL rejection and obsolete generation access.
+- [x] 4.2 Implement constrained artwork fetching, destination/redirect/DNS policy, raster validation, bounded cache and opaque references; cover malformed/oversized content, rebinding/private-address rejection, aborts and placeholder behavior.
+- [x] 4.3 Integrate artwork delivery with management, purpose-scoped browser and private-desktop authorization; test wrong-purpose/revoked keys, arbitrary-URL rejection and obsolete generation access.
 - [ ] 4.4 Extend backup mappings, schema-drift checks and restore behavior for Music config/CSS/style version/branding images/fonts/metadata; validate style and asset references, exclude credentials/pairing identity/cache/playback, require fresh pairing and test rollback/secret cleanup failure.
 - [ ] 4.5 Add Music branding image/font usages to asset reference, replacement and retirement checks for every profile/view; verify valid replacements refresh authorized versioned delivery and incompatible references are rejected.
 

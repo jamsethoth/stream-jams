@@ -145,10 +145,10 @@ Paths below are repository-relative. **New** means create; **modify** means exte
 
 **OpenSpec:** 4.2–4.3. **New:** server `music-artwork-service.ts`, `music-artwork-service.test.ts`, `apps/server/src/http/routes/music-artwork.ts` and tests. **Modify:** existing media/private-grant boundaries only where the new reference kind requires it.
 
-- [ ] Add tests for valid allowlisted rasters, unsupported host/scheme/userinfo, redirect hop to private IP, DNS rebinding, streamed body overflow, malformed image, dimensions4097, fetch cancellation and both cache caps. Assert failure yields null art while safe text remains available.
-- [ ] Run `corepack.cmd pnpm exec vitest run apps/server/src/modules/music/music-artwork-service.test.ts apps/server/src/http/routes/music-artwork.test.ts`; implement the Interfaces API with selected safe-fetch/image primitives, validated connection destinations and bounded decoding. Avoid raw URLs in cache keys exposed to clients.
-- [ ] Add thin authorized delivery by opaque reference. Resolve requester context using existing management, purpose-scoped overlay or private desktop authorization; the same bytes need no new universal bearer credential. Reject arbitrary URL inputs, wrong purpose/output/source generation and revoked keys before returning bytes.
-- [ ] Test stale generation completion/access, cache eviction, empty-state clearing and private-desktop grant expiry. Set verified raster content type/nosniff; never proxy raw upstream errors. Run focused tests/typecheck and commit the artwork checkpoint.
+- [x] Add tests for valid allowlisted rasters, unsupported host/scheme/userinfo, redirect hop to private IP, DNS rebinding, streamed body overflow, malformed image, dimensions4097, fetch cancellation and both cache caps. Assert failure yields null art while safe text remains available.
+- [x] Run `corepack.cmd pnpm exec vitest run apps/server/src/modules/music/music-artwork-service.test.ts apps/server/src/http/routes/music-artwork.test.ts`; implement the Interfaces API with selected safe-fetch/image primitives, validated connection destinations and bounded decoding. Avoid raw URLs in cache keys exposed to clients.
+- [x] Add thin authorized delivery by opaque reference. Resolve requester context using existing management, purpose-scoped overlay or private desktop authorization; the same bytes need no new universal bearer credential. Reject arbitrary URL inputs, wrong purpose/output/source generation and revoked keys before returning bytes.
+- [x] Test stale generation completion/access, cache eviction, empty-state clearing and private-desktop grant expiry. Set verified raster content type/nosniff; never proxy raw upstream errors. Run focused tests/typecheck and commit the artwork checkpoint.
 
 ## Task 9 — Integrate Saved Branding And Font Assets
 
