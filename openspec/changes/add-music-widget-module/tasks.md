@@ -7,8 +7,8 @@
 ## 2. Core Contracts And Provider Registration
 
 - [x] 2.1 Add bounded Music track/snapshot/status/capability/config schemas and adapter interfaces with positive, negative, empty, unknown-duration and malformed-input tests.
-- [ ] 2.2 Move the shared module presentation contract out of timer ownership, preserve timer-stack behavior, add music-widget and update all browser/private-desktop validators with compatibility tests.
-- [ ] 2.3 Extend provider kinds/capabilities and add the next SQLite migration for registration constraints/indexes; verify existing providers and one-active-per-capability invariants survive migration/failure.
+- [x] 2.2 Move the shared module presentation contract out of timer ownership, preserve timer-stack behavior, add music-widget and update all browser/private-desktop validators with compatibility tests.
+- [x] 2.3 Extend provider kinds/capabilities and add the next SQLite migration for registration constraints/indexes; verify existing providers and one-active-per-capability invariants survive migration/failure.
 - [ ] 2.4 Add music selection/config repository/service integration, independent activation/deactivation and disabled module defaults with restart and source-switch tests.
 - [ ] 2.5 Add a reusable adapter contract harness with push, polling-only and selected-session fixtures; prove renderer-independent snapshots and idempotent cancellation/stop.
 
