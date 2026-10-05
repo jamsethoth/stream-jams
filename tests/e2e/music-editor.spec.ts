@@ -2,6 +2,33 @@ import { expect, test } from "@playwright/test";
 import type { MusicModuleConfig } from "../../packages/core/dist/index.js";
 import { startMusicTestRuntime } from "./music-test-runtime.js";
 
+test("Music browser sources show both profiles with masked keys and responsive actions", async ({ page }) => {
+  const fixture = await startMusicTestRuntime();
+  try {
+    for (const targetProfileId of ["landscape", "vertical"] as const) await fixture.request("/management/overlay-outputs/keys", "POST", { overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId });
+    await page.goto(`${fixture.url}/manage/modules/music`);
+    await page.getByRole("button", { name: "Expand browser sources" }).click();
+    const panel = page.getByRole("region", { name: "Music output links" });
+    await expect(panel.getByRole("article", { name: "Landscape browser source" })).toContainText("1920 x 1080");
+    await expect(panel.getByRole("article", { name: "Vertical browser source" })).toContainText("1080 x 1920");
+    await expect(panel.getByRole("textbox")).toHaveCount(0);
+    await expect(panel.locator("code").first()).toContainText("********");
+    for (const width of [1440, 600]) {
+      await page.setViewportSize({ width, height: 1000 });
+      for (const label of ["Landscape", "Vertical"]) {
+        const row = panel.getByRole("article", { name: `${label} browser source` });
+        expect(await row.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+        await expect(row.getByRole("button", { name: `Regenerate ${label} URL` })).toBeVisible();
+      }
+      await panel.screenshot({ path: `.superpowers/music-browser-sources-${width}.png` });
+    }
+    await panel.getByRole("button", { name: "Reveal Vertical URL" }).click();
+    await expect(panel.getByLabel("Vertical browser source URL")).toHaveValue(/\/live\//u);
+    await panel.getByRole("button", { name: "Hide Vertical URL" }).click();
+    await expect(panel.getByRole("textbox")).toHaveCount(0);
+  } finally { await fixture.close(); }
+});
+
 test("Music editor saves dragged and resized components to the live output", async ({ page, context }) => {
   test.setTimeout(90_000);
   const fixture = await startMusicTestRuntime();

@@ -7,8 +7,9 @@ import {
 
 const requestHeaders = ["range", "if-range", "if-match", "if-none-match"];
 const responseHeaders = ["content-type", "content-length", "content-range", "etag", "accept-ranges"];
-type Entry = { ownership: DesktopMediaOwnership; grant: TrustedMediaGrant; controllers: Set<AbortController>; expiry: ReturnType<typeof setTimeout> };
-type ArtworkEntry = { ownerId: string; grant: { handle: string; expiresAt: number }; controllers: Set<AbortController>; expiry: ReturnType<typeof setTimeout> };
+type Entry = { ownership: DesktopMediaOwnership; owners: Set<string>; grant: TrustedMediaGrant; controllers: Set<AbortController>; expiry: ReturnType<typeof setTimeout> };
+type ArtworkEntry = { owners: Set<string>; grant: { handle: string; expiresAt: number }; controllers: Set<AbortController>; expiry: ReturnType<typeof setTimeout> };
+const isMusicModuleOwner = (owner: string) => /^\["module","music",\d+\]$/.test(owner);
 export interface PrivateMediaProtocolOptions {
   readonly scheme: "stream-jams-audio" | "stream-jams-overlay";
   readonly host: "player" | "surface";
@@ -41,8 +42,13 @@ export class PrivateMediaProtocol {
     const grant = trustedMediaGrantSchema.parse(candidate);
     if (this.#destroyed || grant.expiresAt <= Date.now()) throw new Error("Private media ownership is unavailable");
     for (const [handle, entry] of this.#entries) {
-      if (entry.ownership.ownerId === ownerId && entry.grant.handle === grant.handle) {
+      const sameSnapshot = JSON.stringify(entry.grant.snapshot) === JSON.stringify(grant.snapshot);
+      const musicRenewal = this.options.scheme === "stream-jams-overlay" && isMusicModuleOwner(ownerId)
+        && isMusicModuleOwner(entry.ownership.ownerId) && sameSnapshot;
+      if ((entry.owners.has(ownerId) && entry.grant.handle === grant.handle) || musicRenewal) {
         if (JSON.stringify(entry.grant.snapshot) !== JSON.stringify(grant.snapshot)) throw new Error("A renewed grant cannot change its pinned snapshot");
+        if (!entry.owners.has(ownerId) && entry.owners.size >= 64) throw new Error("Private media owner capacity reached");
+        entry.owners.add(ownerId);
         clearTimeout(entry.expiry);
         entry.grant = grant;
         entry.expiry = setTimeout(() => this.revoke(handle), Math.min(2_147_483_647, grant.expiresAt - Date.now()));
@@ -55,18 +61,29 @@ export class PrivateMediaProtocol {
     const expiry = setTimeout(() => this.revoke(handle), Math.min(2_147_483_647, grant.expiresAt - Date.now()));
     expiry.unref();
     // Parse copied values: caller mutations cannot change the registered capability/snapshot.
-    this.#entries.set(handle, { ownership, grant, controllers: new Set(), expiry });
+    this.#entries.set(handle, { ownership, owners: new Set([ownerId]), grant, controllers: new Set(), expiry });
     return { protocolVersion: desktopMediaProtocolVersion, snapshot: { ...grant.snapshot }, handle };
   }
   issueArtwork(ownerId: string, grant: { handle: string; expiresAt: number }): string {
     desktopMediaOwnershipSchema.parse({ generation: this.options.generation, recipientId: this.options.recipientId, ownerId });
     if (this.#destroyed || this.options.scheme !== "stream-jams-overlay" || !/^mart_[A-Za-z0-9_-]{43}$/.test(grant.handle) ||
       !Number.isSafeInteger(grant.expiresAt) || grant.expiresAt <= Date.now() || grant.expiresAt - Date.now() > 3_600_000) throw new Error("Private artwork grant is unavailable");
+    for (const [handle, entry] of this.#artwork) {
+      if (entry.grant.handle !== grant.handle || !isMusicModuleOwner(ownerId)
+        || ![...entry.owners].every(isMusicModuleOwner)) continue;
+      if (!entry.owners.has(ownerId) && entry.owners.size >= 64) throw new Error("Private artwork owner capacity reached");
+      entry.owners.add(ownerId);
+      entry.grant = { ...grant };
+      clearTimeout(entry.expiry);
+      entry.expiry = setTimeout(() => this.#revokeArtwork(handle), grant.expiresAt - Date.now());
+      entry.expiry.unref();
+      return handle;
+    }
     if (this.#artwork.size >= 64) throw new Error("Private artwork grant capacity reached");
     const handle = `private_${randomBytes(32).toString("base64url")}`;
     const expiry = setTimeout(() => this.#revokeArtwork(handle), grant.expiresAt - Date.now());
     expiry.unref();
-    this.#artwork.set(handle, { ownerId, grant: { ...grant }, controllers: new Set(), expiry });
+    this.#artwork.set(handle, { owners: new Set([ownerId]), grant: { ...grant }, controllers: new Set(), expiry });
     return handle;
   }
   url(reference: PrivateMediaReference): string {
@@ -81,8 +98,8 @@ export class PrivateMediaProtocol {
     for (const controller of entry.controllers) controller.abort();
   }
   revokeOwner(ownerId: string): void {
-    for (const [handle, entry] of this.#entries) if (entry.ownership.ownerId === ownerId) this.revoke(handle);
-    for (const [handle, entry] of this.#artwork) if (entry.ownerId === ownerId) this.#revokeArtwork(handle);
+    for (const [handle, entry] of this.#entries) if (entry.owners.delete(ownerId) && entry.owners.size === 0) this.revoke(handle);
+    for (const [handle, entry] of this.#artwork) if (entry.owners.delete(ownerId) && entry.owners.size === 0) this.#revokeArtwork(handle);
   }
   destroy(): void {
     this.#destroyed = true;

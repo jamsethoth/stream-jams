@@ -1,5 +1,5 @@
 // Standalone feasibility probe, not a production contract test.
-// Run from the repository root: node openspec/changes/stream-local-media/library-probe.mjs
+// Run from the repository root: node openspec/changes/archive/2026-10-05-stream-local-media/library-probe.mjs
 import assert from "node:assert/strict";
 import process from "node:process";
 import console from "node:console";
@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath, URL } from "node:url";
 
-const serverRequire = createRequire(new URL("../../../apps/server/package.json", import.meta.url));
+const serverRequire = createRequire(new URL("../../../../apps/server/package.json", import.meta.url));
 const Fastify = serverRequire("fastify");
 const fastifyStatic = serverRequire("@fastify/static");
 const directory = await mkdtemp(join(tmpdir(), "stream-jams-library-probe-"));

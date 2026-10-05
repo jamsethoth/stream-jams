@@ -19,6 +19,69 @@ const fixture = (observation: MusicSnapshot = snapshot): MusicWidgetProjection =
 const shadowOf = (container: HTMLElement) => container.querySelector(".music-widget-host")?.shadowRoot;
 
 describe("MusicWidget", () => {
+  it("retries transient artwork failures after 1, 2 and 5 seconds, then keeps the placeholder", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const view = render(<MusicWidget projection={fixture()} resolveAsset={resolver} nowEpochMs={now} />);
+    const shadow = shadowOf(view.container)!;
+    try {
+      for (const delay of [1_000, 2_000, 5_000]) {
+        fireEvent.error(shadow.querySelector(".sj-artwork img")!);
+        expect(shadow.querySelector(".sj-artwork img")).toBeNull();
+        expect(shadow.querySelector(".sj-title")?.textContent).toBe("Title");
+        act(() => vi.advanceTimersByTime(delay - 1));
+        expect(shadow.querySelector(".sj-artwork img")).toBeNull();
+        act(() => vi.advanceTimersByTime(1));
+        expect(shadow.querySelector(".sj-artwork img")?.getAttribute("src")).toBe("/artwork/art_123");
+      }
+      fireEvent.error(shadow.querySelector(".sj-artwork img")!);
+      act(() => vi.advanceTimersByTime(60_000));
+      expect(shadow.querySelector(".sj-artwork img")).toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { view.unmount(); vi.useRealTimers(); }
+  });
+
+  it("cancels artwork retries on track change and clearing, with a fresh budget for the next track", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const view = render(<MusicWidget projection={fixture()} resolveAsset={resolver} nowEpochMs={now} />);
+    try {
+      fireEvent.error(shadowOf(view.container)!.querySelector(".sj-artwork img")!);
+      expect(vi.getTimerCount()).toBe(1);
+      const next = fixture({ ...snapshot, revision: 2, track: { ...snapshot.track!, id: "next" } });
+      view.rerender(<MusicWidget projection={next} resolveAsset={resolver} nowEpochMs={now} />);
+      expect(vi.getTimerCount()).toBe(0);
+      const image = shadowOf(view.container)!.querySelector(".sj-artwork img")!;
+      expect(image).not.toBeNull();
+      fireEvent.error(image);
+      act(() => vi.advanceTimersByTime(1_000));
+      expect(shadowOf(view.container)!.querySelector(".sj-artwork img")).not.toBeNull();
+      fireEvent.error(shadowOf(view.container)!.querySelector(".sj-artwork img")!);
+      view.rerender(<MusicWidget projection={null} resolveAsset={resolver} nowEpochMs={now} />);
+      expect(vi.getTimerCount()).toBe(0);
+      act(() => vi.advanceTimersByTime(60_000));
+      expect(view.container).toBeEmptyDOMElement();
+    } finally { view.unmount(); vi.useRealTimers(); }
+  });
+
+  it("recovers artwork without restarting its retry on ordinary observations, then cancels on unmount", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const first = fixture();
+    const view = render(<MusicWidget projection={first} resolveAsset={resolver} nowEpochMs={now} />);
+    try {
+      fireEvent.error(shadowOf(view.container)!.querySelector(".sj-artwork img")!);
+      act(() => vi.advanceTimersByTime(500));
+      view.rerender(<MusicWidget projection={{ ...first, snapshot: { ...snapshot, revision: 2, positionMs: 31_000 } }} resolveAsset={resolver} nowEpochMs={now} />);
+      act(() => vi.advanceTimersByTime(500));
+      const recovered = shadowOf(view.container)!.querySelector(".sj-artwork img")!;
+      expect(recovered).not.toBeNull();
+      fireEvent.load(recovered);
+      act(() => vi.advanceTimersByTime(10_000));
+      expect(shadowOf(view.container)!.querySelector(".sj-artwork img")).toBe(recovered);
+      fireEvent.error(recovered);
+      expect(vi.getTimerCount()).toBe(1);
+      view.unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { view.unmount(); vi.useRealTimers(); }
+  });
   it("keeps the same host, shadow content and CSS across ordinary observation revisions", () => {
     const first = fixture();
     const view = render(<MusicWidget projection={first} resolveAsset={resolver} nowEpochMs={now} />);

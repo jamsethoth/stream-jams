@@ -52,6 +52,8 @@ Fresh final results:
 
 ## Remaining manual acceptance
 
+This section records the September 29 checkpoint. The later [10.4 reconciliation and user confirmation](#task-104-reconciliation-and-user-confirmed-http-buttons) supersedes its physical HTTP-button blocker and distinguishes subsequent shared-output coverage from remaining integrated Timer checks.
+
 - No physical Stream Deck button/profile was configured or pressed. The generic-client test exercised the same loopback HTTP contract against a real built local runtime without writing bearer values to artifacts, but physical Stream Deck UI acceptance remains outstanding.
 - Browser and native desktop Timer rendering were verified in separate real renderers, not observed side-by-side in one packaged run. Packaged named-device audio, mute, missing-output, renderer recovery, and Timer cue routing have combined automated coverage, but a single integrated packaged Timer cue matrix remains outstanding.
 - No audible physical-device, OBS mixer, or live-stream output was used. The desktop suite used silent media and isolated disposable profiles.
@@ -142,3 +144,43 @@ Corrected both findings from the independent review of PR #146. Recovery-write f
 - The focused timer and runtime-composition suite passed: eight files / 59 tests.
 - Lint, strict typecheck, production build, and route budgets passed.
 - Both rebuilt real-service Playwright workflows passed: persistent event/manual corrections and forced process-crash recovery.
+
+## Task 10.4 reconciliation and user-confirmed HTTP buttons
+
+During the archive-readiness follow-up, the user confirmed the physical Stream Deck HTTP buttons had been tested and clarified that Stream Deck configuration/certification is outside Stream Jams scope. Task 10.5 is complete: the existing records establish packaged startup/restart and runtime health, and the user confirmation establishes the previously unrecorded physical-button check. No new hardware action was performed during this reconciliation.
+
+The pre-test reconciliation below is historical: task 10.4 was partially satisfied by later work. The focused packaged acceptance recorded afterward closes its remaining checks. The investigation inspected current test assertions and recorded passing runs; it did not rerun native tests or equate shared transport coverage with a Timer-specific packaged result.
+
+| Criterion | Existing evidence | Remaining integrated Timer evidence |
+| --- | --- | --- |
+| Simultaneous browser/desktop countdown agreement | Browser and native Timer rendering pass separately. The streaming physical checkpoint confirms Timer coexistence on desktop and OBS. | No test connects both recipients to one packaged service and compares the same timer's countdown through transitions. |
+| Management hidden | `overlay-host.spec.ts` hides management during production Alert playback; streaming native suites also run hidden. | `timers.spec.ts` leaves management open; no recorded Timer-specific hidden-management assertion. |
+| Explicit cue destinations | `timer-cue-service.test.ts` verifies browser/device admission, immutable outputs and route deduplication. `scoped-automation-audio.spec.ts` runs a real browser start cue. | Packaged `timers.spec.ts` selects no cue assets and no audio destinations; it does not establish packaged start/end cue routing. |
+| Mute | Scoped browser acceptance preserves real Timer cues across current/future module mute. `module-mute.spec.ts` checks production native playback and independent timer cues. | Shared mute policy is covered; physical audibility is not an additional gate here. |
+| Missing output | Timer cue tests isolate browser, preparation, device and missing-asset failures. Native streaming recovery checks failed-recipient isolation. | No recorded packaged Timer cue case demonstrates unavailable output while its countdown and healthy destination continue. |
+| Renderer recovery | Native module-mute and streaming suites exercise production renderer loss/recreation. | No recorded Timer-specific native visual crash/recreation assertion proves the current timer snapshot returns without restarting the run or replaying cues. |
+| Bounded Quit | `timers.spec.ts` quits with a long timer active, verifies process exit within 20 seconds and exit code zero; later scoped-automation acceptance reran the Timer workflow successfully. | Complete; older failed shutdown attempts remain historical evidence. |
+
+Sources: [packaged Timer lifecycle](../../tests/desktop/timers.spec.ts), [Timer cue service](../../apps/server/src/modules/timers/timer-cue-service.test.ts), [browser cue/mute acceptance](../../tests/e2e/scoped-automation-audio.spec.ts), [native mute/recreation](../../tests/desktop/module-mute.spec.ts), [hidden production overlay](../../tests/desktop/overlay-host.spec.ts), [native recipient recovery](../../tests/desktop/media-streaming-recovery.spec.ts), [scoped-automation acceptance](../../openspec/changes/archive/2026-10-05-add-scoped-automation-controls/verification.md), and [user-observed desktop/OBS coexistence](../../openspec/changes/archive/2026-10-05-stream-local-media/manual-physical-checkpoint.md).
+
+The reconciliation identified the integrated packaged Timer test as the remaining dependency. The run below satisfies it. The original ephemeral-run delta was subsequently reconciled with implemented paused recovery before canonical synchronization and archival.
+
+## Focused packaged Timer output acceptance (2026-10-05)
+
+Task 10.4 passed in the real Windows runnable package using [the focused acceptance test](../../tests/desktop/timer-output-acceptance.spec.ts). The final run passed one test in 37.0 seconds (36.2 seconds of test execution). Strict desktop-test typechecking and focused ESLint passed. No production implementation changed.
+
+| Criterion | Packaged evidence |
+| --- | --- |
+| Browser/desktop agreement | One isolated service feeds a real browser source and private Electron renderer; the same countdown agrees within one display tick, freezes identically when paused, and agrees after resume/restart. Concurrent short and long timers retain independent lifecycle. |
+| Hidden management | All owned native windows remain hidden; both countdowns advance while management is hidden. |
+| Explicit cue destinations | Real imported 12-second silent PCM WAV plays through browser and selected native sinks for start/end; browser-only and device-only selections produce no recipient on the unselected path. Three healthy device cues are observed. |
+| Mute | Alerts/Effects mute is changed through production management APIs. Current and future Timer cues remain independent in browser/private native playback, matching the current scoped policy. Silence comes from zero PCM samples, not an assertion-bypassing forced mute. |
+| Missing output | One of two explicitly enumerated native sinks rejects `setSinkId` with `NotFoundError`. Both start/end failures are isolated, healthy private-device and browser playback continue, and the timer reaches zero and its completed hold expires. No default-output fallback is used. |
+| Renderer recovery | The real overlay renderer is forcibly crashed and fully torn down before operator Retry. A replacement PID restores the exact paused generation/remainder. A second crash during a cue, plus pause/resume, emits no replacement start cue. |
+| Bounded Quit | Quit with a long timer active finishes in 427 ms; process exit code is zero, below the 20-second bound. |
+
+Artifact: `apps/desktop/out/timer-acceptance/Stream Jams-win32-x64/Stream Jams.exe`. `resources/app.asar` SHA-256: `02f94389b0bdc0b9cfe8e93703afa82b6e068b9d307bab052e49f99bc04cc1b5`. Sanitized [acceptance evidence](timer-package-acceptance/acceptance.json) records the measured result. The disposable profile and shutdown log were retained at `C:/Users/James/AppData/Local/Temp/stream-jams-desktop-timers-P4lz7V`; its loopback port, storage and Electron user data are isolated from normal operation. No existing app/profile was modified.
+
+Reproduce with `STREAM_JAMS_TEST_EXECUTABLE` pointing to the desired runnable executable, then `node node_modules/@playwright/test/cli.js test --config playwright.hardware.config.ts tests/desktop/timer-output-acceptance.spec.ts`. This explicitly opted-in hardware suite requires two enumerated audio outputs and a desktop display. It tests actual media progression and recipient policy with silent PCM; physical audibility and OBS audio mixing are not claimed. The existing default-CI `timers.spec.ts` remains unchanged.
+
+Initial attempts exposed test/preparation defects: packaging started before staging finished and omitted the tray icon; Retry ran before native crash teardown; the five-second harness timeout was shorter than native cue completion; and the first mute expectation assumed the superseded global policy. The candidate was repackaged after complete staging, and the harness now follows teardown, observes cues in flight, and asserts scoped mute. The final run above passed all criteria without production changes or weakened lifecycle/output assertions.

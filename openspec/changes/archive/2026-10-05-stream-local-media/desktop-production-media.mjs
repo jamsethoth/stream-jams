@@ -8,7 +8,7 @@ await mkdir(root, { recursive: true });
 const packaged = resolve(root, 'packaged');
 await cp(dirname(source), packaged, { recursive: true });
 const appDir = resolve(packaged, 'resources/app'); await mkdir(appDir, { recursive: true });
-await cp('openspec/changes/stream-local-media/desktop-production-media-runtime.mjs', resolve(appDir, 'main.mjs'));
+await cp('openspec/changes/archive/2026-10-05-stream-local-media/desktop-production-media-runtime.mjs', resolve(appDir, 'main.mjs'));
 await writeFile(resolve(appDir, 'package.json'), JSON.stringify({ name: 'stream-jams-isolated-production-media', version: '1.0.0', type: 'module', main: 'main.mjs' }));
 const runtime = resolve(appDir, 'runtime');
 await cp('apps/desktop/dist', resolve(runtime, 'dist'), { recursive: true });

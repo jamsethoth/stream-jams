@@ -1,6 +1,6 @@
 ## Context
 
-Design direction approved on October 3, 2026; the updated written specification was approved for implementation planning on October 4, 2026. This document is not evidence of implementation. See the [implementation plan](../../../docs/superpowers/plans/2026-10-04-music-widget-module.md). Proposal base: `origin/main` at `1d9dfe7`; standalone reference: `C:/dev/projects/stream-jams-music-widget` at `91dcee0327eb97a75860a892a92630c32e0f9e3e`. Source and tests, rather than dated plans, determine existing behavior.
+Design direction approved on October 3, 2026; the updated written specification was approved for implementation planning on October 4, 2026. This document is not evidence of implementation. See the [implementation plan](../../../../docs/superpowers/plans/2026-10-04-music-widget-module.md). Proposal base: `origin/main` at `1d9dfe7`; standalone reference: `C:/dev/projects/stream-jams-music-widget` at `91dcee0327eb97a75860a892a92630c32e0f9e3e`. Source and tests, rather than dated plans, determine existing behavior.
 
 The standalone widget uses JavaScript ES modules, direct DOM rendering, browser-owned Pear requests, URL-based configuration, and generated classic-script bundles. Its source/state separation and presentation are useful porting references. Stream Jams uses strict TypeScript, Zod boundaries, React/Vite, Fastify, SQLite repositories, and an OS-backed secret store. Alerts, Screen Effects, and Timers are already modules; the Music integration must use those extension points.
 

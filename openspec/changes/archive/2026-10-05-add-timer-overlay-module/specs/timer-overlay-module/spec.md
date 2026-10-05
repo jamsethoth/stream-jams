@@ -16,8 +16,8 @@ The system SHALL let authorized management users create, inspect, edit, and dele
 - **WHEN** a timer definition is running, paused, or holding its completed state
 - **THEN** deletion is rejected with an actionable instruction to stop the timer first
 
-### Requirement: Each Definition Owns At Most One Ephemeral Run
-The system SHALL allow different timer definitions to run concurrently while allowing at most one active run for each definition. Runtime state SHALL be in memory only and SHALL begin idle after every application start.
+### Requirement: Each Definition Owns At Most One Active Run
+The system SHALL allow different timer definitions to run concurrently while allowing at most one active run for each definition. The coordinator SHALL own runtime state and generation identity. Local recovery SHALL retain positive active remainders and restore them paused without subtracting offline time or replaying cues, as specified by the persistent-event-timers capability. Stopped and completed runs SHALL remain absent on restart.
 
 #### Scenario: Two definitions start
 - **WHEN** the user starts `Cat Paws` and `Hydration`
@@ -27,7 +27,7 @@ The system SHALL allow different timer definitions to run concurrently while all
 #### Scenario: Application restarts with timers active
 - **WHEN** Stream Jams restarts after one or more timers were running or paused
 - **THEN** every saved definition remains available
-- **AND** every definition starts idle without replaying a cue or prior run
+- **AND** positive retained remainders restore paused without subtracting downtime or replaying cues; stopped and completed runs remain idle
 
 ### Requirement: Timer Commands Have Deterministic Retry-Safe Semantics
 The system SHALL implement start, pause, resume, stop, and restart against a server-authoritative timer generation. Start, pause, resume, and stop SHALL be idempotent for already-satisfied states, while restart SHALL deliberately create a new full-duration generation.

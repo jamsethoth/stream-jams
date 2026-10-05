@@ -26,12 +26,18 @@ const maxGrants = 64;
 
 interface Entry extends MusicArtworkRead { readonly owner: MusicArtworkOwner; readonly url: string; }
 interface Grant { readonly ref: string; readonly owner: MusicArtworkOwner; readonly recipient: string; readonly expiresAt: number; }
+interface PendingArtwork {
+  readonly owner: MusicArtworkOwner;
+  readonly controller: AbortController;
+  readonly promise: Promise<string | null>;
+  waiters: number;
+}
 
 /** Ephemeral decoded provider art. Neither descriptors nor bytes enter the asset repository. */
 export class MusicArtworkService {
   readonly #entries = new Map<string, Entry>();
   readonly #grants = new Map<string, Grant>();
-  readonly #pending = new Map<string, { readonly owner: MusicArtworkOwner; readonly controller: AbortController }>();
+  readonly #pending = new Map<string, PendingArtwork>();
   readonly #options: MusicArtworkServiceOptions;
   #cacheBytes = 0;
 
@@ -51,11 +57,34 @@ export class MusicArtworkService {
       }
     }
     const key = JSON.stringify([owner.providerId, owner.generation, url.href]);
-    if (this.#pending.has(key) || this.#pending.size >= maxPending) return null;
-    const controller = new AbortController();
-    this.#pending.set(key, { owner, controller });
-    const onAbort = () => controller.abort();
-    signal.addEventListener("abort", onAbort, { once: true });
+    let pending = this.#pending.get(key);
+    if (pending?.controller.signal.aborted) { this.#pending.delete(key); pending = undefined; }
+    if (pending === undefined) {
+      if (this.#pending.size >= maxPending) return null;
+      const controller = new AbortController();
+      const entry: PendingArtwork = { owner, controller, waiters: 0,
+        promise: Promise.resolve().then(() => this.#fetch(url, policy, owner, controller)).finally(() => {
+          if (this.#pending.get(key) === entry) this.#pending.delete(key);
+        }) };
+      this.#pending.set(key, entry);
+      pending = entry;
+    }
+    const shared = pending;
+    shared.waiters++;
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      if (--shared.waiters === 0) shared.controller.abort();
+    };
+    signal.addEventListener("abort", release, { once: true });
+    try { return await withAbort(shared.promise, signal); }
+    // error-provenance: allow expected -- a cancelled caller receives the artwork placeholder
+    catch { return null; }
+    finally { signal.removeEventListener("abort", release); release(); }
+  }
+
+  async #fetch(url: URL, policy: MusicArtworkPolicy | null, owner: MusicArtworkOwner, controller: AbortController): Promise<string | null> {
     const timeout = setTimeout(() => controller.abort(), 5_000);
     timeout.unref();
     try {
@@ -65,7 +94,7 @@ export class MusicArtworkService {
       const bytes = await withAbort((this.#options.fetchBytes ?? fetchPinnedBytes)(url, addresses[0]!, controller.signal), controller.signal);
       if (bytes.byteLength === 0 || bytes.byteLength > maxBytes) return null;
       const image = await validateRaster(bytes);
-      if (image === null || controller.signal.aborted || signal.aborted || !this.#options.isCurrentOwner(owner)
+      if (image === null || controller.signal.aborted || !this.#options.isCurrentOwner(owner)
         || !this.#isCurrentDescriptor(url.href, owner)) return null;
       const ref = `art_${randomBytes(24).toString("base64url")}`;
       this.#entries.set(ref, { ...image, owner, url: url.href });
@@ -77,8 +106,6 @@ export class MusicArtworkService {
     catch { return null; }
     finally {
       clearTimeout(timeout);
-      signal.removeEventListener("abort", onAbort);
-      this.#pending.delete(key);
     }
   }
 

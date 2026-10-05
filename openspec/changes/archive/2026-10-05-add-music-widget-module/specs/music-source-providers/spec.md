@@ -83,6 +83,17 @@ The runtime SHALL bound requests, frame size, reconnect delays and pending state
 - **WHEN** a provider sends invalid JSON, invalid normalized values or a frame larger than 256 KiB
 - **THEN** the runtime rejects the input with redacted diagnostics, retains no unbounded raw buffer, and resynchronizes or fails closed
 
+#### Scenario: Responsive authenticated WebSocket recovery
+- **WHEN** a healthy Pear WebSocket disconnects transiently
+- **THEN** automatic transport retries WebSocket with backoff capped at five seconds including jitter, while honoring a longer explicit Retry-After
+- **AND** an unavailable WebSocket endpoint may use authenticated polling with a WebSocket recovery probe every fifteen seconds when not rate limited
+- **AND** authentication rejection stops retries and probes
+
+#### Scenario: Initial player frame has no song metadata
+- **WHEN** an authenticated validated initial player frame omits song metadata
+- **THEN** the adapter immediately hydrates it through authenticated REST instead of waiting for periodic reconciliation
+- **AND** a newer WebSocket song or explicit empty-song observation takes precedence over a late hydration response
+
 ### Requirement: Empty And Stale Playback Cannot Persist Live
 The runtime SHALL clear track and progress for an explicit empty observation, disconnect, authentication failure, disable or source switch. Healthy WS sessions SHALL reconcile current state at least every 15 seconds when not rate limited. A snapshot older than 45 seconds without a successful observation SHALL be stale and transparent live. Management SHALL distinguish last known stale evidence from current state.
 
@@ -108,6 +119,22 @@ The system SHALL provide opaque artwork references and authorized image delivery
 #### Scenario: Unsafe image or unauthorized recipient
 - **WHEN** an image resolves outside the adapter's allowed destination policy, contains HTML/SVG, exceeds bounds, or is requested with a wrong-purpose/revoked key or obsolete source generation
 - **THEN** delivery is rejected without exposing credentials or local network content
+
+#### Scenario: Concurrent authorized artwork recipients
+- **WHEN** browser and desktop recipients request the same pending artwork for the same current provider generation
+- **THEN** they share one bounded validated fetch and each receives its result
+- **AND** cancelling one caller does not cancel other waiting callers; cancelling all callers or revoking the generation cancels the fetch
+
+#### Scenario: Artwork is temporarily unavailable
+- **WHEN** artwork delivery is delayed or an image fails transiently
+- **THEN** metadata and progress are published immediately with placeholder artwork
+- **AND** image rendering retries after one, two and five seconds, then stops for that track and image
+- **AND** track changes, hiding and closure cancel pending image retries and obsolete desktop artwork completions
+
+#### Scenario: Private Music media stays stable through playback updates
+- **WHEN** a desktop Music revision renews the same artwork grant or unchanged pinned branding/font snapshots
+- **THEN** the private media URLs remain stable so the rendered images and fonts do not reload on routine observations
+- **AND** each revision retains explicit ownership; releasing the last owner revokes the private handle, while replacement snapshots or artwork grants receive new handles
 
 ### Requirement: Configuration Is Durable And Portable Without Secrets
 Music registration, selection, enablement and presentation SHALL survive normal restarts. Credentials SHALL use the existing durable secret store and fail closed when unavailable. Portable backups SHALL include non-secret Music configuration while excluding credentials, credential references, pairing identities, cached artwork and current playback. Restore SHALL require fresh pairing; failed restore SHALL preserve the previous operational state and credentials.

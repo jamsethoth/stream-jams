@@ -66,8 +66,10 @@
 - [x] 10.1 Add Playwright management coverage that creates a timer, selects icon/cues/routes, configures both profile regions/orientations/capacities, saves, reloads, edits, and exercises every manual command.
 - [x] 10.2 Add Playwright overlay coverage for concurrent sorting, paused-below-running order, late connection, equal dynamic sizing, ellipsis, `+N more`, module/unified visibility, natural completion, and reconnect continuity.
 - [x] 10.3 Add an end-to-end HTTP scenario that creates/rotates/revokes a timer bearer and invokes every command as a generic Stream Deck-style loopback client without exposing the token in output artifacts.
-- [ ] 10.4 Extend packaged desktop tests for simultaneous browser/desktop countdown agreement, management hidden, explicit cue destinations, mute, missing output, renderer recovery, and bounded Quit.
-- [ ] 10.5 Rebuild and restart the affected local service/desktop package, wait for health, reload management and overlays, and manually verify one real generic Stream Deck HTTP button for start plus pause/resume/stop/restart actions.
+- [x] 10.4 Extend packaged desktop tests for simultaneous browser/desktop countdown agreement, management hidden, explicit cue destinations, mute, missing output, renderer recovery, and bounded Quit.
+- [x] 10.5 Rebuild and restart the affected local service/desktop package, wait for health, reload management and overlays, and manually verify one real generic Stream Deck HTTP button for start plus pause/resume/stop/restart actions. Packaged runtime verification is recorded in docs/verification/timers.md; the user confirmed physical HTTP-button testing during the acceptance reconciliation. Stream Deck profile/plugin certification is outside Stream Jams scope.
+
+Task 10.4 is complete: [focused packaged acceptance](../../../../docs/verification/timers.md#focused-packaged-timer-output-acceptance-2026-10-05) passed against the isolated Windows candidate, including browser/desktop agreement, hidden management, explicit cues, scoped mute, recipient failure, renderer recovery, and bounded Quit. The baseline idle-on-restart behavior in task 3.4 was superseded by the completed persistent-event-timers extension; canonical synchronization preserves paused recovery.
 
 ## 11. Documentation And Release Gates
 

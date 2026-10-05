@@ -47,3 +47,4 @@
 .music-editor__grid { align-items: start; }
 .music-editor__grid > label { align-content: start; }
 .music-editor input[type="number"] { height: 32px; }
+.music-browser-sources__list { display: grid; gap: 6px; }

@@ -37,7 +37,7 @@ export class MediaPreviewService {
       const id = randomUUID();
       const owner = `preview:${sessionId}:${id}`;
       await this.options.media.acquire(owner, [assetId], expiresAt, false,
-        expected === undefined ? undefined : { [assetId]: expected.version });
+        expected === undefined ? undefined : Object.fromEntries([[assetId, expected.version]]));
       try {
         const grant = this.options.media.issueTrustedGrant(owner, assetId, `preview:${sessionId}`, expiresAt);
         if (expected !== undefined && (grant.snapshot.mimeType !== expected.mimeType ||

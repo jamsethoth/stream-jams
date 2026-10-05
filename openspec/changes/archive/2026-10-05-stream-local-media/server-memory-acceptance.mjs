@@ -7,11 +7,11 @@ import { createReadStream } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { setInterval, clearInterval } from 'node:timers';
-import { createInMemoryStreamJamsDatabase } from '../../../apps/server/dist/modules/db/database.js';
-import { SqliteAssetRepository } from '../../../apps/server/dist/modules/assets/sqlite-asset-repository.js';
-import { SqliteAssetRetirementRepository } from '../../../apps/server/dist/modules/assets/sqlite-asset-retirement-repository.js';
-import { LocalAssetStore } from '../../../apps/server/dist/modules/assets/local-asset-store.js';
-import { LocalMediaService } from '../../../apps/server/dist/modules/assets/local-media-service.js';
+import { createInMemoryStreamJamsDatabase } from '../../../../apps/server/dist/modules/db/database.js';
+import { SqliteAssetRepository } from '../../../../apps/server/dist/modules/assets/sqlite-asset-repository.js';
+import { SqliteAssetRetirementRepository } from '../../../../apps/server/dist/modules/assets/sqlite-asset-retirement-repository.js';
+import { LocalAssetStore } from '../../../../apps/server/dist/modules/assets/local-asset-store.js';
+import { LocalMediaService } from '../../../../apps/server/dist/modules/assets/local-media-service.js';
 
 const root = resolve('apps/desktop/out/streaming-acceptance');
 const packaged = JSON.parse(await readFile(join(root, 'results.json'), 'utf8'));

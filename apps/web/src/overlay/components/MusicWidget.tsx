@@ -93,7 +93,6 @@ function MusicContents({ projection, resolveAsset, nowEpochMs, reducedMotion }: 
   const artworkUrl = track.artworkRef === null ? "" : resolveAsset.resolveArtwork(track.artworkRef, projection.snapshot) ?? "";
   const [failedImages, setFailedImages] = useState<ReadonlySet<string>>(() => new Set());
   const showBrand = brandUrl !== "" && !failedImages.has(brandUrl);
-  const showArtwork = artworkUrl !== "" && !failedImages.has(artworkUrl);
   const titleFont = useMusicFont(assetUrl(appearance.titleFont.fontAssetId), nativeFont(appearance.titleFont));
   const detailsFont = useMusicFont(assetUrl(appearance.detailsFont.fontAssetId), nativeFont(appearance.detailsFont));
   const layoutMeasurementKey = `${projection.layout.width}:${projection.layout.height}:${appearance.paddingXPx}:${appearance.paddingYPx}:${Object.values(appearance.contentInsets).join(":")}`;
@@ -148,7 +147,7 @@ function MusicContents({ projection, resolveAsset, nowEpochMs, reducedMotion }: 
     <div className="sj-content" data-view={projection.view} data-theme={projection.profile.theme} data-component-layout={componentLayout === null ? "automatic" : "manual"}
       data-playback-state={projection.snapshot.playbackState} style={contentStyle}>
       {appearance.artworkSizePx > 0 ? <div className="sj-artwork" role="img" aria-label="Album artwork">
-        {showArtwork ? <img src={artworkUrl} alt="" onError={() => markFailed(artworkUrl)} /> : null}
+        {artworkUrl === "" ? null : <MusicArtworkImage key={JSON.stringify([track.id, track.artworkRef, artworkUrl])} url={artworkUrl} />}
       </div> : null}
       <div className="sj-copy">
         <MusicMetadataLine className="sj-title" text={track.title || "Unknown title"} measurementKey={titleMeasurementKey} reducedMotion={reducedMotion} />
@@ -164,6 +163,24 @@ function MusicContents({ projection, resolveAsset, nowEpochMs, reducedMotion }: 
       </div>
     </div>
   </>;
+}
+
+const artworkRetryDelaysMs = [1_000, 2_000, 5_000] as const;
+
+/** Keep metadata visible while a temporary image failure uses a bounded retry budget. */
+function MusicArtworkImage({ url }: { readonly url: string }) {
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    const delay = artworkRetryDelaysMs[attempt];
+    if (!failed || delay === undefined) return;
+    const timer = window.setTimeout(() => {
+      setAttempt(current => current + 1);
+      setFailed(false);
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [failed, attempt]);
+  return failed ? null : <img key={attempt} src={url} alt="" onError={() => setFailed(true)} />;
 }
 
 function MusicMetadataLine({ className, text, measurementKey, reducedMotion }: {

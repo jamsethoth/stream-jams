@@ -191,6 +191,10 @@ The system SHALL place Browser sources above the production-renderer preview, fo
 - **WHEN** Music appearance opens or a user expands one panel
 - **THEN** Browser sources precede Preview, Configuration, Appearance and Custom CSS; the other panels retain independent disclosure state, and Disable custom CSS remains accessible outside the CSS panel
 
+#### Scenario: Browser source rows match other modules
+- **WHEN** the user expands Music browser sources
+- **THEN** Landscape and Vertical live sources appear together in responsive rows with readiness, dimensions, OBS setup guidance, masked URLs, temporary Reveal/Hide, Copy and confirmed Regenerate actions; test sources remain available in a separate disclosure independent of appearance profile selection
+
 #### Scenario: Colour selection and hex stay synchronized
 - **WHEN** a user changes RGB, opacity or a valid RGBA hex value
 - **THEN** the other controls and preview reflect the same draft colour; invalid hex retains the last valid colour and displays a validation error

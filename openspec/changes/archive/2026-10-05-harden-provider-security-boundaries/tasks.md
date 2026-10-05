@@ -50,7 +50,7 @@ Remaining product boundaries: non-local provider connections, TLS proxy setup, a
 - Aggregate `pnpm test:security` passed with exit 0: 50 portable Vitest checks, five browser tests, four packaged checks (native three/private renderer one), and five actual vendor/OBS checks. All 64 focused acceptance checks and their build/package prerequisites passed.
 - Final root typecheck passed; root lint/error-provenance and scoped lint after the final test-only CSP property typing correction passed. Current fixture cleanup succeeded; six known failed-run temporary roots were removed after containment/owned-process checks with no owned executable remaining.
 - Final `openspec.cmd validate harden-provider-security-boundaries --strict` and `git diff --check` passed after documentation reconciliation.
-- Full matrix, commands, fixture prerequisites, and inherently physical limits are recorded in [provider security acceptance](../../../docs/verification/provider-security.md). No commit, push, or archive was performed for implementation.
+- Full matrix, commands, fixture prerequisites, and inherently physical limits are recorded in [provider security acceptance](../../../../docs/verification/provider-security.md). No commit, push, or archive was performed for implementation.
 
 ## 5. Authorized operational automation
 

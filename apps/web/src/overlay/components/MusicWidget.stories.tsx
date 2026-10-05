@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, fireEvent, waitFor } from "storybook/test";
 import { createDefaultMusicModuleConfig, projectMusicWidget, type MusicAssetResolver, type MusicModuleConfig, type MusicSnapshot } from "@stream-jams/core";
 import { MusicWidget } from "./MusicWidget.js";
 
@@ -20,6 +21,23 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const PlayingFull: Story = { args: { projection: projection(), resolveAsset: localAsset, nowEpochMs: now } };
+
+export const ArtworkRecoversAfterTemporaryFailure: Story = {
+  args: { projection: projection(createDefaultMusicModuleConfig(), { ...observation, track: { ...track, artworkRef: "story-artwork" } }), resolveAsset: localAsset, nowEpochMs: now },
+  play: async ({ canvasElement }) => {
+    const shadow = canvasElement.querySelector(".music-widget-host")!.shadowRoot!;
+    const image = shadow.querySelector(".sj-artwork img") as HTMLImageElement;
+    await waitFor(() => expect(image.naturalWidth).toBeGreaterThan(0));
+    fireEvent.error(image);
+    await waitFor(() => expect(image.isConnected).toBe(false));
+    await expect(shadow.querySelector(".sj-title")?.textContent).toBe("Morning Light");
+    await waitFor(() => {
+      const recovered = shadow.querySelector(".sj-artwork img") as HTMLImageElement | null;
+      expect(recovered).not.toBeNull();
+      expect(recovered?.naturalWidth).toBeGreaterThan(0);
+    }, { timeout: 3_000 });
+  }
+};
 
 const compactConfig = createDefaultMusicModuleConfig();
 compactConfig.profiles.landscape.initialView = "compact";

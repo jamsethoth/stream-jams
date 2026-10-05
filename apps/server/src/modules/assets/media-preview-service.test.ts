@@ -45,6 +45,18 @@ it("requires the current version for Music previews and invalidates strict previ
     await expect(f.previews.renew(f.session.id, first.id)).rejects.toThrow("unavailable");
   } finally { await f.close(); }
 });
+it("treats prototype-like asset IDs as ordinary versioned entries", async () => {
+  const f = await fixture();
+  try {
+    const asset = { ...record, id: "__proto__" };
+    f.assets.findManyByIds.mockResolvedValue(new Map([[asset.id, asset]]));
+    const preview = await f.previews.createVersioned(f.session.id, {
+      assetId: asset.id, version: mediaVersion(asset), mimeType: "video/mp4", sizeBytes: asset.sizeBytes, durationMs: asset.durationMs
+    });
+    expect(preview.snapshot.assetId).toBe(asset.id);
+    expect(preview.snapshot.version).toBe(mediaVersion(asset));
+  } finally { await f.close(); }
+});
 it("caps expiry at the session deadline and rejects expired renewal without reviving ownership", async () => {
   vi.useFakeTimers();
   const f = await fixture(90000);

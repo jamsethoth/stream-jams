@@ -20,6 +20,25 @@ function fixture(overrides: Partial<ConstructorParameters<typeof MusicArtworkSer
 }
 
 describe("MusicArtworkService", () => {
+  it("shares a pending image across callers without one cancellation cancelling another", async () => {
+    let finish!: (bytes: Uint8Array) => void;
+    const fetchBytes = vi.fn(async () => new Promise<Uint8Array>(resolve => { finish = resolve; }));
+    const { service } = fixture({ fetchBytes });
+    const controller = new AbortController();
+    const first = service.resolve({ url }, owner, controller.signal);
+    await vi.waitFor(() => expect(fetchBytes).toHaveBeenCalledTimes(1));
+    const second = service.resolve({ url }, owner, new AbortController().signal);
+    const third = service.resolve({ url }, owner, new AbortController().signal);
+    controller.abort();
+    expect(await first).toBeNull();
+    finish(raster);
+    const ref = await second;
+    expect(ref).toMatch(/^art_/);
+    expect(await third).toBe(ref);
+    expect(fetchBytes).toHaveBeenCalledTimes(1);
+    expect(service.counts.entries).toBe(1);
+  });
+
   it("fetches an explicitly configured local origin without credentials or redirects", async () => {
     const headers: unknown[] = [];
     const server = createHttpServer((request, response) => {

@@ -13,12 +13,12 @@ const pollIntervalMs = 3_000;
 const reconciliationIntervalMs = 15_000;
 const staleAfterMs = 45_000;
 const maxFrameBytes = 256 * 1024;
-const retryDelaysMs = [1_000, 2_000, 5_000, 10_000, 30_000] as const;
+const retryDelaysMs = [1_000, 2_000, 5_000] as const;
 const capabilities = { artwork: true, position: true, duration: true, sessionSelection: false } as const;
 
 export class PearAuthenticationError extends Error { constructor() { super("Pear authorization is required"); } }
 export class PearTransportUnavailableError extends Error {
-  constructor(readonly retryAfterMs: number | null = null) { super("Pear transport is unavailable"); }
+  constructor(readonly retryAfterMs: number | null = null, readonly webSocketUnavailable = false) { super("Pear transport is unavailable"); }
 }
 export class PearProtocolError extends Error { constructor() { super("Pear returned invalid player data"); } }
 
@@ -42,6 +42,7 @@ export class PearMusicSource implements MusicSourceAdapter {
   #snapshot: MusicSnapshot | null = null;
   #status: MusicStatus = { state: "disconnected", stale: false, diagnosticReference: null };
   #revision = 0;
+  #songRevision = 0;
   #transportEpoch = 0;
   #run: Promise<void> | null = null;
   #controller: AbortController | null = null;
@@ -77,7 +78,7 @@ export class PearMusicSource implements MusicSourceAdapter {
         opened.socket.terminate();
         return { transport: "ws", capabilities };
       } catch (error) {
-        if (this.#config.transport === "ws" || !(error instanceof PearTransportUnavailableError)) throw error;
+        if (this.#config.transport === "ws" || !(error instanceof PearTransportUnavailableError) || !error.webSocketUnavailable) throw error;
       }
     }
     const response = await this.#fetchSong(combined);
@@ -130,6 +131,7 @@ export class PearMusicSource implements MusicSourceAdapter {
     let firstPending = true;
     let failureCount = 0;
     let transport: "ws" | "poll" = this.#config.transport === "poll" ? "poll" : "ws";
+    let nextWsProbeAt: number | null = null;
     try {
       while (!signal.aborted) {
         const epoch = ++this.#transportEpoch;
@@ -137,6 +139,7 @@ export class PearMusicSource implements MusicSourceAdapter {
           if (transport === "ws") {
             const opened = await this.#openWs(signal, observation => this.#publish(observation, signal, epoch));
             this.#socket = opened.socket;
+            nextWsProbeAt = null;
             this.#setStatus("connected", false);
             failureCount = 0;
             if (firstPending) { firstResolve(); firstPending = false; }
@@ -147,31 +150,36 @@ export class PearMusicSource implements MusicSourceAdapter {
             failureCount = 0;
             if (firstPending) { firstResolve(); firstPending = false; }
             await delay(pollIntervalMs, signal);
+            if (nextWsProbeAt !== null && this.#now() >= nextWsProbeAt) transport = "ws";
           }
         } catch (error) {
           this.#transportEpoch += 1;
           this.#socket?.terminate(); this.#socket = null;
           if (signal.aborted) break;
-          this.#clearLive();
           await this.#requestInFlight?.catch(
             // error-provenance: allow cleanup -- original transport error above controls reconnect status
             () => {}
           );
           if (error instanceof PearAuthenticationError) {
+            this.#clearLive();
             this.#setStatus("auth-required", false);
             if (firstPending) { firstReject(error); firstPending = false; }
             return;
           }
-          if (transport === "ws" && this.#config.transport === "auto" && error instanceof PearTransportUnavailableError) {
-            transport = "poll"; continue;
+          if (transport === "ws" && this.#config.transport === "auto" && error instanceof PearTransportUnavailableError
+            && (error.webSocketUnavailable || nextWsProbeAt !== null)) {
+            transport = "poll";
+            nextWsProbeAt = this.#now() + Math.max(reconciliationIntervalMs, error.retryAfterMs ?? 0);
+            continue;
           }
+          this.#clearLive();
           this.#setStatus("reconnecting", this.#status.stale);
           if (firstPending && !(error instanceof PearTransportUnavailableError)) { firstReject(error); firstPending = false; }
           const retryAfter = error instanceof PearTransportUnavailableError ? error.retryAfterMs : null;
           const base = retryDelaysMs[Math.min(failureCount, retryDelaysMs.length - 1)]!;
           failureCount += 1;
           const jitter = Math.max(0, Math.min(1, this.#options.jitter?.() ?? Math.random()));
-          await delay(Math.max(retryAfter ?? 0, Math.round(base * (0.8 + jitter * 0.4))), signal).catch(
+          await delay(Math.max(retryAfter ?? 0, Math.min(5_000, Math.round(base * (0.8 + jitter * 0.4)))), signal).catch(
             // error-provenance: allow cleanup -- delay rejects only when cancellation ends this generation
             () => {}
           );
@@ -189,6 +197,9 @@ export class PearMusicSource implements MusicSourceAdapter {
     const session = new AbortController();
     const combined = AbortSignal.any([signal, session.signal]);
     try {
+      if (this.#snapshot?.track == null) {
+        await Promise.race([this.#pollOnce(combined, epoch, true), opened.closed]);
+      }
       while (!combined.aborted) {
         await Promise.race([delay(reconciliationIntervalMs, combined), opened.closed]);
         if (combined.aborted) break;
@@ -197,15 +208,18 @@ export class PearMusicSource implements MusicSourceAdapter {
     } finally { session.abort(); opened.socket.terminate(); }
   }
 
-  async #pollOnce(signal: AbortSignal, epoch: number): Promise<void> {
+  async #pollOnce(signal: AbortSignal, epoch: number, initialHydration = false): Promise<void> {
+    const songRevision = this.#songRevision;
     this.#requestInFlight ??= this.#fetchSong(signal).finally(() => { this.#requestInFlight = null; });
     const response = await this.#requestInFlight;
+    if (initialHydration && this.#songRevision !== songRevision) return;
     this.#publish(response.observation, signal, epoch);
   }
 
   #publish(observation: unknown, signal: AbortSignal, epoch: number): void {
     if (signal.aborted || this.#controller?.signal.aborted || epoch !== this.#transportEpoch) return;
     const source = observation as Record<string, unknown>;
+    if (Object.hasOwn(source, "song")) this.#songRevision += 1;
     const descriptor = extractPearArtworkDescriptor(source.song);
     let artworkRef: string | null | undefined = source.song !== null && typeof source.song === "object"
       && !Array.isArray(source.song) && Object.hasOwn(source.song, "imageSrc") ? null : undefined;
@@ -335,7 +349,8 @@ export class PearMusicSource implements MusicSourceAdapter {
         response.resume();
         const status = response.statusCode ?? 0;
         fail(status === 401 || status === 403 ? new PearAuthenticationError()
-          : status >= 300 && status < 400 ? new PearProtocolError() : new PearTransportUnavailableError());
+          : status >= 300 && status < 400 ? new PearProtocolError()
+            : new PearTransportUnavailableError(parseRetryAfter(response.headers["retry-after"], this.#now()), [404, 405, 501, 503].includes(status)));
       });
       socket.on("error", error => {
         fail(/max payload|too big|invalid webSocket frame|utf-8/iu.test(error.message)

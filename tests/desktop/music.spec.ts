@@ -6,7 +6,7 @@ import type { SurfaceSettingsView, TimerDefinition } from "../../packages/core/d
 import { _electron, expect, test, type ElectronApplication } from "@playwright/test";
 import { finishDesktop, windowByUrl, withCleanup } from "./audio-harness.js";
 
-const executablePath = resolve("apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");
+const executablePath = resolve(process.env.STREAM_JAMS_TEST_EXECUTABLE ?? "apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
 test("packaged desktop keeps Music opt-in, transparent without a source, and independent of safety controls", async () => {
@@ -49,8 +49,8 @@ test("packaged desktop keeps Music opt-in, transparent without a source, and ind
     const defaults = await api<{ enabled: boolean; config: unknown }>("/overlay-modules/music/config");
     expect(defaults.enabled).toBe(false);
     await management.goto(`${base}/manage/modules/music`);
-    await expect(management.getByRole("button", { name: "Expand configuration" })).toBeVisible();
-    await management.getByRole("button", { name: "Edit component layout" }).click();
+    await expect(management.getByLabel("Initial view")).toBeVisible();
+    await management.getByRole("button", { name: "Edit layout", exact: true }).click();
     await expect(management.getByLabel("Title width (px)")).toBeVisible();
     await expect(management.getByRole("button", { name: "Resize Title", exact: true })).toBeVisible();
     await expect(management.getByRole("checkbox", { name: "Snap to grid" })).toBeChecked();

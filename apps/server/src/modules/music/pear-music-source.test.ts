@@ -9,13 +9,89 @@ afterEach(async () => { vi.useRealTimers(); await adapter?.stop(); await fixture
 
 async function create(transport: "ws" | "poll" | "auto") {
   fixture = await startPearProtocolFixture();
-  adapter = new PearMusicSource({ config: { baseUrl: fixture.baseUrl, transport }, token: "throwaway-token", providerId: "provider_1", generation: "generation_1", jitter: () => 0.5 });
+  adapter = new PearMusicSource({ config: { baseUrl: fixture.baseUrl, transport }, token: "throwaway-token", providerId: "provider_1", generation: "generation_1", jitter: () => 0.5, now: () => Date.now() });
   return adapter;
 }
 
 const song = { videoId: "abc", title: "Track", artist: "Artist", songDuration: 90, imageSrc: "https://i.ytimg.com/vi/abc/default.jpg" };
 
 describe("PearMusicSource lifecycle", () => {
+  it("hydrates a partial authenticated first frame immediately", async () => {
+    const source = await create("ws"); fixture!.setSong({ status: 200, body: song });
+    await source.start(() => {}, () => {}, new AbortController().signal);
+    await vi.waitFor(() => expect(source.getSnapshot()?.track?.id).toBe("abc"), { timeout: 500 });
+    expect(fixture!.requests).toHaveLength(1);
+  });
+
+  it("does not overwrite a newer WS track with delayed initial hydration", async () => {
+    const source = await create("ws"); fixture!.setSong({ status: 200, body: song, delayMs: 100 });
+    await source.start(() => {}, () => {}, new AbortController().signal);
+    await vi.waitFor(() => expect(fixture!.requests).toHaveLength(1), { timeout: 500 });
+    fixture!.send({ type: "VIDEO_CHANGED", song: { ...song, videoId: "new", title: "New" } });
+    await vi.waitFor(() => expect(source.getSnapshot()?.track?.id).toBe("new"));
+    await new Promise(resolve => setTimeout(resolve, 150));
+    expect(source.getSnapshot()?.track?.id).toBe("new");
+  });
+
+  it("does not resurrect a track cleared by WS during initial hydration", async () => {
+    const source = await create("ws"); fixture!.setSong({ status: 200, body: song, delayMs: 100 });
+    await source.start(() => {}, () => {}, new AbortController().signal);
+    await vi.waitFor(() => expect(fixture!.requests).toHaveLength(1));
+    fixture!.send({ type: "PLAYER_INFO", song: null, isPlaying: false });
+    await new Promise(resolve => setTimeout(resolve, 150));
+    expect(source.getSnapshot()?.track).toBeNull();
+  });
+
+  it("reconnects automatic transport to WS after an ordinary disconnect", async () => {
+    const source = await create("auto"); fixture!.setFirstFrame({ type: "PLAYER_INFO", song, isPlaying: true });
+    await source.start(() => {}, () => {}, new AbortController().signal);
+    fixture!.closeSockets();
+    await vi.waitFor(() => expect(fixture!.sockets).toHaveLength(2), { timeout: 2_500 });
+    expect(fixture!.requests).toHaveLength(0);
+    expect(source.getSnapshot()?.track?.id).toBe("abc");
+  });
+
+  it("probes WS again while automatic transport is polling an unavailable endpoint", async () => {
+    const source = await create("auto"); fixture!.setWsStatus(503); fixture!.setSong({ status: 200, body: song });
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout", "Date"] });
+    await source.start(() => {}, () => {}, new AbortController().signal);
+    fixture!.setWsStatus(null); fixture!.setFirstFrame({ type: "PLAYER_INFO", song, isPlaying: true });
+    for (let index = 0; index < 5; index += 1) {
+      await vi.advanceTimersByTimeAsync(3_100);
+      if (index < 4) await vi.waitFor(() => expect(fixture!.requests.length).toBeGreaterThanOrEqual(index + 2));
+    }
+    vi.useRealTimers();
+    await vi.waitFor(() => expect(fixture!.sockets).toHaveLength(1), { timeout: 500 });
+    fixture!.send({ type: "POSITION_CHANGED", position: 23 });
+    await vi.waitFor(() => expect(source.getSnapshot()?.positionMs).toBe(23_000));
+  });
+
+  it("caps repeated transport retry delays at five seconds including jitter", async () => {
+    fixture = await startPearProtocolFixture(); fixture.setSong({ status: 503 });
+    adapter = new PearMusicSource({ config: { baseUrl: fixture.baseUrl, transport: "poll" }, token: "throwaway-token", providerId: "provider_1", generation: "generation_1", jitter: () => 1 });
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
+    const timers = vi.spyOn(globalThis, "setTimeout");
+    const started = adapter.start(() => {}, () => {}, new AbortController().signal);
+    void started.catch(() => {});
+    await vi.waitFor(() => expect(fixture!.requests).toHaveLength(1));
+    for (const [index, delay] of [1_200, 2_400, 5_000, 5_000].entries()) {
+      await vi.advanceTimersByTimeAsync(delay + 100);
+      await vi.waitFor(() => expect(fixture!.requests).toHaveLength(index + 2));
+    }
+    expect(timers.mock.calls.map(call => call[1]).filter(value => typeof value === "number" && value >= 800)).not.toContain(6_000);
+    expect(timers.mock.calls.map(call => call[1])).toContain(5_000);
+    timers.mockRestore();
+  });
+
+  it("does not poll or probe after automatic WS authentication is rejected", async () => {
+    const source = await create("auto"); fixture!.setWsStatus(403);
+    const statuses: MusicStatus[] = [];
+    await expect(source.start(() => {}, value => statuses.push(value), new AbortController().signal)).rejects.toThrow(/authorization/);
+    vi.useFakeTimers(); await vi.advanceTimersByTimeAsync(60_000);
+    expect(statuses.at(-1)?.state).toBe("auth-required");
+    expect(fixture!.requests).toHaveLength(0);
+    expect(fixture!.sockets).toHaveLength(0);
+  });
   it("polls every three seconds without emitting repeated connected status or losing metadata", async () => {
     const source = await create("poll"); fixture!.setSong({ status: 200, body: song });
     const snapshots: MusicSnapshot[] = []; const statuses: MusicStatus[] = [];

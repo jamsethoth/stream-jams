@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing strict TypeScript/ESM, Zod, React/Vite, Fastify, SQLite, Node fetch, ws, OS keyring, Vitest, Storybook and Playwright. Resolve exact dependency versions from manifests and the lockfile. Task 1 evaluates the small number of missing primitives before adding anything.
 
-**Spec:** [Approved design](../../../openspec/changes/add-music-widget-module/design.md), [provider requirements](../../../openspec/changes/add-music-widget-module/specs/music-source-providers/spec.md), [widget requirements](../../../openspec/changes/add-music-widget-module/specs/music-widget-overlay/spec.md), [OpenSpec checklist](../../../openspec/changes/add-music-widget-module/tasks.md).
+**Spec:** [Approved design](../../../openspec/changes/archive/2026-10-05-add-music-widget-module/design.md), [provider requirements](../../../openspec/changes/archive/2026-10-05-add-music-widget-module/specs/music-source-providers/spec.md), [widget requirements](../../../openspec/changes/archive/2026-10-05-add-music-widget-module/specs/music-widget-overlay/spec.md), [OpenSpec checklist](../../../openspec/changes/archive/2026-10-05-add-music-widget-module/tasks.md).
 
 Approved for implementation planning on October 4, 2026. This document records intended work, not completed implementation. Source baseline: Stream Jams `1d9dfe7`, standalone widget `91dcee0327eb97a75860a892a92630c32e0f9e3e`. Working branch: `codex/add-music-widget-module`. Preserve the committed proposal and user changes when refreshing the baseline.
 

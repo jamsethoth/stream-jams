@@ -25,6 +25,26 @@ async function openEditorControls() {
 }
 
 describe("Music appearance", () => {
+  it("shows both profile rows with masked URLs and confirms regeneration separately from appearance", async () => {
+    const user = userEvent.setup();
+    const outputs = (["landscape", "vertical"] as const).map(targetProfileId => ({ id: targetProfileId, overlayId: "default", moduleId: "music", scope: "module" as const, targetProfileId, purpose: "live" as const, label: targetProfileId, enabled: true, keyId: "example", url: `http://127.0.0.1:39187/overlay/modules/music/live/example-${targetProfileId}`, copyableUrlStatus: "available" as const }));
+    const regenerate = vi.fn(async () => ({ output: outputs[0]!, keyId: "replacement", url: "http://127.0.0.1:39187/overlay/modules/music/live/replacement" }));
+    renderPage({ listMusicOutputs: async () => outputs, regenerateOverlayOutputKey: regenerate });
+    await user.click(await screen.findByRole("button", { name: "Expand browser sources" }));
+    expect(screen.getByRole("article", { name: "Landscape browser source" })).toHaveTextContent("1920 x 1080");
+    expect(screen.getByRole("article", { name: "Vertical browser source" })).toHaveTextContent("1080 x 1920");
+    expect(screen.queryByDisplayValue(outputs[0]!.url)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Reveal Landscape URL" }));
+    expect(screen.getByLabelText("Landscape browser source URL")).toHaveValue(outputs[0]!.url);
+    await user.click(screen.getByRole("button", { name: "Copy Landscape URL" }));
+    expect(await navigator.clipboard.readText()).toBe(outputs[0]!.url);
+    await user.click(screen.getByRole("button", { name: "Regenerate Landscape URL" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" })); expect(regenerate).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Regenerate Landscape URL" }));
+    await user.click(screen.getByRole("button", { name: "Regenerate URL" }));
+    await waitFor(() => expect(regenerate).toHaveBeenCalledWith({ overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId: "landscape" }));
+    await waitFor(() => expect(screen.queryByLabelText("Landscape browser source URL")).not.toBeInTheDocument());
+  });
   it("confirms immediate module enablement without saving appearance drafts", async () => {
     const user = userEvent.setup();
     const setEnabled = vi.fn(async (_module: string, enabled: boolean) => enabled);
@@ -148,8 +168,12 @@ describe("Music appearance", () => {
     await user.click(screen.getByRole("button", { name: "Reset appearance to theme" }));
     expect(screen.getByLabelText("Custom CSS")).toHaveValue(config.css.source);
     expect(screen.getByText("Image brand-a unavailable")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open live output" })).toHaveAttribute("href", expect.stringContaining("/live/"));
-    expect(screen.getByRole("link", { name: "Open test output" })).toHaveAttribute("href", expect.stringContaining("/test/"));
+    expect(screen.queryByRole("textbox", { name: "Landscape browser source URL" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Reveal Landscape URL" }));
+    expect(screen.getByRole("textbox", { name: "Landscape browser source URL" })).toHaveValue("http://127.0.0.1:39187/overlay/modules/music/live/example");
+    await user.click(screen.getByText("Test browser sources"));
+    await user.click(screen.getByRole("button", { name: "Reveal Landscape test URL" }));
+    expect(screen.getByRole("textbox", { name: "Landscape test browser source URL" })).toHaveValue("http://127.0.0.1:39187/overlay/modules/music/test/example");
   });
 
   it("creates the selected profile output link through the existing output service", async () => {
@@ -158,9 +182,10 @@ describe("Music appearance", () => {
     const create = vi.fn(async () => ({ output: { ...output, keyId: "key", url: "http://127.0.0.1:39187/overlay/modules/music/live/example", copyableUrlStatus: "available" as const }, keyId: "key", url: "http://127.0.0.1:39187/overlay/modules/music/live/example" }));
     renderPage({ listMusicOutputs: async () => [output], createOverlayOutputKey: create });
     await openEditorControls();
-    await user.click(screen.getByRole("button", { name: "Create live output link" }));
+    await user.click(screen.getByRole("button", { name: "Create Landscape URL" }));
     await waitFor(() => expect(create).toHaveBeenCalledWith({ overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId: "landscape" }));
-    expect(await screen.findByRole("link", { name: "Open live output" })).toHaveAttribute("href", expect.stringContaining("/live/"));
+    await user.click(await screen.findByRole("button", { name: "Reveal Landscape URL" }));
+    expect(screen.getByRole("textbox", { name: "Landscape browser source URL" })).toHaveValue("http://127.0.0.1:39187/overlay/modules/music/live/example");
   });
 
   it("clamps explicit image aspect result within height limits", () => {

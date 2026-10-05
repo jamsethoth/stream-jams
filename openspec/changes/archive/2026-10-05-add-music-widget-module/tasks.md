@@ -1,6 +1,6 @@
 ## 1. Confirm Scope And Baseline
 
-- [x] 1.1 Obtain written-spec review of the updated design, including the user-selected native controls plus Advanced CSS and uploaded branding image, before implementation planning/execution. Approved October 4, 2026; [implementation plan](../../../docs/superpowers/plans/2026-10-04-music-widget-module.md).
+- [x] 1.1 Obtain written-spec review of the updated design, including the user-selected native controls plus Advanced CSS and uploaded branding image, before implementation planning/execution. Approved October 4, 2026; [implementation plan](../../../../docs/superpowers/plans/2026-10-04-music-widget-module.md).
 - [x] 1.2 Refresh origin/main, confirm the target branch/worktree and unimplemented Music scope, and record the source widget commit and supported Pear version in verification evidence.
 - [x] 1.3 Map each reference widget feature to the new contract/UI and read applicable frontend/module/secret/backup guidance; evaluate an established CSS parser and any missing safe-fetch/image-validation primitive, documenting maintenance/license/stack fit before adding exact dependencies.
 
@@ -35,7 +35,7 @@
 - [x] 5.2 Add Music module management with enablement, profile layouts, view/theme/opacity/alignment/idle settings, saved appearance controls, dirty-state handling and output links.
 - [x] 5.3 Implement shared React full/compact Music rendering, metadata/artwork fallback, progress, scrolling/reduced-motion text and approved custom appearance using existing font assets.
 - [x] 5.4 Add management mock preview and explicit test-output delivery using the production renderer; prove previews do not activate/change a provider or leak fixture state to live output.
-- [ ] 5.5 Register module/unified output composition and opt-in desktop surface delivery; preserve layer visibility, profile bounds, route-key/private authorization, click-through and no-audio behavior.
+- [x] 5.5 Register module/unified output composition and opt-in desktop surface delivery; preserve layer visibility, profile bounds, route-key/private authorization, click-through and no-audio behavior.
 - [x] 5.6 Add production-component tests and Storybook states/interactions for appearance, long/missing text, unknown duration, empty/loading, pairing denial, auth-required, reconnect, stale status, dirty edits and keyboard accessibility.
 - [x] 5.7 Implement and test the shared bounded CSS parser/policy, including escaped syntax, custom-property indirection, resource loading, permitted at-rules, selector restrictions and inline validation locations; do not substitute regex-only filtering.
 - [x] 5.8 Add the versioned styling surface, managed Shadow DOM frame and CSS apply/disable/clear behavior; verify layout/animation/container rules, native-control precedence, reduced motion and isolation from host/sibling content.
@@ -46,12 +46,12 @@
 
 - [x] 6.1 Add a disposable authenticated Pear protocol service and integration tests for real HTTP/WS pairing, first-frame readiness, revocation, reconnect/fallback, empty playback and shutdown; avoid real credentials in fixtures/logs.
 - [x] 6.2 Add Playwright coverage for setup/test/selection, saved appearance and preview, polling idle regression, module/unified routes, key denial/revocation and recovery; exercise real production components and service boundaries.
-- [ ] 6.3 Add focused desktop coverage for the new presentation variant, authorized artwork/font loading, explicit surface membership, shutdown and independent alert/Music behavior.
-- [ ] 6.4 Run lint, typecheck, tests, build, Storybook build/test, applicable Playwright/desktop suites and strict OpenSpec validation; classify and resolve relevant failures without weakening tests.
+- [x] 6.3 Add focused desktop coverage for the new presentation variant, authorized artwork/font loading, explicit surface membership, shutdown and independent alert/Music behavior.
+- [x] 6.4 Run lint, typecheck, tests, build, Storybook build/test, applicable Playwright/desktop suites and strict OpenSpec validation; classify and resolve relevant failures without weakening tests.
 - [x] 6.5 Rebuild/restart affected local services, wait for health, reload management/output and verify the changed workflow against the new build.
-- [ ] 6.6 Record actual Pear version and authenticated pairing/restart/revocation/track/seek/pause/reconnect acceptance, plus OBS browser-source and Windows desktop visual acceptance; mark any unavailable physical check with its exact missing dependency.
+- [x] 6.6 Record actual Pear version and authenticated pairing/restart/revocation/track/seek/pause/reconnect acceptance, plus OBS browser-source and Windows desktop visual acceptance; mark any unavailable physical check with its exact missing dependency.
 - [x] 6.7 Add browser acceptance for custom CSS layouts/disable/errors, rejected network-loading CSS with request interception, scope isolation, branded layer ordering, fit modes, independent opacity and no residual branding after idle/disconnect.
-- [ ] 6.8 Verify the same branded custom layout across management preview, module/unified output and private desktop, including saved restart/backup round trips and asset replacement/missing-image recovery.
+- [x] 6.8 Verify the same branded custom layout across management preview, module/unified output and private desktop, including saved restart/backup round trips and asset replacement/missing-image recovery.
 
 ## 7. Documentation And Requirement Reconciliation
 
@@ -62,8 +62,7 @@
 
 ## Final acceptance boundary
 
-Tasks 5.5, 6.3, 6.4, 6.6 and 6.8 remain **[blocked]** for physical/private-desktop acceptance, not missing implementation. Browser output, authorization, CSS/branding, restore and provider-art paths have automated evidence in [verification](../../../docs/verification/music-widget-module.md) and the [66-scenario map](../../../docs/verification/music-widget-scenarios.md). The full software gates passed at their recorded checkpoints, with affected checks after later corrections. The packaged startup failure was traced to native companion DLLs inside ASAR and corrected; packaged no-source Music and Timer checks subsequently passed. Pear HTTPS and AUTH_AT_FIRST rejection are verified; actual approval/revocation and OBS/private desktop Music pixels remain pending. LockApp process presence does not establish that Windows is locked. Required remaining dependencies are an isolated native-host SecretStore or authorized disposable keyring namespace, an actual paired source and interactive physical acceptance. BL-028 remains only for this acceptance boundary; BL-054 remains future provider work. Canonical spec synchronization records implemented software behavior, not physical certification.
-
+All tasks are closed by the October 5 local gates, packaged acceptance and user confirmations recorded in [verification](../../../../docs/verification/music-widget-module.md). Task 6.6 includes confirmed pairing, track/artwork changes, seeking, idle pause/resume, desktop appearance/click-through and stop/restart recovery in both OBS and desktop. The user accepted artwork/loading responsiveness on the recovery build and confirmed the flicker fixed on the stability build. No separate OBS-specific flicker cause is claimed. Revocation was verified through authenticated disposable protocol/browser and packaged checks; physical revocation of the user's installation was not performed or claimed. BL-028 is complete; BL-054 remains future provider work.
 
 ## 8. User-Requested Editor Refinement
 
@@ -99,3 +98,14 @@ See [editor refinement](editor-refinement.md).
 - [x] 12.1 Keep Configuration visible, collapse Appearance by default, and focus appearance controls on selected components with preview selection.
 - [x] 12.2 Preserve colour/hex/opacity, numeric geometry, typography, branding, spacing and shadow capabilities with responsive spacing and advanced disclosures.
 - [x] 12.3 Verify unit, browser, Storybook accessibility, build/typecheck/lint and packaged candidate; synchronize documentation.
+
+## 13. Artwork and responsiveness corrections
+
+- [x] 13.1 Share authorized pending artwork fetches with independent caller cancellation; deliver desktop metadata immediately and attach artwork asynchronously with current-frame/visibility guards; retry transient rendered-image failures on a bounded schedule.
+- [x] 13.2 Hydrate missing initial Pear metadata immediately, reject late hydration after newer song/empty observations, retry transient WebSocket loss with a five-second cap and periodically probe unavailable-endpoint fallback without bypassing authentication or Retry-After.
+- [x] 13.3 Verify focused regressions, browser recovery, Storybook, builds/typecheck/lint, strict specs and the packaged disposable-profile workflows. Keep the physical OBS/artwork/responsiveness retest under task 6.6.
+
+## 14. Stable private media through Music updates
+
+- [x] 14.1 Preserve private Music artwork and unchanged pinned branding/font URLs across transport revisions with bounded revision ownership and final-owner revocation.
+- [x] 14.2 Reproduce rotating URLs against the previous package, verify current media/transport/renderer regressions, and pass packaged stability/replacement/hiding checks. Keep the physical flicker retest under task 6.6.

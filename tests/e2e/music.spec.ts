@@ -8,6 +8,31 @@ type Key = { keyId: string; url: string };
 const output = (purpose: "live" | "test", scope: "module" | "unified" = "module", targetProfileId: "landscape" | "vertical" | null = "landscape") =>
   ({ overlayId: "default", scope, moduleId: scope === "module" ? "music" : null, purpose, targetProfileId: scope === "module" ? targetProfileId : null });
 
+test("browser artwork recovers from a transient failure without reloading or changing tracks", async ({ page }) => {
+  // Valid 2 x 3 raster, decoded by the production service without external CDN access.
+  const raster = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAYAAAC56t6BAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWP4z8DwH4QZMBgAoXkL9VMpiWIAAAAASUVORK5CYII=", "base64");
+  const fixture = await startMusicTestRuntime({ resolveAddresses: async () => ["8.8.8.8"], fetchBytes: async () => raster });
+  try {
+    fixture.pear.setSong({ status: 200, body: { ...song, imageSrc: "https://i.ytimg.com/vi/fixture/default.jpg" } });
+    await fixture.register();
+    const saved = await fixture.request<{ config: MusicModuleConfig }>("/overlay-modules/music/config");
+    saved.config.profiles.landscape.idleMode = "none";
+    await fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: saved.config });
+    const live = await fixture.request<Key>("/management/overlay-outputs/keys", "POST", output("live"));
+    let attempts = 0;
+    await page.route("**/artwork/**", async route => {
+      attempts++;
+      if (attempts === 1) await route.fulfill({ status: 503, body: "", headers: { "cache-control": "no-store" } });
+      else await route.continue();
+    });
+    await page.goto(live.url);
+    await expect(page.getByTestId("music-widget").locator(".sj-title")).toContainText(song.title);
+    await expect.poll(() => attempts).toBe(2);
+    await expect(page.locator(".sj-artwork img")).toBeVisible();
+    await expect.poll(() => page.locator(".sj-artwork img").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(2);
+  } finally { await fixture.close(); }
+});
+
 test("built Music Sources page pairs, tests and saves against disposable Pear", async ({ page }) => {
   test.setTimeout(90_000);
   const fixture = await startMusicTestRuntime();
@@ -104,15 +129,21 @@ test("source selection, seek, idle timeout and revoked Pear authorization clear 
     const second = await fixture.register("Second Pear");
     const saved = await fixture.request<{ config: { profiles: Record<string, Record<string, unknown>> } }>("/overlay-modules/music/config");
     const profiles = structuredClone(saved.config.profiles);
-    profiles.landscape = { ...profiles.landscape, idleMode: "hide", idleAfterSeconds: 1 };
+    profiles.landscape = { ...profiles.landscape, idleMode: "none", idleAfterSeconds: 1 };
     await fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: { ...saved.config, profiles } });
     await fixture.request(`/management/providers/${first}/activate`, "POST", {});
     const live = await fixture.request<Key>("/management/overlay-outputs/keys", "POST", output("live"));
     await page.goto(live.url);
     await expect(page.getByTestId("music-widget").locator(".sj-title")).toContainText(song.title);
     const firstGeneration = fixture.runtime.composition.musicRuntimeCoordinator.generation;
+    profiles.landscape = { ...profiles.landscape, idleMode: "hide" };
+    await fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: { ...saved.config, profiles } });
     await expect(page.getByTestId("music-widget")).toHaveCount(0, { timeout: 6_000 });
     expect(fixture.pear.requests.filter(request => request.path === "/api/v1/song").length).toBeGreaterThan(1);
+    // Idle behavior is accepted above. Keep the following seek/auth assertions visible
+    // instead of racing their browser checks against a one-second idle window.
+    profiles.landscape = { ...profiles.landscape, idleMode: "none" };
+    await fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: { ...saved.config, profiles } });
     await fixture.request(`/management/providers/${second}/activate`, "POST", {});
     await expect.poll(() => fixture.runtime.composition.musicRuntimeCoordinator.generation).not.toBe(firstGeneration);
     await expect(page.getByTestId("music-widget")).toBeVisible();
@@ -124,7 +155,7 @@ test("source selection, seek, idle timeout and revoked Pear authorization clear 
     await expect(page.getByTestId("music-widget")).toHaveCount(0);
     const status = await fixture.request<{ status: { state: string } }>("/management/music/status");
     expect(status.status.state).toBe("auth-required");
-  } finally { await fixture.close(); }
+  } finally { await page.close(); await fixture.close(); }
 });
 
 test("transient pause, mute, skip, replay and DND do not command the Pear player", async ({ page }) => {

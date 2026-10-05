@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { _electron, expect } from '@playwright/test';
-import { serializeMediaStreamingEvidence } from '../../../scripts/media-streaming-evidence.mjs';
+import { serializeMediaStreamingEvidence } from '../../../../scripts/media-streaming-evidence.mjs';
 
 // Run only against the self-contained Forge package, with an isolated config,
 // muted production safety state and zero-gain layers. Private originals are

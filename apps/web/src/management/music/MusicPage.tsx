@@ -1,6 +1,7 @@
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
 import { BrowserSourcesPanel } from "../foundation/BrowserSourcesPanel.js";
+import { BrowserSourceRow } from "../foundation/BrowserSourceRow.js";
 import { createMusicViewAppearance, fitMusicComponentLayout, musicModuleConfigSchema, musicPublicAssetReferenceSchema, projectMusicWidget, type AssetLibraryItem, type MusicAssetResolver, type MusicCssConfig, type MusicModuleConfig, type MusicProfileConfig, type MusicSnapshot, type OverlayOutputView } from "@stream-jams/core";
 import type { MusicCssValidationResult } from "@stream-jams/core/music-style-policy";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -43,6 +44,8 @@ export function MusicPage({ api, assetApi, surfaceApi }: { readonly api: MusicPa
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [revealedOutputs, setRevealedOutputs] = useState<ReadonlySet<string>>(() => new Set());
+  const [regenerateOutput, setRegenerateOutput] = useState<OverlayOutputView | null>(null);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [appearanceComponent, setAppearanceComponent] = useState<"widget" | "artwork" | "title" | "details" | "progress">("widget");
   const [cssOpen, setCssOpen] = useState(false);
@@ -138,32 +141,43 @@ export function MusicPage({ api, assetApi, surfaceApi }: { readonly api: MusicPa
   const resolver: MusicAssetResolver = useMemo(() => ({ resolveAsset: asset => descriptors[asset.assetId]?.url ?? null, resolveArtwork: () => null }), [descriptors]);
   const changeProfile = (next: MusicProfileConfig) => updateDraft(current => ({ ...current, profiles: { ...current.profiles, [profileId]: { ...next, views: { full: fitMusicComponentLayout(next.views.full), compact: fitMusicComponentLayout(next.views.compact) } } } }));
   const changeAppearance = (next: NonNullable<typeof appearance>) => { if (profile !== null) changeProfile({ ...profile, views: { ...profile.views, [view]: next } }); };
-  async function createOutput(output: OverlayOutputView) {
-    if (output.copyableUrlStatus === "regenerate-required" && !window.confirm(`Regenerate the ${output.label} URL? The old URL will stop working.`)) return;
+  async function createOutput(output: OverlayOutputView, regenerate = false) {
     setBusy(true); setError(null);
     try {
       const request = { overlayId: output.overlayId, scope: "module" as const, moduleId: "music", purpose: output.purpose, targetProfileId: output.targetProfileId };
-      const result = output.copyableUrlStatus === "regenerate-required" ? await api.regenerateOverlayOutputKey(request) : await api.createOverlayOutputKey(request);
+      const result = regenerate ? await api.regenerateOverlayOutputKey(request) : await api.createOverlayOutputKey(request);
       if (!mounted.current) return;
       setOutputs(current => current.map(item => item.id === output.id ? { ...item, keyId: result.keyId, url: result.url, copyableUrlStatus: "available" as const } : item));
+      setRegenerateOutput(null); setRevealedOutputs(current => new Set([...current].filter(id => id !== output.id)));
       setNotice({ tone: "success", message: `${output.label} URL is ready. Add it to a browser source in OBS.` });
     } catch (cause) { if (mounted.current) setError(actionableError(cause, "Unable to create Music output link", "Check the output settings and retry.")); }
     finally { if (mounted.current) setBusy(false); }
   }
   async function copyOutput(url: string) {
     try { await navigator.clipboard.writeText(url); setNotice({ tone: "success", message: "Music output URL copied." }); }
-    catch (cause) { setError(actionableError(cause, "Unable to copy Music output URL", "Use Open output to inspect the URL, or allow clipboard access and retry.")); }
+    catch (cause) { setError(actionableError(cause, "Unable to copy Music output URL", "Reveal the URL and copy it manually, or allow clipboard access and retry.")); }
   }
+
+  const sourceRows = (purpose: "live" | "test") => outputs.filter(output => output.purpose === purpose).map(output => {
+    const label = `${output.targetProfileId === "landscape" ? "Landscape" : "Vertical"}${purpose === "test" ? " test" : ""}`;
+    const revealed = revealedOutputs.has(output.id);
+    return <BrowserSourceRow key={output.id} label={label} ready={output.copyableUrlStatus === "available"} width={output.targetProfileId === "landscape" ? 1920 : 1080} height={output.targetProfileId === "landscape" ? 1080 : 1920} telemetry={purpose === "live" ? "Live output" : "Test output"} url={output.url} revealed={revealed} actions={<>
+      {output.copyableUrlStatus === "create-required" ? <button className="button button--secondary" disabled={busy} onClick={() => void createOutput(output)} type="button">Create {label} URL</button> : null}
+      {output.url === null ? null : <><button aria-label={`${revealed ? "Hide" : "Reveal"} ${label} URL`} className="button button--secondary" onClick={() => setRevealedOutputs(current => { const next = new Set(current); if (revealed) next.delete(output.id); else next.add(output.id); return next; })} type="button">{revealed ? "Hide" : "Reveal"}</button><button aria-label={`Copy ${label} URL`} className="button button--secondary" onClick={() => void copyOutput(output.url!)} type="button">Copy</button></>}
+      {output.copyableUrlStatus === "create-required" ? null : <button aria-label={`Regenerate ${label} URL`} className="button button--danger" disabled={busy} onClick={() => setRegenerateOutput(output)} type="button">Regenerate</button>}
+    </>} />;
+  });
 
   if (loading) return <p role="status">Loading Music appearance…</p>;
   if (draft === null || profile === null || appearance === null) return <div><p role="alert">Music appearance could not be loaded.</p>{error === null ? null : <ManagementErrorBanner error={error} />}</div>;
   return <div className="music-editor">
     {error === null ? null : <ManagementErrorBanner error={error} />}
-    <BrowserSourcesPanel label="Music output links" detailsId="music-browser-sources" expanded={sourcesOpen} onToggle={() => setSourcesOpen(current => !current)} readyCount={outputs.filter(output => output.targetProfileId === profileId && output.url !== null).length} needsSetupCount={outputs.filter(output => output.targetProfileId === profileId && output.url === null).length} description="One live or test URL per output profile." context={profileId === "landscape" ? "Landscape" : "Vertical"}>
-      <p>One live or test URL per output profile. Create a link, then add it as a browser source in OBS.</p>
-      <div className="music-editor__actions">{outputs.filter(output => output.targetProfileId === profileId).map(output => <div key={output.id}><strong>{output.purpose === "live" ? "Live" : "Test"}</strong>{output.url === null ? <button disabled={busy} onClick={() => void createOutput(output)} type="button">{output.copyableUrlStatus === "regenerate-required" ? "Regenerate" : "Create"} {output.purpose} output link</button> : <><a href={output.url} rel="noreferrer" target="_blank">Open {output.purpose} output</a><button onClick={() => void copyOutput(output.url!)} type="button">Copy {output.purpose} output URL</button></>}</div>)}</div>
+    <BrowserSourcesPanel label="Music output links" detailsId="music-browser-sources" expanded={sourcesOpen} onToggle={() => setSourcesOpen(current => !current)} readyCount={outputs.filter(output => output.purpose === "live" && output.copyableUrlStatus === "available").length} needsSetupCount={outputs.filter(output => output.purpose === "live" && output.copyableUrlStatus !== "available").length}>
+      <div className="music-browser-sources__list">{sourceRows("live")}</div>
+      {outputs.some(output => output.purpose === "test") ? <details><summary>Test browser sources</summary><div className="music-browser-sources__list">{sourceRows("test")}</div></details> : null}
       {outputs.length === 0 ? <p role="status">No Music outputs were returned. Check the local service and reload this page.</p> : null}
     </BrowserSourcesPanel>
+    <ModalSurface labelledBy="music-regenerate-title" onCancel={() => setRegenerateOutput(null)} open={regenerateOutput !== null}><h2 id="music-regenerate-title">Regenerate Music URL?</h2><p>The current URL will stop working immediately. Update the Browser Source in OBS after regeneration.</p><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={() => setRegenerateOutput(null)} type="button">Cancel</button><button className="button button--danger" disabled={busy} onClick={() => { if (regenerateOutput !== null) void createOutput(regenerateOutput, true); }} type="button">Regenerate URL</button></div></ModalSurface>
     <div className="music-editor__actions"><StatusBadge label={enabled ? "Module enabled" : "Module disabled"} tone={enabled ? "positive" : "neutral"} /><button className="button button--secondary" disabled={busy} onClick={() => setModuleConfirmation(!enabled)} type="button">{enabled ? "Disable Music module" : "Enable Music module"}</button></div>
     <section aria-label="Music preview" className="music-editor__section"><h3>Preview</h3>
 <div className="music-editor__grid"><label>Output profile<select value={profileId} onChange={event => setProfileId(event.currentTarget.value as typeof profileId)}><option value="landscape">Landscape</option><option value="vertical">Vertical</option></select></label><label>Preview view<select value={view} onChange={event => setView(event.currentTarget.value as typeof view)}><option value="full">Full</option><option value="compact">Compact</option></select></label></div><p>Unsaved changes appear here only. Live output continues using saved settings.</p>
