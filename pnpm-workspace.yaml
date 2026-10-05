@@ -5,6 +5,8 @@ nodeVersion: 24.16.0
 engineStrict: true
 runtimeOnFail: download
 overrides:
+  # SWC 1.16.13 rejects the shared cache permissions used by CI containers.
+  '@swc/core': 1.15.41
   # Keep patched archive checks across the dependency graph.
   'tar@<7.5.21': 7.5.21
   'baseline-browser-mapping@>=2.0.0 <2.11.0': 2.11.0
