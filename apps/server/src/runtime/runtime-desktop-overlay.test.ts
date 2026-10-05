@@ -128,6 +128,28 @@ async function setup(withMedia = false) {
   return { runtime, transport, configure, ingest, settled, assetId, pngBytes };
 }
 
+it("returns committed Music saves and enablement despite output failure, then recovers", async () => {
+  const { runtime } = await setup();
+  const session = (await runtime.app.inject({ method: "POST", url: "/auth/management/sessions" })).json() as { id: string; csrfToken: string };
+  const headers = { authorization: `Bearer ${session.id}`, "x-stream-jams-csrf": session.csrfToken };
+  const url = "/overlay-modules/music/config";
+  const original = (await runtime.app.inject({ url, headers })).json();
+  const sink = vi.spyOn(DesktopModuleSnapshotSink.prototype, "syncMusic").mockRejectedValue(new Error("desktop renderer unavailable"));
+  try {
+    const saved = await runtime.app.inject({ method: "PUT", url, headers, payload: { enabled: true, config: original.config } });
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(saved.json()).toMatchObject({ enabled: true, config: original.config });
+    const disabled = await runtime.app.inject({ method: "PATCH", url: "/overlay-modules/music/enabled", headers, payload: { enabled: false } });
+    expect(disabled.statusCode, disabled.body).toBe(200);
+    expect(disabled.json()).toMatchObject({ enabled: false });
+    expect((await runtime.app.inject({ url, headers })).json()).toMatchObject({ enabled: false, config: original.config });
+    expect(sink).toHaveBeenCalled();
+    sink.mockRestore();
+    const recovered = await runtime.app.inject({ method: "PATCH", url: "/overlay-modules/music/enabled", headers, payload: { enabled: true } });
+    expect(recovered.statusCode, recovered.body).toBe(200);
+  } finally { sink.mockRestore(); }
+});
+
 it("coalesces production Music output work while a desktop composition is blocked", async () => {
   const { runtime } = await setup();
   let release!: () => void;

@@ -1464,7 +1464,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       let reject!: (error: unknown) => void;
       const promise = new Promise<void>((accept, fail) => { resolve = accept; reject = fail; });
       void promise.catch(
-        // error-provenance: allow expected -- the tracked output work records failure; awaiting config callers still receive rejection
+        // error-provenance: allow expected -- tracked output work records failures; callers choose whether refresh failure is fatal
         () => {}
       );
       pendingMusicOutputSync = { includeTest: includeTest || activeMusicIncludesTest, promise, resolve, reject };
@@ -1545,6 +1545,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       }
     }
   });
+  const refreshCommittedMusicConfig = async (enabled: boolean): Promise<void> => {
+    // Persistence has committed. Report runtime failures without turning a durable save into a failed request.
+    await Promise.allSettled([trackRuntimeWork(() => enabled ? musicRuntimeCoordinator.refreshConfig() : musicRuntimeCoordinator.reconcile())]);
+    await Promise.allSettled([queueMusicOutputSync(true)]);
+  };
   const runtimeOverlayModuleConfigService: OverlayModuleConfigService = {
     getModuleConfig: (moduleId) => overlayModuleConfigService.getModuleConfig(moduleId),
     async saveModuleConfig(input) {
@@ -1560,7 +1565,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         await effectPlaybackCoordinator.disable();
       }
       if (config.moduleId === "timers") await queueTimerOutputSync();
-      if (config.moduleId === "music") { await (config.enabled ? musicRuntimeCoordinator.refreshConfig() : musicRuntimeCoordinator.reconcile()); await queueMusicOutputSync(true); }
+      if (config.moduleId === "music") await refreshCommittedMusicConfig(config.enabled);
       return config;
     },
     async setModuleEnabled(moduleId, enabled) {
@@ -1571,7 +1576,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         await effectPlaybackCoordinator.disable();
       }
       if (config.moduleId === "timers") await queueTimerOutputSync();
-      if (config.moduleId === "music") { await (config.enabled ? musicRuntimeCoordinator.refreshConfig() : musicRuntimeCoordinator.reconcile()); await queueMusicOutputSync(true); }
+      if (config.moduleId === "music") await refreshCommittedMusicConfig(config.enabled);
       return config;
     }
   };

@@ -161,8 +161,17 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
       });
       // Release strict preview grants after the serialized media mutation has committed.
       if (replacedAssetId !== null) {
-        await dependencies.mediaPreviewService?.invalidateAsset(replacedAssetId);
-        await dependencies.onAssetReplaced?.(replacedAssetId);
+        const assetId = replacedAssetId;
+        for (const refresh of [
+          () => dependencies.mediaPreviewService?.invalidateAsset(assetId),
+          () => dependencies.onAssetReplaced?.(assetId)
+        ]) {
+          try {
+            await refresh();
+          } catch (error) {
+            request.log.warn({ err: error, assetId }, "Asset replacement committed, but a post-commit refresh failed");
+          }
+        }
       }
       return result;
     });

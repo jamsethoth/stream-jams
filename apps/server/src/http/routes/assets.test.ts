@@ -159,6 +159,21 @@ describe("asset routes", () => {
     expect(await repository.findById("asset_1")).toEqual(original);
     expect((await app.inject({ method: "GET", url: "/assets/asset_1/file", headers: authHeaders })).rawPayload).toEqual(pngBytes);
   });
+  it.each(["preview", "output"])("preserves durable replacement success when %s refresh fails", async failing => {
+    const called: string[] = [];
+    const { app, authHeaders, repository } = await createAppWithAssets({
+      onAssetInvalidated: async () => { called.push("preview"); if (failing === "preview") throw new Error("preview unavailable"); },
+      onAssetReplaced: async () => { called.push("output"); if (failing === "output") throw new Error("renderer unavailable"); }
+    });
+    const headers = { ...authHeaders, "content-type": "application/octet-stream", "x-stream-jams-file-name": "brand.png", "x-stream-jams-mime-type": "image/png" };
+    await app.inject({ method: "POST", url: "/assets/import", headers, payload: pngBytes });
+    const response = await app.inject({ method: "POST", url: "/assets/asset_1/replace", headers, payload: replacementPngBytes });
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json()).toEqual(await repository.findById("asset_1"));
+    expect((await app.inject({ url: "/assets/asset_1/file", headers: authHeaders })).rawPayload).toEqual(replacementPngBytes);
+    expect(called).toEqual(["preview", "output"]);
+  });
+
   it("invalidates strict Music previews after a compatible asset replacement", async () => {
     const invalidated: string[] = [];
     const published: string[] = [];
