@@ -10,6 +10,9 @@ export interface ProviderActivationImpactInput {
 }
 
 export function evaluateProviderActivationImpact(input: ProviderActivationImpactInput): ProviderActivationImpact {
+  if (input.capability === "music-source") {
+    return { matchedAlertCount: 0, unmatchedAlertCount: 0, blockers: [], warnings: [] };
+  }
   if (input.capability === "event-source" || !input.changesProviderKind || input.affectedAlertCount === 0) {
     return {
       matchedAlertCount: input.affectedAlertCount,

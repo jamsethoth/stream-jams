@@ -4,9 +4,11 @@ import type {
   OverlayInstruction,
   OverlayModuleSnapshot
 } from "@stream-jams/core";
+import type { MusicAssetResolver } from "@stream-jams/core";
 import {
   connectOverlayClient,
   createOverlayAssetUrl,
+  createOverlayMusicArtworkUrl,
   parseOverlayRoute,
   type OverlayClientConnection,
   type OverlayClientMessage
@@ -143,6 +145,10 @@ export function OverlayApp() {
     (assetId: string, version?: string) => (route === null ? "" : createOverlayAssetUrl(route, assetId, version)),
     [route]
   );
+  const resolveMusicAsset = useMemo<MusicAssetResolver>(() => ({
+    resolveAsset: asset => route === null ? null : createOverlayAssetUrl(route, asset.assetId, asset.version),
+    resolveArtwork: ref => route === null ? null : createOverlayMusicArtworkUrl(route, ref) || null
+  }), [route]);
 
   if (composition === null || muted === null) {
     return <div className="overlay-root" data-testid="overlay-root" style={overlayRootStyle} />;
@@ -156,6 +162,7 @@ export function OverlayApp() {
       moduleMutes={moduleMutes}
       onPlaybackEvent={onPlaybackEvent}
       resolveAssetUrl={resolveOverlayAssetUrl}
+      resolveMusicAsset={resolveMusicAsset}
     />
   );
 }

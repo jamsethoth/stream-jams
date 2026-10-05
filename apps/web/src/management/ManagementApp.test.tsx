@@ -3,9 +3,11 @@ import { createStoryEffectSets } from "../stories/screen-effect-set-fixtures.js"
 import type { AssetRecord } from "./assets/asset-api.js";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { AssetLibraryItem, DiagnosticsWorkspaceView } from "@stream-jams/core";
+import { createDefaultMusicModuleConfig, type AssetLibraryItem, type DiagnosticsWorkspaceView } from "@stream-jams/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ManagementApp as ProductionManagementApp, type ManagementAppProps } from "./ManagementApp.js";
+// These routing checks should not race the editor's cold Vite module transform.
+import "./alerts/editor/AlertEditorPage.js";
 import { createStoryAudioApi } from "../stories/audio-fixtures.js";
 import type { AssetApi } from "./assets/AssetManager.js";
 import type { ManagementApi } from "./management-api.js";
@@ -480,6 +482,15 @@ function createManagementApi(): ManagementApi {
   };
 
   return {
+    getMusicConfig: vi.fn(async () => ({ enabled: false, config: createDefaultMusicModuleConfig() })),
+    saveMusicConfig: vi.fn(async (enabled, config) => ({ enabled, config })),
+    listMusicOutputs: vi.fn(async () => []),
+    beginMusicPairing: vi.fn(async () => ({ attemptId: "pair_test", status: "pending" as const, expiresAt: "2026-07-16T18:00:00.000Z" })),
+    getMusicPairing: vi.fn(async () => ({ attemptId: "pair_test", status: "approved" as const, expiresAt: "2026-07-16T18:00:00.000Z" })),
+    cancelMusicPairing: vi.fn(async () => undefined),
+    getMusicStatus: vi.fn(async () => ({ enabled: false, selectedProviderId: null, status: { state: "disconnected" as const, stale: false, diagnosticReference: null }, missingAssetIds: { landscape: [], vertical: [] } })),
+    reconnectMusicSource: vi.fn(async () => ({ enabled: false, selectedProviderId: null, status: { state: "disconnected" as const, stale: false, diagnosticReference: null }, missingAssetIds: { landscape: [], vertical: [] } })),
+    replaceMusicCredential: vi.fn(async () => ({ validation: { valid: true, connectionState: "connected" as const, intakeState: null, validatedAt: "2026-07-15T05:00:00.000Z", availableVoices: [], error: null }, runtimeReconcilePending: false, credentialRetirementPending: false })),
     reportClientException: vi.fn(async input => ({ referenceId: input.referenceId })),
     getHomeSetupSummary: vi.fn(async () => ({
       readiness: [

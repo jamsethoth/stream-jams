@@ -10,6 +10,19 @@ import {
 } from "./contracts.js";
 
 describe("provider management contracts", () => {
+  it("accepts a loopback Pear music source with default transport and rejects unsafe endpoints", () => {
+    expect(providerSetupInputSchema.parse({ name: "Pear", kind: "pear-desktop", configuration: {} })).toEqual({
+      name: "Pear", kind: "pear-desktop", configuration: { baseUrl: "http://127.0.0.1:26538", transport: "auto" }
+    });
+    expect(providerSetupInputSchema.safeParse({ name: "Pear", kind: "pear-desktop", configuration: { baseUrl: "http://127.2.3.4:26538", transport: "ws" } }).success).toBe(true);
+    expect(providerSetupInputSchema.safeParse({ name: "Pear", kind: "pear-desktop", configuration: { baseUrl: "https://[::1]:26538", transport: "poll" } }).success).toBe(true);
+    for (const baseUrl of ["http://192.168.1.2:26538", "http://127.0.0.1.example:26538", "http://user:pass@localhost:26538", "http://localhost:0", "http://localhost:26538/path", "http://localhost:26538?token=abc"]) {
+      expect(providerSetupInputSchema.safeParse({ name: "Pear", kind: "pear-desktop", configuration: { baseUrl } }).success).toBe(false);
+    }
+    expect(providerCapabilityForKind("pear-desktop")).toBe("music-source");
+    expect(providerSetupInputSchema.safeParse({ name: "Pear", kind: "pear-desktop", configuration: {}, credential: "raw-secret" }).success).toBe(false);
+    expect(providerSetupInputSchema.parse({ name: "Pear", kind: "pear-desktop", configuration: {}, pairingAttemptId: "pair_opaque_123456" })).toMatchObject({ pairingAttemptId: "pair_opaque_123456" });
+  });
   it.each([
     {
       name: "Main Twitch",

@@ -1,5 +1,6 @@
 import type { AlertTextBoxStyle, AlertTextStyle } from "../alerts/text-style.js";
 import type { OverlayModuleSnapshot } from "../overlay-modules/types.js";
+import type { OverlayModulePresentation } from "../overlay-modules/presentation.js";
 import type { SecretRef } from "../security/types.js";
 import type {
   OverlayElementLayout,
@@ -11,6 +12,7 @@ import type { TtsPlaybackInstruction } from "../tts/types.js";
 import type { PlaybackTiming } from "./playback-timing.js";
 
 export type { OverlayElementLayout, OverlayPurpose, OverlayScope, OverlayTargetProfileId };
+export type { OverlayModulePresentation };
 
 export interface ModuleOutputRequest {
   readonly moduleId: string;

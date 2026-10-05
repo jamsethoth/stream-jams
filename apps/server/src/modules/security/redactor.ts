@@ -4,7 +4,7 @@ const defaultReplacement = "[REDACTED]";
 const overlayKeyPattern = /ovl_[A-Za-z0-9_-]+/g;
 const scopedAutomationTokenPattern = /sja_[A-Za-z0-9_-]+/g;
 const timerAutomationTokenPattern = /tmr_[A-Za-z0-9_-]+/g;
-const mediaGrantPattern = /med_[A-Za-z0-9_-]+/g;
+const mediaGrantPattern = /(?:med|mart)_[A-Za-z0-9_-]+/g;
 const authorizationValuePattern = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi;
 const oauthAuthorizationValuePattern = /\bOAuth\s+(?:[A-Za-z][\w-]*\s*=\s*(?:"(?:\\.|[^"\\])*"|[^,;\s]+)(?:\s*,\s*)?)+/gi;
 const standaloneApiKeyPattern = /\bsk-[A-Za-z0-9_-]+\b/g;
@@ -117,7 +117,8 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
   };
 
   function redactUrls(value: string): string {
-    return value.replace(/(?:https?|wss?):\/\/[^\s"'<>]+|\/\/[^\s"'<>]+|\/(?:[^\s"'<>?]*)(?:\?[^\s"'<>]*)/gi, (candidate) => redactUrl(candidate));
+    return value.replace(/(?:https?|wss?):\/\/[^\s"'<>]+|\/\/[^\s"'<>]+|(?<![:/])\/(?:[^\s"'<>?]*)(?:\?[^\s"'<>]*)/gi, (candidate) => redactUrl(candidate));
+
   }
 
   function redactUrl(value: string): string {
@@ -134,6 +135,11 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
     }
 
     let changed = false;
+    if (url.username !== "" || url.password !== "") {
+      url.username = replacement;
+      url.password = replacement;
+      changed = true;
+    }
     for (const name of Array.from(url.searchParams.keys())) {
       if (sensitiveUrlParamNames.has(normalizeName(name))) {
         url.searchParams.set(name, replacement);
@@ -144,6 +150,7 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
     if (!changed) return safeValue;
     if (/^(?:https?|wss?):\/\//i.test(safeValue)) return url.toString();
     return `${safeValue.startsWith("//") ? `//${url.host}` : ""}${url.pathname}${url.search}${url.hash}`;
+
   }
 }
 

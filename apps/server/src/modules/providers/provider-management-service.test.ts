@@ -8,6 +8,7 @@ import type {
   SecretRef,
   StreamerBotSubscriptionSelection
 } from "@stream-jams/core";
+import { pearConfigurationSchema } from "@stream-jams/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryStreamJamsDatabase, type StreamJamsDatabase } from "../db/database.js";
 import {
@@ -19,6 +20,8 @@ import {
   type ProviderManagementAdapter
 } from "./provider-management-service.js";
 import { SqliteProviderRegistrationRepository } from "./sqlite-provider-registration-repository.js";
+import { PearPairingService } from "../music/pear-pairing-service.js";
+import { RuntimeMaintenanceGate, RuntimeMaintenanceUnavailableError } from "../backup/runtime-maintenance-gate.js";
 
 describe("ProviderManagementService", () => {
   let database: StreamJamsDatabase;
@@ -27,7 +30,9 @@ describe("ProviderManagementService", () => {
   let impacts: Map<string, ProviderActivationImpact>;
   let service: ProviderManagementService;
   let eventSourceSyncCount: number;
+  let musicSourceSyncCount: number;
   let logger: Pick<Logger, "error">;
+  let pairing: PearPairingService;
 
   beforeEach(() => {
     database = createInMemoryStreamJamsDatabase();
@@ -37,7 +42,14 @@ describe("ProviderManagementService", () => {
     secrets = new InMemorySecrets();
     impacts = new Map();
     eventSourceSyncCount = 0;
+    musicSourceSyncCount = 0;
     logger = { error: vi.fn(async () => {}) };
+    pairing = new PearPairingService({
+      identityStore: secrets,
+      requestApproval: async () => ({ status: 200, body: { accessToken: "music-secret" } }),
+      generateClientId: () => "client-stable",
+      now: () => Date.now()
+    });
     let id = 0;
     service = new ProviderManagementService({
       repository,
@@ -45,14 +57,18 @@ describe("ProviderManagementService", () => {
         ["twitch", successfulAdapter("active")],
         ["streamerbot", successfulAdapter("active")],
         ["speakerbot", successfulAdapter(null, [{ id: "Brian", label: "Brian" }])],
-        ["browser-speech", successfulAdapter(null)]
+        ["browser-speech", successfulAdapter(null)],
+        ["pear-desktop", successfulAdapter(null)]
       ]),
       secretStore: secrets,
+      musicPairing: pairing,
+      validateMusicConnection: async () => ({ valid: true, connectionState: "connected", intakeState: null, validatedAt: "2026-07-15T12:00:00.000Z", availableVoices: [], error: null }),
       getActivationImpact: async (providerId) => impacts.get(providerId) ?? emptyImpact,
       getUsedByAlertCount: async (kind) => (kind === "speakerbot" ? 3 : 2),
       onEventSourceChanged: async () => {
         eventSourceSyncCount += 1;
       },
+      onMusicSourceChanged: async () => { musicSourceSyncCount += 1; },
       generateId: () => `provider-${++id}`,
       generateReferenceId: () => "provider-ref-1",
       logger,
@@ -102,6 +118,390 @@ describe("ProviderManagementService", () => {
     expect(secrets.values.get("streamerbot:provider-2:password")).toBe("secret");
   });
 
+  it("selects Music independently and only notifies the Music source callback", async () => {
+    await service.registerProvider(twitchSetup());
+    const first = await service.registerProvider(await pearSetup("Pear A"));
+    const second = await service.registerProvider(await pearSetup("Pear B"));
+    expect(first.status).toBe("registered");
+    expect(second.status).toBe("registered");
+    expect(first.provider?.provider).toMatchObject({ capability: "music-source", active: true, intakeState: null });
+    expect(second.provider?.provider.active).toBe(false);
+    expect(eventSourceSyncCount).toBe(1);
+    expect(musicSourceSyncCount).toBe(1);
+    if (second.status !== "registered") throw new Error("Expected second Music source");
+    await service.activateProvider(second.provider.provider.id, false);
+    expect((await repository.findActive("music-source"))?.provider.id).toBe(second.provider.provider.id);
+    expect((await repository.findActive("event-source"))?.provider.kind).toBe("twitch");
+    expect(eventSourceSyncCount).toBe(1);
+    expect(musicSourceSyncCount).toBe(2);
+    await service.deactivateProvider(second.provider.provider.id);
+    expect(musicSourceSyncCount).toBe(3);
+  });
+
+  it("keeps a whole admitted Pear registration inside the restore exclusion gate", async () => {
+    const gate = new RuntimeMaintenanceGate();
+    let release!: () => void;
+    let entered!: () => void;
+    const blocked = new Promise<void>(resolve => { release = resolve; });
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const guarded = new ProviderManagementService({
+      repository, adapters: new Map(), secretStore: secrets, musicPairing: pairing,
+      validateMusicConnection: async () => { entered(); await blocked; return { valid: true, connectionState: "connected", intakeState: null,
+        validatedAt: "2026-07-15T12:00:00.000Z", availableVoices: [], error: null }; },
+      getActivationImpact: async () => emptyImpact, getUsedByAlertCount: async () => 0,
+      generateId: () => "guarded-pear", generateReferenceId: () => "ref-guarded",
+      runMusicMutation: work => gate.runIntake(work)
+    });
+    const registration = guarded.registerProvider(await pearSetup("Pear"));
+    await started;
+    await expect(gate.runMaintenance(async () => "restore")).rejects.toBeInstanceOf(RuntimeMaintenanceUnavailableError);
+    release();
+    expect((await registration).status).toBe("registered");
+    expect(await gate.runMaintenance(async () => "restore")).toBe("restore");
+  });
+
+  it("counts queued replacements through old-secret retirement before restore can begin", async () => {
+    const initial = await service.registerProvider(await pearSetup("Pear"));
+    if (initial.status !== "registered") throw new Error("Expected registration");
+    const id = initial.provider.provider.id;
+    const first = await pearSetup("Pear");
+    const second = await pearSetup("Pear");
+    if (first.kind !== "pear-desktop" || second.kind !== "pear-desktop" || first.pairingAttemptId === undefined || second.pairingAttemptId === undefined) throw new Error("Expected pairings");
+    const gate = new RuntimeMaintenanceGate();
+    const guarded = new ProviderManagementService({
+      repository, adapters: new Map(), secretStore: secrets, musicPairing: pairing,
+      validateMusicConnection: async () => ({ valid: true, connectionState: "connected", intakeState: null,
+        validatedAt: "2026-07-15T12:00:00.000Z", availableVoices: [], error: null }),
+      getActivationImpact: async () => emptyImpact, getUsedByAlertCount: async () => 0,
+      generateId: () => "unused", generateReferenceId: () => "ref-guarded",
+      onMusicSourceChanged: async () => {}, runMusicMutation: work => gate.runIntake(work)
+    });
+    let release!: () => void;
+    let entered!: () => void;
+    const blocked = new Promise<void>(resolve => { release = resolve; });
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const originalDelete = secrets.deleteSecret.bind(secrets);
+    secrets.deleteSecret = async ref => {
+      if (ref.namespace === "music" && ref.name === "access-token") { entered(); await blocked; }
+      await originalDelete(ref);
+    };
+    const replaceOne = guarded.replaceMusicCredential(id, { pairingAttemptId: first.pairingAttemptId, configuration: pearConfigurationSchema.parse(first.configuration) });
+    await started;
+    const replaceTwo = guarded.replaceMusicCredential(id, { pairingAttemptId: second.pairingAttemptId, configuration: pearConfigurationSchema.parse(second.configuration) });
+    try {
+      expect(gate.activeIntakeCount).toBe(2);
+      await expect(gate.runMaintenance(async () => "restore")).rejects.toBeInstanceOf(RuntimeMaintenanceUnavailableError);
+    } finally { release(); }
+    expect((await replaceOne).validation.valid).toBe(true);
+    expect((await replaceTwo).validation.valid).toBe(true);
+    const current = await repository.findById(id);
+    expect([...secrets.values.keys()].filter(key => key.includes("access-token"))).toEqual([`music:${id}:${current?.secretRef?.name}`]);
+    expect(await gate.runMaintenance(async () => "restore")).toBe("restore");
+  });
+
+  it("holds Music selection and its runtime callback inside restore exclusion", async () => {
+    const first = await service.registerProvider(await pearSetup("Pear A"));
+    const second = await service.registerProvider(await pearSetup("Pear B"));
+    if (first.status !== "registered" || second.status !== "registered") throw new Error("Expected registrations");
+    const gate = new RuntimeMaintenanceGate();
+    let release!: () => void;
+    let entered!: () => void;
+    const blocked = new Promise<void>(resolve => { release = resolve; });
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const guarded = new ProviderManagementService({
+      repository, adapters: new Map(), secretStore: secrets,
+      getActivationImpact: async () => emptyImpact, getUsedByAlertCount: async () => 0,
+      generateId: () => "unused", generateReferenceId: () => "ref-guarded",
+      onMusicSourceChanged: async () => { entered(); await blocked; },
+      runMusicMutation: work => gate.runIntake(work)
+    });
+    const selecting = guarded.activateProvider(second.provider.provider.id, false);
+    await started;
+    try { await expect(gate.runMaintenance(async () => "restore")).rejects.toBeInstanceOf(RuntimeMaintenanceUnavailableError); }
+    finally { release(); }
+    expect((await selecting).provider.id).toBe(second.provider.provider.id);
+    expect(await gate.runMaintenance(async () => "restore")).toBe("restore");
+  });
+
+  it("re-pairs a Music registration with a fresh secret ref while preserving its identity and selection", async () => {
+    const initial = await service.registerProvider(await pearSetup("Pear"));
+    if (initial.status !== "registered") throw new Error("Expected registration");
+    const id = initial.provider.provider.id;
+    const before = await repository.findById(id);
+    const next = await pearSetup("ignored name");
+    if (next.kind !== "pear-desktop" || next.pairingAttemptId === undefined) throw new Error("Expected pairing");
+    const result = await service.replaceMusicCredential(id, { pairingAttemptId: next.pairingAttemptId, configuration: pearConfigurationSchema.parse(next.configuration) });
+    const after = await repository.findById(id);
+    expect(result).toMatchObject({ validation: { valid: true }, runtimeReconcilePending: false, credentialRetirementPending: false });
+    expect(after?.provider).toMatchObject({ id, name: "Pear", active: true });
+    expect(after?.secretRef).not.toEqual(before?.secretRef);
+    expect(after?.secretRef === null || after?.secretRef === undefined ? null : await secrets.getSecret(after.secretRef)).toBe("music-secret");
+    expect(before?.secretRef === null || before?.secretRef === undefined ? null : await secrets.getSecret(before.secretRef)).toBeNull();
+    expect(pairing.get(next.pairingAttemptId).status).toBe("cancelled");
+  });
+
+  it("keeps old Music credential and record if a partial new-secret write fails", async () => {
+    const initial = await service.registerProvider(await pearSetup("Pear"));
+    if (initial.status !== "registered") throw new Error("Expected registration");
+    const id = initial.provider.provider.id;
+    const before = await repository.findById(id);
+    const next = await pearSetup("Pear");
+    if (next.kind !== "pear-desktop" || next.pairingAttemptId === undefined) throw new Error("Expected pairing");
+    const baseSet = secrets.setSecret.bind(secrets);
+    secrets.setSecret = async (ref, value) => { await baseSet(ref, value); if (ref.name.startsWith("access-token-")) throw new Error("new keyring write failed"); };
+    await expect(service.replaceMusicCredential(id, { pairingAttemptId: next.pairingAttemptId, configuration: pearConfigurationSchema.parse(next.configuration) })).rejects.toThrow("new keyring write failed");
+    expect(await repository.findById(id)).toEqual(before);
+    expect(secrets.values.get(`music:${id}:access-token`)).toBe("music-secret");
+    expect([...secrets.values.keys()].filter(key => key.includes("access-token-"))).toEqual([]);
+  });
+
+  it("leaves the old Music credential in place when re-pair validation fails", async () => {
+    const initial = await service.registerProvider(await pearSetup("Pear"));
+    if (initial.status !== "registered") throw new Error("Expected registration");
+    const id = initial.provider.provider.id;
+    const before = await repository.findById(id);
+    const rejected = new ProviderManagementService({
+      repository, adapters: new Map(), secretStore: secrets, musicPairing: pairing,
+      validateMusicConnection: async () => { throw new Error("sensitive upstream failure"); },
+      getActivationImpact: async () => emptyImpact, getUsedByAlertCount: async () => 0,
+      generateId: () => "unused", generateReferenceId: () => "ref-validation"
+    });
+    const next = await pearSetup("Pear");
+    if (next.kind !== "pear-desktop" || next.pairingAttemptId === undefined) throw new Error("Expected pairing");
+    const result = await rejected.replaceMusicCredential(id, { pairingAttemptId: next.pairingAttemptId, configuration: pearConfigurationSchema.parse(next.configuration) });
+    expect(result.validation.valid).toBe(false);
+    expect(JSON.stringify(result)).not.toContain("sensitive upstream failure");
+    expect(await repository.findById(id)).toEqual(before);
+    expect(secrets.values.get(`music:${id}:access-token`)).toBe("music-secret");
+  });
+
+  it("compensates a replacement cancelled after its provisional keyring write", async () => {
+    const initial = await service.registerProvider(await pearSetup("Pear"));
+    if (initial.status !== "registered") throw new Error("Expected registration");
+    const id = initial.provider.provider.id;
+    const before = await repository.findById(id);
+    const next = await pearSetup("Pear");
+    if (next.kind !== "pear-desktop" || next.pairingAttemptId === undefined) throw new Error("Expected pairing");
+    const originalSet = secrets.setSecret.bind(secrets);
+    secrets.setSecret = async (ref, value) => {
+      await originalSet(ref, value);
+      if (ref.name.startsWith("access-token-")) await pairing.cancel(next.pairingAttemptId!);
+    };
+    await expect(service.replaceMusicCredential(id, { pairingAttemptId: next.pairingAttemptId, configuration: pearConfigurationSchema.parse(next.configuration) })).rejects.toThrow("no longer approved");
+    expect(await repository.findById(id)).toEqual(before);
+    expect(secrets.values.get(`music:${id}:access-token`)).toBe("music-secret");
+    expect([...secrets.values.keys()].filter(key => key.includes("access-token-"))).toEqual([]);
+  });
+
+  it("keeps old Music credential and record if durable replacement fails", async () => {
+    const initial = await service.registerProvider(await pearSetup("Pear"));
+    if (initial.status !== "registered") throw new Error("Expected registration");
+    const id = initial.provider.provider.id;
+    const before = await repository.findById(id);
+    const next = await pearSetup("Pear");
+    if (next.kind !== "pear-desktop" || next.pairingAttemptId === undefined) throw new Error("Expected pairing");
+    vi.spyOn(repository, "save").mockRejectedValueOnce(new Error("replacement save failed"));
+    await expect(service.replaceMusicCredential(id, { pairingAttemptId: next.pairingAttemptId, configuration: pearConfigurationSchema.parse(next.configuration) })).rejects.toThrow("replacement save failed");
+    expect(await repository.findById(id)).toEqual(before);
+    expect(secrets.values.get(`music:${id}:access-token`)).toBe("music-secret");
+    expect([...secrets.values.keys()].filter(key => key.includes("access-token-"))).toEqual([]);
+  });
+
+  it("reports postcommit callback failure as committed and permits a safe retry", async () => {
+    const initial = await service.registerProvider(await pearSetup("Pear"));
+    if (initial.status !== "registered") throw new Error("Expected registration");
+    const id = initial.provider.provider.id;
+    const replacement = new ProviderManagementService({
+      repository, adapters: new Map(), secretStore: secrets, musicPairing: pairing,
+      validateMusicConnection: async () => ({ valid: true, connectionState: "connected", intakeState: null, validatedAt: "2026-07-15T12:00:00.000Z", availableVoices: [], error: null }),
+      getActivationImpact: async () => emptyImpact, getUsedByAlertCount: async () => 0,
+      onMusicSourceChanged: async () => { throw new Error("runtime unavailable"); },
+      generateId: () => "unused", generateReferenceId: () => "ref-test"
+    });
+    const next = await pearSetup("Pear");
+    if (next.kind !== "pear-desktop" || next.pairingAttemptId === undefined) throw new Error("Expected pairing");
+    const result = await replacement.replaceMusicCredential(id, { pairingAttemptId: next.pairingAttemptId, configuration: pearConfigurationSchema.parse(next.configuration) });
+    expect(result).toMatchObject({ validation: { valid: true }, runtimeReconcilePending: true });
+    const durable = await repository.findById(id);
+    expect(durable?.secretRef?.name).toMatch(/^access-token-/);
+    expect(durable?.provider.active).toBe(true);
+    expect(secrets.values.has(`music:${id}:access-token`)).toBe(false);
+    expect(pairing.get(next.pairingAttemptId).status).toBe("cancelled");
+    const retry = await pearSetup("Pear");
+    if (retry.kind !== "pear-desktop" || retry.pairingAttemptId === undefined) throw new Error("Expected pairing");
+    expect((await service.replaceMusicCredential(id, { pairingAttemptId: retry.pairingAttemptId, configuration: pearConfigurationSchema.parse(retry.configuration) })).validation.valid).toBe(true);
+  });
+
+  it("serializes two approved replacements and retires only superseded credentials", async () => {
+    const initial = await service.registerProvider(await pearSetup("Pear"));
+    if (initial.status !== "registered") throw new Error("Expected registration");
+    const id = initial.provider.provider.id;
+    const first = await pearSetup("Pear");
+    const second = await pearSetup("Pear");
+    if (first.kind !== "pear-desktop" || second.kind !== "pear-desktop" || first.pairingAttemptId === undefined || second.pairingAttemptId === undefined) throw new Error("Expected pairings");
+    const [one, two] = await Promise.all([
+      service.replaceMusicCredential(id, { pairingAttemptId: first.pairingAttemptId, configuration: pearConfigurationSchema.parse(first.configuration) }),
+      service.replaceMusicCredential(id, { pairingAttemptId: second.pairingAttemptId, configuration: pearConfigurationSchema.parse(second.configuration) })
+    ]);
+    expect(one.validation.valid && two.validation.valid).toBe(true);
+    const current = await repository.findById(id);
+    expect(current?.provider).toMatchObject({ id, active: true });
+    expect(current?.secretRef?.name).toMatch(/^access-token-/);
+    expect([...secrets.values.keys()].filter(key => key.includes("access-token"))).toEqual([`music:${id}:${current?.secretRef?.name}`]);
+  });
+
+  it("preserves selection changed while a replacement secret is being stored", async () => {
+    const initial = await service.registerProvider(await pearSetup("Pear A"));
+    const alternate = await service.registerProvider(await pearSetup("Pear B"));
+    if (initial.status !== "registered" || alternate.status !== "registered") throw new Error("Expected registrations");
+    const id = initial.provider.provider.id;
+    const next = await pearSetup("Pear A");
+    if (next.kind !== "pear-desktop" || next.pairingAttemptId === undefined) throw new Error("Expected pairing");
+    let release!: () => void;
+    let entered!: () => void;
+    const blocked = new Promise<void>(resolve => { release = resolve; });
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const originalSet = secrets.setSecret.bind(secrets);
+    secrets.setSecret = async (ref, value) => { if (ref.name.startsWith("access-token-")) { entered(); await blocked; } await originalSet(ref, value); };
+    const replacing = service.replaceMusicCredential(id, { pairingAttemptId: next.pairingAttemptId, configuration: pearConfigurationSchema.parse(next.configuration) });
+    await started;
+    await service.activateProvider(alternate.provider.provider.id, false);
+    release();
+    await replacing;
+    expect((await repository.findById(id))?.provider.active).toBe(false);
+    expect((await repository.findActive("music-source"))?.provider.id).toBe(alternate.provider.provider.id);
+  });
+
+  async function pearSetup(name: string): Promise<ProviderSetupInput> {
+    const attempt = await pairing.begin({ baseUrl: "http://127.0.0.1:26538", transport: "auto" });
+    await vi.waitFor(() => expect(pairing.get(attempt.attemptId).status).toBe("approved"));
+    return { name, kind: "pear-desktop", configuration: {}, pairingAttemptId: attempt.attemptId };
+  }
+
+  it("requires an approved server-side attempt and never returns its token", async () => {
+    const unpaired = await service.registerProvider({ name: "Pear", kind: "pear-desktop", configuration: {} });
+    expect(unpaired.status).toBe("validation-failed");
+    const registered = await service.registerProvider(await pearSetup("Pear"));
+    expect(registered.status).toBe("registered");
+    expect(JSON.stringify(registered)).not.toContain("music-secret");
+    expect(JSON.stringify(registered)).not.toContain("client-stable");
+    expect(secrets.values.get("music:provider-1:access-token")).toBe("music-secret");
+  });
+
+  it("connection-test validation leaves the approved attempt available and does not register", async () => {
+    const setup = await pearSetup("Pear");
+    const checked = await service.validateProvider(setup);
+    expect(checked.valid).toBe(true);
+    expect(await repository.list("music-source")).toEqual([]);
+    expect((await service.registerProvider(setup)).status).toBe("registered");
+  });
+
+  it("preserves the original Music credential when a second registration cannot persist", async () => {
+    const first = await service.registerProvider(await pearSetup("Original"));
+    if (first.status !== "registered") throw new Error("Expected original registration");
+    database.connection.exec(`CREATE TRIGGER reject_second_music BEFORE INSERT ON provider_registrations
+      WHEN NEW.capability = 'music-source' BEGIN SELECT RAISE(FAIL, 'save failed'); END`);
+    await expect(service.registerProvider(await pearSetup("Replacement"))).rejects.toThrow("save failed");
+    expect((await repository.findActive("music-source"))?.provider.id).toBe(first.provider.provider.id);
+    expect(secrets.values.get("music:provider-1:access-token")).toBe("music-secret");
+    expect(secrets.values.has("music:provider-2:access-token")).toBe(false);
+  });
+
+  it("removes a partly written Music credential when the secret store fails", async () => {
+    const partialStore = new InMemorySecrets();
+    const baseSet = partialStore.setSecret.bind(partialStore);
+    partialStore.setSecret = async (ref, value) => {
+      await baseSet(ref, value);
+      if (ref.name === "access-token") throw new Error("keyring write failed");
+    };
+    service = new ProviderManagementService({
+      repository, adapters: new Map(), secretStore: partialStore, musicPairing: pairing,
+      validateMusicConnection: async () => ({ valid: true, connectionState: "connected", intakeState: null, validatedAt: "2026-07-15T12:00:00.000Z", availableVoices: [], error: null }),
+      getActivationImpact: async () => emptyImpact, getUsedByAlertCount: async () => 0,
+      generateId: () => "provider-partial", generateReferenceId: () => "ref-partial"
+    });
+    await expect(service.registerProvider(await pearSetup("Pear"))).rejects.toThrow("keyring write failed");
+    expect(await repository.list("music-source")).toEqual([]);
+    expect(partialStore.values.has("music:provider-partial:access-token")).toBe(false);
+  });
+
+  it("keeps a durable Music credential if runtime notification fails after save", async () => {
+    service = new ProviderManagementService({
+      repository, adapters: new Map(), secretStore: secrets, musicPairing: pairing,
+      validateMusicConnection: async () => ({ valid: true, connectionState: "connected", intakeState: null, validatedAt: "2026-07-15T12:00:00.000Z", availableVoices: [], error: null }),
+      getActivationImpact: async () => emptyImpact, getUsedByAlertCount: async () => 0,
+      generateId: () => "provider-runtime-error", generateReferenceId: () => "ref-runtime-error",
+      onMusicSourceChanged: async () => { throw new Error("runtime unavailable"); }
+    });
+    const result = await service.registerProvider(await pearSetup("Pear"));
+    expect(result.status).toBe("registered");
+    expect((await repository.findActive("music-source"))?.provider.id).toBe("provider-runtime-error");
+    expect(secrets.values.get("music:provider-runtime-error:access-token")).toBe("music-secret");
+  });
+
+  it("refuses a cancelled attempt after validation finishes", async () => {
+    let release!: () => void;
+    service = new ProviderManagementService({
+      repository, adapters: new Map(), secretStore: secrets, musicPairing: pairing,
+      validateMusicConnection: async () => {
+        await new Promise<void>((resolve) => { release = resolve; });
+        return { valid: true, connectionState: "connected", intakeState: null, validatedAt: "2026-07-15T12:00:00.000Z", availableVoices: [], error: null };
+      },
+      getActivationImpact: async () => emptyImpact, getUsedByAlertCount: async () => 0,
+      generateId: () => "provider-cancelled", generateReferenceId: () => "ref-cancelled"
+    });
+    const setup = await pearSetup("Pear");
+    const registration = service.registerProvider(setup);
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    if (setup.kind !== "pear-desktop" || setup.pairingAttemptId === undefined) throw new Error("No pairing attempt");
+    await pairing.cancel(setup.pairingAttemptId);
+    release();
+    await expect(registration).rejects.toThrow("Pear pairing attempt");
+    expect(await repository.list("music-source")).toEqual([]);
+    expect(secrets.values.has("music:provider-cancelled:access-token")).toBe(false);
+  });
+
+  it("lets only one concurrent registration consume an approved pairing", async () => {
+    const setup = await pearSetup("Pear");
+    const [first, second] = await Promise.allSettled([
+      service.registerProvider(setup), service.registerProvider(setup)
+    ]);
+    expect([first, second].filter((result) => result.status === "fulfilled" && result.value.status === "registered")).toHaveLength(1);
+    expect(await repository.list("music-source")).toHaveLength(1);
+    expect([...secrets.values.keys()].filter((key) => key.endsWith(":access-token"))).toHaveLength(1);
+  });
+
+  it("rolls back a Music record and credential if pairing is cancelled during the database write", async () => {
+    let releaseSave!: () => void;
+    let saved!: () => void;
+    const savedSignal = new Promise<void>((resolve) => { saved = resolve; });
+    repository = new class extends SqliteProviderRegistrationRepository {
+      override async save(record: Parameters<SqliteProviderRegistrationRepository["save"]>[0]) {
+        const result = await super.save(record);
+        if (record.provider.kind === "pear-desktop") {
+          saved();
+          await new Promise<void>((resolve) => { releaseSave = resolve; });
+        }
+        return result;
+      }
+    }(database.connection);
+    service = new ProviderManagementService({
+      repository, adapters: new Map(), secretStore: secrets, musicPairing: pairing,
+      validateMusicConnection: async () => ({ valid: true, connectionState: "connected", intakeState: null, validatedAt: "2026-07-15T12:00:00.000Z", availableVoices: [], error: null }),
+      getActivationImpact: async () => emptyImpact, getUsedByAlertCount: async () => 0,
+      generateId: () => "provider-late-cancel", generateReferenceId: () => "ref-late-cancel"
+    });
+    const setup = await pearSetup("Pear");
+    const registration = service.registerProvider(setup);
+    await savedSignal;
+    if (setup.kind !== "pear-desktop" || setup.pairingAttemptId === undefined) throw new Error("No pairing attempt");
+    await pairing.cancel(setup.pairingAttemptId);
+    releaseSave();
+    await expect(registration).rejects.toThrow("Pear pairing attempt");
+    expect(await repository.list("music-source")).toEqual([]);
+    expect(secrets.values.has("music:provider-late-cancel:access-token")).toBe(false);
+  });
+
   it("blocks setup without authentication and persists explicit local consent", async () => {
     const setup = streamerBotSetup();
     if (setup.kind !== "streamerbot") throw new Error("Expected Streamer.bot setup");
@@ -127,6 +527,7 @@ describe("ProviderManagementService", () => {
     expect(detail.provider.error?.nextStep).toContain("Replace");
     expect(JSON.stringify(detail)).not.toContain(sentinel);
     expect(JSON.stringify(await service.listProviders("event-source"))).not.toContain(sentinel);
+
   });
 
   it("blocks unsafe activation and requires confirmation when impact contains warnings", async () => {

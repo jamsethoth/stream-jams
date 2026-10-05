@@ -1,12 +1,26 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { _electron, expect, test } from "@playwright/test";
+
+test("packaged Sharp addon and companion DLLs are accessible to the Windows loader", async () => {
+  const nativeDirectory = "node_modules/@stream-jams/server/node_modules/sharp/node_modules/@img/sharp-win32-x64/lib";
+  const executable = resolve(process.env.STREAM_JAMS_TEST_EXECUTABLE ?? "apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");
+  const unpacked = resolve(dirname(executable), "resources/app.asar.unpacked", nativeDirectory);
+  const files = await readdir(unpacked);
+  const nativeFiles = files.filter((name) => /\.(node|dll)$/i.test(name));
+  expect(nativeFiles.some((name) => name.endsWith(".node"))).toBe(true);
+  expect(nativeFiles.some((name) => name.endsWith(".dll"))).toBe(true);
+  for (const name of nativeFiles) {
+    // ASAR virtual files cannot satisfy dependencies loaded by Windows itself.
+    await access(resolve(unpacked, name));
+  }
+});
 
 test("bundled utility worker starts, acknowledges persisted mute, and exits after stop", async () => {
   const root = await mkdtemp(join(tmpdir(), "stream-jams-utility-test-"));
@@ -22,9 +36,10 @@ test("bundled utility worker starts, acknowledges persisted mute, and exits afte
   delete env.ELECTRON_RUN_AS_NODE;
   env.STREAM_JAMS_CONFIG_PATH = configPath;
   env.STREAM_JAMS_DESKTOP_USER_DATA_PATH = join(root, "electron");
+  const packagedExecutable = resolve(process.env.STREAM_JAMS_TEST_EXECUTABLE ?? "apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");
   const desktop = await _electron.launch({
     executablePath: require("electron") as string,
-    args: [resolve("tests/desktop/fixtures/utility-host.mjs"), resolve("apps/desktop/out/Stream Jams-win32-x64/resources/app.asar/dist/service-worker.js")],
+    args: [resolve("tests/desktop/fixtures/utility-host.mjs"), resolve(dirname(packagedExecutable), "resources/app.asar/dist/service-worker.js")],
     cwd: root, env, chromiumSandbox: true, timeout: 30_000
   });
   const mainPid = await desktop.evaluate(() => process.pid);

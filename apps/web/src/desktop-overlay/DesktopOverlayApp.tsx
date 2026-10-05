@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
-import type { OverlayComposition, OverlayInstruction, VisualRecipientKey } from "@stream-jams/core";
+import { privateDesktopMusicArtworkUrl, type MusicAssetResolver, type OverlayComposition, type OverlayInstruction, type VisualRecipientKey } from "@stream-jams/core";
 import { OverlaySurface, type OverlayPlaybackEvent } from "../overlay/components/OverlaySurface.js";
 import { moduleAssetKey, type DesktopOverlayController } from "./desktop-overlay-controller.js";
 
@@ -31,7 +31,7 @@ export function DesktopOverlayApp({ controller, subscribe }: {
               textStyle: { ...instruction.text.textStyle, fontAssetId: scopedId(occurrence.key, instruction.text.textStyle.fontAssetId) }
             }
           }))),
-        ...(persistent === undefined ? {} : { presentation: { ...persistent.presentation, stack: {
+        ...(persistent === undefined ? {} : persistent.presentation.kind !== "timer-stack" ? { presentation: persistent.presentation } : { presentation: { ...persistent.presentation, stack: {
           ...persistent.presentation.stack,
           cards: persistent.presentation.stack.cards.map(card => ({ ...card, iconAssetId: card.iconAssetId === null ? null :
             scopedModuleAssetId(persistent.moduleId, persistent.revision, moduleAssetKey(card.iconAssetId, card.iconVersion)) }))
@@ -48,6 +48,18 @@ export function DesktopOverlayApp({ controller, subscribe }: {
     }
     return "";
   }, [controller]);
+  const resolveMusicAsset = useMemo<MusicAssetResolver>(() => ({
+    resolveAsset: asset => {
+      const music = controller.getSnapshot().modules.find(module => module.moduleId === "music" && module.presentation.kind === "music-widget");
+      return music?.assetUrls.get(moduleAssetKey(asset.assetId, asset.version)) ?? null;
+    },
+    resolveArtwork: (ref, snapshot) => {
+      const music = controller.getSnapshot().modules.find(module => module.moduleId === "music" && module.presentation.kind === "music-widget");
+      if (music?.presentation.kind !== "music-widget" || music.artwork?.ref !== ref ||
+        music.presentation.widget.snapshot.providerId !== snapshot.providerId || music.presentation.widget.snapshot.generation !== snapshot.generation) return null;
+      return privateDesktopMusicArtworkUrl(music.artwork);
+    }
+  }), [controller]);
   const onPlaybackEvent = useCallback((event: OverlayPlaybackEvent) => {
     const occurrence = controller.getSnapshot().occurrences.find(value => value.instructions.some(instruction => scopedId(value.key, instruction.id) === event.instructionId));
     if (occurrence === undefined) return;
@@ -60,5 +72,5 @@ export function DesktopOverlayApp({ controller, subscribe }: {
   }, [controller]);
   const preparingInstructionIds = useMemo(() => new Set(snapshot.occurrences.filter(occurrence => occurrence.preparing === true)
     .flatMap(occurrence => occurrence.instructions.map(instruction => scopedId(occurrence.key, instruction.id)))), [snapshot]);
-  return <OverlaySurface composition={composition} muted preparingInstructionIds={preparingInstructionIds} resolveAssetUrl={resolveAssetUrl} onPlaybackEvent={onPlaybackEvent} />;
+  return <OverlaySurface composition={composition} muted preparingInstructionIds={preparingInstructionIds} resolveAssetUrl={resolveAssetUrl} resolveMusicAsset={resolveMusicAsset} onPlaybackEvent={onPlaybackEvent} />;
 }

@@ -140,7 +140,9 @@ it("exports portable consent without secrets, restores into a second runtime, an
   expect(validated.state, JSON.stringify(validated)).toBe("valid");
   const restored = await target.request("/management/settings/backup/restore", "POST", { archive, archiveId: validated.archiveId, confirmation: "RESTORE", regenerateRouteKeys: true });
   expect(restored.status, await restored.clone().text()).toBe(200);
-  expect(target.secretStore.values.size).toBe(0);
+  // Music creates only a local stable pairing identity; provider credentials remain excluded.
+  expect([...target.secretStore.values.keys()]).toEqual(["music:pear-desktop:client-id"]);
+  expect([...target.secretStore.values.values()]).not.toContain("backup-password-sentinel");
   const readback = await target.request(`/management/providers/${id}`);
   expect(await readback.json()).toMatchObject({ configuration: { allowUnauthenticatedLocalConnection: true } });
   const snapshots = new SqliteConfigurationSnapshotRepository(target.runtime.composition.database.connection);
@@ -161,6 +163,8 @@ it("exports portable consent without secrets, restores into a second runtime, an
   await runtime.stop();
   expect(await runtime.readLogs()).not.toContain("backup-password-sentinel");
   await target.start();
-  expect(target.secretStore.values.size).toBe(0);
+  // Music creates only a local stable pairing identity; provider credentials remain excluded.
+  expect([...target.secretStore.values.keys()]).toEqual(["music:pear-desktop:client-id"]);
+  expect([...target.secretStore.values.values()]).not.toContain("backup-password-sentinel");
   expect(target.runtime.composition.streamerBotRuntimeService.getStatus().state).toBe("error");
 }, 30_000);

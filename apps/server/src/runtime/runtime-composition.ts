@@ -23,6 +23,8 @@ import {
   createDefaultOverlayModuleRegistry,
   isStreamerBotSubscriptionAvailable,
   overlayScopeSchema,
+  pearConfigurationSchema,
+  musicModuleConfigSchema,
   type ActionableManagementError,
   type AlertEditorErrorReportInput,
   type AudioDeviceHost,
@@ -116,6 +118,13 @@ import { PlaybackOperationsService } from "../modules/playback/playback-operatio
 import { createAlertQueueOwner, createEffectQueueOwner } from "../modules/playback/playback-queue-owners.js";
 import { ManagementOverviewService } from "../modules/providers/management-overview-service.js";
 import { createProviderManagementAdapters } from "../modules/providers/provider-management-adapters.js";
+import { PearPairingService } from "../modules/music/pear-pairing-service.js";
+import { PearMusicSource, validatePearMusicConnection } from "../modules/music/pear-music-source.js";
+import { MusicRuntimeCoordinator } from "../modules/music/music-runtime-coordinator.js";
+import { MusicManagementService } from "../modules/music/music-management-service.js";
+import { saveValidatedMusicConfig } from "../modules/music/music-config-save.js";
+import { MusicArtworkService, type MusicArtworkServiceOptions } from "../modules/music/music-artwork-service.js";
+import { MusicOutputRuntime } from "../modules/music/music-output-runtime.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
 import { evaluateProviderActivationImpact } from "../modules/providers/provider-activation-impact.js";
 import { SqliteProviderRegistrationRepository } from "../modules/providers/sqlite-provider-registration-repository.js";
@@ -197,6 +206,8 @@ export interface RuntimeAppCompositionOptions {
   readonly configStore?: ConfigStore;
   readonly portAvailability?: PortAvailabilityChecker;
   readonly secretStore?: SecretStore;
+  /** In-process artwork transport for disposable acceptance; normal runtime keeps pinned DNS and HTTPS. */
+  readonly musicArtworkNetwork?: Pick<MusicArtworkServiceOptions, "resolveAddresses" | "fetchBytes">;
   readonly twitchApiClient?: TwitchApiClient;
   readonly twitchRewardApiClient?: TwitchRewardApiClient;
   readonly twitchEventSubApiClient?: TwitchEventSubApiClient;
@@ -220,6 +231,8 @@ export interface RuntimeAppComposition {
   readonly effectPlaybackCoordinator: EffectPlaybackCoordinator;
   readonly timerManagementService: TimerManagementService;
   readonly timerRuntimeCoordinator: TimerRuntimeCoordinator;
+  readonly musicRuntimeCoordinator: MusicRuntimeCoordinator;
+  readonly musicArtworkService: MusicArtworkService;
   readonly playbackOperationsService: PlaybackOperationsService;
   readonly app: FastifyInstance;
   readonly configStore: ConfigStore;
@@ -943,6 +956,57 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     unref?.call(twitchValidationInterval);
   }
   cleanups.push(() => (options.cancelRecurring ?? clearInterval)(twitchValidationInterval as ReturnType<typeof setInterval>));
+  const musicPairingService = new PearPairingService({ identityStore: secretStore });
+  cleanups.push(() => musicPairingService.dispose());
+  const musicRuntimeCoordinator = new MusicRuntimeCoordinator({
+    getConfig: async () => {
+      const module = await overlayModuleConfigService.getModuleConfig("music");
+      return { enabled: module.enabled, config: module.config };
+    },
+    getActiveSource: async () => {
+      const active = await providerRegistrationRepository.findActive("music-source");
+      if (active?.provider.kind !== "pear-desktop" || active.secretRef === null) return null;
+      const token = await secretStore.getSecret(active.secretRef);
+      if (token === null) return null;
+      const parsed = pearConfigurationSchema.safeParse(active.configuration);
+      return parsed.success ? { providerId: active.provider.id, configuration: parsed.data, token } : null;
+    },
+    createSource: (selected, generation) => new PearMusicSource({
+      config: selected.configuration, token: selected.token, providerId: selected.providerId, generation,
+      now: () => now().getTime()
+    }),
+    now: () => now().getTime()
+  });
+  cleanups.push(() => musicRuntimeCoordinator.stop());
+  await musicRuntimeCoordinator.reconcile();
+  const musicArtworkService = new MusicArtworkService({
+    getPolicy: owner => musicRuntimeCoordinator.getArtworkPolicy(owner),
+    ...options.musicArtworkNetwork,
+    isCurrentOwner: owner => musicRuntimeCoordinator.generation === owner.generation
+      && musicRuntimeCoordinator.getCurrentArtwork()?.owner.providerId === owner.providerId,
+    isCurrentDescriptor: (url, owner) => {
+      const current = musicRuntimeCoordinator.getCurrentArtwork();
+      return current?.owner.generation === owner.generation && current.owner.providerId === owner.providerId && current.descriptor.url === url;
+    }
+  });
+  let artworkGeneration = musicRuntimeCoordinator.generation;
+  let artworkProvider = musicRuntimeCoordinator.getCurrentArtwork()?.owner.providerId ?? null;
+  const unsubscribeArtwork = musicRuntimeCoordinator.subscribe(() => {
+    const next = musicRuntimeCoordinator.generation;
+    const current = musicRuntimeCoordinator.getCurrentArtwork();
+    if (next !== artworkGeneration && artworkGeneration !== null && artworkProvider !== null) {
+      void musicArtworkService.clearGeneration({ providerId: artworkProvider, generation: artworkGeneration });
+    }
+    if (next === artworkGeneration && current === null && artworkGeneration !== null && artworkProvider !== null) {
+      void musicArtworkService.clearGeneration({ providerId: artworkProvider, generation: artworkGeneration });
+    }
+    artworkGeneration = next;
+    artworkProvider = current?.owner.providerId ?? artworkProvider;
+  });
+  cleanups.push(async () => {
+    unsubscribeArtwork();
+    if (artworkGeneration !== null && artworkProvider !== null) await musicArtworkService.clearGeneration({ providerId: artworkProvider, generation: artworkGeneration });
+  });
   const providerManagementService = new ProviderManagementService({
     repository: providerRegistrationRepository,
     adapters: createProviderManagementAdapters({
@@ -954,16 +1018,23 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       now
     }),
     secretStore,
+    musicPairing: musicPairingService,
+    validateMusicConnection: (config, token, signal) => validatePearMusicConnection(config, token, signal, now),
     async getActivationImpact(providerId) {
       const target = await providerRegistrationRepository.findById(providerId);
       if (target === null) {
+        return { matchedAlertCount: 0, unmatchedAlertCount: 0, blockers: [], warnings: [] };
+      }
+      if (target.provider.capability === "music-source") {
         return { matchedAlertCount: 0, unmatchedAlertCount: 0, blockers: [], warnings: [] };
       }
       const activeRules = await alertService.listActiveRules();
       const affectedAlertCount =
         target.provider.capability === "event-source"
           ? activeRules.length
-          : activeRules.filter((rule) => rule.variants.some((variant) => variant.enabled && variant.ttsConfig !== null)).length;
+          : target.provider.capability === "tts"
+            ? activeRules.filter((rule) => rule.variants.some((variant) => variant.enabled && variant.ttsConfig !== null)).length
+            : 0;
       const current = await providerRegistrationRepository.findActive(target.provider.capability);
       const changesProviderKind =
         current !== null && current.provider.id !== target.provider.id && current.provider.kind !== target.provider.kind;
@@ -977,6 +1048,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       });
     },
     async getUsedByAlertCount(kind: ProviderKind) {
+      if (kind === "pear-desktop") return 0;
       const activeRules = await alertService.listActiveRules();
       return kind === "speakerbot" || kind === "browser-speech"
         ? activeRules.filter((rule) => rule.variants.some((variant) => variant.enabled && variant.ttsConfig !== null)).length
@@ -989,6 +1061,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     getVerifiedTwitchBroadcasterId: async () =>
       (await twitchAccountRepository.findConnectedAccount())?.accountId ?? null,
     onEventSourceChanged: syncEventSourceRuntime,
+    onMusicSourceChanged: () => musicRuntimeCoordinator.reconcile(),
+    runMusicMutation: work => maintenanceGate.runIntake(work),
     now
   });
   const alertSetMetadataRepository = new SqliteAlertSetMetadataRepository(database.connection);
@@ -1106,6 +1180,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     alertRepository,
     effectRepository,
     timerRepository: timerDefinitionRepository,
+    getMusicConfig: async () => (await overlayModuleConfigService.getModuleConfig("music")).config as import("@stream-jams/core").MusicModuleConfig,
     ruleMetadataRepository: alertSetMetadataRepository,
     deletePersistedAsset: assetId => maintenanceGate.runConfigurationMutation(
       () => runInTransaction(database.connection, () => assetRepository.deleteSync(assetId))
@@ -1113,6 +1188,15 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     clock: now,
     durationCatalog: assetDurationCatalog,
     metadataProbe: mediaMetadataProbe
+  });
+  const musicManagementService = new MusicManagementService({
+    providers: providerRegistrationRepository,
+    runtime: musicRuntimeCoordinator,
+    getConfig: async () => {
+      const module = await overlayModuleConfigService.getModuleConfig("music");
+      return { enabled: module.enabled, config: module.config };
+    },
+    assets: assetLibraryService
   });
   const configurationBackupService = new ConfigurationBackupService({
     deferRetiredAssetCleanup: true,
@@ -1190,6 +1274,29 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         ]);
       }
     },
+    musicRestore: {
+      async captureCredentials() {
+        const registrations = await providerRegistrationRepository.list("music-source");
+        return {
+          identity: await secretStore.getSecret({ namespace: "music", accountId: "pear-desktop", name: "client-id" }),
+          secretRefs: registrations.flatMap(registration => registration.secretRef === null ? [] : [registration.secretRef])
+        };
+      },
+      suspend: () => musicRuntimeCoordinator.suspendForMaintenance(),
+      resume: () => musicRuntimeCoordinator.resumeAfterMaintenance(),
+      async rotateIdentity() {
+        await musicPairingService.changeIdentity(() =>
+          secretStore.setSecret({ namespace: "music", accountId: "pear-desktop", name: "client-id" }, randomUUID())
+        );
+      },
+      async restoreIdentity(identity) {
+        const ref = { namespace: "music", accountId: "pear-desktop", name: "client-id" } as const;
+        await musicPairingService.changeIdentity(() => identity === null
+          ? secretStore.deleteSecret(ref)
+          : secretStore.setSecret(ref, identity));
+      },
+      deleteOldSecret: ref => secretStore.deleteSecret(ref)
+    },
     runExclusive: (work) => maintenanceGate.runMaintenance(() => localMediaService.maintenance(work))
   });
   const managementOverviewService = new ManagementOverviewService({
@@ -1252,6 +1359,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     }, input.exception);
     return { referenceId: input.referenceId };
   };
+  const musicOutputRuntime = new MusicOutputRuntime({
+    runtime: musicRuntimeCoordinator,
+    assets: assetLibraryService,
+    getConfig: async () => (await overlayModuleConfigService.getModuleConfig("music")).config as import("@stream-jams/core").MusicModuleConfig,
+    now: () => now().getTime()
+  });
   const overlayModuleRuntimes = new Map<string, OverlayModuleRuntime>([
     ["alerts", {
       async getModuleSnapshot() {
@@ -1261,7 +1374,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       }
     }],
     ["screen-effects", effectPlaybackCoordinator],
-    ["timers", timerRuntimeCoordinator]
+    ["timers", timerRuntimeCoordinator],
+    ["music", musicOutputRuntime]
   ]);
   const overlayCompositionService = new DefaultOverlayCompositionService({
     surfaceRepository,
@@ -1279,6 +1393,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     surfaces: surfaceRepository,
     runtime: timerRuntimeCoordinator,
     assets: desktopVisualAssetResolver,
+    music: { runtime: musicOutputRuntime, coordinator: musicRuntimeCoordinator, assets: desktopVisualAssetResolver, artwork: musicArtworkService },
     logger: runtimeLogger,
     generateReferenceId: generateRuntimeReferenceId
   });
@@ -1307,6 +1422,58 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     return pending;
   };
   const unsubscribeTimerOutputs = timerRuntimeCoordinator.subscribe(() => { void trackRuntimeWork(queueTimerOutputSync); });
+  const syncMusicOutputs = async (includeTest: boolean) => {
+    const revision = musicRuntimeCoordinator.revision;
+    const generation = musicRuntimeCoordinator.generation;
+    const moduleIds = overlayModuleRegistry.listModules().map(module => module.id);
+    await Promise.all(overlayGateway.clients.filter(client =>
+      (includeTest || client.purpose === "live") && (client.scope === "unified" || client.moduleId === "music")
+    ).map(async client => {
+      const composition = client.scope === "module"
+        ? await overlayCompositionService.resolveModuleOutput({ moduleId: "music", overlayId: client.overlayId, purpose: client.purpose,
+          ...(client.targetProfileId == null ? {} : { targetProfileId: client.targetProfileId }) })
+        : await overlayCompositionService.resolveUnifiedOutput({ overlayId: client.overlayId, purpose: client.purpose, enabledModuleIds: moduleIds });
+      if (musicRuntimeCoordinator.revision === revision && musicRuntimeCoordinator.generation === generation) overlayGateway.deliverComposition(client.id, composition);
+    }));
+    if (musicRuntimeCoordinator.revision !== revision || musicRuntimeCoordinator.generation !== generation) return;
+    await desktopModuleSnapshotSink?.syncMusic();
+  };
+  let activeMusicOutputSync: Promise<void> | null = null;
+  let activeMusicIncludesTest = false;
+  let pendingMusicOutputSync: { includeTest: boolean; promise: Promise<void>; resolve(): void; reject(error: unknown): void } | null = null;
+  const launchMusicOutputSync = (includeTest: boolean): Promise<void> => {
+    activeMusicIncludesTest = includeTest;
+    const work = trackRuntimeWork(() => syncMusicOutputs(includeTest));
+    activeMusicOutputSync = work;
+    const finish = () => {
+      activeMusicOutputSync = null;
+      const pending = pendingMusicOutputSync;
+      pendingMusicOutputSync = null;
+      if (pending !== null) {
+        const next = launchMusicOutputSync(pending.includeTest);
+        void next.then(pending.resolve, pending.reject);
+      }
+    };
+    void work.then(finish, finish);
+    return work;
+  };
+  const queueMusicOutputSync = (includeTest = false): Promise<void> => {
+    if (activeMusicOutputSync === null) return launchMusicOutputSync(includeTest);
+    if (pendingMusicOutputSync === null) {
+      let resolve!: () => void;
+      let reject!: (error: unknown) => void;
+      const promise = new Promise<void>((accept, fail) => { resolve = accept; reject = fail; });
+      void promise.catch(
+        // error-provenance: allow expected -- tracked output work records failures; callers choose whether refresh failure is fatal
+        () => {}
+      );
+      pendingMusicOutputSync = { includeTest: includeTest || activeMusicIncludesTest, promise, resolve, reject };
+    } else {
+      pendingMusicOutputSync.includeTest ||= includeTest;
+    }
+    return pendingMusicOutputSync.promise;
+  };
+  const unsubscribeMusicOutputs = musicRuntimeCoordinator.subscribe(() => { void queueMusicOutputSync(); });
   for (const surface of await surfaceRepository.list()) {
     if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
   }
@@ -1320,7 +1487,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     moduleIds: () => overlayModuleRegistry.listModules().map(module => module.id),
     changed: async surface => {
       if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
-      if (surface.kind === "desktop") await queueTimerOutputSync();
+      if (surface.kind === "desktop") await Promise.all([queueTimerOutputSync(), queueMusicOutputSync()]);
     },
     runMutation: work => maintenanceGate.runIntake(work),
     logger: runtimeLogger,
@@ -1330,6 +1497,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     try {
       await surfaceSettingsService.initializeDesktop();
       await queueTimerOutputSync();
+      await queueMusicOutputSync();
     } catch (error) {
       await runtimeLogger.error("Desktop overlay could not be reconciled or configured. Other outputs remain available.", {
         module: "overlay-surfaces", source: "desktop-overlay.configure.failed", correlationId: generateRuntimeReferenceId(), processingId: null,
@@ -1377,16 +1545,27 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       }
     }
   });
+  const refreshCommittedMusicConfig = async (enabled: boolean): Promise<void> => {
+    // Persistence has committed. Report runtime failures without turning a durable save into a failed request.
+    await Promise.allSettled([trackRuntimeWork(() => enabled ? musicRuntimeCoordinator.refreshConfig() : musicRuntimeCoordinator.reconcile())]);
+    await Promise.allSettled([queueMusicOutputSync(true)]);
+  };
   const runtimeOverlayModuleConfigService: OverlayModuleConfigService = {
     getModuleConfig: (moduleId) => overlayModuleConfigService.getModuleConfig(moduleId),
     async saveModuleConfig(input) {
-      const config = await maintenanceGate.runConfigurationMutation(
-        () => overlayModuleConfigService.saveModuleConfig(input)
-      );
+      const save = async () => maintenanceGate.runConfigurationMutation(async () => {
+        if (input.moduleId === "music") {
+          const parsed = musicModuleConfigSchema.safeParse(input.config);
+          if (parsed.success) await assetLibraryService.validateMusicAssetReferences(parsed.data);
+        }
+        return saveValidatedMusicConfig(overlayModuleConfigService, input);
+      });
+      const config = input.moduleId === "music" ? await localMediaService.mutate(save) : await save();
       if (config.moduleId === "screen-effects" && !config.enabled) {
         await effectPlaybackCoordinator.disable();
       }
       if (config.moduleId === "timers") await queueTimerOutputSync();
+      if (config.moduleId === "music") await refreshCommittedMusicConfig(config.enabled);
       return config;
     },
     async setModuleEnabled(moduleId, enabled) {
@@ -1397,6 +1576,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         await effectPlaybackCoordinator.disable();
       }
       if (config.moduleId === "timers") await queueTimerOutputSync();
+      if (config.moduleId === "music") await refreshCommittedMusicConfig(config.enabled);
       return config;
     }
   };
@@ -1425,6 +1605,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     configurationBackupService,
     managementOverviewService,
     providerManagementService,
+    musicPairingService,
+    musicManagementService,
     alertSetManagementService,
     alertEditorService,
     managementAssetLibraryService: assetLibraryService,
@@ -1445,6 +1627,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     mediaImportPipeline,
     assetStore,
     localMediaService,
+    musicArtworkService,
+    musicRuntimeCoordinator,
+    isDesktopMusicVisible: async () => (await surfaceRepository.list()).some(surface => surface.kind === "desktop" && surface.enabled && surface.displayId !== null &&
+      surface.layers.some(layer => layer.moduleId === "music" && layer.visible)),
+    onAssetReplaced: async () => { await queueMusicOutputSync(true); },
     mediaPreviewService,
     assetLibraryService,
     playbackCoordinator,
@@ -1515,6 +1702,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   cleanups.push(() => timerRuntimeCoordinator.close());
   cleanups.push(async () => {
     unsubscribeTimerOutputs();
+    unsubscribeMusicOutputs();
     await timerOutputSyncTail;
     await desktopModuleSnapshotSink?.close();
   });
@@ -1527,6 +1715,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     effectPlaybackCoordinator,
     timerManagementService,
     timerRuntimeCoordinator,
+    musicRuntimeCoordinator,
+    musicArtworkService,
     playbackOperationsService,
     configStore,
     database,

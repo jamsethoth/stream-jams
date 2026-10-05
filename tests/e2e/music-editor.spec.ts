@@ -1,0 +1,149 @@
+import { expect, test } from "@playwright/test";
+import type { MusicModuleConfig } from "../../packages/core/dist/index.js";
+import { startMusicTestRuntime } from "./music-test-runtime.js";
+
+test("Music browser sources show both profiles with masked keys and responsive actions", async ({ page }) => {
+  const fixture = await startMusicTestRuntime();
+  try {
+    for (const targetProfileId of ["landscape", "vertical"] as const) await fixture.request("/management/overlay-outputs/keys", "POST", { overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId });
+    await page.goto(`${fixture.url}/manage/modules/music`);
+    await page.getByRole("button", { name: "Expand browser sources" }).click();
+    const panel = page.getByRole("region", { name: "Music output links" });
+    await expect(panel.getByRole("article", { name: "Landscape browser source" })).toContainText("1920 x 1080");
+    await expect(panel.getByRole("article", { name: "Vertical browser source" })).toContainText("1080 x 1920");
+    await expect(panel.getByRole("textbox")).toHaveCount(0);
+    await expect(panel.locator("code").first()).toContainText("********");
+    for (const width of [1440, 600]) {
+      await page.setViewportSize({ width, height: 1000 });
+      for (const label of ["Landscape", "Vertical"]) {
+        const row = panel.getByRole("article", { name: `${label} browser source` });
+        expect(await row.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+        await expect(row.getByRole("button", { name: `Regenerate ${label} URL` })).toBeVisible();
+      }
+      await panel.screenshot({ path: `.superpowers/music-browser-sources-${width}.png` });
+    }
+    await panel.getByRole("button", { name: "Reveal Vertical URL" }).click();
+    await expect(panel.getByLabel("Vertical browser source URL")).toHaveValue(/\/live\//u);
+    await panel.getByRole("button", { name: "Hide Vertical URL" }).click();
+    await expect(panel.getByRole("textbox")).toHaveCount(0);
+  } finally { await fixture.close(); }
+});
+
+test("Music editor saves dragged and resized components to the live output", async ({ page, context }) => {
+  test.setTimeout(90_000);
+  const fixture = await startMusicTestRuntime();
+  try {
+    fixture.pear.setSong({ status: 200, body: { videoId: "editor-song", title: "Layout Track", artist: "Fixture", songDuration: 180, elapsedSeconds: 12, isPaused: false } });
+    await fixture.register();
+    const saved = await fixture.request<{ config: MusicModuleConfig }>("/overlay-modules/music/config");
+    await fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: saved.config });
+    const output = await fixture.request<{ url: string }>("/management/overlay-outputs/keys", "POST", { overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId: "landscape" });
+    await page.goto(`${fixture.url}/manage/modules/music`);
+    const preview = page.getByRole("region", { name: "Music preview" });
+    await expect(preview.getByTestId("music-widget")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Expand appearance" })).toHaveAttribute("aria-expanded", "false");
+    await page.getByRole("button", { name: "Expand appearance" }).click();
+    await expect(page.getByLabel("Initial view")).toBeVisible();
+    await page.getByLabel("Appearance component").selectOption("title");
+    const color = page.getByLabel("Title color", { exact: true });
+    await color.fill("#123456");
+    await expect(page.getByLabel("Title RGBA", { exact: true })).toHaveValue("#123456FF");
+    await page.getByRole("button", { name: "Collapse appearance" }).click();
+    await page.getByRole("button", { name: "Edit layout" }).click();
+    await page.getByRole("button", { name: "Move Title", exact: true }).click();
+    await expect(page.getByLabel("Appearance component")).toHaveValue("title");
+    const width = page.getByLabel("Title width (px)");
+    await width.fill("200"); await width.press("Tab");
+    const move = page.getByRole("button", { name: "Move Title", exact: true });
+    const originalX = Number(await page.getByLabel("Title X (px)").inputValue());
+    const box = (await move.boundingBox())!;
+    await page.mouse.move(box.x + 10, box.y + 10);
+    await page.mouse.down(); await page.mouse.move(box.x - 10, box.y + 15, { steps: 5 }); await page.mouse.up();
+    await expect.poll(async () => Number(await page.getByLabel("Title X (px)").inputValue())).toBeLessThan(originalX);
+    const resize = page.getByRole("button", { name: "Resize Title", exact: true });
+    const corner = (await resize.boundingBox())!;
+    await page.mouse.move(corner.x + corner.width / 2, corner.y + corner.height / 2);
+    await page.mouse.down(); await page.mouse.move(corner.x + corner.width / 2 + 20, corner.y + corner.height / 2 + 8, { steps: 5 }); await page.mouse.up();
+    await expect.poll(async () => Number(await width.inputValue())).toBeGreaterThan(200);
+    await move.focus(); await move.press("ArrowRight");
+    expect((await fixture.request<{ config: MusicModuleConfig }>("/overlay-modules/music/config")).config.profiles.landscape.views.full.componentLayout).toBeNull();
+    await page.getByRole("button", { name: "Save Music appearance" }).click();
+    await expect(page.getByText("All changes saved")).toBeVisible();
+    const config = (await fixture.request<{ config: MusicModuleConfig }>("/overlay-modules/music/config")).config;
+    const title = config.profiles.landscape.views.full.componentLayout!.title;
+    const live = await context.newPage();
+    await live.goto(output.url);
+    await expect(live.getByTestId("music-widget").locator(".sj-title")).toHaveCSS("left", `${title.x}px`);
+    await expect(live.getByTestId("music-widget").locator(".sj-title")).toHaveCSS("width", `${title.width}px`);
+    await expect(live.getByRole("button", { name: "Move Title" })).toHaveCount(0);
+    await page.reload();
+    await page.getByRole("button", { name: "Edit layout" }).click();
+    await expect(page.getByLabel("Title X (px)")).toHaveValue(String(title.x));
+    await expect(page.getByLabel("Title width (px)")).toHaveValue(String(title.width));
+    await page.getByRole("button", { name: "Done editing" }).click();
+    await page.getByRole("button", { name: "Expand custom css" }).click();
+    await page.getByLabel("Custom CSS", { exact: true }).fill(".sj-title { color: red; }");
+    await page.getByLabel("Enable custom CSS").check();
+    await expect(page.getByRole("button", { name: "Edit layout" })).toBeDisabled();
+    await page.getByRole("button", { name: "Collapse custom css" }).click();
+    await page.getByRole("button", { name: "Disable custom CSS" }).click();
+    await expect(page.getByRole("button", { name: "Edit layout" })).toBeEnabled();
+    await page.getByRole("button", { name: "Reset automatic layout" }).click();
+    await page.getByRole("button", { name: "Save Music appearance" }).click();
+    await expect(page.getByText("All changes saved")).toBeVisible();
+    const reset = (await fixture.request<{ config: MusicModuleConfig }>("/overlay-modules/music/config")).config;
+    expect(reset.profiles.landscape.views.full.componentLayout).toBeNull();
+    expect(reset.css.source).toBe(".sj-title { color: red; }");
+    expect(reset.css.enabled).toBe(false);
+  } finally { await fixture.close(); }
+});
+
+
+test("Music appearance remains usable at desktop and narrow widths", async ({ page }) => {
+  const fixture = await startMusicTestRuntime();
+  try {
+    await page.goto(`${fixture.url}/manage/modules/music`);
+    await expect(page.getByLabel("Initial view")).toBeVisible();
+    await page.getByRole("button", { name: "Enable Music module" }).click();
+    await page.getByRole("button", { name: "Confirm change" }).click();
+    await expect(page.getByRole("button", { name: "Disable Music module" })).toBeVisible();
+    expect((await fixture.request<{ enabled: boolean }>("/overlay-modules/music/config")).enabled).toBe(true);
+    await expect(page.getByText("All changes saved", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Expand appearance" })).toBeVisible();
+    await page.getByRole("button", { name: "Expand appearance" }).click();
+    for (const width of [1440, 600]) {
+      await page.setViewportSize({ width, height: 1000 });
+      const appearance = page.getByRole("region", { name: "Appearance", exact: true });
+      await appearance.scrollIntoViewIfNeeded();
+      const row = appearance.locator(".music-editor__color-row").first();
+      const swatch = (await row.locator('input[type="color"]').boundingBox())!;
+      const hex = (await row.locator('input:not([type="color"])').boundingBox())!;
+      expect(swatch.x + swatch.width).toBeLessThanOrEqual(hex.x);
+      const bounds = (await appearance.boundingBox())!;
+      expect(hex.x + hex.width).toBeLessThanOrEqual(bounds.x + bounds.width + 1);
+      await page.screenshot({ path: `.superpowers/music-appearance-${width}.png`, fullPage: true });
+    }
+    await page.getByLabel("Appearance component").selectOption("artwork");
+    await expect(page.getByLabel("Artwork size (px)")).toBeVisible();
+    const artworkSize = (await page.getByLabel("Artwork size (px)").boundingBox())!;
+    expect(artworkSize.height).toBe(32);
+    const placeholderColor = (await page.getByLabel("Artwork placeholder color", { exact: true }).boundingBox())!;
+    expect(placeholderColor.y).toBeGreaterThan(artworkSize.y + artworkSize.height);
+    await expect(page.getByLabel("Widget width (px)")).toHaveCount(0);
+    await page.getByLabel("Appearance component").selectOption("title");
+    await expect(page.getByLabel("Title size (px)")).toBeVisible();
+    await expect(page.getByLabel("Title weight")).toBeHidden();
+    await page.getByText("More text options", { exact: true }).click();
+    await expect(page.getByLabel("Title weight")).toBeVisible();
+    await page.getByLabel("Appearance component").selectOption("widget");
+    await page.getByLabel("Shadow preset").selectOption("subtle");
+    await page.getByText("Custom shadow", { exact: true }).click();
+    await expect(page.getByLabel("Shadow blur (px)")).toHaveValue("12");
+    const heights = await Promise.all(["Shadow X (px)", "Shadow Y (px)", "Shadow blur (px)", "Shadow spread (px)"].map(async label => (await page.getByLabel(label).boundingBox())!.height));
+    expect(heights).toEqual([32, 32, 32, 32]);
+    const spread = (await page.getByLabel("Shadow spread (px)").boundingBox())!;
+    const shadowColor = (await page.getByLabel("Shadow color", { exact: true }).boundingBox())!;
+    expect(shadowColor.y).toBeGreaterThan(spread.y + spread.height);
+    await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible();
+  } finally { await fixture.close(); }
+});

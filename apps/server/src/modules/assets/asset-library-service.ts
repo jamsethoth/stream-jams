@@ -1,6 +1,9 @@
 import {
   assetLibraryItemSchema,
   assetMetadataUpdateInputSchema,
+  collectMusicAssetReferences,
+  musicPublicAssetReferenceSchema,
+  InvalidOverlayModuleConfigError,
   normalizeAssetTags,
   type AlertCollection,
   type AlertRepository,
@@ -12,6 +15,9 @@ import {
   type AssetRecord,
   type AssetRepository,
   type ModuleMediaReference,
+  type MusicAssetReference,
+  type MusicModuleConfig,
+  type MusicPublicAssetReference,
   type ScreenEffectRepository,
   type TimerDefinitionRepository,
   type TargetProfileId
@@ -19,6 +25,7 @@ import {
 import type { AlertSetMetadataRepository } from "../alerts/alert-set-management-service.js";
 import type { MediaMetadataProbe } from "@stream-jams/core";
 import type { AssetDurationCatalog } from "./asset-duration-catalog.js";
+import { mediaVersion } from "./local-media-service.js";
 
 export interface AssetLibraryMetadata {
   readonly assetId: string;
@@ -52,6 +59,7 @@ export interface AssetLibraryServiceOptions {
   readonly ruleMetadataRepository: Pick<AlertSetMetadataRepository, "findRule">;
   readonly effectRepository?: Pick<ScreenEffectRepository, "list"> | undefined;
   readonly timerRepository?: Pick<TimerDefinitionRepository, "list"> | undefined;
+  readonly getMusicConfig?: (() => Promise<MusicModuleConfig | null>) | undefined;
   readonly deletePersistedAsset?: ((assetId: string) => void) | undefined;
   readonly findEditorDocuments?: (ids: readonly string[]) => Promise<ReadonlyMap<string, import("@stream-jams/core").AlertEditorDocument>>;
   readonly clock?: () => Date;
@@ -72,6 +80,14 @@ export class AssetLibraryInUseError extends Error {
   constructor(readonly impact: AssetChangeImpact, options?: ErrorOptions) {
     super(`Asset "${impact.assetId}" is used by ${impact.owners.length} saved playback contexts`, options);
     this.name = "AssetLibraryInUseError";
+  }
+}
+
+export class InvalidMusicAssetReferenceError extends InvalidOverlayModuleConfigError {
+  constructor(readonly reference: MusicAssetReference, readonly reason: "missing" | "unavailable" | "incompatible") {
+    super("music");
+    this.message = `Music ${reference.ownerId} ${reference.variantId} ${reference.usageRole} asset is ${reason}`;
+    this.name = "InvalidMusicAssetReferenceError";
   }
 }
 
@@ -133,6 +149,55 @@ export class AssetLibraryService {
     return metadata;
   }
 
+  /** Run at the save boundary before writing a Music configuration, including disabled/hidden views. */
+  async validateMusicAssetReferences(config: MusicModuleConfig): Promise<void> {
+    for (const reference of collectMusicAssetReferences(config)) {
+      const record = await this.#options.assetRepository.findById(reference.assetId);
+      if (record === null) throw new InvalidMusicAssetReferenceError(reference, "missing");
+      if (!musicAssetCompatible(reference, record)) throw new InvalidMusicAssetReferenceError(reference, "incompatible");
+      let health: "available" | "missing" | "broken";
+      try { health = await this.#options.assetStore.inspect(record.storagePath, record.sizeBytes); }
+      // error-provenance: allow expected -- an unreadable saved Music asset fails closed as unavailable
+      catch { health = "broken"; }
+      if (health !== "available") {
+        throw new InvalidMusicAssetReferenceError(reference, "unavailable");
+      }
+    }
+  }
+
+  /** Read current metadata each time so replacement changes the public version immediately. */
+  async resolveMusicAssets(config: MusicModuleConfig, profile: TargetProfileId): Promise<{
+    readonly assets: readonly MusicPublicAssetReference[];
+    readonly missingAssetIds: readonly string[];
+  }> {
+    const references = collectMusicAssetReferences(config).filter(reference => reference.ownerId === profile);
+    const assets: MusicPublicAssetReference[] = [];
+    const missing = new Set<string>();
+    const seen = new Set<string>();
+    for (const reference of references) {
+      if (seen.has(reference.assetId)) continue;
+      seen.add(reference.assetId);
+      try {
+        const record = await this.#options.assetRepository.findById(reference.assetId);
+        if (record === null || references.some(candidate => candidate.assetId === reference.assetId && !musicAssetCompatible(candidate, record))) {
+          missing.add(reference.assetId);
+          continue;
+        }
+        if (await this.#options.assetStore.inspect(record.storagePath, record.sizeBytes) !== "available") {
+          missing.add(reference.assetId);
+          continue;
+        }
+        assets.push(musicPublicAssetReferenceSchema.parse({
+          assetId: record.id, version: mediaVersion(record), mimeType: record.mimeType,
+          sizeBytes: record.sizeBytes, durationMs: record.durationMs
+        }));
+      }
+      // error-provenance: allow expected -- asset lookup failure is reported as missing for this profile
+      catch { missing.add(reference.assetId); }
+    }
+    return { assets, missingAssetIds: [...missing] };
+  }
+
   async getChangeImpact(assetId: string, candidateMediaType?: AssetMediaType): Promise<AssetChangeImpact> {
     const item = await this.getItem(assetId);
     const alertOwners = item.usage.usages.map((usage): ModuleMediaReference => ({
@@ -154,6 +219,10 @@ export class AssetLibraryService {
     const timerOwners = moduleOwners.filter((owner) => owner.moduleId === "timers");
     if (timerOwners.length > 0) {
       warnings.push(`${timerOwners.length} Timer usage${timerOwners.length === 1 ? "" : "s"} will update everywhere.`);
+    }
+    const musicOwners = moduleOwners.filter((owner) => owner.moduleId === "music");
+    if (musicOwners.length > 0) {
+      warnings.push(`${musicOwners.length} Music usage${musicOwners.length === 1 ? "" : "s"} will update everywhere.`);
     }
     if (candidateMediaType !== undefined && candidateMediaType !== item.mediaType) {
       warnings.push(`Media type changes from ${item.mediaType} to ${candidateMediaType}; review every affected layer.`);
@@ -342,9 +411,10 @@ export class AssetLibraryService {
   }
 
   async #deriveModuleUsages(): Promise<ReadonlyMap<string, readonly ModuleMediaReference[]>> {
-    const [effects, timers] = await Promise.all([
+    const [effects, timers, music] = await Promise.all([
       this.#options.effectRepository?.list() ?? [],
-      this.#options.timerRepository?.list() ?? []
+      this.#options.timerRepository?.list() ?? [],
+      this.#options.getMusicConfig?.() ?? null
     ]);
     const usages = new Map<string, ModuleMediaReference[]>();
     const add = (assetId: string | null, usage: ModuleMediaReference) => {
@@ -369,8 +439,20 @@ export class AssetLibraryService {
       add(timer.startAudioAssetId, { ...base, usageRole: "start-audio" });
       add(timer.endAudioAssetId, { ...base, usageRole: "end-audio" });
     }
+    if (music !== null) {
+      for (const reference of collectMusicAssetReferences(music)) {
+        const { assetId, ...owner } = reference;
+        add(assetId, owner);
+      }
+    }
     return usages;
   }
+}
+
+export function musicAssetCompatible(reference: Pick<MusicAssetReference, "usageRole">, record: Pick<AssetRecord, "mediaType" | "mimeType">): boolean {
+  return reference.usageRole === "branding"
+    ? record.mediaType === "image" && ["image/png", "image/jpeg", "image/webp"].includes(record.mimeType)
+    : record.mediaType === "font" && ["font/ttf", "font/otf", "font/woff", "font/woff2"].includes(record.mimeType);
 }
 
 function uniqueOwners(owners: readonly ModuleMediaReference[]): ModuleMediaReference[] {

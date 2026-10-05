@@ -1363,6 +1363,8 @@ function providerSetupDescription(kind: ProviderKind): string {
       return "Send text-to-speech output to Speaker.bot through its WebSocket server.";
     case "browser-speech":
       return "Use speech synthesis provided by the browser running the overlay.";
+    case "pear-desktop":
+      return "Read music playback from Pear Desktop on this computer.";
   }
 }
 
@@ -1433,7 +1435,8 @@ function formatProviderKind(kind: ProviderKind): string {
     twitch: "Twitch",
     streamerbot: "Streamer.bot",
     speakerbot: "Speaker.bot",
-    "browser-speech": "Browser Speech"
+    "browser-speech": "Browser Speech",
+    "pear-desktop": "Pear Desktop"
   };
   return labels[kind];
 }

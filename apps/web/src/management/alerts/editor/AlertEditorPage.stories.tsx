@@ -1614,3 +1614,20 @@ function groupedAlertSetDetail(): AlertSetDetail {
     ]
   };
 }
+
+export const IndependentSnappingControls: Story = {
+  tags: ["editor-snapping"],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const grid = await canvas.findByRole("checkbox", { name: "Snap to grid" });
+    const alignment = canvas.getByRole("checkbox", { name: "Snap to alignment" });
+    await expect(grid).toBeChecked();
+    await expect(alignment).toBeChecked();
+    await userEvent.click(grid);
+    await expect(grid).not.toBeChecked();
+    await expect(alignment).toBeChecked();
+    await userEvent.click(alignment);
+    await expect(alignment).not.toBeChecked();
+    await expect(canvas.getByRole("button", { name: "Toggle canvas grid" })).toHaveAttribute("aria-pressed", "true");
+  }
+};

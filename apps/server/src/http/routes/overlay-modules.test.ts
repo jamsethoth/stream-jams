@@ -47,6 +47,15 @@ describe("overlay module routes", () => {
           entryPoint: "overlay/modules/timers",
           supportedOutputs: ["module", "unified"]
         }
+      }),
+      expect.objectContaining({
+        id: "music",
+        displayName: "Music",
+        defaultEnabled: false,
+        renderer: {
+          entryPoint: "overlay/modules/music",
+          supportedOutputs: ["module", "unified"]
+        }
       })
     ]);
     expect(response.json()).toEqual(
@@ -258,7 +267,7 @@ describe("overlay module routes", () => {
 
     const response = await app.inject({
       method: "GET",
-      url: "/overlay-modules/music/config",
+      url: "/overlay-modules/unknown-module/config",
       headers: authHeaders
     });
 
@@ -266,8 +275,8 @@ describe("overlay module routes", () => {
     expect(response.json()).toEqual({
       error: {
         code: "OVERLAY_MODULE_NOT_FOUND",
-        message: 'Unknown overlay module "music"',
-        moduleId: "music"
+        message: 'Unknown overlay module "unknown-module"',
+        moduleId: "unknown-module"
       }
     });
   });

@@ -7,7 +7,7 @@ This is the canonical index for deferred, planned, and intentionally rejected St
 - Add a new deferred idea here before or with detailed notes elsewhere.
 - Keep one row per product outcome; link supporting detail instead of copying it into this file.
 - Use `Planned` only when an apply-ready OpenSpec change exists, and link that change.
-- When implementation is complete and its specs are synced, remove the row; durable specs, archives, and Git history retain completed history. A maintained main-branch changelog is still planned under BL-052.
+- When implementation, spec sync, and required acceptance are complete, remove the row; durable specs, archives, and Git history retain completed history. A maintained main-branch changelog is still planned under BL-052.
 - `Not planned` entries are deliberate product boundaries, not implementation suggestions. Reopening one requires an explicit product decision.
 - Priority means: `P0` next critical work, `P1` high value, `P2` useful follow-up, and `P3` low urgency or evidence-dependent.
 
@@ -26,7 +26,7 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 | BL-013 | Additional bounded animation presets | Deferred | P2 | Stable style and animation contracts | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
 | BL-014 | Alert version history, rollback, soft delete, and selective recovery | Deferred | P2 | Existing backup/restore plus a bounded history policy | [Future-feature notes](future-features.md#alert-version-history-and-rollback) |
 | BL-015 | Asset version history and restore | Deferred | P3 | BL-014 recovery model | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
-| BL-016 | Responsive units, richer snapping, custom profiles, and optional cross-profile layout assistance | Deferred | P3 | Measured need beyond fixed landscape and vertical profiles | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
+| BL-016 | Responsive units, custom profiles, and optional cross-profile layout assistance | Deferred | P3 | Measured need beyond fixed landscape and vertical profiles | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
 | BL-017 | Translation-ready management UI, selected locales, contrast checks, and alert reduced-motion guidance | Deferred | P3 | Named target locales and accessibility acceptance criteria | Product decision, 2026-07-20 |
 | BL-018 | Constrained per-layer timeline and keyframe editor | Long-term | P3 | Preset animations prove insufficient; the implemented text-style contract and BL-013 are stable | Must remain schema-validated and exclude arbitrary code. |
 | BL-019 | Full provider-event simulation and persisted custom sample library | Deferred | P3 | Stable normalized catalogs and Diagnostics simulation boundary | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
@@ -43,13 +43,13 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 | BL-024 | Manual intake controls and stream-start/stream-end automation | Deferred | P3 | A real OBS or platform lifecycle integration | [UI decisions](design/ui-refactor-decisions.md) |
 | BL-025 | Multiple active providers and provider-specific alert routing | Low evidence | P3 | Demonstrated need that canonical event matching cannot satisfy | [UI decisions](design/ui-refactor-decisions.md) |
 | BL-026 | Resumable provider setup drafts | Deferred | P3 | Measured abandonment or recovery need in provider setup | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
+| BL-054 | Additional Music sources: Plex and Spotify | Deferred | P2 | Implemented Music provider contract and authenticated Pear delivery; provider-specific API, authentication and session/endpoint policies | [Music provider design](../openspec/changes/archive/2026-10-05-add-music-widget-module/design.md); this proposal includes interface fit checks, not these adapters |
 
 ## Modules, Outputs, And Platform
 
 | ID | Feature | Status | Priority | Dependency or trigger | Detail |
 | --- | --- | --- | --- | --- | --- |
 | BL-027 | Startup module selection/setup wizard | Trigger reached; deferred | P3 | Alerts and Screen Effects now ship; a bounded onboarding workflow still needs approval | [Future-feature notes](future-features.md#startup-module-setup-wizard) |
-| BL-028 | Music widget and additional overlay modules | Deferred | P2 | A separately approved module slice | [Product plan](product-plan.md) |
 | BL-029 | Expanded output management, connected-client history, route-key audit, and OBS-aware readiness | Deferred | P3 | Output workflow outgrows the current Alerts section | [UI decisions](design/ui-refactor-decisions.md) |
 | BL-030 | Desktop installer, signing, durable releases, updater/startup/service integration, and `safeStorage` migration | Deferred | P2 | Separately approved release and credential-migration changes | The runnable folder, tray lifecycle, and authenticated short-lived CI artifact publication are implemented. Installer, signing, durable release publication, automatic updates, startup-at-login, Windows service, and credential migration remain deferred. [Desktop requirements](../openspec/specs/windows-desktop-runtime/spec.md); [Product plan](product-plan.md) |
 | BL-031 | Docker delivery | Deferred | P3 | Supported self-hosted deployment requirement | [Product plan](product-plan.md) |

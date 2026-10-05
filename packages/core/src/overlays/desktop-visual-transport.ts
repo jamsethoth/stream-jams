@@ -2,6 +2,7 @@ import { z } from "zod";
 import { playbackTimingDiagnosticsSchema, type PlaybackTimingDiagnostics } from "../diagnostics/playback-timing-diagnostics.js";
 import { desktopOverlayStatusSchema, type DesktopOverlayStatus } from "./desktop-overlay-status.js";
 import { trustedVisualMediaAssetSchema, privateVisualMediaAssetSchema } from "../assets/desktop-media-asset.js";
+import type { MediaVersionSnapshot } from "../assets/media-reference.js";
 import { surfaceConfigurationSchema, type SurfaceConfiguration } from "../overlay-modules/surface-configuration.js";
 import { overlayElementLayoutSchema } from "../shared/schemas.js";
 import { playbackTimingSchema, type PlaybackTiming } from "./playback-timing.js";
@@ -11,11 +12,24 @@ import {
 } from "./schemas.js";
 import { visualRecipientKeySchema, type VisualRecipientKey } from "./visual-recipient.js";
 import { overlayPlaybackFailureSchema } from "./playback-failure.js";
-import { overlayModulePresentationSchema } from "../timers/schemas.js";
-import type { OverlayModulePresentation } from "../timers/types.js";
+import { overlayModulePresentationSchema, type OverlayModulePresentation } from "../overlay-modules/presentation.js";
 
 const identity = z.string().min(1).refine(value => value === value.trim());
 const layout = overlayElementLayoutSchema.strict();
+const musicArtworkRef = z.string().regex(/^[A-Za-z0-9_-]{1,512}$/);
+export const trustedDesktopMusicArtworkSchema = z.object({
+  ref: musicArtworkRef,
+  grant: z.object({ handle: z.string().regex(/^mart_[A-Za-z0-9_-]{43}$/), expiresAt: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }).strict()
+}).strict();
+export const privateDesktopMusicArtworkSchema = z.object({
+  ref: musicArtworkRef,
+  handle: z.string().regex(/^private_[A-Za-z0-9_-]{43}$/)
+}).strict();
+export type TrustedDesktopMusicArtwork = z.infer<typeof trustedDesktopMusicArtworkSchema>;
+export type PrivateDesktopMusicArtwork = z.infer<typeof privateDesktopMusicArtworkSchema>;
+export function privateDesktopMusicArtworkUrl(artwork: PrivateDesktopMusicArtwork): string {
+  return `stream-jams-overlay://surface/music-artwork/${privateDesktopMusicArtworkSchema.parse(artwork).handle}`;
+}
 
 export const desktopVisualInstructionSchema = overlayInstructionSchema.extend({
   id: identity,
@@ -72,33 +86,55 @@ export const privateDesktopVisualBatchSchema = visualBatch(privateVisualMediaAss
 export type PrivateDesktopVisualBatch = z.infer<typeof privateDesktopVisualBatchSchema>;
 export type DesktopVisualBatch = z.infer<typeof desktopVisualBatchSchema>;
 export type DesktopVisualAsset = z.infer<typeof desktopVisualAssetSchema>;
-const moduleSync = <T extends z.ZodType<{ assetId: string }>>(assetSchema: T, mime: (asset: z.infer<T>) => string, version: (asset: z.infer<T>) => string) => z.object({
-  moduleId: z.literal("timers"),
+const moduleSync = <T extends z.ZodType<{ assetId: string }>, A extends z.ZodType<{ ref: string }>>(assetSchema: T, artworkSchema: A, mime: (asset: z.infer<T>) => string, version: (asset: z.infer<T>) => string, snapshot: (asset: z.infer<T>) => MediaVersionSnapshot) => z.object({
+  moduleId: z.enum(["timers", "music"]),
   revision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   presentation: overlayModulePresentationSchema.nullable(),
-  assets: z.array(assetSchema).max(64)
+  assets: z.array(assetSchema).max(64),
+  artwork: artworkSchema.nullable().optional()
 }).strict().superRefine((sync, context) => {
   const fail = (message: string) => context.addIssue({ code: "custom", message });
-  if (sync.presentation !== null && sync.presentation.stack.targetProfileId !== "landscape") fail("Desktop timer presentation must target landscape");
+  if (sync.presentation !== null) {
+    if (sync.presentation.kind === "timer-stack" && sync.moduleId !== "timers") fail("Timer presentation requires the Timers module");
+    if (sync.presentation.kind === "music-widget" && sync.moduleId !== "music") fail("Music presentation requires the Music module");
+    const targetProfileId = sync.presentation.kind === "timer-stack" ? sync.presentation.stack.targetProfileId : sync.presentation.widget.targetProfileId;
+    if (targetProfileId !== "landscape") fail("Desktop module presentation must target landscape");
+  }
   const referenced = new Set<string>();
   const assets = new Map(sync.assets.map(asset => [JSON.stringify([asset.assetId, version(asset)]), asset]));
   if (assets.size !== sync.assets.length) fail("Asset versions must be unique");
-  for (const card of sync.presentation?.stack.cards ?? []) {
+  for (const card of sync.presentation?.kind === "timer-stack" ? sync.presentation.stack.cards : []) {
     if (card.iconAssetId === null) continue;
     const asset = card.iconVersion === undefined ? sync.assets.find(asset => asset.assetId === card.iconAssetId) : assets.get(JSON.stringify([card.iconAssetId, card.iconVersion]));
     if (asset === undefined || !mime(asset).startsWith("image/")) fail("Timer icon asset version is missing or has the wrong media kind");
     else referenced.add(JSON.stringify([asset.assetId, version(asset)]));
   }
+  if (sync.presentation?.kind === "music-widget") {
+    for (const reference of sync.presentation.widget.assets) {
+      const asset = assets.get(JSON.stringify([reference.assetId, reference.version]));
+      if (asset === undefined || mime(asset) !== reference.mimeType ||
+        snapshot(asset).sizeBytes !== reference.sizeBytes || snapshot(asset).durationMs !== reference.durationMs) {
+        fail("Music asset snapshot does not match its authorized grant");
+      }
+      else referenced.add(JSON.stringify([reference.assetId, reference.version]));
+    }
+  }
+  if (sync.artwork !== undefined && sync.artwork !== null) {
+    if (sync.moduleId !== "music" || sync.presentation?.kind !== "music-widget" ||
+      sync.presentation.widget.snapshot.track?.artworkRef !== sync.artwork.ref) fail("Music artwork grant does not match the current presentation");
+  }
+  if (sync.presentation === null && sync.artwork != null) fail("Cleared modules cannot retain artwork");
   if (sync.assets.some(asset => !referenced.has(JSON.stringify([asset.assetId, version(asset)])))) fail("Unreferenced assets are not authorized");
 });
-export const desktopModuleSyncSchema = moduleSync(trustedVisualMediaAssetSchema, asset => asset.grant.snapshot.mimeType, asset => asset.grant.snapshot.version);
-export const privateDesktopModuleSyncSchema = moduleSync(privateVisualMediaAssetSchema, asset => asset.reference.snapshot.mimeType, asset => asset.reference.snapshot.version);
+export const desktopModuleSyncSchema = moduleSync(trustedVisualMediaAssetSchema, trustedDesktopMusicArtworkSchema, asset => asset.grant.snapshot.mimeType, asset => asset.grant.snapshot.version, asset => asset.grant.snapshot);
+export const privateDesktopModuleSyncSchema = moduleSync(privateVisualMediaAssetSchema, privateDesktopMusicArtworkSchema, asset => asset.reference.snapshot.mimeType, asset => asset.reference.snapshot.version, asset => asset.reference.snapshot);
 export type PrivateDesktopModuleSync = z.infer<typeof privateDesktopModuleSyncSchema>;
 export interface DesktopModuleSync {
-  readonly moduleId: "timers";
+  readonly moduleId: "timers" | "music";
   readonly revision: number;
   readonly presentation: OverlayModulePresentation | null;
   readonly assets: readonly DesktopVisualAsset[];
+  readonly artwork?: TrustedDesktopMusicArtwork | null | undefined;
 }
 const visualCommands = <B extends z.ZodType, S extends z.ZodRawShape>(batch: B, sync: z.ZodObject<S>) => z.discriminatedUnion("type", [
   z.object({ type: z.literal("status") }).strict(),

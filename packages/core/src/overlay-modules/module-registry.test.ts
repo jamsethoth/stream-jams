@@ -34,13 +34,14 @@ const customModule: OverlayModuleDefinition = {
 };
 
 describe("overlay module registry", () => {
-  it("registers Alerts, disabled Screen Effects, and disabled Timers in stable built-in order", () => {
+  it("registers Alerts, disabled Screen Effects, Timers and Music in stable built-in order", () => {
     const registry = createDefaultOverlayModuleRegistry();
 
     expect(registry.listModules()).toEqual([
       alertsOverlayModuleDefinition,
       screenEffectsOverlayModuleDefinition,
-      registry.getModule("timers")
+      registry.getModule("timers"),
+      registry.getModule("music")
     ]);
     expect(registry.getModule("alerts")).toEqual(alertsOverlayModuleDefinition);
     expect(registry.getModule("screen-effects")).toEqual(screenEffectsOverlayModuleDefinition);
@@ -59,7 +60,7 @@ describe("overlay module registry", () => {
   it("returns null for unknown module ids", () => {
     const registry = createDefaultOverlayModuleRegistry();
 
-    expect(registry.getModule("music")).toBeNull();
+    expect(registry.getModule("unknown-module")).toBeNull();
   });
 
   it("keeps module list ordering stable and protects registry internals from caller mutation", () => {

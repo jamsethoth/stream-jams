@@ -110,7 +110,7 @@ describe("SqliteEffectRepository", () => {
       DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; DROP TABLE timer_run_recovery; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;
       ALTER TABLE asset_metadata DROP COLUMN duration_ms;
       ALTER TABLE audio_output_routes DROP COLUMN auto_follow_device_name;
-      DELETE FROM schema_migrations WHERE id IN ('023-screen-effect-sets', '024-asset-duration-metadata', '025-remove-screen-effect-animations', '026-automatic-output-rebinding', '027-remove-alert-set-profile-state', '028-timer-overlay-module', '029-asset-retirements', '030-persistent-event-timers');`);
+      DELETE FROM schema_migrations WHERE id IN ('023-screen-effect-sets', '024-asset-duration-metadata', '025-remove-screen-effect-animations', '026-automatic-output-rebinding', '027-remove-alert-set-profile-state', '028-timer-overlay-module', '029-asset-retirements', '030-persistent-event-timers', '032-music-source-providers');`);
     const effects = new SqliteEffectRepository(database.connection);
     const original = { ...effectDocument(), enabled: true };
     await effects.save(original);

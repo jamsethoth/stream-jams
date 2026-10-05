@@ -1,0 +1,16 @@
+{
+  "packageSha256": "02f94389b0bdc0b9cfe8e93703afa82b6e068b9d307bab052e49f99bc04cc1b5",
+  "physicalAudibility": false,
+  "countdownAgreement": true,
+  "managementHidden": true,
+  "overlayRendererRecreated": true,
+  "pausedGenerationPreserved": true,
+  "cueReplayOnResumeOrOverlayRecovery": 0,
+  "healthyDeviceCues": 3,
+  "failedSelectedRecipients": 2,
+  "explicitBrowserOnlyAndDeviceOnly": true,
+  "alertsEffectsMutePreservesCurrentAndFutureTimerCues": true,
+  "quitMs": 427,
+  "exitCode": 0,
+  "passed": true
+}

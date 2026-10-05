@@ -1,0 +1,323 @@
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
+import { createDefaultMusicModuleConfig, projectMusicWidget, type MusicAssetResolver, type MusicSnapshot, type MusicWidgetProjection } from "@stream-jams/core";
+import { describe, expect, it, vi } from "vitest";
+import { MusicWidget } from "./MusicWidget.js";
+import { StrictMode } from "react";
+
+const now = 1_000_000;
+const snapshot: MusicSnapshot = {
+  providerId: "pear", generation: "gen", revision: 1, playbackState: "playing", positionMs: 30_000,
+  durationMs: 120_000, observedAtEpochMs: now, session: null,
+  track: { id: "track", title: "Title", artists: ["Artist"], album: "Album", artworkRef: "art_123" }
+};
+const resolver: MusicAssetResolver = {
+  resolveAsset: asset => `/assets/${asset.assetId}?version=${asset.version}`,
+  resolveArtwork: ref => `/artwork/${ref}`
+};
+const fixture = (observation: MusicSnapshot = snapshot): MusicWidgetProjection => projectMusicWidget(observation,
+  { state: "connected", stale: false, diagnosticReference: null }, createDefaultMusicModuleConfig(), "landscape", now, now)!;
+const shadowOf = (container: HTMLElement) => container.querySelector(".music-widget-host")?.shadowRoot;
+
+describe("MusicWidget", () => {
+  it("retries transient artwork failures after 1, 2 and 5 seconds, then keeps the placeholder", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const view = render(<MusicWidget projection={fixture()} resolveAsset={resolver} nowEpochMs={now} />);
+    const shadow = shadowOf(view.container)!;
+    try {
+      for (const delay of [1_000, 2_000, 5_000]) {
+        fireEvent.error(shadow.querySelector(".sj-artwork img")!);
+        expect(shadow.querySelector(".sj-artwork img")).toBeNull();
+        expect(shadow.querySelector(".sj-title")?.textContent).toBe("Title");
+        act(() => vi.advanceTimersByTime(delay - 1));
+        expect(shadow.querySelector(".sj-artwork img")).toBeNull();
+        act(() => vi.advanceTimersByTime(1));
+        expect(shadow.querySelector(".sj-artwork img")?.getAttribute("src")).toBe("/artwork/art_123");
+      }
+      fireEvent.error(shadow.querySelector(".sj-artwork img")!);
+      act(() => vi.advanceTimersByTime(60_000));
+      expect(shadow.querySelector(".sj-artwork img")).toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { view.unmount(); vi.useRealTimers(); }
+  });
+
+  it("cancels artwork retries on track change and clearing, with a fresh budget for the next track", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const view = render(<MusicWidget projection={fixture()} resolveAsset={resolver} nowEpochMs={now} />);
+    try {
+      fireEvent.error(shadowOf(view.container)!.querySelector(".sj-artwork img")!);
+      expect(vi.getTimerCount()).toBe(1);
+      const next = fixture({ ...snapshot, revision: 2, track: { ...snapshot.track!, id: "next" } });
+      view.rerender(<MusicWidget projection={next} resolveAsset={resolver} nowEpochMs={now} />);
+      expect(vi.getTimerCount()).toBe(0);
+      const image = shadowOf(view.container)!.querySelector(".sj-artwork img")!;
+      expect(image).not.toBeNull();
+      fireEvent.error(image);
+      act(() => vi.advanceTimersByTime(1_000));
+      expect(shadowOf(view.container)!.querySelector(".sj-artwork img")).not.toBeNull();
+      fireEvent.error(shadowOf(view.container)!.querySelector(".sj-artwork img")!);
+      view.rerender(<MusicWidget projection={null} resolveAsset={resolver} nowEpochMs={now} />);
+      expect(vi.getTimerCount()).toBe(0);
+      act(() => vi.advanceTimersByTime(60_000));
+      expect(view.container).toBeEmptyDOMElement();
+    } finally { view.unmount(); vi.useRealTimers(); }
+  });
+
+  it("recovers artwork without restarting its retry on ordinary observations, then cancels on unmount", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const first = fixture();
+    const view = render(<MusicWidget projection={first} resolveAsset={resolver} nowEpochMs={now} />);
+    try {
+      fireEvent.error(shadowOf(view.container)!.querySelector(".sj-artwork img")!);
+      act(() => vi.advanceTimersByTime(500));
+      view.rerender(<MusicWidget projection={{ ...first, snapshot: { ...snapshot, revision: 2, positionMs: 31_000 } }} resolveAsset={resolver} nowEpochMs={now} />);
+      act(() => vi.advanceTimersByTime(500));
+      const recovered = shadowOf(view.container)!.querySelector(".sj-artwork img")!;
+      expect(recovered).not.toBeNull();
+      fireEvent.load(recovered);
+      act(() => vi.advanceTimersByTime(10_000));
+      expect(shadowOf(view.container)!.querySelector(".sj-artwork img")).toBe(recovered);
+      fireEvent.error(recovered);
+      expect(vi.getTimerCount()).toBe(1);
+      view.unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { view.unmount(); vi.useRealTimers(); }
+  });
+  it("keeps the same host, shadow content and CSS across ordinary observation revisions", () => {
+    const first = fixture();
+    const view = render(<MusicWidget projection={first} resolveAsset={resolver} nowEpochMs={now} />);
+    const host = view.container.querySelector(".music-widget-host");
+    const shadow = host!.shadowRoot!;
+    const title = shadow.querySelector(".sj-title");
+    const nativeStyle = shadow.querySelectorAll("style")[1];
+    view.rerender(<MusicWidget projection={{ ...first, clockReferenceEpochMs: now + 3_000,
+      snapshot: { ...first.snapshot, revision: 2, observedAtEpochMs: now + 3_000, positionMs: 33_000 } }}
+      resolveAsset={resolver} nowEpochMs={now + 3_000} />);
+    expect(view.container.querySelector(".music-widget-host")).toBe(host);
+    expect(host!.shadowRoot).toBe(shadow);
+    expect(shadow.querySelector(".sj-title")).toBe(title);
+    expect(shadow.querySelectorAll("style")[1]).toBe(nativeStyle);
+    expect(shadow.querySelector(".sj-time")?.textContent).toBe("0:33 / 2:00");
+  });
+  it("renders full native layout and advances a known position from the observation clock", () => {
+    const { container } = render(<MusicWidget projection={fixture()} resolveAsset={resolver} nowEpochMs={now + 2_000} />);
+    const shadow = shadowOf(container)!;
+    expect(shadow.querySelector('.sj-content[data-view="full"]')).not.toBeNull();
+    expect(shadow.querySelector(".sj-title")?.textContent).toBe("Title");
+    expect(shadow.querySelector(".sj-time")?.textContent).toBe("0:32 / 2:00");
+    expect(shadow.querySelector(".sj-progress-fill")?.getAttribute("style")).toContain("26.666");
+    expect(shadow.querySelector(".sj-artwork img")?.getAttribute("src")).toBe("/artwork/art_123");
+  });
+
+  it("renders saved per-component boxes through the same live widget without editor guides", () => {
+    const config = createDefaultMusicModuleConfig();
+    config.profiles.landscape.views.full.componentLayout = {
+      artwork: { x: 10, y: 10, width: 120, height: 120 },
+      title: { x: 150, y: 12, width: 400, height: 42 },
+      details: { x: 150, y: 58, width: 400, height: 48 },
+      progress: { x: 150, y: 126, width: 400, height: 6 },
+      time: { x: 150, y: 137, width: 400, height: 20 }
+    };
+    const projected = projectMusicWidget(snapshot, { state: "connected", stale: false, diagnosticReference: null }, config, "landscape", now, now)!;
+    const { container } = render(<MusicWidget projection={projected} resolveAsset={resolver} nowEpochMs={now} />);
+    const shadow = shadowOf(container)!;
+    expect(shadow.querySelector('.sj-content[data-component-layout="manual"]')).not.toBeNull();
+    expect(shadow.querySelector(".sj-details .sj-artists")?.textContent).toBe("Artist");
+    expect(shadow.querySelectorAll("style")[1]?.textContent).toContain(".sj-title { position: absolute; left: 150px; top: 12px; width: 400px; height: 42px");
+    expect(shadow.querySelector('[data-music-edit-handle]')).toBeNull();
+  });
+
+  it.each([-300_000, 300_000])("uses server time with a recipient wall-clock offset of %i ms", offset => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    let monotonic = 100;
+    vi.spyOn(performance, "now").mockImplementation(() => monotonic);
+    vi.spyOn(Date, "now").mockReturnValue(now + offset);
+    try {
+      const value = { ...fixture(), clockReferenceEpochMs: now + 1_000 };
+      const view = render(<MusicWidget projection={value} resolveAsset={resolver} />);
+      expect(shadowOf(view.container)?.querySelector(".sj-time")?.textContent).toBe("0:31 / 2:00");
+      monotonic += 2_000;
+      act(() => vi.advanceTimersByTime(2_000));
+      expect(shadowOf(view.container)?.querySelector(".sj-time")?.textContent).toBe("0:33 / 2:00");
+      for (const [revision, playbackState] of [[2, "paused"], [3, "unknown"]] as const) {
+        view.rerender(<MusicWidget projection={{ ...value, snapshot: { ...snapshot, revision, playbackState }, clockReferenceEpochMs: now + 3_000 }} resolveAsset={resolver} />);
+        expect(shadowOf(view.container)?.querySelector(".sj-time")?.textContent).toBe("0:30 / 2:00");
+        monotonic += 1_000;
+        act(() => vi.advanceTimersByTime(1_000));
+        expect(shadowOf(view.container)?.querySelector(".sj-time")?.textContent).toBe("0:30 / 2:00");
+      }
+      // A new recipient gets the already-aged observation, rather than 45 fresh seconds.
+      view.rerender(<MusicWidget projection={{ ...value, snapshot: { ...snapshot, revision: 4 }, clockReferenceEpochMs: now + 44_000 }} resolveAsset={resolver} />);
+      expect(shadowOf(view.container)?.querySelector(".sj-title")?.textContent).toBe("Title");
+      monotonic += 1_001;
+      act(() => vi.advanceTimersByTime(1_001));
+      expect(view.container).toBeEmptyDOMElement();
+      view.unmount();
+    } finally {
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    }
+  });
+
+  it("renders compact appearance, safe fallbacks and long text without markup", () => {
+    const config = createDefaultMusicModuleConfig();
+    config.profiles.landscape.initialView = "compact";
+    const value = projectMusicWidget({ ...snapshot, track: { ...snapshot.track!, title: `<img onerror=alert(1)>${"a".repeat(800)}`, artists: [], album: null, artworkRef: null } },
+      { state: "connected", stale: false, diagnosticReference: null }, config, "landscape", now, now)!;
+    const { container } = render(<MusicWidget projection={value} resolveAsset={resolver} nowEpochMs={now} />);
+    const shadow = shadowOf(container)!;
+    expect(shadow.querySelector('.sj-content[data-view="compact"]')).not.toBeNull();
+    expect(shadow.querySelector(".sj-artwork")).toBeNull();
+    expect(shadow.querySelector(".sj-title")?.textContent).toContain("<img");
+    expect(shadow.querySelector(".sj-title img")).toBeNull();
+    expect(shadow.querySelector(".sj-artists")?.textContent).toBe("Unknown artist");
+    expect(shadow.querySelector(".sj-album")).toBeNull();
+  });
+
+  it("scrolls only measured overflowing metadata and responds to text, width and reduced-motion changes", () => {
+    const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    const originalScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    let textWidth = 280;
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get() { return this.classList.contains("sj-title") ? 100 : 0; } });
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", { configurable: true, get() { return this.classList.contains("sj-scroll-text") ? textWidth : 0; } });
+    try {
+      const longTitle = "A title that cannot fit the available title width";
+      const first = fixture({ ...snapshot, track: { ...snapshot.track!, title: longTitle } });
+      const view = render(<MusicWidget projection={first} resolveAsset={resolver} nowEpochMs={now} />);
+      const title = shadowOf(view.container)!.querySelector(".sj-title") as HTMLElement;
+      expect(title.dataset.overflow).toBe("true");
+      expect(title.dataset.scroll).toBe("true");
+      expect(title.style.getPropertyValue("--sj-scroll-distance")).toBe("180px");
+      expect(title.textContent).toBe(longTitle);
+      textWidth = 80;
+      fireEvent.resize(window);
+      expect(title.dataset.overflow).toBe("false");
+      expect(title.dataset.scroll).toBe("false");
+      textWidth = 280;
+      view.rerender(<MusicWidget projection={{ ...first, snapshot: { ...first.snapshot, revision: 2, track: { ...first.snapshot.track!, title: "Changed long title" } } }} resolveAsset={resolver} nowEpochMs={now} reducedMotion />);
+      const changed = shadowOf(view.container)!.querySelector(".sj-title") as HTMLElement;
+      expect(changed.dataset.overflow).toBe("true");
+      expect(changed.dataset.scroll).toBe("false");
+      expect(changed.title).toBe("Changed long title");
+      view.unmount();
+    } finally {
+      if (originalClientWidth === undefined) Reflect.deleteProperty(HTMLElement.prototype, "clientWidth"); else Object.defineProperty(HTMLElement.prototype, "clientWidth", originalClientWidth);
+      if (originalScrollWidth === undefined) Reflect.deleteProperty(HTMLElement.prototype, "scrollWidth"); else Object.defineProperty(HTMLElement.prototype, "scrollWidth", originalScrollWidth);
+    }
+  });
+
+  it("remeasures after resize and font events, then releases observers and listeners", () => {
+    const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    const originalScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollWidth");
+    const originalFonts = Object.getOwnPropertyDescriptor(document, "fonts");
+    const observers: { targets: Element[]; callback: ResizeObserverCallback; disconnect: () => void }[] = [];
+    const disconnectMocks: Array<ReturnType<typeof vi.fn<() => void>>> = [];
+    let textWidth = 80;
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get() { return this.classList.contains("sj-title") ? 100 : 0; } });
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", { configurable: true, get() { return this.classList.contains("sj-scroll-text") ? textWidth : 0; } });
+    const fontListeners = new Set<EventListenerOrEventListenerObject>();
+    const removeFontListener = vi.fn((_: string, listener: EventListenerOrEventListenerObject) => fontListeners.delete(listener));
+    Object.defineProperty(document, "fonts", { configurable: true, value: {
+      addEventListener: (_: string, listener: EventListenerOrEventListenerObject) => fontListeners.add(listener), removeEventListener: removeFontListener
+    } });
+    vi.stubGlobal("ResizeObserver", class {
+      private readonly record: typeof observers[number];
+      constructor(callback: ResizeObserverCallback) {
+        const disconnect = vi.fn<() => void>();
+        this.record = { targets: [], callback, disconnect };
+        observers.push(this.record);
+        disconnectMocks.push(disconnect);
+      }
+      observe(target: Element) { this.record.targets.push(target); }
+      disconnect() { this.record.disconnect(); }
+    });
+    const removeWindowListener = vi.spyOn(window, "removeEventListener");
+    try {
+      const view = render(<MusicWidget projection={fixture()} resolveAsset={resolver} nowEpochMs={now} />);
+      const title = shadowOf(view.container)!.querySelector(".sj-title") as HTMLElement;
+      expect(title.dataset.scroll).toBe("false");
+      const titleObserver = observers.find(observer => observer.targets.includes(title))!;
+      expect(titleObserver.targets).toHaveLength(2);
+      textWidth = 260;
+      act(() => titleObserver.callback([], {} as ResizeObserver));
+      expect(title.dataset.scroll).toBe("true");
+      textWidth = 70;
+      act(() => { for (const listener of fontListeners) if (typeof listener === "function") listener(new Event("loadingdone")); });
+      expect(title.dataset.scroll).toBe("false");
+      view.unmount();
+      expect(disconnectMocks.every(disconnect => disconnect.mock.calls.length === 1)).toBe(true);
+      expect(fontListeners.size).toBe(0);
+      expect(removeFontListener).toHaveBeenCalled();
+      expect(removeWindowListener).toHaveBeenCalledWith("resize", expect.any(Function));
+    } finally {
+      removeWindowListener.mockRestore();
+      vi.unstubAllGlobals();
+      if (originalFonts === undefined) Reflect.deleteProperty(document, "fonts"); else Object.defineProperty(document, "fonts", originalFonts);
+      if (originalClientWidth === undefined) Reflect.deleteProperty(HTMLElement.prototype, "clientWidth"); else Object.defineProperty(HTMLElement.prototype, "clientWidth", originalClientWidth);
+      if (originalScrollWidth === undefined) Reflect.deleteProperty(HTMLElement.prototype, "scrollWidth"); else Object.defineProperty(HTMLElement.prototype, "scrollWidth", originalScrollWidth);
+    }
+  });
+
+  it("keeps unknown timing unknown and pauses the progress clock", () => {
+    const unknown = { ...snapshot, durationMs: null, positionMs: null, playbackState: "paused" as const };
+    const view = render(<MusicWidget projection={fixture(unknown)} resolveAsset={resolver} nowEpochMs={now + 5_000} />);
+    expect(shadowOf(view.container)?.querySelector(".sj-progress-track")).toBeNull();
+    expect(shadowOf(view.container)?.querySelector(".sj-time")).toBeNull();
+    view.rerender(<MusicWidget projection={fixture({ ...snapshot, playbackState: "paused" })} resolveAsset={resolver} nowEpochMs={now + 5_000} />);
+    expect(shadowOf(view.container)?.querySelector(".sj-time")?.textContent).toBe("0:30 / 2:00");
+  });
+
+  it("is fully transparent for null, invalid and stale projections", () => {
+    const view = render(<MusicWidget projection={null} resolveAsset={resolver} nowEpochMs={now} />);
+    expect(view.container).toBeEmptyDOMElement();
+    view.rerender(<MusicWidget projection={{ ...fixture(), layout: { ...fixture().layout, x: -1 } }} resolveAsset={resolver} nowEpochMs={now} />);
+    expect(view.container).toBeEmptyDOMElement();
+    view.rerender(<MusicWidget projection={fixture()} resolveAsset={resolver} nowEpochMs={now + 45_001} />);
+    expect(view.container).toBeEmptyDOMElement();
+    view.rerender(<MusicWidget projection={{ ...fixture(), snapshot: { ...snapshot, track: null } }} resolveAsset={resolver} nowEpochMs={now} />);
+    expect(view.container).toBeEmptyDOMElement();
+  });
+
+  it("attaches one shadow root in StrictMode and removes it when the projection clears", () => {
+    const view = render(<StrictMode><MusicWidget projection={fixture()} resolveAsset={resolver} nowEpochMs={now} /></StrictMode>);
+    const root = shadowOf(view.container);
+    expect(root?.querySelectorAll(".sj-title")).toHaveLength(1);
+    view.rerender(<StrictMode><MusicWidget projection={null} resolveAsset={resolver} nowEpochMs={now} /></StrictMode>);
+    expect(view.container).toBeEmptyDOMElement();
+  });
+
+  it("separates brand opacity, image fit and content insets; removes a failed image", () => {
+    const projection = fixture();
+    const brand = { assetId: "brand", version: "a".repeat(64), mimeType: "image/png" as const, sizeBytes: 100, durationMs: null };
+    projection.assets.push(brand);
+    projection.profile.views.full.branding = { assetId: "brand", fit: "cover", xPercent: 20, yPercent: 80, opacity: 35 };
+    projection.profile.views.full.contentInsets = { top: 2, right: 4, bottom: 6, left: 8 };
+    const { container } = render(<MusicWidget projection={projection} resolveAsset={resolver} nowEpochMs={now} />);
+    const shadow = shadowOf(container)!;
+    const image = shadow.querySelector(".sj-brand-image") as HTMLImageElement;
+    expect(image.style.objectFit).toBe("cover");
+    expect(image.style.opacity).toBe("0.35");
+    expect((shadow.querySelector(".sj-frame") as HTMLElement).style.opacity).toBe("0.84");
+    expect([...shadow.querySelectorAll("style")].some(style => style.textContent?.includes("inset: 2px 4px 6px 8px"))).toBe(true);
+    fireEvent.error(image);
+    expect(shadow.querySelector(".sj-brand-image")).toBeNull();
+    expect(shadow.querySelector(".sj-frame")).not.toBeNull();
+  });
+
+  it("validates enabled CSS at runtime, clears it on disable and falls back on invalid source", async () => {
+    const projection = fixture();
+    projection.css = { source: ".sj-title{color:red}", enabled: true, styleContractVersion: 1 };
+    const view = render(<MusicWidget projection={projection} resolveAsset={resolver} nowEpochMs={now} />);
+    await waitFor(() => expect([...shadowOf(view.container)!.querySelectorAll("style")].some(style => style.textContent?.includes("color:red"))).toBe(true));
+    view.rerender(<MusicWidget projection={{ ...projection, css: { ...projection.css, enabled: false } }} resolveAsset={resolver} nowEpochMs={now} />);
+    await waitFor(() => expect([...shadowOf(view.container)!.querySelectorAll("style")].some(style => style.textContent?.includes("color:red"))).toBe(false));
+    view.rerender(<MusicWidget projection={{ ...projection, css: { ...projection.css, source: ".sj-title{background:url(https://bad.example/a)}" } }} resolveAsset={resolver} nowEpochMs={now} />);
+    await waitFor(() => expect([...shadowOf(view.container)!.querySelectorAll("style")].some(style => style.textContent?.includes("bad.example"))).toBe(false));
+  });
+
+  it("installs a reduced-motion guard before author styles", () => {
+    const { container } = render(<MusicWidget projection={fixture()} resolveAsset={resolver} nowEpochMs={now} reducedMotion />);
+    const styles = shadowOf(container)!.querySelectorAll("style");
+    expect(styles[0]?.textContent).toContain("*::before, *::after { animation: none !important");
+    expect(styles[0]?.textContent).toContain("@layer sj-motion, sj-native, sj-custom");
+  });
+});

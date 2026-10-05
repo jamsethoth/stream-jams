@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   connectOverlayClient,
   createOverlayAssetUrl,
+  createOverlayMusicArtworkUrl,
   createOverlayPlaybackReporter,
   createOverlayWebSocketUrl,
   parseOverlayRoute
@@ -15,6 +16,15 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("overlay-client", () => {
+  it("builds artwork URLs only for live Music outputs and preserves profile scope", () => {
+    expect(createOverlayMusicArtworkUrl(parseOverlayRoute("/overlay/modules/music/live/ovl_music?profile=vertical")!, "art_safe"))
+      .toBe("/overlay/modules/music/live/ovl_music/artwork/art_safe?profile=vertical");
+    expect(createOverlayMusicArtworkUrl(parseOverlayRoute("/overlay/unified/live/ovl_unified")!, "art_safe"))
+      .toBe("/overlay/unified/live/ovl_unified/music/artwork/art_safe");
+    expect(createOverlayMusicArtworkUrl(parseOverlayRoute("/overlay/modules/music/test/ovl_test")!, "art_safe")).toBe("");
+    expect(createOverlayMusicArtworkUrl(parseOverlayRoute("/overlay/modules/alerts/live/ovl_alert")!, "art_safe")).toBe("");
+    expect(createOverlayMusicArtworkUrl(parseOverlayRoute("/overlay/modules/music/live/ovl_music")!, "https://remote/")).toBe("");
+  });
   it("pins immutable media versions without losing target-profile authorization", () => {
     const version = "a".repeat(64);
     expect(createOverlayAssetUrl(parseOverlayRoute("/overlay/modules/alerts/live/ovl_profile?profile=vertical")!, "clip", version))

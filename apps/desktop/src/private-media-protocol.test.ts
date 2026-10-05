@@ -6,6 +6,53 @@ function create(fetcher: typeof fetch = vi.fn(async () => new Response("media"))
   return new PrivateMediaProtocol({ scheme: "stream-jams-audio", host: "player", trustedServiceOrigin: "http://127.0.0.1:1234", generation: 1, recipientId: "audio-player", fetch: fetcher });
 }
 describe("private media protocol", () => {
+  it("keeps Music artwork stable across revision ownership and revokes after its final owner", async () => {
+    const adapter = new PrivateMediaProtocol({ scheme: "stream-jams-overlay", host: "surface", trustedServiceOrigin: "http://127.0.0.1:1234", generation: 1, recipientId: "desktop:primary",
+      fetch: vi.fn(async () => new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "Content-Type": "image/png" } })) });
+    const source = { handle: `mart_${"a".repeat(43)}`, expiresAt: Date.now() + 60_000 };
+    const first = adapter.issueArtwork('["module","music",1]', source);
+    const next = adapter.issueArtwork('["module","music",2]', source);
+    expect(next).toBe(first);
+    adapter.revokeOwner('["module","music",1]');
+    expect((await adapter.handle(new Request(`stream-jams-overlay://surface/music-artwork/${next}`))).status).toBe(200);
+    adapter.revokeOwner('["module","music",2]');
+    expect((await adapter.handle(new Request(`stream-jams-overlay://surface/music-artwork/${next}`))).status).toBe(404);
+    adapter.destroy();
+  });
+
+  it("keeps identical pinned Music assets stable when server grants renew", async () => {
+    const fetcher = vi.fn(async () => new Response("image", { headers: { "Content-Type": "image/png" } }));
+    const adapter = new PrivateMediaProtocol({ scheme: "stream-jams-overlay", host: "surface", trustedServiceOrigin: "http://127.0.0.1:1234", generation: 1, recipientId: "desktop:primary", fetch: fetcher });
+    const source = { ...grant(), snapshot: { ...grant().snapshot, mimeType: "image/png" as const, durationMs: null } };
+    const first = adapter.issue('["module","music",1]', source);
+    const next = adapter.issue('["module","music",2]', { ...source, handle: `med_${"b".repeat(43)}` });
+    expect(next.handle).toBe(first.handle);
+    adapter.revokeOwner('["module","music",1]');
+    expect(adapter.url(next)).toContain(first.handle);
+    expect((await adapter.handle(new Request(adapter.url(next)))).status).toBe(200);
+    expect(fetcher).toHaveBeenCalledWith(`http://127.0.0.1:1234/media/med_${"b".repeat(43)}`, expect.any(Object));
+    const replacement = adapter.issue('["module","music",3]', { ...source, snapshot: { ...source.snapshot, version: "c".repeat(64) }, handle: `med_${"c".repeat(43)}` });
+    expect(replacement.handle).not.toBe(next.handle);
+    adapter.revokeOwner('["module","music",2]');
+    expect(() => adapter.url(next)).toThrow("Unknown private media reference");
+    expect(adapter.url(replacement)).toContain(replacement.handle);
+    adapter.destroy();
+  });
+  it("proxies private Music artwork only for its owned surface and revokes on hiding", async () => {
+    const fetcher = vi.fn(async () => new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "Content-Type": "image/png" } }));
+    const adapter = new PrivateMediaProtocol({ scheme: "stream-jams-overlay", host: "surface", trustedServiceOrigin: "http://127.0.0.1:1234",
+      generation: 1, recipientId: "desktop:primary", fetch: fetcher });
+    const source = { handle: `mart_${"a".repeat(43)}`, expiresAt: Date.now() + 60_000 };
+    const handle = adapter.issueArtwork("music-revision", source);
+    const url = `stream-jams-overlay://surface/music-artwork/${handle}`;
+    expect(handle).not.toContain("mart_");
+    expect((await adapter.handle(new Request(url))).status).toBe(200);
+    expect(fetcher).toHaveBeenCalledWith(`http://127.0.0.1:1234/media/music-artwork/${source.handle}`, expect.objectContaining({ redirect: "error" }));
+    expect((await adapter.handle(new Request(url.replace("surface", "wrong-output")))).status).toBe(404);
+    adapter.revokeOwner("music-revision");
+    expect((await adapter.handle(new Request(url))).status).toBe(404);
+    adapter.destroy();
+  });
   it("forwards only range/validators to its fixed origin with a distinct private handle", async () => {
     const fetcher = vi.fn(async () => new Response("part", { status: 206, headers: { "Content-Type": "video/mp4", "Content-Range": "bytes 0-3/100", "Set-Cookie": "secret", "Access-Control-Allow-Origin": "*" } }));
     const adapter = create(fetcher);

@@ -7,7 +7,9 @@ import {
 
 const requestHeaders = ["range", "if-range", "if-match", "if-none-match"];
 const responseHeaders = ["content-type", "content-length", "content-range", "etag", "accept-ranges"];
-type Entry = { ownership: DesktopMediaOwnership; grant: TrustedMediaGrant; controllers: Set<AbortController>; expiry: ReturnType<typeof setTimeout> };
+type Entry = { ownership: DesktopMediaOwnership; owners: Set<string>; grant: TrustedMediaGrant; controllers: Set<AbortController>; expiry: ReturnType<typeof setTimeout> };
+type ArtworkEntry = { owners: Set<string>; grant: { handle: string; expiresAt: number }; controllers: Set<AbortController>; expiry: ReturnType<typeof setTimeout> };
+const isMusicModuleOwner = (owner: string) => /^\["module","music",\d+\]$/.test(owner);
 export interface PrivateMediaProtocolOptions {
   readonly scheme: "stream-jams-audio" | "stream-jams-overlay";
   readonly host: "player" | "surface";
@@ -21,6 +23,7 @@ export interface PrivateMediaProtocolOptions {
 /** One registry per owning private session/generation. Caller installs handle on that session. */
 export class PrivateMediaProtocol {
   #entries = new Map<string, Entry>();
+  #artwork = new Map<string, ArtworkEntry>();
   #activeStreams = 0;
   #destroyed = false;
   readonly #origin: string;
@@ -39,8 +42,13 @@ export class PrivateMediaProtocol {
     const grant = trustedMediaGrantSchema.parse(candidate);
     if (this.#destroyed || grant.expiresAt <= Date.now()) throw new Error("Private media ownership is unavailable");
     for (const [handle, entry] of this.#entries) {
-      if (entry.ownership.ownerId === ownerId && entry.grant.handle === grant.handle) {
+      const sameSnapshot = JSON.stringify(entry.grant.snapshot) === JSON.stringify(grant.snapshot);
+      const musicRenewal = this.options.scheme === "stream-jams-overlay" && isMusicModuleOwner(ownerId)
+        && isMusicModuleOwner(entry.ownership.ownerId) && sameSnapshot;
+      if ((entry.owners.has(ownerId) && entry.grant.handle === grant.handle) || musicRenewal) {
         if (JSON.stringify(entry.grant.snapshot) !== JSON.stringify(grant.snapshot)) throw new Error("A renewed grant cannot change its pinned snapshot");
+        if (!entry.owners.has(ownerId) && entry.owners.size >= 64) throw new Error("Private media owner capacity reached");
+        entry.owners.add(ownerId);
         clearTimeout(entry.expiry);
         entry.grant = grant;
         entry.expiry = setTimeout(() => this.revoke(handle), Math.min(2_147_483_647, grant.expiresAt - Date.now()));
@@ -53,8 +61,30 @@ export class PrivateMediaProtocol {
     const expiry = setTimeout(() => this.revoke(handle), Math.min(2_147_483_647, grant.expiresAt - Date.now()));
     expiry.unref();
     // Parse copied values: caller mutations cannot change the registered capability/snapshot.
-    this.#entries.set(handle, { ownership, grant, controllers: new Set(), expiry });
+    this.#entries.set(handle, { ownership, owners: new Set([ownerId]), grant, controllers: new Set(), expiry });
     return { protocolVersion: desktopMediaProtocolVersion, snapshot: { ...grant.snapshot }, handle };
+  }
+  issueArtwork(ownerId: string, grant: { handle: string; expiresAt: number }): string {
+    desktopMediaOwnershipSchema.parse({ generation: this.options.generation, recipientId: this.options.recipientId, ownerId });
+    if (this.#destroyed || this.options.scheme !== "stream-jams-overlay" || !/^mart_[A-Za-z0-9_-]{43}$/.test(grant.handle) ||
+      !Number.isSafeInteger(grant.expiresAt) || grant.expiresAt <= Date.now() || grant.expiresAt - Date.now() > 3_600_000) throw new Error("Private artwork grant is unavailable");
+    for (const [handle, entry] of this.#artwork) {
+      if (entry.grant.handle !== grant.handle || !isMusicModuleOwner(ownerId)
+        || ![...entry.owners].every(isMusicModuleOwner)) continue;
+      if (!entry.owners.has(ownerId) && entry.owners.size >= 64) throw new Error("Private artwork owner capacity reached");
+      entry.owners.add(ownerId);
+      entry.grant = { ...grant };
+      clearTimeout(entry.expiry);
+      entry.expiry = setTimeout(() => this.#revokeArtwork(handle), grant.expiresAt - Date.now());
+      entry.expiry.unref();
+      return handle;
+    }
+    if (this.#artwork.size >= 64) throw new Error("Private artwork grant capacity reached");
+    const handle = `private_${randomBytes(32).toString("base64url")}`;
+    const expiry = setTimeout(() => this.#revokeArtwork(handle), grant.expiresAt - Date.now());
+    expiry.unref();
+    this.#artwork.set(handle, { owners: new Set([ownerId]), grant: { ...grant }, controllers: new Set(), expiry });
+    return handle;
   }
   url(reference: PrivateMediaReference): string {
     if (!this.#entries.has(reference.handle)) throw new Error("Unknown private media reference");
@@ -68,11 +98,19 @@ export class PrivateMediaProtocol {
     for (const controller of entry.controllers) controller.abort();
   }
   revokeOwner(ownerId: string): void {
-    for (const [handle, entry] of this.#entries) if (entry.ownership.ownerId === ownerId) this.revoke(handle);
+    for (const [handle, entry] of this.#entries) if (entry.owners.delete(ownerId) && entry.owners.size === 0) this.revoke(handle);
+    for (const [handle, entry] of this.#artwork) if (entry.owners.delete(ownerId) && entry.owners.size === 0) this.#revokeArtwork(handle);
   }
   destroy(): void {
     this.#destroyed = true;
     for (const handle of this.#entries.keys()) this.revoke(handle);
+    for (const handle of this.#artwork.keys()) this.#revokeArtwork(handle);
+  }
+  #revokeArtwork(handle: string): void {
+    const entry = this.#artwork.get(handle);
+    if (entry === undefined) return;
+    this.#artwork.delete(handle); clearTimeout(entry.expiry);
+    for (const controller of entry.controllers) controller.abort();
   }
   get diagnostics(): { liveGrants: number; activeStreams: number } {
     return { liveGrants: this.#entries.size, activeStreams: this.#activeStreams };
@@ -83,6 +121,35 @@ export class PrivateMediaProtocol {
     try { url = new URL(request.url); }
     // error-provenance: allow expected -- malformed private requests fail closed without disclosing grants
     catch { return fail(404); }
+    if (url.protocol === "stream-jams-overlay:" && url.hostname === "surface" && /^\/music-artwork\/private_[A-Za-z0-9_-]{43}$/.test(url.pathname)) {
+      if (this.#destroyed || request.method !== "GET" || url.search || url.hash) return fail(404);
+      const handle = url.pathname.slice("/music-artwork/".length);
+      const entry = this.#artwork.get(handle);
+      if (entry === undefined || entry.grant.expiresAt <= Date.now()) return fail(404);
+      const controller = new AbortController(); entry.controllers.add(controller);
+      const onAbort = () => controller.abort(); request.signal.addEventListener("abort", onAbort, { once: true });
+      try {
+        const upstream = await this.#fetch(`${this.#origin}/media/music-artwork/${entry.grant.handle}`, { redirect: "error", signal: controller.signal });
+        const mime = upstream.headers.get("content-type");
+        if (controller.signal.aborted || upstream.status !== 200 || !["image/png", "image/jpeg", "image/webp"].includes(mime ?? "") ||
+          upstream.headers.get("content-encoding") !== null) { await upstream.body?.cancel(); return fail(404); }
+        if (Number(upstream.headers.get("content-length") ?? 0) > 2 * 1024 * 1024 || upstream.body === null) { await upstream.body?.cancel(); return fail(404); }
+        const chunks: Uint8Array[] = [];
+        let size = 0;
+        for await (const chunk of upstream.body) {
+          size += chunk.byteLength;
+          if (controller.signal.aborted || size > 2 * 1024 * 1024) { controller.abort(); return fail(404); }
+          chunks.push(chunk);
+        }
+        const bytes = new Uint8Array(size);
+        let offset = 0;
+        for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+        return new Response(bytes, { headers: { "Content-Type": mime!, "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff" } });
+      }
+      // error-provenance: allow expected -- private media failures have one uniform not-found response
+      catch { return fail(404); }
+      finally { entry.controllers.delete(controller); request.signal.removeEventListener("abort", onAbort); }
+    }
     if (this.#destroyed || !["GET", "HEAD"].includes(request.method) || url.protocol !== `${this.options.scheme}:` ||
       url.hostname !== this.options.host || url.port || url.username || url.password || url.search || url.hash ||
       !/^\/media\/private_[A-Za-z0-9_-]{43}$/.test(url.pathname)) return fail(404);

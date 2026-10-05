@@ -82,7 +82,5 @@ export interface TimerStackProjection {
   readonly overflowCount: number;
 }
 
-export type OverlayModulePresentation = {
-  readonly kind: "timer-stack";
-  readonly stack: TimerStackProjection;
-};
+/** Compatibility alias; presentation ownership lives with overlay modules. */
+export type { OverlayModulePresentation } from "../overlay-modules/presentation.js";

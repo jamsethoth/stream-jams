@@ -106,6 +106,10 @@ export class SqliteProviderRegistrationRepository {
     return parsed;
   }
 
+  async delete(providerId: string): Promise<void> {
+    this.#connection.prepare("DELETE FROM provider_registrations WHERE id = ?").run(providerId);
+  }
+
   async findById(providerId: string): Promise<ProviderRegistrationRecord | null> {
     const row = this.#connection
       .prepare(`SELECT ${providerColumns} FROM provider_registrations WHERE id = ?`)
@@ -156,6 +160,13 @@ export class SqliteProviderRegistrationRepository {
         replacedProviderId: currentId === providerId ? null : currentId
       };
     });
+  }
+
+  /** Change Music selection without rewriting credentials from an earlier record read. */
+  async deactivateMusic(providerId: string): Promise<ProviderRegistrationRecord | null> {
+    this.#connection.prepare("UPDATE provider_registrations SET active = 0, updated_at = ? WHERE id = ? AND capability = 'music-source'")
+      .run(this.#now().toISOString(), providerId);
+    return this.findById(providerId);
   }
 
   async updateTtsSafety(

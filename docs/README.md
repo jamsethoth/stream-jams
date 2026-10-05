@@ -8,7 +8,10 @@ Use this map to distinguish current behavior, pending work, and historical evide
 | --- | --- |
 | How do I run or operate the application? | [Runbook](mvp-runbook.md) |
 | How do I configure Timers or Stream Deck HTTP actions? | [Timers](timers.md); [implementation verification and remaining manual acceptance](verification/timers.md) |
+| How do I configure Music and brand its widget? | [Music provider setup](music-providers.md), [styling surface](music-styling.md), and [dated verification/acceptance](verification/music-widget-module.md) |
+| What Music behavior is required? | [Canonical Music source](../openspec/specs/music-source-providers/spec.md) and [widget/output](../openspec/specs/music-widget-overlay/spec.md) capabilities; [scenario trace](verification/music-widget-scenarios.md) records automated and physical evidence |
 | How do native integrations pair and control timers/queues? | [Local automation API v1](automation-api.md) |
+
 | What product boundaries are intentional? | [Product plan](product-plan.md); its MVP sections describe the first delivery boundary, and later sections describe approved additions |
 | What is still pending? | [Canonical backlog](backlog.md), including links to planned OpenSpec changes |
 | What implemented behavior is required? | [Canonical OpenSpec capabilities](../openspec/specs); source and tests establish what actually runs when a discrepancy is found |
@@ -24,28 +27,26 @@ Use this map to distinguish current behavior, pending work, and historical evide
 - `apps/server` owns Fastify, SQLite repositories and migrations, secrets, providers, assets, diagnostics, and runtime composition.
 - `apps/web` serves route-based management, `/operator`, browser-source overlays, and the private desktop-overlay renderer.
 - `apps/desktop` owns the Electron service process, management window, tray, private audio player, and private desktop overlay. Windows x64 runnable-folder packaging and short-lived verified CI artifacts are implemented.
-- Alerts, Screen Effects, and Timers are registered modules. Alerts and Screen Effects retain independent playback queues; Timers use an independent server-authoritative lifecycle. Shared surfaces and global safety controls coordinate their outputs without combining their schedulers.
+- Alerts, Screen Effects, Timers, and Music are registered modules. Music is disabled by default and uses an authenticated selected source with server-authoritative snapshots. Alerts and Screen Effects retain independent playback queues; Timers use an independent server-authoritative lifecycle. Shared surfaces and global safety controls coordinate their outputs without combining their schedulers.
 - Screen Effects supports one active set, unified weighted variants, draft variant removal, media-based duration, fades, and percentage media gain. Per-effect cooldown, default/weighted authoring kinds, and Screen Effect animation controls are no longer current authoring features.
-- Registered local media uses version-pinned bounded streams for management previews, browser sources and private desktop recipients. The [local media specification](../openspec/specs/local-media-streaming/spec.md) defines integrity, ownership and resource bounds; [streaming acceptance](../openspec/changes/stream-local-media/final-acceptance.md) records validation and measurement limits for the change.
+- Registered local media uses version-pinned bounded streams for management previews, browser sources and private desktop recipients. The [local media specification](../openspec/specs/local-media-streaming/spec.md) defines integrity, ownership and resource bounds; [streaming acceptance](../openspec/changes/archive/2026-10-05-stream-local-media/final-acceptance.md) records validation and measurement limits for the change.
 
 Installers, signing, automatic updates, non-Windows desktop delivery, LAN mode, Docker product delivery, and cloud hosting remain outside current delivery. Playwright's Docker test infrastructure is separate from product delivery.
 
 ## Active Change Reconciliation
 
-The following six changes have all tasks checked at the audited commit. They remain in the active change directory; this audit synchronizes documentation without moving or archiving their records.
+The October 5, 2026 UTC reconciliation archived 21 completed changes under [the change archive](../openspec/changes/archive), using the `2026-10-05-` prefix. Before archival, canonical requirements were synchronized for automatic local-output rebinding, persistent event timers, repository error provenance, and the compact Operator panel. Other completed changes were already synchronized; newer timing, streaming, variant-removal and menu requirements were preserved rather than overwritten by older deltas. Historical acceptance limits remain with their archived records.
 
-| Change | Canonical spec reconciliation |
+Two changes remain active:
+
+| Change | Remaining work |
 | --- | --- |
-| `simplify-management-ux-workflows` | Already present; preserved later refinements to alert-row actions |
-| `simplify-live-management-ux` | Synced Home/configuration attention, readable labels, progressive Settings disclosure, and restore safety |
-| `simplify-visual-management-and-operator-ux` | Synced mobile navigation, event visibility, asset filters, queue confirmation/layout, and inline controls |
-| `add-screen-effect-sets` | Synced one-live-set ownership and set/effect/variant navigation |
-| `align-screen-effects-presentation` | Synced focused layouts, local preview, unified weights, and event-owned cooldown |
-| `add-media-synced-duration-audio-fades` | Synced asset duration, Alert/Effect duration modes, per-source fades, and gain |
+| [add-main-branch-changelog](../openspec/changes/add-main-branch-changelog/tasks.md) | Unimplemented proposal, 22 unchecked tasks; no root changelog or enforcing workflow |
+| [add-video-shoutout-overlay-module](../openspec/changes/add-video-shoutout-overlay-module/tasks.md) | Unimplemented proposal, 23 unchecked tasks; no registered video-shoutout module |
 
-Later implemented refinements are also reflected in canonical specs: removal of Screen Effect animation fields in migration 025, draft variant removal in `fec768c`, and holding playback for explicit retry when a local stop acknowledgement fails. Older delta wording must not undo those refinements.
+Persistent event timer recovery and correction requirements are now in [the canonical capability](../openspec/specs/persistent-event-timers/spec.md). The base Timer change is now [archived](../openspec/changes/archive/2026-10-05-add-timer-overlay-module/tasks.md) after the [focused packaged output/cue matrix](verification/timers.md#focused-packaged-timer-output-acceptance-2026-10-05) passed. Its base capabilities are synchronized into [Timer overlay](../openspec/specs/timer-overlay-module/spec.md) and [Timer automation](../openspec/specs/timer-automation-api/spec.md) specifications; the original idle-on-restart wording was reconciled with implemented paused recovery. Physical HTTP-button testing was user-confirmed, and Stream Deck plugin/profile certification remains outside Stream Jams scope.
 
-`add-main-branch-changelog` (0/22 tasks) and `add-video-shoutout-overlay-module` (0/23 tasks) are proposals, not implemented features. Neither a root changelog nor a registered `video-shoutout` module exists at the audited commit.
+The Music change is now [archived](../openspec/changes/archive/2026-10-05-add-music-widget-module/tasks.md) after completed automated checks and user-confirmed physical acceptance, including the artwork/responsiveness and flicker corrections. Its canonical source, widget and snapping requirements are synchronized. The [dated delivery record](verification/music-widget-module.md) and [scenario trace](verification/music-widget-scenarios.md) distinguish user observations from disposable-fixture checks; physical revocation of the user's registration was not performed. BL-028 is complete; Plex and Spotify remain separate BL-054 work. Archival does not merge or publish PR #154.
 
 ## Historical Records
 

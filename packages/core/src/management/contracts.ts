@@ -23,6 +23,7 @@ import {
 import { ttsVoiceSchema } from "../tts/schemas.js";
 import { streamerBotSubscriptionSelectionSchema } from "../events/schemas.js";
 import { serializedExceptionSchema } from "../diagnostics/serialized-exception.js";
+import { pearConfigurationSchema } from "../music/pear-configuration.js";
 
 export const managementErrorSeveritySchema = z.enum(["info", "warning", "error", "critical"]);
 
@@ -63,8 +64,8 @@ export const targetProfileDefinitions = [
   { id: "vertical", label: "Vertical 9:16", width: 1080, height: 1920 }
 ] as const satisfies readonly TargetProfileDefinition[];
 
-export const providerCapabilitySchema = z.enum(["event-source", "tts"]);
-export const providerKindSchema = z.enum(["twitch", "streamerbot", "speakerbot", "browser-speech"]);
+export const providerCapabilitySchema = z.enum(["event-source", "tts", "music-source"]);
+export const providerKindSchema = z.enum(["twitch", "streamerbot", "speakerbot", "browser-speech", "pear-desktop"]);
 export const providerConnectionStateSchema = z.enum(["unconfigured", "validating", "connected", "disconnected", "error"]);
 export const providerIntakeStateSchema = z.enum(["active", "inactive", "error"]);
 export const providerLiveStatusSchema = z.enum(["not-running", "starting", "healthy", "reconnecting", "error"]);
@@ -152,6 +153,11 @@ export const providerSetupInputSchema = z.discriminatedUnion("kind", [
   providerSetupBaseSchema.extend({
     kind: z.literal("browser-speech"),
     configuration: z.object({}).strict()
+  }).strict(),
+  providerSetupBaseSchema.extend({
+    kind: z.literal("pear-desktop"),
+    configuration: pearConfigurationSchema,
+    pairingAttemptId: z.string().min(16).max(128).optional()
   }).strict()
 ]);
 
@@ -790,7 +796,7 @@ export const assetLibraryItemSchema = z.object({
     ownerId: nonEmptyStringSchema,
     ownerName: nonEmptyStringSchema,
     variantId: nonEmptyStringSchema.nullable(),
-    usageRole: z.enum(["icon", "start-audio", "end-audio"]).optional()
+    usageRole: z.enum(["icon", "start-audio", "end-audio", "branding", "title-font", "details-font"]).optional()
   }).strict()).optional()
 });
 
@@ -807,7 +813,7 @@ export const assetChangeImpactSchema = z.object({
     ownerId: nonEmptyStringSchema,
     ownerName: nonEmptyStringSchema,
     variantId: nonEmptyStringSchema.nullable(),
-    usageRole: z.enum(["icon", "start-audio", "end-audio"]).optional()
+    usageRole: z.enum(["icon", "start-audio", "end-audio", "branding", "title-font", "details-font"]).optional()
   }).strict()).default([]),
   canDelete: z.boolean(),
   requiresConfirmation: z.boolean(),
@@ -1079,6 +1085,7 @@ export function normalizeAssetTags(tags: readonly string[]): readonly string[] {
 }
 
 export function providerCapabilityForKind(kind: ProviderKind): ProviderCapability {
+  if (kind === "pear-desktop") return "music-source";
   return kind === "twitch" || kind === "streamerbot" ? "event-source" : "tts";
 }
 

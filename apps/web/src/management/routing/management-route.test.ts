@@ -11,6 +11,7 @@ describe("management route model", () => {
     ["/manage", "home"],
     ["/manage/event-sources", "event-sources"],
     ["/manage/tts-providers", "tts-providers"],
+    ["/manage/music-sources", "music-sources"],
     ["/manage/modules/alerts", "modules-alerts"],
     ["/manage/modules/screen-effects", "modules-screen-effects"],
     ["/manage/modules/timers", "modules-timers"],
@@ -35,6 +36,7 @@ describe("management route model", () => {
       "Home",
       "Event sources",
       "TTS providers",
+      "Music sources",
       "Modules",
       "Assets",
       "Diagnostics",
@@ -44,6 +46,7 @@ describe("management route model", () => {
       "home",
       "event-sources",
       "tts-providers",
+      "music-sources",
       "modules-alerts",
       "assets",
       "diagnostics",
@@ -61,8 +64,15 @@ describe("management route model", () => {
       "modules-alerts",
       "modules-screen-effects",
       "modules-timers",
+      "modules-music",
       "alert-safety"
     ]);
+  });
+
+  it("round-trips the Music appearance route", () => {
+    expect(formatManagementRoute({ id: "modules-music" })).toBe("/manage/modules/music");
+    expect(parseManagementRoute("/manage/modules/music")).toEqual({ id: "modules-music" });
+    expect(getManagementRouteDefinition({ id: "modules-music" }).breadcrumbs).toEqual(["Modules", "Music"]);
   });
 
   it("round-trips focused Screen Effect editor routes", () => {

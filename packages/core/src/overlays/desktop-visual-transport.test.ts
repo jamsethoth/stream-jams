@@ -1,5 +1,7 @@
 import { expect, it } from "vitest";
 import { desktopModuleSyncSchema, desktopVisualBatchSchema, desktopVisualCommandSchema, desktopVisualReplySchema } from "./desktop-visual-transport.js";
+import { createDefaultMusicModuleConfig } from "../music/schemas.js";
+import { projectMusicWidget } from "../music/projection.js";
 
 const key = { surfaceId: "desktop:primary", moduleId: "alerts", occurrenceId: "one", generation: 1 };
 const instruction = { id: "layer", overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module",
@@ -7,6 +9,25 @@ const instruction = { id: "layer", overlayId: "default", moduleId: "alerts", pur
   visual: { assetId: "asset", mediaType: "image", layout: { x: 0, y: 0, width: 100, height: 100, zIndex: 0 } } };
 const batch = { key, timing: { startsAtEpochMs: 1000, endsAtEpochMs: 2000 }, instructions: [instruction],
   assets: [asset("asset", "image/png")] };
+
+it("accepts Landscape Music in desktop sync and rejects cross-module and Vertical payloads", () => {
+  const snapshot = { providerId: "pear", generation: "g", revision: 1, track: { id: "track", title: "Title", artists: [], album: null, artworkRef: null }, playbackState: "playing" as const, positionMs: null, durationMs: null, observedAtEpochMs: 1000, session: null };
+  const status = { state: "connected" as const, stale: false, diagnosticReference: null };
+  const config = createDefaultMusicModuleConfig();
+  const widget = projectMusicWidget(snapshot, status, config, "landscape", 1000, 1000)!;
+  const sync = { moduleId: "music", revision: 1, presentation: { kind: "music-widget", widget }, assets: [] };
+  expect(desktopModuleSyncSchema.safeParse(sync).success).toBe(true);
+  expect(desktopVisualCommandSchema.safeParse({ type: "sync-module", ...sync }).success).toBe(true);
+  expect(desktopModuleSyncSchema.safeParse({ ...sync, moduleId: "timers" }).success).toBe(false);
+  expect(desktopModuleSyncSchema.safeParse({ ...sync, presentation: { kind: "music-widget", widget: { ...widget, targetProfileId: "vertical" } } }).success).toBe(false);
+  const brand = asset("brand", "image/png");
+  const withBrand = { ...sync, presentation: { kind: "music-widget", widget: { ...widget, assets: [brand.grant.snapshot] } }, assets: [brand] };
+  expect(desktopModuleSyncSchema.safeParse(withBrand).success).toBe(true);
+  expect(desktopModuleSyncSchema.safeParse({ ...withBrand, assets: [] }).success).toBe(false);
+  expect(desktopModuleSyncSchema.safeParse({ ...withBrand, assets: [asset("brand", "font/woff2")] }).success).toBe(false);
+  expect(desktopModuleSyncSchema.safeParse({ ...withBrand, presentation: { kind: "music-widget", widget: { ...widget, assets: [{ ...brand.grant.snapshot, sizeBytes: brand.grant.snapshot.sizeBytes + 1 }] } } }).success).toBe(false);
+  expect(desktopModuleSyncSchema.safeParse({ ...sync, assets: [brand] }).success).toBe(false);
+});
 
 it("accepts normalized visual batches without audio authority", () => {
   expect(desktopVisualBatchSchema.parse(batch)).toEqual(batch);

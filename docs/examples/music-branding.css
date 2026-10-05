@@ -1,0 +1,44 @@
+/* Optional Advanced CSS for an uploaded Music branding image.
+   Choose the image in the editor; CSS cannot load files or remote URLs. */
+.sj-content[data-view="full"] {
+  display: block;
+  padding-right: 152px;
+}
+
+.sj-content[data-view="full"] .sj-artwork {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+}
+
+.sj-content[data-view="full"] .sj-progress-track {
+  position: absolute;
+  top: 10px;
+  left: 16px;
+  right: 152px;
+  width: auto;
+  margin-top: 0;
+}
+
+.sj-content[data-view="full"] .sj-title {
+  margin-top: 24px;
+  color: var(--sj-title-color);
+  animation: music-title-enter 250ms ease-out;
+}
+
+.sj-content[data-view="full"] .sj-artists {
+  color: var(--sj-details-color);
+}
+
+.sj-content[data-view="full"] .sj-album { display: none; }
+
+@container (max-width: 480px) {
+  .sj-content[data-view="full"] { padding-right: 16px; }
+  .sj-content[data-view="full"] .sj-artwork { display: none; }
+  .sj-content[data-view="full"] .sj-progress-track { right: 16px; }
+}
+
+@keyframes music-title-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

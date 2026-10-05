@@ -34,11 +34,19 @@ Each alert default or variation SHALL own one output selection containing a Brow
 - **AND** adding the sound layer does not implicitly disable the soundtrack
 
 ### Requirement: Named Routes Bind Explicit Local Devices
-Authorized management users SHALL create, rename, bind, inspect, explicitly test and delete reusable named routes. Bindings SHALL identify enumerated output devices rather than inferred labels or automatic default/communications aliases.
+Authorized management users SHALL create, rename, bind, inspect, explicitly test and delete reusable named routes. Bindings SHALL identify enumerated output devices rather than automatic default or communications aliases. Each route MAY separately opt in to following its exact saved device name. The server SHALL derive the saved label from the selected current inventory and SHALL NOT accept a client-authored label.
 
 #### Scenario: Route is saved
 - **WHEN** a valid unique name and enumerated explicit device ID are saved
-- **THEN** a stable route ID and its binding persist across app restart
+- **THEN** a stable route ID, authoritative device label, binding and per-route consent persist across app restart
+
+#### Scenario: Existing or new route has no consent
+- **WHEN** an existing route is migrated or a new route is created without explicit automatic-follow consent
+- **THEN** automatic following is disabled
+
+#### Scenario: Route is unbound
+- **WHEN** an operator clears a route's selected device
+- **THEN** its device ID and label are cleared and automatic following is disabled
 
 #### Scenario: Unknown route is assigned
 - **WHEN** an alert or Screen Effect save references a nonexistent route ID
@@ -112,17 +120,36 @@ Queue coordination SHALL track local audio independently of browser acknowledgem
 - **WHEN** an acknowledgement belongs to a skipped/expired occurrence or an older renderer generation
 - **THEN** it cannot complete or otherwise mutate a newer occurrence
 
-### Requirement: Unavailable Devices Never Cause Automatic Rerouting
-The system SHALL fail closed for unavailable, disconnected or rejected device sinks. It SHALL NOT automatically redirect their audio to another device or the Browser Source, and recovery SHALL apply only to future playback.
+### Requirement: Unavailable Devices Never Cause Unconsented Or Ambiguous Rerouting
+The system SHALL fail closed for unavailable, disconnected or rejected device sinks. It SHALL NOT redirect audio to another device or Browser Source unless the route explicitly opted in and exactly one current device has a label equal to the authoritative saved label using case-sensitive equality. Recovery SHALL be persisted before use and SHALL apply only to future playback.
 
 #### Scenario: Device is unplugged
 - **WHEN** an active destination disappears
 - **THEN** that destination stops and an actionable management warning is shown
 - **AND** other healthy outputs continue without a fallback copy
 
-#### Scenario: Device returns with a different ID
-- **WHEN** a device label reappears with a different ID
-- **THEN** the route requires explicit rebinding rather than guessing identity from its name
+#### Scenario: Opted-in device returns with a different ID
+- **WHEN** a missing route opted in and exactly one current device has the exact saved label under a different ID
+- **THEN** the replacement ID is persisted before the route becomes available
+- **AND** only later occurrences use the replacement
+
+#### Scenario: Exact saved name is absent or duplicated
+- **WHEN** no current device or more than one current device has the exact saved label
+- **THEN** the route remains unavailable with actionable absent-or-ambiguous guidance
+- **AND** enumeration order, partial labels and default devices do not break the tie
+
+#### Scenario: Consent is disabled
+- **WHEN** a missing route has automatic following disabled
+- **THEN** it requires an explicit manual rebind
+
+#### Scenario: Automatic persistence fails
+- **WHEN** an exact unique replacement is found but cannot be persisted
+- **THEN** the old binding remains authoritative and unavailable
+- **AND** the runtime does not use the inferred replacement ephemerally
+
+#### Scenario: Manual mutation wins a race
+- **WHEN** an operator rebinds or deletes a route while automatic enumeration is pending
+- **THEN** stale reconciliation neither overwrites nor resurrects that route
 
 #### Scenario: Player crashes and recovers
 - **WHEN** the hidden player crashes, including repeated failures
@@ -132,6 +159,10 @@ The system SHALL fail closed for unavailable, disconnected or rejected device si
 #### Scenario: Owning service is lost
 - **WHEN** the server exits, its IPC link closes, or its 10-second ownership lease expires
 - **THEN** the desktop host stops local audio rather than continuing unsupervised playback
+
+#### Scenario: Device returns with a different ID
+- **WHEN** a device label reappears with a different ID and the route has not opted in to exact-name following
+- **THEN** the route requires explicit rebinding rather than guessing identity from its name
 
 #### Scenario: Current service resumes its ownership lease
 - **WHEN** the active service worker sends a valid lease after ownership expired without being replaced or entering shutdown
@@ -206,3 +237,25 @@ The system SHALL apply normalized local-media gain from 0 through 2 consistently
 - **WHEN** a local media source has configured gain above 1
 - **THEN** playback SHALL route it through an audio gain node
 - **AND** its fade envelope SHALL remain bounded by the configured gain
+
+### Requirement: Timer Cues Reuse Named Audio Routes
+Reusable named audio routes SHALL be selectable for timer start and end cues through one timer-wide Browser Source flag and route-ID set. Route validation, physical-device deduplication, unavailability behavior, rebinding snapshots, and deletion impact SHALL apply to Timers as they do to other explicit local media owners.
+
+#### Scenario: Timer selects duplicate physical destinations
+- **WHEN** two selected named routes resolve to the same explicit physical device for a timer cue
+- **THEN** that cue plays once on the device rather than doubling its sound
+
+#### Scenario: Referenced route deletion is attempted
+- **WHEN** a named route is referenced by one or more timer definitions
+- **THEN** deletion is rejected with module-qualified affected timer names
+- **AND** concurrent timer saves cannot create a dangling route reference during deletion
+
+#### Scenario: Route is rebound during an active timer
+- **WHEN** a user confirms rebinding a selected route while a timer run is active
+- **THEN** the active run retains its admitted binding for any already-admitted cue work
+- **AND** future timer starts use the replacement binding
+
+#### Scenario: Selected timer route is unavailable
+- **WHEN** a timer transition emits a cue to an unavailable named route
+- **THEN** that destination fails closed without falling back to another device or Browser Source
+- **AND** timer progression and healthy recipients continue

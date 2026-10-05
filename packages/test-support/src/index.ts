@@ -1,4 +1,7 @@
 import type { SecretRef, SecretStore } from "@stream-jams/core";
+export { startPearProtocolFixture, type PearProtocolFixture } from "./pear-protocol-fixture.js";
+export { assertMusicSourceContract, type MusicSourceContractScenario } from "./music-source-contract.js";
+export { createDisposableMusicSourceFixture } from "./music-source-fixture.js";
 
 export type SecretRefKey = (ref: SecretRef) => string;
 

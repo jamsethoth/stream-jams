@@ -1,5 +1,5 @@
 import { createTestMediaPreviewApi } from "./test-support/media-preview-fixture.js";
-import type { AssetRecord } from "./management/assets/asset-api.js";
+import { createDefaultMusicModuleConfig, type AssetRecord } from "@stream-jams/core";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
@@ -29,6 +29,15 @@ describe("App", () => {
 
 function createManagementApi(): ManagementApi {
   return {
+    async getMusicConfig() { return { enabled: false, config: createDefaultMusicModuleConfig() }; },
+    async saveMusicConfig(enabled, config) { return { enabled, config }; },
+    async listMusicOutputs() { return []; },
+    async beginMusicPairing() { return { attemptId: "pair_test", status: "pending", expiresAt: "2026-07-16T18:00:00.000Z" }; },
+    async getMusicPairing() { return { attemptId: "pair_test", status: "approved", expiresAt: "2026-07-16T18:00:00.000Z" }; },
+    async cancelMusicPairing() {},
+    async getMusicStatus() { return { enabled: false, selectedProviderId: null, status: { state: "disconnected", stale: false, diagnosticReference: null }, missingAssetIds: { landscape: [], vertical: [] } }; },
+    async reconnectMusicSource() { return { enabled: false, selectedProviderId: null, status: { state: "disconnected", stale: false, diagnosticReference: null }, missingAssetIds: { landscape: [], vertical: [] } }; },
+    async replaceMusicCredential() { return { validation: { valid: true, connectionState: "connected", intakeState: null, validatedAt: "2026-07-15T05:00:00.000Z", availableVoices: [], error: null }, runtimeReconcilePending: false, credentialRetirementPending: false }; },
     async reportClientException(input) { return { referenceId: input.referenceId }; },
     async getHomeSetupSummary() {
       return { readiness: [], activeAlertSet: null, alertConfiguration: { state: "no-active-set", enabledAlertCount: 0, items: [] }, actionableProblems: [] };

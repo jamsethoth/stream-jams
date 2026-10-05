@@ -8,6 +8,8 @@ import {
   type AlertPriorityGroup
 } from "@stream-jams/core";
 
+import { snapEditorRect } from "../../editor/snapping.js";
+
 type LayerLayout = AlertEditorDocument["targetProfiles"][number]["layerLayouts"][number];
 export type TargetProfileId = AlertEditorDocument["targetProfiles"][number]["id"];
 export type LayerGeometry = Pick<LayerLayout, "x" | "y" | "width" | "height">;
@@ -442,22 +444,9 @@ export function snapLayerGeometry(
   options: SnapOptions = {}
 ): LayerGeometry {
   const profile = targetProfileDefinitions.find((candidate) => candidate.id === profileId)!;
-  const gridSize = options.gridSize ?? 10;
-  const threshold = options.threshold ?? 5;
-
-  return {
-    ...geometry,
-    x: nearestSnap(
-      geometry.x,
-      [0, profile.width - geometry.width, (profile.width - geometry.width) / 2, Math.round(geometry.x / gridSize) * gridSize],
-      threshold
-    ),
-    y: nearestSnap(
-      geometry.y,
-      [0, profile.height - geometry.height, (profile.height - geometry.height) / 2, Math.round(geometry.y / gridSize) * gridSize],
-      threshold
-    )
-  };
+  return snapEditorRect(geometry, { mode: "move", bounds: profile, peers: [], grid: true, alignment: true, scale: 1,
+    ...(options.gridSize === undefined ? {} : { gridSize: options.gridSize }),
+    ...(options.threshold === undefined ? {} : { threshold: options.threshold }) }).rect;
 }
 
 function synchronizeLayerOrder(
@@ -494,19 +483,4 @@ function nextLayerId(document: AlertEditorDocument, type: AlertLayer["type"]): s
   let suffix = document.layers.length + 1;
   while (document.layers.some((layer) => layer.id === `layer-${type}-${suffix}`)) suffix += 1;
   return `layer-${type}-${suffix}`;
-}
-
-function nearestSnap(value: number, candidates: readonly number[], threshold: number): number {
-  let result = value;
-  let nearestDistance = Number.POSITIVE_INFINITY;
-
-  for (const candidate of candidates) {
-    const distance = Math.abs(candidate - value);
-    if (distance <= threshold && distance < nearestDistance) {
-      result = candidate;
-      nearestDistance = distance;
-    }
-  }
-
-  return result;
 }

@@ -43,7 +43,7 @@ export default defineConfig({
     baseURL,
     trace: "on-first-retry"
   },
-  webServer: {
+  webServer: process.env.PLAYWRIGHT_SKIP_WEB_SERVER === "1" ? undefined : {
     command: `corepack pnpm --filter @stream-jams/web exec vite --host ${webServerHost} --port 4173`,
     reuseExistingServer: !process.env.CI,
     url: webServerUrl

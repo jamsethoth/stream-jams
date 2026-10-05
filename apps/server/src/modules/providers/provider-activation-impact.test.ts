@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { evaluateProviderActivationImpact } from "./provider-activation-impact.js";
 
 describe("evaluateProviderActivationImpact", () => {
+  it("does not attribute alert impact to a Music source switch", () => {
+    expect(evaluateProviderActivationImpact({ capability: "music-source", affectedAlertCount: 4, changesProviderKind: true, currentProviderName: "Pear A", targetProviderName: "Pear B", occurredAt: "2026-07-17T12:00:00.000Z" })).toEqual({ matchedAlertCount: 0, unmatchedAlertCount: 0, blockers: [], warnings: [] });
+  });
   it("keeps canonical alerts matched when switching event-source provider kinds", () => {
     expect(evaluateProviderActivationImpact({
       capability: "event-source",

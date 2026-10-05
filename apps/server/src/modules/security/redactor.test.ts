@@ -57,6 +57,8 @@ describe("createRedactor", () => {
     const redactor = createRedactor();
     expect(redactor.redactText("/media/med_private-capability grant med_other_capability"))
       .toBe("/media/[REDACTED] grant [REDACTED]");
+    expect(redactor.redactText("/media/music-artwork/mart_private-capability grant mart_other_capability"))
+      .toBe("/media/music-artwork/[REDACTED] grant [REDACTED]");
   });
   it("redacts nested secrets, auth headers, URLs, and overlay route keys without mutating input", () => {
     const input = {
@@ -142,6 +144,19 @@ describe("createRedactor", () => {
     expect(redactor.redactText("GET /manage?token=secret-value&view=raw")).toBe(
       "GET /manage?token=%5BREDACTED%5D&view=raw"
     );
+  });
+
+  it("redacts Pear credentials in WS, WSS and HTTP URL forms and nested diagnostics", () => {
+    const redactor = createRedactor();
+    const sentinel = "pear-secret-sentinel";
+    const diagnostic = redactor.redact({
+      websocket: `wss://localhost:26538/api/v1/ws?token=${sentinel}`,
+      insecureWebsocket: `ws://localhost:26538/api/v1/ws?token=${sentinel}`,
+      url: `https://pear:${sentinel}@localhost:26538/auth/client`,
+      authorization: `Bearer ${sentinel}`,
+      cause: { message: `Authorization: Bearer ${sentinel}` }
+    });
+    expect(JSON.stringify(diagnostic)).not.toContain(sentinel);
   });
 
   it("normalizes control characters across nested exception text", () => {

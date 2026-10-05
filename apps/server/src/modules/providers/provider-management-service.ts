@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import {
   evaluateProviderActivation,
   localWebSocketConnectionSchema,
@@ -5,6 +6,8 @@ import {
   providerActivationResultSchema,
   providerCapabilityForKind,
   providerRegistrationAttemptSchema,
+  musicCredentialReplacementInputSchema,
+  musicCredentialReplacementResultSchema,
   providerSetupInputSchema,
   providerValidationResultSchema,
   providerVoiceTestResultSchema,
@@ -22,6 +25,9 @@ import {
   type ProviderSetupInput,
   type ProviderValidationResult,
   type ProviderVoiceTestResult,
+  type PearConfiguration,
+  type MusicCredentialReplacementInput,
+  type MusicCredentialReplacementResult,
   type RegisteredProviderDetail,
   type RegisteredProviderView,
   type SecretRef,
@@ -34,6 +40,7 @@ import type {
   ProviderRegistrationRecord,
   SqliteProviderRegistrationRepository
 } from "./sqlite-provider-registration-repository.js";
+import type { PearPairingClaim, PearPairingService } from "../music/pear-pairing-service.js";
 
 export interface ProviderVoiceTestInput {
   readonly provider: RegisteredProviderDetail;
@@ -49,12 +56,17 @@ export interface ProviderManagementServiceOptions {
   readonly repository: SqliteProviderRegistrationRepository;
   readonly adapters: ReadonlyMap<ProviderKind, ProviderManagementAdapter>;
   readonly secretStore: Pick<SecretStoreBoundary, "setSecret" | "getSecret" | "deleteSecret">;
+  readonly musicPairing?: Pick<PearPairingService, "reserve"> | undefined;
+  readonly validateMusicConnection?: ((config: PearConfiguration, token: string, signal: AbortSignal) => Promise<ProviderValidationResult>) | undefined;
+  /** Own the complete async Pear lifecycle, including queued writes and postcommit cleanup. */
+  readonly runMusicMutation?: <T>(work: () => Promise<T>) => Promise<T>;
   readonly getActivationImpact: (providerId: string) => Promise<ProviderActivationImpact>;
   readonly getUsedByAlertCount: (kind: ProviderKind) => Promise<number>;
   readonly generateId: () => string;
   readonly generateReferenceId: () => string;
   readonly logger?: Pick<Logger, "error"> | undefined;
   readonly onEventSourceChanged?: (() => void | Promise<void>) | undefined;
+  readonly onMusicSourceChanged?: (() => void | Promise<void>) | undefined;
   readonly streamerBotSubscriptions?: StreamerBotSubscriptionRuntime | undefined;
   readonly getVerifiedTwitchBroadcasterId?: (() => Promise<string | null>) | undefined;
   readonly now?: () => Date;
@@ -142,27 +154,36 @@ export class ProviderManagementService {
   readonly #repository: SqliteProviderRegistrationRepository;
   readonly #adapters: ReadonlyMap<ProviderKind, ProviderManagementAdapter>;
   readonly #secretStore: ProviderManagementServiceOptions["secretStore"];
+  readonly #musicPairing: ProviderManagementServiceOptions["musicPairing"];
+  readonly #validateMusicConnection: ProviderManagementServiceOptions["validateMusicConnection"];
+  readonly #runMusicMutation: NonNullable<ProviderManagementServiceOptions["runMusicMutation"]>;
   readonly #getActivationImpact: ProviderManagementServiceOptions["getActivationImpact"];
   readonly #getUsedByAlertCount: ProviderManagementServiceOptions["getUsedByAlertCount"];
   readonly #generateId: () => string;
   readonly #generateReferenceId: () => string;
   readonly #logger: Pick<Logger, "error"> | null;
   readonly #onEventSourceChanged: () => void | Promise<void>;
+  readonly #onMusicSourceChanged: () => void | Promise<void>;
   readonly #streamerBotSubscriptions: StreamerBotSubscriptionRuntime | null;
   readonly #getVerifiedTwitchBroadcasterId: () => Promise<string | null>;
   readonly #now: () => Date;
   #pendingStreamerBotSubscriptionMutation: Promise<unknown> = Promise.resolve();
+  #pendingMusicCredentialMutation: Promise<unknown> = Promise.resolve();
 
   constructor(options: ProviderManagementServiceOptions) {
     this.#repository = options.repository;
     this.#adapters = options.adapters;
     this.#secretStore = options.secretStore;
+    this.#musicPairing = options.musicPairing;
+    this.#validateMusicConnection = options.validateMusicConnection;
+    this.#runMusicMutation = options.runMusicMutation ?? (work => work());
     this.#getActivationImpact = options.getActivationImpact;
     this.#getUsedByAlertCount = options.getUsedByAlertCount;
     this.#generateId = options.generateId;
     this.#generateReferenceId = options.generateReferenceId;
     this.#logger = options.logger ?? null;
     this.#onEventSourceChanged = options.onEventSourceChanged ?? (() => {});
+    this.#onMusicSourceChanged = options.onMusicSourceChanged ?? (() => {});
     this.#streamerBotSubscriptions = options.streamerBotSubscriptions ?? null;
     this.#getVerifiedTwitchBroadcasterId = options.getVerifiedTwitchBroadcasterId ?? (async () => null);
     this.#now = options.now ?? (() => new Date());
@@ -170,8 +191,25 @@ export class ProviderManagementService {
 
   async validateProvider(input: ProviderSetupInput): Promise<ProviderValidationResult> {
     const parsed = providerSetupInputSchema.parse(input);
+    return parsed.kind === "pear-desktop" ? this.#runMusicMutation(() => this.#validateProvider(parsed)) : this.#validateProvider(parsed);
+  }
+
+  async #validateProvider(parsed: ReturnType<typeof providerSetupInputSchema.parse>): Promise<ProviderValidationResult> {
+    if (parsed.kind === "pear-desktop") {
+      if (parsed.pairingAttemptId === undefined || this.#musicPairing === undefined || this.#validateMusicConnection === undefined) {
+        return this.#failedValidation("Pear pairing is required", "Approve a local Pear pairing request before connecting.", "Pair Pear Desktop and retry setup.");
+      }
+      let claim: PearPairingClaim;
+      try { claim = this.#musicPairing.reserve(parsed.pairingAttemptId, parsed.configuration); }
+      // error-provenance: allow expected -- invalid/used pairing claims return bounded setup guidance
+      catch { return this.#failedValidation("Pear pairing is unavailable", "The pairing request expired, was cancelled, or has already been used.", "Start a new pairing request."); }
+      try {
+        return await this.#validatePear(parsed.configuration, claim.token);
+      } finally { claim.release(); }
+    }
     if (parsed.kind === "streamerbot" && !parsed.credential && !parsed.configuration.allowUnauthenticatedLocalConnection) {
       return this.#failedValidation("Streamer.bot authentication must be configured", "A password or explicit local unauthenticated consent is required.", "Enable Authentication and Enforce in Streamer.bot and enter the password, or explicitly allow an unauthenticated local connection.");
+
     }
     const adapter = this.#adapters.get(parsed.kind);
     if (adapter === undefined) {
@@ -197,8 +235,22 @@ export class ProviderManagementService {
 
   async registerProvider(input: ProviderSetupInput): Promise<ProviderRegistrationAttempt> {
     const parsed = providerSetupInputSchema.parse(input);
-    const validation = await this.validateProvider(parsed);
+    return parsed.kind === "pear-desktop" ? this.#runMusicMutation(() => this.#registerProvider(parsed)) : this.#registerProvider(parsed);
+  }
+
+  async #registerProvider(parsed: ReturnType<typeof providerSetupInputSchema.parse>): Promise<ProviderRegistrationAttempt> {
+    let claim: PearPairingClaim | null = null;
+    if (parsed.kind === "pear-desktop" && parsed.pairingAttemptId !== undefined && this.#musicPairing !== undefined && this.#validateMusicConnection !== undefined) {
+      try { claim = this.#musicPairing.reserve(parsed.pairingAttemptId, parsed.configuration); }
+      // error-provenance: allow expected -- invalid claim follows the ordinary failed-validation path below
+      catch { /* Validation below returns a bounded management error. */ }
+    }
+    const validation = claim !== null && parsed.kind === "pear-desktop"
+      ? await this.#validatePear(parsed.configuration, claim.token)
+      : await this.#validateProvider(parsed);
+    claim?.assertActive();
     if (!validation.valid) {
+      claim?.release();
       return providerRegistrationAttemptSchema.parse({
         status: "validation-failed",
         provider: null,
@@ -210,8 +262,10 @@ export class ProviderManagementService {
     const active = (await this.#repository.findActive(capability)) === null;
     const providerId = this.#generateId();
     const now = this.#now().toISOString();
-    const secret = providerCredential(parsed);
-    const secretRef = secret === null ? null : createProviderSecretRef(providerId);
+    const secret = parsed.kind === "pear-desktop"
+      ? claim?.token ?? null
+      : providerCredential(parsed);
+    const secretRef = secret === null ? null : createProviderSecretRef(providerId, parsed.kind);
     const record: ProviderRegistrationRecord = {
       provider: {
         id: providerId,
@@ -235,25 +289,139 @@ export class ProviderManagementService {
     };
 
     if (secretRef !== null && secret !== null) {
-      await this.#secretStore.setSecret(secretRef, secret);
+      try {
+        claim?.assertActive();
+        await this.#secretStore.setSecret(secretRef, secret);
+        claim?.assertActive();
+      }
+      catch (error) {
+        await this.#secretStore.deleteSecret(secretRef);
+        claim?.release();
+        throw error;
+      }
     }
 
+    let saved: ProviderRegistrationRecord;
     try {
-      const saved = await this.#repository.save(record);
+      claim?.assertActive();
+      saved = await this.#repository.save(record);
+      claim?.assertActive();
+      claim?.complete();
+    } catch (error) {
+      if (claim !== null) await this.#repository.delete(providerId);
+      if (secretRef !== null) await this.#secretStore.deleteSecret(secretRef);
+      claim?.release();
+      throw error;
+    }
+    try {
       if (saved.provider.capability === "event-source" && saved.provider.active) {
         await this.#onEventSourceChanged();
       }
-      return providerRegistrationAttemptSchema.parse({
-        status: "registered",
-        provider: await this.#toDetail(saved),
-        validation
-      });
-    } catch (error) {
-      if (secretRef !== null) {
-        await this.#secretStore.deleteSecret(secretRef);
+      if (saved.provider.capability === "music-source" && saved.provider.active) {
+        await this.#onMusicSourceChanged();
       }
-      throw error;
     }
+    // error-provenance: allow expected -- committed registration stays durable while runtime retries independently
+    catch {
+      // The record and its credential are durable. Runtime reconciliation retries separately.
+    }
+    return providerRegistrationAttemptSchema.parse({
+      status: "registered", provider: await this.#toDetail(saved), validation
+    });
+  }
+
+  /** Replace an existing Pear credential without changing its registration or active selection. */
+  replaceMusicCredential(providerId: string, input: MusicCredentialReplacementInput): Promise<MusicCredentialReplacementResult> {
+    return this.#runMusicMutation(() => this.#queueMusicCredentialReplacement(providerId, input));
+  }
+
+  #queueMusicCredentialReplacement(providerId: string, input: MusicCredentialReplacementInput): Promise<MusicCredentialReplacementResult> {
+    const result = this.#pendingMusicCredentialMutation.then(() => this.#replaceMusicCredential(providerId, input));
+    this.#pendingMusicCredentialMutation = result.catch(
+      // error-provenance: allow expected -- caller observes replacement error; serialized queue remains usable
+      () => undefined
+    );
+    return result;
+  }
+
+  async #replaceMusicCredential(providerId: string, input: MusicCredentialReplacementInput): Promise<MusicCredentialReplacementResult> {
+    const parsed = musicCredentialReplacementInputSchema.parse(input);
+    const record = await this.#requireRecord(providerId);
+    if (record.provider.kind !== "pear-desktop" || this.#musicPairing === undefined || this.#validateMusicConnection === undefined) {
+      throw new MusicCredentialReplacementUnavailableError();
+    }
+    let claim: PearPairingClaim;
+    try { claim = this.#musicPairing.reserve(parsed.pairingAttemptId, parsed.configuration); }
+    // error-provenance: allow expected -- rejected replacement claim returns bounded setup guidance
+    catch { return { validation: await this.#failedValidation("Pear pairing is unavailable", "The pairing request expired, was cancelled, or has already been used.", "Start a new pairing request."), runtimeReconcilePending: false, credentialRetirementPending: false }; }
+    const newSecretRef: SecretRef = { namespace: "music", accountId: providerId, name: `access-token-${randomBytes(16).toString("hex")}` };
+    let attemptedSave = false;
+    let previousForRollback: ProviderRegistrationRecord | null = null;
+    try {
+      const validation = await this.#validatePear(parsed.configuration, claim.token);
+      claim.assertActive();
+      if (!validation.valid) return { validation, runtimeReconcilePending: false, credentialRetirementPending: false };
+      await this.#secretStore.setSecret(newSecretRef, claim.token);
+      claim.assertActive();
+      const current = await this.#requireRecord(providerId);
+      if (current.provider.kind !== "pear-desktop") throw new MusicCredentialReplacementUnavailableError();
+      previousForRollback = current;
+      claim.assertActive();
+      attemptedSave = true;
+      await this.#repository.save({
+        ...current,
+        configuration: parsed.configuration,
+        secretRef: newSecretRef,
+        provider: { ...current.provider, connectionState: validation.connectionState, validatedAt: validation.validatedAt, error: null },
+        updatedAt: this.#now().toISOString()
+      });
+      claim.assertActive();
+      claim.complete();
+      // The repository now durably points at the new credential. Runtime errors cannot undo it.
+      let runtimeReconcilePending = false;
+      try { if (current.provider.active) await this.#onMusicSourceChanged(); }
+      // error-provenance: allow expected -- committed credential remains valid; management reports pending runtime retry
+      catch { runtimeReconcilePending = true; }
+      let credentialRetirementPending = false;
+      if (current.secretRef !== null) {
+        try { await this.#secretStore.deleteSecret(current.secretRef); }
+        // error-provenance: allow cleanup -- new credential is durable; management reports old-secret retirement pending
+        catch { credentialRetirementPending = true; }
+      }
+      return musicCredentialReplacementResultSchema.parse({ validation, runtimeReconcilePending, credentialRetirementPending });
+    } catch (error) {
+      if (attemptedSave && previousForRollback !== null) {
+        const afterFailure = await this.#repository.findById(providerId);
+        if (afterFailure?.secretRef?.name === newSecretRef.name) {
+          await this.#repository.save({
+            ...afterFailure,
+            configuration: previousForRollback.configuration,
+            secretRef: previousForRollback.secretRef,
+            provider: {
+              ...afterFailure.provider,
+              connectionState: previousForRollback.provider.connectionState,
+              validatedAt: previousForRollback.provider.validatedAt,
+              error: previousForRollback.provider.error
+            },
+            updatedAt: this.#now().toISOString()
+          });
+        }
+      }
+      await this.#secretStore.deleteSecret(newSecretRef);
+      throw error;
+    } finally {
+      claim.release();
+    }
+  }
+
+  async #validatePear(config: PearConfiguration, token: string): Promise<ProviderValidationResult> {
+    try {
+      const result = providerValidationResultSchema.parse(await this.#validateMusicConnection!(config, token, AbortSignal.timeout(5_000)));
+      if (result.valid) return { ...result, error: null };
+    }
+    // error-provenance: allow expected -- upstream connection errors may contain credentials; return bounded guidance
+    catch { /* Never surface upstream credential-bearing diagnostics. */ }
+    return this.#failedValidation("Pear connection failed", "Pear did not confirm a usable music connection.", "Check Pear Desktop and retry pairing.");
   }
 
   async listProviders(capability: ProviderCapability): Promise<readonly RegisteredProviderView[]> {
@@ -272,6 +440,13 @@ export class ProviderManagementService {
 
   async activateProvider(providerId: string, confirmWarnings: boolean): Promise<ProviderActivationResult> {
     const target = await this.#requireRecord(providerId);
+    return target.provider.capability === "music-source"
+      ? this.#runMusicMutation(() => this.#activateProvider(providerId, confirmWarnings))
+      : this.#activateProvider(providerId, confirmWarnings);
+  }
+
+  async #activateProvider(providerId: string, confirmWarnings: boolean): Promise<ProviderActivationResult> {
+    const target = await this.#requireRecord(providerId);
     const impact = await this.getActivationImpact(providerId);
     const decision = evaluateProviderActivation(impact);
     if (!decision.allowed) {
@@ -282,7 +457,7 @@ export class ProviderManagementService {
     }
 
     const result = await this.#repository.activate(providerId);
-    const activated = await this.#repository.save({
+    const activated = target.provider.capability === "music-source" ? result.provider : await this.#repository.save({
       ...result.provider,
       provider: {
         ...result.provider.provider,
@@ -309,6 +484,9 @@ export class ProviderManagementService {
     if (target.provider.capability === "event-source") {
       await this.#onEventSourceChanged();
     }
+    if (target.provider.capability === "music-source") {
+      await this.#onMusicSourceChanged();
+    }
 
     return providerActivationResultSchema.parse({
       provider: (await this.#toDetail(activated)).provider,
@@ -319,7 +497,16 @@ export class ProviderManagementService {
 
   async deactivateProvider(providerId: string): Promise<RegisteredProviderView> {
     const target = await this.#requireRecord(providerId);
-    const deactivated = await this.#repository.save({
+    return target.provider.capability === "music-source"
+      ? this.#runMusicMutation(() => this.#deactivateProvider(providerId))
+      : this.#deactivateProvider(providerId);
+  }
+
+  async #deactivateProvider(providerId: string): Promise<RegisteredProviderView> {
+    const target = await this.#requireRecord(providerId);
+    const deactivated = target.provider.capability === "music-source"
+      ? await this.#repository.deactivateMusic(providerId)
+      : await this.#repository.save({
       ...target,
       provider: {
         ...target.provider,
@@ -328,8 +515,12 @@ export class ProviderManagementService {
       },
       updatedAt: this.#now().toISOString()
     });
+    if (deactivated === null) throw new ProviderRegistrationNotFoundError(providerId);
     if (target.provider.capability === "event-source") {
       await this.#onEventSourceChanged();
+    }
+    if (target.provider.capability === "music-source" && target.provider.active) {
+      await this.#onMusicSourceChanged();
     }
     return (await this.#toDetail(deactivated)).provider;
   }
@@ -548,6 +739,11 @@ export class ProviderManagementService {
   }
 }
 
+export class MusicCredentialReplacementUnavailableError extends Error {
+  readonly code = "MUSIC_CREDENTIAL_REPLACEMENT_UNAVAILABLE";
+  constructor() { super("This registration cannot be re-paired with Pear Desktop"); }
+}
+
 type StreamerBotConfiguration = Extract<
   ReturnType<typeof providerSetupInputSchema.parse>,
   { readonly kind: "streamerbot" }
@@ -602,8 +798,10 @@ function providerCredential(input: ProviderSetupInput): string | null {
     : null;
 }
 
-function createProviderSecretRef(providerId: string): SecretRef {
-  return { namespace: "streamerbot", accountId: providerId, name: "password" };
+function createProviderSecretRef(providerId: string, kind: ProviderKind): SecretRef {
+  return kind === "pear-desktop"
+    ? { namespace: "music", accountId: providerId, name: "access-token" }
+    : { namespace: "streamerbot", accountId: providerId, name: "password" };
 }
 
 function defaultTtsSafety(defaultVoiceId: string | null): TtsProviderSafetySettings {
@@ -626,5 +824,7 @@ function formatProviderKind(kind: ProviderKind): string {
       return "Speaker.bot";
     case "browser-speech":
       return "Browser Speech";
+    case "pear-desktop":
+      return "Pear Desktop";
   }
 }

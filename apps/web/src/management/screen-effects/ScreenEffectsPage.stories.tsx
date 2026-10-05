@@ -28,8 +28,8 @@ export const Inventory: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(await canvas.findByText("Neutral burst")).toBeVisible();
-    await expect(canvas.getByRole("button", { name: "Browser sources" })).toHaveAttribute("aria-expanded", "false");
-    await userEvent.click(canvas.getByRole("button", { name: "Browser sources" }));
+    await expect(canvas.getByRole("button", { name: "Expand browser sources" })).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(canvas.getByRole("button", { name: "Expand browser sources" }));
     const browserSources = canvas.getByRole("region", { name: "Browser sources" });
     const liveLabel = within(browserSources).getByText("Screen Effects Live");
     await expect(liveLabel).toBeVisible();

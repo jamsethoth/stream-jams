@@ -19,6 +19,9 @@ import { registerManagementAssetRoutes } from "./management-assets.js";
 import { registerManagementDiagnosticsRoutes } from "./management-diagnostics.js";
 import { registerManagementHomeRoutes } from "./management-home.js";
 import { registerManagementProviderRoutes } from "./management-providers.js";
+import { registerMusicManagementRoutes } from "./music-management.js";
+import type { PearPairingService } from "../../modules/music/pear-pairing-service.js";
+import type { MusicManagementService } from "../../modules/music/music-management-service.js";
 
 export interface ManagementUiRouteDependencies {
   readonly managementOverviewService: Pick<
@@ -35,7 +38,10 @@ export interface ManagementUiRouteDependencies {
     | "getTtsSafety"
     | "updateTtsSafety"
     | "testVoice"
+    | "replaceMusicCredential"
   >;
+  readonly musicPairingService?: Pick<PearPairingService, "begin" | "get" | "cancel"> | undefined;
+  readonly musicManagementService?: Pick<MusicManagementService, "getStatus" | "reconnect"> | undefined;
   readonly alertSetManagementService: Pick<
     AlertSetManagementService,
     | "listSets"
@@ -94,6 +100,9 @@ export function registerManagementUiRoutes(
     providers: dependencies.providerManagementService,
     preHandlers
   });
+  if (dependencies.musicPairingService !== undefined) {
+    registerMusicManagementRoutes(app, { pairing: dependencies.musicPairingService, management: dependencies.musicManagementService, providers: dependencies.providerManagementService, preHandlers });
+  }
   registerManagementAlertRoutes(app, {
     alertSets: dependencies.alertSetManagementService,
     alertEditor: dependencies.alertEditorService,

@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import { expect, it, vi } from "vitest";
-import { MediaCapacityError, LocalMediaService } from "../../modules/assets/local-media-service.js";
+import { MediaCapacityError, LocalMediaService, mediaVersion } from "../../modules/assets/local-media-service.js";
 import { MediaPreviewService } from "../../modules/assets/media-preview-service.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import { createManagementSecurityPreHandler } from "../middleware/management-security.js";
@@ -34,6 +34,11 @@ it("protects preview mutations with session, origin and CSRF; descriptors keep o
     expect((await app.inject({ method: "DELETE", url: `/assets/previews/${descriptor.id}`, headers })).statusCode).toBe(204);
     expect((await app.inject({ method: "POST", url: `/assets/previews/${descriptor.id}/renew`, headers })).statusCode).toBe(404);
     expect((await app.inject({ method: "POST", url: "/assets/missing/preview", headers })).statusCode).toBe(404);
+    const snapshot = { assetId: "asset", version: mediaVersion(record), mimeType: "video/mp4", sizeBytes: record.sizeBytes, durationMs: record.durationMs };
+    expect((await app.inject({ method: "POST", url: "/assets/asset/preview", headers, payload: { snapshot: { ...snapshot, version: "0".repeat(64) } } })).statusCode).toBe(404);
+    const exact = await app.inject({ method: "POST", url: "/assets/asset/preview", headers, payload: { snapshot } });
+    expect(exact.statusCode).toBe(201);
+    expect(exact.json()).toMatchObject({ snapshot });
   } finally { await app.close(); await previews.close(); await media.close(); }
 });
 

@@ -1,10 +1,10 @@
-import { useMemo, type MouseEvent } from "react";
+import { lazy, Suspense, useMemo, type MouseEvent } from "react";
 import { defaultAudioApi, type AudioApi } from "./audio/audio-api.js";
 import type { AssetApi } from "./assets/AssetManager.js";
 import { AssetManager } from "./assets/AssetManager.js";
 import { AlertSetsPage } from "./alerts/AlertSetsPage.js";
 import { AlertSafetyPage } from "./alerts/safety/AlertSafetyPage.js";
-import { AlertEditorPage } from "./alerts/editor/AlertEditorPage.js";
+const AlertEditorPage = lazy(() => import("./alerts/editor/AlertEditorPage.js").then(module => ({ default: module.AlertEditorPage })));
 import { DiagnosticsPanel } from "./diagnostics/DiagnosticsPanel.js";
 import { PageHeader } from "./foundation/PageHeader.js";
 import { StatusBadge } from "./foundation/StatusBadge.js";
@@ -14,6 +14,8 @@ import { DirtyNavigationProvider, useManagementNavigation } from "./navigation/d
 import { ManagementNavigation } from "./navigation/ManagementNavigation.js";
 import { EventSourcesPage } from "./providers/EventSourcesPage.js";
 import { TtsProvidersPage } from "./providers/TtsProvidersPage.js";
+const MusicSourcesPage = lazy(() => import("./music/MusicSourcesPage.js").then(module => ({ default: module.MusicSourcesPage })));
+const MusicPage = lazy(() => import("./music/MusicPage.js").then(module => ({ default: module.MusicPage })));
 import {
   getManagementRouteDefinition,
   parseManagementRoute,
@@ -144,6 +146,10 @@ function RouteContent({
       return <EventSourcesPage initialProviderId={route.providerId} managementApi={managementApi} openSetupOnLoad={route.setup === "add"} />;
     case "tts-providers":
       return <TtsProvidersPage initialProviderId={route.providerId} managementApi={managementApi} openSetupOnLoad={route.setup === "add"} />;
+    case "music-sources":
+      return <Suspense fallback={<p role="status">Loading Music sources…</p>}><MusicSourcesPage api={managementApi} initialProviderId={route.providerId} /></Suspense>;
+    case "modules-music":
+      return <Suspense fallback={<p role="status">Loading Music appearance…</p>}><MusicPage api={managementApi} assetApi={assetApi} /></Suspense>;
     case "modules-alerts":
       return <AlertSetsPage initialSetId={route.setId} managementApi={managementApi} onEditAlert={(alert) => onNavigate({ id: "alert-editor", alertId: alert.id, setId: alert.setId, eventType: alert.eventType, targetProfileId: alert.targetProfileIds[0] ?? "landscape" })} />;
     case "modules-screen-effects":
@@ -154,6 +160,7 @@ function RouteContent({
       return <AlertSafetyPage managementApi={managementApi} />;
     case "alert-editor":
       return route.alertId === undefined ? null : (
+        <Suspense fallback={<p role="status">Loading alert editor…</p>}>
         <AlertEditorPage
           audioApi={audioApi}
           alertId={route.alertId}
@@ -166,6 +173,7 @@ function RouteContent({
           onOpenAlert={(alertId, targetProfileId) => onNavigate({ id: "alert-editor", alertId, ...(route.setId === undefined ? {} : { setId: route.setId }), targetProfileId })}
           targetProfileId={route.targetProfileId}
         />
+        </Suspense>
       );
     case "screen-effect-editor":
       return route.effectId === undefined ? null : (

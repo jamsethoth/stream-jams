@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { compatibilityAlertTextBoxStyle, compatibilityAlertTextStyle } from "@stream-jams/core";
+import { compatibilityAlertTextBoxStyle, compatibilityAlertTextStyle, createDefaultMusicModuleConfig, projectMusicWidget } from "@stream-jams/core";
 import { afterEach, expect, it, vi } from "vitest";
 import { DesktopOverlayApp } from "./DesktopOverlayApp.js";
 import { DesktopOverlayController } from "./desktop-overlay-controller.js";
@@ -151,6 +151,30 @@ it("renders persistent timer module presentations and their prepared icons", asy
   } }, assets: [privateAsset("icon", "image/png")] }));
   expect(screen.getByText("Wear oven mitts")).toBeVisible();
   expect(screen.getByRole("img", { name: "Wear oven mitts icon" })).toHaveAttribute("src", "blob:timer-icon");
+  controller.dispose();
+});
+
+it("uses only the matching private Music artwork grant and clears it with the module", async () => {
+  const listeners = new Set<() => void>();
+  const controller = new DesktopOverlayController({ report: vi.fn(), changed: () => { for (const listener of listeners) listener(); },
+    prepareAsset: async () => ({ url: "blob:music-brand", dispose() {} }) });
+  const receive = (command: unknown) => controller.receive({ protocolVersion: 1, generation: 1, requestId: crypto.randomUUID(), command });
+  const now = Date.now();
+  const widget = projectMusicWidget({ providerId: "pear", generation: "gen", revision: 1,
+    track: { id: "track", title: "Desktop song", artists: ["Artist"], album: null, artworkRef: "art_ref" },
+    playbackState: "paused", positionMs: null, durationMs: null, observedAtEpochMs: now, session: null },
+  { state: "connected", stale: false, diagnosticReference: null }, createDefaultMusicModuleConfig(), "landscape", now, now)!;
+  render(<DesktopOverlayApp controller={controller} subscribe={listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }} />);
+  act(() => receive({ type: "configure", config: { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "monitor", opacity: 1,
+    layers: [{ moduleId: "music", visible: true }] } }));
+  await act(async () => receive({ type: "sync-module", moduleId: "music", revision: 1, presentation: { kind: "music-widget", widget: { ...widget, layout: { ...widget.layout, x: 123, y: 234 } } }, assets: [],
+    artwork: { ref: "art_ref", handle: `private_${"a".repeat(43)}` } }));
+  expect(document.querySelector(".music-widget-host")).toHaveStyle({ left: "123px", top: "234px" });
+  const shadow = document.querySelector(".music-widget-host")?.shadowRoot;
+  expect(shadow?.querySelector(".sj-title")?.textContent).toBe("Desktop song");
+  expect(shadow?.querySelector(".sj-artwork img")?.getAttribute("src")).toBe(`stream-jams-overlay://surface/music-artwork/private_${"a".repeat(43)}`);
+  await act(async () => receive({ type: "sync-module", moduleId: "music", revision: 2, presentation: null, assets: [] }));
+  expect(document.querySelector(".music-widget-host")).toBeNull();
   controller.dispose();
 });
 

@@ -8,7 +8,7 @@ import {
 } from "../shared/schemas.js";
 
 export const secretRefSchema = z.object({
-  namespace: z.enum(["twitch", "streamerbot", "tts", "management", "overlay"]),
+  namespace: z.enum(["twitch", "streamerbot", "tts", "management", "overlay", "music"]),
   accountId: nonEmptyStringSchema,
   name: nonEmptyStringSchema
 });

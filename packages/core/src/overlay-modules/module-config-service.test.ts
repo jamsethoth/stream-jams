@@ -23,6 +23,21 @@ function createService(clock: () => Date = () => now) {
 }
 
 describe("overlay module config service", () => {
+  it("loads Music disabled and hydrates saved older CSS and branding defaults", async () => {
+    const { service, repository } = createService();
+    const initial = await service.getModuleConfig("music");
+    expect(initial.enabled).toBe(false);
+    expect(initial.config).toMatchObject({ version: 1, css: { source: "", enabled: false, styleContractVersion: 1 } });
+    const older = structuredClone(initial.config) as { css?: unknown; profiles: Record<string, { views: Record<string, { branding?: unknown; contentInsets?: unknown }> }> };
+    delete older.css;
+    for (const profile of Object.values(older.profiles)) for (const view of Object.values(profile.views)) {
+      delete view.branding;
+      delete view.contentInsets;
+    }
+    await repository.saveModuleConfig({ ...initial, config: older });
+    const loaded = await service.getModuleConfig("music");
+    expect(loaded.config).toMatchObject({ css: { source: "", enabled: false, styleContractVersion: 1 }, profiles: { landscape: { views: { full: { branding: { assetId: null }, contentInsets: { top: 0 } } } } } });
+  });
   it("returns disabled bounded Landscape and Vertical defaults for Timers", async () => {
     const { service } = createService();
 
@@ -188,15 +203,15 @@ describe("overlay module config service", () => {
   it("rejects unknown module config reads, saves, and toggles", async () => {
     const { service } = createService();
 
-    await expect(service.getModuleConfig("music")).rejects.toBeInstanceOf(UnknownOverlayModuleError);
+    await expect(service.getModuleConfig("unknown-module")).rejects.toBeInstanceOf(UnknownOverlayModuleError);
     await expect(
       service.saveModuleConfig({
-        moduleId: "music",
+        moduleId: "unknown-module",
         enabled: true,
         config: {}
       })
     ).rejects.toBeInstanceOf(UnknownOverlayModuleError);
-    await expect(service.setModuleEnabled("music", true)).rejects.toBeInstanceOf(UnknownOverlayModuleError);
+    await expect(service.setModuleEnabled("unknown-module", true)).rejects.toBeInstanceOf(UnknownOverlayModuleError);
   });
 
 

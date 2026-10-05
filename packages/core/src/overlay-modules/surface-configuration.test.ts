@@ -19,6 +19,13 @@ describe("surface configuration", () => {
     ]);
     expect(saved).toHaveLength(2);
   });
+  it("adds Music to existing private and unified layer lists with explicit opt-in false", () => {
+    for (const existing of [[{ moduleId: "timers", visible: true }], [{ moduleId: "alerts", visible: true }, { moduleId: "timers", visible: false }]]) {
+      const layers = reconcileSurfaceLayers(existing, ["alerts", "timers", "music"]);
+      expect(layers.at(-1)).toEqual({ moduleId: "music", visible: false });
+      expect(layers.slice(0, existing.length)).toEqual(existing);
+    }
+  });
 
   it("accepts complete reordered layers including an empty registry", () => {
     expect(() => validateSurfaceOrder([

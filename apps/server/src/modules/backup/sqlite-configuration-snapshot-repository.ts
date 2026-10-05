@@ -13,6 +13,8 @@ import {
   assetRecordSchema,
   overlayPurposeSchema,
   overlayModuleConfigSchema,
+  musicModuleConfigSchema,
+  collectMusicAssetReferences,
   providerCapabilitySchema,
   providerConnectionStateSchema,
   providerIntakeStateSchema,
@@ -27,6 +29,7 @@ import {
   type ConfigurationBackupOutput,
   type ModerationSettings
 } from "@stream-jams/core";
+import { validateMusicCss } from "@stream-jams/core/music-style-policy";
 import { runInTransaction } from "../db/database.js";
 import { isTimerAssetCompatible } from "../timers/timer-asset-role.js";
 import type { ConfigurationSnapshotRepository } from "./configuration-backup-service.js";
@@ -499,6 +502,16 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
       config: parseJsonValue(row.config_json),
       updatedAt: row.updated_at
     }));
+    if (row.module_id === "music") {
+      const parsed = musicModuleConfigSchema.safeParse(parseJsonValue(row.config_json));
+      if (!parsed.success) {
+        errors.push(`overlay_module_config[${index}].config_json contains invalid Music configuration.`);
+      } else {
+        const css = parsed.data.css;
+        const validation = validateMusicCss(css.source, css.styleContractVersion);
+        if (!validation.valid) errors.push(`overlay_module_config[${index}].config_json contains invalid Music CSS: ${validation.errors[0]?.message ?? "invalid stylesheet"}.`);
+      }
+    }
   }
 
   for (const [index, row] of (tables.alert_collections ?? []).entries()) {
@@ -934,6 +947,16 @@ function validateReferences(tables: BackupConfiguration["tables"]): readonly str
   const alertEditorDocumentIds = new Set([...ruleIds, ...variantIds]);
   const assetIds = ids("asset_metadata", "id");
   const assetMediaTypes = new Map((tables.asset_metadata ?? []).map(row => [String(row.id), String(row.media_type)]));
+  for (const [index, row] of (tables.overlay_module_config ?? []).entries()) {
+    if (row.module_id !== "music") continue;
+    const parsed = musicModuleConfigSchema.safeParse(parseJsonValue(row.config_json));
+    if (!parsed.success) continue;
+    for (const reference of collectMusicAssetReferences(parsed.data)) {
+      const actual = assetMediaTypes.get(reference.assetId);
+      const expected = reference.usageRole === "branding" ? "image" : "font";
+      if (actual !== expected) errors.push(`overlay_module_config[${index}] Music ${reference.ownerId}/${reference.variantId}/${reference.usageRole} references missing or incompatible asset_metadata "${reference.assetId}".`);
+    }
+  }
   const audioRouteIds = ids("audio_output_routes", "id");
   const effectIds = ids("screen_effects", "id");
   const effectVariantIds = ids("screen_effect_variants", "id");

@@ -2,6 +2,7 @@ import {
   InvalidMediaImportError,
   DefaultAssetValidator,
   defaultAssetValidationPolicy,
+  normalizeAssetMimeType,
   type AssetRepository,
   type MediaImportPipeline,
   type OverlayAccessService,
@@ -10,6 +11,8 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerHookHandler } from "fastify";
 import { AssetFileChangedError, AssetStreamCapacityError, AssetFileNotFoundError, AssetPathTraversalError, type LocalAssetStore } from "../../modules/assets/local-asset-store.js";
 import type { AssetLibraryService } from "../../modules/assets/asset-library-service.js";
+import { musicAssetCompatible } from "../../modules/assets/asset-library-service.js";
+import type { MediaPreviewService } from "../../modules/assets/media-preview-service.js";
 import {
   createOverlayAuthPreHandler,
   parseOverlayTargetProfileQuery
@@ -27,6 +30,8 @@ export interface AssetRouteDependencies {
   readonly assetStore: Pick<LocalAssetStore, "openRead">;
   readonly localMediaService?: LocalMediaService;
   readonly assetLibraryService?: Pick<AssetLibraryService, "registerAsset" | "getChangeImpact" | "completeReplacement">;
+  readonly mediaPreviewService?: Pick<MediaPreviewService, "invalidateAsset">;
+  readonly onAssetReplaced?: (assetId: string) => Promise<void>;
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
   readonly overlayAccessService?: Pick<OverlayAccessService, "verifyRouteAccess">;
@@ -101,7 +106,8 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
   const assetLibraryService = dependencies.assetLibraryService;
   if (assetLibraryService !== undefined) {
     app.post("/assets/:assetId/replace", { preHandler, bodyLimit: maximumAssetImportBodyBytes }, async (request, reply) => {
-      return mutateMedia(dependencies, async () => {
+      let replacedAssetId: string | null = null;
+      const result = await mutateMedia(dependencies, async () => {
       const assetId = readAssetId(request.params);
       const existing = await dependencies.assetRepository.findById(assetId);
       if (existing === null) {
@@ -136,8 +142,15 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
         if (impact.owners.some(owner => owner.moduleId === "timers" && !isTimerAssetCompatible(owner.usageRole ?? "", mediaType))) {
           throw new InvalidMediaImportError("Replacement media is incompatible with an existing timer icon or audio cue.");
         }
+        if (impact.owners.some(owner => owner.moduleId === "music" && !musicAssetCompatible(
+          { usageRole: owner.usageRole === "branding" ? "branding" : "title-font" },
+          { mediaType, mimeType: normalizeAssetMimeType(importRequest.mimeType, importRequest.originalFileName) }
+        ))) {
+          throw new InvalidMediaImportError("Replacement media is incompatible with an existing Music brand or font.");
+        }
         const replacement = await dependencies.mediaImportPipeline.importMedia({ ...importRequest, assetId });
         await assetLibraryService.completeReplacement(existing, replacement);
+        replacedAssetId = assetId;
         return replacement;
       } catch (error) {
         if (error instanceof InvalidMediaImportError) {
@@ -146,6 +159,21 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
         throw error;
       }
       });
+      // Release strict preview grants after the serialized media mutation has committed.
+      if (replacedAssetId !== null) {
+        const assetId = replacedAssetId;
+        for (const refresh of [
+          () => dependencies.mediaPreviewService?.invalidateAsset(assetId),
+          () => dependencies.onAssetReplaced?.(assetId)
+        ]) {
+          try {
+            await refresh();
+          } catch (error) {
+            request.log.warn({ err: error, assetId }, "Asset replacement committed, but a post-commit refresh failed");
+          }
+        }
+      }
+      return result;
     });
   }
 

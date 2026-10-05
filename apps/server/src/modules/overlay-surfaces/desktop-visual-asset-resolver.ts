@@ -1,8 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { defaultAssetValidationPolicy, mediaVersionSnapshotSchema, desktopVisualBatchSchema, overlayModulePresentationSchema, type DesktopModuleSync, type DesktopVisualBatch, type OverlayModulePresentation } from "@stream-jams/core";
 import type { LocalMediaService } from "../assets/local-media-service.js";
 
 export interface DesktopVisualAssetResolverDependencies {
-  readonly media: Pick<LocalMediaService, "records" | "verifyGroup" | "issueTrustedGrant" | "hasOwner" | "shareVersion">;
+  readonly media: Pick<LocalMediaService, "records" | "verifyGroup" | "issueTrustedGrant" | "hasOwner" | "shareVersion" | "acquire" | "release">;
   readonly now?: () => number;
 }
 
@@ -49,10 +50,10 @@ export class DesktopVisualAssetResolver {
   }
 
   async resolveTimerModule(candidate: OverlayModulePresentation): Promise<{
-    presentation: OverlayModulePresentation; assets: DesktopModuleSync["assets"]; missingAssetIds: readonly string[];
+    presentation: Extract<OverlayModulePresentation, { kind: "timer-stack" }>; assets: DesktopModuleSync["assets"]; missingAssetIds: readonly string[];
   }> {
     const presentation = overlayModulePresentationSchema.parse(candidate);
-    if (presentation.stack.targetProfileId !== "landscape") throw unavailable();
+    if (presentation.kind !== "timer-stack" || presentation.stack.targetProfileId !== "landscape") throw unavailable();
     const assets: DesktopModuleSync["assets"][number][] = [];
     const missing = new Set<string>();
     const failedVersions = new Set<string>();
@@ -76,5 +77,42 @@ export class DesktopVisualAssetResolver {
     return { presentation: { ...presentation, stack: { ...presentation.stack, cards: presentation.stack.cards.map(card =>
       card.iconAssetId !== null && failedVersions.has(JSON.stringify([card.iconAssetId, card.iconVersion])) ? { ...card, iconAssetId: null } : card) } }, assets, missingAssetIds: [...missing] };
   }
+
+  async resolveMusicModule(candidate: OverlayModulePresentation): Promise<{
+    presentation: Extract<OverlayModulePresentation, { kind: "music-widget" }>;
+    assets: DesktopModuleSync["assets"];
+    missingAssetIds: readonly string[];
+    ownerId: string | null;
+  }> {
+    const presentation = overlayModulePresentationSchema.parse(candidate);
+    if (presentation.kind !== "music-widget" || presentation.widget.targetProfileId !== "landscape") throw unavailable();
+    const references = presentation.widget.assets;
+    if (references.length === 0) return { presentation, assets: [], missingAssetIds: [], ownerId: null };
+    const ids = references.map(reference => reference.assetId);
+    const ownerId = JSON.stringify(["music", "desktop:primary", randomUUID()]);
+    try {
+      await this.dependencies.media.acquire(ownerId, ids, this.#now() + 3600000, false,
+        Object.fromEntries(references.map(reference => [reference.assetId, reference.version])));
+      await this.dependencies.media.verifyGroup(ownerId, ids, AbortSignal.timeout(5000));
+      const assets = references.map(reference => ({ assetId: reference.assetId,
+        grant: this.dependencies.media.issueTrustedGrant(ownerId, reference.assetId, "desktop-music:desktop:primary", this.#now() + 3600000) }));
+      for (const [index, asset] of assets.entries()) {
+        const reference = references[index]!;
+        if (asset.grant.snapshot.version !== reference.version || asset.grant.snapshot.mimeType !== reference.mimeType ||
+          asset.grant.snapshot.sizeBytes !== reference.sizeBytes) throw unavailable();
+      }
+      return { presentation, assets, missingAssetIds: [], ownerId };
+    }
+    // error-provenance: allow expected -- missing private media is replaced with a bounded native fallback
+    catch {
+      await this.dependencies.media.release(ownerId).catch(
+        // error-provenance: allow cleanup -- best-effort release after the failed acquisition/verification
+        () => {}
+      );
+      return { presentation: { ...presentation, widget: { ...presentation.widget, assets: [] } }, assets: [], missingAssetIds: ids, ownerId: null };
+    }
+  }
+
+  releaseMusicOwner(ownerId: string): Promise<void> { return this.dependencies.media.release(ownerId); }
 }
 function unavailable(): Error { return new Error("Desktop visual asset is unavailable or invalid"); }

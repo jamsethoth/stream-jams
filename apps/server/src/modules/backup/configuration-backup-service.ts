@@ -18,7 +18,8 @@ import {
   type ConfigurationRestoreImpact,
   type ConfigurationRestorePreflight,
   type ConfigurationRestoreRequest,
-  type ConfigurationRestoreResult
+  type ConfigurationRestoreResult,
+  type SecretRef
 } from "@stream-jams/core";
 import { RuntimeMaintenanceUnavailableError } from "./runtime-maintenance-gate.js";
 
@@ -67,6 +68,14 @@ export interface ConfigurationBackupServiceOptions {
     findConnectedAccountId(): Promise<string | null>;
     deleteTokenSecrets(accountId: string): Promise<void>;
   };
+  readonly musicRestore?: {
+    captureCredentials(): Promise<{ readonly identity: string | null; readonly secretRefs: readonly SecretRef[] }>;
+    suspend(): Promise<void>;
+    resume(): Promise<void>;
+    rotateIdentity(): Promise<void>;
+    restoreIdentity(identity: string | null): Promise<void>;
+    deleteOldSecret(ref: SecretRef): Promise<void>;
+  };
   readonly runExclusive?: <T>(work: () => Promise<T>) => Promise<T>;
   readonly deferRetiredAssetCleanup?: boolean;
 }
@@ -106,7 +115,7 @@ export class ConfigurationBackupService {
       assetDirectory: appConfig.storage.assetDirectory,
       logLevel: appConfig.logging.level,
       logRetentionHours: appConfig.logging.retentionHours,
-      secretExclusions: ["Provider credentials and tokens", "Overlay route keys and hashes", "Timer automation credentials and active timer runs", "Local audio device IDs and labels", "Runtime logs and sessions"]
+      secretExclusions: ["Provider credentials and tokens", "Music pairing identity and live playback/artwork", "Overlay route keys and hashes", "Timer automation credentials and active timer runs", "Local audio device IDs and labels", "Runtime logs and sessions"]
     };
     try {
       const archive = await this.exportArchive();
@@ -441,6 +450,7 @@ export class ConfigurationBackupService {
     }
 
     const connectedTwitchAccountId = await this.#options.twitchCredentials?.findConnectedAccountId() ?? null;
+    const previousMusicCredentials = await this.#options.musicRestore?.captureCredentials() ?? null;
     const restoredAssetMetadata = new Map(
       (request.archive.configuration.tables.asset_metadata ?? []).map((row) => [String(row.id), row])
     );
@@ -459,6 +469,8 @@ export class ConfigurationBackupService {
     const stagedAssets: AssetRecord[] = [];
     const restoredConfig = appConfigSchema.parse(request.archive.configuration.appConfig);
     let appConfigUpdated = false;
+    let musicSuspended = false;
+    let musicIdentityChanged = false;
     try {
       for (const asset of request.archive.assets) {
         const bytes = Buffer.from(asset.dataBase64, "base64");
@@ -497,6 +509,10 @@ export class ConfigurationBackupService {
         request.archive.configuration,
         request.archive.manifest.schemaVersion
       );
+      if (this.#options.musicRestore !== undefined) {
+        musicSuspended = true;
+        await this.#options.musicRestore.suspend();
+      }
       this.#options.snapshotRepository.replace({ tables: upgradedConfiguration.tables, assets: stagedAssets });
       await this.#options.configStore.updateConfig({
         desktop: restoredConfig.desktop,
@@ -507,12 +523,26 @@ export class ConfigurationBackupService {
       appConfigUpdated = true;
       await this.#options.reloadRuntimeConfiguration?.();
       this.#options.assetDurationCatalog?.replace(stagedAssets);
+      if (this.#options.musicRestore !== undefined) {
+        musicIdentityChanged = true;
+        await this.#options.musicRestore.rotateIdentity();
+        await this.#options.musicRestore.resume();
+        musicSuspended = false;
+      }
     } catch (cause) {
       const rollbackFailures: string[] = [];
+      if (this.#options.musicRestore !== undefined && musicSuspended) {
+        try { await this.#options.musicRestore.suspend(); }
+        catch (error) { rollbackFailures.push(`Music runtime cancellation failed: ${errorMessage(error)}`); }
+      }
       try {
         this.#options.snapshotRepository.restoreRestorePoint(restorePoint);
       } catch (error) {
         rollbackFailures.push(`Operational database rollback failed: ${errorMessage(error)}`);
+      }
+      if (musicIdentityChanged && previousMusicCredentials !== null) {
+        try { await this.#options.musicRestore?.restoreIdentity(previousMusicCredentials.identity); }
+        catch (error) { rollbackFailures.push(`Music pairing identity rollback failed: ${errorMessage(error)}`); }
       }
       if (appConfigUpdated) {
         try {
@@ -530,6 +560,15 @@ export class ConfigurationBackupService {
         await this.#options.reloadRuntimeConfiguration?.();
       } catch (error) {
         rollbackFailures.push(`Runtime configuration rollback failed: ${errorMessage(error)}`);
+      }
+      try {
+        this.#options.assetDurationCatalog?.replace(currentAssets);
+      } catch (error) {
+        rollbackFailures.push(`Asset duration rollback failed: ${errorMessage(error)}`);
+      }
+      if (this.#options.musicRestore !== undefined && musicSuspended) {
+        try { await this.#options.musicRestore.resume(); }
+        catch (error) { rollbackFailures.push(`Music runtime rollback failed: ${errorMessage(error)}`); }
       }
       const cleanupFailures = settledFailures(
         await Promise.allSettled(stagedAssets.map((record) => this.#options.assetStore.delete(record.storagePath)))
@@ -584,6 +623,16 @@ export class ConfigurationBackupService {
           correction: { label: "Open Diagnostics", route: "/manage/diagnostics" }
         });
       }
+    }
+    if (previousMusicCredentials !== null && this.#options.musicRestore !== undefined) {
+      const failures = settledFailures(await Promise.allSettled(previousMusicCredentials.secretRefs.map(ref =>
+        this.#options.musicRestore!.deleteOldSecret(ref)
+      )));
+      if (failures.length > 0) warnings.push({
+        ...warning("Old Music credentials could not be removed", `${failures.length} superseded Music credential(s) may remain in the OS keyring.`, "Open Diagnostics with the reference ID, remove the unused credentials, then pair Music again."),
+        referenceId: this.#options.generateReferenceId(),
+        correction: { label: "Open Diagnostics", route: "/manage/diagnostics" }
+      });
     }
     const restoredOrigin = `http://${restoredConfig.server.host}:${restoredConfig.server.port}`;
     for (const output of request.archive.configuration.overlayOutputs) {
@@ -647,6 +696,7 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   if (currentSchemaVersion === 29) return [19, 20, 21, 22, 23, 24, 25, 26, 27, 28].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 31) return [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 30) return [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29].includes(archiveSchemaVersion);
+  if (currentSchemaVersion === 32) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 31;
   if (currentSchemaVersion === 28) return [19, 20, 21, 22, 23, 24, 25, 26, 27].includes(archiveSchemaVersion);
   return false;
 }

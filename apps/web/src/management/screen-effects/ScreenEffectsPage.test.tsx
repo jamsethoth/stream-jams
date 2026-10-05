@@ -42,8 +42,8 @@ describe("ScreenEffectsPage", () => {
     render(<ScreenEffectsPage api={api()} generateId={(prefix) => `${prefix}-new`} onEdit={vi.fn()} />);
 
     expect(await screen.findByText("Confetti")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Browser sources" })).toHaveAttribute("aria-expanded", "false");
-    await user.click(screen.getByRole("button", { name: "Browser sources" }));
+    expect(screen.getByRole("button", { name: "Expand browser sources" })).toHaveAttribute("aria-expanded", "false");
+    await user.click(screen.getByRole("button", { name: "Expand browser sources" }));
     expect(screen.getByText("Screen Effects Live")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Reveal Screen Effects Live Browser Source URL" }));
     expect(screen.getByLabelText("Screen Effects Live Browser Source URL")).toHaveTextContent("/overlay/modules/screen-effects/live/");
@@ -63,7 +63,7 @@ describe("ScreenEffectsPage", () => {
     />);
 
     const browserSources = await screen.findByRole("region", { name: "Browser sources" });
-    await userEvent.click(screen.getByRole("button", { name: "Browser sources" }));
+    await userEvent.click(screen.getByRole("button", { name: "Expand browser sources" }));
     const liveSource = within(browserSources).getByText("Screen Effects Live").closest("li");
     const testSource = within(browserSources).getByText("Screen Effects Test").closest("li");
 
@@ -102,7 +102,7 @@ describe("ScreenEffectsPage", () => {
     await user.click(screen.getByRole("button", { name: "Confirm change" }));
     expect(service.setModuleEnabled).toHaveBeenCalledWith(true);
 
-    await user.click(screen.getByRole("button", { name: "Browser sources" }));
+    await user.click(screen.getByRole("button", { name: "Expand browser sources" }));
     await user.click(screen.getByRole("button", { name: "Create URL" }));
     expect(service.createBrowserSource).toHaveBeenCalledWith(expect.objectContaining({
       moduleId: "screen-effects",
@@ -116,7 +116,7 @@ describe("ScreenEffectsPage", () => {
     render(<ScreenEffectsPage api={service} onEdit={vi.fn()} />);
     await screen.findByText("Confetti");
 
-    await user.click(screen.getByRole("button", { name: "Browser sources" }));
+    await user.click(screen.getByRole("button", { name: "Expand browser sources" }));
     await user.click(screen.getByRole("button", { name: "Regenerate URL" }));
     const dialog = screen.getByRole("dialog", { name: "Regenerate Screen Effects Live URL?" });
     const confirm = within(dialog).getByRole("button", { name: "Regenerate URL" });

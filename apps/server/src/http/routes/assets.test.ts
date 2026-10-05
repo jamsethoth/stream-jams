@@ -143,6 +143,53 @@ describe("asset routes", () => {
     expect(await repository.findById("asset_1")).toEqual(record);
     expect((await app.inject({ method: "GET", url: "/assets/asset_1/file", headers: authHeaders })).rawPayload).toEqual(originalBytes);
   });
+  it("rejects GIF replacement for a Music brand before changing stored bytes", async () => {
+    const { app, authHeaders, repository } = await createAppWithAssets({ musicRole: "branding" });
+    const imported = await app.inject({ method: "POST", url: "/assets/import", headers: {
+      ...authHeaders, "content-type": "application/octet-stream", "x-stream-jams-file-name": "brand.png", "x-stream-jams-mime-type": "image/png"
+    }, payload: pngBytes });
+    expect(imported.statusCode).toBe(201);
+    const original = await repository.findById("asset_1");
+    const response = await app.inject({ method: "POST", url: "/assets/asset_1/replace", headers: {
+      ...authHeaders, "content-type": "application/octet-stream", "x-stream-jams-confirm-impact": "true",
+      "x-stream-jams-file-name": "brand.gif", "x-stream-jams-mime-type": "image/gif"
+    }, payload: Buffer.from("GIF89aexample") });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: { code: "INVALID_ASSET_REPLACEMENT" } });
+    expect(await repository.findById("asset_1")).toEqual(original);
+    expect((await app.inject({ method: "GET", url: "/assets/asset_1/file", headers: authHeaders })).rawPayload).toEqual(pngBytes);
+  });
+  it.each(["preview", "output"])("preserves durable replacement success when %s refresh fails", async failing => {
+    const called: string[] = [];
+    const { app, authHeaders, repository } = await createAppWithAssets({
+      onAssetInvalidated: async () => { called.push("preview"); if (failing === "preview") throw new Error("preview unavailable"); },
+      onAssetReplaced: async () => { called.push("output"); if (failing === "output") throw new Error("renderer unavailable"); }
+    });
+    const headers = { ...authHeaders, "content-type": "application/octet-stream", "x-stream-jams-file-name": "brand.png", "x-stream-jams-mime-type": "image/png" };
+    await app.inject({ method: "POST", url: "/assets/import", headers, payload: pngBytes });
+    const response = await app.inject({ method: "POST", url: "/assets/asset_1/replace", headers, payload: replacementPngBytes });
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json()).toEqual(await repository.findById("asset_1"));
+    expect((await app.inject({ url: "/assets/asset_1/file", headers: authHeaders })).rawPayload).toEqual(replacementPngBytes);
+    expect(called).toEqual(["preview", "output"]);
+  });
+
+  it("invalidates strict Music previews after a compatible asset replacement", async () => {
+    const invalidated: string[] = [];
+    const published: string[] = [];
+    const { app, authHeaders } = await createAppWithAssets({ musicRole: "branding", onAssetInvalidated: async id => { invalidated.push(id); },
+      onAssetReplaced: async id => { published.push(id); } });
+    await app.inject({ method: "POST", url: "/assets/import", headers: {
+      ...authHeaders, "content-type": "application/octet-stream", "x-stream-jams-file-name": "brand.png", "x-stream-jams-mime-type": "image/png"
+    }, payload: pngBytes });
+    const replacement = await app.inject({ method: "POST", url: "/assets/asset_1/replace", headers: {
+      ...authHeaders, "content-type": "application/octet-stream", "x-stream-jams-confirm-impact": "true",
+      "x-stream-jams-file-name": "brand.png", "x-stream-jams-mime-type": "image/png"
+    }, payload: replacementPngBytes });
+    expect(replacement.statusCode).toBe(200);
+    expect(invalidated).toEqual(["asset_1"]);
+    expect(published).toEqual(["asset_1"]);
+  });
   afterEach(async () => {
     await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { force: true, recursive: true })));
   });
@@ -504,6 +551,9 @@ async function createAppWithAssets(options: {
   readonly overlayAccessService?: LocalOverlayAccessService;
   readonly replacementRequiresConfirmation?: boolean;
   readonly timerRole?: "icon" | "start-audio" | "end-audio";
+  readonly musicRole?: "branding" | "title-font" | "details-font";
+  readonly onAssetInvalidated?: (assetId: string) => Promise<void>;
+  readonly onAssetReplaced?: (assetId: string) => Promise<void>;
 } = {}) {
   const assetDirectory = await createTemporaryAssetDirectory();
   const repository = new InMemoryAssetRepository();
@@ -559,9 +609,12 @@ async function createAppWithAssets(options: {
                 }]
               : []
           },
-          owners: options.timerRole === undefined ? [] : [{ moduleId: "timers" as const, ownerId: "timer", ownerName: "Timer", variantId: null, usageRole: options.timerRole }],
+          owners: [
+            ...(options.timerRole === undefined ? [] : [{ moduleId: "timers" as const, ownerId: "timer", ownerName: "Timer", variantId: null, usageRole: options.timerRole }]),
+            ...(options.musicRole === undefined ? [] : [{ moduleId: "music" as const, ownerId: "landscape", ownerName: "Music landscape", variantId: "full", usageRole: options.musicRole }])
+          ],
           canDelete: !requiresConfirmation,
-          requiresConfirmation,
+          requiresConfirmation: requiresConfirmation || options.musicRole !== undefined,
           warnings: requiresConfirmation ? ["1 alert usage will update everywhere."] : []
         };
       },
@@ -569,6 +622,8 @@ async function createAppWithAssets(options: {
         return {} as never;
       }
     },
+    ...(options.onAssetInvalidated === undefined ? {} : { mediaPreviewService: { invalidateAsset: options.onAssetInvalidated } }),
+    ...(options.onAssetReplaced === undefined ? {} : { onAssetReplaced: options.onAssetReplaced }),
     managementAuthPreHandler: createTestManagementSecurity(managementSessionService),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
     ...(options.overlayAccessService === undefined ? {} : { overlayAccessService: options.overlayAccessService })

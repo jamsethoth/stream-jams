@@ -54,6 +54,7 @@ import { registerWebShellRoutes, type WebShellRouteDependencies } from "./http/r
 import { createRedactor } from "./modules/security/redactor.js";
 import { registerTimerRoutes, type TimerRouteDependencies } from "./http/routes/timers.js";
 import { registerTimerAutomationRoutes, type TimerAutomationRouteDependencies } from "./http/routes/timer-automation.js";
+import { registerMusicArtworkRoutes, type MusicArtworkRouteDependencies } from "./http/routes/music-artwork.js";
 
 export interface ServerErrorLogEntry {
   readonly errorId: string;
@@ -98,8 +99,10 @@ export type ProductionServerAppDependencies = BaseServerAppOptions
   & ScreenEffectRouteDependencies
   & TimerRouteDependencies
   & TimerAutomationRouteDependencies
+  & Partial<MusicArtworkRouteDependencies>
   & AutomationPairingRouteDependencies
   & AutomationControlRouteDependencies
+
   & WebShellRouteDependencies;
 
 export function createBaseServerApp(options: BaseServerAppOptions): FastifyInstance {
@@ -126,6 +129,9 @@ export function createServerApp(dependencies: ProductionServerAppDependencies): 
   registerAlertCollectionRoutes(app, dependencies);
   registerAlertRoutes(app, dependencies);
   registerAssetRoutes(app, dependencies);
+  if (dependencies.musicArtworkService !== undefined && dependencies.musicRuntimeCoordinator !== undefined) {
+    registerMusicArtworkRoutes(app, { ...dependencies, musicArtworkService: dependencies.musicArtworkService, musicRuntimeCoordinator: dependencies.musicRuntimeCoordinator });
+  }
   if (dependencies.mediaPreviewService !== undefined) registerAssetPreviewRoutes(app, { ...dependencies, mediaPreviewService: dependencies.mediaPreviewService });
   registerOverlayRoutes(app, { ...dependencies, webShellRenderer });
   registerOverlayModuleRoutes(app, dependencies);

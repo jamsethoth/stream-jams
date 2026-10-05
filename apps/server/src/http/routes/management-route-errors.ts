@@ -30,6 +30,7 @@ import {
   ProviderActivationConfirmationRequiredError,
   ProviderRegistrationNotFoundError
 } from "../../modules/providers/provider-management-service.js";
+import { RuntimeMaintenanceUnavailableError } from "../../modules/backup/runtime-maintenance-gate.js";
 
 type ErrorReply = Parameters<typeof sendHttpError>[0];
 
@@ -123,6 +124,12 @@ export async function recordAlertEditorError(
 }
 
 export function sendProviderCommandError(reply: ErrorReply, error: unknown) {
+  if (error instanceof RuntimeMaintenanceUnavailableError) {
+    return sendHttpError(reply, 409, {
+      code: "PROVIDER_MAINTENANCE_ACTIVE",
+      message: "Provider changes are unavailable during restore or shutdown. Wait for maintenance to finish, then retry."
+    });
+  }
   if (error instanceof ProviderRegistrationNotFoundError) {
     return sendHttpError(reply, 404, {
       code: error.code,
