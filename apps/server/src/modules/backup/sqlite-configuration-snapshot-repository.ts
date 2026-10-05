@@ -19,6 +19,7 @@ import {
   providerConnectionStateSchema,
   providerIntakeStateSchema,
   providerKindSchema,
+  providerSetupInputSchema,
   registeredProviderDetailSchema,
   screenEffectDocumentSchema,
   screenEffectSetSchema,
@@ -127,6 +128,9 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
       });
     }
 
+    if (validateProviderConnections(tables).length > 0) {
+      throw new Error("Provider connection settings require replacement before backup export.");
+    }
     const providerReconnectMetadata = this.connection
       .prepare("SELECT id, name, kind FROM provider_registrations ORDER BY capability, name, id")
       .all()
@@ -150,7 +154,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
     return {
       marker: restorePointMarker,
       tables: Object.fromEntries(
-        [...tableDefinitions.map((definition) => definition.name), "overlay_keys", "twitch_accounts", "timer_automation_credential"].map((name) => [
+        [...tableDefinitions.map((definition) => definition.name), "overlay_keys", "twitch_accounts", "timer_automation_credential", "automation_grants"].map((name) => [
           name,
           this.connection.prepare(`SELECT * FROM ${name}`).all().map(toPlainRecord)
         ])
@@ -167,6 +171,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
       this.connection.prepare("DELETE FROM overlay_keys").run();
       this.connection.prepare("DELETE FROM twitch_accounts").run();
       this.connection.prepare("DELETE FROM timer_automation_credential").run();
+      this.connection.prepare("DELETE FROM automation_grants").run();
       for (const definition of [...tableDefinitions].reverse()) {
         this.connection.prepare(`DELETE FROM ${definition.name}`).run();
       }
@@ -176,6 +181,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
       insertCapturedRows(this.connection, "overlay_keys", restorePoint.tables.overlay_keys ?? []);
       insertCapturedRows(this.connection, "twitch_accounts", restorePoint.tables.twitch_accounts ?? []);
       insertCapturedRows(this.connection, "timer_automation_credential", restorePoint.tables.timer_automation_credential ?? []);
+      insertCapturedRows(this.connection, "automation_grants", restorePoint.tables.automation_grants ?? []);
     });
   }
 
@@ -223,13 +229,14 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
         }
         if (definition.name === "provider_registrations" && typeof row.non_secret_config_json === "string") {
           const forbiddenPath = findForbiddenSecretField(row.non_secret_config_json);
-          if (forbiddenPath !== null) errors.push(`provider_registrations[${index}].non_secret_config_json contains forbidden secret field "${forbiddenPath}".`);
+          if (forbiddenPath !== null) errors.push(`provider_registrations[${index}].non_secret_config_json contains a forbidden secret field.`);
         }
       }
     }
     errors.push(...validateUniqueConstraints(configuration.tables));
     errors.push(...validateReferences(configuration.tables));
     errors.push(...validateDomainRows(configuration.tables));
+    errors.push(...validateProviderConnections(configuration.tables));
     for (const [index, output] of configuration.overlayOutputs.entries()) {
       if (output.scope !== "unified" && output.scope !== "module") errors.push(`overlayOutputs[${index}].scope is invalid.`);
       if (output.scope === "module" && output.moduleId === null) errors.push(`overlayOutputs[${index}].moduleId is required for module scope.`);
@@ -252,6 +259,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
       this.connection.prepare("DELETE FROM overlay_keys").run();
       this.connection.prepare("DELETE FROM twitch_accounts").run();
       this.connection.prepare("DELETE FROM timer_automation_credential").run();
+      this.connection.prepare("DELETE FROM automation_grants").run();
       for (const definition of [...tableDefinitions].reverse()) {
         this.connection.prepare(`DELETE FROM ${definition.name}`).run();
       }
@@ -906,6 +914,18 @@ function sqlBoolean(value: unknown): boolean | unknown {
   if (value === 1) return true;
   if (value === 0) return false;
   return value;
+}
+
+function validateProviderConnections(tables: BackupConfiguration["tables"]): string[] {
+  const errors: string[] = [];
+  for (const row of tables.provider_registrations ?? []) {
+    const configuration = parseJsonValue(row.non_secret_config_json);
+    const parsed = providerSetupInputSchema.safeParse({ kind: row.kind, name: row.name, configuration });
+    if (!parsed.success || (typeof row.non_secret_config_json === "string" && findForbiddenSecretField(row.non_secret_config_json) !== null)) {
+      errors.push("Provider connection settings require replacement with credential-free local settings.");
+    }
+  }
+  return errors;
 }
 
 function pushSchemaError(

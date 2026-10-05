@@ -191,7 +191,7 @@ describe("Twitch reward catalog runtime composition", () => {
   });
 });
 
-it("serves audio routes over loopback, observes global mute, and retains bindings across a CLI restart", async () => {
+it("serves audio routes over loopback, observes Alerts mute, and retains bindings across a CLI restart", async () => {
   const testRoot = await mkdtemp(join(tmpdir(), "stream-jams-audio-runtime-"));
   let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
   const testOutput = vi.fn<(deviceId: string) => Promise<void>>(async () => {});
@@ -206,7 +206,7 @@ it("serves audio routes over loopback, observes global mute, and retains binding
       scheduleRecurring: () => ({ scheduled: true }), cancelRecurring: () => {}
     };
     composition = await createRuntimeAppComposition({ ...options,
-      audioPlaybackSink: { play, close: closeAudio, stop: async () => {}, setMuted: async () => {} },
+      audioPlaybackSink: { play, close: closeAudio, stop: async () => {}, setMuted: async () => {}, setModuleMutes: async () => {} },
       audioDeviceHost: {
       listOutputDevices: async () => [{ deviceId: "test-device", label: "Test output" }], testOutput
     } });
@@ -603,7 +603,7 @@ it("restores timer definitions and active runs paused after a runtime restart", 
   }
 });
 
-it("applies persisted mute before wiring the desktop transport for device playback", async () => {
+it("applies persisted module mute before wiring the desktop transport for device playback", async () => {
   const testRoot = await mkdtemp(join(tmpdir(), "stream-jams-desktop-audio-runtime-"));
   let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
   const calls: string[] = [];
@@ -614,6 +614,7 @@ it("applies persisted mute before wiring the desktop transport for device playba
     prepare: vi.fn(async () => { calls.push("prepare"); return { start: async () => { calls.push("start"); return { failedRouteIds: [] }; } }; }),
     stop: vi.fn(async () => {}),
     setMuted: vi.fn(async muted => { calls.push(`mute:${String(muted)}`); }),
+    setModuleMutes: vi.fn(async state => { calls.push(`modules:${String(state.alerts)}:${String(state["screen-effects"])}`); }),
     retry: vi.fn(async () => { calls.push("retry"); }),
     close: vi.fn(async () => { calls.push("close"); })
   };
@@ -622,14 +623,14 @@ it("applies persisted mute before wiring the desktop transport for device playba
     composition = await createRuntimeAppComposition({
       homeDirectory: testRoot,
       webBuildDirectory: await createWebBuildFixture(testRoot),
-      configStore: new StaticConfigStore({ ...config, playback: { ...config.playback, muted: true } }),
+      configStore: new StaticConfigStore({ ...config, playback: { ...config.playback, muted: false, moduleMutes: { alerts: true, "screen-effects": false } } }),
       environment: {},
       secretStore: new TestSecretStore(),
       scheduleRecurring: () => ({ scheduled: true }),
       cancelRecurring: () => {},
       desktopAudioTransport: transport
     });
-    expect(calls).toEqual(["mute:true", "devices"]);
+    expect(calls).toEqual(["mute:false", "modules:true:false", "devices"]);
 
     await mkdir(join(testRoot, "assets", "audio"), { recursive: true });
     await writeFile(join(testRoot, "assets", "audio", "tone.mp3"), Buffer.from([1, 2, 3]));
@@ -671,7 +672,7 @@ it("applies persisted mute before wiring the desktop transport for device playba
       startDeadlineMs: expect.any(Number)
     }));
     expect(transport.play).not.toHaveBeenCalled();
-    expect(calls).toEqual(["mute:true", "devices", "devices", "devices", "prepare", "start"]);
+    expect(calls).toEqual(["mute:false", "modules:true:false", "devices", "devices", "devices", "prepare", "start"]);
     expect((await composition.app.inject({ method: "POST", url: "/audio/retry", headers })).statusCode).toBe(204);
     expect(transport.retry).toHaveBeenCalledTimes(1);
   } finally {
@@ -789,6 +790,7 @@ class StaticConfigStore implements ConfigStore {
         retentionHours: patch.logging?.retentionHours ?? this.config.logging.retentionHours
       },
       playback: {
+        ...(patch.playback?.moduleMutes === undefined && this.config.playback.moduleMutes === undefined ? {} : { moduleMutes: patch.playback?.moduleMutes ?? this.config.playback.moduleMutes! }),
         paused: patch.playback?.paused ?? this.config.playback.paused,
         muted: patch.playback?.muted ?? this.config.playback.muted,
         doNotDisturb: patch.playback?.doNotDisturb ?? this.config.playback.doNotDisturb
@@ -862,3 +864,38 @@ function createAdvancingClock() {
     read: () => new Date(nowMs)
   };
 }
+
+
+it("notifies the desktop and advances Effects after persisted policy delivery fails", async () => {
+  const testRoot = await mkdtemp(join(tmpdir(), "stream-jams-mute-failure-"));
+  let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
+  let failMute = false;
+  const notified = vi.fn();
+  const configStore = new StaticConfigStore(createConfig(testRoot));
+  const transport: DesktopAudioTransport = {
+    listOutputDevices: async () => [], testOutput: async () => {},
+    play: async () => ({ failedRouteIds: [] }), stop: async () => {},
+    setMuted: async () => {},
+    setModuleMutes: async () => { if (failMute) throw new Error("device mute delivery failed"); },
+    retry: async () => {}, close: async () => {}
+  };
+  try {
+    composition = await createRuntimeAppComposition({
+      homeDirectory: testRoot, webBuildDirectory: await createWebBuildFixture(testRoot), configStore,
+      environment: {}, secretStore: new TestSecretStore(), scheduleRecurring: () => ({ scheduled: true }), cancelRecurring: () => {},
+      desktopAudioTransport: transport, desktopHost: { onConfigChanged: () => {}, onPlaybackStateChanged: notified }
+    });
+    const advanceEffects = vi.spyOn(composition.effectPlaybackCoordinator, "startNext");
+    failMute = true;
+    const moduleMutes = { alerts: true, "screen-effects": false };
+    await composition.playbackOperationsService.setModulesMuted(["alerts"], true);
+    expect((await configStore.readConfig()).playback.moduleMutes).toEqual(moduleMutes);
+    expect(composition.playbackOperationsService.getModuleMuteState()).toEqual(moduleMutes);
+    expect(composition.playbackOperationsService.getMuteOutputStatus().status).toBe("failed");
+    expect(advanceEffects).toHaveBeenCalledOnce();
+    expect(notified).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ moduleMutes, muted: false }));
+  } finally {
+    await composition?.close();
+    await rm(testRoot, { recursive: true, force: true });
+  }
+});

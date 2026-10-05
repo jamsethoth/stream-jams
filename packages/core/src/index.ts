@@ -373,3 +373,7 @@ export * from "./music/management.js";
 export * from "./music/module-definition.js";
 export * from "./music/projection.js";
 export * from "./music/asset-references.js";
+
+export * from "./management/local-websocket-connection.js";
+export { moduleMuteStateSchema } from "./playback/schemas.js";
+export { defaultModuleMuteState, type ModuleMuteState, type MutablePlaybackModuleId } from "./playback/types.js";

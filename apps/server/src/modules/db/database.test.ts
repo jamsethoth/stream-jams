@@ -40,7 +40,9 @@ const expectedMigrations = [
   "028-timer-overlay-module",
   "029-asset-retirements",
   "030-persistent-event-timers",
-  "031-music-source-providers"
+  "031-automation-grants",
+  "032-music-source-providers"
+
 ] as const;
 
 const expectedTables = [
@@ -58,6 +60,7 @@ const expectedTables = [
   "asset_metadata",
   "asset_retirements",
   "audio_output_routes",
+  "automation_grants",
   "event_logs",
   "module_playback_settings",
   "overlay_keys",
@@ -80,6 +83,16 @@ const expectedTables = [
 ];
 
 describe("Stream Jams SQLite database", () => {
+  it("upgrades the exact pre-merge Music preview history without rebuilding provider rows", () => {
+    using database = createInMemoryStreamJamsDatabase();
+    database.connection.exec("DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; UPDATE schema_migrations SET id = '031-music-source-providers' WHERE id = '032-music-source-providers';");
+    database.connection.exec("INSERT INTO provider_registrations (id,name,kind,capability,non_secret_config_json,active,connection_state,available_voices_json,created_at,updated_at) VALUES ('pear-preview','Pear','pear-desktop','music-source','{}',1,'connected','[]','now','now')");
+    database.runMigrations();
+    expect(database.connection.prepare("SELECT id FROM schema_migrations ORDER BY rowid").all().map(row => row.id)).toEqual(expectedMigrations);
+    expect(database.connection.prepare("SELECT id FROM provider_registrations WHERE kind = 'pear-desktop'").get()?.id).toBe("pear-preview");
+    expect(() => database.runMigrations()).not.toThrow();
+  });
+
   it("adds constrained timer definitions, routes, and hash-only automation metadata after schema 27", () => {
     using database = createInMemoryStreamJamsDatabase();
     const db = database.connection;
@@ -153,7 +166,8 @@ describe("Stream Jams SQLite database", () => {
   it("removes stored Screen Effect animations when upgrading schema 24", () => {
     using database = createInMemoryStreamJamsDatabase();
     const db = database.connection;
-    db.exec("DELETE FROM schema_migrations WHERE id = '031-music-source-providers'; DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements; DELETE FROM schema_migrations WHERE id = '029-asset-retirements'; DROP TABLE timer_run_recovery; DELETE FROM schema_migrations WHERE id = '030-persistent-event-timers'; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;");
+    db.exec("DELETE FROM schema_migrations WHERE id = '032-music-source-providers'; DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements; DELETE FROM schema_migrations WHERE id = '029-asset-retirements'; DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; DROP TABLE timer_run_recovery; DELETE FROM schema_migrations WHERE id = '030-persistent-event-timers'; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;");
+
     db.prepare("DELETE FROM schema_migrations WHERE id IN (?, ?, ?, ?)").run(
       "025-remove-screen-effect-animations",
       "026-automatic-output-rebinding",
@@ -292,7 +306,8 @@ describe("Stream Jams SQLite database", () => {
   it("defaults existing audio routes to automatic following disabled when migrating schema 25", () => {
     using database = createInMemoryStreamJamsDatabase();
     const db = database.connection;
-    db.exec("DELETE FROM schema_migrations WHERE id = '031-music-source-providers'; DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements; DELETE FROM schema_migrations WHERE id = '029-asset-retirements'; DROP TABLE timer_run_recovery; DELETE FROM schema_migrations WHERE id = '030-persistent-event-timers'; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;");
+    db.exec("DELETE FROM schema_migrations WHERE id = '032-music-source-providers'; DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements; DELETE FROM schema_migrations WHERE id = '029-asset-retirements'; DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; DROP TABLE timer_run_recovery; DELETE FROM schema_migrations WHERE id = '030-persistent-event-timers'; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;");
+
     db.prepare("DELETE FROM schema_migrations WHERE id IN (?, ?, ?)").run(
       "026-automatic-output-rebinding",
       "027-remove-alert-set-profile-state",
@@ -574,7 +589,7 @@ describe("Stream Jams SQLite database", () => {
     `);
     database.connection.exec(alertTextStyleDefaultsMigration.sql);
     database.connection.exec(`
-      DELETE FROM schema_migrations WHERE id = '031-music-source-providers';
+      DELETE FROM schema_migrations WHERE id = '032-music-source-providers';
       DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset;
       DROP TABLE asset_retirements;
       DELETE FROM schema_migrations WHERE id = '029-asset-retirements';
@@ -586,7 +601,7 @@ describe("Stream Jams SQLite database", () => {
       DROP TABLE screen_effect_variants;
       DROP TABLE screen_effects;
       DROP TABLE module_playback_settings;
-      DROP TABLE timer_run_recovery; DELETE FROM schema_migrations WHERE id = '030-persistent-event-timers'; DROP TABLE timer_audio_routes;
+      DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; DROP TABLE timer_run_recovery; DELETE FROM schema_migrations WHERE id = '030-persistent-event-timers'; DROP TABLE timer_audio_routes;
       DROP TABLE timer_definitions;
       DROP TABLE timer_automation_credential;
       ALTER TABLE asset_metadata DROP COLUMN duration_ms;

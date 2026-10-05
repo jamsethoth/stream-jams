@@ -7,6 +7,12 @@ import { createProviderManagementAdapters } from "./provider-management-adapters
 const now = new Date("2026-07-15T12:00:00.000Z");
 
 describe("provider management adapters", () => {
+  it("requires a password or explicit local consent before dialing", async () => {
+    const harness = createHarness();
+    const input = streamerBotInput();
+    await expect(harness.adapters.get("streamerbot")?.validate({ ...input, configuration: { ...input.configuration, allowUnauthenticatedLocalConnection: false } })).rejects.toThrow("password or explicitly allow");
+    expect(harness.streamerBotUrls).toEqual([]);
+  });
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -69,7 +75,7 @@ describe("provider management adapters", () => {
     const harness = createHarness();
     const validation = harness.adapters.get("streamerbot")?.validate(streamerBotInput());
     const rejection = expect(validation).rejects.toThrow(
-      "Start Streamer.bot, enable its WebSocket server, verify ws://127.0.0.1:8080/, then retry"
+      "Enable its local WebSocket server and verify Authentication and Enforce settings"
     );
 
     harness.streamerBotSockets[0]?.emitError(new Error("connect failed"));
@@ -336,7 +342,7 @@ function streamerBotInput() {
   return {
     name: "Streamer.bot",
     kind: "streamerbot",
-    configuration: { protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/" }
+    configuration: { protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/", allowUnauthenticatedLocalConnection: true }
   } as const;
 }
 

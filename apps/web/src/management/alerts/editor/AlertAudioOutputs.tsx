@@ -27,7 +27,7 @@ export function AlertAudioOutputs({ value, status, loading, error, onChange }: {
     {error === null ? null : <p role="status">Audio route status could not refresh. {error} {status === null ? "Saved selections are retained." : "Showing last-known status."}</p>}
     {status?.capability.available === false ? <p>Device routing is unavailable. {status.capability.nextStep}</p> : null}
     {!value.browserSource && value.deviceRouteIds.length === 0 ? <p>Audio layers and enabled soundtracks are silent: no outputs selected. TTS is unchanged.</p> : null}
-    {status?.muted ? <p>Global mute is on. Audio remains muted on all selected outputs.</p> : null}
+    {status?.muted ? <p>Alerts mute is on. Alerts audio remains muted on all selected outputs. Effects and timer cues have independent audio.</p> : null}
     <p><a href="/manage/settings#audio-outputs">Configure audio outputs</a>. Preview plays locally only; it never uses these device routes. TTS routing is unchanged.</p>
   </fieldset></div>;
 }

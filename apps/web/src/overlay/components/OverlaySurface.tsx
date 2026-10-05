@@ -28,6 +28,7 @@ export interface OverlaySurfaceProps {
   readonly composition: OverlayComposition;
   readonly preparingInstructionIds?: ReadonlySet<string>;
   readonly muted?: boolean;
+  readonly moduleMutes?: import("@stream-jams/core").ModuleMuteState | undefined;
   readonly resolveAssetUrl: (assetId: string, version?: string) => string;
   readonly resolveMusicAsset?: MusicAssetResolver | undefined;
   readonly onPlaybackEvent?: ((event: OverlayPlaybackEvent) => void) | undefined;
@@ -43,7 +44,8 @@ export const overlayRootStyle: CSSProperties = {
 
 const testAudioActivationEvent = "stream-jams:test-audio-activation";
 
-export function OverlaySurface({ composition, preparingInstructionIds, muted = false, onPlaybackEvent, resolveAssetUrl, resolveMusicAsset }: OverlaySurfaceProps) {
+export function OverlaySurface({ composition, preparingInstructionIds, muted = false, moduleMutes, onPlaybackEvent, resolveAssetUrl, resolveMusicAsset }: OverlaySurfaceProps) {
+
   const [blockedTestAudioIds, setBlockedTestAudioIds] = useState<ReadonlySet<string>>(() => new Set());
   const rootElementRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState(() => ({
@@ -101,7 +103,9 @@ export function OverlaySurface({ composition, preparingInstructionIds, muted = f
           instruction={instruction}
           key={instruction.id}
           preparing={preparingInstructionIds?.has(instruction.id) === true}
-          muted={muted}
+          muted={instruction.moduleId === "timers" ? false : moduleMutes !== undefined
+            ? (instruction.moduleId === "alerts" || instruction.moduleId === "screen-effects") && moduleMutes[instruction.moduleId]
+            : muted}
           visualVisible={moduleSnapshot.surfaceLayer?.visible !== false}
           onPlaybackEvent={onPlaybackEvent}
           onTestAudioBlockedChange={setTestAudioBlocked}

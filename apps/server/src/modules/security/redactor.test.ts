@@ -2,6 +2,57 @@ import { describe, expect, it } from "vitest";
 import { createRedactor } from "./redactor.js";
 
 describe("createRedactor", () => {
+  it.each(["http", "https", "ws", "wss", "HTTPS"])("removes URL user information from %s URLs", (scheme) => {
+    const redactor = createRedactor();
+    const output = redactor.redactText(`Connect ${scheme}://user%40name:p%3Assword@localhost:8080/events?view=public#status`);
+
+    expect(output).toBe(`Connect ${scheme}://localhost:8080/events?view=public#status`);
+  });
+
+  it("fails closed for malformed credential URLs with encoded query secrets", () => {
+    const output = createRedactor().redactText("wss://user:secret@[invalid]/events?access%5ftoken=hidden");
+    expect(output).toBe("[REDACTED]");
+  });
+
+  it("removes protocol-relative and malformed URL credentials while preserving safe destinations", () => {
+    const redactor = createRedactor();
+
+    expect(redactor.redactText("Connect //username:password@[::1]:8080/events?token=opaque&view=public"))
+      .toBe("Connect //[::1]:8080/events?token=%5BREDACTED%5D&view=public");
+    expect(redactor.redactText("Failed wss://username:password@[invalid]:8080/events"))
+      .toBe("Failed wss://[invalid]:8080/events");
+    expect(redactor.redactText("http://localhost:8080/events ws://localhost:8080/events"))
+      .toBe("http://localhost:8080/events ws://localhost:8080/events");
+  });
+
+  it("redacts authentication and credential fields in objects and encoded JSON text", () => {
+    const redactor = createRedactor();
+    const payload = {
+      request: "Authenticate",
+      authentication: "challenge-response-secret",
+      credentials: { username: "secret-user", value: "credential-secret" },
+      public: "retained"
+    };
+
+    expect(redactor.redact(payload)).toEqual({
+      request: "Authenticate", authentication: "[REDACTED]", credentials: "[REDACTED]", public: "retained"
+    });
+    expect(JSON.parse(redactor.redactText(JSON.stringify(payload)))).toEqual({
+      request: "Authenticate", authentication: "[REDACTED]", credentials: "[REDACTED]", public: "retained"
+    });
+    expect(redactor.redactText('Provider failed: {"authentication":"response-secret","credential":"escaped \\" secret"}'))
+      .toBe('Provider failed: {"authentication":"[REDACTED]","credential":"[REDACTED]"}');
+  });
+
+  it("redacts complete OAuth header parameter lists and quoted credential assignments", () => {
+    const redactor = createRedactor();
+
+    expect(redactor.redactText('Authorization: OAuth oauth_consumer_key="consumer-secret", oauth_token="oauth-secret", oauth_signature="signature-secret"; status=failed'))
+      .toBe("Authorization: OAuth [REDACTED]; status=failed");
+    expect(redactor.redactText('authentication="challenge response" credential=opaque-secret'))
+      .toBe("authentication=[REDACTED] credential=[REDACTED]");
+  });
+
   it("redacts media capabilities in URLs and ordinary text", () => {
     const redactor = createRedactor();
     expect(redactor.redactText("/media/med_private-capability grant med_other_capability"))
@@ -125,4 +176,38 @@ describe("createRedactor", () => {
       }
     });
   });
+  it.each(["http://", "https://", "ws://", "wss://", "//"])("strips raw and encoded quoted credentials before URL matching: %s", prefix => {
+    for (const password of ["p'ass", 'p"ass', 'p",ass', 'p"}ass', 'p"]ass', "p'}ass", '123"}ass', '123"]ass', '123","x":"secret', 'p%27ass', 'p%22ass']) {
+      const output = createRedactor().redactText(`Provider ${prefix}alice:${password}@localhost:8080/events?token=query-secret&view=raw finished`);
+      expect(output).toContain(`${prefix}localhost:8080/events`);
+      expect(output).toContain("view=raw finished");
+      expect(output).not.toContain(password);
+      expect(output).not.toContain("alice:");
+      expect(output).not.toContain("query-secret");
+      expect(createRedactor().redactText(`${prefix}alice:${password}@[invalid]/events`)).toBe(`${prefix}[invalid]/events`);
+    }
+  });
+  it("preserves outer quotes, JSON boundaries, unrelated email and multiple URLs", () => {
+    const redactor = createRedactor();
+    const json = 'Provider {"url":"wss://localhost:8080","email":"alice@example.test"}';
+    expect(redactor.redactText(json)).toBe(json);
+    const nested = 'Provider {"nested":{"url":"wss://localhost:8080"},"email":"alice@example.test"}';
+    expect(redactor.redactText(nested)).toBe(nested);
+    expect(redactor.redactText('Provider "wss://alice:p"ass@localhost/events" done alice@example.test')).toBe('Provider "wss://localhost/events" done alice@example.test');
+    expect(redactor.redactText("'ws://alice:p'ass@localhost' and https://bob:p%22ass@safe.test/path done" )).toBe("'ws://localhost' and https://safe.test/path done");
+    expect(redactor.redactText('Provider {"url":"wss://alice:p",ass@localhost/events","email":"alice@example.test"}')).toBe('Provider {"url":"wss://localhost/events","email":"alice@example.test"}');
+    expect(redactor.redactText("GET /events?token=hidden&view=raw")).toContain("view=raw");
+  });
+});
+it("redacts scoped automation tokens and pairing proof in fields, text and URLs", () => {
+ const r = createRedactor(); expect(r.redact({ verifier: "proof", codeChallenge: "hash", text: "sja_private" })).toEqual({ verifier: "[REDACTED]", codeChallenge: "[REDACTED]", text: "[REDACTED]" });
+ expect(r.redactText("verifier=proof codeChallenge=hash sja_private")).toBe("verifier=[REDACTED] codeChallenge=[REDACTED] [REDACTED]");
+ expect(r.redactText("/pair?verifier=proof&code_challenge=hash")).not.toContain("proof");
+});
+
+it("combines quoted URL credentials with scoped automation tokens and pairing proof redaction", () => {
+    const output = createRedactor().redactText('Provider wss://alice:p"}ass@localhost/events?verifier=url-proof&code_challenge=url-challenge sja_pairingSecret verifier=plain-proof codeChallenge=plain-challenge {"verifier":"json-proof","codeChallenge":"json-challenge"}');
+    expect(output).toContain("wss://localhost/events");
+    for (const secret of ['alice:', 'p"}ass', 'url-proof', 'url-challenge', 'sja_pairingSecret', 'plain-proof', 'plain-challenge', 'json-proof', 'json-challenge']) expect(output).not.toContain(secret);
+    expect(createRedactor().redact({ verifier: "proof", codeChallenge: "challenge", nested: "sja_nestedSecret" })).toEqual({ verifier: "[REDACTED]", codeChallenge: "[REDACTED]", nested: "[REDACTED]" });
 });

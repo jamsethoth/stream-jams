@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { localWebSocketConnectionSchema } from "./local-websocket-connection.js";
 import { alertAudioOutputsSchema, mediaVolumeSchema } from "../audio/schemas.js";
 import { channelPointRewardSelectionSchema } from "../alerts/channel-point-reward-selection.js";
 import { alertConditionSchema, streamEventTypeSchema } from "../alerts/schemas.js";
@@ -100,14 +101,7 @@ const providerSetupBaseSchema = z.object({
   name: nonEmptyStringSchema
 });
 
-const websocketProviderConfigurationSchema = z
-  .object({
-    protocol: z.enum(["ws", "wss"]),
-    host: nonEmptyStringSchema,
-    port: positiveIntegerSchema.max(65_535),
-    endpoint: nonEmptyStringSchema
-  })
-  .strict();
+const websocketProviderConfigurationSchema = localWebSocketConnectionSchema;
 
 const safeStreamerBotIdentitySchema = nonEmptyStringSchema.max(120).refine(
   (value) => Array.from(value).every((character) => {
@@ -137,6 +131,7 @@ const configuredStreamerBotSubscriptionsSchema = z.array(
 });
 
 const streamerBotProviderConfigurationSchema = websocketProviderConfigurationSchema.extend({
+  allowUnauthenticatedLocalConnection: z.boolean().default(false),
   twitchBroadcasterId: safeStreamerBotIdentitySchema.nullable().default(null),
   externalSubscriptions: configuredStreamerBotSubscriptionsSchema.default([])
 }).strict();

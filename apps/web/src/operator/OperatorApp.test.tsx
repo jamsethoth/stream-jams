@@ -187,6 +187,16 @@ describe("OperatorApp", () => {
     expect(screen.getByRole("heading", { name: "Screen Effects" })).toHaveFocus();
   });
 
+  it("shows independent module mute and applies All to a mixed policy", async () => {
+    const playbackApi = api({ getSnapshot: async () => ({ ...snapshot(), moduleMutes: { alerts: true, "screen-effects": false } }) });
+    render(<OperatorApp timersApi={idleTimersApi} api={playbackApi} />);
+    expect(await screen.findByText("Alerts muted")).toBeVisible();
+    expect(screen.getByText("Effects audio on")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Mute Alerts and Effects" }));
+    expect(playbackApi.mute).toHaveBeenCalledOnce();
+    expect(playbackApi.unmute).not.toHaveBeenCalled();
+  });
+
   it("runs global safety as one pending command and announces the result", async () => {
     const user = userEvent.setup();
     const response = deferred<MergedOperationsSnapshot>();

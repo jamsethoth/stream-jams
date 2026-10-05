@@ -25,6 +25,30 @@ afterEach(async () => {
 });
 
 describe("web shell routes", () => {
+  it.each(["/manage", "/manage/assets", "/operator"])("restricts executable content and framing on %s", async (url) => {
+    const app = createWebShellRouteTestApp({
+      metadata: { appName: "stream-jams", version: "1.2.3" },
+      webBuildDirectory: await createWebBuildFixture()
+    });
+
+    const response = await app.inject({ method: "GET", url });
+
+    expect(response.statusCode).toBe(200);
+    const policy = response.headers["content-security-policy"];
+    expect(policy).toContain("default-src 'none'");
+    expect(policy).toContain("script-src 'self'");
+    expect(policy).toContain("connect-src 'self' blob:");
+    expect(policy).toContain("base-uri 'none'");
+    expect(policy).toContain("form-action 'none'");
+    expect(policy).toContain("frame-ancestors 'none'");
+    expect(policy).not.toContain("'unsafe-eval'");
+    expect(policy).not.toMatch(/script-src[^;]*'unsafe-inline'/u);
+    expect(policy).not.toMatch(/https?:|wss?:|\*/u);
+    expect(response.headers["x-frame-options"]).toBe("DENY");
+    expect(response.headers["referrer-policy"]).toBe("no-referrer");
+    await app.close();
+  });
+
   it("serves manifest-driven management shell assets and redirects root to /manage", async () => {
     const webBuildDirectory = await createWebBuildFixture();
     const app = createWebShellAssetRouteTestApp({
@@ -232,6 +256,9 @@ describe("web shell routes", () => {
     expect(management.body).toContain('<script type="module" crossorigin src="/assets/index-test.js"></script>');
     expect(overlay.statusCode).toBe(200);
     expect(overlay.headers["content-type"]).toContain("text/html");
+    expect(overlay.headers["content-security-policy"]).toBeUndefined();
+    expect(overlay.headers["x-frame-options"]).toBeUndefined();
+    expect(overlay.headers["referrer-policy"]).toBe("no-referrer");
     expect(overlay.body).toContain('<script type="module" crossorigin src="/assets/index-test.js"></script>');
     expect(overlay.body).not.toContain("/src/main.tsx");
     expect(overlay.body).not.toContain(created.rawKey);

@@ -20,6 +20,34 @@ describe("SqliteConfigurationSnapshotRepository", () => {
 
   afterEach(() => database.close());
 
+  it("blocks credential-bearing legacy provider exports and imports with safe errors", () => {
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const snapshot = repository.snapshot();
+    const configuration = JSON.stringify({ protocol: "ws", host: "user:secret-sentinel@remote.example", port: 8080, endpoint: "/" });
+    database.connection.prepare("UPDATE provider_registrations SET kind = 'streamerbot', non_secret_config_json = ?").run(configuration);
+    const restorePoint = repository.captureRestorePoint();
+    expect(() => repository.snapshot()).toThrow("replacement before backup export");
+    repository.restoreRestorePoint(restorePoint);
+    expect(database.connection.prepare("SELECT non_secret_config_json FROM provider_registrations").get()?.non_secret_config_json).toBe(configuration);
+    const tables = { ...snapshot.tables, provider_registrations: snapshot.tables.provider_registrations!.map(row => ({ ...row, kind: "streamerbot", non_secret_config_json: configuration })) };
+    const errors = repository.validate({ ...snapshot, appConfig: {}, tables });
+    expect(errors).toContain("Provider connection settings require replacement with credential-free local settings.");
+    expect(JSON.stringify(errors)).not.toContain("secret-sentinel");
+  });
+
+  it("exports password-configured providers without secrets and preserves local consent", () => {
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    for (const consent of [false, true]) {
+      const configuration = JSON.stringify({ protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/", allowUnauthenticatedLocalConnection: consent });
+      database.connection.prepare("UPDATE provider_registrations SET kind = 'streamerbot', non_secret_config_json = ?").run(configuration);
+      const snapshot = repository.snapshot();
+      expect(repository.validate({ ...snapshot, appConfig: {} })).toEqual([]);
+      expect(snapshot.tables.provider_registrations?.[0]?.non_secret_config_json).toBe(configuration);
+      expect(snapshot.tables.provider_registrations?.[0]).not.toHaveProperty("secret_ref_json");
+      expect(JSON.stringify(snapshot)).not.toContain('"password"');
+    }
+  });
+
   it("preserves set membership through portable restore and restores pre-set backups into Default", async () => {
     const effects = new SqliteEffectRepository(database.connection);
     const sets = new SqliteEffectSetRepository(database.connection, effects);
@@ -501,7 +529,7 @@ describe("SqliteConfigurationSnapshotRepository", () => {
       expect.stringContaining("unexpected"),
       expect.stringContaining("extra"),
       expect.stringContaining("missing-asset"),
-      expect.stringContaining("accessToken")
+      expect.stringContaining("forbidden secret field")
     ]));
   });
 

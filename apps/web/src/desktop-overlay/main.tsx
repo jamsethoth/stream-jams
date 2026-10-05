@@ -1,3 +1,4 @@
+import "../csp-schema-validation.js";
 import { createRoot } from "react-dom/client";
 import { DesktopOverlayApp } from "./DesktopOverlayApp.js";
 import { DesktopOverlayController } from "./desktop-overlay-controller.js";

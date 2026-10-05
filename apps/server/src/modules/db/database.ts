@@ -31,7 +31,9 @@ import { removeAlertSetProfileStateMigration } from "./migrations/027-remove-ale
 import { timerOverlayModuleMigration } from "./migrations/028-timer-overlay-module.js";
 import { assetRetirementsMigration } from "./migrations/029-asset-retirements.js";
 import { persistentEventTimersMigration } from "./migrations/030-persistent-event-timers.js";
-import { musicSourceProvidersMigration } from "./migrations/031-music-source-providers.js";
+import { musicSourceProvidersMigration } from "./migrations/032-music-source-providers.js";
+
+import { automationGrantsMigration } from "./migrations/031-automation-grants.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -75,7 +77,9 @@ const migrations = [
   timerOverlayModuleMigration,
   assetRetirementsMigration,
   persistentEventTimersMigration,
+  automationGrantsMigration,
   musicSourceProvidersMigration
+
 ] satisfies readonly StreamJamsMigration[];
 
 export const currentSchemaVersion = migrations.length;
@@ -160,6 +164,17 @@ class NodeSqliteStreamJamsDatabase implements StreamJamsDatabase {
       )
     `);
 
+    // Preserve the exact pre-merge Music preview history while inserting main's migration.
+    const history = this.connection.prepare("SELECT id, applied_at FROM schema_migrations ORDER BY rowid").all();
+    if (history.length === 31 && history[30]?.id === "031-music-source-providers"
+      && history.slice(0, 30).every((row, index) => row.id === migrations[index]?.id)) {
+      runInTransaction(this.connection, () => {
+        this.connection.prepare("DELETE FROM schema_migrations WHERE id = ?").run("031-music-source-providers");
+        this.connection.exec(automationGrantsMigration.sql);
+        insertMigrationRecord(this.connection, automationGrantsMigration.id);
+        this.connection.prepare("INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)").run(musicSourceProvidersMigration.id, String(history[30]!.applied_at));
+      });
+    }
     const appliedCount = validateMigrationHistory(this.connection);
     for (const migration of migrations.slice(appliedCount)) {
       runInTransaction(this.connection, () => {

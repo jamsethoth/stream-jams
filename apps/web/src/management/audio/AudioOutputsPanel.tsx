@@ -239,10 +239,10 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
     try {
       const result = await audioApi.testRoute(route.id);
       setNotice(result.muted
-        ? { tone: "warning", message: `${route.name} test completed while global alert audio was muted.`, detail: "Unmute alert audio before testing again if you need to hear the tone." }
+        ? { tone: "warning", message: `${route.name} test completed while Alerts audio was muted.`, detail: "Unmute alert audio before testing again if you need to hear the tone." }
         : { tone: "success", message: `${route.name} played a one-second test tone.` });
     } catch (cause) {
-      setActionError(actionable("Audio test did not complete", cause, "Check the selected device and global mute, then retry."));
+      setActionError(actionable("Audio test did not complete", cause, "Check the selected device and Alerts mute, then retry."));
     } finally {
       mutationInProgressRef.current = false;
       setBusyId(null);
@@ -289,7 +289,7 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
           <h3 id="audio-outputs-heading">Audio outputs</h3>
           <p>Name local playback destinations once, then select them from alert settings.</p>
         </div>
-        <StatusBadge label={!status.capability.available ? "Device playback unavailable" : status.muted ? "Globally muted" : "Device playback available"} tone={status.muted || !status.capability.available ? "warning" : "positive"} />
+        <StatusBadge label={!status.capability.available ? "Device playback unavailable" : status.muted ? "Alerts muted" : "Device playback available"} tone={status.muted || !status.capability.available ? "warning" : "positive"} />
       </div>
 
       <div className="audio-outputs__guidance">

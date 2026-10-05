@@ -1,3 +1,5 @@
+import { registerAutomationPairingRoutes, type AutomationPairingRouteDependencies } from "./http/routes/automation-pairing.js";
+import { registerAutomationControlRoutes, type AutomationControlRouteDependencies } from "./http/routes/automation-controls.js";
 import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
 import { HttpResponseError } from "./http/errors.js";
@@ -98,6 +100,9 @@ export type ProductionServerAppDependencies = BaseServerAppOptions
   & TimerRouteDependencies
   & TimerAutomationRouteDependencies
   & Partial<MusicArtworkRouteDependencies>
+  & AutomationPairingRouteDependencies
+  & AutomationControlRouteDependencies
+
   & WebShellRouteDependencies;
 
 export function createBaseServerApp(options: BaseServerAppOptions): FastifyInstance {
@@ -136,6 +141,8 @@ export function createServerApp(dependencies: ProductionServerAppDependencies): 
   registerScreenEffectRoutes(app, dependencies);
   registerTimerRoutes(app, dependencies);
   registerTimerAutomationRoutes(app, dependencies);
+  registerAutomationPairingRoutes(app, dependencies);
+  registerAutomationControlRoutes(app, dependencies);
   registerTtsRoutes(app, dependencies);
   registerTwitchAuthRoutes(app, dependencies);
   registerTwitchEventSubRoutes(app, dependencies);

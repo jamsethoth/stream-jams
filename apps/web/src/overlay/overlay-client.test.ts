@@ -262,6 +262,14 @@ describe("overlay-client", () => {
     expect(onMessage).toHaveBeenCalledTimes(2);
   });
 
+  it("validates independent module audio states and rejects malformed policies", () => {
+    const onMessage = vi.fn(); connectClient(onMessage);
+    for (const moduleMutes of [{ alerts: true, "screen-effects": false }, { alerts: "yes", "screen-effects": false }, { alerts: true }]) {
+      FakeWebSocket.instances[0]!.emitMessage(JSON.stringify({ type: "overlay.playback.audio-state", muted: false, moduleMutes }));
+    }
+    expect(onMessage).toHaveBeenCalledExactlyOnceWith({ type: "audio-state", muted: false, moduleMutes: { alerts: true, "screen-effects": false } });
+  });
+
   it("preserves safe close evidence once and reconnects", () => {
     const onMessage = vi.fn();
     connectClient(onMessage);

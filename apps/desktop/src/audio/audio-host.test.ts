@@ -260,3 +260,16 @@ it("rejects obsolete renderer protocol acknowledgements with an actionable incom
   expect(diagnostics).toHaveBeenCalledWith(expect.objectContaining({ source: "desktop.audio.incompatible-media-protocol" }));
   expect(destroy).toHaveBeenCalledOnce(); await host.close();
 });
+
+
+it("reconciles independent module mute when its renderer is recreated", async () => {
+  const { host, ports } = harness();
+  const moduleMutes = { alerts: true, "screen-effects": false };
+  await host.setModuleMutes(moduleMutes);
+  await host.listOutputDevices();
+  expect(ports[0]!.sent[0]!.command).toEqual({ type: "initialize", protocolVersion: 1, muted: false, moduleMutes });
+  ports[0]!.callbacks.onDestroyed();
+  await host.listOutputDevices();
+  expect(ports[1]!.sent[0]!.command).toEqual({ type: "initialize", protocolVersion: 1, muted: false, moduleMutes });
+  await host.close();
+});

@@ -8,6 +8,60 @@ import {
 } from "./streamerbot-client.js";
 
 describe("StreamerBotClient", () => {
+  it.each(["stop", "replace"])("ignores late Authenticate success across %s", async mode => {
+    const harness = createClientHarness({ requestIds: ["old-auth", "new-auth"] });
+    harness.client.connect({ password: "required" });
+    await harness.sockets[0]?.emitMessage(authHello("salt", "challenge"));
+    const old = harness.sockets[0];
+    if (mode === "stop") harness.client.disconnect();
+    else harness.client.connect({ password: "required" });
+    await old?.emitMessage({ id: "old-auth", status: "ok" });
+    await old?.emitMessage({ timeStamp: "2026-06-08T12:00:00.000Z", event: { source: "Twitch", type: "Follow" }, data: { id: "stale" } });
+    expect(harness.events).toEqual([]);
+    expect(harness.client.getStatus().state).not.toBe("connected");
+    if (mode === "replace") {
+      await harness.sockets[1]?.emitMessage(authHello("new-salt", "new-challenge"));
+      await harness.sockets[1]?.emitMessage({ id: "new-auth", status: "ok" });
+      expect(harness.client.getStatus().state).toBe("connected");
+    }
+  });
+
+  it("revokes event readiness on socket errors and ignores replaced socket events", async () => {
+    const harness = createConnectedClientHarness();
+    const oldSocket = harness.sockets[0];
+    const event = { timeStamp: "2026-06-08T12:00:00.000Z", event: { source: "Twitch", type: "Follow" }, data: {} };
+    oldSocket?.emitError(new Error("socket failure"));
+    await oldSocket?.emitMessage(event);
+    harness.client.connect({ allowUnauthenticatedLocalConnection: true });
+    await harness.sockets[1]?.emitMessage(hello());
+    await oldSocket?.emitMessage(event);
+    await harness.sockets[1]?.emitMessage(event);
+    expect(harness.events).toHaveLength(1);
+  });
+
+  it("drops events before Hello, during authentication, and after duplicate Hello failure", async () => {
+    const harness = createClientHarness({ requestIds: ["auth-1"] });
+    harness.client.connect({ password: "secret", allowUnauthenticatedLocalConnection: true });
+    const event = { timeStamp: "2026-06-08T12:00:00.000Z", event: { source: "Twitch", type: "Follow" }, data: {} };
+    await harness.sockets[0]?.emitMessage(event);
+    await harness.sockets[0]?.emitMessage(authHello("salt", "challenge"));
+    await harness.sockets[0]?.emitMessage(event);
+    await harness.sockets[0]?.emitMessage(hello());
+    await harness.sockets[0]?.emitMessage({ id: "auth-1", status: "ok" });
+    await harness.sockets[0]?.emitMessage(event);
+    expect(harness.events).toEqual([]);
+    expect(harness.client.getStatus().state).not.toBe("connected");
+  });
+
+  it("requires explicit consent and rejects password authentication downgrade", async () => {
+    for (const input of [{}, { password: "secret", allowUnauthenticatedLocalConnection: true }]) {
+      const harness = createClientHarness();
+      harness.client.connect(input);
+      await harness.sockets[0]?.emitMessage(hello());
+      expect(harness.client.getStatus().state).toBe("error");
+    }
+  });
+
   it("builds default and custom WebSocket URLs while reporting idle and connecting status", () => {
     const harness = createClientHarness();
 
@@ -24,7 +78,7 @@ describe("StreamerBotClient", () => {
       referenceId: null
     });
 
-    harness.client.connect();
+    harness.client.connect({ allowUnauthenticatedLocalConnection: true });
 
     expect(harness.openedUrls).toEqual(["ws://127.0.0.1:8080/"]);
     expect(harness.client.getStatus()).toMatchObject({
@@ -35,15 +89,15 @@ describe("StreamerBotClient", () => {
     const customHarness = createClientHarness();
     customHarness.client.connect({
       protocol: "wss",
-      host: "streamerbot.local",
+      host: "localhost",
       port: 8090,
       endpoint: "/ws"
     });
 
-    expect(customHarness.openedUrls).toEqual(["wss://streamerbot.local:8090/ws"]);
+    expect(customHarness.openedUrls).toEqual(["wss://127.0.0.1:8090/ws"]);
 
     const normalizedHarness = createClientHarness();
-    normalizedHarness.client.connect({ endpoint: "ws" });
+    normalizedHarness.client.connect({ endpoint: "/ws" });
 
     expect(normalizedHarness.openedUrls).toEqual(["ws://127.0.0.1:8080/ws"]);
   });
@@ -51,7 +105,7 @@ describe("StreamerBotClient", () => {
   it("connects from a valid Hello without authentication and sends no Authenticate request", async () => {
     const harness = createClientHarness();
 
-    harness.client.connect();
+    harness.client.connect({ allowUnauthenticatedLocalConnection: true });
     await harness.sockets[0]?.emitMessage(hello({ name: "Local Bot", version: "1.2.3" }));
 
     expect(harness.sockets[0]?.sent).toEqual([]);
@@ -88,7 +142,7 @@ describe("StreamerBotClient", () => {
 
   it("fails authentication safely for missing passwords, auth errors, and malformed Hello payloads", async () => {
     const missingPassword = createClientHarness();
-    missingPassword.client.connect();
+    missingPassword.client.connect({ allowUnauthenticatedLocalConnection: true });
 
     await missingPassword.sockets[0]?.emitMessage(authHello("salt-value", "challenge-value"));
 
@@ -118,7 +172,7 @@ describe("StreamerBotClient", () => {
     });
 
     const malformedHello = createClientHarness();
-    malformedHello.client.connect();
+    malformedHello.client.connect({ allowUnauthenticatedLocalConnection: true });
     await malformedHello.sockets[0]?.emitMessage({
       request: "Hello",
       authentication: { salt: "salt-value" }
@@ -543,7 +597,7 @@ interface HarnessOptions {
 
 function createConnectedClientHarness(options: HarnessOptions = {}) {
   const harness = createClientHarness(options);
-  harness.client.connect();
+  harness.client.connect({ allowUnauthenticatedLocalConnection: true });
   harness.sockets[0]?.emitMessageSync(hello());
   return harness;
 }

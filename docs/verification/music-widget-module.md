@@ -332,3 +332,11 @@ Shadow input alignment: X/Y/Blur/Spread now occupy their own top-aligned respons
 Artwork input alignment: size uses a separate row above placeholder colour, and shared Music numeric grids align at the top with 32px inputs. Focused browser geometry regression verifies both artwork and shadow, with TypeScript, lint and web build passing.
 
 Resume idle behavior: paused-to-playing transitions reset the server appearance epoch for all recipients. Sixteen coordinator tests passed including hide/resume/re-hide, repeat-playing and obsolete revision guards; authenticated WebSocket live browser hide/resume/re-hide passed. Candidate: apps/desktop/out/music-resume-idle/Stream Jams-win32-x64.
+
+### PR 154 main conflict resolution
+
+Merged main's provider authentication/security, local automation/module mute and maintained Electron ZIP extractor with Music. Music is migration 032 after automation 031. Only the exact known 31-migration Music preview prefix is translated transactionally: apply automation grants and preserve the existing provider table, then record Music 032. Corrupt/unknown histories still fail normal validation. Added a preview-profile preservation/idempotency regression and schema-31 backup upgrade coverage. Schema-32 restore supports prior schemas 19 through 31. Provider restore verification allows only the newly generated local Pear client identity and still excludes provider passwords.
+
+Evidence: pre-merge complete unit suite passed 337 files/2931 tests. Resolved-area checks passed 157 tests; corrected backup, security lifecycle and packaging regressions passed. Fifteen built-service browser checks passed across Music setup, authenticated WS/poll transport, artwork authorization, CSS/branding/backup, layout and pause/resume idle behavior. Frozen dependency install with pnpm 11.2.2 passed lockfile supply-chain policy checks. TypeScript including browser/desktop projects, full lint, web/private renderer/preload builds, error provenance, route budgets and strict OpenSpec passed. Complete post-resolution Node suite result is recorded below when available. Running user-profile application has not been replaced during PR integration.
+
+Complete post-resolution Node suite: 263 files / 2261 tests passed.

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { StreamerBotSubscriptionSelection } from "@stream-jams/core";
+import { buildLocalWebSocketUrl, type StreamerBotSubscriptionSelection } from "@stream-jams/core";
 
 export type StreamerBotConnectionState = "idle" | "connecting" | "connected" | "reconnecting" | "degraded" | "error";
 
@@ -10,6 +10,7 @@ export interface StreamerBotConnectionInput {
   readonly host?: string | undefined;
   readonly port?: number | undefined;
   readonly endpoint?: string | undefined;
+  readonly allowUnauthenticatedLocalConnection?: boolean | undefined;
   readonly password?: string | null | undefined;
 }
 
@@ -129,6 +130,7 @@ export class StreamerBotClient {
   #socket: StreamerBotSocket | null = null;
   #status: StreamerBotClientStatus = idleStatus();
   #stopped = true;
+  #handshake: "awaiting-hello" | "authenticating" | "ready" | "failed" = "failed";
 
   constructor(options: StreamerBotClientOptions) {
     this.#socketFactory = options.socketFactory;
@@ -146,6 +148,7 @@ export class StreamerBotClient {
 
   connect(input: StreamerBotConnectionInput = {}): void {
     this.#stopped = true;
+    this.#handshake = "failed";
     const previousSocket = this.#socket;
     this.#socket = null;
     this.#rejectAllPending(new StreamerBotConnectionError("Streamer.bot connection was replaced"));
@@ -158,6 +161,7 @@ export class StreamerBotClient {
 
   disconnect(): void {
     this.#stopped = true;
+    this.#handshake = "failed";
     const previousSocket = this.#socket;
     this.#socket = null;
     this.#rejectAllPending(new StreamerBotConnectionError("Streamer.bot connection was closed"));
@@ -204,6 +208,7 @@ export class StreamerBotClient {
       message: null
     });
 
+    this.#handshake = "awaiting-hello";
     const socket = this.#socketFactory(url);
     this.#socket = socket;
 
@@ -219,7 +224,7 @@ export class StreamerBotClient {
   }
 
   async #handleSocketMessage(socket: StreamerBotSocket, data: unknown, restoreSubscriptions: boolean): Promise<void> {
-    if (this.#socket !== socket) {
+    if (this.#socket !== socket || this.#handshake === "failed") {
       return;
     }
 
@@ -244,7 +249,7 @@ export class StreamerBotClient {
       return;
     }
 
-    if (isEventLike(rawMessage)) {
+    if (isEventLike(rawMessage) && this.#handshake === "ready") {
       await this.#handleEventEnvelope(rawMessage);
       return;
     }
@@ -253,10 +258,13 @@ export class StreamerBotClient {
   }
 
   #handleHello(socket: StreamerBotSocket, rawMessage: Record<string, unknown>, restoreSubscriptions: boolean): void {
+    if (this.#handshake !== "awaiting-hello") {
+      this.#failHandshake(socket, "Streamer.bot Hello message was duplicated");
+      return;
+    }
     const hello = parseHello(rawMessage);
     if (hello === null) {
-      this.#setError("Streamer.bot Hello message was invalid");
-      socket.close();
+      this.#failHandshake(socket, "Streamer.bot Hello message was invalid");
       return;
     }
 
@@ -266,17 +274,22 @@ export class StreamerBotClient {
     });
 
     if (hello.authentication === null) {
+      if ((typeof this.#connection.password === "string" && this.#connection.password.length > 0)
+        || this.#connection.allowUnauthenticatedLocalConnection !== true) {
+        this.#failHandshake(socket, "Streamer.bot authentication is required unless local unauthenticated access is explicitly allowed");
+        return;
+      }
       this.#markConnected(hello.info, restoreSubscriptions);
       return;
     }
 
     const password = this.#connection.password;
     if (typeof password !== "string" || password.length === 0) {
-      this.#setError("Streamer.bot authentication requires a configured password");
-      socket.close();
+      this.#failHandshake(socket, "Streamer.bot authentication requires a configured password");
       return;
     }
 
+    this.#handshake = "authenticating";
     const authentication = createStreamerBotAuthenticationValue(
       password,
       hello.authentication.salt,
@@ -284,18 +297,24 @@ export class StreamerBotClient {
     );
     void this.#sendRequest("Authenticate", { authentication }, validateOkResponse, { allowConnecting: true })
       .then(() => {
-        if (this.#socket === socket) {
+        if (this.#socket === socket && this.#handshake === "authenticating") {
           this.#markConnected(hello.info, restoreSubscriptions);
         }
       })
       .catch(
       // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
       () => {
-        if (this.#socket === socket) {
-          this.#setError("Streamer.bot authentication failed");
-          socket.close();
+        if (this.#socket === socket && this.#handshake === "authenticating") {
+          this.#failHandshake(socket, "Streamer.bot authentication failed");
         }
       });
+  }
+
+  #failHandshake(socket: StreamerBotSocket, message: string): void {
+    this.#handshake = "failed";
+    this.#rejectAllPending(new StreamerBotAuthenticationError());
+    this.#setError(message);
+    socket.close();
   }
 
   #handleResponse(response: Record<string, unknown>): void {
@@ -365,6 +384,7 @@ export class StreamerBotClient {
       return;
     }
 
+    this.#handshake = "failed";
     this.#socket = null;
     this.#rejectAllPending(new StreamerBotConnectionError("Streamer.bot connection closed"));
 
@@ -391,11 +411,13 @@ export class StreamerBotClient {
       return;
     }
 
+    this.#handshake = "failed";
     this.#rejectAllPending(new StreamerBotConnectionError("Streamer.bot WebSocket error"));
     this.#setError("Streamer.bot WebSocket error", error);
   }
 
   #markConnected(instance: Record<string, unknown>, restoreSubscriptions: boolean): void {
+    this.#handshake = "ready";
     this.#reconnectAttempt = 0;
     const now = this.#now().toISOString();
     this.#updateStatus({
@@ -430,7 +452,7 @@ export class StreamerBotClient {
   ): Promise<T> {
     const socket = this.#socket;
     const canSend =
-      socket !== null && (this.#status.state === "connected" || (options.allowConnecting === true && this.#status.state === "connecting"));
+      socket !== null && (this.#handshake === "ready" || (request === "Authenticate" && options.allowConnecting === true && this.#handshake === "authenticating"));
     if (!canSend) {
       return Promise.reject(new StreamerBotConnectionError("Streamer.bot is not connected"));
     }
@@ -589,14 +611,12 @@ export class StreamerBotClient {
 }
 
 export function buildStreamerBotWebSocketUrl(input: StreamerBotConnectionInput = {}): string {
-  const protocol = input.protocol ?? "ws";
-  const host = input.host ?? "127.0.0.1";
-  const port = input.port ?? 8080;
-  const endpoint = normalizeEndpoint(input.endpoint);
-  const url = new URL(protocol + "://" + host);
-  url.port = String(port);
-  url.pathname = endpoint;
-  return url.toString();
+  return buildLocalWebSocketUrl({
+    protocol: input.protocol ?? "ws",
+    host: input.host ?? "127.0.0.1",
+    port: input.port ?? 8080,
+    endpoint: input.endpoint ?? "/"
+  });
 }
 
 function idleStatus(): StreamerBotClientStatus {
@@ -624,15 +644,6 @@ function withSafeRuntimeFields(
     subscriptionSourceKeys: selections.map((selection) => selection.sourceKey),
     pendingRequestCount
   };
-}
-
-function normalizeEndpoint(endpoint: string | undefined): string {
-  if (endpoint === undefined || endpoint.trim().length === 0) {
-    return "/";
-  }
-
-  const normalized = endpoint.replace(/^\/+/, "");
-  return normalized.length === 0 ? "/" : "/" + normalized;
 }
 
 function parseRawMessage(data: unknown): unknown | null {

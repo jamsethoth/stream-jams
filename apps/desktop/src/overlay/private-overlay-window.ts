@@ -8,7 +8,7 @@ import { OVERLAY_PLAYER_SCHEME, OVERLAY_PLAYER_URL } from "./overlay-player-poli
 import { OVERLAY_COMMAND_CHANNEL, OVERLAY_REPLY_CHANNEL, overlayRendererReplySchema, overlayRendererRequestSchema, type OverlayRendererRequest } from "./overlay-ipc.js";
 import type { OverlayRendererCallbacks, OverlayRendererPort } from "./overlay-host.js";
 
-const contentSecurityPolicy = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; media-src 'self'; connect-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
+const contentSecurityPolicy = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; media-src 'self'; font-src 'self'; connect-src stream-jams-overlay://surface/media/; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
 type MediaOptions = Omit<PrivateMediaProtocolOptions, "scheme" | "host" | "recipientId">;
 
 /** The native surface can load only the privately staged visual renderer. */

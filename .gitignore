@@ -16,3 +16,4 @@ storybook-static/
 .superpowers/
 apps/desktop/.stage/
 apps/desktop/out/
+pnpm-audit.json

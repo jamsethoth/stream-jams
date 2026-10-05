@@ -51,6 +51,7 @@ describe("provider management contracts", () => {
           ...input,
           configuration: {
             ...input.configuration,
+            allowUnauthenticatedLocalConnection: false,
             externalSubscriptions: [],
             twitchBroadcasterId: null
           }
@@ -75,7 +76,7 @@ describe("provider management contracts", () => {
       }
     };
 
-    expect(providerSetupInputSchema.parse(input)).toEqual(input);
+    expect(providerSetupInputSchema.parse(input)).toEqual({ ...input, configuration: { ...input.configuration, allowUnauthenticatedLocalConnection: false } });
     expect(providerSetupInputSchema.safeParse({
       name: "Speaker.bot",
       kind: "speakerbot",

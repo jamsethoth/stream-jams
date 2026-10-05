@@ -442,10 +442,25 @@ describe("management UI contract routes", () => {
       ...setup,
       configuration: {
         ...setup.configuration,
+        allowUnauthenticatedLocalConnection: false,
         externalSubscriptions: [],
         twitchBroadcasterId: null
       }
     }]);
+  });
+
+  it("rejects unsafe provider settings with safe client errors before validation or registration", async () => {
+    const { app, authHeaders, service } = await createApp();
+    for (const url of ["/management/providers/validate", "/management/providers"]) {
+      const response = await app.inject({ method: "POST", url, headers: authHeaders, payload: {
+        name: "Local Streamer.bot", kind: "streamerbot", configuration: { protocol: "ws", host: "user:credential-sentinel@example.com", port: 8080, endpoint: "/" }, credential: "password-sentinel"
+      } });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({ error: { code: "INVALID_PROVIDER_CONFIGURATION", message: expect.stringContaining("loopback") } });
+      expect(response.body).not.toContain("credential-sentinel");
+      expect(response.body).not.toContain("password-sentinel");
+    }
+    expect(service.registeredSetups).toEqual([]);
   });
 
   it("deactivates a registered provider through an explicit command", async () => {

@@ -53,16 +53,22 @@ export function registerManagementProviderRoutes(
   });
 
   app.post("/management/providers/validate", { preHandler }, async (request, reply) => {
-    try {
-      return providerValidationResultSchema.parse(await providers.validateProvider(providerSetupInputSchema.parse(request.body)));
-    } catch (error) { return sendProviderCommandError(reply, error); }
+    const setup = providerSetupInputSchema.safeParse(request.body);
+    if (!setup.success) return sendHttpError(reply, 400, { code: "INVALID_PROVIDER_CONFIGURATION", message: "Use credential-free local provider settings: a loopback host, valid port, and path-only endpoint." });
+    try { return providerValidationResultSchema.parse(await providers.validateProvider(setup.data)); }
+    catch (error) { return sendProviderCommandError(reply, error); }
   });
 
   app.post("/management/providers", { preHandler }, async (request, reply) => {
+    const setup = providerSetupInputSchema.safeParse(request.body);
+    if (!setup.success) return sendHttpError(reply, 400, { code: "INVALID_PROVIDER_CONFIGURATION", message: "Use credential-free local provider settings: a loopback host, valid port, and path-only endpoint." });
     try {
-      const result = providerRegistrationAttemptSchema.parse(await providers.registerProvider(providerSetupInputSchema.parse(request.body)));
-      return reply.status(result.status === "registered" ? 201 : 422).send(result);
+    const result = providerRegistrationAttemptSchema.parse(
+      await providers.registerProvider(setup.data)
+    );
+    return reply.status(result.status === "registered" ? 201 : 422).send(result);
     } catch (error) { return sendProviderCommandError(reply, error); }
+
   });
 
   app.get("/management/providers/:providerId", { preHandler }, async (request, reply) => {

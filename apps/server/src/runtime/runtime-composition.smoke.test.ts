@@ -12,6 +12,7 @@ import {
   type AppConfigUpdate,
   type AudioPlaybackSink,
   type ConfigStore,
+  type PlaybackSafetyState,
   type OverlayInstruction
 } from "@stream-jams/core";
 import { createSequence, InMemorySecretStore } from "@stream-jams/test-support";
@@ -255,6 +256,7 @@ describe("runtime app composition smoke", () => {
       play: async () => ({ failedRouteIds: [] }),
       stop: async () => {},
       setMuted: async muted => { sinkMuteChanges.push(muted); },
+      setModuleMutes: async state => { sinkMuteChanges.push(state.alerts); },
       close: async () => {}
     };
     const config = createConfig(testRoot);
@@ -264,7 +266,7 @@ describe("runtime app composition smoke", () => {
       configStore: new StaticConfigStore({
         ...config,
         desktop: { closeToTray: false },
-        playback: { ...config.playback, muted: true }
+        playback: { ...config.playback, muted: true, moduleMutes: { alerts: true, "screen-effects": true } }
       }),
       desktopHost: { onConfigChanged: ({ closeToTray }) => { desktopChanges.push(closeToTray); }, onPlaybackStateChanged: () => {} },
       audioPlaybackSink,
@@ -381,6 +383,7 @@ describe("runtime app composition smoke", () => {
     const configStore = new StaticConfigStore(createConfig(testRoot, {
       paused: true,
       muted: true,
+      moduleMutes: { alerts: true, "screen-effects": true },
       doNotDisturb: true
     }));
     const composition = await createRuntimeAppComposition({
@@ -768,7 +771,7 @@ describe("runtime app composition smoke", () => {
       payload: {
         name: "Streamer.bot",
         kind: "streamerbot",
-        configuration: { protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/" }
+        configuration: { protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/", allowUnauthenticatedLocalConnection: true }
       }
     });
     const providerId = (registration.json() as { readonly provider: { readonly provider: { readonly id: string } } })
@@ -1058,7 +1061,7 @@ describe("runtime app composition smoke", () => {
       payload: {
         name: "Streamer.bot",
         kind: "streamerbot",
-        configuration: { protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/" }
+        configuration: { protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/", allowUnauthenticatedLocalConnection: true }
       }
     });
     expect(streamerBotRegistration.statusCode).toBe(201);
@@ -2041,7 +2044,7 @@ function managementAuthHeaders(sessionResponse: { json(): unknown }): {
 
 function createConfig(
   testRoot: string,
-  playback = { paused: false, muted: false, doNotDisturb: false }
+  playback: PlaybackSafetyState = { paused: false, muted: false, doNotDisturb: false }
 ): AppConfig {
   return {
     desktop: { closeToTray: true },
@@ -2086,6 +2089,7 @@ class StaticConfigStore implements ConfigStore {
         retentionHours: patch.logging?.retentionHours ?? this.config.logging.retentionHours
       },
       playback: {
+        ...(patch.playback?.moduleMutes === undefined && this.config.playback.moduleMutes === undefined ? {} : { moduleMutes: patch.playback?.moduleMutes ?? this.config.playback.moduleMutes! }),
         paused: patch.playback?.paused ?? this.config.playback.paused,
         muted: patch.playback?.muted ?? this.config.playback.muted,
         doNotDisturb: patch.playback?.doNotDisturb ?? this.config.playback.doNotDisturb

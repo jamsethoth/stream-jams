@@ -1,0 +1,1 @@
+export const automationGrantsMigration = { id: "031-automation-grants", sql: `CREATE TABLE automation_grants (id TEXT PRIMARY KEY NOT NULL, client_name TEXT NOT NULL, scopes_json TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, revoked_at TEXT, claimed_at TEXT) STRICT;` } as const;

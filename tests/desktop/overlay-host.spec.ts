@@ -23,7 +23,7 @@ test("packaged production host renders an isolated silent Landscape event withou
   await writeFile(configPath, JSON.stringify({
     server: { host: "127.0.0.1", port },
     storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") },
-    playback: { paused: false, muted: true, doNotDisturb: false }
+    playback: { paused: false, muted: true, moduleMutes: { alerts: true, "screen-effects": true }, doNotDisturb: false }
   }));
   const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
   delete env.ELECTRON_RUN_AS_NODE;
@@ -126,10 +126,30 @@ test("packaged production host renders an isolated silent Landscape event withou
         opacity: surface.opacity, layers: surface.layers.map(entry => entry.moduleId === "alerts" ? { ...entry, visible } : entry)
       });
     }
+    await desktop.evaluate(({ BrowserWindow, app }) => {
+      const instrument = (window: Electron.BrowserWindow) => {
+        const originalSend = window.webContents.send.bind(window.webContents);
+        window.webContents.send = (channel, ...args) => {
+          const request = args[0] as { command?: { type?: string; timing?: { startsAtEpochMs: number; endsAtEpochMs: number } } } | undefined;
+          if (window.webContents.getURL() === "stream-jams-overlay://surface/" && request?.command?.type === "start" && request.command.timing !== undefined) {
+            (globalThis as typeof globalThis & { overlayObservedStartTiming?: { startsAtEpochMs: number; endsAtEpochMs: number } }).overlayObservedStartTiming = { ...request.command.timing };
+          }
+          originalSend(channel, ...args);
+        };
+      };
+      BrowserWindow.getAllWindows().forEach(instrument);
+      app.on("browser-window-created", (_event, window) => instrument(window));
+    });
     await event("native-overlay-first");
     const playing = await api<{ current: { startedAt: string } }>("/playback");
-    const originalStart = Date.parse(playing.current.startedAt);
-    const originalDeadline = originalStart + edited.durationMs;
+    await expect.poll(() => desktop!.evaluate(() => (globalThis as typeof globalThis & { overlayObservedStartTiming?: unknown }).overlayObservedStartTiming)).toBeDefined();
+    // Queue admission precedes asynchronous output preparation. The production
+    // start command carries the authoritative shared full-duration deadline.
+    const timing = await desktop.evaluate(() => (globalThis as typeof globalThis & { overlayObservedStartTiming: { startsAtEpochMs: number; endsAtEpochMs: number } }).overlayObservedStartTiming);
+    const originalStart = timing.startsAtEpochMs;
+    const originalDeadline = timing.endsAtEpochMs;
+    expect(originalStart).toBeGreaterThanOrEqual(Date.parse(playing.current.startedAt));
+    expect(originalDeadline - originalStart).toBe(edited.durationMs);
     const overlay = await windowByUrl(desktop, overlayUrl);
     const text = overlay.getByText("Neutral desktop Fixture", { exact: true });
     await expect(text).toBeVisible();

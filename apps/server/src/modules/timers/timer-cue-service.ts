@@ -173,7 +173,7 @@ export class TimerCueService implements TimerCueSink {
         });
       }
       if (token.cancelled) return;
-      const results = await Promise.allSettled(prepared.batches.map(batch => this.options.audioPlaybackSink!.play(batch)));
+      const results = await Promise.allSettled(prepared.batches.map(batch => this.options.audioPlaybackSink!.play({ ...batch, moduleId: "timers" })));
       const failedRouteIds = results.flatMap(result => result.status === "fulfilled" ? result.value.failedRouteIds : []);
       const rejection = results.find(result => result.status === "rejected");
       if (failedRouteIds.length > 0 || rejection?.status === "rejected") {

@@ -26,7 +26,10 @@ export const playbackQueueItemSchema = z.object({
   completedAt: isoDateTimeSchema.nullable()
 });
 
+export const moduleMuteStateSchema = z.object({ alerts: z.boolean(), "screen-effects": z.boolean() }).strict();
+
 export const playbackSafetyStateSchema = z.object({
+  moduleMutes: moduleMuteStateSchema.optional(),
   paused: z.boolean(),
   muted: z.boolean(),
   doNotDisturb: z.boolean()

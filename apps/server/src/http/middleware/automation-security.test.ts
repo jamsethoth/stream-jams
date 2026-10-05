@@ -1,0 +1,48 @@
+import Fastify from "fastify";
+import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
+import { createInMemoryStreamJamsDatabase } from "../../modules/db/database.js";
+import { AutomationCredentialService } from "../../modules/automation/automation-credential-service.js";
+import { SqliteAutomationGrantRepository } from "../../modules/automation/sqlite-automation-grant-repository.js";
+import { LocalManagementRateLimiter } from "./local-management-rate-limit.js";
+import { createAutomationMachinePreHandler, createAutomationSecurityPreHandler, getAutomationGrant } from "./automation-security.js";
+import { registerAutomationPairingRoutes } from "../routes/automation-pairing.js";
+import { SqliteConfigurationSnapshotRepository } from "../../modules/backup/sqlite-configuration-snapshot-repository.js";
+describe("automation native-client security", () => {
+ it("rejects Origin, Host, remote peer, missing bearer and missing scope; revocation takes effect", async () => {
+  using db = createInMemoryStreamJamsDatabase();
+  const service = new AutomationCredentialService(new SqliteAutomationGrantRepository(db.connection));
+  const limiter = new LocalManagementRateLimiter({ maxRequests: 100, windowMs: 60_000 });
+  const app = Fastify();
+  app.get("/read", { preHandler: createAutomationSecurityPreHandler({ credentials: service, limiter, requiredScopes: ["timers:read"] }) }, async req => getAutomationGrant(req));
+  app.get("/control", { preHandler: createAutomationSecurityPreHandler({ credentials: service, limiter, requiredScopes: ["timers:control"] }) }, async () => ({}));
+  const verifier = "a".repeat(43); const pending = service.createPairing({ clientName: "Test", scopes: ["timers:read"], codeChallenge: createHash("sha256").update(verifier).digest("base64url") }); service.approve(pending.id, { scopes: ["timers:read"] }); const grant = service.exchange(pending.id, verifier);
+  const headers = { host: "127.0.0.1:3000", authorization: `Bearer ${grant.token}` };
+  expect((await app.inject({ url: "/read", headers })).statusCode).toBe(200);
+  expect((await app.inject({ url: "/control", headers })).statusCode).toBe(403);
+  expect((await app.inject({ url: "/read", headers: { ...headers, origin: "http://localhost" } })).statusCode).toBe(403);
+  expect((await app.inject({ url: "/read", headers: { ...headers, host: "evil.test" } })).statusCode).toBe(403);
+  expect((await app.inject({ url: "/read", headers, remoteAddress: "192.168.1.2" })).statusCode).toBe(403);
+  expect((await app.inject({ url: "/read", headers: { host: "localhost" } })).statusCode).toBe(401);
+  service.revoke(grant.grant.id); expect((await app.inject({ url: "/read", headers })).statusCode).toBe(401); await app.close();
+ });
+ it("runs strict proof pairing routes, bounded body and management approval gate", async () => {
+  using db = createInMemoryStreamJamsDatabase(); const service = new AutomationCredentialService(new SqliteAutomationGrantRepository(db.connection));
+  const limiter = new LocalManagementRateLimiter({ maxRequests: 100, windowMs: 60_000 }); const app = Fastify();
+  registerAutomationPairingRoutes(app, { automationCredentialService: service, automationMachinePreHandler: createAutomationMachinePreHandler({ limiter }), automationAuthPreHandler: createAutomationSecurityPreHandler({ credentials: service, limiter }), managementAuthPreHandler: async (req, reply) => { if (req.headers["x-test-management"] !== "approved") return reply.status(403).send(); } });
+  const verifier = "a".repeat(43); const headers = { host: "localhost" }; const input = { clientName: "Test", scopes: ["timers:read"], codeChallenge: createHash("sha256").update(verifier).digest("base64url") };
+  expect((await app.inject({ method: "POST", url: "/automation/v1/pairings", headers, payload: { ...input, extra: true } })).statusCode).toBe(400);
+  const response = await app.inject({ method: "POST", url: "/automation/v1/pairings", headers, payload: input }); const id = response.json().id as string;
+  expect((await app.inject({ method: "POST", url: `/api/automation/pairings/${id}/approve`, headers, payload: { scopes: input.scopes } })).statusCode).toBe(403);
+  expect((await app.inject({ method: "POST", url: `/api/automation/pairings/${id}/approve`, headers: { ...headers, "x-test-management": "approved" }, payload: { scopes: input.scopes } })).statusCode).toBe(200);
+  expect((await app.inject({ method: "POST", url: `/automation/v1/pairings/${id}/status`, headers, payload: { verifier: "b".repeat(43) } })).statusCode).toBe(401);
+  const exchanged = await app.inject({ method: "POST", url: `/automation/v1/pairings/${id}/exchange`, headers, payload: { verifier } }); expect(exchanged.statusCode).toBe(200);
+  expect((await app.inject({ method: "POST", url: `/automation/v1/pairings/${id}/exchange`, headers, payload: { verifier } })).statusCode).toBe(404);
+  expect((await app.inject({ method: "POST", url: "/automation/v1/pairings", headers, payload: { ...input, clientName: "x".repeat(5000) } })).statusCode).toBe(413);
+  const snapshot = new SqliteConfigurationSnapshotRepository(db.connection); expect(snapshot.snapshot().tables).not.toHaveProperty("automation_grants");
+  const restorePoint = snapshot.captureRestorePoint(); service.revoke(exchanged.json().grant.id as string); snapshot.restoreRestorePoint(restorePoint); expect(service.verify(exchanged.json().token as string)).not.toBeNull();
+  db.connection.prepare("INSERT INTO alert_collections(id, name, enabled) VALUES (?, ?, ?)").run("test-set", "Test", 1);
+  snapshot.replace({ tables: snapshot.snapshot().tables, assets: [] }); expect(service.verify(exchanged.json().token as string)).toBeNull();
+  await app.close();
+ });
+});

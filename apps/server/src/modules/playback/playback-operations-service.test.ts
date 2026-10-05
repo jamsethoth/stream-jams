@@ -53,6 +53,7 @@ function service(input: {
     owners: input.owners ?? [owner("alerts"), owner("screen-effects")],
     initialSafety: { paused: false, muted: false, doNotDisturb: false },
     persistSafety: input.persistSafety ?? (async (patch) => ({
+      ...patch,
       paused: patch.paused ?? false,
       muted: patch.muted ?? false,
       doNotDisturb: patch.doNotDisturb ?? false
@@ -121,9 +122,9 @@ describe("PlaybackOperationsService", () => {
       operations.setSafety({ muted: true })
     ]);
 
-    expect(persisted).toEqual({ paused: true, muted: true, doNotDisturb: false });
+    expect(persisted).toEqual({ paused: true, muted: true, doNotDisturb: false, moduleMutes: { alerts: true, "screen-effects": true } });
     expect(operations.getSnapshot()).toMatchObject({ paused: true, muted: true, doNotDisturb: false });
-    expect(applied.at(-1)).toEqual({ paused: true, muted: true, doNotDisturb: false });
+    expect(applied.at(-1)).toEqual({ paused: true, muted: true, doNotDisturb: false, moduleMutes: { alerts: true, "screen-effects": true } });
   });
 
   it("keeps a module pause when global playback resumes", async () => {
@@ -153,5 +154,38 @@ describe("PlaybackOperationsService", () => {
 
   it("rejects unknown owners before dispatch", async () => {
     await expect(service().remove("missing", "one")).rejects.toBeInstanceOf(UnknownPlaybackOwnerError);
+  });
+});
+
+
+describe("module mute policy", () => {
+  it("persists independent modules, applies All to both, and reports output failure", async () => {
+    let saved: PlaybackSafetyState = { paused: false, muted: true, doNotDisturb: false };
+    const apply = vi.fn(async () => {});
+    const operations = service({ persistSafety: async patch => (saved = { ...saved, ...patch }), applySafety: apply });
+    expect(operations.getModuleMuteState()).toEqual({ alerts: false, "screen-effects": false });
+    await operations.setModulesMuted(["alerts"], true);
+    expect(saved.moduleMutes).toEqual({ alerts: true, "screen-effects": false });
+    expect(operations.getSnapshot().muted).toBe(false);
+    await operations.setModulesMuted(["screen-effects"], true);
+    expect(operations.getSnapshot().muted).toBe(true);
+    await operations.setSafety({ muted: false });
+    expect(operations.getModuleMuteState()).toEqual({ alerts: false, "screen-effects": false });
+    apply.mockRejectedValueOnce(new Error("device unavailable"));
+    await operations.setModulesMuted(["alerts"], true);
+    expect(operations.getModuleMuteState().alerts).toBe(true);
+    expect(operations.getMuteOutputStatus().status).toBe("failed");
+    await operations.restoreSafety(saved);
+    expect(operations.getMuteOutputStatus().status).toBe("applied");
+  });
+  it("serializes toggles with management pause and guards clear identities", async () => {
+    const alerts = owner("alerts", { queued: [row("alerts", "first")] });
+    const operations = service({ owners: [alerts] });
+    await Promise.all([operations.setModulePaused("alerts", true), operations.toggleModulePaused("alerts")]);
+    expect(alerts.snapshot().paused).toBe(false);
+    await expect(operations.clearPendingGuarded("alerts", 1, ["replacement"])).rejects.toBeInstanceOf(PlaybackOperationsConflictError);
+    expect(alerts.clearPending).not.toHaveBeenCalled();
+    await operations.clearPendingGuarded("alerts", 1, ["first"]);
+    expect(alerts.clearPending).toHaveBeenCalledOnce();
   });
 });

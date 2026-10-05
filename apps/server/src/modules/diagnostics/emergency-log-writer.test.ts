@@ -1,3 +1,6 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import { EmergencyLogWriter } from "./emergency-log-writer.js";
 
@@ -12,6 +15,35 @@ const input = {
 };
 
 describe("EmergencyLogWriter", () => {
+  it.each([false, true])("redacts URL credentials and all capability types when stderr fallback is %s", (failFile) => {
+    const lines: string[] = [];
+    const writer = new EmergencyLogWriter({
+      filePath: "C:/logs/emergency.jsonl",
+      appendFile: (_path, data) => {
+        if (failFile) throw new Error("emergency file unavailable");
+        lines.push(data);
+      },
+      writeStderr: (data) => { lines.push(data); }
+    });
+
+    writer.write({
+      ...input,
+      message: "Failed ws://secret-user:secret-password@localhost:8080/events med_private-media tmr_private-timer",
+      originalException: new Error('Provider {"authentication":"challenge-secret"}', {
+        cause: new Error("//nested-user:nested-password@localhost/events?token=nested-token")
+      }),
+      loggerException: new Error("wss://logger-user:logger-password@localhost/events ovl_private-overlay")
+    });
+
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0] ?? "")).toMatchObject({ emergency: true, referenceId: input.referenceId });
+    for (const secret of ["secret-user", "secret-password", "med_private-media", "tmr_private-timer", "challenge-secret",
+      "nested-user", "nested-password", "nested-token", "logger-user", "logger-password", "ovl_private-overlay"]) {
+      expect(lines[0]).not.toContain(secret);
+    }
+    expect(lines[0]).toContain("ws://localhost:8080/events");
+  });
+
   it("writes one independently sanitized bounded synchronous record", () => {
     const lines: string[] = [];
     const writer = new EmergencyLogWriter({
@@ -83,5 +115,21 @@ describe("EmergencyLogWriter", () => {
     expect(output).not.toContain("cleanup-secret");
     expect(output).not.toContain("outer-secret");
     expect(output).not.toContain("credential-secret");
+  });
+  it("strips quoted credentials from real emergency files and stderr including nested causes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "stream-jams-quote-emergency-"));
+    const filePath = join(root, "emergency.jsonl");
+    try {
+      const entry = { ...input, message: "Provider wss://alice:p'ass@localhost/events", originalException: new Error('ws://bob:p",ass@[invalid]/events', { cause: new Error("https://cause:p%22ass@safe.test/events?token=query-secret") }), loggerException: new Error('http://logger:p"ass@localhost/logs') };
+      new EmergencyLogWriter({ filePath }).write(entry);
+      const stderr: string[] = [];
+      new EmergencyLogWriter({ filePath, appendFile: () => { throw new Error("unavailable"); }, writeStderr: data => { stderr.push(data); } }).write(entry);
+      for (const output of [await readFile(filePath, "utf8"), stderr.join("")]) {
+        expect(output).toContain("wss://localhost/events");
+        expect(output).toContain("ws://[invalid]/events");
+        expect(output).toContain("https://safe.test/events");
+        for (const secret of ["alice:", "bob:", "cause:", "logger:", "p'ass", "query-secret"]) expect(output).not.toContain(secret);
+      }
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

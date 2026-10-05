@@ -10,12 +10,15 @@ Use this map to distinguish current behavior, pending work, and historical evide
 | How do I configure Timers or Stream Deck HTTP actions? | [Timers](timers.md); [implementation verification and remaining manual acceptance](verification/timers.md) |
 | How do I configure Music and brand its widget? | [Music provider setup](music-providers.md), [styling surface](music-styling.md), and [dated verification/remaining acceptance](verification/music-widget-module.md) |
 | What Music behavior is required? | [Canonical Music source](../openspec/specs/music-source-providers/spec.md) and [widget/output](../openspec/specs/music-widget-overlay/spec.md) capabilities; [scenario trace](verification/music-widget-scenarios.md) identifies remaining physical checks |
+| How do native integrations pair and control timers/queues? | [Local automation API v1](automation-api.md) |
+
 | What product boundaries are intentional? | [Product plan](product-plan.md); its MVP sections describe the first delivery boundary, and later sections describe approved additions |
 | What is still pending? | [Canonical backlog](backlog.md), including links to planned OpenSpec changes |
 | What implemented behavior is required? | [Canonical OpenSpec capabilities](../openspec/specs); source and tests establish what actually runs when a discrepancy is found |
 | What work is being proposed or completed? | [Active OpenSpec changes](../openspec/changes); task completion and archive status are distinct |
 | What are the frontend conventions? | [Frontend guide](ai/frontend-agent-guide.md), [UI guidelines](ui-guidelines.md), [design tokens](design-tokens.md), and [UX spec](design/ui-refactor-mvp-ux-spec.md) |
 | What versions and checks are authoritative? | [Root manifest](../package.json), package manifests, lockfile, TypeScript configurations, and [CI workflow](../.github/workflows/ci.yml) |
+| How is provider security exercised against real runtimes and installed apps? | [Provider security acceptance](verification/provider-security.md), a dated matrix with commands, prerequisites, results, and physical verification limits |
 | What was physically or interactively verified? | Dated records under [verification](verification), especially [desktop](verification/windows-desktop-tray-runtime.md), [shared surfaces](verification/shared-desktop-overlay.md), and [Screen Effects](verification/screen-effects.md) |
 
 ## Implemented Repository Shape

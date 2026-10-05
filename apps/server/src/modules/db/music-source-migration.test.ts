@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { runInTransaction } from "./database.js";
 import { providerRegistrationsMigration } from "./migrations/005-provider-registrations.js";
-import { musicSourceProvidersMigration } from "./migrations/031-music-source-providers.js";
+import { musicSourceProvidersMigration } from "./migrations/032-music-source-providers.js";
 
 const createdAt = "2026-10-04T00:00:00.000Z";
 function insert(db: DatabaseSync, id: string, kind: string, capability: string, active: number, secretRef: string | null = null) {

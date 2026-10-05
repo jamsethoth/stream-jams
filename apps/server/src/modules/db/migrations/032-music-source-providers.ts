@@ -1,5 +1,5 @@
 export const musicSourceProvidersMigration = {
-  id: "031-music-source-providers",
+  id: "032-music-source-providers",
   sql: `
 CREATE TABLE provider_registrations_new (
   id TEXT PRIMARY KEY NOT NULL,
