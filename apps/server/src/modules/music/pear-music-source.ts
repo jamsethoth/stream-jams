@@ -198,7 +198,7 @@ export class PearMusicSource implements MusicSourceAdapter {
     const combined = AbortSignal.any([signal, session.signal]);
     try {
       if (this.#snapshot?.track == null) {
-        await Promise.race([this.#pollOnce(combined, epoch, true), opened.closed]);
+        await Promise.race([this.#pollOnce(combined, epoch), opened.closed]);
       }
       while (!combined.aborted) {
         await Promise.race([delay(reconciliationIntervalMs, combined), opened.closed]);
@@ -208,11 +208,12 @@ export class PearMusicSource implements MusicSourceAdapter {
     } finally { session.abort(); opened.socket.terminate(); }
   }
 
-  async #pollOnce(signal: AbortSignal, epoch: number, initialHydration = false): Promise<void> {
+  async #pollOnce(signal: AbortSignal, epoch: number): Promise<void> {
     const songRevision = this.#songRevision;
     this.#requestInFlight ??= this.#fetchSong(signal).finally(() => { this.#requestInFlight = null; });
     const response = await this.#requestInFlight;
-    if (initialHydration && this.#songRevision !== songRevision) return;
+    // Newer WS metadata (including an explicit clear) supersedes an in-flight REST observation.
+    if (this.#songRevision !== songRevision) return;
     this.#publish(response.observation, signal, epoch);
   }
 

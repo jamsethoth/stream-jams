@@ -133,6 +133,39 @@ describe("PearMusicSource lifecycle", () => {
     expect(snapshots.at(-1)?.track).toBeNull();
   });
 
+  it.each([
+    { name: "new track", frame: { type: "VIDEO_CHANGED", song: { ...song, videoId: "new", title: "New" } }, expectedId: "new" },
+    { name: "cleared track", frame: { type: "PLAYER_INFO", song: null, isPlaying: false }, expectedId: null }
+  ])("discards delayed reconciliation after a WS $name", async ({ frame, expectedId }) => {
+    const source = await create("ws"); fixture!.setFirstFrame({ type: "PLAYER_INFO", song, isPlaying: true });
+    fixture!.setSong({ status: 200, body: song, delayMs: 300 });
+    const snapshots: MusicSnapshot[] = [];
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
+    await source.start(value => snapshots.push(value), () => {}, new AbortController().signal);
+    await vi.advanceTimersByTimeAsync(15_000);
+    vi.useRealTimers();
+    await vi.waitFor(() => expect(fixture!.requests).toHaveLength(1));
+    fixture!.send(frame);
+    await vi.waitFor(() => expect(source.getSnapshot()?.track?.id ?? null).toBe(expectedId));
+    const publishedCount = snapshots.length;
+    await new Promise(resolve => setTimeout(resolve, 350));
+    expect(source.getSnapshot()?.track?.id ?? null).toBe(expectedId);
+    expect(snapshots).toHaveLength(publishedCount);
+  });
+
+  it("retains reconciliation through a position-only WS update", async () => {
+    const source = await create("ws"); fixture!.setFirstFrame({ type: "PLAYER_INFO", song, isPlaying: true });
+    fixture!.setSong({ status: 200, body: { ...song, title: "Reconciled" }, delayMs: 300 });
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
+    await source.start(() => {}, () => {}, new AbortController().signal);
+    await vi.advanceTimersByTimeAsync(15_000);
+    vi.useRealTimers();
+    await vi.waitFor(() => expect(fixture!.requests).toHaveLength(1));
+    fixture!.send({ type: "POSITION_CHANGED", position: 12 });
+    await vi.waitFor(() => expect(source.getSnapshot()?.positionMs).toBe(12_000));
+    await vi.waitFor(() => expect(source.getSnapshot()?.track?.title).toBe("Reconciled"));
+  });
+
   it("discards a late reconciliation response after its socket disconnects", async () => {
     const source = await create("ws"); fixture!.setFirstFrame({ type: "PLAYER_INFO", song, isPlaying: true });
     fixture!.setSong({ status: 200, body: { ...song, title: "Late" }, delayMs: 100 });
