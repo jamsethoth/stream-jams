@@ -17,17 +17,39 @@ const renderPage = (overrides: Parameters<typeof createStoryManagementApi>[0] = 
 };
 
 async function openEditorControls() {
-  fireEvent.click(await screen.findByRole("button", { name: "Expand configuration" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Expand appearance" }));
   fireEvent.click(screen.getByRole("button", { name: "Expand custom css" }));
   fireEvent.click(screen.getByRole("button", { name: "Expand browser sources" }));
-  await screen.findByRole("heading", { name: "Appearance" });
+  await screen.findByLabelText("Appearance component");
   await screen.findByLabelText("Custom CSS");
 }
 
 describe("Music appearance", () => {
+  it("confirms immediate module enablement without saving appearance drafts", async () => {
+    const user = userEvent.setup();
+    const setEnabled = vi.fn(async (_module: string, enabled: boolean) => enabled);
+    const save = vi.fn();
+    renderPage({ setOverlayModuleEnabled: setEnabled, saveMusicConfig: save });
+    const button = await screen.findByRole("button", { name: "Enable Music module" });
+    expect(screen.queryByLabelText("Enable Music module after saving")).toBeNull();
+    const sources = screen.getByRole("region", { name: "Music output links" });
+    expect(sources.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await user.selectOptions(screen.getByLabelText("Theme"), "light");
+    await user.click(button);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(setEnabled).not.toHaveBeenCalled();
+    await user.click(button);
+    await user.click(screen.getByRole("button", { name: "Confirm change" }));
+    await screen.findByRole("button", { name: "Disable Music module" });
+    expect(setEnabled).toHaveBeenCalledWith("music", true);
+    expect(screen.getByLabelText("Theme")).toHaveValue("light");
+    expect(screen.getByText("Unsaved changes", { exact: true })).toBeVisible();
+    expect(save).not.toHaveBeenCalled();
+  });
+
   it("orders browser sources, preview, configuration and CSS with independent disclosures", async () => {
     renderPage();
-    const config = await screen.findByRole("button", { name: "Expand configuration" });
+    const config = await screen.findByRole("button", { name: "Expand appearance" });
     const sources = screen.getByRole("region", { name: "Music output links" });
     const preview = screen.getByRole("region", { name: "Music preview" });
     const settings = screen.getByRole("region", { name: "Configuration" });
@@ -35,11 +57,12 @@ describe("Music appearance", () => {
     expect(sources.compareDocumentPosition(preview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(preview.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(settings.compareDocumentPosition(css) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByLabelText("Initial view")).toBeVisible();
     expect(config).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(config);
     expect(await screen.findByLabelText("Widget width (px)")).toBeVisible();
     expect(screen.getByRole("button", { name: "Expand custom css" })).toHaveAttribute("aria-expanded", "false");
-    fireEvent.click(screen.getByRole("button", { name: "Collapse configuration" }));
+    fireEvent.click(screen.getByRole("button", { name: "Collapse appearance" }));
     expect(screen.queryByLabelText("Widget width (px)")).toBeNull();
     expect(screen.getByRole("button", { name: "Disable custom CSS" })).toBeVisible();
   });
@@ -48,6 +71,7 @@ describe("Music appearance", () => {
     const user = userEvent.setup();
     renderPage();
     await openEditorControls();
+    await user.selectOptions(screen.getByLabelText("Appearance component"), "title");
     fireEvent.change(screen.getByLabelText("Title color"), { target: { value: "#123456" } });
     expect(screen.getByLabelText("Title RGBA")).toHaveValue("#123456FF");
     fireEvent.change(screen.getByLabelText("Title opacity"), { target: { value: "50" } });
@@ -121,7 +145,7 @@ describe("Music appearance", () => {
       { id: "test", overlayId: "default", moduleId: "music", scope: "module", targetProfileId: "landscape", purpose: "test", label: "Music Landscape Test", enabled: false, keyId: "key", url: "http://127.0.0.1:39187/overlay/modules/music/test/example", copyableUrlStatus: "available" }
     ] });
     await openEditorControls();
-    await user.click(screen.getByRole("button", { name: "Reset current view to theme" }));
+    await user.click(screen.getByRole("button", { name: "Reset appearance to theme" }));
     expect(screen.getByLabelText("Custom CSS")).toHaveValue(config.css.source);
     expect(screen.getByText("Image brand-a unavailable")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open live output" })).toHaveAttribute("href", expect.stringContaining("/live/"));
@@ -152,7 +176,7 @@ describe("Music appearance", () => {
     const save = vi.fn((enabled: boolean, config: ReturnType<typeof createDefaultMusicModuleConfig>) => new Promise<{ enabled: boolean; config: ReturnType<typeof createDefaultMusicModuleConfig> }>(resolve => { void enabled; void config; complete = resolve; }));
     renderPage({ saveMusicConfig: save });
     await openEditorControls();
-    await user.click(screen.getByLabelText("Enable Music module after saving"));
+    await user.selectOptions(screen.getByLabelText("Theme"), "light");
     await user.click(screen.getByRole("button", { name: "Save Music appearance" }));
     await waitFor(() => expect(save).toHaveBeenCalledOnce());
     await user.selectOptions(screen.getByLabelText("Preview view"), "compact");
@@ -174,11 +198,13 @@ describe("Music appearance", () => {
     await user.click(screen.getByRole("button", { name: "Choose branding image" }));
     await user.click(await screen.findByRole("button", { name: "Use selected asset" }));
     expect(screen.getByText("Follower burst")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Appearance component"), "title");
     await user.click(screen.getByRole("button", { name: "Choose title font" }));
     await user.click(await screen.findByRole("button", { name: "Use selected asset" }));
     expect(screen.getByText("font-a")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Custom CSS"), { target: { value: ".sj-title { color: red; }" } });
     await user.click(screen.getByRole("button", { name: "Remove title font" }));
+    await user.selectOptions(screen.getByLabelText("Appearance component"), "widget");
     expect(screen.getByText("Follower burst")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Remove image" }));
     expect(screen.getByLabelText("Custom CSS")).toHaveValue(".sj-title { color: red; }");
@@ -190,7 +216,7 @@ describe("Music appearance", () => {
     const api = createStoryManagementApi({ listAssetLibraryItems: async () => [], listMusicOutputs: async () => [] });
     render(<DirtyNavigationProvider><MusicNavigationHarness api={api} /></DirtyNavigationProvider>);
     await openEditorControls();
-    await user.click(screen.getByLabelText("Enable Music module after saving"));
+    await user.selectOptions(screen.getByLabelText("Theme"), "light");
     await user.click(screen.getByRole("button", { name: "Leave Music editor" }));
     expect(screen.getByRole("heading", { name: "Leave with unsaved changes?" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
@@ -205,7 +231,7 @@ describe("Music appearance", () => {
     const api = createStoryManagementApi({ saveMusicConfig: save, listAssetLibraryItems: async () => [], listMusicOutputs: async () => [] });
     render(<DirtyNavigationProvider><MusicNavigationHarness api={api} /></DirtyNavigationProvider>);
     await openEditorControls();
-    await user.click(screen.getByLabelText("Enable Music module after saving"));
+    await user.selectOptions(screen.getByLabelText("Theme"), "light");
     await user.click(screen.getByRole("button", { name: "Leave Music editor" }));
     await user.click(screen.getByRole("button", { name: "Save and leave" }));
     await waitFor(() => expect(save).toHaveBeenCalledOnce());

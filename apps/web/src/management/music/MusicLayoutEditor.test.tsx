@@ -46,7 +46,7 @@ describe("MusicLayoutEditor", () => {
     const user = userEvent.setup();
     render(<Fixture />);
     expect(screen.getByTestId("saved-layout")).toHaveTextContent("null");
-    await user.click(screen.getByRole("button", { name: "Edit component layout" }));
+    await user.click(screen.getByRole("button", { name: "Edit layout" }));
     await user.click(screen.getByRole("checkbox", { name: "Snap to grid" }));
     await user.click(screen.getByRole("checkbox", { name: "Snap to alignment" }));
     const saved = () => JSON.parse(screen.getByTestId("saved-layout").textContent ?? "null") as MusicComponentLayout;
@@ -81,7 +81,7 @@ describe("MusicLayoutEditor", () => {
     mockLayoutGeometry();
     const user = userEvent.setup();
     const view = render(<Fixture />);
-    await user.click(screen.getByRole("button", { name: "Edit component layout" }));
+    await user.click(screen.getByRole("button", { name: "Edit layout" }));
     const grid = screen.getByRole("checkbox", { name: "Snap to grid" });
     const alignment = screen.getByRole("checkbox", { name: "Snap to alignment" });
     expect(grid).toBeChecked(); expect(alignment).toBeChecked();
@@ -121,7 +121,7 @@ describe("MusicLayoutEditor", () => {
     mockLayoutGeometry();
     const user = userEvent.setup();
     render(<Fixture />);
-    await user.click(screen.getByRole("button", { name: "Resize widget" }));
+    await user.click(screen.getByRole("button", { name: "Edit layout" }));
     const handle = screen.getByRole("button", { name: "Resize overall widget" });
     const width = screen.getByRole("spinbutton", { name: "Preview widget width (px)" });
     const height = screen.getByRole("spinbutton", { name: "Preview widget height (px)" });
@@ -140,7 +140,7 @@ describe("MusicLayoutEditor", () => {
     expect(width).toHaveValue(662);
     fireEvent.pointerCancel(handle, { pointerId: 10 });
     expect(width).toHaveValue(641);
-    await user.click(screen.getByRole("button", { name: "Edit component layout" }));
+    expect(screen.getByRole("button", { name: "Move Title" })).toBeInTheDocument();
     await user.clear(width); await user.type(width, "160"); fireEvent.blur(width);
     const layout = JSON.parse(screen.getByTestId("saved-layout").textContent ?? "null") as MusicComponentLayout;
     expect(layout.title.x + layout.title.width).toBeLessThanOrEqual(160);
@@ -150,7 +150,7 @@ describe("MusicLayoutEditor", () => {
 
   it("warns and disables native handles while custom CSS can override geometry", () => {
     render(<Fixture css />);
-    expect(screen.getByRole("button", { name: "Edit component layout" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Edit layout" })).toBeDisabled();
     expect(screen.getByText(/Disable custom CSS to edit native component layout/u)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Move Title" })).toBeNull();
   });

@@ -1,3 +1,4 @@
+import { pearArtworkPolicy } from "../../modules/music/music-artwork-policy.js";
 import Fastify from "fastify";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
@@ -15,7 +16,7 @@ function setup() {
   let revoked = false;
   let desktopVisible = true;
   let clock = 1000;
-  const service = new MusicArtworkService({
+  const service = new MusicArtworkService({ getPolicy: () => pearArtworkPolicy,
     isCurrentOwner: candidate => current && candidate.providerId === owner.providerId && candidate.generation === owner.generation,
     isCurrentDescriptor: url => url === currentUrl,
     now: () => clock,

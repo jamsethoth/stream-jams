@@ -1,3 +1,4 @@
+import { pearArtworkPolicy, type MusicArtworkPolicy, type PrivateArtworkDescriptor } from "./music-artwork-policy.js";
 import { randomUUID } from "node:crypto";
 import * as http from "node:http";
 import * as https from "node:https";
@@ -5,7 +6,7 @@ import { isIP } from "node:net";
 import WebSocket, { type RawData } from "ws";
 import { musicSnapshotSchema, musicStatusSchema, type MusicConnectionTestResult, type MusicSnapshot, type MusicSourceAdapter, type MusicStatus, type PearConfiguration, type ProviderValidationResult } from "@stream-jams/core";
 import { parsePearConfiguration, resolvePearDestination } from "./pear-config.js";
-import { extractPearArtworkDescriptor, normalizePearObservation, type PrivateArtworkDescriptor } from "./pear-normalization.js";
+import { extractPearArtworkDescriptor, normalizePearObservation } from "./pear-normalization.js";
 
 const requestTimeoutMs = 5_000;
 const pollIntervalMs = 3_000;
@@ -57,6 +58,8 @@ export class PearMusicSource implements MusicSourceAdapter {
     if (!options.token || options.token.length > 4096) throw new Error("Invalid Pear credential");
     this.#now = options.now ?? Date.now;
   }
+
+  getArtworkPolicy(): MusicArtworkPolicy { return pearArtworkPolicy; }
 
   getSnapshot(): MusicSnapshot | null { return this.#snapshot; }
 

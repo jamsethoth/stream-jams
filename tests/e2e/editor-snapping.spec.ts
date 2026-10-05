@@ -22,7 +22,7 @@ test("Music snaps independently to grid and component alignment with exact keybo
     };
     await fixture.request("/overlay-modules/music/config", "PUT", saved);
     await page.goto(`${fixture.url}/manage/modules/music`);
-    await page.getByRole("button", { name: "Edit component layout" }).click();
+    await page.getByRole("button", { name: "Edit layout" }).click();
     const grid = page.getByRole("checkbox", { name: "Snap to grid" });
     const alignment = page.getByRole("checkbox", { name: "Snap to alignment" });
     await expect(grid).toBeChecked(); await expect(alignment).toBeChecked();

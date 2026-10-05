@@ -54,11 +54,17 @@ function isEpoch(value: number): boolean {
 
 /** Apply only at the private desktop recipient boundary; browser alignment stays independent. */
 export function applyMusicDesktopPlacement(projection: MusicWidgetProjection, config: MusicModuleConfig): MusicWidgetProjection {
+  if (projection.targetProfileId !== "landscape") return projection;
   const position = config.desktopPlacement[projection.view];
-  if (position === null || projection.targetProfileId !== "landscape") return projection;
+  if (position === null && config.desktopScale[projection.view] === 1) return projection;
   const bounds = targetProfileDefinitions.find(profile => profile.id === "landscape")!;
-  return { ...projection, layout: { ...projection.layout,
-    x: Math.min(position.x, bounds.width - projection.layout.width),
-    y: Math.min(position.y, bounds.height - projection.layout.height)
+  const renderScale = Math.min(config.desktopScale[projection.view], bounds.width / projection.layout.width, bounds.height / projection.layout.height);
+  const width = projection.layout.width * renderScale;
+  const height = projection.layout.height * renderScale;
+  const alignment = projection.profile.alignment;
+  const x = position?.x ?? (alignment.endsWith("left") ? 0 : alignment.endsWith("right") ? bounds.width - width : (bounds.width - width) / 2);
+  const y = position?.y ?? (alignment.startsWith("top") ? 0 : alignment.startsWith("bottom") ? bounds.height - height : (bounds.height - height) / 2);
+  return { ...projection, renderScale, layout: { ...projection.layout,
+    x: Math.min(x, bounds.width - width), y: Math.min(y, bounds.height - height)
   } };
 }

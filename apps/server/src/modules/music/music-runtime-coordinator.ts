@@ -4,7 +4,7 @@ import {
   type MusicModuleConfig, type MusicSnapshot, type MusicSourceAdapter, type MusicStatus, type MusicWidgetProjection,
   type OverlayTargetProfileId, type PearConfiguration
 } from "@stream-jams/core";
-import type { PrivateArtworkDescriptor } from "./pear-normalization.js";
+import type { MusicArtworkPolicy, PrivateArtworkDescriptor } from "./music-artwork-policy.js";
 
 export interface MusicRuntimeSource {
   readonly providerId: string;
@@ -65,6 +65,11 @@ export class MusicRuntimeCoordinator {
   getProjection(targetProfileId: OverlayTargetProfileId): MusicWidgetProjection | null {
     if (this.#config === null) return null;
     return projectMusicWidget(this.#snapshot, this.#status, this.#config, targetProfileId, this.#appearanceStartedAtEpochMs, this.#now());
+  }
+  getArtworkPolicy(owner: Pick<MusicSnapshot, "providerId" | "generation">): MusicArtworkPolicy | null {
+    if (this.#generation !== owner.generation || this.#snapshot?.providerId !== owner.providerId) return null;
+    const source = this.#source as (MusicSourceAdapter & { getArtworkPolicy?: () => MusicArtworkPolicy }) | null;
+    return source?.getArtworkPolicy?.() ?? null;
   }
   getArtworkDescriptor(ref: string, owner: Pick<MusicSnapshot, "providerId" | "generation">): PrivateArtworkDescriptor | null {
     if (this.#generation !== owner.generation || this.#snapshot?.providerId !== owner.providerId || this.#snapshot.track?.artworkRef !== ref) return null;
@@ -197,7 +202,8 @@ export class MusicRuntimeCoordinator {
     const oldTrack = previous?.track;
     const nextTrack = parsed.data.track;
     if (nextTrack === null) this.#appearanceStartedAtEpochMs = null;
-    else if (oldTrack === null || oldTrack === undefined || oldTrack.id !== nextTrack.id || previous?.session?.id !== parsed.data.session?.id) this.#appearanceStartedAtEpochMs = this.#now();
+    else if (oldTrack === null || oldTrack === undefined || oldTrack.id !== nextTrack.id || previous?.session?.id !== parsed.data.session?.id
+      || (previous?.playbackState === "paused" && parsed.data.playbackState === "playing")) this.#appearanceStartedAtEpochMs = this.#now();
     this.#publish();
   }
   #acceptStatus(value: MusicStatus, lifecycle: number, generation: string): void {

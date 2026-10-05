@@ -88,3 +88,14 @@ See [editor refinement](editor-refinement.md).
 - [x] 10.2 Add a desktop canvas placement panel with drag/numeric/keyboard edits, optional grid/alignment snapping, cancellation, reset and explicit desktop setup/CSS states.
 - [x] 10.3 Verify schemas, output boundaries, renderer positioning, backup round trip, saved browser workflow and production Storybook accessibility; synchronize the capability and guidance.
 - [x] 10.4 Rebuild the desktop candidate and verify the packaged placement controls without changing the running user profile.
+
+## 11. Provider-owned artwork trust refinement
+
+- [x] 11.1 Centralize provider-owned CDN/configured-server policies, preserve safe fetch and credential isolation, and verify positive/negative/cache revocation cases.
+- [x] 11.2 Rebuild and verify a packaged candidate with disposable provider fixtures.
+
+## 12. Focused Music appearance inspector
+
+- [x] 12.1 Keep Configuration visible, collapse Appearance by default, and focus appearance controls on selected components with preview selection.
+- [x] 12.2 Preserve colour/hex/opacity, numeric geometry, typography, branding, spacing and shadow capabilities with responsive spacing and advanced disclosures.
+- [x] 12.3 Verify unit, browser, Storybook accessibility, build/typecheck/lint and packaged candidate; synchronize documentation.

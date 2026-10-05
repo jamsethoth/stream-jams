@@ -50,3 +50,19 @@ it("marks retained desktop status stale on refresh failure and recovers", async 
   fireEvent.click(screen.getByRole("button", { name: "Refresh desktop status" })); await act(async () => {});
   expect(screen.queryByText(/Desktop status is stale/u)).toBeNull();
 });
+
+it("rescales only desktop output and restores a cancelled drag", async () => {
+  render(<Fixture />); await screen.findByText(/Desktop overlay: unavailable/u);
+  const initial = JSON.parse(screen.getByTestId("config").textContent!) as MusicModuleConfig;
+  const handle = screen.getByRole("button", { name: "Rescale Music widget on desktop overlay" });
+  fireEvent.keyDown(handle, { key: "ArrowRight", shiftKey: true });
+  expect(screen.getByLabelText("Desktop Music scale (%)")).toHaveValue(110);
+  const saved = JSON.parse(screen.getByTestId("config").textContent!) as MusicModuleConfig;
+  expect(saved.desktopScale).toEqual({ full: 1.1, compact: 1 });
+  expect(saved.profiles).toEqual(initial.profiles);
+  HTMLElement.prototype.setPointerCapture = vi.fn();
+  fireEvent.pointerDown(handle, { pointerId: 4, clientX: 100, clientY: 100 });
+  fireEvent.pointerMove(handle, { pointerId: 4, clientX: 150, clientY: 130 });
+  fireEvent.keyDown(handle, { key: "Escape" });
+  expect(screen.getByLabelText("Desktop Music scale (%)")).toHaveValue(110);
+});

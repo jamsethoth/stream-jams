@@ -32,7 +32,7 @@ export function MusicDesktopPlacement({ config, snapshot, now, resolveAsset, onC
   const scale = Math.min(1, width / bounds.width);
   const sample = projectMusicWidget(snapshot, { state: "connected", stale: false, diagnosticReference: null }, { ...config, profiles: { ...config.profiles, landscape: { ...config.profiles.landscape, initialView: view, idleMode: "none" } } }, "landscape", now, now);
   const projection = sample === null ? null : applyMusicDesktopPlacement(sample, config);
-  const rect = projection?.layout ?? null;
+  const rect = projection === null ? null : { ...projection.layout, width: projection.layout.width * (projection.renderScale ?? 1), height: projection.layout.height * (projection.renderScale ?? 1) };
   const blocked = config.css.enabled && config.css.source.trim() !== "";
   useEffect(() => {
     const element = viewport.current;
@@ -79,6 +79,13 @@ export function MusicDesktopPlacement({ config, snapshot, now, resolveAsset, onC
     const direction = delta[event.key]; if (direction === undefined) return;
     event.preventDefault(); update(rect.x + direction[0], rect.y + direction[1]);
   };
+  const scaleGesture = useRef<{ pointerId: number; x: number; y: number; canvasScale: number; value: number; saved: MusicModuleConfig } | null>(null);
+  const setWidgetScale = (value: number) => {
+    if (sample === null) return;
+    const maximum = Math.min(3, bounds.width / sample.layout.width, bounds.height / sample.layout.height);
+    onChange({ ...config, desktopScale: { ...config.desktopScale, [view]: Math.max(0.1, Math.min(maximum, value)) } });
+  };
+  const cancelScale = () => { setGuides([]); const active = scaleGesture.current; scaleGesture.current = null; if (active !== null) onChange(active.saved); };
   const desktop = status?.surfaces.find(surface => surface.kind === "desktop");
   const visible = desktop?.layers.some(layer => layer.moduleId === "music" && layer.visible) ?? false;
   return <div className="music-desktop-placement">
@@ -94,14 +101,27 @@ export function MusicDesktopPlacement({ config, snapshot, now, resolveAsset, onC
       {projection === null || rect === null ? <p role="status">Desktop placement preview is unavailable.</p> : <div aria-label="Desktop placement canvas" className="music-desktop-placement__stage" style={{ width: bounds.width * scale, height: bounds.height * scale }}>
         <div className="music-desktop-placement__scaled" style={{ width: bounds.width, height: bounds.height, transform: `scale(${scale})` }}><MusicWidget projection={projection} resolveAsset={resolveAsset} nowEpochMs={now} reducedMotion /></div>
         <button aria-label="Move Music widget on desktop overlay" className="music-desktop-placement__move" disabled={blocked} style={{ left: rect.x * scale, top: rect.y * scale, width: rect.width * scale, height: rect.height * scale }} onPointerDown={begin} onPointerMove={move} onPointerUp={event => { if (gesture.current?.pointerId === event.pointerId) { gesture.current = null; setGuides([]); } }} onLostPointerCapture={cancel} onPointerCancel={cancel} onKeyDown={keys} type="button" />
+        <button aria-label="Rescale Music widget on desktop overlay" className="music-layout-editor__resize music-desktop-placement__resize" disabled={blocked}
+          style={{ left: (rect.x + rect.width) * scale - 14, top: (rect.y + rect.height) * scale - 14 }}
+          onPointerDown={event => { event.preventDefault(); event.currentTarget.focus(); event.currentTarget.setPointerCapture(event.pointerId); scaleGesture.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, canvasScale: scale, value: projection.renderScale ?? 1, saved: config }; }}
+          onPointerMove={event => { const active = scaleGesture.current; if (active === null || active.pointerId !== event.pointerId || sample === null) return;
+            const dx = (event.clientX - active.x) / active.canvasScale; const dy = (event.clientY - active.y) / active.canvasScale;
+            let value = active.value + (dx * sample.layout.width + dy * sample.layout.height) / (sample.layout.width ** 2 + sample.layout.height ** 2);
+            const snapped = snapEditorRect({ x: rect.x, y: rect.y, width: sample.layout.width * value, height: sample.layout.height * value }, { mode: "resize", bounds, peers: [], grid, alignment, scale: active.canvasScale });
+            value = snapped.guides.some(guide => guide.axis === "y") ? snapped.rect.height / sample.layout.height : snapped.rect.width / sample.layout.width;
+            setGuides(snapped.guides);
+            setWidgetScale(value); }}
+          onPointerUp={event => { if (scaleGesture.current?.pointerId === event.pointerId) { scaleGesture.current = null; setGuides([]); } }} onPointerCancel={cancelScale} onLostPointerCapture={cancelScale}
+          onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); cancelScale(); } else if (["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"].includes(event.key)) { event.preventDefault(); setWidgetScale((projection.renderScale ?? 1) + (event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : -1) * (event.shiftKey ? 0.1 : 0.01)); } }} type="button" />
         {guides.map((guide, index) => <div aria-hidden="true" className={`music-desktop-placement__guide music-desktop-placement__guide--${guide.axis}`} key={`${guide.axis}:${index}`} style={guide.axis === "x" ? { left: guide.position * scale } : { top: guide.position * scale }} />)}
       </div>}
     </div>
     <fieldset disabled={blocked || rect === null}><legend>Desktop widget position</legend>
       <div className="music-layout-editor__fields"><MusicNumberField label="Desktop Music X (px)" value={rect?.x ?? 0} min={0} max={bounds.width - (rect?.width ?? 0)} onCommit={x => update(x, rect?.y ?? 0)} /><MusicNumberField label="Desktop Music Y (px)" value={rect?.y ?? 0} min={0} max={bounds.height - (rect?.height ?? 0)} onCommit={y => update(rect?.x ?? 0, y)} /></div>
+      <MusicNumberField label="Desktop Music scale (%)" value={Math.round((projection?.renderScale ?? 1) * 100)} min={10} max={sample === null ? 300 : Math.floor(Math.min(3, bounds.width / sample.layout.width, bounds.height / sample.layout.height) * 100)} onCommit={value => setWidgetScale(value / 100)} />
       <div className="music-layout-editor__snapping"><label><input checked={grid} onChange={event => { setGrid(event.currentTarget.checked); setGuides([]); }} type="checkbox" /> Snap desktop placement to grid</label><label><input checked={alignment} onChange={event => { setAlignment(event.currentTarget.checked); setGuides([]); }} type="checkbox" /> Snap desktop placement to alignment</label></div>
       <button className="button button--secondary" disabled={config.desktopPlacement[view] === null} onClick={() => { gesture.current = null; setGuides([]); onChange({ ...config, desktopPlacement: { ...config.desktopPlacement, [view]: null } }); }} type="button">Reset desktop placement to alignment</button>
     </fieldset>
-    <p>Drag the widget to position it. Arrow keys move by 1 px; Shift moves by 10 px. Escape cancels a drag. Browser-source placement is unchanged.</p>
+    <p>Drag the widget to position it or its corner to scale it proportionally. Scale affects only desktop output. Arrow keys move by 1 px; Shift moves by 10 px. Escape cancels a drag. Browser-source placement is unchanged.</p>
   </div>;
 }

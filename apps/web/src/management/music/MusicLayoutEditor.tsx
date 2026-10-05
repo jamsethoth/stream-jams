@@ -11,6 +11,7 @@ export interface MusicLayoutEditorProps {
   readonly resolveAsset: MusicAssetResolver;
   readonly appearance: MusicAppearance;
   readonly onChange: (appearance: MusicAppearance) => void;
+  readonly onSelectComponent?: (role: MusicComponentRole) => void;
 }
 
 const labels: Record<MusicComponentRole, string> = { artwork: "Artwork", title: "Title", details: "Artists and album", progress: "Progress", time: "Time" };
@@ -18,15 +19,15 @@ const selectors: Record<MusicComponentRole, string> = { artwork: ".sj-artwork", 
 type Gesture = { pointerId: number; role: MusicComponentRole; mode: "move" | "resize"; clientX: number; clientY: number; startRect: MusicComponentRect; startLayout: MusicComponentLayout };
 
 /** The handles are management-only siblings of the production Shadow DOM widget. */
-export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChange }: MusicLayoutEditorProps) {
+export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChange, onSelectComponent }: MusicLayoutEditorProps) {
   const shellRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const gesture = useRef<Gesture | null>(null);
   const widgetGesture = useRef<{ pointerId: number; clientX: number; clientY: number; factor: number; appearance: MusicAppearance } | null>(null);
-  const [resizingWidget, setResizingWidget] = useState(false);
   const [availableWidth, setAvailableWidth] = useState(700);
   const [editing, setEditing] = useState(false);
   const [selected, setSelected] = useState<MusicComponentRole>("title");
+  const selectComponent = (role: MusicComponentRole) => { setSelected(role); onSelectComponent?.(role); };
   const [snapGrid, setSnapGrid] = useState(true);
   const [snapAlignment, setSnapAlignment] = useState(true);
   const [guides, setGuides] = useState<ReturnType<typeof snapEditorRect>["guides"]>([]);
@@ -123,7 +124,7 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
     if (!editing || customCssActive || appearance.componentLayout === null) return;
     event.preventDefault();
     event.stopPropagation();
-    setSelected(role);
+    selectComponent(role);
     event.currentTarget.focus();
     event.currentTarget.setPointerCapture(event.pointerId);
     setGuides([]);
@@ -179,7 +180,7 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
     const delta = directions[event.key];
     if (delta === undefined) return;
     event.preventDefault();
-    setSelected(role);
+    selectComponent(role);
     updateRect(role, mode === "move"
       ? moveMusicComponentRect(appearance.componentLayout[role], delta[0], delta[1], bounds)
       : resizeMusicComponentRect(appearance.componentLayout[role], delta[0], delta[1], bounds));
@@ -192,11 +193,10 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
 
   return <div className="music-layout-editor">
     <div className="music-layout-editor__toolbar">
-      <button aria-pressed={resizingWidget} disabled={customCssActive || projection === null} onClick={() => { widgetGesture.current = null; setResizingWidget(current => !current); }} type="button">Resize widget</button>
       <span>{appearance.componentLayout === null ? "Automatic component layout" : "Custom component layout"}</span>
-      {editing ? <button onClick={() => { gesture.current = null; setGuides([]); setEditing(false); }} type="button">Done editing</button>
-        : <button disabled={customCssActive || projection === null} onClick={beginEditing} type="button">Edit component layout</button>}
-      {appearance.componentLayout === null ? null : <button onClick={() => { gesture.current = null; setGuides([]); setEditing(false); onChange({ ...appearance, componentLayout: null }); }} type="button">Reset automatic layout</button>}
+      {editing ? <button onClick={() => { gesture.current = null; widgetGesture.current = null; setGuides([]); setEditing(false); }} type="button">Done editing</button>
+        : <button disabled={customCssActive || projection === null} onClick={beginEditing} type="button">Edit layout</button>}
+      {appearance.componentLayout === null ? null : <button onClick={() => { gesture.current = null; widgetGesture.current = null; setGuides([]); setEditing(false); onChange({ ...appearance, componentLayout: null }); }} type="button">Reset automatic layout</button>}
     </div>
     {customCssActive ? <p className="music-layout-editor__warning" role="status">Custom CSS can override component positions. Disable custom CSS to edit native component layout.</p> : null}
     <div className="music-layout-editor__viewport" ref={shellRef}>
@@ -204,12 +204,12 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
         <div className="music-layout-editor__scaled" style={{ width: bounds.width, height: bounds.height, transform: `scale(${scale})` }}>
           <MusicWidget projection={preview} resolveAsset={resolveAsset} nowEpochMs={preview.clockReferenceEpochMs} reducedMotion={editing} />
         </div>
-        {resizingWidget && !customCssActive ? <><div aria-hidden="true" className="music-layout-editor__widget-outline" /><button aria-label="Resize overall widget" className="music-layout-editor__resize music-layout-editor__widget-resize" onPointerDown={beginWidgetResize} onPointerMove={moveWidgetResize} onPointerUp={event => { if (widgetGesture.current?.pointerId === event.pointerId) widgetGesture.current = null; }} onPointerCancel={cancelWidgetResize} onLostPointerCapture={cancelWidgetResize} onKeyDown={widgetKeys} type="button" /></> : null}
+        {editing && !customCssActive ? <><div aria-hidden="true" className="music-layout-editor__widget-outline" /><button aria-label="Resize overall widget" className="music-layout-editor__resize music-layout-editor__widget-resize" onPointerDown={beginWidgetResize} onPointerMove={moveWidgetResize} onPointerUp={event => { if (widgetGesture.current?.pointerId === event.pointerId) widgetGesture.current = null; }} onPointerCancel={cancelWidgetResize} onLostPointerCapture={cancelWidgetResize} onKeyDown={widgetKeys} type="button" /></> : null}
         {editing && !customCssActive && appearance.componentLayout !== null ? musicComponentRoles.map(role => {
           const rect = appearance.componentLayout![role];
           return <div className={`music-layout-editor__box${selected === role ? " is-selected" : ""}`} key={role}
             style={{ left: rect.x * scale, top: rect.y * scale, width: rect.width * scale, height: rect.height * scale }}>
-            <button aria-label={`Move ${labels[role]}`} aria-pressed={selected === role} className="music-layout-editor__move" onClick={() => setSelected(role)}
+            <button aria-label={`Move ${labels[role]}`} aria-pressed={selected === role} className="music-layout-editor__move" onClick={() => selectComponent(role)}
               onKeyDown={event => keyAdjust(role, "move", event)} onLostPointerCapture={cancelGesture} onPointerCancel={cancelGesture}
               onPointerDown={event => beginGesture(role, "move", event)} onPointerMove={moveGesture} onPointerUp={endGesture} type="button" />
             {selected === role ? <button aria-label={`Resize ${labels[role]}`} className="music-layout-editor__resize"
@@ -222,16 +222,16 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
           style={guide.axis === "x" ? { left: guide.position * scale } : { top: guide.position * scale }} />) : null}
       </div>}
     </div>
-    {resizingWidget && !customCssActive ? <div className="music-layout-editor__inspector">
+    {editing && !customCssActive ? <div className="music-layout-editor__inspector">
       <div className="music-layout-editor__fields">
         <MusicNumberField label="Preview widget width (px)" value={appearance.widthPx} min={musicLimits.widthPx.min} max={maxWidth} onCommit={width => resizeWidget(width, appearance.heightPx)} />
         <MusicNumberField label="Preview widget height (px)" value={appearance.heightPx} min={musicLimits.heightPx.min} max={maxHeight} onCommit={height => resizeWidget(appearance.widthPx, height)} />
       </div>
       <p>Drag the outer corner to resize the widget. Arrow keys adjust by 1 px; hold Shift for 10 px. Components keep their size and position where they fit.</p>
     </div> : null}
-    {(editing || resizingWidget) && !customCssActive ? <div className="music-layout-editor__snapping"><label><input checked={snapGrid} onChange={event => { setSnapGrid(event.currentTarget.checked); setGuides([]); }} type="checkbox" /> Snap to grid</label>{editing ? <label><input checked={snapAlignment} onChange={event => { setSnapAlignment(event.currentTarget.checked); setGuides([]); }} type="checkbox" /> Snap to alignment</label> : null}</div> : null}
+    {editing && !customCssActive ? <div className="music-layout-editor__snapping"><label><input checked={snapGrid} onChange={event => { setSnapGrid(event.currentTarget.checked); setGuides([]); }} type="checkbox" /> Snap to grid</label>{editing ? <label><input checked={snapAlignment} onChange={event => { setSnapAlignment(event.currentTarget.checked); setGuides([]); }} type="checkbox" /> Snap to alignment</label> : null}</div> : null}
     {editing && !customCssActive && activeRect !== null ? <div className="music-layout-editor__inspector">
-      <div aria-label="Music component" className="music-layout-editor__roles">{musicComponentRoles.map(role => <button aria-pressed={selected === role} key={role} onClick={() => setSelected(role)} type="button">{labels[role]}</button>)}</div>
+      <div aria-label="Music component" className="music-layout-editor__roles">{musicComponentRoles.map(role => <button aria-pressed={selected === role} key={role} onClick={() => selectComponent(role)} type="button">{labels[role]}</button>)}</div>
       <div className="music-layout-editor__fields">
         <MusicNumberField label={`${labels[selected]} X (px)`} value={activeRect.x} min={0} max={bounds.width - activeRect.width} onCommit={value => setField("x", value)} />
         <MusicNumberField label={`${labels[selected]} Y (px)`} value={activeRect.y} min={0} max={bounds.height - activeRect.height} onCommit={value => setField("y", value)} />

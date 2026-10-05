@@ -324,3 +324,24 @@ test("normal three-second Pear observations keep the same scrolling DOM and anim
     expect(after).toBeGreaterThan(before + 1_000);
   } finally { await fixture.close(); }
 });
+
+
+test("hidden Music reappears for a fresh idle period on resume", async ({ page }) => {
+  const fixture = await startMusicTestRuntime();
+  try {
+    fixture.pear.setSong({ status: 200, body: song });
+    fixture.pear.setFirstFrame({ type: "PLAYER_INFO", song, isPlaying: true });
+    await fixture.register("Resume fixture", "ws");
+    const saved = await fixture.request<{ config: import("../../packages/core/dist/index.js").MusicModuleConfig }>("/overlay-modules/music/config");
+    saved.config.profiles.landscape.idleMode = "hide"; saved.config.profiles.landscape.idleAfterSeconds = 1;
+    await fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: saved.config });
+    const live = await fixture.request<Key>("/management/overlay-outputs/keys", "POST", output("live"));
+    await page.goto(live.url);
+    await expect(page.getByTestId("music-widget")).toBeVisible();
+    await expect(page.getByTestId("music-widget")).toHaveCount(0);
+    fixture.pear.send({ type: "PLAYER_STATE_CHANGED", isPlaying: false });
+    fixture.pear.send({ type: "PLAYER_STATE_CHANGED", isPlaying: true });
+    await expect(page.getByTestId("music-widget")).toBeVisible();
+    await expect(page.getByTestId("music-widget")).toHaveCount(0);
+  } finally { await fixture.close(); }
+});

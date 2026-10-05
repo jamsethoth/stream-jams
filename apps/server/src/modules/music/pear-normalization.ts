@@ -1,3 +1,4 @@
+import { parseArtworkUrl, pearArtworkPolicy, type PrivateArtworkDescriptor } from "./music-artwork-policy.js";
 import { musicLimits, musicSnapshotSchema, type MusicSnapshot } from "@stream-jams/core";
 
 export interface PearObservationContext {
@@ -9,7 +10,7 @@ export interface PearObservationContext {
   readonly artworkRef?: string | null;
 }
 
-export interface PrivateArtworkDescriptor { readonly url: string; }
+
 
 type PearEvent = "PLAYER_INFO" | "VIDEO_CHANGED" | "PLAYER_STATE_CHANGED" | "POSITION_CHANGED" | "REST_SONG" | "REST_EMPTY";
 const eventTypes = new Set<PearEvent>(["PLAYER_INFO", "VIDEO_CHANGED", "PLAYER_STATE_CHANGED", "POSITION_CHANGED", "REST_SONG", "REST_EMPTY"]);
@@ -36,13 +37,8 @@ export function extractPearArtworkDescriptor(songInput: unknown): PrivateArtwork
   if (typeof songInput !== "object" || songInput === null || Array.isArray(songInput)) return null;
   const imageSrc = (songInput as Record<string, unknown>).imageSrc;
   if (typeof imageSrc !== "string" || imageSrc.length > 4096) return null;
-  try {
-    const url = new URL(imageSrc);
-    if (url.protocol !== "https:" || url.username || url.password || !["i.ytimg.com", "lh3.googleusercontent.com"].includes(url.hostname.toLowerCase())) return null;
-    return { url: url.toString() };
-  }
-  // error-provenance: allow expected -- malformed provider artwork URLs are omitted from normalized state
-  catch { return null; }
+  const url = parseArtworkUrl(imageSrc, pearArtworkPolicy);
+  return url === null ? null : { url: url.href };
 }
 
 export function normalizePearObservation(input: unknown, previous: MusicSnapshot | null, context: PearObservationContext): MusicSnapshot {

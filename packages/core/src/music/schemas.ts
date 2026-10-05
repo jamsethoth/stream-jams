@@ -138,6 +138,7 @@ export const musicDesktopPlacementSchema = z.object({ full: musicDesktopPosition
 export const musicModuleConfigSchema = z.object({
   version: z.literal(1).default(1),
   desktopPlacement: musicDesktopPlacementSchema.default({ full: null, compact: null }),
+  desktopScale: z.object({ full: z.number().min(0.1).max(3), compact: z.number().min(0.1).max(3) }).strict().default({ full: 1, compact: 1 }),
   profiles: z.object({ landscape: musicProfileConfigSchema, vertical: musicProfileConfigSchema }).strict(),
   css: musicCssConfigSchema.default({ source: "", enabled: false, styleContractVersion: 1 })
 }).strict();
@@ -153,11 +154,13 @@ export const musicWidgetProjectionSchema = z.object({
   targetProfileId: overlayTargetProfileIdSchema, snapshot: musicSnapshotSchema,
   appearanceStartedAtEpochMs: milliseconds, clockReferenceEpochMs: milliseconds.max(Number.MAX_SAFE_INTEGER),
   profile: musicProfileConfigSchema, view: musicViewSchema,
+  renderScale: z.number().min(0.1).max(3).optional(),
   layout: overlayElementLayoutSchema.strict(), css: musicCssConfigSchema, assets: z.array(musicPublicAssetReferenceSchema)
 }).strict().superRefine((projection, context) => {
   const bounds = targetProfileDefinitions.find(profile => profile.id === projection.targetProfileId)!;
   const { layout } = projection;
-  if (!projection.snapshot.track || layout.x < 0 || layout.y < 0 || layout.x + layout.width > bounds.width || layout.y + layout.height > bounds.height) {
+  const scale = projection.renderScale ?? 1;
+  if (!projection.snapshot.track || layout.x < 0 || layout.y < 0 || layout.x + layout.width * scale > bounds.width || layout.y + layout.height * scale > bounds.height) {
     context.addIssue({ code: "custom", message: "Music projection must have a track and remain inside its target profile" });
   }
 });

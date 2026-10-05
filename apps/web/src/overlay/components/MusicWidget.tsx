@@ -55,6 +55,7 @@ function ClockedMusicWidget({ frame, resolveAsset, nowEpochMs, reducedMotion }: 
   return <div className="music-widget-host" data-testid="music-widget" style={{
     position: "absolute", left: frame.layout.x, top: frame.layout.y,
     width: frame.layout.width, height: frame.layout.height,
+    transform: `scale(${frame.renderScale ?? 1})`, transformOrigin: "top left",
     zIndex: frame.layout.zIndex, overflow: "hidden", contain: "layout paint style",
     isolation: "isolate", pointerEvents: "none", visibility: "visible"
   }} ref={attachHost}>

@@ -6,7 +6,9 @@ test("Music widget outer resize snaps, cancels, and saves independently per view
   const fixture = await startMusicTestRuntime();
   try {
     await page.goto(`${fixture.url}/manage/modules/music`);
-    await page.getByRole("button", { name: "Resize widget" }).click();
+    await page.getByRole("button", { name: "Edit layout" }).click();
+    await expect(page.getByRole("button", { name: "Move Title" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Resize widget", exact: true })).toHaveCount(0);
     const handle = page.getByRole("button", { name: "Resize overall widget" });
     const width = page.getByLabel("Preview widget width (px)");
     const height = page.getByLabel("Preview widget height (px)");
@@ -27,10 +29,10 @@ test("Music widget outer resize snaps, cancels, and saves independently per view
     await page.getByRole("button", { name: "Save Music appearance" }).click();
     await expect(page.getByText("All changes saved")).toBeVisible();
     const saved = await fixture.request<{ config: MusicModuleConfig }>("/overlay-modules/music/config");
-    expect(saved.config.profiles.landscape.views.full).toMatchObject({ widthPx: 724, heightPx: 203, componentLayout: null });
+    expect(saved.config.profiles.landscape.views.full).toMatchObject({ widthPx: 724, heightPx: 203 });
     expect(saved.config.profiles.landscape.views.compact.widthPx).toBe(480);
     expect(saved.config.profiles.vertical.views.full.widthPx).toBe(640);
-    await page.reload(); await page.getByRole("button", { name: "Resize widget" }).click();
+    await page.reload(); await page.getByRole("button", { name: "Edit layout" }).click();
     await expect(width).toHaveValue("724"); await expect(height).toHaveValue("203");
   } finally { await fixture.close(); }
 });

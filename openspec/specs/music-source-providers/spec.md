@@ -136,3 +136,16 @@ The system SHALL redact tokens, authorization headers, credential references and
 #### Scenario: Authentication failure contains a URL and nested cause
 - **WHEN** a Pear connection fails with credential-bearing values in its message, request metadata or serialized cause
 - **THEN** exported diagnostics and management errors contain only redacted evidence with a usable failure reference
+
+### Requirement: Artwork trust belongs to the active provider
+The server SHALL obtain a private artwork policy from the active provider generation and deny artwork without a policy. Public CDN policies SHALL allow only declared HTTPS domain families with dot-boundary matching and exclusively public validated DNS answers. Configured-server policies SHALL permit only the explicitly selected exact scheme, host and port, including private destinations for that origin. Track metadata SHALL NOT select or broaden trust. Shared fetching SHALL pin DNS, reject redirects, enforce existing raster/time/cache limits, isolate credentials and revalidate cached images and grants against current policy.
+
+#### Scenario: Provider changes CDN subdomain
+- **WHEN** Pear supplies artwork from another subdomain of `ytimg.com` or `googleusercontent.com`
+- **THEN** automatic fetching uses the shared protections without a per-image approval
+- **AND** suffix-spoofed domains and private CDN DNS answers are rejected
+
+#### Scenario: Configured local server
+- **WHEN** an adapter declares a configured-server origin
+- **THEN** only that exact origin can use private-address artwork fetching and no other origin inherits the exception
+- **AND** withdrawing the active policy makes existing cache and grants unavailable

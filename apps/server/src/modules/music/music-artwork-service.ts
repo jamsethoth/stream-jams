@@ -1,14 +1,16 @@
 import { randomBytes } from "node:crypto";
 import { resolve4, resolve6 } from "node:dns/promises";
 import { request } from "node:https";
+import { request as requestHttp } from "node:http";
 import { isIP } from "node:net";
 import type { Readable } from "node:stream";
 import sharp from "sharp";
-import type { PrivateArtworkDescriptor } from "./pear-normalization.js";
+import { parseArtworkUrl, type MusicArtworkPolicy, type PrivateArtworkDescriptor } from "./music-artwork-policy.js";
 
 export interface MusicArtworkOwner { readonly providerId: string; readonly generation: string; }
 export interface MusicArtworkRead { readonly bytes: Uint8Array; readonly mimeType: "image/png" | "image/jpeg" | "image/webp"; }
 export interface MusicArtworkServiceOptions {
+  readonly getPolicy: (owner: MusicArtworkOwner) => MusicArtworkPolicy | null;
   readonly isCurrentOwner: (owner: MusicArtworkOwner) => boolean;
   readonly isCurrentDescriptor?: (url: string, owner: MusicArtworkOwner) => boolean;
   readonly resolveAddresses?: (hostname: string) => Promise<readonly string[]>;
@@ -21,7 +23,6 @@ const maxCacheBytes = 16 * 1024 * 1024;
 const maxEntries = 32;
 const maxPending = 8;
 const maxGrants = 64;
-const hosts = new Set(["i.ytimg.com", "lh3.googleusercontent.com"]);
 
 interface Entry extends MusicArtworkRead { readonly owner: MusicArtworkOwner; readonly url: string; }
 interface Grant { readonly ref: string; readonly owner: MusicArtworkOwner; readonly recipient: string; readonly expiresAt: number; }
@@ -40,7 +41,8 @@ export class MusicArtworkService {
 
   async resolve(descriptor: PrivateArtworkDescriptor, owner: MusicArtworkOwner, signal: AbortSignal): Promise<string | null> {
     if (!this.#options.isCurrentOwner(owner) || signal.aborted) return null;
-    const url = parseArtworkUrl(descriptor.url);
+    const policy = this.#options.getPolicy(owner);
+    const url = parseArtworkUrl(descriptor.url, policy);
     if (url === null || !this.#isCurrentDescriptor(url.href, owner)) return null;
     for (const [ref, entry] of this.#entries) {
       if (sameOwner(entry.owner, owner) && entry.url === url.href) {
@@ -58,7 +60,7 @@ export class MusicArtworkService {
     timeout.unref();
     try {
       const addresses = await withAbort((this.#options.resolveAddresses ?? resolvePublicAddresses)(url.hostname), controller.signal);
-      if (addresses.length === 0 || addresses.some(address => !isPublicAddress(address))) return null;
+      if (addresses.length === 0 || addresses.some(address => isIP(address) === 0 || (policy?.kind !== "configured-server" && !isPublicAddress(address)))) return null;
       controller.signal.throwIfAborted();
       const bytes = await withAbort((this.#options.fetchBytes ?? fetchPinnedBytes)(url, addresses[0]!, controller.signal), controller.signal);
       if (bytes.byteLength === 0 || bytes.byteLength > maxBytes) return null;
@@ -135,7 +137,8 @@ export class MusicArtworkService {
     while (this.#entries.size > maxEntries || this.#cacheBytes > maxCacheBytes) this.#remove(this.#entries.keys().next().value!);
   }
   #isCurrentDescriptor(url: string, owner: MusicArtworkOwner): boolean {
-    return this.#options.isCurrentDescriptor?.(url, owner) ?? true;
+    return parseArtworkUrl(url, this.#options.getPolicy(owner)) !== null
+      && (this.#options.isCurrentDescriptor?.(url, owner) ?? true);
   }
 }
 
@@ -155,17 +158,9 @@ function sameOwner(left: MusicArtworkOwner, right: MusicArtworkOwner): boolean {
   return left.providerId === right.providerId && left.generation === right.generation;
 }
 
-function parseArtworkUrl(input: string): URL | null {
-  if (input.length > 4096) return null;
-  try {
-    const url = new URL(input);
-    return url.protocol === "https:" && hosts.has(url.hostname) && !url.username && !url.password && url.port === "" ? url : null;
-  }
-  // error-provenance: allow expected -- malformed artwork URLs are rejected before fetch
-  catch { return null; }
-}
-
 async function resolvePublicAddresses(host: string): Promise<readonly string[]> {
+  const literal = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
+  if (isIP(literal)) return [literal];
   const results = await Promise.allSettled([resolve4(host), resolve6(host)]);
   const addresses = results.flatMap(result => result.status === "fulfilled" ? result.value : []);
   return addresses;
@@ -211,7 +206,7 @@ export async function validateRaster(bytes: Uint8Array): Promise<MusicArtworkRea
 
 export function fetchPinnedBytes(url: URL, address: string, signal: AbortSignal): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
-    const req = request(url, { method: "GET", signal, agent: false,
+    const req = (url.protocol === "http:" ? requestHttp : request)(url, { method: "GET", signal, agent: false,
       lookup: (_hostname, options, callback) => {
         const family = isIP(address);
         if (options.all) callback(null, [{ address, family }]);

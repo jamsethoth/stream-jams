@@ -126,7 +126,7 @@ The widget SHALL interpolate only fresh playing observations with known position
 - **THEN** elapsed time can display while total duration and percentage remain unavailable
 
 ### Requirement: Idle Appearance Is Independent Of Polling
-The module SHALL support `none`, `hide` and `compact` idle modes, an integer delay from 1 through 600 seconds, and a default delay of 30 seconds with mode `none`. A new track or genuine recovery from disconnection SHALL restart the display interval. Routine successful polls, progress updates and pause/resume of the same track SHALL NOT restart that interval. Recipients SHALL derive visibility from the server's shared appearance epoch.
+The module SHALL support `none`, `hide` and `compact` idle modes, an integer delay from 1 through 600 seconds, and a default delay of 30 seconds with mode `none`. A new track, genuine recovery from disconnection or paused-to-playing transition SHALL restart the display interval. Routine successful polls, progress updates and pausing the same track SHALL NOT restart that interval. Recipients SHALL derive visibility from the server's shared appearance epoch.
 
 #### Scenario: Polling continues beyond idle delay
 - **WHEN** the same track is observed every three seconds with hide mode and a 30-second delay
@@ -180,11 +180,11 @@ Management SHALL expose Music source setup, pair/test/reconnect, selection, modu
 
 
 ### Requirement: Music Editing Follows Shared Module Patterns
-The system SHALL place Browser sources above the production-renderer preview, followed by separate collapsible Configuration and Custom CSS panels. Graphical RGB/opacity controls and validated RGBA hex input SHALL edit the same saved appearance draft. An explicit preview Edit layout mode SHALL support bounded independent movement and resizing of artwork, title, details, progress and time, with equivalent numeric geometry controls and reset to automatic layout. Old configuration SHALL default to automatic layout. Guides SHALL remain management-only; authored layout SHALL use the same production renderer in all outputs and remain a draft until Save.
+The system SHALL place Browser sources above the production-renderer preview, followed by always-visible Configuration and separate Appearance (collapsed by default) and Custom CSS panels. A module status and confirmed Enable/Disable Music module button SHALL appear directly below Browser sources. Enablement SHALL use the existing immediate module API independently of appearance drafts. Configuration contains initial view, theme, alignment, idle behavior/delay and background opacity. Appearance shows a selected Widget, Artwork, Title, Details or Progress inspector; preview component selection opens the matching inspector. Swatch and hex share a row with opacity below, while advanced spacing, text options and custom shadow use disclosures. Shadow offers Off, Subtle and Strong presets. Graphical RGB/opacity controls and validated RGBA hex input SHALL edit the same saved appearance draft. An explicit preview Edit layout mode SHALL support bounded independent movement and resizing of artwork, title, details, progress and time, with equivalent numeric geometry controls and reset to automatic layout. Old configuration SHALL default to automatic layout. Guides SHALL remain management-only; authored layout SHALL use the same production renderer in all outputs and remain a draft until Save.
 
 #### Scenario: Module controls are disclosed independently
 - **WHEN** Music appearance opens or a user expands one panel
-- **THEN** Browser sources precede Preview, Configuration and Custom CSS; the other panels retain independent disclosure state, and Disable custom CSS remains accessible outside the CSS panel
+- **THEN** Browser sources precede Preview, Configuration, Appearance and Custom CSS; the other panels retain independent disclosure state, and Disable custom CSS remains accessible outside the CSS panel
 
 #### Scenario: Colour selection and hex stay synchronized
 - **WHEN** a user changes RGB, opacity or a valid RGBA hex value
@@ -221,3 +221,7 @@ The Music editor SHALL provide a full-overlay desktop placement preview with gra
 #### Scenario: Desktop setup and CSS conflicts remain explicit
 - **WHEN** desktop output is disabled, hidden, unavailable or its status refresh fails, or custom CSS overrides native geometry
 - **THEN** management shows actionable setup/status information and shared Overlay settings, marks retained status stale after failure, disables native positioning while custom CSS is active, and does not automatically enable output
+
+#### Scenario: Desktop scaling preserves browser appearance
+- **WHEN** the user drags the desktop widget corner or enters a scale percentage and saves
+- **THEN** all widget contents scale proportionally only on desktop output, full and compact retain independent scale, the scaled footprint stays bounded, legacy configurations default to 100 percent, and Escape cancels a scale drag

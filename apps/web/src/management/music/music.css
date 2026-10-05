@@ -15,7 +15,7 @@
 .music-editor__color-control .alert-editor-inspector__rgba { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 10px; align-items: center; }
 .music-editor__color-control input[type="color"] { min-height: 32px; padding: 2px; cursor: pointer; }
 .music-editor__color-control input[type="range"] { padding: 0; }
-.music-editor__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 12px; }
+.music-editor__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 20px; }
 .music-editor label, .music-editor fieldset { display: grid; gap: 6px; min-width: 0; }
 .music-editor label:has(> input[type="checkbox"]) { display: flex; align-items: center; }
 .music-editor input:not([type="checkbox"]), .music-editor select, .music-editor textarea { width: 100%; box-sizing: border-box; }
@@ -30,3 +30,20 @@
 .music-editor__preview .music-widget-host { position: relative !important; top: 0 !important; left: 0 !important; }
 .music-editor__metadata { display: grid; gap: 3px; color: var(--color-text); }
 @media (max-width: 650px) { .music-editor__intro { display: grid; } }
+
+.music-editor__color-row { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px; align-items: center; }
+.music-editor__color-control { max-width: 520px; gap: 10px; }
+.music-editor details > summary { cursor: pointer; padding: 8px 0; }
+.music-editor details > div { padding: 12px 0; }
+.music-editor fieldset { align-content: start; padding: 16px; border: 1px solid var(--color-border); border-radius: 6px; }
+.music-editor input[type="number"], .music-editor input[type="text"], .music-editor select { min-height: 32px; }
+
+.music-editor__shadow { display: grid; gap: 20px; }
+.music-editor__shadow-dimensions { align-items: start; }
+.music-editor__shadow-dimensions > label { align-content: start; }
+.music-editor__shadow-dimensions input[type="number"] { height: 32px; }
+
+.music-editor__artwork { display: grid; gap: 20px; }
+.music-editor__grid { align-items: start; }
+.music-editor__grid > label { align-content: start; }
+.music-editor input[type="number"] { height: 32px; }

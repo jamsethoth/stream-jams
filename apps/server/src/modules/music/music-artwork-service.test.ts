@@ -1,3 +1,5 @@
+import { createServer as createHttpServer } from "node:http";
+import { pearArtworkPolicy } from "./music-artwork-policy.js";
 import { describe, expect, it, vi } from "vitest";
 import sharp from "sharp";
 import { randomBytes } from "node:crypto";
@@ -13,11 +15,53 @@ const raster = await sharp({ create: { width: 2, height: 3, channels: 4, backgro
 function fixture(overrides: Partial<ConstructorParameters<typeof MusicArtworkService>[0]> = {}) {
   let current = true;
   const fetchBytes = vi.fn(async () => raster);
-  const service = new MusicArtworkService({ isCurrentOwner: () => current, resolveAddresses: async () => ["8.8.8.8"], fetchBytes, ...overrides });
+  const service = new MusicArtworkService({ getPolicy: () => pearArtworkPolicy, isCurrentOwner: () => current, resolveAddresses: async () => ["8.8.8.8"], fetchBytes, ...overrides });
   return { service, fetchBytes, setCurrent(value: boolean) { current = value; } };
 }
 
 describe("MusicArtworkService", () => {
+  it("fetches an explicitly configured local origin without credentials or redirects", async () => {
+    const headers: unknown[] = [];
+    const server = createHttpServer((request, response) => {
+      headers.push(request.headers.authorization);
+      if (request.url === "/redirect") { response.writeHead(302, { location: "/art" }); response.end(); }
+      else { response.writeHead(200, { "content-type": "image/png" }); response.end(raster); }
+    });
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("Missing fixture address");
+      const origin = `http://127.0.0.1:${address.port}`;
+      const service = new MusicArtworkService({ isCurrentOwner: () => true,
+        getPolicy: () => ({ kind: "configured-server", origin }) });
+      expect(await service.resolve({ url: `${origin}/art` }, owner, AbortSignal.timeout(1000))).toMatch(/^art_/);
+      expect(await service.resolve({ url: `${origin}/redirect` }, owner, AbortSignal.timeout(1000))).toBeNull();
+      expect(headers).toEqual([undefined, undefined]);
+    } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
+  });
+
+  it("allows private addresses only for the provider's explicitly configured origin", async () => {
+    const local = "http://192.168.1.4:32400/art";
+    const { service, fetchBytes } = fixture({
+      getPolicy: () => ({ kind: "configured-server", origin: "http://192.168.1.4:32400" }),
+      resolveAddresses: async () => ["192.168.1.4"]
+    });
+    expect(await service.resolve({ url: local }, owner, new AbortController().signal)).toMatch(/^art_/);
+    expect(await service.resolve({ url: "http://192.168.1.5:32400/art" }, owner, new AbortController().signal)).toBeNull();
+    expect(fetchBytes).toHaveBeenCalledTimes(1);
+  });
+
+  it("revokes cached artwork and grants when provider trust is withdrawn", async () => {
+    let trusted = true;
+    const { service } = fixture({ getPolicy: () => trusted ? pearArtworkPolicy : null });
+    const ref = await service.resolve({ url }, owner, new AbortController().signal);
+    const grant = service.issueGrant(ref!, owner, "desktop-music:desktop:primary", Date.now() + 1000);
+    trusted = false;
+    expect(await service.read(ref!, owner)).toBeNull();
+    expect(await service.readGrant(grant!, "desktop-music:desktop:primary")).toBeNull();
+    expect(await service.resolve({ url }, owner, new AbortController().signal)).toBeNull();
+  });
+
   it("admits only approved HTTPS hosts, no userinfo, and decoded raster bytes", async () => {
     const { service, fetchBytes } = fixture();
     for (const invalid of ["http://i.ytimg.com/a", "https://user@i.ytimg.com/a", "https://example.org/a", "https://i.ytimg.com.evil.org/a", "https://127.0.0.1/a", "https://i.ytimg.com:444/a"]) {
@@ -78,7 +122,7 @@ describe("MusicArtworkService", () => {
 
   it("bounds in-flight fetches and aborts only the cleared generation", async () => {
     const controllers: AbortSignal[] = [];
-    const service = new MusicArtworkService({
+    const service = new MusicArtworkService({ getPolicy: () => pearArtworkPolicy,
       isCurrentOwner: () => true,
       resolveAddresses: async () => ["8.8.8.8"],
       fetchBytes: async (_url, _address, signal) => { controllers.push(signal); return new Promise<Uint8Array>(() => {}); }
@@ -152,4 +196,11 @@ describe("MusicArtworkService", () => {
       expect(hits, String(error)).toBe(1);
     } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
   });
+});
+
+it("admits Pear album art from the exact yt3 host while rejecting lookalikes", async () => {
+  const { service, fetchBytes } = fixture();
+  expect(await service.resolve({ url: "https://yt3.googleusercontent.com/album" }, owner, new AbortController().signal)).toMatch(/^art_/);
+  expect(await service.resolve({ url: "https://yt3.googleusercontent.com.evil.test/album" }, owner, new AbortController().signal)).toBeNull();
+  expect(fetchBytes).toHaveBeenCalledTimes(1);
 });

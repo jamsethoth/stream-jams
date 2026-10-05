@@ -27,9 +27,15 @@ Validate all four real module routes at desktop and narrow widths, including key
 
 ## Graphical widget bounds (2026-10-04)
 
-Expose an independent Resize widget mode in the Music preview with an outer corner handle and matching width/height inputs. Pointer resize uses the current grid preference and a scale captured at pointer-down; keyboard arrows remain exact (Shift = 10 px). Escape or pointer cancellation restores the complete starting appearance. Clamp dimensions to the schema and selected output profile, fit content insets and component rectangles, and preserve font sizes. Keep automatic layout automatic until component editing is explicitly enabled. Outer handles remain management-only and disabled with active custom CSS. Existing Save and per-profile/per-view persistence apply.
+Expose a single Edit layout mode for widget bounds and component geometry in the Music preview with an outer corner handle and matching width/height inputs. Pointer resize uses the current grid preference and a scale captured at pointer-down; keyboard arrows remain exact (Shift = 10 px). Escape or pointer cancellation restores the complete starting appearance. Clamp dimensions to the schema and selected output profile, fit content insets and component rectangles, and preserve font sizes. Entering Edit layout seeds the component geometry from the rendered automatic arrangement when needed. Outer handles remain management-only and disabled with active custom CSS. Existing Save and per-profile/per-view persistence apply.
 
 
 ## Independent desktop placement (approved 2026-10-04)
 
 Add a collapsible Desktop overlay placement panel in Music with a 1920×1080 logical desktop preview, drag movement, precise X/Y fields, independent grid/alignment snapping and transient edge/center guides. Save nullable positions independently for full/compact desktop views in Music config, defaulting legacy settings to existing alignment. Apply positions only at the private desktop recipient boundary; browser projections retain their profile alignment. Clamp positions when appearance sizes change. Reset restores alignment. Render desktop availability, display, enablement and Music visibility status with a link to shared Overlay settings. Preview is an unsaved draft and uses the production widget; CSS recovery remains available. No automatic desktop enablement or changes to display selection.
+
+## Desktop scaling (approved 2026-10-04)
+
+Add proportional corner scaling and numeric percentage controls to desktop placement. Persist independent full/compact scales from 10 to 300 percent, defaulting legacy settings to 100 percent. Bound the scaled footprint to the desktop canvas, preserve browser appearance, support keyboard and Escape cancellation, and keep native editing disabled under active custom CSS.
+
+Approved refinement: Configuration remains visible with enablement, initial view, theme, alignment, idle behavior/delay and background opacity. Appearance defaults collapsed with Widget/Artwork/Title/Details/Progress selection; preview component selection opens the matching inspector. Colours use swatch plus validated hex and a separate opacity row. Advanced spacing/text/custom shadow use disclosures, shadow includes Off/Subtle/Strong presets. Reset is scoped to the current profile/view.

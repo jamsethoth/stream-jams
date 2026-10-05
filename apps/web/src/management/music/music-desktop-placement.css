@@ -17,3 +17,5 @@
 .music-desktop-placement input[type="number"], .music-desktop-placement select { background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: 4px; color: var(--color-text); font: inherit; min-height: 38px; padding: 6px 10px; width: 100%; }
 .music-desktop-placement .button { justify-self: start; }
 .music-desktop-placement .music-layout-editor__snapping label { display: inline-flex; }
+
+.music-desktop-placement__resize { position: absolute; z-index: 5; right: auto; bottom: auto; }

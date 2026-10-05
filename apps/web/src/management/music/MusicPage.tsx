@@ -1,3 +1,5 @@
+import { ModalSurface } from "../foundation/ModalSurface.js";
+import { StatusBadge } from "../foundation/StatusBadge.js";
 import { BrowserSourcesPanel } from "../foundation/BrowserSourcesPanel.js";
 import { createMusicViewAppearance, fitMusicComponentLayout, musicModuleConfigSchema, musicPublicAssetReferenceSchema, projectMusicWidget, type AssetLibraryItem, type MusicAssetResolver, type MusicCssConfig, type MusicModuleConfig, type MusicProfileConfig, type MusicSnapshot, type OverlayOutputView } from "@stream-jams/core";
 import type { MusicCssValidationResult } from "@stream-jams/core/music-style-policy";
@@ -20,7 +22,7 @@ const MusicDesktopPlacement = lazy(() => import("./MusicDesktopPlacement.js").th
 import type { SurfaceSettingsApi } from "../settings/overlay-surfaces-api.js";
 import "./music.css";
 
-export type MusicPageApi = Pick<MusicApi, "getMusicConfig" | "saveMusicConfig" | "listMusicOutputs"> & Pick<ManagementApi, "createOverlayOutputKey" | "regenerateOverlayOutputKey"> & AssetLibraryManagementApi;
+export type MusicPageApi = Pick<MusicApi, "getMusicConfig" | "saveMusicConfig" | "listMusicOutputs"> & Pick<ManagementApi, "createOverlayOutputKey" | "regenerateOverlayOutputKey" | "setOverlayModuleEnabled"> & AssetLibraryManagementApi;
 const fixtureTime = 1_000_000;
 const fixture: MusicSnapshot = {
   providerId: "preview", generation: "fixture", revision: 1,
@@ -32,6 +34,7 @@ export function MusicPage({ api, assetApi, surfaceApi }: { readonly api: MusicPa
   const [saved, setSaved] = useState<{ enabled: boolean; config: MusicModuleConfig } | null>(null);
   const [draft, setDraft] = useState<MusicModuleConfig | null>(null);
   const [enabled, setEnabled] = useState(false);
+  const [moduleConfirmation, setModuleConfirmation] = useState<boolean | null>(null);
   const [profileId, setProfileId] = useState<"landscape" | "vertical">("landscape");
   const [view, setView] = useState<"full" | "compact">("full");
   const [assets, setAssets] = useState<readonly AssetLibraryItem[]>([]);
@@ -40,7 +43,8 @@ export function MusicPage({ api, assetApi, surfaceApi }: { readonly api: MusicPa
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
-  const [configurationOpen, setConfigurationOpen] = useState(false);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [appearanceComponent, setAppearanceComponent] = useState<"widget" | "artwork" | "title" | "details" | "progress">("widget");
   const [cssOpen, setCssOpen] = useState(false);
   const [desktopOpen, setDesktopOpen] = useState(false);
   const [error, setError] = useState<ReturnType<typeof actionableError> | null>(null);
@@ -52,7 +56,19 @@ export function MusicPage({ api, assetApi, surfaceApi }: { readonly api: MusicPa
   const draftRevision = useRef(0);
   const mounted = useRef(true);
   const updateDraft = (update: (current: MusicModuleConfig) => MusicModuleConfig) => { draftRevision.current += 1; setDraft(current => current === null ? null : update(current)); };
-  const updateEnabled = (value: boolean) => { draftRevision.current += 1; setEnabled(value); };
+  const confirmModuleEnablement = async () => {
+    if (moduleConfirmation === null) return;
+    setBusy(true); setError(null);
+    try {
+      const nextEnabled = await api.setOverlayModuleEnabled("music", moduleConfirmation);
+      if (!mounted.current) return;
+      setEnabled(nextEnabled);
+      setSaved(current => current === null ? null : { ...current, enabled: nextEnabled });
+      setModuleConfirmation(null);
+      setNotice({ tone: "success", message: `Music module is now ${nextEnabled ? "enabled" : "disabled"}.` });
+    } catch (cause) { if (mounted.current) setError(actionableError(cause, "Music module could not be updated", "Try again or open Diagnostics for the server reference.")); }
+    finally { if (mounted.current) setBusy(false); }
+  };
 
   useEffect(() => {
     let live = true;
@@ -148,18 +164,18 @@ export function MusicPage({ api, assetApi, surfaceApi }: { readonly api: MusicPa
       <div className="music-editor__actions">{outputs.filter(output => output.targetProfileId === profileId).map(output => <div key={output.id}><strong>{output.purpose === "live" ? "Live" : "Test"}</strong>{output.url === null ? <button disabled={busy} onClick={() => void createOutput(output)} type="button">{output.copyableUrlStatus === "regenerate-required" ? "Regenerate" : "Create"} {output.purpose} output link</button> : <><a href={output.url} rel="noreferrer" target="_blank">Open {output.purpose} output</a><button onClick={() => void copyOutput(output.url!)} type="button">Copy {output.purpose} output URL</button></>}</div>)}</div>
       {outputs.length === 0 ? <p role="status">No Music outputs were returned. Check the local service and reload this page.</p> : null}
     </BrowserSourcesPanel>
+    <div className="music-editor__actions"><StatusBadge label={enabled ? "Module enabled" : "Module disabled"} tone={enabled ? "positive" : "neutral"} /><button className="button button--secondary" disabled={busy} onClick={() => setModuleConfirmation(!enabled)} type="button">{enabled ? "Disable Music module" : "Enable Music module"}</button></div>
     <section aria-label="Music preview" className="music-editor__section"><h3>Preview</h3>
 <div className="music-editor__grid"><label>Output profile<select value={profileId} onChange={event => setProfileId(event.currentTarget.value as typeof profileId)}><option value="landscape">Landscape</option><option value="vertical">Vertical</option></select></label><label>Preview view<select value={view} onChange={event => setView(event.currentTarget.value as typeof view)}><option value="full">Full</option><option value="compact">Compact</option></select></label></div><p>Unsaved changes appear here only. Live output continues using saved settings.</p>
       {mediaUnavailable ? <p role="status">A preview image or font is unavailable. The native fallback is shown. Reselect the asset to retry.</p> : null}
-      <Suspense fallback={<p role="status">Loading Music preview…</p>}><MusicLayoutEditor key={`${profileId}-${view}`} projection={projection} resolveAsset={resolver} appearance={appearance} onChange={changeAppearance} /></Suspense>
+      <Suspense fallback={<p role="status">Loading Music preview…</p>}><MusicLayoutEditor key={`${profileId}-${view}`} projection={projection} resolveAsset={resolver} appearance={appearance} onChange={changeAppearance} onSelectComponent={role => { setAppearanceComponent(role === "time" ? "details" : role); setAppearanceOpen(true); }} /></Suspense>
       <div className="music-editor__actions"><button disabled={!draft.css.enabled} onClick={() => updateDraft(current => ({ ...current, css: { ...current.css, enabled: false } }))} type="button">Disable custom CSS</button><a href="/manage/music-sources">Music sources</a><a href="/manage/settings">Overlay outputs</a></div>
       <div aria-label="Full preview metadata" className="music-editor__metadata"><strong>{fixture.track?.title}</strong><span>{fixture.track?.artists.join(", ")}</span><span>{fixture.track?.album}</span></div>
     </section>
     <MusicDisclosure title="Desktop overlay placement" open={desktopOpen} onToggle={() => setDesktopOpen(current => !current)} summary={draft.desktopPlacement.full === null && draft.desktopPlacement.compact === null ? "Uses alignment" : "Custom desktop position"}>
       <Suspense fallback={<p role="status">Loading desktop placement…</p>}><MusicDesktopPlacement config={draft} snapshot={fixture} now={fixtureTime} resolveAsset={resolver} surfaceApi={surfaceApi} onChange={next => updateDraft(() => next)} /></Suspense>
     </MusicDisclosure>
-    <MusicDisclosure title="Configuration" open={configurationOpen} onToggle={() => setConfigurationOpen(current => !current)} summary={`${enabled ? "Enabled" : "Disabled"} · ${view === "full" ? "Full" : "Compact"} view`}>
-      <label><input checked={enabled} onChange={event => updateEnabled(event.currentTarget.checked)} type="checkbox" /> Enable Music module after saving</label>
+    <section aria-label="Configuration" className="music-editor__section"><h3>Configuration</h3>
 <div className="music-editor__grid">
       <label>Initial view<select value={profile.initialView} onChange={event => changeProfile({ ...profile, initialView: event.currentTarget.value as typeof profile.initialView })}><option value="full">Full</option><option value="compact">Compact</option></select></label>
       <label>Theme<select value={profile.theme} onChange={event => changeProfile({ ...profile, theme: event.currentTarget.value as typeof profile.theme })}><option value="dark">Dark</option><option value="light">Light</option></select></label>
@@ -168,10 +184,13 @@ export function MusicPage({ api, assetApi, surfaceApi }: { readonly api: MusicPa
       <MusicNumberFieldBridge label="Idle after (seconds)" value={profile.idleAfterSeconds} min={1} max={600} onCommit={idleAfterSeconds => changeProfile({ ...profile, idleAfterSeconds })} />
       <MusicNumberFieldBridge label="Background opacity (%)" value={profile.backgroundOpacity} min={0} max={100} onCommit={backgroundOpacity => changeProfile({ ...profile, backgroundOpacity })} />
     </div>
-    <button onClick={() => changeAppearance({ ...createMusicViewAppearance(profile.theme, view), branding: appearance.branding })} type="button">Reset current view to theme</button>
+    </section>
+    <MusicDisclosure title="Appearance" open={appearanceOpen} onToggle={() => setAppearanceOpen(current => !current)} summary={`${profileId} · ${view} view`}>
+    <p>Editing the {profileId} profile, {view} view.</p>
+    <button onClick={() => changeAppearance({ ...createMusicViewAppearance(profile.theme, view), branding: appearance.branding })} type="button">Reset appearance to theme</button>
     <Suspense fallback={<p role="status">Loading configuration controls…</p>}>
-    <MusicAppearanceEditor key={`${profileId}-${view}-appearance`} profile={profile} view={view} onChange={changeProfile} onPickFont={setPicker} />
-    <MusicBrandingEditor key={`${profileId}-${view}-branding`} appearance={appearance} image={selectedImage} onChange={changeAppearance} onPick={() => setPicker("brand")} />
+    <MusicAppearanceEditor key={`${profileId}-${view}-appearance`} profile={profile} view={view} onChange={changeProfile} onPickFont={setPicker} selectedComponent={appearanceComponent} onSelectComponent={setAppearanceComponent} />
+    {appearanceComponent === "widget" ? <MusicBrandingEditor key={`${profileId}-${view}-branding`} appearance={appearance} image={selectedImage} onChange={changeAppearance} onPick={() => setPicker("brand")} /> : null}
     </Suspense>
     </MusicDisclosure>
     <MusicDisclosure title="Custom CSS" label="Custom CSS settings" open={cssOpen} onToggle={() => setCssOpen(current => !current)} summary={validation?.valid === false ? "Needs correction" : draft.css.enabled ? "Enabled" : "Disabled"}>
@@ -179,6 +198,7 @@ export function MusicPage({ api, assetApi, surfaceApi }: { readonly api: MusicPa
     </MusicDisclosure>
     <div className="music-editor__save"><span role="status">{dirty ? "Unsaved changes" : "All changes saved"}</span><button disabled={busy || !dirty || checkingCss} onClick={() => void save()} type="button">Save Music appearance</button></div>
     <AssetPicker assetApi={assetApi} compatibleMediaTypes={picker === "brand" ? ["image"] : ["font"]} managementApi={api} onCancel={() => setPicker(null)} onSelect={(assetId, _mediaType, item) => { setAssets(current => [...current.filter(candidate => candidate.id !== item.id), item]); if (picker === "brand") changeAppearance({ ...appearance, branding: { ...appearance.branding, assetId } }); else if (picker !== null) changeAppearance({ ...appearance, [picker]: { ...appearance[picker], fontAssetId: assetId } }); setPicker(null); }} open={picker !== null} selectedAssetId={picker === "brand" ? appearance.branding.assetId : picker === null ? null : appearance[picker].fontAssetId} />
+    <ModalSurface labelledBy="music-module-confirm-title" onCancel={() => setModuleConfirmation(null)} open={moduleConfirmation !== null}>{moduleConfirmation === null ? null : <div><h2 id="music-module-confirm-title">{moduleConfirmation ? "Enable" : "Disable"} Music module?</h2><p>{moduleConfirmation ? "Music can appear in enabled browser and desktop overlay surfaces when the selected source is connected." : "Music stops rendering until the module is enabled again. Saved appearance and provider settings are retained."}</p><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={() => setModuleConfirmation(null)} type="button">Cancel</button><button className="button button--primary" disabled={busy} onClick={() => void confirmModuleEnablement()} type="button">Confirm change</button></div></div>}</ModalSurface>
     {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
   </div>;
 }

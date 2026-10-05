@@ -30,14 +30,14 @@ export const AutomaticPreview: Story = { render: () => <Example /> };
 
 export const EditNativeParts: Story = { render: () => <Example />, play: async ({ canvasElement }) => {
   const canvas = within(canvasElement);
-  await userEvent.click(canvas.getByRole("button", { name: "Edit component layout" }));
+  await userEvent.click(canvas.getByRole("button", { name: "Edit layout" }));
   await expect(canvas.getByRole("button", { name: "Move Title" })).toBeVisible();
   await expect(canvas.getByRole("spinbutton", { name: "Title X (px)" })).toHaveValue(182);
 } };
 
 export const SnapNativeParts: Story = { tags: ["editor-snapping"], render: () => <Example />, play: async ({ canvasElement }) => {
   const canvas = within(canvasElement);
-  await userEvent.click(canvas.getByRole("button", { name: "Edit component layout" }));
+  await userEvent.click(canvas.getByRole("button", { name: "Edit layout" }));
   const grid = canvas.getByRole("checkbox", { name: "Snap to grid" });
   const alignment = canvas.getByRole("checkbox", { name: "Snap to alignment" });
   await expect(grid).toBeChecked();
@@ -49,13 +49,13 @@ export const SnapNativeParts: Story = { tags: ["editor-snapping"], render: () =>
 
 export const CustomCssBlocksHandles: Story = { render: () => <Example customCss />, play: async ({ canvasElement }) => {
   const canvas = within(canvasElement);
-  await expect(canvas.getByRole("button", { name: "Edit component layout" })).toBeDisabled();
+  await expect(canvas.getByRole("button", { name: "Edit layout" })).toBeDisabled();
   await expect(canvas.getByText(/Disable custom CSS to edit native component layout/u)).toBeVisible();
 } };
 
 export const ResizeWidget: Story = { tags: ["widget-size"], render: () => <Example />, play: async ({ canvasElement }) => {
   const canvas = within(canvasElement);
-  await userEvent.click(canvas.getByRole("button", { name: "Resize widget" }));
+  await userEvent.click(canvas.getByRole("button", { name: "Edit layout" }));
   const handle = canvas.getByRole("button", { name: "Resize overall widget" });
   await handle.focus(); await userEvent.keyboard("{ArrowRight}");
   await expect(canvas.getByRole("spinbutton", { name: "Preview widget width (px)" })).toHaveValue(641);

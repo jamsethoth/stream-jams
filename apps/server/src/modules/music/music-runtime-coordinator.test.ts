@@ -1,3 +1,4 @@
+import { pearArtworkPolicy } from "./music-artwork-policy.js";
 import { describe, expect, it, vi } from "vitest";
 import { createDefaultMusicModuleConfig, type MusicSnapshot, type MusicSourceAdapter, type MusicStatus } from "@stream-jams/core";
 import { MusicRuntimeCoordinator } from "./music-runtime-coordinator.js";
@@ -37,6 +38,21 @@ function fixture() {
 }
 
 describe("MusicRuntimeCoordinator", () => {
+  it("gets artwork trust only from the active source generation", async () => {
+    const f = fixture(); f.setEnabled(true); await f.runtime.reconcile();
+    const generation = f.runtime.generation!;
+    const owner = { providerId: "pear", generation };
+    const source = f.sources[0]!;
+    source.onSnapshot?.(snapshot(generation, 1, 1000));
+    expect(f.runtime.getArtworkPolicy(owner)).toBeNull();
+    Object.assign(source, { getArtworkPolicy: () => pearArtworkPolicy });
+    expect(f.runtime.getArtworkPolicy(owner)).toBe(pearArtworkPolicy);
+    expect(f.runtime.getArtworkPolicy({ ...owner, generation: "obsolete" })).toBeNull();
+    expect(f.runtime.getArtworkPolicy({ ...owner, providerId: "other" })).toBeNull();
+    await f.runtime.stop();
+    expect(f.runtime.getArtworkPolicy(owner)).toBeNull();
+  });
+
   it("drains live Music before maintenance and resumes from fresh provider state", async () => {
     const f = fixture(); f.setEnabled(true); await f.runtime.reconcile();
     const first = f.sources[0]!;
@@ -79,7 +95,7 @@ describe("MusicRuntimeCoordinator", () => {
     await f.runtime.stop();
   });
 
-  it("rejects out-of-order revisions while polls and pause/resume preserve the appearance epoch", async () => {
+  it("rejects out-of-order revisions while polls and pausing preserve the appearance epoch", async () => {
     const f = fixture(); f.setEnabled(true); await f.runtime.reconcile();
     const source = f.sources[0]!; const generation = f.runtime.generation!;
     source.onStatus?.(connected); source.onSnapshot?.(snapshot(generation, 2, 1000));
@@ -90,6 +106,25 @@ describe("MusicRuntimeCoordinator", () => {
     source.onSnapshot?.(snapshot(generation, 4, 2000, "next"));
     expect(f.runtime.getProjection("landscape")?.appearanceStartedAtEpochMs).toBe(2000);
     await f.runtime.stop();
+  });
+
+  it("shows hidden Music for a fresh idle period after paused-to-playing resume", async () => {
+    const f = fixture(); f.setEnabled(true);
+    configuration.profiles.landscape.idleMode = "hide"; configuration.profiles.landscape.idleAfterSeconds = 1;
+    try {
+      await f.runtime.reconcile(); const source = f.sources[0]!; const generation = f.runtime.generation!;
+      source.onStatus?.(connected); source.onSnapshot?.(snapshot(generation, 1, 1000));
+      f.setNow(2500); source.onSnapshot?.({ ...snapshot(generation, 2, 2500), playbackState: "paused" });
+      expect(f.runtime.getProjection("landscape")).toBeNull();
+      f.setNow(3000); source.onSnapshot?.(snapshot(generation, 3, 3000));
+      expect(f.runtime.getProjection("landscape")?.appearanceStartedAtEpochMs).toBe(3000);
+      f.setNow(3500); source.onSnapshot?.(snapshot(generation, 4, 3500));
+      expect(f.runtime.getProjection("landscape")?.appearanceStartedAtEpochMs).toBe(3000);
+      f.setNow(4000); expect(f.runtime.getProjection("landscape")).toBeNull();
+      source.onSnapshot?.({ ...snapshot(generation, 3, 4000), playbackState: "paused" });
+      source.onSnapshot?.(snapshot(generation, 5, 4000));
+      expect(f.runtime.getProjection("landscape")).toBeNull();
+    } finally { await f.runtime.stop(); configuration.profiles.landscape.idleMode = "none"; configuration.profiles.landscape.idleAfterSeconds = 30; }
   });
 
   it("publishes idle and stale deadlines without a provider event", async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizePearObservation } from "./pear-normalization.js";
+import { extractPearArtworkDescriptor, normalizePearObservation } from "./pear-normalization.js";
 
 const context = { providerId: "provider_1", generation: "generation_1", revision: 1, observedAtEpochMs: 1_000 } as const;
 
@@ -45,4 +45,9 @@ describe("normalizePearObservation", () => {
     expect(() => normalizePearObservation({ type: "PLAYER_INFO", song: { videoId: "id", title: "x".repeat(1025) } }, null, context)).toThrow();
     expect(() => normalizePearObservation({ type: "VOLUME_CHANGED" }, null, context)).toThrow();
   });
+});
+
+it("recognizes Pear artwork on the exact yt3 image host", () => {
+  expect(extractPearArtworkDescriptor({ imageSrc: "https://yt3.googleusercontent.com/album" })).toEqual({ url: "https://yt3.googleusercontent.com/album" });
+  expect(extractPearArtworkDescriptor({ imageSrc: "https://yt3.googleusercontent.com.evil.test/album" })).toBeNull();
 });

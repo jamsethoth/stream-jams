@@ -111,3 +111,16 @@ it("defaults desktop placement to alignment and clamps authored positions withou
   const compact = projectMusicWidget(snapshot, status, config, "landscape", 10000, 10000)!;
   expect(applyMusicDesktopPlacement(compact, config).layout).toMatchObject({ x: 45, y: 67 });
 });
+
+it("scales desktop footprint, preserves browser geometry and clamps to canvas", () => {
+  const config = createDefaultMusicModuleConfig();
+  config.desktopScale.full = 2;
+  config.desktopPlacement.full = { x: 1900, y: 1000 };
+  const browser = projectMusicWidget(snapshot, status, config, "landscape", 10000, 10000)!;
+  const desktop = applyMusicDesktopPlacement(browser, config);
+  expect(desktop.renderScale).toBe(2);
+  expect(desktop.layout).toMatchObject({ x: 640, y: 724, width: 640, height: 178 });
+  expect(browser.renderScale).toBeUndefined();
+  expect(browser.layout).toMatchObject({ x: 0, y: 902 });
+  expect(desktop.profile).toEqual(browser.profile);
+});

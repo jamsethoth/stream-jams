@@ -150,3 +150,21 @@ it("defaults legacy desktop placement and rejects malformed positions", () => {
     expect(musicModuleConfigSchema.safeParse({ ...config, desktopPlacement: { full: position, compact: null } }).success).toBe(false);
   }
 });
+
+it("defaults legacy desktop scaling and rejects invalid scale settings", () => {
+  const config = createDefaultMusicModuleConfig();
+  const { desktopScale: omitted, ...legacy } = config;
+  expect(omitted).toEqual({ full: 1, compact: 1 });
+  expect(musicModuleConfigSchema.parse(legacy).desktopScale).toEqual(omitted);
+  for (const value of [0, -1, 3.1, NaN, Infinity]) {
+    expect(musicModuleConfigSchema.safeParse({ ...config, desktopScale: { full: value, compact: 1 } }).success).toBe(false);
+  }
+});
+
+it("validates scaled widget footprints at the canvas edges", () => {
+  const config = createDefaultMusicModuleConfig();
+  const frame = { targetProfileId: "landscape", snapshot: { ...observation, track: { id: "track", title: "Title", artists: [], album: null, artworkRef: null } }, appearanceStartedAtEpochMs: 1000, clockReferenceEpochMs: 1000, profile: config.profiles.landscape, view: "full", renderScale: 0.7, layout: { x: 1472, y: 955.4, width: 640, height: 178, zIndex: 0 }, css: config.css, assets: [] };
+  expect(musicWidgetProjectionSchema.safeParse(frame).success).toBe(true);
+  expect(musicWidgetProjectionSchema.safeParse({ ...frame, layout: { ...frame.layout, x: 1473 } }).success).toBe(false);
+  expect(musicWidgetProjectionSchema.safeParse({ ...frame, renderScale: 2 }).success).toBe(false);
+});

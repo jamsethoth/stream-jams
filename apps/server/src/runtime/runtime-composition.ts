@@ -962,6 +962,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   cleanups.push(() => musicRuntimeCoordinator.stop());
   await musicRuntimeCoordinator.reconcile();
   const musicArtworkService = new MusicArtworkService({
+    getPolicy: owner => musicRuntimeCoordinator.getArtworkPolicy(owner),
     ...options.musicArtworkNetwork,
     isCurrentOwner: owner => musicRuntimeCoordinator.generation === owner.generation
       && musicRuntimeCoordinator.getCurrentArtwork()?.owner.providerId === owner.providerId,
