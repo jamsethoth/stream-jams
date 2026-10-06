@@ -793,10 +793,6 @@ a:focus-visible {
   margin: 5px 0 0;
 }
 
-.management-toast > .button {
-  flex-shrink: 0;
-}
-
 .management-toast--actionable {
   display: block;
   padding: 0;

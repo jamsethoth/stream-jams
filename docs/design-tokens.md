@@ -6,6 +6,8 @@ This file documents the management theme contract in `apps/web/src/App.css`. Age
 
 Mantine teal denotes the accent, red negative/destructive, green positive, yellow warning and blue information. Filled, light and outline variants resolve to the matching semantic token pair. Do not use a library palette color to invent a new status meaning. Defaults keep small fields, wrapping command labels, 6px control/8px panel radii and reduced-motion support. Portals inherit root tokens and the resolved scheme in both document directions.
 
+Standard control presentation belongs to the management-only theme adapter, including toast dismiss commands and semantic invalid borders. Workflow CSS owns layout and specialized surfaces; it must not recolor descendant Mantine label/error text with broad `p`, `span`, `label`, or `input` selectors. Preserve external error/help IDs through the documented input slot and use the compatible boolean error state. Shared native consumers keep their existing App.css/timer selectors. See [migration verification](verification/management-component-consistency.md) for route and exception evidence.
+
 ## Color
 
 | CSS custom property | Light value | Use |

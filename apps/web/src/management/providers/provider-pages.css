@@ -139,6 +139,17 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.provider-page__safety-fields,
+.provider-page__subscription-fields {
+  border: 0;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
 .provider-page__form button {
   align-self: end;
   justify-self: start;
@@ -378,7 +389,9 @@
     gap: 10px;
   }
 
-  .provider-page__form {
+  .provider-page__form,
+  .provider-page__safety-fields,
+  .provider-page__subscription-fields {
     grid-template-columns: 1fr;
   }
 

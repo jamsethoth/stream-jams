@@ -6,8 +6,36 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AssetManager, type AssetLibraryManagementApi } from "./AssetManager.js";
 import type { AssetApi, AssetRecord } from "./asset-api.js";
+import { DirtyNavigationProvider, useManagementNavigation } from "../navigation/dirty-navigation.js";
 
 describe("AssetManager", () => {
+  it.each(["selection", "navigation"])("keeps a failed %s metadata save in its active guard with one reference and explicit retry", async mode => {
+    const user = userEvent.setup();
+    const diagnostic = vi.spyOn(console, "error").mockImplementation(() => {});
+    const updateAssetMetadata = vi.fn<AssetLibraryManagementApi["updateAssetMetadata"]>()
+      .mockRejectedValueOnce(Object.assign(new Error("Metadata store unavailable"), { referenceId: "ref-metadata-save", nextStep: "Restore local storage, then retry." }))
+      .mockResolvedValueOnce({ ...imageItem, displayName: "Follower burst draft" });
+    const fixture = createFixture({ updateAssetMetadata });
+    window.history.replaceState(null, "", "/manage/assets");
+    render(<DirtyNavigationProvider><AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} /><AssetNavigationProbe /></DirtyNavigationProvider>);
+    await screen.findByRole("button", { name: "Follower burst" });
+    await user.type(screen.getByLabelText("Display name"), " draft");
+    await user.click(screen.getByRole("button", { name: mode === "selection" ? "Raid chime" : "Go home" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /Save and/ }));
+    const alert = await within(dialog).findByRole("alert");
+    expect(alert).toHaveTextContent("ref-metadata-save");
+    expect(alert).toHaveTextContent("Restore local storage, then retry.");
+    expect(screen.getAllByRole("alert", { hidden: true })).toHaveLength(1);
+    expect(diagnostic).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText("Display name")).toHaveValue("Follower burst draft");
+    expect(window.location.pathname).toBe("/manage/assets");
+    await user.click(within(dialog).getByRole("button", { name: /Save and/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(updateAssetMetadata).toHaveBeenCalledTimes(2);
+    if (mode === "selection") expect(screen.getByRole("region", { name: "Raid chime details" })).toBeVisible();
+    else expect(window.location.pathname).toBe("/manage");
+  });
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
@@ -346,6 +374,11 @@ describe("AssetManager", () => {
     expect(screen.getByRole("region", { name: "Raid chime details" })).toBeVisible();
   });
 });
+
+function AssetNavigationProbe() {
+  const navigation = useManagementNavigation();
+  return <><button onClick={() => navigation.requestNavigation({ id: "home" })}>Go home</button>{navigation.guard}</>;
+}
 
 function createFixture(overrides: Partial<AssetLibraryManagementApi> = {}) {
   let items: readonly AssetLibraryItem[] = [imageItem, audioItem];

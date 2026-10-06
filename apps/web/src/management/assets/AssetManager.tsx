@@ -14,7 +14,7 @@ import { ManagementModalSurface as ModalSurface, ManagementModalTitle } from "..
 import { StatusBadge } from "../foundation/StatusBadge.js";
 import { formatBytes, formatCount, formatDate } from "../foundation/formatters.js";
 import { formatIdentifierLabel } from "../foundation/presentation-labels.js";
-import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
+import { useDirtyNavigationSource, type DirtyNavigationSaveResult } from "../navigation/dirty-navigation.js";
 import { AssetPicker } from "./AssetPicker.js";
 import { AssetPreview } from "./AssetPreview.js";
 import {
@@ -63,7 +63,7 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
   const [tags, setTags] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pendingSelectedId, setPendingSelectedId] = useState<string | null>(null);
-  const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [selectionError, setSelectionError] = useState<string | ActionableManagementError | null>(null);
   const [replacement, setReplacement] = useState<ReplacementState | null>(null);
   const [deleteItem, setDeleteItem] = useState<AssetLibraryItem | null>(null);
   const hasLoadedItems = useRef(false);
@@ -145,11 +145,12 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
     }
   }, [filtered, requestAssetSelection, selectedId]);
 
-  const persistMetadata = useCallback(async (): Promise<boolean> => {
+  const persistMetadata = useCallback(async (navigation = false): Promise<DirtyNavigationSaveResult> => {
     if (selected === null || libraryError !== null || mutationPending.current) return false;
     mutationPending.current = true;
     setBusy(true);
     setNotice(null);
+    setError(null);
     try {
       const updated = await managementApi.updateAssetMetadata(selected.id, {
         displayName: displayName.trim(),
@@ -160,13 +161,15 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
       setError(null);
       return true;
     } catch (saveError) {
-      setError(actionableError(saveError, "Asset details were not saved", "Review the display name and tags, then retry."));
-      return false;
+      const failure = actionableError(saveError, "Asset details were not saved", "Review the display name and tags, then retry.");
+      if (!navigation) setError(failure);
+      return { saved: false, error: failure };
     } finally {
       mutationPending.current = false;
       setBusy(false);
     }
   }, [displayName, libraryError, managementApi, normalizedTags, selected]);
+  const saveBeforeNavigation = useCallback(() => persistMetadata(true), [persistMetadata]);
 
   const discardMetadata = useCallback(() => {
     setDisplayName(selected?.displayName ?? "");
@@ -177,7 +180,7 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
     id: "asset-metadata",
     dirty: metadataDirty,
     summary: "Asset details have unsaved changes.",
-    save: persistMetadata,
+    save: saveBeforeNavigation,
     discard: discardMetadata
   });
 
@@ -189,8 +192,9 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
   async function saveAndContinueSelection() {
     if (pendingSelectedId === null || mutationPending.current) return;
     setSelectionError(null);
-    if (!await persistMetadata()) {
-      setSelectionError("Asset details were not saved. Review the display name and tags, then retry.");
+    const result = await saveBeforeNavigation();
+    if (result !== true) {
+      setSelectionError(typeof result === "object" ? result.error : "Asset details were not saved. Review the display name and tags, then retry.");
       return;
     }
     setSelectedId(pendingSelectedId);
@@ -330,6 +334,7 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
       <DirtyNavigationDialog
         pending={busy}
         error={selectionError}
+        onDismissError={() => setSelectionError(null)}
         onCancel={() => { setPendingSelectedId(null); setSelectionError(null); }}
         onDiscard={discardAndContinueSelection}
         onSave={() => void saveAndContinueSelection()}

@@ -79,8 +79,9 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
   const candidate = useMemo(() => draft === null ? null : toCandidate(draft), [draft]);
   const dirty = saved !== null && candidate !== null && !samePolicy(saved, candidate);
 
-  const save = useCallback(async (): Promise<DirtyNavigationSaveResult> => {
-    if (draft === null) return false;
+  const savePending = useRef(false);
+  const save = useCallback(async (navigation = false): Promise<DirtyNavigationSaveResult> => {
+    if (draft === null || savePending.current) return false;
     invalidatePreview();
     const validation = validateDraft(draft);
     setErrors(validation.errors);
@@ -88,6 +89,7 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
       return { saved: false, error: formatValidationFailure(validation.errors) };
     }
 
+    savePending.current = true;
     setBusy("save");
     setActionError(null);
     setNotice(null);
@@ -103,12 +105,14 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
         cause,
         "Try saving again. If the problem continues, open Diagnostics."
       );
-      setActionError(error);
-      return { saved: false, error: formatSaveFailure(error) };
+      if (!navigation) setActionError(error);
+      return { saved: false, error };
     } finally {
       setBusy(null);
+      savePending.current = false;
     }
   }, [draft, invalidatePreview, managementApi]);
+  const saveBeforeNavigation = useCallback(() => save(true), [save]);
 
   const revert = useCallback(() => {
     if (saved === null) return;
@@ -123,7 +127,7 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
     id: "alert-safety",
     dirty,
     summary: "Alert safety settings have unsaved changes.",
-    save,
+    save: saveBeforeNavigation,
     discard: revert
   });
 
@@ -333,11 +337,6 @@ function formatValidationFailure(errors: FieldErrors): string {
   return `Safety settings were not saved. ${details.join(" ")} Correct the values or cancel to continue editing.`;
 }
 
-function formatSaveFailure(error: ActionableManagementError): string {
-  const reference = error.referenceId === null ? "" : ` Reference ID: ${error.referenceId}.`;
-  return `${error.summary}. ${error.nextStep}${reference}`;
-}
-
 function samePolicy(left: ModerationSettingsView, right: ModerationSettingsView): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -347,7 +346,7 @@ function actionable(summary: string, cause: unknown, nextStep: string): Actionab
   return {
     summary,
     cause: cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "The operation did not complete.",
-    nextStep,
+    nextStep: typeof cause === "object" && cause !== null && "nextStep" in cause && typeof cause.nextStep === "string" && cause.nextStep.trim() !== "" ? cause.nextStep : nextStep,
     severity: "error",
     occurredAt: new Date().toISOString(),
     referenceId,

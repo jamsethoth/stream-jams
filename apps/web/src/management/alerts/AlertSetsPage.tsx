@@ -1178,7 +1178,7 @@ function AlertRowsTable({
                         { accessibleLabel: `Delete ${alert.name}`, disabled: busy, label: "Delete", onSelect: () => onDelete(alert), tone: "danger" }
                       ]}
                       label={`More actions for ${alert.name}`}
-                      triggerClassName="button button--secondary button--compact"
+                      triggerSize="xs"
                     />
                   </div>
                   <small className="alert-sets-page__test-summary">Saved input · Browser {alert.targetProfileIds.map(formatProfile).join(", ") || "none"}{alert.targetProfileIds.includes("landscape") ? " · Desktop Landscape when ready" : ""} · Selected device outputs · Audio and TTS included</small>

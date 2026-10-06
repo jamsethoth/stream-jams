@@ -1,4 +1,4 @@
-import { Button, Menu } from "@mantine/core";
+import { Button, Menu, type ButtonProps } from "@mantine/core";
 import { useRef, useState } from "react";
 
 export interface ActionMenuItem {
@@ -13,14 +13,15 @@ export interface ActionMenuProps {
   readonly label: string;
   readonly triggerClassName?: string;
   readonly triggerLabel?: string;
+  readonly triggerSize?: ButtonProps["size"];
 }
-export function ActionMenu({ items, label, triggerClassName, triggerLabel = "More" }: ActionMenuProps) {
+export function ActionMenu({ items, label, triggerClassName, triggerLabel = "More", triggerSize }: ActionMenuProps) {
   const trigger = useRef<HTMLButtonElement>(null);
   const [opened, setOpened] = useState(false);
   const firstEnabled = items.findIndex(item => !item.disabled);
   return <Menu opened={opened} onChange={setOpened} position="bottom-end" loop withinPortal returnFocus={false} withInitialFocusPlaceholder={false} transitionProps={{ duration: 0 }}>
     <Menu.Target>
-      <Button aria-label={label} className={triggerClassName} ref={trigger} variant="default" onKeyDown={(event) => {
+      <Button aria-label={label} className={triggerClassName} ref={trigger} variant="default" {...(triggerSize === undefined ? {} : { size: triggerSize })} onKeyDown={(event) => {
         if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setOpened(true); }
       }}>{triggerLabel}</Button>
     </Menu.Target>

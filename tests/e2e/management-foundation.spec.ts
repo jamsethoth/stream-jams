@@ -40,25 +40,32 @@ test("built management foundation covers every route, theme reload/system change
       expect(await page.evaluate(() => (window as unknown as { cspViolations: string[] }).cspViolations)).toEqual([]);
     }
     await page.goto(`${fixture.runtime.url}/manage/settings`);
-    await page.getByRole("radio", { name: "Dark" }).click();
+    const chooseTheme = async (name: "Dark" | "Light" | "System") => {
+      const radio = page.getByRole("radio", { name });
+      const label = page.locator(`label[for="${await radio.getAttribute("id")}"]`);
+      await expect(label).toBeVisible();
+      await label.click();
+      await expect(radio).toBeChecked();
+    };
+    await chooseTheme("Dark");
     await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", "dark");
     await page.reload();
     await expect(page.getByRole("radio", { name: "Dark" })).toBeChecked();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-    await page.getByRole("radio", { name: "System" }).click();
+    await chooseTheme("System");
     await page.emulateMedia({ colorScheme: "light" });
     await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", "light");
     await page.emulateMedia({ colorScheme: "dark" });
     await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", "dark");
-    await page.getByRole("radio", { name: "Light" }).click();
+    await chooseTheme("Light");
     await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", "light");
     expect(await page.evaluate(() => Object.keys(localStorage).filter(key => /theme|color-scheme/u.test(key)))).toEqual(["stream-jams-theme"]);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(() => { document.documentElement.lang = "ar"; document.documentElement.dir = "rtl"; });
-    await expect(page.getByRole("radio", { name: "Light" })).toBeVisible();
+    await expect(page.locator('label[for="theme-preference-light"]')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath("foundation-settings-390-rtl-light.png") });
-    await page.getByRole("radio", { name: "Dark" }).click();
+    await chooseTheme("Dark");
     await page.screenshot({ path: testInfo.outputPath("foundation-settings-390-rtl-dark.png") });
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto(`${fixture.runtime.url}/manage/modules/timers`);

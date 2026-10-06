@@ -56,6 +56,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const AutomaticInspectorTabs: Story = {
+  tags: ["mantine-final-layout"],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const layers = await canvas.findByRole("tab", { name: "Layers" });

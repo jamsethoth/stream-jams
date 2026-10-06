@@ -105,6 +105,13 @@ test("rebuilt Alerts editor preserves shared audio drafts, reviewed save retry, 
     await expect(page.getByRole("textbox", { name: "Session payload (JSON)", exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath("alerts-event-desktop-dark-rtl.png") });
+    await page.setViewportSize({ width: 820, height: 768 });
+    const tabletCanvas = page.getByRole("region", { name: "Landscape alert canvas" });
+    await expect(tabletCanvas).toBeVisible();
+    await tabletCanvas.scrollIntoViewIfNeeded();
+    expect((await tabletCanvas.boundingBox())!.height).toBeGreaterThanOrEqual(160);
+    expect(await page.locator(".alert-editor-page__stage").evaluate(element => getComputedStyle(element).overflowY)).toBe("auto");
+    await page.screenshot({ path: testInfo.outputPath("alerts-tablet-canvas-dark-rtl.png") });
     await page.setViewportSize({ width: 900, height: 1000 });
     await page.getByRole("tab", { name: "Alert", exact: true }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

@@ -95,7 +95,7 @@ describe("AlertThemeChooser", () => {
       ])
     );
     expect(screen.getAllByText("Welcome raiders from StreamSpark!")).toHaveLength(6);
-    expect(container).not.toHaveTextContent(/\{[^{}]+\}/u);
+    expect(screen.getByRole("region", { name: "Starter theme" })).not.toHaveTextContent(/\{[^{}]+\}/u);
     expect(container.querySelectorAll(".alert-theme-preview__shape").length).toBeGreaterThanOrEqual(8);
     expect(container.querySelector(".alert-theme-preview__shape")).toHaveStyle({
       backgroundColor: "rgba(7, 17, 29, 0.87)"
@@ -138,13 +138,13 @@ describe("AlertThemeChooser", () => {
   });
 
   it("provides resolved deterministic preview text for every canonical event", () => {
-    const { container, rerender } = render(
+    const { rerender } = render(
       <AlertThemeChooser eventType="follow" onChange={vi.fn()} value="clean-signal" />
     );
 
     for (const eventType of streamEventTypes) {
       rerender(<AlertThemeChooser eventType={eventType} onChange={vi.fn()} value="clean-signal" />);
-      expect(container).not.toHaveTextContent(/\{[^{}]+\}/u);
+      expect(screen.getByRole("region", { name: "Starter theme" })).not.toHaveTextContent(/\{[^{}]+\}/u);
     }
   });
 });

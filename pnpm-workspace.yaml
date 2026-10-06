@@ -5,6 +5,10 @@ nodeVersion: 24.16.0
 engineStrict: true
 runtimeOnFail: download
 overrides:
+  # GHSA-68fv-2mgg-jv7q: validate indexed source-map offsets.
+  'source-map-js@<1.2.2': 1.2.2
+  # This consumer uses only YAML load(); v4 removes the unpatched sprintf CLI chain.
+  '@istanbuljs/load-nyc-config>js-yaml': 4.3.2
   # SWC 1.16.13 rejects the shared cache permissions used by CI containers.
   '@swc/core': 1.15.41
   # Keep patched archive checks across the dependency graph.
@@ -15,8 +19,8 @@ overrides:
   'brace-expansion@>=3.0.0 <5.0.12': 5.0.12
   'fast-uri@>=3.0.0 <3.1.8': 3.1.8
   'find-my-way@<=9.6.0': 9.7.0
-  'joi@>=17.0.0 <17.13.7': 17.13.7
-  'joi@>=18.0.0 <18.2.6': 18.2.6
+  'joi@>=17.0.0 <17.13.8': 17.13.8
+  'joi@>=18.0.0 <18.2.9': 18.2.9
   'js-yaml@<3.15.2': 3.15.2
   'postcss@<=8.5.17': 8.5.25
   'undici@>=7.0.0 <7.29.1': 7.29.1

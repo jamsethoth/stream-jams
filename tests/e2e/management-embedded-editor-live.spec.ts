@@ -18,13 +18,13 @@ test("rebuilt Effects and Timer editors preserve saved drafts, preview and event
     expect(imported.status).toBe(201);
     const asset = await imported.json() as { id: string };
     const base = createScreenEffectDocument({ id: "disposable-effect", name: "Disposable effect", defaultVariantId: "fixture-variant" });
-    const document = screenEffectDocumentSchema.parse({ ...base, variants: [{ ...base.variants[0], visual: { mediaType: "image", assetId: asset.id, layout: { x: 0, y: 0, width: 1920, height: 1080, zIndex: 0 } }, visualOutputs: { browserSource: true, desktop: false } }] });
-    expect((await fixture.request("/screen-effects", "POST", document)).status).toBe(201);
+    const effectDocument = screenEffectDocumentSchema.parse({ ...base, variants: [{ ...base.variants[0], visual: { mediaType: "image", assetId: asset.id, layout: { x: 0, y: 0, width: 1920, height: 1080, zIndex: 0 } }, visualOutputs: { browserSource: true, desktop: false } }] });
+    expect((await fixture.request("/screen-effects", "POST", effectDocument)).status).toBe(201);
     await fixture.stop();
     await fixture.start();
     expect((await fixture.request("/health")).status).toBe(200);
     await page.setViewportSize({ width: 1500, height: 1100 });
-    await page.goto(`${fixture.runtime.url}/manage/modules/screen-effects/editor/${document.id}`);
+    await page.goto(`${fixture.runtime.url}/manage/modules/screen-effects/editor/${effectDocument.id}`);
     await page.getByRole("textbox", { name: "Variant name" }).fill("Disposable " + "variant-name".repeat(10));
     await page.getByRole("spinbutton", { name: "Variant weight" }).fill("7");
     await page.getByRole("spinbutton", { name: "Visual width" }).fill("1200");
@@ -38,7 +38,7 @@ test("rebuilt Effects and Timer editors preserve saved drafts, preview and event
     await page.getByRole("textbox", { name: "Effect name" }).fill("Disposable " + "effect-name".repeat(10));
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByText("Screen Effect saved.", { exact: true })).toBeVisible();
-    const savedEffect = screenEffectDocumentSchema.parse(await (await fixture.request(`/screen-effects/${document.id}`)).json());
+    const savedEffect = screenEffectDocumentSchema.parse(await (await fixture.request(`/screen-effects/${effectDocument.id}`)).json());
     expect(savedEffect.variants[0]?.weight).toBe(7);
     expect(savedEffect.variants[0]?.visual?.layout.width).toBe(1200);
     await page.evaluate(() => localStorage.setItem("stream-jams-theme", "dark"));

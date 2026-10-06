@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { EventSourcesPage } from "./EventSourcesPage.js";
 import type { ProviderPageApi } from "./ProviderPage.js";
 import { TtsProvidersPage } from "./TtsProvidersPage.js";
+import { DirtyNavigationProvider, useManagementNavigation } from "../navigation/dirty-navigation.js";
 
 const validationError: ActionableManagementError = {
   summary: "Streamer.bot validation failed",
@@ -98,6 +99,107 @@ const ttsSafety: TtsProviderSafetySettings = {
 };
 
 describe("provider pages", () => {
+  it.each(["selection", "navigation"])("keeps failed TTS %s saves in one typed guard and locks pending decisions", async mode => {
+    const user = userEvent.setup();
+    let rejectSave!: (cause: unknown) => void;
+    const updateTtsSafety = vi.fn<ProviderPageApi["updateTtsSafety"]>()
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectSave = reject; }))
+      .mockImplementationOnce(async (_id, input) => input);
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => [activeSpeakerBot, inactiveSpeakerBot]),
+      getProvider: vi.fn(async id => detail(id === activeSpeakerBot.id ? activeSpeakerBot : inactiveSpeakerBot)),
+      getTtsProviderSafetySettings: vi.fn(async () => ttsSafety), updateTtsSafety
+    });
+    window.history.replaceState(null, "", "/manage/tts-providers");
+    render(<DirtyNavigationProvider><TtsProvidersPage managementApi={api} /><ProviderNavigationProbe /></DirtyNavigationProvider>);
+    await screen.findByRole("heading", { name: "Speaker.bot" });
+    await user.clear(screen.getByLabelText("Volume (0–1)"));
+    await user.type(screen.getByLabelText("Volume (0–1)"), "0.6");
+    await user.click(screen.getByRole("button", { name: mode === "selection" ? "Select Backup Speaker.bot" : "Go home" }));
+    const dialog = screen.getByRole("dialog");
+    await user.dblClick(within(dialog).getByRole("button", { name: /Save and/ }));
+    expect(updateTtsSafety).toHaveBeenCalledOnce();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(screen.getByLabelText("Volume (0–1)")).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(dialog).toBeVisible();
+    await act(async () => rejectSave(Object.assign(new Error("Safety store unavailable"), { referenceId: "ref-tts-save", nextStep: "Restore safety storage and retry." })));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("ref-tts-save");
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Restore safety storage and retry.");
+    expect(screen.getAllByRole("alert", { hidden: true })).toHaveLength(1);
+    expect(screen.getByLabelText("Volume (0–1)")).toHaveValue(0.6);
+    expect(window.location.pathname).toBe("/manage/tts-providers");
+    await user.click(within(dialog).getByRole("button", { name: /Save and/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(updateTtsSafety).toHaveBeenCalledTimes(2);
+    if (mode === "selection") expect(await screen.findByRole("heading", { name: "Backup Speaker.bot" })).toBeInTheDocument();
+    else expect(window.location.pathname).toBe("/manage");
+  });
+
+  it("requires subscription consent before navigation save and scopes a later request failure to the guard", async () => {
+    const user = userEvent.setup();
+    const activeBot = { ...inactiveStreamerBot, active: true, intakeState: "active" as const };
+    let rejectSave!: (cause: unknown) => void;
+    const updateStreamerBotSubscriptions = vi.fn<ProviderPageApi["updateStreamerBotSubscriptions"]>()
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectSave = reject; }))
+      .mockImplementationOnce(async (providerId, input) => ({ providerId, available: true, sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }], selected: input.externalSubscriptions, unavailableSelections: [], twitchBroadcasterId: input.twitchBroadcasterId }));
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => [activeBot]), getProvider: vi.fn(async () => detail(activeBot)),
+      getStreamerBotSubscriptions: vi.fn(async () => ({ providerId: activeBot.id, available: true, sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }], selected: [], unavailableSelections: [], twitchBroadcasterId: null })),
+      updateStreamerBotSubscriptions
+    });
+    window.history.replaceState(null, "", "/manage/event-sources");
+    render(<DirtyNavigationProvider><EventSourcesPage managementApi={api} /><ProviderNavigationProbe /></DirtyNavigationProvider>);
+    await user.click(await screen.findByRole("checkbox", { name: "SceneChanged" }));
+    await user.click(screen.getByRole("button", { name: "Go home" }));
+    let dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Save and leave" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Cancel to review and confirm the live subscription impact");
+    expect(screen.getAllByRole("alert", { hidden: true })).toHaveLength(1);
+    expect(updateStreamerBotSubscriptions).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("checkbox", { name: /I understand saving changes/ }));
+    await user.click(screen.getByRole("button", { name: "Go home" }));
+    dialog = screen.getByRole("dialog");
+    await user.dblClick(within(dialog).getByRole("button", { name: "Save and leave" }));
+    expect(updateStreamerBotSubscriptions).toHaveBeenCalledOnce();
+    expect(screen.getByRole("checkbox", { name: "SceneChanged" })).toBeDisabled();
+    await act(async () => rejectSave(Object.assign(new Error("Subscription store unavailable"), { referenceId: "ref-subscriptions-save", nextStep: "Restore subscription storage and retry." })));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("ref-subscriptions-save");
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Restore subscription storage and retry.");
+    expect(screen.getAllByRole("alert", { hidden: true })).toHaveLength(1);
+    expect(screen.getByRole("checkbox", { name: "SceneChanged" })).toBeChecked();
+    await user.click(within(dialog).getByRole("button", { name: "Save and leave" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(updateStreamerBotSubscriptions).toHaveBeenCalledTimes(2);
+    expect(window.location.pathname).toBe("/manage");
+  });
+  it("clears a prior subscription save error when navigation requires missing consent", async () => {
+    const user = userEvent.setup();
+    const activeBot = { ...inactiveStreamerBot, active: true, intakeState: "active" as const };
+    const updateStreamerBotSubscriptions = vi.fn<ProviderPageApi["updateStreamerBotSubscriptions"]>()
+      .mockRejectedValue(Object.assign(new Error("Subscription store unavailable"), { referenceId: "ref-prior-save" }));
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => [activeBot]), getProvider: vi.fn(async () => detail(activeBot)),
+      getStreamerBotSubscriptions: vi.fn(async () => ({ providerId: activeBot.id, available: true, sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }], selected: [], unavailableSelections: [], twitchBroadcasterId: null })),
+      updateStreamerBotSubscriptions
+    });
+    window.history.replaceState(null, "", "/manage/event-sources");
+    render(<DirtyNavigationProvider><EventSourcesPage managementApi={api} /><ProviderNavigationProbe /></DirtyNavigationProvider>);
+    await user.click(await screen.findByRole("checkbox", { name: "SceneChanged" }));
+    const consent = screen.getByRole("checkbox", { name: /I understand saving changes/ });
+    await user.click(consent);
+    await user.click(screen.getByRole("button", { name: "Save subscriptions" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("ref-prior-save");
+    await user.click(consent);
+    await user.click(screen.getByRole("button", { name: "Go home" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Save and leave" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Cancel to review and confirm");
+    expect(screen.getAllByRole("alert", { hidden: true })).toHaveLength(1);
+    expect(updateStreamerBotSubscriptions).toHaveBeenCalledOnce();
+    expect(screen.getByRole("checkbox", { name: "SceneChanged" })).toBeChecked();
+  });
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
@@ -993,6 +1095,11 @@ describe("provider pages", () => {
     expect(screen.getByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
   });
 });
+
+function ProviderNavigationProbe() {
+  const navigation = useManagementNavigation();
+  return <><button onClick={() => navigation.requestNavigation({ id: "home" })}>Go home</button>{navigation.guard}</>;
+}
 
 function provider(
   overrides: Partial<RegisteredProviderView> & Pick<RegisteredProviderView, "id" | "name" | "kind">

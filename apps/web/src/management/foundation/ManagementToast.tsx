@@ -1,4 +1,5 @@
 import type { ActionableManagementError } from "@stream-jams/core";
+import { Button } from "@mantine/core";
 import { useEffect, useRef } from "react";
 import { ManagementErrorBanner } from "./ManagementErrorBanner.js";
 
@@ -23,7 +24,7 @@ export function ManagementToast({ notice, onDismiss }: {
         <p>{notice.message}</p>
         {notice.detail === undefined ? null : <p>{notice.detail}</p>}
       </div>
-      <button className="button button--secondary" onClick={onDismiss} type="button">Dismiss {label.toLowerCase()}</button>
+      <Button variant="default" onClick={onDismiss}>Dismiss {label.toLowerCase()}</Button>
     </section>
   );
 }
@@ -43,7 +44,7 @@ export function ManagementErrorToast({ error, onDismiss }: {
       <ManagementErrorBanner error={error} role={tone === "failure" ? "alert" : "status"} />
       <div className="management-toast__actions">
         {diagnosticsRoute === null || correctionAlreadyOpensDiagnostics ? null : <a href={diagnosticsRoute}>Open diagnostics</a>}
-        <button className="button button--secondary" onClick={onDismiss} type="button">Dismiss error</button>
+        <Button variant="default" onClick={onDismiss}>Dismiss error</Button>
       </div>
     </div>
   );

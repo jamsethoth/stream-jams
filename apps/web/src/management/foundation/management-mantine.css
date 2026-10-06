@@ -28,3 +28,5 @@
 .mantine-SegmentedControl-indicator { background: var(--color-surface); }
 .mantine-SegmentedControl-label { color: var(--color-text-muted); }
 .mantine-SegmentedControl-label[data-active] { color: var(--color-text); }
+
+.management-toast > .mantine-Button-root { flex-shrink: 0; }

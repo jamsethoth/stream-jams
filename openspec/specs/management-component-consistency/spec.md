@@ -1,4 +1,10 @@
-## ADDED Requirements
+# Management Component Consistency
+
+## Purpose
+
+Define the shared management presentation, feedback and interaction contracts while preserving local-first domain behavior and native output boundaries.
+
+## Requirements
 
 ### Requirement: Management Shares A Mantine Presentation Foundation
 

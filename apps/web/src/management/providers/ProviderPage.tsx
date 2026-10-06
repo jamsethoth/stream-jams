@@ -23,7 +23,7 @@ import { ManagementModalSurface as ModalSurface, ManagementModalTitle } from "..
 import { StatusBadge, type StatusBadgeTone } from "../foundation/StatusBadge.js";
 import { formatCount, formatDateTime } from "../foundation/formatters.js";
 import type { ManagementApi, TwitchConnectionStatusView } from "../management-api.js";
-import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
+import { useDirtyNavigationSource, type DirtyNavigationSaveResult } from "../navigation/dirty-navigation.js";
 import "./provider-pages.css";
 
 export type ProviderPageApi = Pick<
@@ -103,7 +103,9 @@ export function ProviderPage({
   const [actionLoadingProviderId, setActionLoadingProviderId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [pendingProviderId, setPendingProviderId] = useState<string | null>(null);
-  const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [selectionError, setSelectionError] = useState<string | ActionableManagementError | null>(null);
+  const safetySavePending = useRef(false);
+  const [safetyBusy, setSafetyBusy] = useState(false);
 
   const loadProviders = useCallback(async (preferredProviderId?: string) => {
     const loaded = await managementApi.listRegisteredProviders(capability);
@@ -284,11 +286,14 @@ export function ProviderPage({
     }
   }
 
-  const persistSafety = useCallback(async (): Promise<boolean> => {
-    if (selectedProvider === null || safety === null) {
+  const persistSafety = useCallback(async (navigation = false): Promise<DirtyNavigationSaveResult> => {
+    if (selectedProvider === null || safety === null || safetySavePending.current) {
       return false;
     }
+    safetySavePending.current = true;
+    setSafetyBusy(true);
     setNotice(null);
+    setOperationError(null);
     try {
       const saved = await managementApi.updateTtsSafety(selectedProvider.id, safety);
       setSafety(saved);
@@ -297,10 +302,15 @@ export function ProviderPage({
       setNotice({ tone: "success", message: "TTS safety settings saved." });
       return true;
     } catch (error) {
-      setOperationError(actionableError(error, "Unable to save TTS safety settings", "Review each safety value, then retry the save."));
-      return false;
+      const failure = actionableError(error, "Unable to save TTS safety settings", "Review each safety value, then retry the save.");
+      if (!navigation) setOperationError(failure);
+      return { saved: false, error: failure };
+    } finally {
+      safetySavePending.current = false;
+      setSafetyBusy(false);
     }
   }, [managementApi, safety, selectedProvider]);
+  const saveSafetyBeforeNavigation = useCallback(() => persistSafety(true), [persistSafety]);
 
   const discardSafety = useCallback(() => {
     setSafety(savedSafety);
@@ -311,7 +321,7 @@ export function ProviderPage({
     id: "tts-provider-safety",
     dirty: safetyDirty,
     summary: "TTS safety settings have unsaved changes.",
-    save: persistSafety,
+    save: saveSafetyBeforeNavigation,
     discard: discardSafety
   });
 
@@ -321,6 +331,7 @@ export function ProviderPage({
   }
 
   function requestProviderSelection(providerId: string) {
+    if (safetySavePending.current) return;
     if (providerId === selectedProviderId) return;
     if (safetyDirty) {
       setSelectionError(null);
@@ -331,10 +342,11 @@ export function ProviderPage({
   }
 
   async function saveAndContinueSelection() {
-    if (pendingProviderId === null) return;
+    if (pendingProviderId === null || safetySavePending.current) return;
     setSelectionError(null);
-    if (!await persistSafety()) {
-      setSelectionError("TTS safety settings were not saved. Review each safety value, then retry the save.");
+    const result = await saveSafetyBeforeNavigation();
+    if (result !== true) {
+      setSelectionError(typeof result === "object" ? result.error : "TTS safety settings were not saved. Review each safety value, then retry the save.");
       return;
     }
     setSelectedProviderId(pendingProviderId);
@@ -342,7 +354,7 @@ export function ProviderPage({
   }
 
   function discardAndContinueSelection() {
-    if (pendingProviderId === null) return;
+    if (pendingProviderId === null || safetySavePending.current) return;
     discardSafety();
     setSelectedProviderId(pendingProviderId);
     setPendingProviderId(null);
@@ -478,6 +490,7 @@ export function ProviderPage({
               onTestVoice={() => void testVoice()}
               safety={safety}
               safetyDirty={safetyDirty}
+              safetyBusy={safetyBusy}
             />
           )}
         </div>
@@ -485,10 +498,12 @@ export function ProviderPage({
 
       <DirtyNavigationDialog
         error={selectionError}
-        onCancel={() => { setPendingProviderId(null); setSelectionError(null); }}
+        onDismissError={() => setSelectionError(null)}
+        onCancel={() => { if (safetySavePending.current) return; setPendingProviderId(null); setSelectionError(null); }}
         onDiscard={discardAndContinueSelection}
         onSave={() => void saveAndContinueSelection()}
         open={pendingProviderId !== null}
+        pending={safetyBusy}
         saveAvailable
         saveLabel="Save and continue"
         summary="TTS safety settings have unsaved changes."
@@ -582,7 +597,8 @@ function ProviderDetail({
   onSafetySubmit,
   onTestVoice,
   safety,
-  safetyDirty
+  safetyDirty,
+  safetyBusy
 }: {
   readonly capability: ProviderCapability;
   readonly detail: RegisteredProviderDetail;
@@ -595,6 +611,7 @@ function ProviderDetail({
   readonly onTestVoice: () => void;
   readonly safety: TtsProviderSafetySettings | null;
   readonly safetyDirty: boolean;
+  readonly safetyBusy: boolean;
 }) {
   const provider = detail.provider;
   const speakerBotVoiceMissing = provider.kind === "speakerbot" && (safety?.defaultVoiceId?.trim() ?? "") === "";
@@ -664,6 +681,7 @@ function ProviderDetail({
           <section aria-labelledby="tts-safety-title" className="provider-page__subsection">
             <h4 id="tts-safety-title">Safety defaults</h4>
             <form className="provider-page__form" onSubmit={onSafetySubmit}>
+              <fieldset className="provider-page__safety-fields" disabled={safetyBusy}>
               <div>
                 {detail.provider.kind === "speakerbot" && detail.availableVoices.length === 0 ? (
                   <TextInput label="Default voice alias"
@@ -689,7 +707,8 @@ function ProviderDetail({
                 <TextInput label="Maximum rate (×)" description="1× is normal speed; 0.5× is half speed; 2× is double speed." min={0.1} onChange={(event) => onSafetyChange({ ...safety, maximumRate: Number(event.currentTarget.value) })} withAsterisk={false} required step={0.1} type="number" value={safety.maximumRate} />
               </div>
               <TextInput label="Maximum text length" min={1} onChange={(event) => onSafetyChange({ ...safety, maximumTextLength: Number(event.currentTarget.value) })} withAsterisk={false} required step={1} type="number" value={safety.maximumTextLength} />
-              <Button type="submit">Save safety settings</Button>
+              <Button disabled={safetyBusy} type="submit">Save safety settings</Button>
+              </fieldset>
             </form>
           </section>
           <section aria-labelledby="voice-test-title" className="provider-page__subsection">
@@ -697,7 +716,7 @@ function ProviderDetail({
             <p>{safeVoiceTestText}</p>
             {speakerBotVoiceMissing ? <p>Save a default voice alias before testing Speaker.bot.</p> : null}
             {!speakerBotVoiceMissing && provider.kind === "speakerbot" && safetyDirty ? <p>Save voice settings before testing Speaker.bot.</p> : null}
-            <Button disabled={voiceTestDisabled} onClick={onTestVoice} type="button">Test voice</Button>
+            <Button disabled={voiceTestDisabled || safetyBusy} onClick={onTestVoice} type="button">Test voice</Button>
           </section>
         </>
       ) : null}
@@ -721,11 +740,14 @@ function StreamerBotSubscriptionEditor({
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<ActionableManagementError | null>(null);
+  const savePending = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     setCatalog(null);
     setError(null);
+    setSaveError(null);
     void Promise.all([
       managementApi.getStreamerBotSubscriptions(provider.id),
       managementApi.getTwitchStatus()
@@ -747,14 +769,18 @@ function StreamerBotSubscriptionEditor({
   const dirty = JSON.stringify(selected) !== JSON.stringify(savedSelected)
     || broadcasterId !== savedBroadcasterId;
 
-  const persist = useCallback(async () => {
+  const persist = useCallback(async (navigation = false): Promise<DirtyNavigationSaveResult> => {
+    if (savePending.current) return false;
     if (!dirty) return true;
-    if (!confirmed) {
-      setError("Confirm the live subscription impact before saving.");
-      return false;
-    }
-    setBusy(true);
     setError(null);
+    setSaveError(null);
+    if (!confirmed) {
+      const instruction = "Cancel to review and confirm the live subscription impact before saving.";
+      if (!navigation) setError(instruction);
+      return { saved: false, error: instruction };
+    }
+    savePending.current = true;
+    setBusy(true);
     try {
       const updated = await managementApi.updateStreamerBotSubscriptions(provider.id, {
         twitchBroadcasterId: broadcasterId,
@@ -771,25 +797,29 @@ function StreamerBotSubscriptionEditor({
       setConfirmed(false);
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to update Streamer.bot subscriptions.");
-      return false;
+      const failure = actionableError(cause, "Unable to update Streamer.bot subscriptions", "Review the selected source and event types, then retry saving. Cancel to review the live subscription impact.");
+      if (!navigation) setSaveError(failure);
+      return { saved: false, error: failure };
     } finally {
       setBusy(false);
+      savePending.current = false;
     }
   }, [broadcasterId, confirmed, dirty, managementApi, provider.id, selected]);
+  const saveBeforeNavigation = useCallback(() => persist(true), [persist]);
 
   const discard = useCallback(() => {
     setSelected(savedSelected);
     setBroadcasterId(savedBroadcasterId);
     setConfirmed(false);
     setError(null);
+    setSaveError(null);
   }, [savedBroadcasterId, savedSelected]);
 
   useDirtyNavigationSource({
     id: `streamerbot-subscriptions-${provider.id}`,
     dirty,
     summary: "Streamer.bot event subscriptions have unsaved changes.",
-    save: persist,
+    save: saveBeforeNavigation,
     discard
   });
 
@@ -812,6 +842,7 @@ function StreamerBotSubscriptionEditor({
       <h4 id="streamerbot-subscriptions-title">Screen Effects event subscriptions</h4>
       <p>Select only the Streamer.bot source and event types that Screen Effects may use. Alert Twitch intake remains subscribed separately.</p>
       {error === null ? null : <p role="alert">{error}</p>}
+      {saveError === null ? null : <ManagementErrorBanner error={saveError} />}
       {catalog === null && error === null ? <p>Loading Streamer.bot event catalog...</p> : null}
       {catalog?.available === false ? <p>Activate and connect this Streamer.bot provider to edit subscriptions.</p> : null}
       {catalog?.unavailableSelections.length ? (
@@ -819,6 +850,7 @@ function StreamerBotSubscriptionEditor({
       ) : null}
       {catalog?.available ? (
         <form className="provider-page__form" onSubmit={(event) => { event.preventDefault(); void persist(); }}>
+          <fieldset className="provider-page__subscription-fields" disabled={busy}>
           <NativeSelect label="Twitch reward broadcaster"
               onChange={(event) => { setBroadcasterId(event.currentTarget.value || null); setConfirmed(false); }}
               value={broadcasterId ?? ""}
@@ -875,6 +907,7 @@ function StreamerBotSubscriptionEditor({
             <Button variant="default" disabled={!dirty || busy} onClick={discard} type="button">Discard</Button>
             <Button disabled={!dirty || !confirmed || busy} type="submit">{busy ? "Saving..." : "Save subscriptions"}</Button>
           </div>
+          </fieldset>
         </form>
       ) : null}
     </section>
@@ -1393,7 +1426,7 @@ function actionableError(error: unknown, summary: string, nextStep: string): Act
   return {
     summary,
     cause: error instanceof Error ? error.message : error === null ? null : "The request failed for an unknown reason.",
-    nextStep,
+    nextStep: typeof error === "object" && error !== null && "nextStep" in error && typeof error.nextStep === "string" && error.nextStep.trim() !== "" ? error.nextStep : nextStep,
     severity: "error",
     occurredAt: new Date().toISOString(),
     referenceId: readReferenceId(error),

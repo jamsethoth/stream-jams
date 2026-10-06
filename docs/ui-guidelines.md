@@ -38,6 +38,8 @@ Do not build landing-page or marketing layouts for product work.
 - Success and warning toasts expire after four seconds. Failure toasts remain dismissible and expire after eight seconds.
 - Keep toast content, timestamps, reference IDs, correction links, and dismissal controls inside the viewport and allow long values or localized copy to wrap.
 - Keep blocking load failures, stale-runtime refresh failures, field validation, wizard failures, destructive confirmation content, and warnings requiring a decision inline with the affected workflow.
+- A failed Save and leave/continue belongs to the active review, retaining available cause, reference and next step without a duplicate page announcement. Keep drafts and the intended destination available for explicit retry or Cancel. Missing live-impact consent tells the user to Cancel and review the impact.
+- Standard dismiss commands use the management control theme while the established toast timing and announcement policy remain unchanged. See [route and native-exception verification](verification/management-component-consistency.md).
 
 ## Dense Hierarchical Management
 

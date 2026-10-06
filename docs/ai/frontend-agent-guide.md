@@ -23,6 +23,14 @@ Do not treat this as a marketing site. Build the actual management or overlay wo
 
 ## Implementation Rules
 
+The completed migration is recorded in [Management component verification](../verification/management-component-consistency.md) and the [canonical presentation capability](../../openspec/specs/management-component-consistency/spec.md). The record maps every management route and F1–F7 to production owners, tests and concrete native exceptions. Native element counts are inventory clues, never a blanket prohibition.
+
+Use direct Mantine imports for standard management commands/fields/tabs. `ManagementModalSurface` and `ActionMenu` add only product naming, focus and action policy. ESLint rejects value imports of native `ModalSurface` from management production code; its type-only contract and native Operator tests remain allowed. Build graph checks reject Mantine JS/CSS from Operator, browser-source and private renderers. `App.css`, native `ModalSurface`, `StatusBadge`, and `TimerAdjustmentControls` retain their reverse-consumer styles and provider independence.
+
+All navigation-save owners return `DirtyNavigationSaveResult`: request failures carry `{ saved: false, error }` with the available actionable context. The active navigation/selection review renders it once; suppress the duplicate page failure for that attempt while retaining ordinary save feedback and existing diagnostic recording. Consent-required provider drafts instruct Cancel and review; they never auto-confirm. Preserve synchronous request guards, pending dismissal/field locks, retained drafts/destination and explicit retry. Field validation stays associated with its field. `ManagementToast` remains the existing timer/announcement API, now with direct Mantine dismiss commands.
+
+For module pages, keep `PageHeader` in the shell and compose `ModulePageLayout` with feedback, saved controls, outputs, the workspace, then secondary sections. Pages own API/state, correction/deep-link expansion, polling and media lifetimes. Slots render ReactNode directly; do not add a form/page engine. Native disclosure/hierarchy, capability readouts, specialized color/canvas/media controls and the provider-independent consumers are the documented exceptions below and in the verification record.
+
 - Use real production components in stories and tests. Mock typed API boundaries, not rendered markup.
 - Keep domain behavior out of React components. Matching, queueing, provider normalization, persistence, auth, and overlay composition belong in services/packages.
 - Keep management and overlay auth separate. Never put secrets, OAuth tokens, overlay keys, signed URLs, or credential refs in Storybook args, client env, logs, screenshots, or docs examples.

@@ -19,6 +19,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const ActiveSet: Story = {
+  tags: ["mantine-final-layout"],
   args: { managementApi: api([activeSet], detail(activeSet)) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);

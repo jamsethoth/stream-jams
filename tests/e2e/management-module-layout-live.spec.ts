@@ -48,6 +48,12 @@ test("rebuilt Alerts and Music preserve composed order, correction focus, saved 
     await createAlert.getByRole("button", { name: "Create alert", exact: true }).click();
     await expect(createAlert).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Edit Disposable Stage4 alert", exact: true })).toBeVisible();
+    const row = page.getByRole("row", { name: /Disposable Stage4 alert/u });
+    const rowMetrics = async (label: string) => row.getByRole("button", { name: label, exact: true }).evaluate(element => {
+      const style = getComputedStyle(element), box = element.getBoundingClientRect();
+      return { height: box.height, radius: style.borderRadius, padding: style.padding, fontSize: style.fontSize };
+    });
+    expect(await rowMetrics("More actions for Disposable Stage4 alert")).toEqual(await rowMetrics("Edit Disposable Stage4 alert"));
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath("alerts-created-390-dark-rtl.png") });
 

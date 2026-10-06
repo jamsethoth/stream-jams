@@ -12,8 +12,9 @@ import { ManagementModalSurface, ManagementModalTitle } from "./ManagementModalS
 afterEach(() => { cleanup(); vi.restoreAllMocks(); localStorage.clear(); document.documentElement.dir = "ltr"; });
 it("restores the single theme key before Settings mounts and synchronizes live system changes", async () => {
   let dark = false;
-  const listeners = new Set<() => void>();
-  vi.spyOn(window, "matchMedia").mockImplementation(query => ({ get matches() { return dark; }, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener(_event: string, listener: EventListenerOrEventListenerObject) { listeners.add(listener as () => void); }, removeEventListener(_event: string, listener: EventListenerOrEventListenerObject) { listeners.delete(listener as () => void); }, dispatchEvent() { return false; } }));
+  const listeners = new Set<(event: MediaQueryListEvent) => void>();
+  const dispatchChange = () => listeners.forEach(listener => listener(Object.assign(new Event("change"), { matches: dark, media: "(prefers-color-scheme: dark)" }) as MediaQueryListEvent));
+  vi.spyOn(window, "matchMedia").mockImplementation(query => ({ get matches() { return dark; }, media: query, onchange: null, addListener() {}, removeListener() {}, addEventListener(_event: string, listener: EventListenerOrEventListenerObject) { listeners.add(listener as (event: MediaQueryListEvent) => void); }, removeEventListener(_event: string, listener: EventListenerOrEventListenerObject) { listeners.delete(listener as (event: MediaQueryListEvent) => void); }, dispatchEvent() { return false; } }));
   localStorage.setItem("stream-jams-theme", "dark");
   const getItem = vi.spyOn(Storage.prototype, "getItem");
   const view = renderManagement(<ThemeSwitcher />);
@@ -22,10 +23,10 @@ it("restores the single theme key before Settings mounts and synchronizes live s
   expect(getItem.mock.calls.every(([key]) => key === "stream-jams-theme")).toBe(true);
   await userEvent.click(screen.getByRole("radio", { name: "System" }));
   expect(document.documentElement).toHaveAttribute("data-mantine-color-scheme", "light");
-  act(() => { dark = true; listeners.forEach(listener => listener()); });
+  act(() => { dark = true; dispatchChange(); });
   expect(document.documentElement).toHaveAttribute("data-mantine-color-scheme", "dark");
   await userEvent.click(screen.getByRole("radio", { name: "Light" }));
-  act(() => listeners.forEach(listener => listener()));
+  act(dispatchChange);
   expect(document.documentElement).toHaveAttribute("data-mantine-color-scheme", "light");
   view.unmount();
   renderManagement(<ThemeSwitcher />);

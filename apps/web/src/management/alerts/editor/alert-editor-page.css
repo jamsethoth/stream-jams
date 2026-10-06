@@ -1028,6 +1028,20 @@
   .alert-canvas__viewport {
     min-height: 0;
   }
+
+  /* Wrapped commands must not consume the tablet canvas's entire grid row. */
+  .alert-editor-page__stage {
+    overflow: auto;
+  }
+
+  .alert-editor-page__stage-toolbar {
+    flex-shrink: 0;
+  }
+
+  .alert-editor-page__stage > .alert-canvas {
+    flex-shrink: 0;
+    min-height: 160px;
+  }
 }
 
 @media (max-width: 700px) {

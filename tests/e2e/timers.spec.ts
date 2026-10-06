@@ -138,7 +138,9 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
   await expect(outputLabels).toHaveCount(2);
   const outputAlignment = await outputLabels.evaluateAll(labels => labels.map(label => {
     const labelBounds = label.getBoundingClientRect();
-    const checkboxBounds = label.querySelector("input")!.getBoundingClientRect();
+    const checkbox = document.getElementById(label.getAttribute("for")!);
+    if (!(checkbox instanceof HTMLInputElement) || checkbox.type !== "checkbox") throw new Error("Output label must associate a checkbox");
+    const checkboxBounds = checkbox.getBoundingClientRect();
     return {
       centerOffset: Math.abs((labelBounds.top + labelBounds.height / 2) - (checkboxBounds.top + checkboxBounds.height / 2)),
       checkboxLeft: checkboxBounds.left
