@@ -36,10 +36,10 @@
 
 ## 5. Complete module adoption
 
-- [ ] 5.1 Migrate Screen Effects controls, outputs, workspace headings and secondary sections, retaining module/unified output semantics and set/editor behavior.
-- [ ] 5.2 Migrate Timers controls, output rows, workspace headings and secondary sections, retaining event rules, timer profile configuration and persistence.
-- [ ] 5.3 Apply shared pending confirmations to compatible module actions without changing impact copy or typed-confirmation requirements.
-- [ ] 5.4 Verify all four module page contracts for order, optional sections, saved enablement/runtime distinction, errors, deep links, output security and keyboard behavior; pass slice checks, verify rebuilt workflows and remove migrated duplication.
+- [x] 5.1 Migrate Screen Effects controls, outputs, workspace headings and secondary sections, retaining module/unified output semantics and set/editor behavior.
+- [x] 5.2 Migrate Timers controls, output rows, workspace headings and secondary sections, retaining event rules, timer profile configuration and persistence.
+- [x] 5.3 Apply shared pending confirmations to compatible module actions without changing impact copy or typed-confirmation requirements.
+- [x] 5.4 Verify all four module page contracts for order, optional sections, saved enablement/runtime distinction, errors, deep links, output security and keyboard behavior; pass slice checks, verify rebuilt workflows and remove migrated duplication.
 
 ## 6. Complete management page families and editors
 
