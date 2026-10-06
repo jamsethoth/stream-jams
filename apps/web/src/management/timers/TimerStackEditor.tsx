@@ -72,7 +72,7 @@ export function TimerStackEditor({ assetApi, definitions, value, onChange }: {
     else update({ layout: { ...region.layout, width: Math.max(1, Math.min(bounds.width - region.layout.x, region.layout.width + change[0])), height: Math.max(1, Math.min(bounds.height - region.layout.y, region.layout.height + change[1])) } });
   };
   return <section className="timer-layout" aria-labelledby="timer-layout-heading">
-    <div className="timer-section-heading"><div><p className="management-eyebrow">Overlay layout</p><h3 id="timer-layout-heading">Timer stack</h3></div>
+    <div className="timer-section-heading"><div><h3 id="timer-layout-heading">Timer stack</h3></div>
       <SegmentedControl aria-label="Timer profile" value={profile} onChange={(value) => { if (value === "landscape" || value === "vertical") setProfile(value); }} data={[{ value: "landscape", label: "Landscape" }, { value: "vertical", label: "Vertical" }]} /></div>
     <div className="timer-layout__controls">
       <label>Orientation<select value={region.orientation} onChange={event => update({ orientation: event.currentTarget.value as typeof region.orientation })}><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option></select></label>
