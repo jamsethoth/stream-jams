@@ -54,9 +54,9 @@
 
 ## 7. Remove duplication and deliver
 
-- [ ] 7.1 Check for leftover superseded controls/styles after per-slice cleanup; reconcile F1–F7 and every route/shared surface against migrated-or-justified-exception evidence, including Operator and desktop CSS consumers.
-- [ ] 7.2 Update frontend guide, design tokens and UI guidelines to document Mantine ownership, module template, imports, field/feedback/confirmation contracts and specialized exceptions.
-- [ ] 7.3 Add targeted enforcement for completed equivalent patterns without banning native HTML or introducing a general analysis engine.
-- [ ] 7.4 Run required publishing gates: lint, typecheck, tests, web build, Storybook build/interactions/accessibility and relevant Playwright workflows; investigate relevant failures without weakening tests.
-- [ ] 7.5 Inspect JS/CSS dependency graphs and budgets; verify rebuilt management, Operator status/timer/clear-dialog behavior, transparent browser-source overlay and private renderer isolation; review theme/RTL/390px screenshots and record any outstanding physical checks.
-- [ ] 7.6 Reconcile code/tests against the spec, sync canonical specs and archive only after implementation is complete; keep commit/push/PR actions within the user's authorization.
+- [x] 7.1 Check for leftover superseded controls/styles after per-slice cleanup; reconcile F1–F7 and every route/shared surface against migrated-or-justified-exception evidence, including Operator and desktop CSS consumers.
+- [x] 7.2 Update frontend guide, design tokens and UI guidelines to document Mantine ownership, module template, imports, field/feedback/confirmation contracts and specialized exceptions.
+- [x] 7.3 Add targeted enforcement for completed equivalent patterns without banning native HTML or introducing a general analysis engine.
+- [x] 7.4 Run required publishing gates: lint, typecheck, tests, web build, Storybook build/interactions/accessibility and relevant Playwright workflows; investigate relevant failures without weakening tests.
+- [x] 7.5 Inspect JS/CSS dependency graphs and budgets; verify rebuilt management, Operator status/timer/clear-dialog behavior, transparent browser-source overlay and private renderer isolation; review theme/RTL/390px screenshots and record any outstanding physical checks.
+- [x] 7.6 Reconcile code/tests against the spec, sync canonical specs and archive only after implementation is complete; keep commit/push/PR actions within the user's authorization.
