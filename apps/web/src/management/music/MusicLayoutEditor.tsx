@@ -1,3 +1,4 @@
+import { Button, Checkbox } from "@mantine/core";
 import { musicLimits, targetProfileDefinitions, clampMusicComponentRect, moveMusicComponentRect, musicComponentRoles, resizeMusicComponentRect, type MusicAppearance, type MusicAssetResolver, type MusicComponentLayout, type MusicComponentRect, type MusicComponentRole, type MusicWidgetProjection } from "@stream-jams/core";
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { MusicWidget } from "../../overlay/components/MusicWidget.js";
@@ -194,9 +195,9 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
   return <div className="music-layout-editor">
     <div className="music-layout-editor__toolbar">
       <span>{appearance.componentLayout === null ? "Automatic component layout" : "Custom component layout"}</span>
-      {editing ? <button onClick={() => { gesture.current = null; widgetGesture.current = null; setGuides([]); setEditing(false); }} type="button">Done editing</button>
-        : <button disabled={customCssActive || projection === null} onClick={beginEditing} type="button">Edit layout</button>}
-      {appearance.componentLayout === null ? null : <button onClick={() => { gesture.current = null; widgetGesture.current = null; setGuides([]); setEditing(false); onChange({ ...appearance, componentLayout: null }); }} type="button">Reset automatic layout</button>}
+      {editing ? <Button variant="default" onClick={() => { gesture.current = null; widgetGesture.current = null; setGuides([]); setEditing(false); }} type="button">Done editing</Button>
+        : <Button variant="default" disabled={customCssActive || projection === null} onClick={beginEditing} type="button">Edit layout</Button>}
+      {appearance.componentLayout === null ? null : <Button variant="default" onClick={() => { gesture.current = null; widgetGesture.current = null; setGuides([]); setEditing(false); onChange({ ...appearance, componentLayout: null }); }} type="button">Reset automatic layout</Button>}
     </div>
     {customCssActive ? <p className="music-layout-editor__warning" role="status">Custom CSS can override component positions. Disable custom CSS to edit native component layout.</p> : null}
     <div className="music-layout-editor__viewport" ref={shellRef}>
@@ -229,9 +230,9 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
       </div>
       <p>Drag the outer corner to resize the widget. Arrow keys adjust by 1 px; hold Shift for 10 px. Components keep their size and position where they fit.</p>
     </div> : null}
-    {editing && !customCssActive ? <div className="music-layout-editor__snapping"><label><input checked={snapGrid} onChange={event => { setSnapGrid(event.currentTarget.checked); setGuides([]); }} type="checkbox" /> Snap to grid</label>{editing ? <label><input checked={snapAlignment} onChange={event => { setSnapAlignment(event.currentTarget.checked); setGuides([]); }} type="checkbox" /> Snap to alignment</label> : null}</div> : null}
+    {editing && !customCssActive ? <div className="music-layout-editor__snapping"><Checkbox label="Snap to grid" checked={snapGrid} onChange={event => { setSnapGrid(event.currentTarget.checked); setGuides([]); }} />{editing ? <Checkbox label="Snap to alignment" checked={snapAlignment} onChange={event => { setSnapAlignment(event.currentTarget.checked); setGuides([]); }} /> : null}</div> : null}
     {editing && !customCssActive && activeRect !== null ? <div className="music-layout-editor__inspector">
-      <div aria-label="Music component" className="music-layout-editor__roles">{musicComponentRoles.map(role => <button aria-pressed={selected === role} key={role} onClick={() => selectComponent(role)} type="button">{labels[role]}</button>)}</div>
+      <div aria-label="Music component" className="music-layout-editor__roles">{musicComponentRoles.map(role => <Button variant={selected === role ? "filled" : "default"} aria-pressed={selected === role} key={role} onClick={() => selectComponent(role)} type="button">{labels[role]}</Button>)}</div>
       <div className="music-layout-editor__fields">
         <MusicNumberField label={`${labels[selected]} X (px)`} value={activeRect.x} min={0} max={bounds.width - activeRect.width} onCommit={value => setField("x", value)} />
         <MusicNumberField label={`${labels[selected]} Y (px)`} value={activeRect.y} min={0} max={bounds.height - activeRect.height} onCommit={value => setField("y", value)} />

@@ -41,7 +41,7 @@ const managementApi = createStoryManagementApi({
   }] })
 });
 
-const meta = { tags: ["stream-local-media", "mantine-feedback-tabs"],
+const meta = { tags: ["stream-local-media", "mantine-feedback-tabs", "mantine-stage6d", "mantine-stage6d-closure"],
   title: "Management/Screen Effects/Focused editor",
   component: ScreenEffectEditor,
   decorators: [(Story) => <DirtyNavigationProvider><div className="management-main management-main--focused"><Story /></div></DirtyNavigationProvider>],
@@ -125,8 +125,9 @@ export const VideoWithSeparateSound: Story = {
     const canvas = within(canvasElement);
     const embeddedAudio = await canvas.findByRole("checkbox", { name: "Play embedded audio" });
     await expect(embeddedAudio).toBeChecked();
-    await expect(canvasElement.querySelector(`label[for="${embeddedAudio.id}"]`)).toHaveClass("screen-effects-check");
-    await expect(canvas.getByRole("checkbox", { name: /^OBS Browser Source$/u }).closest("label")).toHaveClass("screen-effects-check");
+    await expect(canvasElement.querySelector(`label[for="${embeddedAudio.id}"]`)).toHaveTextContent("Play embedded audio");
+    const browserVisual = canvas.getByRole("checkbox", { name: /^OBS Browser Source$/u });
+    await expect(canvasElement.querySelector(`label[for="${browserVisual.id}"]`)).toHaveTextContent("OBS Browser Source");
     await expect(canvas.getByText(/Both the video soundtrack and separate audio will play/u)).toBeVisible();
   }
 };

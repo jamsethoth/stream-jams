@@ -27,7 +27,7 @@ const buildApi = (states: readonly TimerRunState[], enabled = true): TimersApi =
   getAutomationCredential: async () => ({ configured: false, createdAt: null, rotatedAt: null }),
   rotateAutomationCredential: async () => ({ configured: true, createdAt: definition.createdAt, rotatedAt: null, token: `tmr_${"placeholder".repeat(4)}` }), revokeAutomationCredential: async () => {}
 });
-const meta = { tags: ["stream-local-media", "mantine-feedback-tabs", "mantine-feedback-timers", "mantine-stage5"], title: "Management/Timers", component: TimersPage, parameters: { layout: "fullscreen" }, args: {
+const meta = { tags: ["mantine-stage6d", "stream-local-media", "mantine-feedback-tabs", "mantine-feedback-timers", "mantine-stage5"], title: "Management/Timers", component: TimersPage, parameters: { layout: "fullscreen" }, args: {
   assetApi, audioApi, managementApi: {} as AssetLibraryManagementApi, api: buildApi([])
 } } satisfies Meta<typeof TimersPage>;
 export default meta; type Story = StoryObj<typeof meta>;
@@ -76,14 +76,24 @@ export const CreatingTimer: Story = { play: async ({ canvasElement }) => {
   await userEvent.click(await canvas.findByRole("button", { name: "New timer" }));
   const dialog = await within(document.body).findByRole("dialog", { name: "Create timer" });
   await expect(dialog).toBeVisible();
-  const outputLabels = within(dialog).getByRole("group", { name: "Audio outputs" }).querySelectorAll("label");
-  for (const label of outputLabels) {
-    const checkbox = label.querySelector("input");
+  const outputs = within(dialog).getByRole("group", { name: "Audio outputs" });
+  for (const checkbox of within(outputs).getAllByRole("checkbox")) {
+    const label = outputs.querySelector(`label[for="${checkbox.id}"]`)!;
     const labelBounds = label.getBoundingClientRect();
-    const checkboxBounds = checkbox?.getBoundingClientRect();
+    const checkboxBounds = checkbox.getBoundingClientRect();
     await expect(checkboxBounds).toBeDefined();
-    await expect(Math.abs((labelBounds.top + labelBounds.height / 2) - (checkboxBounds!.top + checkboxBounds!.height / 2))).toBeLessThanOrEqual(1);
+    await expect(Math.abs((labelBounds.top + labelBounds.height / 2) - (checkboxBounds.top + checkboxBounds.height / 2))).toBeLessThanOrEqual(1);
   }
+  await expect(within(dialog).getByRole("spinbutton", { name: "Duration (seconds)" })).toBeRequired();
+  await userEvent.click(within(dialog).getByRole("button", { name: "Add event rule" }));
+  const rules = within(dialog).getByRole("group", { name: "Rule 1" });
+  await userEvent.selectOptions(within(rules).getByRole("combobox", { name: "Event type" }), "cheer");
+  await userEvent.selectOptions(within(rules).getByRole("combobox", { name: "Action" }), "increment");
+  const quantity = within(rules).getByRole("spinbutton", { name: "Quantity per adjustment (blank for fixed time)" });
+  await userEvent.type(quantity, "10");
+  await expect(quantity).toHaveValue(10);
+  await userEvent.clear(quantity);
+  await expect(quantity).toHaveValue(null);
 } };
 export const BrowserSourceSetup: Story = { play: async ({ canvasElement }) => {
   const canvas = within(canvasElement);

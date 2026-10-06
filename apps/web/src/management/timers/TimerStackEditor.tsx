@@ -1,4 +1,4 @@
-import { SegmentedControl } from "@mantine/core";
+import { NativeSelect, SegmentedControl, TextInput } from "@mantine/core";
 import { projectTimerStack, timerProfileDimensions, timerStackRegionSchema, type OverlayTargetProfileId, type TimerDefinition, type TimerRunState, type TimersOverlayModuleConfig } from "@stream-jams/core";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { TimerStack } from "../../overlay/components/TimerStack.js";
@@ -75,9 +75,9 @@ export function TimerStackEditor({ assetApi, definitions, value, onChange }: {
     <div className="timer-section-heading"><div><h3 id="timer-layout-heading">Timer stack</h3></div>
       <SegmentedControl aria-label="Timer profile" value={profile} onChange={(value) => { if (value === "landscape" || value === "vertical") setProfile(value); }} data={[{ value: "landscape", label: "Landscape" }, { value: "vertical", label: "Vertical" }]} /></div>
     <div className="timer-layout__controls">
-      <label>Orientation<select value={region.orientation} onChange={event => update({ orientation: event.currentTarget.value as typeof region.orientation })}><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option></select></label>
-      <label>Maximum shown<input min="1" max="12" type="number" value={region.maxVisible} onChange={event => update({ maxVisible: Number(event.currentTarget.value) })} /></label>
-      {(["x", "y", "width", "height"] as const).map(field => <label key={field}>{field.toUpperCase()}<input min={field === "width" || field === "height" ? 1 : 0} max={field === "x" || field === "width" ? bounds.width : bounds.height} type="number" value={region.layout[field]} onChange={event => updateLayout(field, Number(event.currentTarget.value))} /></label>)}
+      <NativeSelect label="Orientation" value={region.orientation} onChange={event => update({ orientation: event.currentTarget.value as typeof region.orientation })}><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option></NativeSelect>
+      <TextInput label="Maximum shown" min="1" max="12" type="number" value={region.maxVisible} onChange={event => update({ maxVisible: Number(event.currentTarget.value) })} />
+      {(["x", "y", "width", "height"] as const).map(field => <TextInput key={field} label={field.toUpperCase()} min={field === "width" || field === "height" ? 1 : 0} max={field === "x" || field === "width" ? bounds.width : bounds.height} type="number" value={region.layout[field]} onChange={event => updateLayout(field, Number(event.currentTarget.value))} />)}
     </div>
     {slotWidth < 180 || slotHeight < 56 ? <p className="timer-layout__warning" role="status">Timer cards may be difficult to read at this size.</p> : null}
     <div className="timer-layout__preview-shell" ref={previewShell}>

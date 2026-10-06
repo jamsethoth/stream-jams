@@ -15,11 +15,9 @@
 .music-layout-editor__guide--y { left: 0; right: 0; height: 1px; }
 .music-layout-editor__inspector { display: grid; gap: 10px; }
 .music-layout-editor__snapping { display: flex; gap: 14px; flex-wrap: wrap; }
-.music-layout-editor__snapping label { display: inline-flex; align-items: center; gap: 6px; }
 .music-layout-editor__roles { display: flex; gap: 6px; flex-wrap: wrap; }
-.music-layout-editor__roles button[aria-pressed="true"] { border-color: var(--color-accent); background: var(--color-accent-soft); }
 .music-layout-editor__fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr)); gap: 10px; }
-.music-layout-editor__inspector p { margin: 0; color: var(--color-text-muted); font-size: 13px; }
+.music-layout-editor__inspector > p { margin: 0; color: var(--color-text-muted); font-size: 13px; }
 
 .music-layout-editor__widget-outline { position: absolute; inset: 0; border: 2px solid var(--color-accent); pointer-events: none; z-index: 5; }
 .music-layout-editor__widget-resize { z-index: 6; }

@@ -85,9 +85,58 @@ describe("ScreenEffectEditor", () => {
 
   it("groups related asset commands into consistently spaced rows", async () => {
     renderEditor({ api: effectApi(enabledEffect(false)), create: false, document: enabledEffect(false) });
-    expect(await screen.findByRole("button", { name: "Choose visual asset" })).toHaveClass("button");
+    expect(await screen.findByRole("button", { name: "Choose visual asset" })).toHaveClass("mantine-Button-root");
     expect(screen.getByRole("button", { name: "Choose visual asset" }).parentElement).toHaveClass("screen-effects-button-row");
     expect(screen.getByRole("button", { name: "Choose sound asset" }).parentElement).toHaveClass("screen-effects-button-row");
+  });
+
+  it("locks reviewed saving, keeps one typed failure, then retries the preserved draft", async () => {
+    const saved = enabledEffect(true);
+    let reject!: (error: unknown) => void;
+    const api = effectApi(saved);
+    api.update = vi.fn(() => new Promise<ScreenEffectDocument>((_resolve, fail) => { reject = fail; }));
+    const user = userEvent.setup();
+    renderEditor({ api, create: false, document: saved });
+    await user.click(await screen.findByRole("tab", { name: "Effect" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Effect name" }), { target: { value: "Reviewed draft" } });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Save live Screen Effect changes?" }));
+    const confirm = dialog.getByRole("button", { name: "Save live changes" });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(api.update).toHaveBeenCalledTimes(1);
+    expect(confirm).toBeDisabled();
+    expect(dialog.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog")).toBeVisible();
+    await act(async () => reject(new ManagementHttpError("Unavailable", "UNAVAILABLE", "review-reference", "Restart storage, then retry.")));
+    expect(await dialog.findByRole("alert")).toHaveTextContent("review-reference");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    api.update = vi.fn(async (_id, candidate) => candidate);
+    await user.click(confirm);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(api.update).toHaveBeenCalledExactlyOnceWith(saved.id, expect.objectContaining({ name: "Reviewed draft" }), true);
+  });
+
+  it("locks explicit live-test cancellation while its single request remains pending", async () => {
+    const saved = enabledEffect(true);
+    let resolve!: (value: Awaited<ReturnType<ScreenEffectsApi["test"]>>) => void;
+    const api = effectApi(saved);
+    api.test = vi.fn(() => new Promise<Awaited<ReturnType<ScreenEffectsApi["test"]>>>(done => { resolve = done; }));
+    const user = userEvent.setup();
+    renderEditor({ api, create: false, document: saved });
+    await user.click(await screen.findByRole("button", { name: "Test saved…" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Test saved Screen Effect?" }));
+    const confirm = dialog.getByRole("button", { name: "Confirm live test" });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(api.test).toHaveBeenCalledTimes(1);
+    expect(dialog.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog")).toBeVisible();
+    await act(async () => resolve({ effectId: saved.id, occurrenceId: "reviewed-test", status: "queued" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByRole("status")).toHaveTextContent("reviewed-test");
   });
 
   it("edits every media volume as a percentage through 200 percent", async () => {

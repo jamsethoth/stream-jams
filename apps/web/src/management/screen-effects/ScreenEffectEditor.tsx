@@ -2,7 +2,7 @@ import { actionableError } from "../foundation/actionable-error.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import type { ActionableManagementError } from "@stream-jams/core";
-import { Tabs } from "@mantine/core";
+import { Button, Checkbox, NativeSelect, Tabs, TextInput, Textarea } from "@mantine/core";
 import { ScreenEffectPreview } from "./ScreenEffectPreview.js";
 import { ManagementHttpError } from "../management-http-client.js";
 import {
@@ -107,6 +107,8 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
   const [loading, setLoading] = useState(true);
   const [contextRetrying, setContextRetrying] = useState(false);
   const [busy, setBusy] = useState(false);
+  const saveInFlight = useRef(false);
+  const editorHeadingRef = useRef<HTMLHeadingElement>(null);
   const [error, setError] = useState<ActionableManagementError | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
@@ -188,7 +190,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
   }, [context, props.audioApi, props.managementApi]);
 
   const save = useCallback(async (confirmLiveImpact = false, forNavigation = false): Promise<DirtyNavigationSaveResult> => {
-    if (state === null) return false;
+    if (state === null || saveInFlight.current) return false;
     setError(null);
     setNotice(null);
     const parsed = screenEffectDocumentSchema.safeParse(state.document);
@@ -201,6 +203,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
       if (!forNavigation) setSaveConfirmationOpen(true);
       return forNavigation ? { saved: false, error: "Cancel to continue editing, then choose Save to review the live Screen Effect changes." } : false;
     }
+    saveInFlight.current = true;
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -227,6 +230,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
       setError(error);
       return false;
     } finally {
+      saveInFlight.current = false;
       setBusy(false);
     }
   }, [currentSet, persisted, props.api, props.effectId, state]);
@@ -293,12 +297,13 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
 
   if (loading) return <p role="status">Loading Screen Effect editor…</p>;
   if (document === null || state === null || selectedVariant === null) {
-    return <div className="management-card"><h2>The Screen Effect editor could not be opened</h2>{error === null ? <p role="alert">The saved definition is unavailable.</p> : <ManagementErrorBanner error={error} />}<button className="button button--secondary" onClick={props.onBack} type="button">Back to Screen Effects</button></div>;
+    return <div className="management-card"><h2>The Screen Effect editor could not be opened</h2>{error === null ? <p role="alert">The saved definition is unavailable.</p> : <ManagementErrorBanner error={error} />}<Button variant="default" onClick={props.onBack} type="button">Back to Screen Effects</Button></div>;
   }
 
 
   return <div className="screen-effect-editor">
     <EditorHeader
+      headingRef={editorHeadingRef}
       name={document.name}
       dirty={dirty || !persisted}
       busy={busy}
@@ -323,12 +328,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
           <li key={failure.source}><strong>{failure.source}:</strong> {failure.detail}</li>
         ))}</ul>
         <p>Data that loaded successfully remains available. Retry before relying on missing assets, routes, or trigger choices.</p>
-        <button
-          className="button button--secondary"
-          disabled={contextRetrying}
-          onClick={() => void retryEditorContext()}
-          type="button"
-        >{contextRetrying ? "Retrying editor context…" : "Retry editor context"}</button>
+        <Button variant="default" disabled={contextRetrying} onClick={() => void retryEditorContext()} type="button">{contextRetrying ? "Retrying editor context…" : "Retry editor context"}</Button>
       </section>
     )}
     {validation?.success === false ? <p className="screen-effect-editor__validation" role="status">Draft needs attention: {firstValidationMessage(validation.error)}</p> : null}
@@ -346,7 +346,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
           }} />
         </details>)}
         <div className="screen-effect-editor__variant-actions">
-          <button className="button button--primary" disabled={document.variants.length >= 50} onClick={() => {
+          <Button disabled={document.variants.length >= 50} onClick={() => {
             const id = generateId("variant");
             edit((current) => ({
               ...current,
@@ -358,15 +358,15 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
             }));
             setSelectedVariantId(id);
             setInspectorTab("Variant");
-          }} ref={variantRemovalFocusFallbackRef} type="button">New variant</button>
-          <button className="button button--secondary" disabled={validation?.success !== true || document.variants.length >= 50} onClick={() => {
+          }} ref={variantRemovalFocusFallbackRef} type="button">New variant</Button>
+          <Button variant="default" disabled={validation?.success !== true || document.variants.length >= 50} onClick={() => {
             const id = generateId("variant");
             edit((current) => copyScreenEffectVariant(current, selectedVariant.id, { id, name: `${selectedVariant.name} copy` }));
             setSelectedVariantId(id);
             setInspectorTab("Variant");
-          }} type="button">Copy variant</button>
-          <button className="button button--danger-quiet" disabled={cannotRemoveEffectVariant(document, selectedVariant)} onClick={() => setVariantRemoval(selectedVariant)} type="button">Remove variant</button>
-          <button className="button button--secondary" onClick={simulateWeights} type="button">Simulate 1,000 selections</button>
+          }} type="button">Copy variant</Button>
+          <Button color="red" variant="subtle" disabled={cannotRemoveEffectVariant(document, selectedVariant)} onClick={() => setVariantRemoval(selectedVariant)} type="button">Remove variant</Button>
+          <Button variant="default" onClick={simulateWeights} type="button">Simulate 1,000 selections</Button>
         </div>
         {document.variants.length === 1 ? <p className="screen-effects-field-help">Every effect needs at least one variant.</p> : selectedVariant.enabled && document.variants.filter((variant) => variant.enabled).length === 1 ? <p className="screen-effects-field-help">Enable another variant before removing the only enabled variant.</p> : null}
         {simulationError === null ? null : <p className="screen-effect-editor__simulation-error" role="alert">{simulationError}</p>}
@@ -450,16 +450,16 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
       routeNames={context.routeNames}
       variant={selectedVariant}
     />
-    <ModalSurface labelledBy="screen-effect-save-impact-title" onCancel={() => { setError(null); setNotice(null); setSaveConfirmationOpen(false); }} open={saveConfirmationOpen}>
-      <div>{feedbackOwner === "save" ? feedback : null}<ManagementModalTitle>Save live Screen Effect changes?</ManagementModalTitle><p>Saving changes live admission. Current and queued occurrences keep their exact saved snapshot.</p><div className="management-modal__actions"><button className="button button--secondary" onClick={() => { setError(null); setNotice(null); setSaveConfirmationOpen(false); }} type="button">Cancel</button><button className="button button--primary" disabled={busy} onClick={() => void save(true)} type="button">Save live changes</button></div></div>
+    <ModalSurface labelledBy="screen-effect-save-impact-title" onCancel={() => { if (saveInFlight.current) return; setError(null); setNotice(null); setSaveConfirmationOpen(false); }} open={saveConfirmationOpen} pending={busy} restoreFocusFallbackRef={editorHeadingRef}>
+      <div>{feedbackOwner === "save" ? feedback : null}<ManagementModalTitle>Save live Screen Effect changes?</ManagementModalTitle><p>Saving changes live admission. Current and queued occurrences keep their exact saved snapshot.</p><div className="management-modal__actions"><Button variant="default" disabled={busy} onClick={() => { if (saveInFlight.current) return; setError(null); setNotice(null); setSaveConfirmationOpen(false); }} type="button">Cancel</Button><Button disabled={busy} onClick={() => void save(true)} type="button">Save live changes</Button></div></div>
     </ModalSurface>
     <ModalSurface labelledBy="screen-effect-remove-variant-title" onCancel={() => setVariantRemoval(null)} open={variantRemoval !== null} restoreFocusFallbackRef={variantRemovalFocusFallbackRef}>
       <div>
         <ManagementModalTitle>Remove {variantRemoval?.name} variant?</ManagementModalTitle>
         <p>The variant will be removed from this draft. Save the Screen Effect to persist the change, or use Undo to restore it.</p>
         <div className="management-modal__actions">
-          <button className="button button--secondary" onClick={() => setVariantRemoval(null)} type="button">Cancel</button>
-          <button className="button button--danger" onClick={confirmVariantRemoval} type="button">Remove variant</button>
+          <Button variant="default" onClick={() => setVariantRemoval(null)} type="button">Cancel</Button>
+          <Button color="red" onClick={confirmVariantRemoval} type="button">Remove variant</Button>
         </div>
       </div>
     </ModalSurface>
@@ -467,6 +467,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
 }
 
 function EditorHeader(props: {
+  readonly headingRef: React.RefObject<HTMLHeadingElement | null>;
   readonly name: string;
   readonly dirty: boolean;
   readonly busy: boolean;
@@ -482,13 +483,13 @@ function EditorHeader(props: {
   readonly testDisabled: boolean;
 }) {
   return <header className="screen-effect-editor__header">
-    <div><button className="screen-effect-editor__back" onClick={props.onBack} type="button">Back to Screen Effects</button><h1>{props.name}</h1><p>{props.dirty ? "Unsaved changes" : "All changes saved"}</p></div>
+    <div><Button variant="default" onClick={props.onBack} type="button">Back to Screen Effects</Button><h1 ref={props.headingRef} tabIndex={-1}>{props.name}</h1><p>{props.dirty ? "Unsaved changes" : "All changes saved"}</p></div>
     <div className="screen-effect-editor__actions">
-      <button className="button button--secondary" disabled={!props.canUndo} onClick={props.onUndo} type="button">Undo</button>
-      <button className="button button--secondary" disabled={!props.canRedo} onClick={props.onRedo} type="button">Redo</button>
-      <button className="button button--secondary" onClick={props.onPreview} type="button">Preview</button>
-      <button className="button button--secondary" disabled={props.testDisabled} onClick={props.onTest} type="button">Test saved…</button>
-      <button className="button button--primary" disabled={props.busy || !props.canSave} onClick={props.onSave} type="button">Save</button>
+      <Button variant="default" disabled={!props.canUndo} onClick={props.onUndo} type="button">Undo</Button>
+      <Button variant="default" disabled={!props.canRedo} onClick={props.onRedo} type="button">Redo</Button>
+      <Button variant="default" onClick={props.onPreview} type="button">Preview</Button>
+      <Button variant="default" disabled={props.testDisabled} onClick={props.onTest} type="button">Test saved…</Button>
+      <Button disabled={props.busy || !props.canSave} onClick={props.onSave} type="button">Save</Button>
     </div>
   </header>;
 }
@@ -500,14 +501,14 @@ function DocumentPanel({ document, edit, isNew }: {
 }) {
   return <section aria-labelledby="effect-details-title" className="management-card">
     <h2 id="effect-details-title">Effect details</h2>
-    <label>Name<input aria-label="Effect name" maxLength={120} onChange={(event) => { const value = event.currentTarget.value; edit((current) => ({ ...current, name: value })); }} value={document.name} /></label>
-    <label>Description<textarea aria-label="Effect description" maxLength={2000} onChange={(event) => { const value = emptyToNull(event.currentTarget.value); edit((current) => ({ ...current, description: value })); }} value={document.description ?? ""} /></label>
-    <label>Category<input aria-label="Effect category" maxLength={80} onChange={(event) => { const value = emptyToNull(event.currentTarget.value); edit((current) => ({ ...current, category: value })); }} value={document.category ?? ""} /></label>
+    <TextInput label="Name" aria-label="Effect name" maxLength={120} onChange={(event) => { const value = event.currentTarget.value; edit((current) => ({ ...current, name: value })); }} value={document.name} />
+    <Textarea label="Description" aria-label="Effect description" maxLength={2000} onChange={(event) => { const value = emptyToNull(event.currentTarget.value); edit((current) => ({ ...current, description: value })); }} value={document.description ?? ""} />
+    <TextInput label="Category" aria-label="Effect category" maxLength={80} onChange={(event) => { const value = emptyToNull(event.currentTarget.value); edit((current) => ({ ...current, category: value })); }} value={document.category ?? ""} />
     <div className="screen-effects-fields-inline">
-      <label>Queue priority<input aria-label="Queue priority" onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => edit((current) => ({ ...current, priority: value })))} step={1} type="number" value={document.priority} /></label>
+      <TextInput label="Queue priority" aria-label="Queue priority" onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => edit((current) => ({ ...current, priority: value })))} step={1} type="number" value={document.priority} />
     </div>
     <p className="screen-effects-field-help">Higher numbers are queued first when one event matches multiple effects. Priority does not interrupt an effect that is already playing.</p>
-    <label className="screen-effects-check"><input checked={document.enabled} disabled={isNew} onChange={(event) => { const enabled = event.currentTarget.checked; edit((current) => ({ ...current, enabled })); }} type="checkbox" />Enabled</label>
+    <Checkbox label="Enabled" checked={document.enabled} disabled={isNew} onChange={(event) => { const enabled = event.currentTarget.checked; edit((current) => ({ ...current, enabled })); }} />
     {isNew ? <p>New effects are saved disabled. Save valid media first, then enable from the inventory.</p> : null}
   </section>;
 }
@@ -530,8 +531,8 @@ function VariantPanel(props: {
   return <section aria-labelledby="effect-variant-title" className="management-card screen-effect-variant">
     <h2 id="effect-variant-title">Variant settings</h2><p>Every enabled variant is chosen according to its weight. This variant has a {formatPercent(expectedPercent)} expected chance.</p>
     <div className="screen-effects-fields-inline">
-      <label>Variant name<input aria-label="Variant name" maxLength={120} onChange={(event) => { const name = event.currentTarget.value; update((variant) => ({ ...variant, name })); }} value={selected.name} /></label>
-      <label>Weight<input aria-label="Variant weight" max={10000} min={1} onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => update((variant) => ({ ...variant, weight: value })))} type="number" value={selected.weight} /></label>
+      <TextInput label="Variant name" aria-label="Variant name" maxLength={120} onChange={(event) => { const name = event.currentTarget.value; update((variant) => ({ ...variant, name })); }} value={selected.name} />
+      <TextInput label="Weight" aria-label="Variant weight" max={10000} min={1} onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => update((variant) => ({ ...variant, weight: value })))} type="number" value={selected.weight} />
     </div>
     <MediaDurationControls assetIds={[
       ...(selected.visual?.mediaType === "video" ? [selected.visual.assetId] : []),
@@ -540,7 +541,7 @@ function VariantPanel(props: {
       mode={selected.durationMode ?? "custom"}
       onChange={({ mode, durationMs }) => update((variant) => ({ ...variant, durationMode: mode, durationMs }))}
       onRepair={props.onRepairDuration} />
-    <label className="screen-effects-check"><input checked={selected.enabled} onChange={(event) => { const enabled = event.currentTarget.checked; update((variant) => ({ ...variant, enabled })); }} type="checkbox" />Variant enabled</label>
+    <Checkbox label="Variant enabled" checked={selected.enabled} onChange={(event) => { const enabled = event.currentTarget.checked; update((variant) => ({ ...variant, enabled })); }} />
     <MediaPanel asset={visualAsset} onChoose={() => props.onOpenPicker("visual")} onRemove={() => update((variant) => ({ ...variant, visual: null }))} selected={selected} update={update} />
     <SoundPanel asset={soundAsset} onChoose={() => props.onOpenPicker("sound")} onRemove={() => update((variant) => ({ ...variant, sound: null }))} selected={selected} update={update} />
     <DestinationPanel routeNames={context.routeNames} selected={selected} update={update} />
@@ -593,17 +594,16 @@ function MediaPanel({ asset, onChoose, onRemove, selected, update }: {
     <legend>Visual</legend>
     <p>{visual === null ? "No visual selected." : asset === null ? `Unavailable ${visual.mediaType} asset (${visual.assetId})` : `${asset.displayName} · ${visual.mediaType}`}</p>
     <div className="screen-effects-button-row">
-      <button className="button button--secondary" onClick={onChoose} type="button">Choose visual asset</button>
-      {visual === null ? null : <button className="button button--secondary" onClick={onRemove} type="button">Remove visual</button>}
+      <Button variant="default" onClick={onChoose} type="button">Choose visual asset</Button>
+      {visual === null ? null : <Button variant="default" onClick={onRemove} type="button">Remove visual</Button>}
     </div>
     {visual === null ? null : <>
       <LayoutFields selected={selected} update={update} />
       <div className="screen-effects-fields-inline">
-        <label className="screen-effects-check"><input checked={selected.visualOutputs.browserSource} onChange={(event) => { const browserSource = event.currentTarget.checked; update((variant) => ({ ...variant, visualOutputs: { ...variant.visualOutputs, browserSource } })); }} type="checkbox" />OBS Browser Source</label>
-        <label className="screen-effects-check"><input checked={selected.visualOutputs.desktop} onChange={(event) => { const desktop = event.currentTarget.checked; update((variant) => ({ ...variant, visualOutputs: { ...variant.visualOutputs, desktop } })); }} type="checkbox" />Desktop overlay</label>
+        <Checkbox label="OBS Browser Source" checked={selected.visualOutputs.browserSource} onChange={(event) => { const browserSource = event.currentTarget.checked; update((variant) => ({ ...variant, visualOutputs: { ...variant.visualOutputs, browserSource } })); }} />
+        <Checkbox label="Desktop overlay" checked={selected.visualOutputs.desktop} onChange={(event) => { const desktop = event.currentTarget.checked; update((variant) => ({ ...variant, visualOutputs: { ...variant.visualOutputs, desktop } })); }} />
       </div>
       {visual.mediaType === "video" ? <MediaAudioControls
-        checkboxClassName="screen-effects-check"
         hasSeparateAudio={selected.sound !== null}
         onChange={(value) => update((variant) => ({
           ...variant,
@@ -626,7 +626,7 @@ function LayoutFields({ selected, update }: {
 }) {
   if (selected.visual === null) return null;
   return <div className="screen-effects-fields-inline">
-    {(["x", "y", "width", "height"] as const).map((field) => <label key={field}>{field.toUpperCase()}<input aria-label={`Visual ${field}`} onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => update((variant) => ({ ...variant, visual: variant.visual === null ? null : { ...variant.visual, layout: { ...variant.visual.layout, [field]: value } } })))} type="number" value={selected.visual!.layout[field]} /></label>)}
+    {(["x", "y", "width", "height"] as const).map((field) => <TextInput key={field} label={field.toUpperCase()} aria-label={`Visual ${field}`} onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => update((variant) => ({ ...variant, visual: variant.visual === null ? null : { ...variant.visual, layout: { ...variant.visual.layout, [field]: value } } })))} type="number" value={selected.visual!.layout[field]} />)}
   </div>;
 }
 
@@ -641,8 +641,8 @@ function SoundPanel({ asset, onChoose, onRemove, selected, update }: {
     <legend>Separate sound</legend>
     <p>{selected.sound === null ? "No separate sound selected." : asset === null ? `Unavailable audio asset (${selected.sound.assetId})` : asset.displayName}</p>
     <div className="screen-effects-button-row">
-      <button className="button button--secondary" onClick={onChoose} type="button">Choose sound asset</button>
-      {selected.sound === null ? null : <button className="button button--secondary" onClick={onRemove} type="button">Remove sound</button>}
+      <Button variant="default" onClick={onChoose} type="button">Choose sound asset</Button>
+      {selected.sound === null ? null : <Button variant="default" onClick={onRemove} type="button">Remove sound</Button>}
     </div>
     {selected.sound === null ? null : <>
       <MediaVolumeControl label="Sound volume" value={selected.sound.volume} onChange={(value) => update((variant) => ({ ...variant, sound: variant.sound === null ? null : { ...variant.sound, volume: value } }))} />
@@ -660,11 +660,11 @@ function DestinationPanel({ routeNames, selected, update }: {
   return <fieldset>
     <legend>Audio destinations</legend>
     <p>Soundtrack and separate sound share these explicit destinations.</p>
-    <label className="screen-effects-check"><input checked={selected.outputs.browserSource} disabled={!hasAudio} onChange={(event) => { const browserSource = event.currentTarget.checked; update((variant) => ({ ...variant, outputs: { ...variant.outputs, browserSource } })); }} type="checkbox" />OBS Browser Source audio</label>
-    {[...routeNames].map(([routeId, name]) => <label className="screen-effects-check" key={routeId}><input checked={selected.outputs.deviceRouteIds.includes(routeId)} disabled={!hasAudio} onChange={(event) => { const checked = event.currentTarget.checked; update((variant) => ({
+    <Checkbox label="OBS Browser Source audio" checked={selected.outputs.browserSource} disabled={!hasAudio} onChange={(event) => { const browserSource = event.currentTarget.checked; update((variant) => ({ ...variant, outputs: { ...variant.outputs, browserSource } })); }} />
+    {[...routeNames].map(([routeId, name]) => <Checkbox key={routeId} label={name} checked={selected.outputs.deviceRouteIds.includes(routeId)} disabled={!hasAudio} onChange={(event) => { const checked = event.currentTarget.checked; update((variant) => ({
       ...variant,
       outputs: { ...variant.outputs, deviceRouteIds: checked ? [...variant.outputs.deviceRouteIds, routeId] : variant.outputs.deviceRouteIds.filter((id) => id !== routeId) }
-    })); }} type="checkbox" />{name}</label>)}
+    })); }} />)}
     {selected.outputs.deviceRouteIds.filter((id) => !routeNames.has(id)).map((id) => <p key={id}>Unavailable audio route: {id}</p>)}
     {routeNames.size === 0 ? <p>No named device routes are available. Configure them in Settings.</p> : null}
   </fieldset>;
@@ -684,7 +684,7 @@ function TriggerPanel({ context, document, edit, generateId }: {
     <ul>{document.bindings.map((binding) => <li key={binding.id}>
       <span>{bindingLabel(binding)}</span>
       <strong>{bindingAvailable(binding, context) ? "Configured" : "Unavailable — review event source setup"}</strong>
-      <button className="button button--secondary" onClick={() => edit((current) => ({ ...current, bindings: current.bindings.filter((item) => item.id !== binding.id) }))} type="button">Remove trigger</button>
+      <Button variant="default" onClick={() => edit((current) => ({ ...current, bindings: current.bindings.filter((item) => item.id !== binding.id) }))} type="button">Remove trigger</Button>
     </li>)}</ul>
     {document.bindings.length === 0 ? <p>No trigger configured. The effect can only be previewed or explicitly tested.</p> : null}
     <AddTriggerControls add={add} context={context} generateId={generateId} />
@@ -713,19 +713,19 @@ function AddTriggerControls({ add, context, generateId }: {
     )
   );
   return <div className="screen-effect-trigger-adders">
-    <label>Twitch reward<select aria-label="Twitch reward" onChange={(event) => setRewardId(event.currentTarget.value)} value={rewardId}><option value="">Choose a configured reward</option>{context.rewards.map((reward) => <option key={reward.id} value={reward.id}>{reward.title}</option>)}</select></label>
-    <button className="button button--secondary" disabled={rewardId === "" || context.twitch?.connected !== true} onClick={() => {
+    <NativeSelect label="Twitch reward" aria-label="Twitch reward" onChange={(event) => setRewardId(event.currentTarget.value)} value={rewardId}><option value="">Choose a configured reward</option>{context.rewards.map((reward) => <option key={reward.id} value={reward.id}>{reward.title}</option>)}</NativeSelect>
+    <Button variant="default" disabled={rewardId === "" || context.twitch?.connected !== true} onClick={() => {
       if (context.twitch?.connected !== true || rewardId === "") return;
       add({ id: generateId("binding"), kind: "twitch-reward", broadcasterId: context.twitch.account.accountId, rewardId });
       setRewardId("");
-    }} type="button">Add reward trigger</button>
-    <label>Streamer.bot event<select aria-label="Streamer.bot event" onChange={(event) => setStreamerSelection(event.currentTarget.value)} value={streamerSelection}><option value="">Choose a configured subscription</option>{streamerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-    <button className="button button--secondary" disabled={streamerSelection === "" || context.streamerBot === null} onClick={() => {
+    }} type="button">Add reward trigger</Button>
+    <NativeSelect label="Streamer.bot event" aria-label="Streamer.bot event" onChange={(event) => setStreamerSelection(event.currentTarget.value)} value={streamerSelection}><option value="">Choose a configured subscription</option>{streamerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</NativeSelect>
+    <Button variant="default" disabled={streamerSelection === "" || context.streamerBot === null} onClick={() => {
       const option = streamerOptions.find((candidate) => candidate.value === streamerSelection);
       if (option === undefined || context.streamerBot === null) return;
       add({ id: generateId("binding"), kind: "streamerbot-event", providerId: context.streamerBot.providerId, sourceKey: option.sourceKey, eventType: option.eventType });
       setStreamerSelection("");
-    }} type="button">Add Streamer.bot trigger</button>
+    }} type="button">Add Streamer.bot trigger</Button>
   </div>;
 }
 
@@ -742,8 +742,11 @@ function LiveTestDialog({ api, document, feedback, onCancel, onClose, onError, o
   readonly variant: EffectVariant;
 }) {
   const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
   const destinations = useMemo(() => effectDestinationNames(variant, routeNames), [routeNames, variant]);
   async function send() {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     onError(null);
     onNotice(null);
@@ -759,10 +762,11 @@ function LiveTestDialog({ api, document, feedback, onCancel, onClose, onError, o
     } catch (testError) {
       onError(actionableError(testError, "The live Screen Effect test did not start.", "Review outputs and the local service before testing again."));
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }
-  return <ModalSurface labelledBy="screen-effect-live-test-title" onCancel={onCancel} open={open}>
+  return <ModalSurface labelledBy="screen-effect-live-test-title" onCancel={() => { if (!inFlight.current) onCancel(); }} open={open} pending={busy}>
     <div>
       {feedback}
       <p className="management-eyebrow">Explicit live output</p>
@@ -770,7 +774,7 @@ function LiveTestDialog({ api, document, feedback, onCancel, onClose, onError, o
       <p>Saved input · The saved {variant.name} variant is used exactly; weighted selection is not rerun.</p>
       <p>Selected destinations (current connection and device readiness are checked when you confirm):</p>
       {destinations.length === 0 ? <p role="alert">No destination is selected.</p> : <ul>{destinations.map((destination) => <li key={destination}>{destination}</li>)}</ul>}
-      <div className="management-modal__actions"><button className="button button--secondary" onClick={onCancel} type="button">Cancel</button><button className="button button--primary" disabled={busy || destinations.length === 0} onClick={() => void send()} type="button">Confirm live test</button></div>
+      <div className="management-modal__actions"><Button variant="default" disabled={busy} onClick={() => { if (!inFlight.current) onCancel(); }} type="button">Cancel</Button><Button disabled={busy || destinations.length === 0} onClick={() => void send()} type="button">Confirm live test</Button></div>
     </div>
   </ModalSurface>;
 }

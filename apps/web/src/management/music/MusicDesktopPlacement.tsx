@@ -1,3 +1,4 @@
+import { Button, Checkbox, NativeSelect } from "@mantine/core";
 import { applyMusicDesktopPlacement, moveMusicComponentRect, projectMusicWidget, type MusicAssetResolver, type MusicModuleConfig, type MusicSnapshot, type SurfaceSettingsView } from "@stream-jams/core";
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { MusicWidget } from "../../overlay/components/MusicWidget.js";
@@ -93,9 +94,9 @@ export function MusicDesktopPlacement({ config, snapshot, now, resolveAsset, onC
     {status === null && error === null ? <p role="status">Loading desktop overlay status…</p> : null}
     {status === null ? null : <p role="status">Desktop overlay: {status.desktop.state}. {desktop?.kind === "desktop" ? `Display: ${desktop.displayLabel ?? "Not selected"}. ${desktop.enabled ? "Enabled" : "Disabled"}. Music ${visible ? "visible" : "hidden"}.` : "No desktop surface configured."}</p>}
     {status?.desktop.message == null ? null : <p>{status.desktop.message}</p>}
-    {error === null ? null : <><ManagementErrorBanner error={error} /><button className="button button--secondary" onClick={() => setReload(current => current + 1)} type="button">Refresh desktop status</button>{status === null ? null : <p>Desktop status is stale; the last known settings are shown.</p>}</>}
+    {error === null ? null : <><ManagementErrorBanner error={error} /><Button variant="default" onClick={() => setReload(current => current + 1)} type="button">Refresh desktop status</Button>{status === null ? null : <p>Desktop status is stale; the last known settings are shown.</p>}</>}
     <a href="/manage/settings#overlay-surfaces">Open Overlay settings</a>
-    <label>Desktop preview view<select value={view} onChange={event => { gesture.current = null; setGuides([]); setView(event.currentTarget.value as typeof view); }}><option value="full">Full</option><option value="compact">Compact</option></select></label>
+    <NativeSelect label="Desktop preview view" value={view} onChange={event => { gesture.current = null; setGuides([]); setView(event.currentTarget.value as typeof view); }}><option value="full">Full</option><option value="compact">Compact</option></NativeSelect>
     {blocked ? <p role="status">Disable custom CSS to edit native desktop placement. CSS can override the widget position.</p> : null}
     <div className="music-desktop-placement__viewport" ref={viewport}>
       {projection === null || rect === null ? <p role="status">Desktop placement preview is unavailable.</p> : <div aria-label="Desktop placement canvas" className="music-desktop-placement__stage" style={{ width: bounds.width * scale, height: bounds.height * scale }}>
@@ -119,8 +120,8 @@ export function MusicDesktopPlacement({ config, snapshot, now, resolveAsset, onC
     <fieldset disabled={blocked || rect === null}><legend>Desktop widget position</legend>
       <div className="music-layout-editor__fields"><MusicNumberField label="Desktop Music X (px)" value={rect?.x ?? 0} min={0} max={bounds.width - (rect?.width ?? 0)} onCommit={x => update(x, rect?.y ?? 0)} /><MusicNumberField label="Desktop Music Y (px)" value={rect?.y ?? 0} min={0} max={bounds.height - (rect?.height ?? 0)} onCommit={y => update(rect?.x ?? 0, y)} /></div>
       <MusicNumberField label="Desktop Music scale (%)" value={Math.round((projection?.renderScale ?? 1) * 100)} min={10} max={sample === null ? 300 : Math.floor(Math.min(3, bounds.width / sample.layout.width, bounds.height / sample.layout.height) * 100)} onCommit={value => setWidgetScale(value / 100)} />
-      <div className="music-layout-editor__snapping"><label><input checked={grid} onChange={event => { setGrid(event.currentTarget.checked); setGuides([]); }} type="checkbox" /> Snap desktop placement to grid</label><label><input checked={alignment} onChange={event => { setAlignment(event.currentTarget.checked); setGuides([]); }} type="checkbox" /> Snap desktop placement to alignment</label></div>
-      <button className="button button--secondary" disabled={config.desktopPlacement[view] === null} onClick={() => { gesture.current = null; setGuides([]); onChange({ ...config, desktopPlacement: { ...config.desktopPlacement, [view]: null } }); }} type="button">Reset desktop placement to alignment</button>
+      <div className="music-layout-editor__snapping"><Checkbox label="Snap desktop placement to grid" checked={grid} onChange={event => { setGrid(event.currentTarget.checked); setGuides([]); }} /><Checkbox label="Snap desktop placement to alignment" checked={alignment} onChange={event => { setAlignment(event.currentTarget.checked); setGuides([]); }} /></div>
+      <Button variant="default" disabled={config.desktopPlacement[view] === null} onClick={() => { gesture.current = null; setGuides([]); onChange({ ...config, desktopPlacement: { ...config.desktopPlacement, [view]: null } }); }} type="button">Reset desktop placement to alignment</Button>
     </fieldset>
     <p>Drag the widget to position it or its corner to scale it proportionally. Scale affects only desktop output. Arrow keys move by 1 px; Shift moves by 10 px. Escape cancels a drag. Browser-source placement is unchanged.</p>
   </div>;

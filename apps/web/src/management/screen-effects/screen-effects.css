@@ -34,13 +34,6 @@
   margin: 0;
 }
 
-.screen-effect-editor__back {
-  background: transparent;
-  border: 0;
-  color: var(--color-info);
-  padding: 0;
-}
-
 .screen-effect-editor__actions {
   justify-content: flex-end;
 }
@@ -119,10 +112,6 @@
   margin-top: 16px;
 }
 
-.screen-effect-editor__variant-actions .button {
-  width: 100%;
-}
-
 .screen-effect-editor__variants h2,
 .screen-effect-editor__panel h2 {
   font-size: 16px;
@@ -131,32 +120,10 @@
 
 .screen-effect-editor__variants p,
 .screen-effect-editor__variants small,
-.screen-effect-editor__stage span,
+.screen-effect-editor__stage-heading > span,
 .screen-effect-editor__stage-help {
   color: var(--color-text-muted);
   font-size: 12px;
-}
-
-.screen-effect-editor__variants nav {
-  display: grid;
-  gap: 6px;
-  margin-block: 12px;
-}
-
-.screen-effect-editor__variants nav button {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  color: var(--color-text);
-  display: grid;
-  gap: 4px;
-  overflow-wrap: anywhere;
-  padding: 10px;
-  text-align: left;
-}
-
-.screen-effect-editor__variants nav [aria-current="true"] {
-  background: var(--color-accent-soft);
-  border-color: var(--color-accent);
 }
 
 .screen-effect-editor__inspector {
@@ -182,14 +149,6 @@
   border: 0;
   padding: 0;
   min-width: 0;
-}
-
-.screen-effect-editor__panel input:not([type="checkbox"]):not([type="radio"]),
-.screen-effect-editor__panel select,
-.screen-effect-editor__panel textarea {
-  box-sizing: border-box;
-  min-width: 0;
-  width: 100%;
 }
 
 .screen-effect-editor__panel fieldset {
@@ -375,34 +334,11 @@
 
 
 
-.screen-effect-editor label,
-.screen-effect-trigger-adders label {
-  display: grid;
-  gap: 4px;
-}
-
 .screen-effects-fields-inline {
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
   margin-block: 12px;
-}
-
-.screen-effects-check {
-  align-items: center;
-  display: flex !important;
-  gap: 8px !important;
-  margin: 0;
-  width: fit-content;
-}
-
-.screen-effects-check input[type="checkbox"] {
-  flex: 0 0 auto;
-  height: 16px;
-  margin: 0;
-  min-height: 16px;
-  padding: 0;
-  width: 16px;
 }
 
 .screen-effects-field-help {

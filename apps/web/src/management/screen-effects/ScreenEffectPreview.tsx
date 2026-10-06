@@ -1,3 +1,4 @@
+import { Button, Checkbox } from "@mantine/core";
 import type { EffectVariant } from "@stream-jams/core";
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import type { MediaPreviewApi } from "../assets/media-preview-api.js";
@@ -117,9 +118,9 @@ export function ScreenEffectPreview({ assetApi, variant, ref }: {
     </div>
     {urls?.sound ? <audio aria-label="Preview sound" muted={muted} onError={() => { stop(); setError("Preview sound could not load. Check the asset and reselect it."); }} ref={audio} src={urls.sound} /> : null}
     <div className="screen-effect-preview__controls">
-      <button className="button button--primary" disabled={urls === null || (visual === null && variant.sound === null)} onClick={() => void play()} type="button">Play preview</button>
-      <button className="button button--secondary" disabled={!playing} onClick={stop} type="button">Stop preview</button>
-      <label className="screen-effects-check"><input checked={muted} onChange={(event) => setMuted(event.currentTarget.checked)} type="checkbox" />Mute preview</label>
+      <Button disabled={urls === null || (visual === null && variant.sound === null)} onClick={() => void play()} type="button">Play preview</Button>
+      <Button variant="default" disabled={!playing} onClick={stop} type="button">Stop preview</Button>
+      <Checkbox label="Mute preview" checked={muted} onChange={(event) => setMuted(event.currentTarget.checked)} />
     </div>
     <p aria-live="polite">{playing ? "Preview playing" : "Preview stopped"} · {variant.durationMs / 1000}s</p>
   </>;

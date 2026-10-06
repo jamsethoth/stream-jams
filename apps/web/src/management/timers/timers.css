@@ -49,24 +49,9 @@
   gap: 16px;
 }
 
-.timer-editor label,
-.timer-layout__controls label,
 .timer-token label {
   display: grid;
   gap: 6px;
-}
-
-.timer-editor label.timer-output-option {
-  align-items: center;
-  display: flex;
-  gap: 8px;
-}
-
-.timer-output-option input[type="checkbox"] {
-  flex: 0 0 16px;
-  height: 16px;
-  margin: 0;
-  width: 16px;
 }
 
 .timer-editor fieldset {
@@ -192,8 +177,7 @@
   gap: 12px;
   margin-top: 12px;
 }
-.timer-adjustment label,
-.timer-event-rules label {
+.timer-adjustment label {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -203,7 +187,4 @@
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
   margin-bottom: 12px;
-}
-.timer-event-rules input[type="checkbox"] {
-  width: auto;
 }
