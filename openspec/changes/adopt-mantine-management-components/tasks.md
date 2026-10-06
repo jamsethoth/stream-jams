@@ -12,12 +12,12 @@
 
 ## 2. Migrate production Assets and repair confirmations
 
-- [ ] 2.1 Adapt destructive confirmation to the established management modal: synchronous submit guard, pending lock of every dismissal path for non-abortable mutations, scoped failure/retry, stable-target/reopen reset and valid focus fallback (F3).
-- [ ] 2.2 Migrate Assets inventory, selection and previews with existing typed API/state; preserve Search/Type and collapsed secondary filters including active count, retained values and clear behavior.
-- [ ] 2.3 Migrate detail fields, tags and usage navigation; preserve actual image/video/audio previews, metadata, stable selection and dirty-state navigation protection.
-- [ ] 2.4 Migrate import/picker, replacement and deletion surfaces while retaining validation, usage impact, stable IDs and in-use safeguards; preserve existing editor picker callers.
-- [ ] 2.5 Add/update deferred-request, error/retry, confirmation reset/focus and Assets stories/browser coverage, including dirty selection and 390px identity/status/action reachability; verify shared AssetPicker consumers in editors/Timers/Music as applicable.
-- [ ] 2.6 Pass affected slice checks, rebuild/restart and verify real Assets with disposable fixtures; remove superseded asset styles only after checking all consumers and record evidence.
+- [x] 2.1 Adapt destructive confirmation to the established management modal: synchronous submit guard, pending lock of every dismissal path for non-abortable mutations, scoped failure/retry, stable-target/reopen reset and valid focus fallback (F3).
+- [x] 2.2 Migrate Assets inventory, selection and previews with existing typed API/state; preserve Search/Type and collapsed secondary filters including active count, retained values and clear behavior.
+- [x] 2.3 Migrate detail fields, tags and usage navigation; preserve actual image/video/audio previews, metadata, stable selection and dirty-state navigation protection.
+- [x] 2.4 Migrate import/picker, replacement and deletion surfaces while retaining validation, usage impact, stable IDs and in-use safeguards; preserve existing editor picker callers.
+- [x] 2.5 Add/update deferred-request, error/retry, confirmation reset/focus and Assets stories/browser coverage, including dirty selection and 390px identity/status/action reachability; verify shared AssetPicker consumers in editors/Timers/Music as applicable.
+- [x] 2.6 Pass affected slice checks, rebuild/restart and verify real Assets with disposable fixtures; remove superseded asset styles only after checking all consumers and record evidence.
 
 ## 3. Repair shared feedback and tab interactions
 
