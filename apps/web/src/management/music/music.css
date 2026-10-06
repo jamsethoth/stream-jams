@@ -1,16 +1,9 @@
 .music-editor { display: grid; gap: 18px; }
-.music-editor__intro { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-.music-editor__intro p { margin: 0; color: var(--color-text-muted); }
+/* Native embedded editor sections retain their presentation until the editor slice. */
 .music-editor__section { border-top: 1px solid var(--color-border); padding-top: 16px; display: grid; gap: 12px; }
 .music-editor__section h3 { margin: 0; }
 .music-editor__section p { margin: 0; color: var(--color-text-muted); }
 .music-editor__section:first-of-type { border-top: 0; padding-top: 0; }
-.music-editor__disclosure-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.music-editor__disclosure-toggle { display: inline-flex; align-items: center; gap: 8px; border: 0; padding: 4px 0; background: transparent; color: var(--color-text); font: inherit; cursor: pointer; }
-.music-editor__disclosure-toggle:hover { color: var(--color-accent); }
-.music-editor__disclosure-toggle:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 4px; }
-.music-editor__summary { color: var(--color-text-muted); font-size: 13px; }
-.music-editor__disclosure-body { display: grid; gap: 16px; }
 .music-editor__color-control { display: grid; align-content: start; gap: 8px; }
 .music-editor__color-control .alert-editor-inspector__rgba { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 10px; align-items: center; }
 .music-editor__color-control input[type="color"] { min-height: 32px; padding: 2px; cursor: pointer; }
@@ -29,7 +22,7 @@
 .music-editor__preview { position: relative; overflow: auto; min-height: 220px; max-height: 440px; background: var(--color-surface-subtle); border: 1px solid var(--color-border); border-radius: 6px; }
 .music-editor__preview .music-widget-host { position: relative !important; top: 0 !important; left: 0 !important; }
 .music-editor__metadata { display: grid; gap: 3px; color: var(--color-text); }
-@media (max-width: 650px) { .music-editor__intro { display: grid; } }
+
 
 .music-editor__color-row { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px; align-items: center; }
 .music-editor__color-control { max-width: 520px; gap: 10px; }

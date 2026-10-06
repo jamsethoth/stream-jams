@@ -6,7 +6,7 @@ import { BrowserSourcesPanel } from "./BrowserSourcesPanel.js";
 const meta = {
   title: "Management/Browser Sources",
   component: BrowserSourcesPanel,
-  tags: ["browser-sources"],
+  tags: ["mantine-module-proof", "browser-sources"],
   args: { detailsId: "example-browser-sources", expanded: false, onToggle: () => undefined, readyCount: 1, needsSetupCount: 1, children: <p>Source setup controls appear here.</p> },
   render: function Interactive(args) {
     const [expanded, setExpanded] = useState(args.expanded);

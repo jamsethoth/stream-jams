@@ -43,6 +43,10 @@ describe("AlertSetsPage", () => {
     expect(within(verticalSource).getByText("Not listening. No connection recorded.")).toBeInTheDocument();
     expect(within(verticalSource).getByText("1080 x 1920")).toBeInTheDocument();
     expect(screen.queryByText("4 alerts need review")).not.toBeInTheDocument();
+    const controls = screen.getByLabelText("Module controls");
+    const outputs = screen.getByRole("region", { name: "Browser sources" });
+    expect(controls.compareDocumentPosition(outputs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(outputs.compareDocumentPosition(screen.getByRole("region", { name: "Alert sets" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("shows explicit alert module enablement and confirms disabling it", async () => {
@@ -73,7 +77,7 @@ describe("AlertSetsPage", () => {
     );
     await user.click(screen.getByRole("button", { name: "Hide Landscape URL" }));
     expect(screen.queryByRole("textbox", { name: "Landscape browser source" })).not.toBeInTheDocument();
-    expect(landscapeSource.querySelector(".alert-sets-page__source-masked")).toBeInTheDocument();
+    expect(landscapeSource.querySelector("code")).toBeInTheDocument();
     expect(api.createOverlayOutputKey).not.toHaveBeenCalled();
     expect(api.regenerateOverlayOutputKey).not.toHaveBeenCalled();
   });
@@ -878,6 +882,30 @@ describe("AlertSetsPage", () => {
     await waitFor(() => expect(deleteManagedAlert).toHaveBeenCalledWith("alert-follow", true));
   });
 
+  it("locks a pending reset decision and retains a single scoped actionable failure", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const user = userEvent.setup();
+    let reject!: (cause: Error) => void;
+    const resetManagedAlert = vi.fn(() => new Promise<AlertSetDetail["inventory"][number]>((_resolve, rejectRequest) => { reject = rejectRequest; }));
+    render(<AlertSetsPage managementApi={alertSetsApi({ resetManagedAlert })} onEditAlert={vi.fn()} />);
+    await user.click(await screen.findByRole("button", { name: "More actions for New follower" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Reset New follower" }));
+    const dialog = screen.getByRole("dialog", { name: "Reset New follower?" });
+    await user.dblClick(within(dialog).getByRole("button", { name: "Reset alert" }));
+    expect(resetManagedAlert).toHaveBeenCalledOnce();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(dialog).toBeVisible();
+    reject(Object.assign(new Error("Disposable persistence unavailable"), { referenceId: "fixture-reset-ref", nextStep: "Restart the disposable service before retrying." }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("fixture-reset-ref");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Restart the disposable service before retrying.");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "More actions for New follower" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Reset New follower" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("keeps alert creation open with an actionable error when the command fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const createAlert = vi.fn(async () => Promise.reject(new Error("Local persistence failed")));
@@ -1029,7 +1057,7 @@ describe("AlertSetsPage", () => {
     expect(dialog).toBeInTheDocument();
     expect(confirmButton).toBeDisabled();
 
-    await user.type(screen.getByLabelText("Type REGENERATE to continue"), "REGENERATE");
+    await user.type(screen.getByLabelText("Type REGENERATE to confirm"), "REGENERATE");
     await user.click(confirmButton);
 
     await waitFor(() => expect(api.regenerateOverlayOutputKey).toHaveBeenCalledWith({

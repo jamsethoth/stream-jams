@@ -1,0 +1,10 @@
+.module-page-layout, .module-section, .module-controls { min-width: 0; }
+.module-section { display: grid; gap: 12px; }
+.module-section-heading { min-width: 0; }
+.module-section-heading > div { min-width: 0; }
+.module-section-heading h2, .module-section-heading h3 { font-size: 17px; margin: 0; overflow-wrap: anywhere; }
+.module-section-description { color: var(--color-text-muted); font-size: 13px; margin: 4px 0 0; }
+.module-disclosure { border-block-start: 1px solid var(--color-border); padding-block: 12px; }
+.module-disclosure-toggle { padding-inline: 0; }
+.module-disclosure-toggle .mantine-Button-label { gap: 8px; }
+.module-disclosure-body { display: grid; gap: 12px; min-width: 0; }

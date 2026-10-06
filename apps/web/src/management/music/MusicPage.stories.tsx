@@ -8,7 +8,7 @@ import { MusicPage } from "./MusicPage.js";
 
 const baseApi = () => createStoryManagementApi({ listMusicOutputs: async () => [] });
 const meta = {
-  title: "Management/Music Appearance", component: MusicPage, tags: ["music-task-13", "music-editor-refinement"],
+  title: "Management/Music Appearance", component: MusicPage, tags: ["mantine-module-proof", "music-task-13", "music-editor-refinement"],
   args: { api: baseApi(), assetApi: createStoryAssetApi() },
   decorators: [(Story) => <DirtyNavigationProvider><div className="management-main"><Story /></div></DirtyNavigationProvider>]
 } satisfies Meta<typeof MusicPage>;
