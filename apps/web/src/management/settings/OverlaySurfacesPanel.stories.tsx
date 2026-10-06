@@ -21,7 +21,8 @@ function api(initial = view(), overrides: Partial<SurfaceSettingsApi> = {}): Sur
     retry: fn(async () => structuredClone(saved)), ...overrides
   };
 }
-const meta = { title: "Management/Settings/Overlay surfaces", component: OverlaySurfacesPanel, args: { api: api() }, parameters: { layout: "padded" } } satisfies Meta<typeof OverlaySurfacesPanel>;
+const meta = {
+  tags: ["mantine-stage6b", "mantine-stage6b-surfaces"], title: "Management/Settings/Overlay surfaces", component: OverlaySurfacesPanel, args: { api: api() }, parameters: { layout: "padded" } } satisfies Meta<typeof OverlaySurfacesPanel>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const DesktopAndUnifiedLayers: Story = {};

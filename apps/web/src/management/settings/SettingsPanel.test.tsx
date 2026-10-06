@@ -9,6 +9,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AudioApi } from "../audio/audio-api.js";
 import type { ManagementApi } from "../management-api.js";
+import { ManagementHttpError } from "../management-http-client.js";
 import { DirtyNavigationProvider, useManagementNavigation } from "../navigation/dirty-navigation.js";
 import { SettingsPanel } from "./SettingsPanel.js";
 import type { SurfaceSettingsApi } from "./overlay-surfaces-api.js";
@@ -269,6 +270,51 @@ describe("SettingsPanel", () => {
 
     await waitFor(() => expect(window.location.pathname).toBe("/manage"));
     expect(audioApi.createRoute).not.toHaveBeenCalled();
+  });
+
+  it("keeps an Audio save failure reference and correction inside the active navigation dialog", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/manage/settings");
+    const audioApi = createAudioApi();
+    audioApi.updateRoute = vi.fn(async () => { throw new ManagementHttpError("Device settings could not be written", "AUDIO_SAVE_FAILED", "ref-disposable-audio", "Reconnect the selected endpoint, then retry."); });
+    render(<DirtyNavigationProvider><SettingsNavigationHarness audioApi={audioApi} managementApi={createManagementApi()} /></DirtyNavigationProvider>);
+    await openDisclosure(user, /^Audio outputs ·/);
+    const name = await screen.findByLabelText("Output name");
+    await user.clear(name); await user.type(name, "Retained failed draft");
+    await user.click(screen.getByRole("button", { name: "Go home" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Leave with unsaved changes?" }));
+    await user.click(dialog.getByRole("button", { name: "Save and leave" }));
+    expect(await dialog.findByRole("alert")).toHaveTextContent("ref-disposable-audio");
+    expect(dialog.getByRole("alert")).toHaveTextContent("Reconnect the selected endpoint, then retry.");
+    expect(dialog.getByRole("link", { name: "Review audio outputs" })).toHaveAttribute("href", "/manage/settings#audio-outputs");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(audioApi.updateRoute).toHaveBeenCalledOnce();
+    await user.click(dialog.getByRole("button", { name: "Cancel" }));
+    expect(name).toHaveValue("Retained failed draft");
+    expect(window.location.pathname).toBe("/manage/settings");
+  });
+
+  it("keeps an Overlay save failure reference and retained draft inside the active navigation dialog", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/manage/settings");
+    const surfaceApi: SurfaceSettingsApi = {
+      load: async () => ({ surfaces: [{ id: "unified-browser:default", kind: "unified-browser", overlayId: "default", layers: [{ moduleId: "alerts", visible: true }] }], desktop: { available: false, displays: [], state: "unavailable", message: null }, desktopBindingState: "not-needed" }),
+      save: vi.fn(async () => { throw new ManagementHttpError("Surface settings could not be written", "SURFACE_SAVE_FAILED", "ref-disposable-surface", "Check the saved surface, then retry."); }), retry: vi.fn()
+    };
+    render(<DirtyNavigationProvider><SettingsNavigationHarness audioApi={createAudioApi()} surfaceApi={surfaceApi} managementApi={createManagementApi()} /></DirtyNavigationProvider>);
+    await openDisclosure(user, /^Overlay surfaces ·/);
+    const visible = await screen.findByRole("checkbox", { name: "Show Alerts on Unified browser: default" });
+    await user.click(visible);
+    await user.click(screen.getByRole("button", { name: "Go home" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Leave with unsaved changes?" }));
+    await user.click(dialog.getByRole("button", { name: "Save and leave" }));
+    expect(await dialog.findByRole("alert")).toHaveTextContent("ref-disposable-surface");
+    expect(dialog.getByRole("link", { name: "Review overlay surfaces" })).toHaveAttribute("href", "/manage/settings#overlay-surfaces");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(surfaceApi.save).toHaveBeenCalledOnce();
+    await user.click(dialog.getByRole("button", { name: "Cancel" }));
+    expect(visible).not.toBeChecked();
+    expect(window.location.pathname).toBe("/manage/settings");
   });
 
   it("keeps an unnamed device draft and blocks Save and leave with an inline error", async () => {

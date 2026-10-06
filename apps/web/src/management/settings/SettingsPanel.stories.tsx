@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { Button } from "@mantine/core";
 import { expect, fn, userEvent, within } from "storybook/test";
 import {
   createStoryManagementApi,
@@ -7,9 +8,12 @@ import {
 } from "../../stories/mock-apis.js";
 import type { ManagementApi } from "../management-api.js";
 import type { AudioApi } from "../audio/audio-api.js";
-import { SettingsPanel } from "./SettingsPanel.js";
+import { SettingsPanel, type SettingsPanelProps } from "./SettingsPanel.js";
+import { ManagementHttpError } from "../management-http-client.js";
+import { DirtyNavigationProvider, useManagementNavigation } from "../navigation/dirty-navigation.js";
 
 const meta = {
+  tags: ["mantine-stage6b", "mantine-stage6b-closure"],
   title: "Management/Settings/Backup and restore",
   component: SettingsPanel,
   args: { audioApi: createAudioStoryApi(), managementApi: createSettingsStoryApi(), surfaceApi: {
@@ -23,6 +27,47 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Overview: Story = {};
+
+export const AudioSaveAndLeaveFailure: Story = {
+  args: { audioApi: { ...createAudioStoryApi(), updateRoute: fn(async () => { throw new ManagementHttpError("Device settings could not be written", "AUDIO_SAVE_FAILED", "ref-disposable-story", "Reconnect the selected endpoint, then retry."); }) } },
+  render: args => <DirtyNavigationProvider><NavigationSaveScenario {...args} /></DirtyNavigationProvider>,
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText(/^Audio outputs ·/));
+    const name = await canvas.findByRole("textbox", { name: "Output name" });
+    await userEvent.clear(name); await userEvent.type(name, "Retained failed draft");
+    await userEvent.click(canvas.getByRole("button", { name: "Open Diagnostics" }));
+    const dialog = within(await within(document.body).findByRole("dialog", { name: "Leave with unsaved changes?" }));
+    await userEvent.click(dialog.getByRole("button", { name: "Save and leave" }));
+    await expect(await dialog.findByRole("alert")).toHaveTextContent("ref-disposable-story");
+    await expect(dialog.getByRole("alert")).toHaveTextContent("Reconnect the selected endpoint, then retry.");
+    await expect(args.audioApi?.updateRoute).toHaveBeenCalledTimes(1);
+    await expect(within(document.body).getAllByRole("alert")).toHaveLength(1);
+    await userEvent.click(dialog.getByRole("button", { name: "Cancel" }));
+    await expect(name).toHaveValue("Retained failed draft");
+  }
+};
+
+function NavigationSaveScenario(props: SettingsPanelProps) {
+  const navigation = useManagementNavigation();
+  return <><Button onClick={() => navigation.requestNavigation({ id: "diagnostics" })}>Open Diagnostics</Button><SettingsPanel {...props} />{navigation.guard}</>;
+}
+
+export const CollapsedServerDraftRemainsAvailable: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const summary = await canvas.findByText("Server settings");
+    await userEvent.click(summary);
+    const port = canvas.getByRole("spinbutton", { name: "Port" });
+    await userEvent.clear(port);
+    await userEvent.type(port, "40123");
+    await userEvent.click(summary);
+    await expect(port).not.toBeVisible();
+    await userEvent.click(summary);
+    await expect(port).toHaveValue(40123);
+    await expect(canvas.getByRole("button", { name: "Save server settings" })).toBeEnabled();
+  }
+};
 
 export const InitialLoadFailure: Story = {
   args: {

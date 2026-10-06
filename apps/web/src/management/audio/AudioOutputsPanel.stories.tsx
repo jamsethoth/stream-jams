@@ -6,7 +6,7 @@ import type { AudioApi } from "./audio-api.js";
 import { AudioOutputsPanel } from "./AudioOutputsPanel.js";
 
 const meta = {
-  tags: ["mantine-stage5"],
+  tags: ["mantine-stage6b-closure", "mantine-stage6b", "mantine-stage5"],
   title: "Management/Settings/Audio outputs",
   component: AudioOutputsPanel,
   args: { audioApi: createAudioApi() },
@@ -17,6 +17,20 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const LoadedRoutes: Story = {};
+
+export const DeviceSelectionRemainsAnExplicitDraft: Story = {
+  args: { audioApi: createAudioApi() },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    await userEvent.type(await canvas.findByRole("textbox", { name: "New output name" }), "Disposable monitor");
+    const device = canvas.getByRole("combobox", { name: "New output device" });
+    await userEvent.selectOptions(device, within(device).getAllByRole("option")[1]!);
+    await userEvent.click(canvas.getAllByRole("checkbox", { name: "Automatically follow this device name" })[0]!);
+    await expect(args.audioApi.createRoute).not.toHaveBeenCalled();
+    await userEvent.click(canvas.getByRole("button", { name: "Create output" }));
+    await expect(args.audioApi.createRoute).toHaveBeenCalledWith(expect.objectContaining({ name: "Disposable monitor", autoFollowDeviceName: true }));
+  }
+};
 
 export const Empty: Story = {
   args: { audioApi: createAudioApi({ getStatus: fn(async () => status({ routes: [] })) }) }

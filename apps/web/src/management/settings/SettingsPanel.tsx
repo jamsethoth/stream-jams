@@ -1,3 +1,4 @@
+import { Button, Checkbox, Group, TextInput } from "@mantine/core";
 import {
   configurationBackupArchiveSchema,
   configurationBackupLimits,
@@ -22,6 +23,7 @@ import type { SurfaceSettingsApi } from "./overlay-surfaces-api.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import { AutomationSettingsPanel } from "./AutomationSettingsPanel.js";
 import type { AutomationSettingsApi } from "./automation-api.js";
+import { SectionHeading } from "../foundation/ModulePageLayout.js";
 import "./settings-panel.css";
 
 type SettingsApi = Pick<
@@ -124,11 +126,13 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
   const saveSettings = useCallback(async () => {
     if (serverDirty) await saveServer();
     if (desktopDirty) await saveDesktop();
-    if (audioDirty && !(await audioPanelRef.current?.save())) {
-      return { saved: false as const, error: "Audio output changes could not be saved. Resolve the highlighted route and try again." };
+    if (audioDirty) {
+      const result = await audioPanelRef.current?.save();
+      if (result !== true) return result ?? { saved: false as const, error: "Audio output changes could not be saved. Resolve the highlighted route and try again." };
     }
-    if (surfacesDirty && !(await surfacesPanelRef.current?.save())) {
-      return { saved: false as const, error: "Overlay surface settings could not be saved. Resolve the highlighted settings and try again." };
+    if (surfacesDirty) {
+      const result = await surfacesPanelRef.current?.save();
+      if (result !== true) return result ?? { saved: false as const, error: "Overlay surface settings could not be saved. Resolve the highlighted settings and try again." };
     }
   }, [audioDirty, desktopDirty, surfacesDirty, saveDesktop, saveServer, serverDirty]);
 
@@ -302,7 +306,7 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
   }
 
   if (loading) return <p className="management-empty" role="status">Loading settings...</p>;
-  if (initialLoadFailed && error !== null) return <section aria-label="Settings" className="settings-page"><ManagementErrorBanner error={error} /><button onClick={() => void loadSettings()} type="button">Retry loading settings</button></section>;
+  if (initialLoadFailed && error !== null) return <section aria-label="Settings" className="settings-page"><ManagementErrorBanner error={error} /><Button onClick={() => void loadSettings()} type="button">Retry loading settings</Button></section>;
 
   return (
     <section aria-label="Settings" className="settings-page">
@@ -314,28 +318,28 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
       {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
 
       <section aria-labelledby="appearance-heading" className="settings-page__section">
-        <div className="settings-page__section-heading"><div><h3 id="appearance-heading">Appearance</h3><p>Choose how the management interface is displayed on this device.</p></div></div>
+        <SectionHeading level={3} id="appearance-heading" title="Appearance" description="Choose how the management interface is displayed on this device." />
         <ThemeSwitcher />
       </section>
 
       <details className="settings-page__disclosure" onToggle={(event) => setServerOpen(event.currentTarget.open)} open={serverOpen}>
         <summary><span className="settings-page__summary-content"><strong>Server settings</strong><small>Local only · port {configDraft.port}{serverDirty ? " · Unsaved" : ""}</small></span></summary>
         <section aria-labelledby="server-heading" className="settings-page__section">
-          <div className="settings-page__section-heading"><div><h3 id="server-heading">Local server</h3><p>Management and browser-source traffic remains bound to this computer.</p></div></div>
+          <SectionHeading level={3} id="server-heading" title="Local server" description="Management and browser-source traffic remains bound to this computer." />
           <form className="settings-page__form" onSubmit={submitServer}>
-            <label><span>Host</span><input disabled readOnly value={configDraft.host} /></label>
-            <label><span>Port</span><input min={1} max={65535} onChange={(event) => setConfigDraft({ ...configDraft, port: Number(event.currentTarget.value) })} type="number" value={configDraft.port} /></label>
-            <button disabled={busy || !serverDirty} type="submit">Save server settings</button>
+            <TextInput label="Host" disabled readOnly value={configDraft.host} />
+            <TextInput label="Port" min={1} max={65535} onChange={(event) => setConfigDraft({ ...configDraft, port: Number(event.currentTarget.value) })} type="number" value={configDraft.port} />
+            <Button disabled={busy || !serverDirty} type="submit">Save server settings</Button>
           </form>
         </section>
       </details>
 
       {desktopConfig?.available !== true ? null : (
         <section aria-labelledby="desktop-heading" className="settings-page__section">
-          <div className="settings-page__section-heading"><div><h3 id="desktop-heading">Desktop app</h3><p>Choose what happens when you close the management window.</p></div></div>
+          <SectionHeading level={3} id="desktop-heading" title="Desktop app" description="Choose what happens when you close the management window." />
           <form className="settings-page__form" onSubmit={submitDesktop}>
             <DesktopSettingsPanel closeToTray={closeToTray} disabled={busy} onChange={setCloseToTray} />
-            <button disabled={busy || !desktopDirty} type="submit">Save desktop settings</button>
+            <Button disabled={busy || !desktopDirty} type="submit">Save desktop settings</Button>
           </form>
         </section>
       )}
@@ -358,30 +362,27 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
         <summary><span className="settings-page__summary-content"><strong>Data and backup{dataNeedsAttention ? " · Needs attention" : ""}</strong><small>{summary === null ? "Loading storage details" : `${formatCount(summary.configurationRecordCount, { one: "configuration record", other: "configuration records" })} · ${formatCount(summary.assetCount, { one: "asset", other: "assets" })}`}</small></span></summary>
         {summary === null ? null : (
         <section aria-labelledby="storage-heading" className="settings-page__section settings-page__section--nested">
-          <div className="settings-page__section-heading"><div><h3 id="storage-heading">Data and diagnostics</h3><p>Current storage locations and bounded log-retention policy.</p></div></div>
+          <SectionHeading level={3} id="storage-heading" title="Data and diagnostics" description="Current storage locations and bounded log-retention policy." />
           <dl className="settings-page__facts">
             <div><dt>Data folder</dt><dd>{summary.dataDirectory}</dd></div>
             <div><dt>Asset folder</dt><dd>{summary.assetDirectory}</dd></div>
             <div><dt>Log level</dt><dd>{summary.logLevel}</dd></div>
             <div><dt>Log retention</dt><dd>{formatHours(summary.logRetentionHours)}</dd></div>
           </dl>
-          <div className="settings-page__section-heading settings-page__section-heading--action">
+          <Group wrap="wrap" align="center">
             <div><strong>Local maintenance</strong><p>Open application data or apply the configured retention policy now.</p></div>
-            <button className="button button--secondary" disabled={busy || maintenanceBusy !== null} onClick={() => void openDataFolder()} type="button">
+            <Button variant="default" disabled={busy || maintenanceBusy !== null} onClick={() => void openDataFolder()} type="button">
               {maintenanceBusy === "open-data-folder" ? "Opening data folder..." : "Open data folder"}
-            </button>
-            <button className="button button--secondary" disabled={busy || maintenanceBusy !== null} onClick={() => void clearOldLogs()} type="button">
+            </Button>
+            <Button variant="default" disabled={busy || maintenanceBusy !== null} onClick={() => void clearOldLogs()} type="button">
               {maintenanceBusy === "clear-old-logs" ? "Clearing old logs..." : "Clear old logs now"}
-            </button>
-          </div>
+            </Button>
+          </Group>
         </section>
       )}
 
       <section aria-labelledby="backup-heading" className="settings-page__section settings-page__section--nested">
-        <div className="settings-page__section-heading settings-page__section-heading--action">
-          <div><h3 id="backup-heading">Backup and restore</h3><p>Move complete local configuration and assets without exporting credentials or route keys.</p></div>
-          <button disabled={busy || summary?.state === "invalid"} onClick={() => void exportBackup()} type="button">Export backup</button>
-        </div>
+        <SectionHeading level={3} id="backup-heading" title="Backup and restore" description="Move complete local configuration and assets without exporting credentials or route keys." actions={<Button disabled={busy || summary?.state === "invalid"} onClick={() => void exportBackup()} type="button">Export backup</Button>} />
         {summary === null ? null : (
           <div className="settings-page__backup-summary">
             <strong>{formatCount(summary.configurationRecordCount, { one: "configuration record", other: "configuration records" })} · {formatCount(summary.assetCount, { one: "asset", other: "assets" })} · {formatBytes(summary.totalAssetBytes)}</strong>
@@ -391,7 +392,7 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
         {summary?.blockers.map((blocker) => <ManagementErrorBanner error={blocker} key={`${blocker.summary}-${blocker.referenceId ?? "none"}`} />)}
 
         <div className="settings-page__restore">
-          <label className="settings-page__file"><span>Backup file</span><input accept=".streamjams-backup,application/json" disabled={busy} onChange={(event) => void chooseArchive(event)} type="file" /></label>
+          <TextInput className="settings-page__file" label="Backup file" accept=".streamjams-backup,application/json" disabled={busy} onChange={(event) => void chooseArchive(event)} type="file" />
           {archiveName === null ? <p>No backup selected.</p> : <p><strong>{archiveName}</strong>{busy ? " · Validating..." : ""}</p>}
 
           {preflight?.impact === null || preflight?.impact === undefined ? null : <RestoreImpact impact={preflight.impact} />}
@@ -399,9 +400,9 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
           {preflight?.warnings.map((warning) => <ManagementErrorBanner error={warning} key={`${warning.summary}-${warning.nextStep}`} />)}
 
           {preflight?.state !== "valid" ? null : <>
-            <label className="settings-page__confirmation"><span>Type RESTORE to confirm</span><input autoComplete="off" disabled={busy} onChange={(event) => setConfirmation(event.currentTarget.value)} value={confirmation} /></label>
-            <label className="settings-page__route-key-option"><input checked disabled readOnly type="checkbox" /> Regenerate overlay route keys and browser-source URLs</label>
-            <button className="button button--danger" disabled={busy || confirmation !== "RESTORE"} onClick={() => void restoreConfiguration()} type="button">Restore configuration</button>
+            <TextInput className="settings-page__confirmation" label="Type RESTORE to confirm" autoComplete="off" disabled={busy} onChange={(event) => setConfirmation(event.currentTarget.value)} value={confirmation} />
+            <Checkbox checked disabled readOnly label="Regenerate overlay route keys and browser-source URLs" />
+            <Button color="red" disabled={busy || confirmation !== "RESTORE"} onClick={() => void restoreConfiguration()} type="button">Restore configuration</Button>
           </>}
         </div>
       </section>

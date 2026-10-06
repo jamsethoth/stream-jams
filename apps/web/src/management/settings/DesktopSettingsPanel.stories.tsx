@@ -6,6 +6,7 @@ import { SettingsPanel } from "./SettingsPanel.js";
 
 const api = createStoryManagementApi();
 const meta = {
+  tags: ["mantine-stage6b"],
   title: "Management/Settings/Desktop",
   component: SettingsPanel,
   args: { audioApi: createStoryAudioApi(), managementApi: { ...api, getDesktopConfig: async () => ({ available: true, closeToTray: true }) } }

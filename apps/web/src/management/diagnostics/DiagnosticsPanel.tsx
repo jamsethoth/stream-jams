@@ -1,4 +1,4 @@
-import { Tabs } from "@mantine/core";
+import { Button, NativeSelect, Tabs, TextInput, UnstyledButton } from "@mantine/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   DiagnosticsEventView,
@@ -11,6 +11,7 @@ import { StatusBadge, type StatusBadgeTone } from "../foundation/StatusBadge.js"
 import { ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import { formatCount, formatDateTime } from "../foundation/formatters.js";
 import type { DiagnosticsDebugExportView, DiagnosticsExportView, ManagementApi } from "../management-api.js";
+import { SectionHeading } from "../foundation/ModulePageLayout.js";
 import "./diagnostics-workspace.css";
 
 type DiagnosticsTab = "problems" | "events" | "raw-logs";
@@ -164,10 +165,10 @@ export function DiagnosticsPanel({ initialReferenceId, managementApi }: Diagnost
           <p>Failures remain visible with plain-language next steps, reference IDs, and sanitized evidence.</p>
         </div>
         <div className="diagnostics-workspace__actions">
-          <button disabled={exporting} onClick={() => void exportBundle(false)} type="button">Export support bundle</button>
-          <button className="button button--secondary" disabled={exporting} onClick={() => void exportBundle(true)} type="button">
+          <Button disabled={exporting} onClick={() => void exportBundle(false)} type="button">Export support bundle</Button>
+          <Button variant="default" disabled={exporting} onClick={() => void exportBundle(true)} type="button">
             Export with recent logs
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -182,38 +183,29 @@ export function DiagnosticsPanel({ initialReferenceId, managementApi }: Diagnost
         </Tabs.List>
 
       <div className="diagnostics-workspace__toolbar">
-        <label className="management-field diagnostics-workspace__search">
-          <span>Search</span>
-          <input
+          <TextInput className="diagnostics-workspace__search" label="Search"
             onChange={(event) => setQuery(event.currentTarget.value)}
             placeholder="Reference ID or message"
             type="search"
             value={query}
           />
-        </label>
-        <label className="management-field">
-          <span>{filterLabel(activeTab)}</span>
-          <select aria-label={filterLabel(activeTab)} onChange={(event) => setFilter(event.currentTarget.value)} value={filter}>
+          <NativeSelect label={filterLabel(activeTab)} onChange={(event) => setFilter(event.currentTarget.value)} value={filter}>
             {filterOptions(activeTab).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
-        </label>
-        <label className="management-field">
-          <span>Sort</span>
-          <select aria-label="Sort diagnostics" onChange={(event) => setSortOrder(event.currentTarget.value as SortOrder)} value={sortOrder}>
+          </NativeSelect>
+          <NativeSelect label="Sort" aria-label="Sort diagnostics" onChange={(event) => setSortOrder(event.currentTarget.value as SortOrder)} value={sortOrder}>
             <option value="newest">Newest first</option>
             <option value="oldest">Oldest first</option>
-          </select>
-        </label>
-        <button className="button button--secondary diagnostics-workspace__reload" disabled={loading} onClick={() => void loadWorkspace()} type="button">
+          </NativeSelect>
+        <Button variant="default" className="diagnostics-workspace__reload" disabled={loading} onClick={() => void loadWorkspace()} type="button">
           Refresh
-        </button>
+        </Button>
       </div>
 
       {loading ? <p className="management-empty" role="status">Loading diagnostics...</p> : null}
       {!loading && workspace === null ? (
         <div className="diagnostics-workspace__load-failure">
           <p>Diagnostics evidence is unavailable.</p>
-          <button onClick={() => void loadWorkspace()} type="button">Retry</button>
+          <Button onClick={() => void loadWorkspace()} type="button">Retry</Button>
         </div>
       ) : null}
       {diagnosticsTabs.map((tab) => <Tabs.Panel key={tab} value={tab} tabIndex={0}>
@@ -235,15 +227,15 @@ function ProblemsView(props: {
   readonly onCopy: (label: string, value: string) => Promise<void>;
 }) {
   return <><section aria-label="Open problems" className="diagnostics-workspace__list-pane">
-    <h3>Open problems</h3>
+    <SectionHeading level={3} title="Open problems" />
     {props.problems.length === 0 ? <EmptyState title="No active problems" detail="Connected services and recent operations have not reported a failure." /> :
       groupProblems(props.problems).map((group) => <section className="diagnostics-problem-group" key={group.key}>
         <h4>{group.label}</h4>
         <div className="diagnostics-problem-group__items">
-          {group.problems.map((problem) => <button aria-pressed={props.selected?.id === problem.id} className="diagnostics-problem-row" key={problem.id} onClick={() => props.onSelect(problem.id)} type="button">
+          {group.problems.map((problem) => <UnstyledButton aria-pressed={props.selected?.id === problem.id} className="diagnostics-problem-row" key={problem.id} onClick={() => props.onSelect(problem.id)} type="button">
             <span><strong>{problem.summary}</strong><small>{problem.cause ?? problem.nextStep}</small></span>
             <span className="diagnostics-problem-row__meta"><StatusBadge label={problem.severity} tone={severityTone(problem.severity)} />{problem.referenceId}</span>
-          </button>)}
+          </UnstyledButton>)}
         </div>
       </section>)}
   </section><DetailPane label="Selected problem">
@@ -254,36 +246,36 @@ function ProblemsView(props: {
       <h4>Next step</h4><p>{props.selected.nextStep}</p>
       <EvidenceList occurredAt={props.selected.occurredAt} referenceId={props.selected.referenceId} />
       <div className="diagnostics-workspace__detail-actions">
-        {props.selected.correction === null ? null : <a className="button" href={props.selected.correction.route}>{props.selected.correction.label}</a>}
-        <button className="button button--secondary" onClick={() => void props.onCopy("Error JSON", JSON.stringify(props.selected, null, 2))} type="button">Copy error JSON</button>
-        {props.selected.referenceId === null ? null : <button className="button button--secondary" onClick={() => void props.onCopy("Reference ID", props.selected!.referenceId!)} type="button">Copy reference ID</button>}
+        {props.selected.correction === null ? null : <Button component="a" href={props.selected.correction.route}>{props.selected.correction.label}</Button>}
+        <Button variant="default" onClick={() => void props.onCopy("Error JSON", JSON.stringify(props.selected, null, 2))} type="button">Copy error JSON</Button>
+        {props.selected.referenceId === null ? null : <Button variant="default" onClick={() => void props.onCopy("Reference ID", props.selected!.referenceId!)} type="button">Copy reference ID</Button>}
       </div>
     </>}
   </DetailPane></>;
 }
 
 function EventsView(props: { readonly events: readonly DiagnosticsEventView[]; readonly selected: DiagnosticsEventView | null; readonly onSelect: (id: string) => void }) {
-  return <><section aria-label="Received events" className="diagnostics-workspace__list-pane"><h3>Received events</h3>
+  return <><section aria-label="Received events" className="diagnostics-workspace__list-pane"><SectionHeading level={3} title="Received events" />
     {props.events.length === 0 ? <EmptyState title="No matching events" detail="Change the session filters or wait for a connected event source." /> : <div className="management-table-wrap"><table className="management-table diagnostics-event-table"><thead><tr><th>Time</th><th>Source</th><th>Event</th><th>Matched</th><th>Result</th></tr></thead><tbody>
-      {props.events.map((event) => <tr aria-selected={props.selected?.id === event.id} key={event.id}><td><time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time></td><td>{event.providerKind}</td><td><button className="diagnostics-event-table__select" onClick={() => props.onSelect(event.id)} type="button">{event.eventType}</button></td><td>{event.alertIds.length === 0 ? "No alert" : formatCount(event.alertIds.length, { one: "alert", other: "alerts" })}</td><td><StatusBadge label={event.playbackStatus ?? event.outcome} tone={outcomeTone(event.outcome)} /></td></tr>)}
+      {props.events.map((event) => <tr aria-selected={props.selected?.id === event.id} key={event.id}><td><time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time></td><td>{event.providerKind}</td><td><Button variant="subtle" className="diagnostics-event-table__select" onClick={() => props.onSelect(event.id)} type="button">{event.eventType}</Button></td><td>{event.alertIds.length === 0 ? "No alert" : formatCount(event.alertIds.length, { one: "alert", other: "alerts" })}</td><td><StatusBadge label={event.playbackStatus ?? event.outcome} tone={outcomeTone(event.outcome)} /></td></tr>)}
     </tbody></table></div>}
   </section><DetailPane label="Event detail">{props.selected === null ? <EmptyState title="No event selected" detail="Select an event to inspect its sanitized payload and matching result." /> : <>
     <StatusBadge label={props.selected.playbackStatus ?? props.selected.outcome} tone={outcomeTone(props.selected.outcome)} /><h3>{props.selected.eventType}</h3>
     <dl className="diagnostics-workspace__facts"><div><dt>Provider</dt><dd>{props.selected.providerKind} · {props.selected.providerId}</dd></div><div><dt>Mode</dt><dd>{props.selected.test ? "Test" : "Live"}</dd></div><div><dt>Occurred</dt><dd><time dateTime={props.selected.occurredAt}>{formatDateTime(props.selected.occurredAt)}</time></dd></div><div><dt>Actor</dt><dd>{props.selected.actorDisplayName}</dd></div><div><dt>Matched alerts</dt><dd>{props.selected.alertIds.join(", ") || "None"}</dd></div><div><dt>Reference ID</dt><dd>{props.selected.referenceId}</dd></div></dl>
     {props.selected.errorMessage === null ? null : <p className="diagnostics-workspace__inline-error">{props.selected.errorMessage}</p>}
     <h4>Sanitized payload</h4><pre>{JSON.stringify(props.selected.sanitizedPayload, null, 2)}</pre>
-    {props.selected.correction === null ? null : <a className="button" href={props.selected.correction.route}>{props.selected.correction.label}</a>}
+    {props.selected.correction === null ? null : <Button component="a" href={props.selected.correction.route}>{props.selected.correction.label}</Button>}
   </>}</DetailPane></>;
 }
 
 function RawLogsView(props: { readonly logs: readonly DiagnosticsRawLogView[]; readonly selected: DiagnosticsRawLogView | null; readonly onSelect: (id: string) => void; readonly onCopy: (label: string, value: string) => Promise<void> }) {
-  return <><section aria-label="Raw logs" className="diagnostics-workspace__list-pane"><h3>Raw logs</h3>
-    {props.logs.length === 0 ? <EmptyState title="No matching raw logs" detail="Change the session filters or refresh after reproducing the issue." /> : <div className="diagnostics-log-list">{props.logs.map((log) => <button aria-pressed={props.selected?.id === log.id} className={`diagnostics-log-row diagnostics-log-row--${log.level.toLowerCase()}`} key={log.id} onClick={() => props.onSelect(log.id)} type="button"><time dateTime={log.timestamp}>{formatTime(log.timestamp)}</time><span>{log.level.toLowerCase()}</span><strong>{log.referenceId ?? log.event}</strong><small>{log.message}</small></button>)}</div>}
+  return <><section aria-label="Raw logs" className="diagnostics-workspace__list-pane"><SectionHeading level={3} title="Raw logs" />
+    {props.logs.length === 0 ? <EmptyState title="No matching raw logs" detail="Change the session filters or refresh after reproducing the issue." /> : <div className="diagnostics-log-list">{props.logs.map((log) => <UnstyledButton aria-pressed={props.selected?.id === log.id} className={`diagnostics-log-row diagnostics-log-row--${log.level.toLowerCase()}`} key={log.id} onClick={() => props.onSelect(log.id)} type="button"><time dateTime={log.timestamp}>{formatTime(log.timestamp)}</time><span>{log.level.toLowerCase()}</span><strong>{log.referenceId ?? log.event}</strong><small>{log.message}</small></UnstyledButton>)}</div>}
   </section><DetailPane label="Raw log detail">{props.selected === null ? <EmptyState title="No log selected" detail="Select a raw log to inspect its redacted evidence." /> : <>
     <StatusBadge label={props.selected.level} tone={logTone(props.selected.level)} /><h3>{props.selected.referenceId ?? props.selected.event}</h3><p>{props.selected.message}</p>
     <EvidenceList occurredAt={props.selected.timestamp} referenceId={props.selected.referenceId} />
     <pre>{JSON.stringify(sanitizedLogBundle(props.selected), null, 2)}</pre>
-    <div className="diagnostics-workspace__detail-actions">{props.selected.correction === null ? null : <a className="button" href={props.selected.correction.route}>{props.selected.correction.label}</a>}<button className="button button--secondary" onClick={() => void props.onCopy("Sanitized event", JSON.stringify(sanitizedLogBundle(props.selected!), null, 2))} type="button">Copy sanitized event</button></div>
+    <div className="diagnostics-workspace__detail-actions">{props.selected.correction === null ? null : <Button component="a" href={props.selected.correction.route}>{props.selected.correction.label}</Button>}<Button variant="default" onClick={() => void props.onCopy("Sanitized event", JSON.stringify(sanitizedLogBundle(props.selected!), null, 2))} type="button">Copy sanitized event</Button></div>
   </>}</DetailPane></>;
 }
 

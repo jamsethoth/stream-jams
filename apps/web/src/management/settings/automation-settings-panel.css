@@ -8,4 +8,3 @@
 
 .automation-settings__scopes { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; min-width: 0; }
 .automation-settings__scopes legend { margin-bottom: 8px; }
-.automation-settings__scopes label { display: flex; align-items: center; gap: 8px; }

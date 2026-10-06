@@ -1,3 +1,4 @@
+import { Button, Checkbox, Group, NativeSelect, TextInput } from "@mantine/core";
 import type {
   ActionableManagementError,
   AudioOutputDevice,
@@ -46,7 +47,7 @@ interface ConflictState {
 }
 
 export interface AudioOutputsPanelHandle {
-  save(): Promise<boolean>;
+  save(): Promise<boolean | { readonly saved: false; readonly error: ActionableManagementError }>;
   discard(): void;
 }
 
@@ -73,6 +74,12 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
   const [deleteError, setDeleteError] = useState<ActionableManagementError | null>(null);
   const fallbackRef = useRef<HTMLHeadingElement>(null);
   const mutationInProgressRef = useRef(false);
+  const navigationSavingRef = useRef(false);
+  const navigationErrorRef = useRef<ActionableManagementError | null>(null);
+  const recordSaveError = useCallback((error: ActionableManagementError) => {
+    navigationErrorRef.current = error;
+    if (!navigationSavingRef.current) setActionError(error);
+  }, []);
 
   useEffect(() => {
     if (status === null) return;
@@ -117,6 +124,9 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
       await refresh();
       return true;
     } catch (cause) {
+      const failure = actionable("Audio output was not saved", cause, "Review the output name and device, then retry.");
+      if (cause instanceof ManagementHttpError && cause.code === "AUDIO_ROUTE_CONFIRMATION_REQUIRED") navigationErrorRef.current = failure;
+      else recordSaveError(failure);
       if (cause instanceof ManagementHttpError && cause.code === "AUDIO_ROUTE_CONFIRMATION_REQUIRED") {
         setConflict({
           kind: "rebind",
@@ -126,21 +136,19 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
           owners: cause.owners,
           references: cause.references
         });
-      } else {
-        setActionError(actionable("Audio output was not saved", cause, "Review the output name and device, then retry."));
       }
       return false;
     } finally {
       mutationInProgressRef.current = false;
       setBusyId(null);
     }
-  }, [audioApi, refresh]);
+  }, [audioApi, refresh, recordSaveError]);
 
   const saveNewOutput = useCallback(async (): Promise<boolean> => {
     if (!newOutputDirty) return true;
     const name = newName.trim();
     if (name === "") {
-      setActionError(actionable("Audio output needs a name", "The name is empty.", "Enter a unique name, then create the output."));
+      recordSaveError(actionable("Audio output needs a name", "The name is empty.", "Enter a unique name, then create the output."));
       return false;
     }
     mutationInProgressRef.current = true;
@@ -161,29 +169,37 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
       await refresh();
       return true;
     } catch (cause) {
-      setActionError(actionable("Audio output was not created", cause, "Use a unique name and an available explicit output device, then retry."));
+      recordSaveError(actionable("Audio output was not created", cause, "Use a unique name and an available explicit output device, then retry."));
       return false;
     } finally {
       mutationInProgressRef.current = false;
       setBusyId(null);
     }
-  }, [audioApi, newAutoFollowDeviceName, newDeviceId, newName, newOutputDirty, refresh]);
+  }, [audioApi, newAutoFollowDeviceName, newDeviceId, newName, newOutputDirty, refresh, recordSaveError]);
 
   const saveAll = useCallback(async (): Promise<boolean> => {
     if (mutationInProgressRef.current) return false;
     if (newOutputDirty && newName.trim() === "") {
-      setActionError(actionable("Audio output needs a name", "The name is empty.", "Enter a unique name, then create the output."));
+      recordSaveError(actionable("Audio output needs a name", "The name is empty.", "Enter a unique name, then create the output."));
       return false;
     }
     if (drafts.some((draft) => isDirty(draft) && draft.name.trim() === "")) {
-      setActionError(actionable("Audio output needs a name", "A saved route name is empty.", "Enter a unique name, then save the output."));
+      recordSaveError(actionable("Audio output needs a name", "A saved route name is empty.", "Enter a unique name, then save the output."));
       return false;
     }
     for (const draft of drafts) {
       if (isDirty(draft) && !(await saveOne(draft))) return false;
     }
     return saveNewOutput();
-  }, [drafts, newName, newOutputDirty, saveNewOutput, saveOne]);
+  }, [drafts, newName, newOutputDirty, saveNewOutput, saveOne, recordSaveError]);
+
+  const saveForNavigation = useCallback(async () => {
+    navigationSavingRef.current = true; navigationErrorRef.current = null; setActionError(null);
+    try {
+      if (await saveAll()) return true;
+      return { saved: false as const, error: { ...(navigationErrorRef.current ?? actionable("Audio changes were not saved", null, "Finish the current audio action, then try again.")), correction: { label: "Review audio outputs", route: "/manage/settings#audio-outputs" } } };
+    } finally { navigationSavingRef.current = false; }
+  }, [saveAll]);
 
   const discard = useCallback(() => {
     if (status !== null) setDrafts(status.routes.map(({ route }) => toDraft(route)));
@@ -194,7 +210,7 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
     setActionError(null);
   }, [status]);
 
-  useImperativeHandle(ref, () => ({ save: saveAll, discard }), [discard, saveAll]);
+  useImperativeHandle(ref, () => ({ save: saveForNavigation, discard }), [discard, saveForNavigation]);
 
   function createOutput(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -278,7 +294,7 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
       <section aria-labelledby="audio-outputs-heading" className="audio-outputs" id="audio-outputs">
         <h3 id="audio-outputs-heading">Audio outputs</h3>
         <ManagementErrorBanner error={actionable("Audio outputs could not be loaded", refreshError, "Check the local service, then retry." )} />
-        <button onClick={() => void refresh()} type="button">Retry loading audio outputs</button>
+        <Button onClick={() => void refresh()} type="button">Retry loading audio outputs</Button>
       </section>
     );
   }
@@ -288,13 +304,13 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
 
   return (
     <section aria-labelledby="audio-outputs-heading" className="audio-outputs" id="audio-outputs">
-      <div className="audio-outputs__heading">
+      <Group align="flex-start" justify="space-between" wrap="wrap">
         <div>
           <h3 id="audio-outputs-heading" ref={fallbackRef} tabIndex={-1}>Audio outputs</h3>
           <p>Name local playback destinations once, then select them from alert settings.</p>
         </div>
         <StatusBadge label={!status.capability.available ? "Device playback unavailable" : status.muted ? "Alerts muted" : "Device playback available"} tone={status.muted || !status.capability.available ? "warning" : "positive"} />
-      </div>
+      </Group>
 
       <div className="audio-outputs__guidance">
         <p><strong>Private-output reminder:</strong> OBS Desktop Audio or monitoring can independently capture a selected endpoint.</p>
@@ -310,7 +326,7 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
       {status.capability.available ? null : (
         <div className="audio-outputs__unavailable" role="status">
           <div><strong>Local device playback is unavailable.</strong><p>{status.capability.nextStep ?? "Open the desktop app to enumerate and test local output devices."}</p></div>
-          <button className="button button--secondary" disabled={busyId !== null} onClick={() => void retryAudioPlayer()} type="button">{busyId === "retry" ? "Retrying audio player..." : "Retry audio player"}</button>
+          <Button variant="default" disabled={busyId !== null} onClick={() => void retryAudioPlayer()} type="button">{busyId === "retry" ? "Retrying audio player..." : "Retry audio player"}</Button>
         </div>
       )}
 
@@ -320,12 +336,12 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
       } : null} />}
 
       <form className="audio-outputs__create" onSubmit={createOutput}>
-        <label><span>New output name</span><input disabled={busyId !== null} maxLength={120} onChange={(event) => setNewName(event.currentTarget.value)} value={newName} /></label>
+        <TextInput label="New output name" disabled={busyId !== null} maxLength={120} onChange={(event) => setNewName(event.currentTarget.value)} value={newName} />
         <div className="audio-outputs__device-field">
           <DeviceSelect available={status.capability.available} devices={devices} disabled={busyId !== null} label="New output device" onChange={(deviceId) => { setNewDeviceId(deviceId); if (deviceId === null) setNewAutoFollowDeviceName(false); }} route={null} value={newDeviceId} />
-          <label className="audio-outputs__checkbox"><input checked={newAutoFollowDeviceName} disabled={busyId !== null || newDeviceId === null} onChange={(event) => setNewAutoFollowDeviceName(event.currentTarget.checked)} type="checkbox" />Automatically follow this device name</label>
+          <Checkbox checked={newAutoFollowDeviceName} disabled={busyId !== null || newDeviceId === null} onChange={(event) => setNewAutoFollowDeviceName(event.currentTarget.checked)} label="Automatically follow this device name" />
         </div>
-        <button disabled={busyId !== null || newName.trim() === ""} type="submit">{busyId === "new" ? "Creating output..." : "Create output"}</button>
+        <Button disabled={busyId !== null || newName.trim() === ""} type="submit">{busyId === "new" ? "Creating output..." : "Create output"}</Button>
       </form>
 
       {drafts.length === 0 ? <p className="management-empty">No named audio outputs yet. Create one to route explicit alert audio to a local device.</p> : (
@@ -337,17 +353,17 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
             return (
               <fieldset aria-label={`${route.name} audio output`} className="audio-output-route" disabled={busyId !== null} key={route.id}>
                 <legend><span>{route.name}</span><StatusBadge label={stateLabel(routeStatus.state)} tone={stateTone(routeStatus.state)} /></legend>
-                <label><span>Output name</span><input maxLength={120} onChange={(event) => updateDraft(setDrafts, draft.id, { name: event.currentTarget.value })} value={draft.name} /></label>
+                <TextInput label="Output name" maxLength={120} onChange={(event) => updateDraft(setDrafts, draft.id, { name: event.currentTarget.value })} value={draft.name} />
                 <div className="audio-outputs__device-field">
                   <DeviceSelect available={status.capability.available} devices={devices} disabled={busyId !== null} label="Output device" onChange={(deviceId) => updateDraft(setDrafts, draft.id, { deviceId, ...(deviceId === null ? { autoFollowDeviceName: false } : {}) })} route={route} value={draft.deviceId} />
-                  <label className="audio-outputs__checkbox"><input checked={draft.autoFollowDeviceName} disabled={busyId !== null || draft.deviceId === null || !hasTrustedDeviceLabel(draft, route, devices)} onChange={(event) => updateDraft(setDrafts, draft.id, { autoFollowDeviceName: event.currentTarget.checked })} type="checkbox" />Automatically follow this device name</label>
+                  <Checkbox checked={draft.autoFollowDeviceName} disabled={busyId !== null || draft.deviceId === null || !hasTrustedDeviceLabel(draft, route, devices)} onChange={(event) => updateDraft(setDrafts, draft.id, { autoFollowDeviceName: event.currentTarget.checked })} label="Automatically follow this device name" />
                 </div>
                 <p className="audio-output-route__state">{stateDescription(routeStatus)}</p>
                 {automaticBindingDescription(routeStatus) === null ? null : <p className="audio-output-route__state">{automaticBindingDescription(routeStatus)}</p>}
                 <div className="audio-output-route__actions">
-                  <button disabled={!isDirty(draft) || draft.name.trim() === ""} onClick={() => void saveOne(draft)} type="button">{routeBusy ? "Saving output..." : "Save output"}</button>
-                  <button className="button button--secondary" disabled={routeStatus.state !== "ready" || isDirty(draft) || busyId !== null} onClick={() => void testOutput(route)} type="button">Test {route.name}</button>
-                  <button className="button button--danger-quiet" disabled={busyId !== null} onClick={() => { setActionError(null); setNotice(null); setDeleteError(null); setConflict(null); setDeleteRoute(route); }} type="button">Delete {route.name}</button>
+                  <Button disabled={!isDirty(draft) || draft.name.trim() === ""} onClick={() => void saveOne(draft)} type="button">{routeBusy ? "Saving output..." : "Save output"}</Button>
+                  <Button variant="default" disabled={routeStatus.state !== "ready" || isDirty(draft) || busyId !== null} onClick={() => void testOutput(route)} type="button">Test {route.name}</Button>
+                  <Button variant="subtle" color="red" disabled={busyId !== null} onClick={() => { setActionError(null); setNotice(null); setDeleteError(null); setConflict(null); setDeleteRoute(route); }} type="button">Delete {route.name}</Button>
                 </div>
               </fieldset>
             );
@@ -385,14 +401,11 @@ function DeviceSelect({ available, devices, disabled, label, onChange, route, va
 }) {
   const missingSelection = value !== null && !devices.some((device) => device.deviceId === value);
   return (
-    <label>
-      <span>{label}</span>
-      <select disabled={disabled || !available} onChange={(event) => onChange(event.currentTarget.value === "" ? null : event.currentTarget.value)} value={value ?? ""}>
+    <NativeSelect label={label} disabled={disabled || !available} onChange={(event) => onChange(event.currentTarget.value === "" ? null : event.currentTarget.value)} value={value ?? ""}>
         <option value="">Not bound</option>
         {missingSelection ? <option value={value!}>{route?.deviceLabel ?? value} (missing)</option> : null}
         {devices.map((device) => <option key={device.deviceId} value={device.deviceId}>{device.label}</option>)}
-      </select>
-    </label>
+    </NativeSelect>
   );
 }
 
@@ -415,7 +428,7 @@ function ConflictNotice({ busy, conflict, onConfirm }: { readonly busy: boolean;
         </li>
       ))}</ul>}
       <p><span className="management-error-banner__label">Next step:</span> {conflict.nextStep}</p>
-      {onConfirm === null ? null : <button disabled={busy} onClick={onConfirm} type="button">Confirm binding change</button>}
+      {onConfirm === null ? null : <Button disabled={busy} onClick={onConfirm} type="button">Confirm binding change</Button>}
     </section>
   );
 }
