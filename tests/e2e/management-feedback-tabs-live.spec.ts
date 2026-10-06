@@ -6,6 +6,94 @@ import { createProviderSecurityRuntimeFixture } from "../../apps/server/src/test
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
+test("rebuilt navigation Save and leave owns one accessible failure and preserves retry", async ({ page }, testInfo) => {
+  const fixture = await createProviderSecurityRuntimeFixture();
+  try {
+    await fixture.start();
+    expect((await fixture.request("/health")).status).toBe(200);
+    const errors: string[] = [];
+    const expectedErrors: string[] = [];
+    page.on("pageerror", error => errors.push(error.message));
+    page.on("console", message => {
+      if (message.type() !== "error") return;
+      const text = message.text();
+      if (text.startsWith("[fixture-navigation-ref] The Screen Effect was not saved.")
+        || (message.location().url.endsWith("/fixture-navigation-effect") && text === "Failed to load resource: the server responded with a status of 503 (Service Unavailable)")) expectedErrors.push(text);
+      else errors.push(text);
+    });
+    const importResponse = await fetch(`${fixture.runtime.url}/assets/import`, {
+      method: "POST",
+      headers: { ...fixture.headers, "content-type": "application/octet-stream", "x-stream-jams-file-name": "fixture.png", "x-stream-jams-mime-type": "image/png" },
+      body: new Uint8Array(await readFile(resolve("apps/web/public/storybook-assets/tiny-image.png")))
+    });
+    expect(importResponse.status).toBe(201);
+    const asset = await importResponse.json() as { id: string };
+    const draft = createScreenEffectDocument({ id: "fixture-navigation-effect", name: "Disposable navigation effect", defaultVariantId: "fixture-navigation-variant" });
+    const effect = screenEffectDocumentSchema.parse({ ...draft, variants: [{ ...draft.variants[0], visual: { mediaType: "image", assetId: asset.id, layout: { x: 0, y: 0, width: 1920, height: 1080, zIndex: 0 } }, visualOutputs: { browserSource: true, desktop: false } }] });
+    expect((await fixture.request("/screen-effects", "POST", effect)).status).toBe(201);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${fixture.runtime.url}/manage/modules/screen-effects/editor/${effect.id}`);
+    await page.evaluate(() => { localStorage.setItem("stream-jams-theme", "dark"); });
+    await page.reload();
+    await page.getByRole("tab", { name: "Effect", exact: true }).click();
+    await page.getByLabel("Effect name", { exact: true }).fill("Disposable retained navigation draft");
+    let requests = 0;
+    let release!: () => void;
+    const responseGate = new Promise<void>(resolve => { release = resolve; });
+    await page.route(`**/screen-effects/${effect.id}`, async route => {
+      requests += 1;
+      await responseGate;
+      await route.fulfill({ status: 503, json: { error: { code: "UNAVAILABLE", message: "Disposable storage unavailable", id: "fixture-navigation-ref", nextStep: "Restart the disposable service, then try Save and leave again." } } });
+    });
+    await page.getByRole("button", { name: "Back to Screen Effects" }).click();
+    const dialog = page.getByRole("dialog", { name: "Leave with unsaved changes?" });
+    await dialog.getByRole("button", { name: "Save and leave" }).click();
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await expect(dialog.getByRole("button", { name: "Save and leave" })).toBeDisabled();
+    await expect(dialog.getByRole("button", { name: "Discard" })).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeVisible();
+    expect(requests).toBe(1);
+    release();
+    await expect(dialog.getByRole("alert")).toHaveCount(1);
+    await expect(page.getByRole("alert")).toHaveCount(1);
+    await expect(dialog.getByRole("alert")).toContainText("Disposable storage unavailable");
+    await expect(dialog.getByRole("alert")).toContainText("fixture-navigation-ref");
+    await expect(dialog.getByRole("alert")).toContainText("Restart the disposable service");
+    const diagnostics = dialog.getByRole("link", { name: "Open Diagnostics" });
+    await expect(diagnostics).toHaveAttribute("href", "/manage/diagnostics?reference=fixture-navigation-ref");
+    const dismiss = dialog.getByRole("button", { name: "Dismiss error" });
+    await dismiss.focus();
+    await expect(dismiss).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(diagnostics).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(dismiss).toBeFocused();
+    await page.screenshot({ path: testInfo.outputPath("navigation-save-failure-390-dark.png") });
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await dialog.getByRole("button", { name: "Save and leave" }).click();
+    await expect(dialog.getByRole("alert")).toHaveCount(1);
+    expect(requests).toBe(2);
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByLabel("Effect name", { exact: true })).toHaveValue("Disposable retained navigation draft");
+    await page.getByRole("button", { name: "Back to Screen Effects" }).click();
+    await expect(dialog).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await page.unroute(`**/screen-effects/${effect.id}`);
+    await dialog.getByRole("button", { name: "Save and leave" }).click();
+    await expect(page.locator(".screen-effect-editor")).toHaveCount(0);
+    await expect(page).toHaveURL(`${fixture.runtime.url}/manage/modules/screen-effects`);
+    const stored = await (await fixture.request(`/screen-effects/${effect.id}`)).json() as { name: string };
+    expect(stored.name).toBe("Disposable retained navigation draft");
+    expect(expectedErrors).toHaveLength(4);
+    expect(errors).toEqual([]);
+  } finally {
+    await fixture.close();
+  }
+});
+
 test("rebuilt feedback and tabs preserve drafts, preview ownership, dialog focus and compact themes", async ({ page }, testInfo) => {
   const fixture = await createProviderSecurityRuntimeFixture();
   try {

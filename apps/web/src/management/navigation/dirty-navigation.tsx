@@ -9,6 +9,7 @@ import {
   type ReactNode
 } from "react";
 import { DirtyNavigationDialog } from "../foundation/DirtyNavigationDialog.js";
+import type { ActionableManagementError } from "@stream-jams/core";
 import { getDesktopBridge } from "../desktop/desktop-bridge.js";
 import {
   formatManagementRoute,
@@ -25,7 +26,7 @@ export interface DirtyNavigationSource {
 
 export type DirtyNavigationSaveResult = boolean | void | {
   readonly saved: false;
-  readonly error: string;
+  readonly error: string | ActionableManagementError;
 };
 
 interface DirtyNavigationContextValue {
@@ -86,7 +87,7 @@ export function useManagementNavigation() {
 
   const [route, setRoute] = useState<ManagementRoute>(() => parseManagementRoute(`${window.location.pathname}${window.location.search}${window.location.hash}`));
   const [pending, setPending] = useState<PendingNavigation | null>(null);
-  const [guardError, setGuardError] = useState<string | null>(null);
+  const [guardError, setGuardError] = useState<string | ActionableManagementError | null>(null);
   const decisionInFlight = useRef(false);
   const [decisionPending, setDecisionPending] = useState(false);
 
@@ -211,6 +212,7 @@ export function useManagementNavigation() {
   const guard = (
     <DirtyNavigationDialog
       error={guardError}
+      onDismissError={() => setGuardError(null)}
       onCancel={() => {
         if (decisionInFlight.current) return;
         if (pending !== null && "quitId" in pending) getDesktopBridge()?.resolveQuit(pending.quitId, false);

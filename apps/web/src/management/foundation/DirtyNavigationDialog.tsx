@@ -1,9 +1,12 @@
 import { useId } from "react";
 import { Button } from "@mantine/core";
+import type { ActionableManagementError } from "@stream-jams/core";
+import { ManagementErrorToast } from "./ManagementToast.js";
 import { ManagementModalSurface as ModalSurface, ManagementModalTitle } from "./ManagementModalSurface.js";
 
 export interface DirtyNavigationDialogProps {
-  readonly error: string | null;
+  readonly error: string | ActionableManagementError | null;
+  readonly onDismissError?: () => void;
   readonly onCancel: () => void;
   readonly onDiscard: () => void;
   readonly onSave: () => void;
@@ -24,7 +27,9 @@ export function DirtyNavigationDialog(props: DirtyNavigationDialogProps) {
         <ManagementModalTitle>{props.title ?? "Leave with unsaved changes?"}</ManagementModalTitle>
         <p>{props.summary}</p>
       </header>
-      {props.error === null ? null : (
+      {props.error === null ? null : typeof props.error !== "string" ? (
+        <ManagementErrorToast error={props.error} onDismiss={props.onDismissError ?? props.onCancel} />
+      ) : (
         <div className="management-error-banner management-error-banner--error" role="alert">
           <strong>Changes could not be completed.</strong>
           <span>{props.error}</span>

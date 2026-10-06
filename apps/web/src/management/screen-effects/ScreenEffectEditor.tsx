@@ -40,7 +40,7 @@ import { AudioFadeControls } from "../audio/AudioFadeControls.js";
 import { MediaDurationControls } from "../audio/MediaDurationControls.js";
 import { ManagementModalSurface as ModalSurface, ManagementModalTitle } from "../foundation/ManagementModalSurface.js";
 import type { ManagementApi, TwitchConnectionStatusView } from "../management-api.js";
-import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
+import { useDirtyNavigationSource, type DirtyNavigationSaveResult } from "../navigation/dirty-navigation.js";
 import { removeEffectVariant, updateEffectVariant } from "./effect-editor-state.js";
 import type { ScreenEffectsApi } from "./screen-effects-api.js";
 import "./screen-effects.css";
@@ -187,18 +187,19 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
     }
   }, [context, props.audioApi, props.managementApi]);
 
-  const save = useCallback(async (confirmLiveImpact = false) => {
+  const save = useCallback(async (confirmLiveImpact = false, forNavigation = false): Promise<DirtyNavigationSaveResult> => {
     if (state === null) return false;
     setError(null);
     setNotice(null);
     const parsed = screenEffectDocumentSchema.safeParse(state.document);
     if (!parsed.success) {
-      setValidationError(firstValidationMessage(parsed.error));
-      return false;
+      const error = firstValidationMessage(parsed.error);
+      setValidationError(error);
+      return forNavigation ? { saved: false, error } : false;
     }
     if (!confirmLiveImpact && currentSet?.active !== false && (state.savedDocument.enabled || parsed.data.enabled)) {
-      setSaveConfirmationOpen(true);
-      return false;
+      if (!forNavigation) setSaveConfirmationOpen(true);
+      return forNavigation ? { saved: false, error: "Cancel to continue editing, then choose Save to review the live Screen Effect changes." } : false;
     }
     setBusy(true);
     setError(null);
@@ -217,11 +218,13 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
       setSaveConfirmationOpen(false);
       return true;
     } catch (saveError) {
-      if (saveError instanceof ManagementHttpError && saveError.code === "SCREEN_EFFECT_LIVE_IMPACT_CONFIRMATION_REQUIRED") {
+      if (!forNavigation && saveError instanceof ManagementHttpError && saveError.code === "SCREEN_EFFECT_LIVE_IMPACT_CONFIRMATION_REQUIRED") {
         setSaveConfirmationOpen(true);
       }
       setNotice(null);
-      setError(actionableError(saveError, "The Screen Effect was not saved. The draft is still here.", "Review the draft and local service, then save again."));
+      const error = actionableError(saveError, "The Screen Effect was not saved. The draft is still here.", "Review the draft and local service, then save again.");
+      if (forNavigation) return { saved: false, error };
+      setError(error);
       return false;
     } finally {
       setBusy(false);
@@ -234,7 +237,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
     setValidationError(null);
   }, []);
 
-  const saveForNavigation = useCallback(() => save(false), [save]);
+  const saveForNavigation = useCallback(() => save(false, true), [save]);
 
   const simulateWeights = useCallback(() => {
     try {
