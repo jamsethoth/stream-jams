@@ -43,9 +43,9 @@
 
 ## 6. Complete management page families and editors
 
-- [ ] 6.1 Migrate ManagementNavigation, PageHeader/Breadcrumbs and remaining shell controls, preserving mobile navigation disclosure, native links, dirty-navigation interception and focused-editor shell behavior.
-- [ ] 6.2 Migrate Home, Event sources and TTS providers with existing readiness, validation, activation and live-health contracts.
-- [ ] 6.3 Migrate MusicSourcesPage and AlertSafetyPage explicitly, preserving pairing/credentials/provider status and moderation contracts.
+- [x] 6.1 Migrate ManagementNavigation, PageHeader/Breadcrumbs and remaining shell controls, preserving mobile navigation disclosure, native links, dirty-navigation interception and focused-editor shell behavior.
+- [x] 6.2 Migrate Home, Event sources and TTS providers with existing readiness, validation, activation and live-health contracts.
+- [x] 6.3 Migrate MusicSourcesPage and AlertSafetyPage explicitly, preserving pairing/credentials/provider status and moderation contracts.
 - [ ] 6.4 Migrate Settings and its Audio, Desktop, OverlaySurfaces and Automation sections; retain drafts, correction links, restore/export and device/grant safeguards.
 - [ ] 6.5 Complete Diagnostics controls/sections while retaining already-migrated tabs, active filters, scroll/view state and safe error references.
 - [ ] 6.6 Complete Alerts editor and related controls/dialogs, preserving canvas/warp/color/typography, raw numeric drafts, commit timing and preview ownership; reuse the picker and tabs already migrated.
