@@ -37,6 +37,16 @@ test("rejects a management source imported by the overlay graph", async () => {
   );
 });
 
+for (const route of ["bootstrap", "operator", "overlay"]) {
+  test(`rejects Mantine imports in the ${route} graph`, async () => {
+    const manifest = validManifest();
+    const moduleManifest = validModuleManifest(manifest);
+    moduleManifest[`assets/${route}.js`].push("node_modules/.pnpm/@mantine+core@9.7.0/node_modules/@mantine/core/esm/index.mjs");
+    const fixture = await createFixture(manifest, moduleManifest);
+    await assert.rejects(checkWebRouteBundles({ buildDirectory: fixture }), /route includes management Mantine source/u);
+  });
+}
+
 test("rejects a folded management import from a real Vite overlay chunk", async () => {
   const project = await createViteFixture();
   const require = createRequire(new URL("../apps/web/package.json", import.meta.url));

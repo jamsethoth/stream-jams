@@ -1,6 +1,7 @@
+import { renderManagement as render } from "../../test-support/render-management.js";
 import { createTestMediaPreviewApi } from "../../test-support/media-preview-fixture.js";
 import { timersOverlayModuleDefinition, type AssetLibraryItem, type TimerDefinition, type TimerRunState } from "@stream-jams/core";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import type { AudioApi } from "../audio/audio-api.js";

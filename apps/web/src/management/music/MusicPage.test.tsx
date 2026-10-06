@@ -1,5 +1,6 @@
+import { renderManagement as render } from "../../test-support/render-management.js";
 import { createDefaultMusicModuleConfig } from "@stream-jams/core";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createStoryAssetApi, createStoryManagementApi } from "../../stories/mock-apis.js";

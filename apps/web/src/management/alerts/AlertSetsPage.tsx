@@ -17,7 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { ActionMenu, type ActionMenuItem } from "../foundation/ActionMenu.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
-import { ModalSurface } from "../foundation/ModalSurface.js";
+import { ManagementModalSurface as ModalSurface, ManagementModalTitle } from "../foundation/ManagementModalSurface.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
 import { formatCount, formatDateTime } from "../foundation/formatters.js";
 import { formatEventLabel } from "../foundation/presentation-labels.js";
@@ -869,7 +869,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
       <RegenerateDialog busy={busy} confirmation={regenerateConfirmation} onCancel={() => setRegenerateDialog(null)} onChange={setRegenerateConfirmation} onConfirm={() => void regenerateBrowserSource()} state={regenerateDialog} />
       <DeleteDialog busy={busy} onCancel={() => setDeleteSet(null)} onConfirm={() => void confirmDelete()} set={deleteSet} />
       <AlertMutationDialog busy={busy} onCancel={() => setAlertMutation(null)} onConfirm={() => void confirmAlertMutation()} state={alertMutation} />
-      <ModalSurface labelledBy="alert-module-confirm-title" onCancel={() => setModuleConfirmation(null)} open={moduleConfirmation !== null}>{moduleConfirmation === null ? null : <div className="alert-sets-page__modal"><div><h2 id="alert-module-confirm-title">{moduleConfirmation ? "Enable" : "Disable"} Alerts module?</h2><p>{moduleConfirmation ? "Enabled alerts in the active set may render for new live events." : "Saved alert sets and individual alert settings remain unchanged, but Alerts stop rendering until the module is enabled again."}</p></div><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={() => setModuleConfirmation(null)} type="button">Cancel</button><button className="button button--primary" disabled={busy} onClick={() => void confirmModuleEnablement()} type="button">Confirm change</button></div></div>}</ModalSurface>
+      <ModalSurface labelledBy="alert-module-confirm-title" onCancel={() => setModuleConfirmation(null)} open={moduleConfirmation !== null}>{moduleConfirmation === null ? null : <div className="alert-sets-page__modal"><div><ManagementModalTitle>{moduleConfirmation ? "Enable" : "Disable"} Alerts module?</ManagementModalTitle><p>{moduleConfirmation ? "Enabled alerts in the active set may render for new live events." : "Saved alert sets and individual alert settings remain unchanged, but Alerts stop rendering until the module is enabled again."}</p></div><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={() => setModuleConfirmation(null)} type="button">Cancel</button><button className="button button--primary" disabled={busy} onClick={() => void confirmModuleEnablement()} type="button">Confirm change</button></div></div>}</ModalSurface>
     </div>
   );
 }
@@ -1241,7 +1241,7 @@ function BrowserSources({
 
 function NameDialog({ busy, draft, onCancel, onChange, onSubmit, state }: { readonly busy: boolean; readonly draft: string; readonly onCancel: () => void; readonly onChange: (value: string) => void; readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void; readonly state: NameDialogState | null }) {
   const title = state?.action === "create" ? "Create alert set" : state?.action === "rename" ? "Rename alert set" : "Duplicate alert set";
-  return <ModalSurface labelledBy="alert-set-name-dialog-title" onCancel={onCancel} open={state !== null}><form className="alert-sets-page__modal" onSubmit={onSubmit}><div><h2 id="alert-set-name-dialog-title">{title}</h2><p>Saving does not change which alert set is active.</p></div><label><span>Alert set name</span><input autoComplete="off" autoFocus maxLength={120} onChange={(event) => onChange(event.currentTarget.value)} required value={draft} /></label><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button><button disabled={busy || draft.trim() === ""} type="submit">{state?.action === "duplicate" ? "Duplicate" : "Save"}</button></div></form></ModalSurface>;
+  return <ModalSurface labelledBy="alert-set-name-dialog-title" onCancel={onCancel} open={state !== null}><form className="alert-sets-page__modal" onSubmit={onSubmit}><div><ManagementModalTitle>{title}</ManagementModalTitle><p>Saving does not change which alert set is active.</p></div><label><span>Alert set name</span><input autoComplete="off" autoFocus maxLength={120} onChange={(event) => onChange(event.currentTarget.value)} required value={draft} /></label><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button><button disabled={busy || draft.trim() === ""} type="submit">{state?.action === "duplicate" ? "Duplicate" : "Save"}</button></div></form></ModalSurface>;
 }
 
 function CreateAlertDialog({ busy, error, eventType, eventTypeLocked, loadTwitchCustomRewards, name, onCancel, onEventType, onName, onRewardSelection, onSubmit, open, overlapAlertNames, rewardSelection }: {
@@ -1268,7 +1268,7 @@ function CreateAlertDialog({ busy, error, eventType, eventTypeLocked, loadTwitch
     <ModalSurface labelledBy="alert-create-dialog-title" onCancel={onCancel} open={open}>
       <form className="alert-sets-page__modal" onSubmit={onSubmit}>
         <div>
-          <h2 id="alert-create-dialog-title">Add alert</h2>
+          <ManagementModalTitle>Add alert</ManagementModalTitle>
           <p>The alert starts empty and disabled. Add its content, then review both target profiles in the editor before enabling it.</p>
         </div>
         {error === null ? null : <ManagementErrorBanner error={error} />}
@@ -1317,7 +1317,7 @@ function VariationDialog({ alert, busy, error, name, onCancel, onName, onSubmit 
     <ModalSurface labelledBy="alert-variation-dialog-title" onCancel={onCancel} open={alert !== null}>
       <form className="alert-sets-page__modal" onSubmit={onSubmit}>
         <div>
-          <h2 id="alert-variation-dialog-title">Add variation to {alert?.name}</h2>
+          <ManagementModalTitle>Add variation to {alert?.name}</ManagementModalTitle>
           <p>The variation copies the default design and starts disabled until reviewed.</p>
         </div>
         {error === null ? null : <ManagementErrorBanner error={error} />}
@@ -1332,7 +1332,7 @@ function VariationDialog({ alert, busy, error, name, onCancel, onName, onSubmit 
 }
 
 function ActivationDialog({ busy, impact, onCancel, onConfirm, set }: { readonly busy: boolean; readonly impact: AlertSetActivationImpact | null; readonly onCancel: () => void; readonly onConfirm: () => void; readonly set: AlertSetOverview | null }) {
-  return <ModalSurface labelledBy="alert-set-activation-title" onCancel={onCancel} open={set !== null && impact !== null}><div className="alert-sets-page__modal"><div><h2 id="alert-set-activation-title">Activate {set?.name}?</h2><p>{impact?.replacingActiveSetName === null ? "This set will receive live events." : `${impact?.replacingActiveSetName} will become inactive. Saved configuration will not be deleted.`}</p></div><ImpactFacts impact={impact} />{(impact?.blockers.length ?? 0) > 0 ? <IssueGroup heading="Resolve before activation" issues={impact?.blockers ?? []} /> : null}{(impact?.warnings.length ?? 0) > 0 ? <IssueGroup heading="Review before activation" issues={impact?.warnings ?? []} /> : null}<div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button><button disabled={busy || (impact?.blockers.length ?? 0) > 0} onClick={onConfirm} type="button">{(impact?.warnings.length ?? 0) > 0 ? "Activate with warnings" : "Activate"}</button></div></div></ModalSurface>;
+  return <ModalSurface labelledBy="alert-set-activation-title" onCancel={onCancel} open={set !== null && impact !== null}><div className="alert-sets-page__modal"><div><ManagementModalTitle>Activate {set?.name}?</ManagementModalTitle><p>{impact?.replacingActiveSetName === null ? "This set will receive live events." : `${impact?.replacingActiveSetName} will become inactive. Saved configuration will not be deleted.`}</p></div><ImpactFacts impact={impact} />{(impact?.blockers.length ?? 0) > 0 ? <IssueGroup heading="Resolve before activation" issues={impact?.blockers ?? []} /> : null}{(impact?.warnings.length ?? 0) > 0 ? <IssueGroup heading="Review before activation" issues={impact?.warnings ?? []} /> : null}<div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button><button disabled={busy || (impact?.blockers.length ?? 0) > 0} onClick={onConfirm} type="button">{(impact?.warnings.length ?? 0) > 0 ? "Activate with warnings" : "Activate"}</button></div></div></ModalSurface>;
 }
 
 function ImpactFacts({ impact }: { readonly impact: AlertSetActivationImpact | null }) {
@@ -1345,17 +1345,17 @@ function IssueGroup({ heading, issues }: { readonly heading: string; readonly is
 }
 
 function PreviewDialog({ alert, onCancel }: { readonly alert: AlertInventoryRow | null; readonly onCancel: () => void }) {
-  return <ModalSurface labelledBy="alert-preview-title" onCancel={onCancel} open={alert !== null}><div className="alert-sets-page__modal"><div><span className="alert-sets-page__eyebrow">Text-only sample</span><h2 id="alert-preview-title">Sample message for {alert?.name}</h2></div><div className="alert-sets-page__preview"><span>{alert?.previewText}</span></div><p>This is sample text, not the rendered alert design. Template variables may remain unresolved. It does not send a test or play media.</p><div className="management-modal__actions"><button onClick={onCancel} type="button">Close</button></div></div></ModalSurface>;
+  return <ModalSurface labelledBy="alert-preview-title" onCancel={onCancel} open={alert !== null}><div className="alert-sets-page__modal"><div><span className="alert-sets-page__eyebrow">Text-only sample</span><ManagementModalTitle>Sample message for {alert?.name}</ManagementModalTitle></div><div className="alert-sets-page__preview"><span>{alert?.previewText}</span></div><p>This is sample text, not the rendered alert design. Template variables may remain unresolved. It does not send a test or play media.</p><div className="management-modal__actions"><button onClick={onCancel} type="button">Close</button></div></div></ModalSurface>;
 }
 
 function RegenerateDialog({ busy, confirmation, onCancel, onChange, onConfirm, state }: { readonly busy: boolean; readonly confirmation: string; readonly onCancel: () => void; readonly onChange: (value: string) => void; readonly onConfirm: () => void; readonly state: RegenerateDialogState | null }) {
   const label = state === null ? "Browser source" : formatProfile(state.source.targetProfileId);
   const confirmed = !state?.requiresTypedConfirmation || confirmation === "REGENERATE";
-  return <ModalSurface labelledBy="regenerate-browser-source-title" onCancel={onCancel} open={state !== null}><div className="alert-sets-page__modal"><div><h2 id="regenerate-browser-source-title">Regenerate {label} URL?</h2><p>The current URL will stop working immediately. Update every browser source that uses it.</p></div>{state?.requiresTypedConfirmation ? <label><span>Type REGENERATE to continue</span><input autoComplete="off" onChange={(event) => onChange(event.currentTarget.value)} value={confirmation} /></label> : null}<div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button><button className="button button--danger" disabled={busy || !confirmed} onClick={onConfirm} type="button">Regenerate URL</button></div></div></ModalSurface>;
+  return <ModalSurface labelledBy="regenerate-browser-source-title" onCancel={onCancel} open={state !== null}><div className="alert-sets-page__modal"><div><ManagementModalTitle>Regenerate {label} URL?</ManagementModalTitle><p>The current URL will stop working immediately. Update every browser source that uses it.</p></div>{state?.requiresTypedConfirmation ? <label><span>Type REGENERATE to continue</span><input autoComplete="off" onChange={(event) => onChange(event.currentTarget.value)} value={confirmation} /></label> : null}<div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button><button className="button button--danger" disabled={busy || !confirmed} onClick={onConfirm} type="button">Regenerate URL</button></div></div></ModalSurface>;
 }
 
 function DeleteDialog({ busy, onCancel, onConfirm, set }: { readonly busy: boolean; readonly onCancel: () => void; readonly onConfirm: () => void; readonly set: AlertSetOverview | null }) {
-  return <ModalSurface labelledBy="delete-alert-set-title" onCancel={onCancel} open={set !== null}><div className="alert-sets-page__modal"><div><h2 id="delete-alert-set-title">Delete {set?.name}?</h2><p>This permanently deletes the set and its alerts. Assets used elsewhere remain available.</p></div><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button><button className="button button--danger" disabled={busy} onClick={onConfirm} type="button">Delete alert set</button></div></div></ModalSurface>;
+  return <ModalSurface labelledBy="delete-alert-set-title" onCancel={onCancel} open={set !== null}><div className="alert-sets-page__modal"><div><ManagementModalTitle>Delete {set?.name}?</ManagementModalTitle><p>This permanently deletes the set and its alerts. Assets used elsewhere remain available.</p></div><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button><button className="button button--danger" disabled={busy} onClick={onConfirm} type="button">Delete alert set</button></div></div></ModalSurface>;
 }
 
 function AlertMutationDialog({ busy, onCancel, onConfirm, state }: {
@@ -1370,7 +1370,7 @@ function AlertMutationDialog({ busy, onCancel, onConfirm, state }: {
     <ModalSurface labelledBy="alert-mutation-dialog-title" onCancel={onCancel} open={state !== null}>
       <div className="alert-sets-page__modal">
         <div>
-          <h2 id="alert-mutation-dialog-title">{title}</h2>
+          <ManagementModalTitle>{title}</ManagementModalTitle>
           <p>{reset
             ? "The saved design and matching controls will return to the event default. The alert will be disabled and require review."
             : state?.alert.kind === "default"

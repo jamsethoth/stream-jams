@@ -1,9 +1,10 @@
+import { renderManagement as render } from "../../test-support/render-management.js";
 import type {
   ChannelPointRewardSelection,
   TwitchCustomReward,
   TwitchCustomRewardCatalog
 } from "@stream-jams/core";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";

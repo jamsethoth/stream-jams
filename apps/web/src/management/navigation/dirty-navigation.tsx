@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode
 } from "react";
@@ -86,6 +87,8 @@ export function useManagementNavigation() {
   const [route, setRoute] = useState<ManagementRoute>(() => parseManagementRoute(`${window.location.pathname}${window.location.search}${window.location.hash}`));
   const [pending, setPending] = useState<PendingNavigation | null>(null);
   const [guardError, setGuardError] = useState<string | null>(null);
+  const decisionInFlight = useRef(false);
+  const [decisionPending, setDecisionPending] = useState(false);
 
   const commit = useCallback((nextRoute: ManagementRoute, mode: RouteNavigation["mode"]) => {
     const path = formatManagementRoute(nextRoute);
@@ -100,6 +103,7 @@ export function useManagementNavigation() {
   useEffect(() => {
     const bridge = getDesktopBridge();
     return bridge?.onQuitRequested((quitId) => {
+      if (decisionInFlight.current) { bridge.resolveQuit(quitId, false); return; }
       if (context.source === null) { bridge.resolveQuit(quitId, true); return; }
       setGuardError(null);
       setPending({ quitId });
@@ -108,6 +112,7 @@ export function useManagementNavigation() {
 
   const requestNavigation = useCallback(
     (nextRoute: ManagementRoute) => {
+      if (decisionInFlight.current) return;
       if (formatManagementRoute(nextRoute) === formatManagementRoute(route)) {
         return;
       }
@@ -123,6 +128,7 @@ export function useManagementNavigation() {
 
   useEffect(() => {
     const handlePopState = () => {
+      if (decisionInFlight.current) { window.history.pushState(null, "", formatManagementRoute(route)); return; }
       const nextRoute = parseManagementRoute(`${window.location.pathname}${window.location.search}${window.location.hash}`);
       if (formatManagementRoute(nextRoute) === formatManagementRoute(route)) {
         return;
@@ -163,6 +169,10 @@ export function useManagementNavigation() {
   }, [commit, context, pending]);
 
   const saveAndLeave = useCallback(async () => {
+    if (decisionInFlight.current || pending === null || context.source?.save == null) return;
+    decisionInFlight.current = true;
+    setDecisionPending(true);
+    setGuardError(null);
     try {
       const saved = await context.source?.save?.();
       if (saved === false) {
@@ -176,22 +186,33 @@ export function useManagementNavigation() {
       finishPending();
     } catch (error) {
       setGuardError(error instanceof Error ? error.message : "Unable to save changes before leaving.");
+    } finally {
+      decisionInFlight.current = false;
+      setDecisionPending(false);
     }
-  }, [context.source, finishPending]);
+  }, [context.source, finishPending, pending]);
 
   const discardAndLeave = useCallback(async () => {
+    if (decisionInFlight.current || pending === null) return;
+    decisionInFlight.current = true;
+    setDecisionPending(true);
+    setGuardError(null);
     try {
       await context.source?.discard();
       finishPending();
     } catch (error) {
       setGuardError(error instanceof Error ? error.message : "Unable to discard changes before leaving.");
+    } finally {
+      decisionInFlight.current = false;
+      setDecisionPending(false);
     }
-  }, [context.source, finishPending]);
+  }, [context.source, finishPending, pending]);
 
   const guard = (
     <DirtyNavigationDialog
       error={guardError}
       onCancel={() => {
+        if (decisionInFlight.current) return;
         if (pending !== null && "quitId" in pending) getDesktopBridge()?.resolveQuit(pending.quitId, false);
         setPending(null);
         setGuardError(null);
@@ -199,6 +220,7 @@ export function useManagementNavigation() {
       onDiscard={() => void discardAndLeave()}
       onSave={() => void saveAndLeave()}
       open={pending !== null}
+      pending={decisionPending}
       saveAvailable={context.source?.save !== null && context.source?.save !== undefined}
       summary={context.source?.summary ?? "This page has unsaved changes."}
     />

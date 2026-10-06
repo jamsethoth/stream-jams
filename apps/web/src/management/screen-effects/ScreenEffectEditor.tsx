@@ -33,7 +33,7 @@ import { MediaAudioControls } from "../audio/MediaAudioControls.js";
 import { MediaVolumeControl } from "../audio/MediaVolumeControl.js";
 import { AudioFadeControls } from "../audio/AudioFadeControls.js";
 import { MediaDurationControls } from "../audio/MediaDurationControls.js";
-import { ModalSurface } from "../foundation/ModalSurface.js";
+import { ManagementModalSurface as ModalSurface, ManagementModalTitle } from "../foundation/ManagementModalSurface.js";
 import type { ManagementApi, TwitchConnectionStatusView } from "../management-api.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import { removeEffectVariant, updateEffectVariant } from "./effect-editor-state.js";
@@ -430,11 +430,11 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
       variant={selectedVariant}
     />
     <ModalSurface labelledBy="screen-effect-save-impact-title" onCancel={() => setSaveConfirmationOpen(false)} open={saveConfirmationOpen}>
-      <div><h2 id="screen-effect-save-impact-title">Save live Screen Effect changes?</h2><p>Saving changes live admission. Current and queued occurrences keep their exact saved snapshot.</p><div className="management-modal__actions"><button className="button button--secondary" onClick={() => setSaveConfirmationOpen(false)} type="button">Cancel</button><button className="button button--primary" disabled={busy} onClick={() => void save(true)} type="button">Save live changes</button></div></div>
+      <div><ManagementModalTitle>Save live Screen Effect changes?</ManagementModalTitle><p>Saving changes live admission. Current and queued occurrences keep their exact saved snapshot.</p><div className="management-modal__actions"><button className="button button--secondary" onClick={() => setSaveConfirmationOpen(false)} type="button">Cancel</button><button className="button button--primary" disabled={busy} onClick={() => void save(true)} type="button">Save live changes</button></div></div>
     </ModalSurface>
     <ModalSurface labelledBy="screen-effect-remove-variant-title" onCancel={() => setVariantRemoval(null)} open={variantRemoval !== null} restoreFocusFallbackRef={variantRemovalFocusFallbackRef}>
       <div>
-        <h2 id="screen-effect-remove-variant-title">Remove {variantRemoval?.name} variant?</h2>
+        <ManagementModalTitle>Remove {variantRemoval?.name} variant?</ManagementModalTitle>
         <p>The variant will be removed from this draft. Save the Screen Effect to persist the change, or use Undo to restore it.</p>
         <div className="management-modal__actions">
           <button className="button button--secondary" onClick={() => setVariantRemoval(null)} type="button">Cancel</button>
@@ -740,7 +740,7 @@ function LiveTestDialog({ api, document, onClose, onError, onNotice, open, route
   return <ModalSurface labelledBy="screen-effect-live-test-title" onCancel={onClose} open={open}>
     <div>
       <p className="management-eyebrow">Explicit live output</p>
-      <h2 id="screen-effect-live-test-title">Test saved Screen Effect?</h2>
+      <ManagementModalTitle>Test saved Screen Effect?</ManagementModalTitle>
       <p>Saved input · The saved {variant.name} variant is used exactly; weighted selection is not rerun.</p>
       <p>Selected destinations (current connection and device readiness are checked when you confirm):</p>
       {destinations.length === 0 ? <p role="alert">No destination is selected.</p> : <ul>{destinations.map((destination) => <li key={destination}>{destination}</li>)}</ul>}

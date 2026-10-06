@@ -1,6 +1,7 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { renderManagement as render } from "../../test-support/render-management.js";
+import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { DirtyNavigationProvider, useDirtyNavigationSource, useManagementNavigation } from "./dirty-navigation.js";
 import type { DesktopBridge } from "../desktop/desktop-bridge.js";
 
@@ -44,4 +45,38 @@ it("allows a clean management page to quit without a discard dialog", () => {
   const { request, effects } = fixture(false, false);
   request();
   expect(effects).toEqual(["quit"]);
+});
+
+it("blocks repeated save, discard, Escape and quit decisions while a save is pending, then permits explicit retry", async () => {
+  let rejectSave!: (cause: unknown) => void;
+  let requestQuit!: (id: string) => void;
+  const resolveQuit = vi.fn();
+  window.streamJamsDesktop = { onQuitRequested(listener) { requestQuit = listener; return () => {}; }, resolveQuit };
+  const save = vi.fn(() => new Promise<void>((_resolve, reject) => { rejectSave = reject; }));
+  const discard = vi.fn();
+  function Harness() {
+    useDirtyNavigationSource({ id: "editor", summary: "Unsaved draft", dirty: true, save, discard });
+    return useManagementNavigation().guard;
+  }
+  render(<DirtyNavigationProvider><Harness /></DirtyNavigationProvider>);
+  act(() => requestQuit("quit-original"));
+  const saveButton = await screen.findByRole("button", { name: "Save and leave" });
+  await userEvent.dblClick(saveButton);
+  expect(save).toHaveBeenCalledOnce();
+  expect(saveButton).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Discard" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  await userEvent.keyboard("{Escape}");
+  expect(screen.getByRole("dialog")).toBeVisible();
+  act(() => requestQuit("quit-repeated"));
+  expect(resolveQuit).toHaveBeenCalledExactlyOnceWith("quit-repeated", false);
+  await act(async () => rejectSave(new Error("Explicit retry required")));
+  expect(await screen.findByText("Explicit retry required")).toBeVisible();
+  expect(saveButton).toBeEnabled();
+  expect(discard).not.toHaveBeenCalled();
+  await userEvent.click(saveButton);
+  expect(save).toHaveBeenCalledTimes(2);
+  await act(async () => rejectSave(new Error("Still unavailable")));
+  await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(resolveQuit).toHaveBeenLastCalledWith("quit-original", false);
 });

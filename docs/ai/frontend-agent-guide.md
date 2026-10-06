@@ -28,7 +28,7 @@ Do not treat this as a marketing site. Build the actual management or overlay wo
 - Keep management and overlay auth separate. Never put secrets, OAuth tokens, overlay keys, signed URLs, or credential refs in Storybook args, client env, logs, screenshots, or docs examples.
 - Use `import type` for type-only imports and keep relative TypeScript imports ESM-compatible.
 - Preserve strict TypeScript. Do not weaken `strict`, `noUncheckedIndexedAccess`, or `exactOptionalPropertyTypes`.
-- Prefer the existing CSS and component patterns before introducing a new UI dependency.
+- Management standard controls use the installed Mantine components and the management presentation provider. Read the ownership contract in `docs/design-tokens.md`; keep workflow components and typed API boundaries intact.
 - Do not silently fail. User-visible failures need human-readable next steps and a log/reference ID when one is available.
 - Keep live-runtime changes explicit, especially actions that affect active alert consumption, active alert sets, overlay routes, or provider selection.
 
@@ -59,6 +59,16 @@ Storybook is the component workbench for `apps/web`.
 - New controls need accessible names, stable focus behavior, and keyboard operation.
 - Prefer role and label based testing selectors. Use test IDs only when user-facing selectors do not exist.
 - Automated accessibility checks are a first pass, not a replacement for keyboard and screen-reader review.
+
+## Management Presentation Boundary
+
+`ManagementPresentationProvider` owns the sole persisted preference, `stream-jams-theme`, and synchronizes System mode with the OS. Do not add another color-scheme manager or provider to a page. The existing native error boundary surrounds this provider so recovery remains available if initialization fails.
+
+Use direct Mantine Button/ActionIcon and field components for standard controls. Command buttons default to `type="button"`; declare submit intent explicitly. Keep navigation as native anchors. Preserve labels, descriptions, errors, refs and draft values when migrating fields. Numeric drafts that allow blanks, negative corrections or specialized clamping stay native until an equivalent tested adapter exists.
+
+Management dialogs use `ManagementModalSurface` with `ManagementModalTitle`; pending actions disable dismissal. Menus use the existing thin ActionMenu contract. Mantine owns portals, positioning and keyboard behavior; retain workflow safeguards and valid focus fallback. Library CSS loads in the management entry only, with semantic overrides after its layer. Modal/menu/select z-index defaults are 1000/1100/1200. Direction follows the document without remounting drafts.
+
+Operator and browser/private overlays retain their provider-independent ModalSurface, StatusBadge, TimerAdjustmentControls and shared CSS. They must not import management Mantine CSS or JS. Bootstrap and recovery also remain native. Use `renderManagement` for management unit tests and the scoped Management Storybook decorator; never disable real browser portals or focus to make tests pass. Management axe checks include portal roots.
 
 ## Overlay Error Rule
 

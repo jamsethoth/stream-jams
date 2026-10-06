@@ -63,6 +63,13 @@ export async function checkWebRouteBundles({
   })));
 
   const errors = [];
+  for (const route of ["bootstrap", "operator", "overlay"]) {
+    for (const source of routes[route].sources) {
+      if (source.includes("@mantine/") || source.includes("@mantine+")) {
+        errors.push(`${title(route)} route includes management Mantine source ${source}.`);
+      }
+    }
+  }
   for (const [route, budget] of Object.entries(budgets)) {
     const measured = routes[route]?.gzipBytes;
     if (measured === undefined) throw new Error(`No ${route} route graph was measured.`);

@@ -1,6 +1,7 @@
+import { renderManagement as render } from "../../test-support/render-management.js";
 import { createTestMediaPreviewApi } from "../../test-support/media-preview-fixture.js";
 import type { AssetChangeImpact, AssetLibraryItem, AssetMetadataUpdateInput } from "@stream-jams/core";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AssetManager, type AssetLibraryManagementApi } from "./AssetManager.js";

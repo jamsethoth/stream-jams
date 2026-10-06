@@ -1,4 +1,5 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { renderManagement as render } from "../../test-support/render-management.js";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { storyAssetLibraryItems } from "../../stories/story-fixtures.js";
 import { createTestMediaPreviewApi } from "../../test-support/media-preview-fixture.js";

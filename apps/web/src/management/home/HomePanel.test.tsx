@@ -1,5 +1,6 @@
+import { renderManagement as render } from "../../test-support/render-management.js";
 import type { ActionableManagementError, HomeSetupSummary } from "@stream-jams/core";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HomePanel } from "./HomePanel.js";
 

@@ -1,10 +1,11 @@
+import { renderManagement as render } from "../../../test-support/render-management.js";
 import { createTestMediaPreviewApi, previewDescriptor } from "../../../test-support/media-preview-fixture.js";
 import {
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
   type AlertEditorDocument
 } from "@stream-jams/core";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AssetApi } from "../../assets/asset-api.js";

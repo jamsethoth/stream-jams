@@ -1,5 +1,6 @@
+import { renderManagement as render } from "../../test-support/render-management.js";
 import { alertStarterThemes, streamEventTypes, type AlertStarterThemeId } from "@stream-jams/core";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AlertThemeChooser } from "./AlertThemeChooser.js";

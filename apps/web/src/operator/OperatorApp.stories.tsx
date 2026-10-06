@@ -9,7 +9,7 @@ import type { OperatorTimersApi } from "./timers-api.js";
 const meta = {
   title: "Operator/Playback Console",
   component: OperatorApp,
-  tags: ["operator-compact"],
+  tags: ["operator-compact", "mantine-foundation"],
   parameters: { layout: "fullscreen" },
   args: { timersApi: createTimersApi([]) }
 } satisfies Meta<typeof OperatorApp>;

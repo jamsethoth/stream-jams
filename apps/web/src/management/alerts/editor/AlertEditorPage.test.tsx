@@ -1,3 +1,4 @@
+import { renderManagement as render } from "../../../test-support/render-management.js";
 import { createTestMediaPreviewApi, previewDescriptor } from "../../../test-support/media-preview-fixture.js";
 import {
   compatibilityAlertTextBoxStyle,
@@ -9,7 +10,7 @@ import {
   type RegisteredProviderView,
   type TwitchCustomReward
 } from "@stream-jams/core";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AssetApi } from "../../assets/asset-api.js";
@@ -238,7 +239,7 @@ describe("AlertEditorPage", () => {
     expect(screen.getByRole("checkbox", { name: "Play embedded audio" })).toBeChecked();
     expect(screen.getByText(/Both the video soundtrack and separate audio will play/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Save" }));
-    await user.click(within(screen.getByRole("dialog", { name: "Save changes to active alert?" })).getByRole("button", { name: "Save changes" }));
+    await user.click(within(await screen.findByRole("dialog", { name: "Save changes to active alert?" })).getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
     expect(saveAlertEditorDocument.mock.calls[0]![1].layers.find(layer => layer.type === "video")).toMatchObject({ playEmbeddedAudio: true, audioVolume: 1 });
   });
@@ -288,7 +289,7 @@ describe("AlertEditorPage", () => {
     await user.click(screen.getByRole("button", { name: "Redo" }));
     expect(saveAlertEditorDocument).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Save" }));
-    await user.click(within(screen.getByRole("dialog", { name: "Save changes to active alert?" })).getByRole("button", { name: "Save changes" }));
+    await user.click(within(await screen.findByRole("dialog", { name: "Save changes to active alert?" })).getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
     const saved = saveAlertEditorDocument.mock.calls[0]![1];
     expect(saved.layers.find(layer => layer.type === "video")).toMatchObject({ playEmbeddedAudio: true, audioVolume: 2 });
@@ -351,10 +352,13 @@ describe("AlertEditorPage", () => {
       fireEvent.click(screen.getByRole("button", { name: "Preview" }));
       await vi.advanceTimersByTimeAsync(0);
     });
-    await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
+    // Batch the simulated animation frames into the observed boundary. Flushing
+    // React after every fake frame makes this integration check depend on CPU
+    // pressure rather than the controller's media/visual-exit timing.
+    await act(async () => { vi.advanceTimersByTime(4_000); });
     expect(screen.getByRole("slider", { name: "Preview position" })).toHaveValue("4000");
     expect(screen.getByRole("button", { name: "Pause preview" })).toBeInTheDocument();
-    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    await act(async () => { vi.advanceTimersByTime(300); });
     expect(screen.getByRole("slider", { name: "Preview position" })).toHaveValue("4271");
     expect(screen.getByRole("button", { name: "Replay preview" })).toBeInTheDocument();
   });
@@ -455,7 +459,7 @@ describe("AlertEditorPage", () => {
     await user.click(await screen.findByText("Sound", { selector: ".alert-editor-inspector__layer-list span" }));
     fireEvent.change(screen.getByRole("spinbutton", { name: "Volume" }), { target: { value: "70" } });
     await user.click(screen.getByRole("button", { name: "Save" }));
-    const dialog = screen.getByRole("dialog", { name: "Save changes to active alert?" });
+    const dialog = await screen.findByRole("dialog", { name: "Save changes to active alert?" });
     expect(dialog).toHaveTextContent("Private headphones");
     expect(saveAlertEditorDocument).not.toHaveBeenCalled();
   });
@@ -484,7 +488,7 @@ describe("AlertEditorPage", () => {
     await user.click(await screen.findByRole("tab", { name: "Alert" }));
     await user.click(await screen.findByRole("checkbox", { name: /Private headphones/ }));
     await user.click(screen.getByRole("button", { name: "Save" }));
-    const dialog = screen.getByRole("dialog", { name: "Save changes to active alert?" });
+    const dialog = await screen.findByRole("dialog", { name: "Save changes to active alert?" });
     expect(dialog).toHaveTextContent("Private headphones");
     expect(saveAlertEditorDocument).not.toHaveBeenCalled();
     await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
@@ -507,7 +511,7 @@ describe("AlertEditorPage", () => {
     expect(browser()).toBeChecked();
     await user.click(browser());
     await user.click(screen.getByRole("button", { name: "Save" }));
-    const dialog = screen.getByRole("dialog", { name: "Save changes to active alert?" });
+    const dialog = await screen.findByRole("dialog", { name: "Save changes to active alert?" });
     expect(dialog).toHaveTextContent("Audio outputs");
     await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
@@ -1780,7 +1784,7 @@ describe("AlertEditorPage", () => {
     await user.paste("Welcome, James!");
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Save" }));
-    const saveWarning = screen.getByRole("dialog", { name: "Save changes to active alert?" });
+    const saveWarning = await screen.findByRole("dialog", { name: "Save changes to active alert?" });
     expect(saveWarning).toHaveTextContent("Follow events");
     expect(saveWarning).toHaveTextContent("Landscape");
     expect(saveAlertEditorDocument).not.toHaveBeenCalled();
@@ -2356,7 +2360,7 @@ describe("AlertEditorPage", () => {
     await user.click(screen.getByRole("button", { name: "Leave editor" }));
     await user.click(screen.getByRole("button", { name: "Save and leave" }));
 
-    expect(screen.getByRole("dialog", { name: "Save changes to active alert?" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Save changes to active alert?" })).toBeInTheDocument();
     expect(saveAlertEditorDocument).not.toHaveBeenCalled();
     expect(window.location.pathname).toBe("/manage/modules/alerts/editor/alert-follow");
 

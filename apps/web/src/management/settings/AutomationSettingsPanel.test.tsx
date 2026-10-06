@@ -1,5 +1,6 @@
+import { renderManagement as render } from "../../test-support/render-management.js";
 import { StrictMode } from "react";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AutomationSettingsPanel } from "./AutomationSettingsPanel.js";

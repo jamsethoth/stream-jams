@@ -6,7 +6,7 @@ import {
 } from "@stream-jams/core";
 import { useCallback, useEffect, useState } from "react";
 import { ActionMenu } from "../foundation/ActionMenu.js";
-import { ModalSurface } from "../foundation/ModalSurface.js";
+import { ManagementModalSurface as ModalSurface, ManagementModalTitle } from "../foundation/ManagementModalSurface.js";
 import { MaskedValue } from "../foundation/MaskedValue.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
 import type {
@@ -215,7 +215,7 @@ export function ScreenEffectsPage({ api, onEdit, initialSetId, generateId = defa
 
     <ModalSurface labelledBy="screen-effect-set-name" onCancel={() => setNameDialog(null)} open={nameDialog !== null}>
       <form onSubmit={(event) => { event.preventDefault(); void saveSetName(); }}>
-        <h2 id="screen-effect-set-name">{nameDialog?.kind === "rename" ? "Rename set" : nameDialog?.kind === "duplicate" ? "Duplicate set" : "Create set"}</h2>
+        <ManagementModalTitle>{nameDialog?.kind === "rename" ? "Rename set" : nameDialog?.kind === "duplicate" ? "Duplicate set" : "Create set"}</ManagementModalTitle>
         <label>Set name<input autoFocus maxLength={120} onChange={(event) => setSetName(event.currentTarget.value)} value={setName} /></label>
         {error === null ? null : <p role="alert">{error}</p>}
         <div className="management-modal__actions"><button className="button button--secondary" onClick={() => setNameDialog(null)} type="button">Cancel</button><button className="button button--primary" disabled={busy || setName.trim() === ""} type="submit">Save set</button></div>
@@ -223,7 +223,7 @@ export function ScreenEffectsPage({ api, onEdit, initialSetId, generateId = defa
     </ModalSurface>
     <ModalSurface labelledBy="screen-effect-confirm-title" onCancel={() => setConfirmation(null)} open={confirmation !== null}>
       {confirmation === null ? null : <div>
-        <h2 id="screen-effect-confirm-title">{confirmationTitle(confirmation)}</h2>
+        <ManagementModalTitle>{confirmationTitle(confirmation)}</ManagementModalTitle>
         <p>{confirmationMessage(confirmation)}</p>
         {confirmation.kind === "regenerate" ? <label><span>Type REGENERATE to continue</span><input autoComplete="off" onChange={(event) => setRegenerateConfirmation(event.currentTarget.value)} value={regenerateConfirmation} /></label> : null}
         <div className="management-modal__actions"><button className="button button--secondary" onClick={() => { setConfirmation(null); setRegenerateConfirmation(""); }} type="button">Cancel</button><button className={confirmation.kind === "delete" || confirmation.kind === "regenerate" ? "button button--danger" : "button button--primary"} disabled={busy || (confirmation.kind === "regenerate" && regenerateConfirmation !== "REGENERATE")} onClick={() => void confirm()} type="button">{confirmation.kind === "regenerate" ? "Regenerate URL" : "Confirm change"}</button></div>

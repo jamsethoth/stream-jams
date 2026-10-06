@@ -1,5 +1,6 @@
 import { useId } from "react";
-import { ModalSurface } from "./ModalSurface.js";
+import { Button } from "@mantine/core";
+import { ManagementModalSurface as ModalSurface, ManagementModalTitle } from "./ManagementModalSurface.js";
 
 export interface DirtyNavigationDialogProps {
   readonly error: string | null;
@@ -11,15 +12,16 @@ export interface DirtyNavigationDialogProps {
   readonly saveLabel?: string;
   readonly summary: string;
   readonly title?: string;
+  readonly pending?: boolean;
 }
 
 export function DirtyNavigationDialog(props: DirtyNavigationDialogProps) {
   const titleId = useId();
   return (
-    <ModalSurface labelledBy={titleId} onCancel={props.onCancel} open={props.open}>
+    <ModalSurface labelledBy={titleId} onCancel={props.onCancel} open={props.open} pending={props.pending ?? false}>
       <header className="management-modal__header">
         <p className="management-eyebrow">Unsaved changes</p>
-        <h2 id={titleId}>{props.title ?? "Leave with unsaved changes?"}</h2>
+        <ManagementModalTitle>{props.title ?? "Leave with unsaved changes?"}</ManagementModalTitle>
         <p>{props.summary}</p>
       </header>
       {props.error === null ? null : (
@@ -30,9 +32,9 @@ export function DirtyNavigationDialog(props: DirtyNavigationDialogProps) {
         </div>
       )}
       <div className="management-modal__actions">
-        <button className="button button--secondary" onClick={props.onCancel} type="button">Cancel</button>
-        <button className="button button--danger-quiet" onClick={props.onDiscard} type="button">Discard</button>
-        {props.saveAvailable ? <button className="button button--primary" onClick={props.onSave} type="button">{props.saveLabel ?? "Save and leave"}</button> : null}
+        <Button variant="default" disabled={props.pending ?? false} onClick={props.onCancel}>Cancel</Button>
+        <Button variant="light" color="red" disabled={props.pending ?? false} onClick={props.onDiscard}>Discard</Button>
+        {props.saveAvailable ? <Button disabled={props.pending ?? false} loading={props.pending ?? false} onClick={props.onSave}>{props.saveLabel ?? "Save and leave"}</Button> : null}
       </div>
     </ModalSurface>
   );

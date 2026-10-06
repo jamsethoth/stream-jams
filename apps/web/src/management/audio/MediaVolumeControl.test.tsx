@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { renderManagement as render } from "../../test-support/render-management.js";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { MediaVolumeControl } from "./MediaVolumeControl.js";
 

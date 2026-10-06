@@ -1,4 +1,5 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { renderManagement as render } from "../../test-support/render-management.js";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createDefaultMusicModuleConfig, type MusicModuleConfig, type MusicSnapshot } from "@stream-jams/core";
 import { useState } from "react";

@@ -1,3 +1,4 @@
+import { renderManagement as render } from "../../test-support/render-management.js";
 import type {
   ActionableManagementError,
   ProviderActivationImpact,
@@ -7,7 +8,7 @@ import type {
   RegisteredProviderView,
   TtsProviderSafetySettings
 } from "@stream-jams/core";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EventSourcesPage } from "./EventSourcesPage.js";

@@ -1,3 +1,4 @@
+import { renderManagement as render } from "../../test-support/render-management.js";
 import {
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
@@ -8,7 +9,7 @@ import {
   type StreamEventType,
   type TwitchCustomReward
 } from "@stream-jams/core";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ManagementApi } from "../management-api.js";
@@ -266,7 +267,7 @@ describe("AlertSetsPage", () => {
 
     const more = within(row).getByRole("button", { name: "More actions for New follower" });
     await user.click(more);
-    const menu = screen.getByRole("menu", { name: "More actions for New follower" });
+    const menu = await screen.findByRole("menu", { name: "More actions for New follower" });
     expect(row).not.toContainElement(menu);
     await waitFor(() => expect(within(menu).getByRole("menuitem", { name: "Sample message New follower" })).toHaveFocus());
     await user.keyboard("{ArrowDown}");
@@ -275,7 +276,7 @@ describe("AlertSetsPage", () => {
     expect(screen.queryByRole("menu", { name: "More actions for New follower" })).not.toBeInTheDocument();
     expect(more).toHaveFocus();
     await user.click(more);
-    const reopenedMenu = screen.getByRole("menu", { name: "More actions for New follower" });
+    const reopenedMenu = await screen.findByRole("menu", { name: "More actions for New follower" });
     await user.click(within(reopenedMenu).getByRole("menuitem", { name: "Sample message New follower" }));
 
     const dialog = screen.getByRole("dialog", { name: "Sample message for New follower" });
@@ -844,7 +845,7 @@ describe("AlertSetsPage", () => {
     expect(screen.getByRole("row", { name: /VIP follower/u })).toHaveClass("alert-sets-page__variation-row");
 
     await user.click(screen.getByRole("button", { name: "More actions for New follower" }));
-    await user.click(screen.getByRole("menuitem", { name: "Add variation to New follower" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Add variation to New follower" }));
     const dialog = screen.getByRole("dialog", { name: "Add variation to New follower" });
     await user.clear(within(dialog).getByLabelText("Variation name"));
     await user.type(within(dialog).getByLabelText("Variation name"), "Large follower");
@@ -852,7 +853,7 @@ describe("AlertSetsPage", () => {
     await waitFor(() => expect(createAlertVariation).toHaveBeenCalledWith("alert-follow", { name: "Large follower" }));
 
     await user.click(screen.getByRole("button", { name: "More actions for VIP follower" }));
-    await user.click(screen.getByRole("menuitem", { name: "Duplicate VIP follower" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Duplicate VIP follower" }));
     await waitFor(() => expect(duplicateManagedAlert).toHaveBeenCalledWith("variant-vip"));
   });
 
@@ -863,14 +864,14 @@ describe("AlertSetsPage", () => {
     render(<AlertSetsPage managementApi={alertSetsApi({ resetManagedAlert, deleteManagedAlert })} onEditAlert={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: "More actions for New follower" }));
-    await user.click(screen.getByRole("menuitem", { name: "Reset New follower" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Reset New follower" }));
     const resetDialog = screen.getByRole("dialog", { name: "Reset New follower?" });
     expect(resetDialog).toHaveTextContent("return to the event default");
     await user.click(within(resetDialog).getByRole("button", { name: "Reset alert" }));
     await waitFor(() => expect(resetManagedAlert).toHaveBeenCalledWith("alert-follow", true));
 
     await user.click(screen.getByRole("button", { name: "More actions for New follower" }));
-    await user.click(screen.getByRole("menuitem", { name: "Delete New follower" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Delete New follower" }));
     const deleteDialog = screen.getByRole("dialog", { name: "Delete New follower?" });
     expect(deleteDialog).toHaveTextContent("all of its variations");
     await user.click(within(deleteDialog).getByRole("button", { name: "Delete alert" }));

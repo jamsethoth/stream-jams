@@ -1,6 +1,7 @@
+import { renderManagement as render } from "../../test-support/render-management.js";
 import { createStoryEffectSets } from "../../stories/screen-effect-set-fixtures.js";
 import { createScreenEffectDocument, screenEffectDocumentSchema, type ScreenEffectDocument } from "@stream-jams/core";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ScreenEffectsPage } from "./ScreenEffectsPage.js";
@@ -51,8 +52,9 @@ describe("ScreenEffectsPage", () => {
 
     const more = screen.getByRole("button", { name: "More actions for Confetti" });
     await user.click(more);
-    const menu = screen.getByRole("menu", { name: "More actions for Confetti" });
-    expect(menu.parentElement).toBe(document.body);
+    const menu = await screen.findByRole("menu", { name: "More actions for Confetti" });
+    expect(document.body).toContainElement(menu);
+    expect(more.closest(".screen-effects-page")).not.toContainElement(menu);
     await waitFor(() => expect(within(menu).getByRole("menuitem", { name: "Copy Confetti" })).toHaveFocus());
   });
 

@@ -1,4 +1,5 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { renderManagement as render } from "../../test-support/render-management.js";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { DiagnosticsWorkspaceView } from "@stream-jams/core";
 import { afterEach, describe, expect, it, vi } from "vitest";

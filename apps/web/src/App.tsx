@@ -5,6 +5,7 @@ import { ManagementApp } from "./management/ManagementApp.js";
 import type { ManagementApi } from "./management/management-api.js";
 import { createClientErrorReporter, type ClientErrorReporter } from "./management/diagnostics/client-error-reporter.js";
 import { ManagementErrorBoundary } from "./management/foundation/ManagementErrorBoundary.js";
+import { ManagementPresentationProvider } from "./management/foundation/ManagementPresentationProvider.js";
 
 export interface AppProps {
   readonly assetApi?: AssetApi;
@@ -15,7 +16,9 @@ export interface AppProps {
 export function App({ assetApi = createHttpAssetApi(), managementApi, errorReporter = createClientErrorReporter() }: AppProps) {
   return (
     <ManagementErrorBoundary reporter={errorReporter} resetKey={window.location.pathname}>
-      <ManagementApp assetApi={assetApi} managementApi={managementApi} />
+      <ManagementPresentationProvider>
+        <ManagementApp assetApi={assetApi} managementApi={managementApi} />
+      </ManagementPresentationProvider>
     </ManagementErrorBoundary>
   );
 }

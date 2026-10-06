@@ -17,7 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import { DirtyNavigationDialog } from "../foundation/DirtyNavigationDialog.js";
-import { ModalSurface } from "../foundation/ModalSurface.js";
+import { ManagementModalSurface as ModalSurface, ManagementModalTitle } from "../foundation/ManagementModalSurface.js";
 import { StatusBadge, type StatusBadgeTone } from "../foundation/StatusBadge.js";
 import { formatCount, formatDateTime } from "../foundation/formatters.js";
 import type { ManagementApi, TwitchConnectionStatusView } from "../management-api.js";
@@ -522,9 +522,9 @@ export function ProviderPage({
 
       <ModalSurface labelledBy="provider-action-title" onCancel={() => { if (!actionBusy) setPendingAction(null); }} open={pendingAction !== null}>
         <div className="provider-page__modal-content">
-          <h2 id="provider-action-title">
+          <ManagementModalTitle>
             {pendingAction?.kind === "deactivate" ? "Deactivate" : "Activate"} {pendingAction?.provider.name ?? "provider"}?
-          </h2>
+          </ManagementModalTitle>
           {pendingAction?.kind === "deactivate" ? (
             <>
               <p>Live event intake will stop for {pendingAction.provider.name}. Provider settings and alert mappings will remain saved, and the provider connection can remain connected.</p>
@@ -1197,7 +1197,7 @@ function ProviderSetupWizard({
       <form className="provider-page__modal-content" onSubmit={(event) => void register(event)}>
         <div>
           <span className="provider-page__eyebrow">{reconnecting ? "Connection recovery" : `Step ${stepNumber} of 3`}</span>
-          <h2 id="provider-setup-title" ref={headingRef} tabIndex={-1}>{heading}</h2>
+          <ManagementModalTitle ref={headingRef} tabIndex={-1}>{heading}</ManagementModalTitle>
         </div>
 
         {step === "select" ? (

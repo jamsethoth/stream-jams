@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { renderManagement as render } from "../../../test-support/render-management.js";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createDefaultTextWarp, insertTextWarpSplit, type AlertTextWarp } from "@stream-jams/core";
 import { useState } from "react";
@@ -9,7 +10,7 @@ function setup(initial = createDefaultTextWarp()) {
   const commit = vi.fn(); const preview = vi.fn(); const done = vi.fn();
   function Harness() { const [warp, setWarp] = useState<AlertTextWarp>(initial); return <TextWarpEditor warp={warp} onCommit={(next) => { commit(next); setWarp(next); }} onPreview={preview} onDone={done} />; }
   const { container } = render(<Harness />);
-  const surface = container.firstElementChild as HTMLDivElement;
+  const surface = container.querySelector<HTMLDivElement>(".text-warp-editor")!;
   vi.spyOn(surface, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, width: 400, height: 200, right: 400, bottom: 200, x: 0, y: 0, toJSON: () => ({}) });
   return { surface, commit, preview, done };
 }

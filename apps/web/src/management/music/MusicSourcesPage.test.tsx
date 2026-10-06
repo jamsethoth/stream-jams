@@ -1,4 +1,5 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { renderManagement as render } from "../../test-support/render-management.js";
+import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MusicSourcesApi } from "./MusicSourcesPage.js";

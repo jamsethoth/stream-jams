@@ -49,7 +49,7 @@ import { useAudioStatus } from "../../audio/use-audio-status.js";
 import { Breadcrumbs } from "../../foundation/Breadcrumbs.js";
 import { ManagementErrorBanner } from "../../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../../foundation/ManagementToast.js";
-import { ModalSurface } from "../../foundation/ModalSurface.js";
+import { ManagementModalSurface as ModalSurface, ManagementModalTitle } from "../../foundation/ManagementModalSurface.js";
 import { StatusBadge } from "../../foundation/StatusBadge.js";
 import type { ManagementApi } from "../../management-api.js";
 import { ManagementHttpError } from "../../management-http-client.js";
@@ -1223,7 +1223,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       />
       <ModalSurface labelledBy="copy-alert-design-title" onCancel={() => setCopyDesignOpen(false)} open={copyDesignOpen}>
         <div className="alert-editor-page__save-warning">
-          <div><h2 id="copy-alert-design-title">Copy design from another alert?</h2><p>Layers, assets, animation, and both profile layouts will replace the current design. Matching, enablement, identity, and sample data stay unchanged.</p></div>
+          <div><ManagementModalTitle>Copy design from another alert?</ManagementModalTitle><p>Layers, assets, animation, and both profile layouts will replace the current design. Matching, enablement, identity, and sample data stay unchanged.</p></div>
           <label><span>Source alert</span><select autoFocus onChange={(event) => setCopyDesignSourceId(event.currentTarget.value)} value={copyDesignSourceId}><option value="">Choose an alert</option>{(setDetail?.inventory ?? []).filter((alert) => alert.id !== document.id).map((alert) => <option key={alert.id} value={alert.id}>{alert.name} ({formatEventType(alert.eventType)})</option>)}</select></label>
           <div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={() => setCopyDesignOpen(false)} type="button">Cancel</button><button className="button button--primary" disabled={busy || copyDesignSourceId === ""} onClick={() => void applyCopiedDesign()} type="button">Copy design</button></div>
         </div>
@@ -1231,7 +1231,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       <ModalSurface labelledBy="active-alert-save-warning-title" onCancel={cancelSaveWarning} open={saveWarning !== null}>
         <div className="alert-editor-page__save-warning">
           <div>
-            <h2 id="active-alert-save-warning-title">Save changes to active alert?</h2>
+            <ManagementModalTitle>Save changes to active alert?</ManagementModalTitle>
             <p>This alert belongs to the active set. Saving can change live output immediately.</p>
             {saveWarning?.serverMessage ? <p>{saveWarning.serverMessage}</p> : null}
           </div>
@@ -1251,7 +1251,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       </ModalSurface>
       <ModalSurface labelledBy="profile-copy-warning-title" onCancel={() => setProfileCopy(null)} open={profileCopy !== null}>
         <div className="alert-editor-page__save-warning">
-          <div><h2 id="profile-copy-warning-title">Replace edited {profileCopy === null ? "target" : profileLabel(profileCopy.targetId)} layout?</h2><p>Your unsaved target-profile layout changes will be replaced by a scaled copy. The copied profile will be disabled and marked Needs review.</p></div>
+          <div><ManagementModalTitle>Replace edited {profileCopy === null ? "target" : profileLabel(profileCopy.targetId)} layout?</ManagementModalTitle><p>Your unsaved target-profile layout changes will be replaced by a scaled copy. The copied profile will be disabled and marked Needs review.</p></div>
           <div className="management-modal__actions"><button className="button button--secondary" onClick={() => setProfileCopy(null)} type="button">Cancel</button><button className="button button--primary" onClick={() => applyProfileCopy()} type="button">Replace layout</button></div>
         </div>
       </ModalSurface>

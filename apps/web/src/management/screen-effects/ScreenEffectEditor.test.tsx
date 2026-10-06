@@ -1,3 +1,4 @@
+import { renderManagement as render } from "../../test-support/render-management.js";
 import { createTestMediaPreviewApi } from "../../test-support/media-preview-fixture.js";
 import { ManagementHttpError } from "../management-http-client.js";
 import { createStoryEffectSets } from "../../stories/screen-effect-set-fixtures.js";
@@ -8,7 +9,7 @@ import {
   type RegisteredProviderView,
   type ScreenEffectDocument
 } from "@stream-jams/core";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssetApi } from "../assets/asset-api.js";

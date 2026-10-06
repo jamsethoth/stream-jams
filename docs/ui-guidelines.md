@@ -19,6 +19,7 @@ Do not build landing-page or marketing layouts for product work.
   - number inputs for precise numeric configuration
   - buttons only for explicit commands
 - Buttons should be short, action-oriented, and fit on mobile.
+- Standard management controls use Mantine with the semantic defaults in `docs/design-tokens.md`. Preserve native navigation anchors and explicit submit intent. Dialogs and menus stay within the management presentation boundary; Operator and transparent outputs keep their native controls.
 - Preserve loading, empty, error, success, disabled, and destructive states when a workflow has them.
 - Keep Twitch, overlay, playback, diagnostics, assets, alerts, and settings states operationally distinct.
 

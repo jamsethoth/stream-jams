@@ -1,6 +1,7 @@
+import { renderManagement as render } from "../../test-support/render-management.js";
 import { createTestMediaPreviewApi, previewDescriptor } from "../../test-support/media-preview-fixture.js";
 import { timersOverlayModuleDefinition, type TimerDefinition } from "@stream-jams/core";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TimerStackEditor } from "./TimerStackEditor.js";
 

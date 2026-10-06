@@ -2,6 +2,10 @@
 
 This file documents the management theme contract in `apps/web/src/App.css`. Agents must use these custom properties for new management UI instead of adding fixed theme colors.
 
+`ManagementPresentationProvider` is the single preference owner (`stream-jams-theme`: system/light/dark). `management-theme.ts` maps Mantine typography, spacing/radii and color variables to this contract; `management-mantine.css` supplies semantic control and portal overrides after Mantine's CSS layer. App.css remains the shared native token source for Operator and private overlays. Do not import the management stylesheet from either surface.
+
+Mantine teal denotes the accent, red negative/destructive, green positive, yellow warning and blue information. Filled, light and outline variants resolve to the matching semantic token pair. Do not use a library palette color to invent a new status meaning. Defaults keep small fields, wrapping command labels, 6px control/8px panel radii and reduced-motion support. Portals inherit root tokens and the resolved scheme in both document directions.
+
 ## Color
 
 | CSS custom property | Light value | Use |

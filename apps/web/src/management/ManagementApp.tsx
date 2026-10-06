@@ -21,8 +21,8 @@ import {
   parseManagementRoute,
   type ManagementRoute
 } from "./routing/management-route.js";
-import { SettingsPanel } from "./settings/SettingsPanel.js";
-import { ScreenEffectEditor } from "./screen-effects/ScreenEffectEditor.js";
+const SettingsPanel = lazy(() => import("./settings/SettingsPanel.js").then(module => ({ default: module.SettingsPanel })));
+const ScreenEffectEditor = lazy(() => import("./screen-effects/ScreenEffectEditor.js").then(module => ({ default: module.ScreenEffectEditor })));
 import { ScreenEffectsPage } from "./screen-effects/ScreenEffectsPage.js";
 import { defaultScreenEffectsApi, type ScreenEffectsApi } from "./screen-effects/screen-effects-api.js";
 import { TimersPage } from "./timers/TimersPage.js";
@@ -177,6 +177,7 @@ function RouteContent({
       );
     case "screen-effect-editor":
       return route.effectId === undefined ? null : (
+        <Suspense fallback={<p role="status">Loading Screen Effect editor…</p>}>
         <ScreenEffectEditor
           api={screenEffectsApi}
           assetApi={assetApi}
@@ -189,13 +190,14 @@ function RouteContent({
           managementApi={managementApi}
           onBack={() => onNavigate({ id: "modules-screen-effects", ...(route.setId === undefined ? {} : { setId: route.setId }) })}
         />
+        </Suspense>
       );
     case "assets":
       return <AssetManager assetApi={assetApi} managementApi={managementApi} />;
     case "diagnostics":
       return <DiagnosticsPanel initialReferenceId={route.referenceId} managementApi={managementApi} />;
     case "settings":
-      return <SettingsPanel audioApi={audioApi} managementApi={managementApi} />;
+      return <Suspense fallback={<p role="status">Loading Settings…</p>}><SettingsPanel audioApi={audioApi} managementApi={managementApi} /></Suspense>;
   }
 }
 

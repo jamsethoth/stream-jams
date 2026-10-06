@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { ModalSurface } from "./ModalSurface.js";
+import { ManagementModalSurface as ModalSurface, ManagementModalTitle } from "./ManagementModalSurface.js";
 
 export interface DestructiveConfirmationDialogProps {
   readonly actionLabel: string;
@@ -22,7 +22,7 @@ export function DestructiveConfirmationDialog(props: DestructiveConfirmationDial
     <ModalSurface labelledBy={titleId} onCancel={props.onCancel} open={props.open}>
       <header className="management-modal__header">
         <p className="management-eyebrow">Confirmation required</p>
-        <h2 id={titleId}>{props.title}</h2>
+        <ManagementModalTitle>{props.title}</ManagementModalTitle>
       </header>
       <dl className="management-confirmation-details">
         <div><dt>Affected scope</dt><dd>{props.scope}</dd></div>

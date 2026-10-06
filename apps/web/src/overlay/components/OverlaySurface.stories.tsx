@@ -14,6 +14,7 @@ import {
 
 const meta: Meta<typeof OverlaySurface> = {
   title: "Overlay/OverlaySurface",
+  tags: ["mantine-foundation"],
   component: OverlaySurface,
   decorators: [
     (Story) => (

@@ -39,3 +39,5 @@ onlyBuiltDependencies:
   - unrs-resolver
 minimumReleaseAgeExclude:
   - http-cache-semantics@4.3.0
+  - '@mantine/core@9.7.0'
+  - '@mantine/hooks@9.7.0'

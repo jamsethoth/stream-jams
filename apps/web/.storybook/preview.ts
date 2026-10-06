@@ -1,4 +1,6 @@
 import type { Preview } from "@storybook/react-vite";
+import { createElement } from "react";
+import { ManagementPresentationProvider } from "../src/management/foundation/ManagementPresentationProvider.js";
 import "../src/App.css";
 
 const rtlLanguages = new Set(["ar", "fa", "he", "ur"]);
@@ -24,7 +26,7 @@ const preview: Preview = {
         document.documentElement.lang = locale;
         document.documentElement.dir = rtlLanguages.has(locale.split("-")[0]?.toLowerCase() ?? "en") ? "rtl" : "ltr";
       }
-      return Story();
+      return context.title.startsWith("Management/") ? createElement(ManagementPresentationProvider, null, createElement(Story)) : Story();
     }
   ],
   parameters: {
