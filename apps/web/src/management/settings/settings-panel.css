@@ -46,3 +46,5 @@
   .settings-page__disclosure > .audio-outputs,
   .settings-page__disclosure > .overlay-surfaces { padding-inline-start: 4px; }
 }
+/* Embedded panels take their section heading from the disclosure summary. */
+.settings-page__summary-title { display: inline; font-size: var(--font-size-md); margin: 0; }

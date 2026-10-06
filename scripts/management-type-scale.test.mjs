@@ -23,7 +23,9 @@ test("management and Operator CSS uses only the type scale for font sizes", asyn
     const source = await readFile(file, "utf8");
     source.split("\n").forEach((line, index) => {
       if (/^\s*--font-size-/.test(line)) return;
-      if (/font-size:\s*-?[\d.]+(px|rem|em|pt)\b/.test(line)) violations.push(`${file}:${index + 1} ${line.trim()}`);
+      // Covers font-size and the font shorthand, whose size precedes an optional /line-height.
+      const shorthand = /\bfont:\s*[^;]*?(?<![/\w.-])[\d.]+(px|rem|em|pt)\b/;
+      if (/font-size:\s*-?[\d.]+(px|rem|em|pt)\b/.test(line) || shorthand.test(line)) violations.push(`${file}:${index + 1} ${line.trim()}`);
     });
   }
   assert.deepEqual(violations, [], `Use var(--font-size-*) instead of raw sizes:\n${violations.join("\n")}`);
@@ -42,6 +44,8 @@ test("management and Operator CSS spacing stays on the 4px grid", async () => {
           const pixels = Number(size);
           if (pixels > 2 && pixels % 4 !== 0) violations.push(`${file}:${index + 1} ${line.trim()}`);
         }
+        // Relative units would bypass the grid; spacing uses px steps or theme variables.
+        if (/(?<![\w.-])\d*\.?\d*[1-9]\d*(rem|em)\b/.test(value)) violations.push(`${file}:${index + 1} ${line.trim()}`);
       }
     });
   }

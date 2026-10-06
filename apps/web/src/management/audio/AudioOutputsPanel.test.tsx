@@ -37,6 +37,18 @@ describe("AudioOutputsPanel", () => {
   });
   afterEach(() => { cleanup(); vi.useRealTimers(); });
 
+  it("embedded in Settings, names the region without a repeated heading and returns focus to its description", async () => {
+    const user = userEvent.setup();
+    const deleteRoute = vi.fn().mockResolvedValue(undefined);
+    render(<AudioOutputsPanel audioApi={createApi({ deleteRoute, getStatus: vi.fn().mockResolvedValueOnce(status()).mockResolvedValue(status({ routes: [] })) })} embedded />);
+    await user.click(await screen.findByRole("button", { name: "Delete Headphones" }));
+    expect(screen.getByRole("region", { name: "Audio outputs" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Audio outputs" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Delete output" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Name local playback destinations once, then select them from alert settings.")).toHaveFocus());
+  });
+
   it("creates and edits named routes only after explicit saves, without playing on selection", async () => {
     const user = userEvent.setup();
     const api = createApi();

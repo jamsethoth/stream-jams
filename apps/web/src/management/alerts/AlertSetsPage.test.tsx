@@ -225,6 +225,14 @@ describe("AlertSetsPage", () => {
     expect(screen.getByText("Test queued on Vertical. Reference ref-inline-test.").closest(".management-toast")).toHaveClass("management-toast--success");
   });
 
+  it("shows the Test saved routing summary as a tooltip on keyboard focus", async () => {
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({ getAlertSet: vi.fn(async () => detail()) })} onEditAlert={vi.fn()} />);
+    await screen.findByRole("button", { name: "Test saved New follower" });
+    while (document.activeElement !== screen.getByRole("button", { name: "Test saved New follower" })) await user.tab();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(/Saved input · Browser/u);
+  });
+
   it("keeps the saved Landscape profile selected when only the desktop overlay is available", async () => {
     const source = detail();
     source.browserSources = source.browserSources.map((entry) => entry.targetProfileId === "landscape"
@@ -255,7 +263,8 @@ describe("AlertSetsPage", () => {
       document: saved,
       targetProfileId: "landscape"
     })));
-    expect(screen.getAllByText(/Desktop Landscape when ready/u)[0]).toBeVisible();
+    // The routing summary is the Test saved button's tooltip and accessible description.
+    expect(screen.getByRole("button", { name: "Test saved New follower" })).toHaveAccessibleDescription(/Desktop Landscape when ready/u);
     expect(screen.getByText("Test queued on Desktop Overlay. Reference ref-desktop-test.")).toBeVisible();
   });
 

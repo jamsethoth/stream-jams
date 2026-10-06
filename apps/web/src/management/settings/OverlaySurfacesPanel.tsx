@@ -8,6 +8,7 @@ import { ManagementHttpError } from "../management-http-client.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import { defaultSurfaceSettingsApi, type SurfaceSettingsApi } from "./overlay-surfaces-api.js";
 import { SectionHeading } from "../foundation/ModulePageLayout.js";
+import { FocusFallback } from "../foundation/FocusFallback.js";
 import "./overlay-surfaces-panel.css";
 
 export interface OverlaySurfacesPanelHandle { save(): Promise<boolean | { readonly saved: false; readonly error: ActionableManagementError }>; discard(): void }
@@ -36,6 +37,7 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
   const version = useRef(0);
   const loaded = useRef(false);
   const navigationSavingRef = useRef(false);
+  const surfaceHeadings = useRef(new Map<string, HTMLHeadingElement>());
   const navigationErrorRef = useRef<ActionableManagementError | null>(null);
 
   useEffect(() => {
@@ -138,7 +140,7 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
       const savedDesktop = saved.kind === "desktop" ? saved : null;
       const selected = savedDesktop === null ? null : view.desktop.displays.find(display => display.id === savedDesktop.displayId);
       return <form key={draft.id} className="overlay-surfaces__surface" aria-label={name} onSubmit={event => { event.preventDefault(); void saveValues([draft]); }}>
-        <div className="overlay-surfaces__heading"><h4>{name}</h4><span>{changed ? "Unsaved changes" : "Saved settings"}</span></div>
+        <div className="overlay-surfaces__heading"><h4 tabIndex={-1} ref={(element) => { if (element === null) surfaceHeadings.current.delete(draft.id); else surfaceHeadings.current.set(draft.id, element); }}>{name}</h4><span>{changed ? "Unsaved changes" : "Saved settings"}</span></div>
         {draft.kind === "desktop" ? <>
           <p>Desktop status: <strong>{stateLabel(view.desktop.state)}</strong>. Saved display: {selected?.label ?? savedDesktop?.displayLabel ?? savedDesktop?.displayId ?? "Not selected"}.</p>
           {view.desktop.message === null ? null : <p className="overlay-surfaces__message">{view.desktop.message}</p>}
@@ -166,7 +168,8 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
             </li>)}
           </ol>}
         </fieldset>
-        <div className="overlay-surfaces__actions">{changed || busy ? <><Button type="submit" disabled={busy || unavailable || !changed || invalid}>Save {name}</Button><Button variant="default" type="button" disabled={busy || !changed} onClick={() => edit(saved)}>Revert {name}</Button></> : null}
+        <FocusFallback visible={changed} target={() => surfaceHeadings.current.get(draft.id)} />
+        <div className="overlay-surfaces__actions">{changed ? <><Button type="submit" disabled={busy || unavailable || !changed || invalid}>Save {name}</Button><Button variant="default" type="button" disabled={busy || !changed} onClick={() => edit(saved)}>Revert {name}</Button></> : null}
           {draft.kind === "desktop" && savedDesktop?.enabled === true ? <Button variant="default" type="button" disabled={busy || unavailable || savedDesktop?.enabled !== true} onClick={() => void retry()}>Retry desktop output</Button> : null}
         </div>
         {draft.kind === "desktop" && changed ? <p>Retry uses saved desktop settings. Unsaved changes will not be applied.</p> : null}

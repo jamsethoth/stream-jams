@@ -55,6 +55,29 @@ describe("SettingsPanel", () => {
     expect(screen.getByLabelText("Port")).toHaveValue(40123);
   });
 
+  it("shows Save server settings only after an edit and returns focus to the port after saving", async () => {
+    const user = userEvent.setup();
+    const managementApi = createManagementApi();
+    render(<SettingsPanel audioApi={createAudioApi()} managementApi={managementApi} />);
+    await user.click((await screen.findByText("Server settings")).closest("summary")!);
+    expect(screen.queryByRole("button", { name: "Save server settings" })).not.toBeInTheDocument();
+    const port = screen.getByLabelText("Port");
+    await user.clear(port);
+    await user.type(port, "40123");
+    const save = screen.getByRole("button", { name: "Save server settings" });
+    save.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Save server settings" })).not.toBeInTheDocument());
+    expect(managementApi.updateServerConfig).toHaveBeenCalledWith({ host: "127.0.0.1", port: 40123 });
+    expect(screen.getByLabelText("Port")).toHaveFocus();
+  });
+
+  it("gives the embedded Audio outputs and Overlay surfaces sections their heading in the summary", async () => {
+    render(<SettingsPanel audioApi={createAudioApi()} managementApi={createManagementApi()} />);
+    expect(await screen.findByRole("heading", { name: /^Audio outputs · / })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /^Overlay surfaces · / })).toBeVisible();
+  });
+
   it("opens backup restore from its hash and gates confirmation controls on valid preflight", async () => {
     window.history.replaceState(null, "", "/manage/settings#backup-restore");
     render(<SettingsPanel managementApi={createManagementApi()} />);

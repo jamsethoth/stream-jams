@@ -62,3 +62,4 @@
   cursor: pointer; font: inherit; font-size: var(--font-size-sm); font-weight: 600; margin-inline-end: 12px; padding: 4px 12px;
 }
 .mantine-Input-input[type="file"]:hover::file-selector-button { background: var(--color-surface); }
+.mantine-Tooltip-tooltip { background: var(--color-text); color: var(--color-surface); font-size: var(--font-size-xs); line-height: 1.45; }

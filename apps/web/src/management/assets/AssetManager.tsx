@@ -8,6 +8,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { DestructiveConfirmationDialog } from "../foundation/DestructiveConfirmationDialog.js";
 import { DirtyNavigationDialog } from "../foundation/DirtyNavigationDialog.js";
+import { FocusFallback } from "../foundation/FocusFallback.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import { ManagementModalSurface as ModalSurface, ManagementModalTitle } from "../foundation/ManagementModalSurface.js";
@@ -69,6 +70,7 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
   const hasLoadedItems = useRef(false);
   const mutationPending = useRef(false);
   const libraryHeadingRef = useRef<HTMLHeadingElement>(null);
+  const moreFiltersRef = useRef<HTMLElement>(null);
   const [replacementError, setReplacementError] = useState<ActionableManagementError | null>(null);
   const [deleteError, setDeleteError] = useState<ActionableManagementError | null>(null);
   const draftOwner = useRef<string | null>(null);
@@ -297,7 +299,7 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
         <FilterSelect label="Type" onChange={setMediaType} value={mediaType} options={["all", "image", "gif", "video", "audio", "font"]} />
       </div>
       <details className="asset-library__filter-disclosure">
-        <summary>More filters {activeSecondaryFilterCount > 0 ? <span aria-label={`${activeSecondaryFilterCount} active secondary filters`}>{activeSecondaryFilterCount}</span> : null}</summary>
+        <summary ref={moreFiltersRef}>More filters {activeSecondaryFilterCount > 0 ? <span aria-label={`${activeSecondaryFilterCount} active secondary filters`}>{activeSecondaryFilterCount}</span> : null}</summary>
         <div className="asset-library__filters" aria-label="Asset filters">
           <FilterSelect label="Usage" onChange={setUsageFilter} value={usageFilter} options={["all", "used", "unused"]} />
           <FilterSelect label="Health" onChange={setHealthFilter} value={healthFilter} options={["all", "available", "missing", "broken"]} />
@@ -306,6 +308,7 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
           <NativeSelect label="Event" onChange={(event) => setEventFilter(event.currentTarget.value)} value={eventFilter} data={[{ value: "all", label: "All" }, ...eventOptions]} />
         </div>
         {allTags.length === 0 ? null : <fieldset className="asset-library__tag-filters"><legend>Tags (match all)</legend>{allTags.map((tag) => <Checkbox key={tag} label={tag} checked={tagFilters.includes(tag)} onChange={() => setTagFilters((current) => current.includes(tag) ? current.filter((value) => value !== tag) : [...current, tag])} />)}</fieldset>}
+        <FocusFallback visible={activeSecondaryFilterCount > 0} target={() => moreFiltersRef.current} />
         {activeSecondaryFilterCount === 0 ? null : <Button variant="default" size="compact-sm" onClick={() => { setUsageFilter("all"); setHealthFilter("all"); setModuleFilter("all"); setSetFilter("all"); setEventFilter("all"); setTagFilters([]); }} type="button">Clear filters</Button>}
       </details>
 

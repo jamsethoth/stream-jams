@@ -24,6 +24,7 @@ import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import { AutomationSettingsPanel } from "./AutomationSettingsPanel.js";
 import type { AutomationSettingsApi } from "./automation-api.js";
 import { SectionHeading } from "../foundation/ModulePageLayout.js";
+import { FocusFallback } from "../foundation/FocusFallback.js";
 import "./settings-panel.css";
 
 type SettingsApi = Pick<
@@ -328,8 +329,9 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
           <SectionHeading level={3} id="server-heading" title="Local server" description="Management and browser-source traffic remains bound to this computer." />
           <form className="settings-page__form" onSubmit={submitServer}>
             <TextInput label="Host" disabled readOnly value={configDraft.host} />
-            <TextInput label="Port" min={1} max={65535} onChange={(event) => setConfigDraft({ ...configDraft, port: Number(event.currentTarget.value) })} type="number" value={configDraft.port} />
-            {serverDirty || busy ? <Button disabled={busy || !serverDirty} type="submit">Save server settings</Button> : null}
+            <TextInput id="settings-server-port" label="Port" min={1} max={65535} onChange={(event) => setConfigDraft({ ...configDraft, port: Number(event.currentTarget.value) })} type="number" value={configDraft.port} />
+            {serverDirty ? <Button disabled={busy} type="submit">Save server settings</Button> : null}
+            <FocusFallback visible={serverDirty} target={() => document.getElementById("settings-server-port")} />
           </form>
         </section>
       </details>
@@ -339,17 +341,18 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
           <SectionHeading level={3} id="desktop-heading" title="Desktop app" description="Choose what happens when you close the management window." />
           <form className="settings-page__form" onSubmit={submitDesktop}>
             <DesktopSettingsPanel closeToTray={closeToTray} disabled={busy} onChange={setCloseToTray} />
-            {desktopDirty || busy ? <Button disabled={busy || !desktopDirty} type="submit">Save desktop settings</Button> : null}
+            {desktopDirty ? <Button disabled={busy} type="submit">Save desktop settings</Button> : null}
+            <FocusFallback visible={desktopDirty} target={() => document.querySelector<HTMLElement>(".desktop-settings input")} />
           </form>
         </section>
       )}
 
       <details className="settings-page__disclosure" onToggle={(event) => setAudioOpen(event.currentTarget.open)} open={audioOpen}>
-        <summary><span className="settings-page__summary-content"><strong>Audio outputs · {summaryText(audioSummary, "configured")}{audioDirty ? " · Unsaved" : ""}</strong></span></summary>
+        <summary><span className="settings-page__summary-content"><h3 className="settings-page__summary-title">Audio outputs · {summaryText(audioSummary, "configured")}{audioDirty ? " · Unsaved" : ""}</h3></span></summary>
         <AudioOutputsPanel audioApi={audioApi} embedded onDirtyChange={setAudioDirty} onSummaryChange={setAudioSummary} ref={audioPanelRef} />
       </details>
       <details className="settings-page__disclosure" onToggle={(event) => setSurfacesOpen(event.currentTarget.open)} open={surfacesOpen}>
-        <summary><span className="settings-page__summary-content"><strong>Overlay surfaces · {summaryText(surfaceSummary, "configured")}{surfacesDirty ? " · Unsaved" : ""}</strong></span></summary>
+        <summary><span className="settings-page__summary-content"><h3 className="settings-page__summary-title">Overlay surfaces · {summaryText(surfaceSummary, "configured")}{surfacesDirty ? " · Unsaved" : ""}</h3></span></summary>
         <OverlaySurfacesPanel api={surfaceApi} embedded manageNavigation={false} onDirtyChange={setSurfacesDirty} onSummaryChange={setSurfaceSummary} ref={surfacesPanelRef} />
       </details>
 

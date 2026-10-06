@@ -107,8 +107,8 @@ body {
     sans-serif;
 }
 
-/* Native controls only: an unlayered reset would override Mantine's layered size rules. */
-:is(button, input, select, textarea):not([class*="mantine-"]) {
+/* Native controls only (an unlayered reset would override Mantine's layered size rules), with zero specificity so component rules win. */
+:where(button, input, select, textarea):where(:not([class*="mantine-"])) {
   font: inherit;
 }
 

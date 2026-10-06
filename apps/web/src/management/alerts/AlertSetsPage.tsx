@@ -1,6 +1,6 @@
 import { actionableError } from "../foundation/actionable-error.js";
 import { DestructiveConfirmationDialog } from "../foundation/DestructiveConfirmationDialog.js";
-import { Button, Checkbox, NativeSelect, TextInput } from "@mantine/core";
+import { Button, Checkbox, NativeSelect, TextInput, Tooltip } from "@mantine/core";
 import { DisclosureIcon, ModulePageLayout, ModuleControls, SectionHeading } from "../foundation/ModulePageLayout.js";
 import { BrowserSourceRow } from "../foundation/BrowserSourceRow.js";
 import { BrowserSourcesPanel } from "../foundation/BrowserSourcesPanel.js";
@@ -1148,7 +1148,7 @@ function AlertRowsTable({
             const blockerCount = alertIssues.filter((issue) => issue.severity === "blocker").length;
             const warningCount = alertIssues.filter((issue) => issue.severity === "warning").length;
             const testMenuOpen = testMenuAlertId === alert.id;
-            // Shown as the Test saved tooltip and description instead of a line under every row.
+            // Shown as the Test saved tooltip (hover and focus) and description instead of a line under every row.
             const testSummary = `Saved input · Browser ${alert.targetProfileIds.map(formatProfile).join(", ") || "none"}${alert.targetProfileIds.includes("landscape") ? " · Desktop Landscape when ready" : ""} · Selected device outputs · Audio and TTS included`;
             const summary = summarizeAlertInventoryRow(alert, siblings, fullGroup.known, rewardTitles);
             return (
@@ -1169,7 +1169,7 @@ function AlertRowsTable({
                 <td data-label="Actions">
                   <div className="alert-sets-page__row-actions alert-sets-page__alert-actions">
                     <Button aria-label={`Edit ${alert.name}`} variant="default" size="xs" id={alertRowFocusId(alert.id)} onClick={() => onEdit(alert)} type="button">Edit</Button>
-                    <Button aria-describedby={`alert-test-summary-${alert.id}`} title={testSummary} aria-expanded={testMenuOpen} aria-label={`Test saved ${alert.name}`} variant="default" size="xs" disabled={testingAlertId === alert.id} onClick={() => onTest(alert)} type="button">{testingAlertId === alert.id ? "Testing..." : "Test saved"}</Button>
+                    <Tooltip label={testSummary} events={{ hover: true, focus: true, touch: false }} multiline w={320} openDelay={300} withinPortal><Button aria-describedby={`alert-test-summary-${alert.id}`} aria-expanded={testMenuOpen} aria-label={`Test saved ${alert.name}`} variant="default" size="xs" disabled={testingAlertId === alert.id} onClick={() => onTest(alert)} type="button">{testingAlertId === alert.id ? "Testing..." : "Test saved"}</Button></Tooltip>
                     <Button aria-label={`${alert.enabled ? "Disable" : "Enable"} ${alert.name}`} variant="default" size="xs" className="alert-sets-page__toggle-action" disabled={busy} onClick={() => onToggle(alert)} type="button">{alert.enabled ? "Disable" : "Enable"}</Button>
                     <ActionMenu
                       items={[
