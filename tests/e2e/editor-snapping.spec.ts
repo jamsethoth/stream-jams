@@ -86,7 +86,7 @@ test("Alerts shares grid and peer alignment snapping and saves exact geometry", 
     await expect(x).toHaveValue("113");
     await alignment.check();
     await dragTo(page, move.locator(".alert-canvas__resize-handle"), surface, 1920, 213, 305);
-    await expect(page.getByRole("group", { name: "Position and size" }).getByLabel("WIDTH", { exact: true })).toHaveValue("194");
+    await expect(page.getByRole("group", { name: "Position and size" }).getByLabel("Width", { exact: true })).toHaveValue("194");
     await expect(x).toHaveValue("113");
     await grid.check(); await alignment.check();
     await move.focus(); await move.press("ArrowRight"); await expect(x).toHaveValue("114");

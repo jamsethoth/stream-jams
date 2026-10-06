@@ -98,6 +98,8 @@ const emptyContext: EditorContext = {
 const visualMediaTypes = ["image", "gif", "video"] as const;
 const soundMediaTypes = ["audio"] as const;
 
+const geometryLabels = { x: "X", y: "Y", width: "Width", height: "Height" } as const;
+
 export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
   const generateIdRef = useRef(props.generateId ?? defaultId);
   const generateId = generateIdRef.current;
@@ -626,7 +628,7 @@ function LayoutFields({ selected, update }: {
 }) {
   if (selected.visual === null) return null;
   return <div className="screen-effects-fields-inline">
-    {(["x", "y", "width", "height"] as const).map((field) => <TextInput key={field} label={field.toUpperCase()} aria-label={`Visual ${field}`} onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => update((variant) => ({ ...variant, visual: variant.visual === null ? null : { ...variant.visual, layout: { ...variant.visual.layout, [field]: value } } })))} type="number" value={selected.visual!.layout[field]} />)}
+    {(["x", "y", "width", "height"] as const).map((field) => <TextInput key={field} label={geometryLabels[field]} aria-label={`Visual ${field}`} onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => update((variant) => ({ ...variant, visual: variant.visual === null ? null : { ...variant.visual, layout: { ...variant.visual.layout, [field]: value } } })))} type="number" value={selected.visual!.layout[field]} />)}
   </div>;
 }
 

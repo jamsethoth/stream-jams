@@ -50,3 +50,14 @@
 :where(.app-shell, .operator-console, .management-mantine-modal) details > summary::-webkit-details-marker { display: none; }
 [dir="rtl"] .management-disclosure-icon:not([data-expanded]), [dir="rtl"] details:not([open]) > summary::before { transform: rotate(135deg); }
 @media (prefers-reduced-motion: reduce) { .management-disclosure-icon, details > summary::before { transition: none; } }
+
+/* Native anchors follow the theme instead of browser-default blue and purple. */
+:where(.app-shell, .operator-console, .management-mantine-modal) a:where(:not([class*="mantine-"])) { color: var(--color-accent); text-underline-offset: 2px; }
+:where(.app-shell, .operator-console, .management-mantine-modal) a:where(:not([class*="mantine-"])):hover { color: var(--color-accent-hover); }
+/* File inputs keep their native behaviour but draw a button that matches default commands. */
+.mantine-Input-input[type="file"] { cursor: pointer; padding-block: 3px; }
+.mantine-Input-input[type="file"]::file-selector-button {
+  background: var(--color-surface-subtle); border: 1px solid var(--color-border-strong); border-radius: 6px; color: var(--color-text);
+  cursor: pointer; font: inherit; font-size: var(--font-size-sm); font-weight: 600; margin-inline-end: 12px; padding: 4px 12px;
+}
+.mantine-Input-input[type="file"]:hover::file-selector-button { background: var(--color-surface); }

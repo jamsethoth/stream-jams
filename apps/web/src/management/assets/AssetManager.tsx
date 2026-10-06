@@ -306,7 +306,7 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
           <NativeSelect label="Event" onChange={(event) => setEventFilter(event.currentTarget.value)} value={eventFilter} data={[{ value: "all", label: "All" }, ...eventOptions]} />
         </div>
         {allTags.length === 0 ? null : <fieldset className="asset-library__tag-filters"><legend>Tags (match all)</legend>{allTags.map((tag) => <Checkbox key={tag} label={tag} checked={tagFilters.includes(tag)} onChange={() => setTagFilters((current) => current.includes(tag) ? current.filter((value) => value !== tag) : [...current, tag])} />)}</fieldset>}
-        <Button variant="default" size="compact-sm" disabled={activeSecondaryFilterCount === 0} onClick={() => { setUsageFilter("all"); setHealthFilter("all"); setModuleFilter("all"); setSetFilter("all"); setEventFilter("all"); setTagFilters([]); }} type="button">Clear filters</Button>
+        {activeSecondaryFilterCount === 0 ? null : <Button variant="default" size="compact-sm" onClick={() => { setUsageFilter("all"); setHealthFilter("all"); setModuleFilter("all"); setSetFilter("all"); setEventFilter("all"); setTagFilters([]); }} type="button">Clear filters</Button>}
       </details>
 
       {loading ? <p className="management-empty">Loading asset library...</p> : null}

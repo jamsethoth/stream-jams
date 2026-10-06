@@ -120,10 +120,10 @@
   background: var(--color-accent);
   border: 2px solid var(--color-surface);
   cursor: nwse-resize;
-  height: 16px;
+  height: 24px;
   padding: 0;
   position: absolute;
-  width: 16px;
+  width: 24px;
 }
 
 .timer-layout-save {

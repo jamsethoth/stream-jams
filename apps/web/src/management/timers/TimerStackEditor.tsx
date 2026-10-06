@@ -5,6 +5,8 @@ import { TimerStack } from "../../overlay/components/TimerStack.js";
 import type { MediaPreviewApi } from "../assets/media-preview-api.js";
 import { useMediaPreviewGroup } from "../assets/use-media-preview-group.js";
 
+const geometryLabels = { x: "X", y: "Y", width: "Width", height: "Height" } as const;
+
 export function TimerStackEditor({ assetApi, definitions, value, onChange }: {
   readonly assetApi: MediaPreviewApi;
   readonly definitions?: readonly TimerDefinition[];
@@ -77,14 +79,14 @@ export function TimerStackEditor({ assetApi, definitions, value, onChange }: {
     <div className="timer-layout__controls">
       <NativeSelect label="Orientation" value={region.orientation} onChange={event => update({ orientation: event.currentTarget.value as typeof region.orientation })}><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option></NativeSelect>
       <TextInput label="Maximum shown" min="1" max="12" type="number" value={region.maxVisible} onChange={event => update({ maxVisible: Number(event.currentTarget.value) })} />
-      {(["x", "y", "width", "height"] as const).map(field => <TextInput key={field} label={field.toUpperCase()} min={field === "width" || field === "height" ? 1 : 0} max={field === "x" || field === "width" ? bounds.width : bounds.height} type="number" value={region.layout[field]} onChange={event => updateLayout(field, Number(event.currentTarget.value))} />)}
+      {(["x", "y", "width", "height"] as const).map(field => <TextInput key={field} label={geometryLabels[field]} min={field === "width" || field === "height" ? 1 : 0} max={field === "x" || field === "width" ? bounds.width : bounds.height} type="number" value={region.layout[field]} onChange={event => updateLayout(field, Number(event.currentTarget.value))} />)}
     </div>
     {slotWidth < 180 || slotHeight < 56 ? <p className="timer-layout__warning" role="status">Timer cards may be difficult to read at this size.</p> : null}
     <div className="timer-layout__preview-shell" ref={previewShell}>
       {stack === null ? <p role="status">Correct the layout values to preview the timer stack.</p> : <div aria-label={`${profile} timer preview`} className="timer-layout__preview" style={{ width: bounds.width * previewScale, height: bounds.height * previewScale }}>
         <div style={{ transform: `scale(${previewScale})`, transformOrigin: "top left", width: bounds.width, height: bounds.height }}><TimerStack stack={stack} resolveAssetUrl={resolvePreviewAssetUrl} now={() => 0} /></div>
         <button aria-label="Move timer region" className="timer-layout__region-handle" onKeyDown={event => keyAdjust("move", event)} onPointerDown={event => beginGesture("move", event)} onPointerMove={moveGesture} onPointerUp={() => { gesture.current = null; }} style={{ left: region.layout.x * previewScale, top: region.layout.y * previewScale, width: region.layout.width * previewScale, height: region.layout.height * previewScale }} type="button" />
-        <button aria-label="Resize timer region" className="timer-layout__resize-handle" onKeyDown={event => keyAdjust("resize", event)} onPointerDown={event => beginGesture("resize", event)} onPointerMove={moveGesture} onPointerUp={() => { gesture.current = null; }} style={{ left: (region.layout.x + region.layout.width) * previewScale - 16, top: (region.layout.y + region.layout.height) * previewScale - 16 }} type="button" />
+        <button aria-label="Resize timer region" className="timer-layout__resize-handle" onKeyDown={event => keyAdjust("resize", event)} onPointerDown={event => beginGesture("resize", event)} onPointerMove={moveGesture} onPointerUp={() => { gesture.current = null; }} style={{ left: (region.layout.x + region.layout.width) * previewScale - 24, top: (region.layout.y + region.layout.height) * previewScale - 24 }} type="button" />
       </div>}
     </div>
   </section>;

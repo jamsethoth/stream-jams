@@ -1148,6 +1148,8 @@ function AlertRowsTable({
             const blockerCount = alertIssues.filter((issue) => issue.severity === "blocker").length;
             const warningCount = alertIssues.filter((issue) => issue.severity === "warning").length;
             const testMenuOpen = testMenuAlertId === alert.id;
+            // Shown as the Test saved tooltip and description instead of a line under every row.
+            const testSummary = `Saved input · Browser ${alert.targetProfileIds.map(formatProfile).join(", ") || "none"}${alert.targetProfileIds.includes("landscape") ? " · Desktop Landscape when ready" : ""} · Selected device outputs · Audio and TTS included`;
             const summary = summarizeAlertInventoryRow(alert, siblings, fullGroup.known, rewardTitles);
             return (
               <tr className={alert.kind === "variation" ? "alert-sets-page__variation-row" : undefined} key={alert.id}>
@@ -1167,7 +1169,7 @@ function AlertRowsTable({
                 <td data-label="Actions">
                   <div className="alert-sets-page__row-actions alert-sets-page__alert-actions">
                     <Button aria-label={`Edit ${alert.name}`} variant="default" size="xs" id={alertRowFocusId(alert.id)} onClick={() => onEdit(alert)} type="button">Edit</Button>
-                    <Button aria-expanded={testMenuOpen} aria-label={`Test saved ${alert.name}`} variant="default" size="xs" disabled={testingAlertId === alert.id} onClick={() => onTest(alert)} type="button">{testingAlertId === alert.id ? "Testing..." : "Test saved"}</Button>
+                    <Button aria-describedby={`alert-test-summary-${alert.id}`} title={testSummary} aria-expanded={testMenuOpen} aria-label={`Test saved ${alert.name}`} variant="default" size="xs" disabled={testingAlertId === alert.id} onClick={() => onTest(alert)} type="button">{testingAlertId === alert.id ? "Testing..." : "Test saved"}</Button>
                     <Button aria-label={`${alert.enabled ? "Disable" : "Enable"} ${alert.name}`} variant="default" size="xs" className="alert-sets-page__toggle-action" disabled={busy} onClick={() => onToggle(alert)} type="button">{alert.enabled ? "Disable" : "Enable"}</Button>
                     <ActionMenu
                       items={[
@@ -1181,7 +1183,7 @@ function AlertRowsTable({
                       triggerSize="xs"
                     />
                   </div>
-                  <small className="alert-sets-page__test-summary">Saved input · Browser {alert.targetProfileIds.map(formatProfile).join(", ") || "none"}{alert.targetProfileIds.includes("landscape") ? " · Desktop Landscape when ready" : ""} · Selected device outputs · Audio and TTS included</small>
+                  <small className="alert-sets-page__test-summary sr-only" id={`alert-test-summary-${alert.id}`}>{testSummary}</small>
                   {testMenuOpen ? <div aria-label={`Choose test profile for ${alert.name}`} className="alert-sets-page__test-profiles" role="group">{testMenuProfileIds.map((targetProfileId) => <Button aria-label={`Send ${alert.name} saved test to ${formatProfile(targetProfileId)}`} variant="default" size="xs" key={targetProfileId} onClick={() => onTestProfile(alert, targetProfileId)} type="button">{formatProfile(targetProfileId)}</Button>)}</div> : null}
                 </td>
               </tr>

@@ -158,6 +158,8 @@ const emptyAlertEditorSessionState: AlertEditorSessionState = {
   editor: null
 };
 
+const geometryLabels = { x: "X", y: "Y", width: "Width", height: "Height" } as const;
+
 export function AlertEditorPage(props: AlertEditorPageProps) {
   const [editorSession, setEditorSession] = useState<AlertEditorSessionState>(emptyAlertEditorSessionState);
   const { editor } = editorSession;
@@ -916,7 +918,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     <div className="alert-editor-page">
       <header className="alert-editor-page__header">
         <div>
-          <Button variant="default" className="alert-editor-page__back" onClick={() => props.onBack(document.setId)} type="button">Back to alerts</Button>
+          <Button variant="default" size="xs" className="alert-editor-page__back" onClick={() => props.onBack(document.setId)} type="button">Back to alerts</Button>
           <Breadcrumbs items={["Alerts", setDetail?.overview.name ?? "Alert set", document.name]} />
           <div className="alert-editor-page__title-row">
             <h2 ref={editorHeadingRef} tabIndex={-1}>{document.name}</h2>
@@ -986,7 +988,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                       const next = new Set(current);
                       if (next.has(group.key)) next.delete(group.key); else next.add(group.key);
                       return next;
-                    })} type="button"><DisclosureIcon expanded={expanded} /><span><strong>{group.label}</strong><small>{group.defaultCount} defaults · {group.variationCount} variations</small></span></UnstyledButton>
+                    })} type="button"><DisclosureIcon expanded={expanded} /><span><strong>{group.label}</strong><small>{group.defaultCount === 1 ? "1 default" : `${group.defaultCount} defaults`} · {group.variationCount === 1 ? "1 variation" : `${group.variationCount} variations`}</small></span></UnstyledButton>
                   {expanded ? (
                     <div className="alert-editor-page__event-content" id={contentId}>
                       {group.defaults.length === 0 && group.orphanVariations.length === 0 ? <p className="alert-editor-page__empty">No alerts configured.</p> : null}
@@ -1564,7 +1566,7 @@ function LayerInspector({
               <summary>Position and size</summary>
               <fieldset aria-label="Position and size" className="alert-editor-inspector__geometry">
                 {(["x", "y", "width", "height"] as const).map((field) => (
-                  <TextInput label={<>{field.toUpperCase()}</>} key={field} min="0" onChange={(event) => { const value = Number(event.currentTarget.value); onChange((current) => updateLayerGeometry(current, profileId, selectedLayer.id, { [field]: value })); }} type="number" value={layout[field]} />
+                  <TextInput label={geometryLabels[field]} key={field} min="0" onChange={(event) => { const value = Number(event.currentTarget.value); onChange((current) => updateLayerGeometry(current, profileId, selectedLayer.id, { [field]: value })); }} type="number" value={layout[field]} />
                 ))}
               </fieldset>
             </details>

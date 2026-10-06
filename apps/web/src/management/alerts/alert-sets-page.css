@@ -330,12 +330,16 @@
   margin-top: 2px;
 }
 
-.alert-sets-page__table--inventory th:first-child {
-  min-width: 150px;
-}
-
-.alert-sets-page__table--inventory th:last-child {
-  min-width: 390px;
+/* Fixed columns keep every event group's table aligned, so only the first group shows column headings. */
+.alert-sets-page__table--inventory { table-layout: fixed; }
+.alert-sets-page__table--inventory th:nth-child(1) { width: 24%; }
+.alert-sets-page__table--inventory th:nth-child(2) { width: 15%; }
+.alert-sets-page__table--inventory th:nth-child(3) { width: 11%; }
+.alert-sets-page__table--inventory th:nth-child(4) { width: 13%; }
+.alert-sets-page__table--inventory th:nth-child(5) { width: 37%; }
+/* Zero-height header row keeps fixed column widths and the headings in the accessibility tree. */
+.alert-sets-page__event-group ~ .alert-sets-page__event-group .alert-sets-page__table--inventory thead th {
+  border-bottom: 0; font-size: 0; height: 0; line-height: 0; padding-block: 0;
 }
 
 .alert-sets-page__alert-actions,
@@ -592,3 +596,4 @@
     padding: 10px 0;
   }
 }
+.alert-sets-page__table tbody td > .management-status-badge { display: inline-flex; }

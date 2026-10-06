@@ -227,7 +227,8 @@ test.describe.serial("full application visual UX acceptance", () => {
     await server.press("Enter");
     await expect(page.locator(".overlay-surfaces").getByText("Screen Effects", { exact: true })).toBeVisible();
     await surfacesSummary.click();
-    await expect(page.getByRole("button", { name: "Save server settings" })).toBeVisible();
+    // Save server settings appears only after a change; the open section shows its fields.
+    await expect(page.getByLabel("Port", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Export backup" })).toBeHidden();
     await captureEvidence(page, "settings-server-open-desktop-light.png");
     await server.press("Enter");

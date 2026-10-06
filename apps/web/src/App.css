@@ -1028,3 +1028,6 @@ a:focus-visible {
 @media (max-width: 380px) {
   .operator-timer-item .operator-item__summary { flex-wrap: wrap; }
 }
+
+/* Visually hidden but available to assistive technology. */
+.sr-only { border: 0; clip: rect(0, 0, 0, 0); clip-path: inset(50%); height: 1px; margin: -1px; overflow: hidden; padding: 0; position: absolute; white-space: nowrap; width: 1px; }

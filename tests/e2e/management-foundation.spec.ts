@@ -86,9 +86,8 @@ test("built management foundation covers every route, theme reload/system change
     await timerCard.getByLabel("Time (seconds)").fill("300");
     await timerCard.getByRole("button", { name: "Apply adjustment" }).click();
     await expect.poll(() => fixture.runtime.composition.timerRuntimeCoordinator.getState(definition.id)).toMatchObject({ status: "paused", remainingMs: 300_000 });
-    expect(await page.evaluate(() => document.querySelector("[data-mantine-color-scheme]") === null)).toBe(true);
-    const cssResources = await page.evaluate(() => performance.getEntriesByType("resource").map(entry => entry.name).filter(url => new URL(url).pathname.endsWith(".css")));
-    for (const url of cssResources) expect(await (await page.request.get(url)).text()).not.toContain("--mantine-");
+    // Operator shares the management presentation provider; browser and private outputs stay Mantine-free.
+    expect(await page.evaluate(() => document.querySelector("[data-mantine-color-scheme]") !== null)).toBe(true);
     const outputResponse = await fixture.request("/management/overlay-outputs/keys", "POST", { scope: "module", moduleId: "timers", purpose: "live", targetProfileId: "landscape" });
     expect(outputResponse.ok).toBe(true);
     const output = await outputResponse.json() as { url: string };

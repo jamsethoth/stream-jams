@@ -44,7 +44,7 @@ test("rebuilt Settings and Diagnostics retain disposable drafts, scope decisions
     const originalVisibility = await visibility.isChecked();
     await visibility.setChecked(!originalVisibility);
     await surface.getByRole("button", { name: "Save Unified browser: default" }).click();
-    await expect(surface.getByRole("button", { name: "Save Unified browser: default" })).toBeDisabled();
+    await expect(surface.getByRole("button", { name: "Save Unified browser: default" })).toHaveCount(0);
     const surfaces = await (await fixture.request("/overlay-surfaces")).json() as { surfaces: { kind: string; layers: { moduleId: string; visible: boolean }[] }[] };
     expect(surfaces.surfaces.find(item => item.kind === "unified-browser")?.layers.find(layer => layer.moduleId === "alerts")?.visible).toBe(!originalVisibility);
     await page.screenshot({ path: testInfo.outputPath("settings-surfaces-desktop-light.png") });
@@ -154,15 +154,17 @@ test("compact Settings owners remain readable in dark RTL after their disposable
       ["audio-outputs", "Audio outputs", "audio"], ["overlay-surfaces", "Overlay surfaces", "surfaces"],
       ["automation", "Automation permissions", "automation"], ["backup-restore", "Backup and restore", "backup"]
     ] as const) {
+      // Audio outputs and Overlay surfaces are named regions inside their Settings disclosures.
+      const sentinelRole = sentinel === "Audio outputs" || sentinel === "Overlay surfaces" ? "region" : "heading";
       await page.goto(`${fixture.runtime.url}/manage/settings#${hash}`);
       await page.reload();
-      await expect(page.getByRole("heading", { name: sentinel, exact: true })).toBeVisible();
+      await expect(page.getByRole(sentinelRole, { name: sentinel, exact: true })).toBeVisible();
       await page.evaluate(() => { document.documentElement.dir = "rtl"; });
       if (hash === "audio-outputs") await expect(page.getByRole("textbox", { name: "New output name" })).toBeVisible();
       if (hash === "overlay-surfaces") await expect(page.getByRole("checkbox", { name: "Show Alerts on Unified browser: default" })).toBeVisible();
       if (hash === "automation") await expect(page.getByText("No paired clients.")).toBeVisible();
       if (hash === "backup-restore") await expect(page.getByRole("button", { name: "Export backup" })).toBeEnabled();
-      await page.getByRole("heading", { name: sentinel, exact: true }).scrollIntoViewIfNeeded();
+      await page.getByRole(sentinelRole, { name: sentinel, exact: true }).scrollIntoViewIfNeeded();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await page.screenshot({ path: testInfo.outputPath(`settings-${filename}-390-dark-rtl.png`) });
       if (hash === "audio-outputs") await page.getByRole("textbox", { name: "New output name" }).scrollIntoViewIfNeeded();

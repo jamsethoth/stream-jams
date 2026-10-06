@@ -84,8 +84,10 @@
 }
 
 .alert-editor-page__live-readiness > div {
-  display: grid;
-  gap: 3px;
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
 }
 
 .alert-editor-page__live-readiness span {
@@ -107,13 +109,15 @@
   padding: 9px 14px;
 }
 
+/* Sits directly under Live readiness as one compact status block. */
 .alert-editor-page__validation {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   display: grid;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 6px;
+  padding: 8px 12px;
 }
+.alert-editor-page__live-readiness + .alert-editor-page__validation { border-top: 0; margin-top: -12px; }
 
 .alert-editor-page__validation > div {
   align-items: baseline;
@@ -136,12 +140,12 @@
 }
 
 .alert-editor-page__validation-issue {
-  align-items: center;
+  align-items: baseline;
   border-left: 3px solid var(--color-warning);
   display: grid;
   gap: 10px;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  padding: 8px 10px;
+  padding: 6px 10px;
 }
 
 .alert-editor-page__validation-issue--blocker {
@@ -154,8 +158,10 @@
 }
 
 .alert-editor-page__validation-issue div {
-  display: grid;
-  gap: 2px;
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
 }
 
 .alert-editor-page__validation-severity {
@@ -1103,3 +1109,8 @@
 .alert-editor-page__stage-toolbar { flex-wrap: wrap; }
 .alert-editor-page__segments { flex: 0 0 auto; }
 .alert-editor-page__segments .mantine-Button-root { flex: 0 0 auto; }
+
+/* Back command shares the breadcrumb row instead of adding a row above it. */
+.alert-editor-page__header > div > .alert-editor-page__back { margin-inline-end: 12px; vertical-align: middle; }
+.alert-editor-page__header > div > .management-breadcrumbs { display: inline-block; vertical-align: middle; }
+.alert-editor-inspector__add-row .mantine-Button-root { padding-inline: 8px; }

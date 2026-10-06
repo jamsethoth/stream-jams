@@ -84,8 +84,8 @@ export function ProviderPage({
   openSetupOnLoad = false
 }: ProviderPageProps) {
   const copy = capability === "event-source"
-    ? { title: "Event sources", add: "Add event source", empty: "No event sources registered." }
-    : { title: "TTS providers", add: "Add TTS provider", empty: "No TTS providers registered." };
+    ? { title: "Event sources", add: "Add event source", empty: "No event sources registered.", emptyDetail: "An event source such as Twitch or Streamer.bot delivers follows, subscriptions and other stream events to your alerts, Screen Effects and Timers." }
+    : { title: "TTS providers", add: "Add TTS provider", empty: "No TTS providers registered.", emptyDetail: "A text-to-speech provider reads alert messages aloud. Add one before enabling TTS layers in alerts." };
   const [providers, setProviders] = useState<readonly RegisteredProviderView[]>([]);
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [detail, setDetail] = useState<RegisteredProviderDetail | null>(null);
@@ -391,7 +391,7 @@ export function ProviderPage({
       {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
 
       {loading ? <p className="provider-page__empty" role="status">Loading providers...</p> : null}
-      {!loading && pageError === null && providers.length === 0 ? <p className="provider-page__empty">{copy.empty}</p> : null}
+      {!loading && pageError === null && providers.length === 0 ? <div className="provider-page__empty"><p><strong>{copy.empty}</strong></p><p>{copy.emptyDetail}</p></div> : null}
       {providers.length > 0 ? (
         <div className="provider-page__workspace">
           <div className="provider-page__table-wrap">
