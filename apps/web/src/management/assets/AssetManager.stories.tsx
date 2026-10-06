@@ -3,6 +3,7 @@ import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { createStoryAssetApi, createStoryManagementApi } from "../../stories/mock-apis.js";
 import { AssetManager } from "./AssetManager.js";
 import { storyAssetLibraryItems } from "../../stories/story-fixtures.js";
+import type { AssetRecord } from "./asset-api.js";
 
 const meta = { tags: ["stream-local-media", "mantine-assets"], title: "Management/Assets/Library", component: AssetManager, render: (args, context) => <AssetManager key={context.id} {...args} /> } satisfies Meta<typeof AssetManager>;
 export default meta;
@@ -152,5 +153,50 @@ export const InUseReplacementWarning: Story = {
     await userEvent.upload(dialog.getByLabelText("Replacement file"), png);
     await userEvent.click(dialog.getByRole("button", { name: "Review replacement" }));
     await waitFor(() => expect(dialog.getByText("1 alert usage will update everywhere.")).toBeVisible());
+  }
+};
+
+let rejectPendingReplacement: (error: Error) => void;
+let pendingReplacementCalls = 0;
+export const ReplacementPendingOwnerNavigation: Story = {
+  tags: ["mantine-assets-replacement"],
+  beforeEach: () => {
+    pendingReplacementCalls = 0;
+    const reportError = console.error; console.error = fn();
+    return () => { console.error = reportError; };
+  },
+  args: {
+    assetApi: { ...createStoryAssetApi(), replaceAsset: () => {
+      pendingReplacementCalls += 1;
+      return new Promise<AssetRecord>((_resolve, reject) => { rejectPendingReplacement = reject; });
+    } },
+    managementApi: createStoryManagementApi({ getAssetChangeImpact: async assetId => ({
+      assetId, usage: storyAssetLibraryItems[0]!.usage,
+      owners: [{ moduleId: "timers", ownerId: "fixture-timer", ownerName: "Timer icon", variantId: null, usageRole: "icon" }],
+      canDelete: false, requiresConfirmation: true, warnings: ["Every saved usage will update."]
+    }) })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement), body = within(document.body);
+    await canvas.findByRole("button", { name: "Follower burst" });
+    await userEvent.click(canvas.getByRole("button", { name: "Replace file" }));
+    await userEvent.upload(body.getByLabelText("Replacement file"), new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], "replacement.png", { type: "image/png" }));
+    await userEvent.click(body.getByRole("button", { name: "Review replacement" }));
+    const dialog = within(await body.findByRole("dialog", { name: "Replace Follower burst?" }));
+    await expect(dialog.getByRole("link", { name: "New follower" })).toBeVisible();
+    await expect(dialog.getByRole("link", { name: "Timer icon" })).toBeVisible();
+    await userEvent.dblClick(dialog.getByRole("button", { name: "Replace everywhere" }));
+    await expect(pendingReplacementCalls).toBe(1);
+    await expect(dialog.queryAllByRole("link")).toHaveLength(0);
+    await userEvent.click(dialog.getByText("New follower"));
+    await userEvent.click(dialog.getByText("Timer icon"));
+    await userEvent.keyboard("{Escape}");
+    await expect(body.getByRole("dialog", { name: "Replace Follower burst?" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    rejectPendingReplacement(new Error("Fixture replacement unavailable"));
+    await expect(await dialog.findByText("Asset file was not replaced")).toBeVisible();
+    await expect(dialog.getByRole("link", { name: "New follower" })).toBeVisible();
+    await expect(dialog.getByRole("link", { name: "Timer icon" })).toHaveAttribute("href", "/manage/modules/timers?ownerId=fixture-timer");
+    await expect(dialog.getByRole("button", { name: "Replace everywhere" })).toBeEnabled();
   }
 };

@@ -234,6 +234,38 @@ describe("AssetManager", () => {
     expect(screen.getByRole("dialog", { name: "Switch assets with unsaved changes?" })).toBeVisible();
   });
 
+  it.each([false, true])("locks replacement owner navigation until a failed request settles (dirty=%s)", async dirty => {
+    const replacement = deferred<AssetRecord>();
+    const replaceAsset = vi.fn(() => replacement.promise);
+    const navigate = vi.fn();
+    const fixture = createFixture({ getAssetChangeImpact: async () => ({ ...impactFor(imageItem), owners: [{ moduleId: "timers", ownerId: "timer-fixture", ownerName: "Timer icon", variantId: null, usageRole: "icon" }] }) });
+    render(<div onClickCapture={event => { if ((event.target as Element).closest("a")) { event.preventDefault(); navigate(); } }}><AssetManager assetApi={{ ...fixture.assetApi, replaceAsset }} managementApi={fixture.managementApi} /></div>);
+    await screen.findByRole("button", { name: "Follower burst" });
+    if (dirty) await userEvent.type(screen.getByLabelText("Display name"), " draft");
+    await userEvent.click(screen.getByRole("button", { name: "Replace file" }));
+    await userEvent.upload(screen.getByLabelText("Replacement file"), new File([pngBytes], "replacement.png", { type: "image/png" }));
+    await userEvent.click(screen.getByRole("button", { name: "Review replacement" }));
+    const dialog = screen.getByRole("dialog", { name: "Replace Follower burst?" });
+    const scope = within(dialog);
+    expect(scope.getByRole("link", { name: "New follower" })).toHaveAttribute("href", "/manage/modules/alerts/editor/alert-follow?set=set-default&event=follow&profile=landscape");
+    expect(scope.getByRole("link", { name: "Timer icon" })).toHaveAttribute("href", "/manage/modules/timers?ownerId=timer-fixture");
+    await userEvent.dblClick(scope.getByRole("button", { name: "Replace everywhere" }));
+    expect(replaceAsset).toHaveBeenCalledOnce();
+    expect(scope.queryByRole("link")).toBeNull();
+    await userEvent.click(scope.getByText("New follower"));
+    await userEvent.click(scope.getByText("Timer icon"));
+    expect(navigate).not.toHaveBeenCalled();
+    await userEvent.keyboard("{Escape}");
+    expect(dialog).toBeVisible();
+    expect(scope.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await act(async () => replacement.reject(new Error("Fixture replacement unavailable")));
+    expect(await scope.findByText("Asset file was not replaced")).toBeVisible();
+    expect(scope.getByRole("button", { name: "Replace everywhere" })).toBeEnabled();
+    await userEvent.click(scope.getByRole("link", { name: "Timer icon" }));
+    expect(navigate).toHaveBeenCalledOnce();
+    expect(scope.getByRole("link", { name: "New follower" })).toHaveAttribute("href", "/manage/modules/alerts/editor/alert-follow?set=set-default&event=follow&profile=landscape");
+  });
+
   it("removes a confirmed deletion locally while a failed refresh marks retained details stale until retry", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const listAssetLibraryItems = vi.fn().mockResolvedValueOnce([imageItem, audioItem])

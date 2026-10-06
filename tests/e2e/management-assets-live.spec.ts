@@ -11,8 +11,16 @@ test("rebuilt Assets retains real import, usage, dirty choices, stable replaceme
     await fixture.start();
     expect((await fixture.request("/health")).status).toBe(200);
     const errors: string[] = [];
+    const expectedReplacementErrors: string[] = [];
+    let expectedReplacementUrl: string | null = null;
     page.on("pageerror", error => errors.push(error.message));
-    page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
+    page.on("console", message => {
+      if (message.type() !== "error") return;
+      const text = message.text();
+      if (text.startsWith("[fixture-replace-failure] Asset file was not replaced")
+        || (message.location().url === expectedReplacementUrl && text === "Failed to load resource: the server responded with a status of 503 (Service Unavailable)")) expectedReplacementErrors.push(text);
+      else errors.push(text);
+    });
     await page.goto(`${fixture.runtime.url}/manage/assets`);
     await expect(page.getByText("No assets imported yet.")).toBeVisible();
     for (const asset of [
@@ -62,6 +70,41 @@ test("rebuilt Assets retains real import, usage, dirty choices, stable replaceme
     dialog = page.getByRole("dialog", { name: `Replace ${savedName}?` });
     await expect(dialog.getByText("1 Timer usage will update everywhere.")).toBeVisible();
     await expect(dialog.getByRole("link", { name: "Disposable usage" })).toHaveAttribute("href", `/manage/modules/timers?ownerId=${timer.id}`);
+    let rejectReplacement!: () => void;
+    const replacementGate = new Promise<void>(resolve => { rejectReplacement = resolve; });
+    let replacements = 0;
+    expectedReplacementUrl = `${fixture.runtime.url}/assets/${image.id}/replace`;
+    await page.route(`**/assets/${image.id}/replace`, async route => {
+      replacements += 1;
+      await replacementGate;
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "FIXTURE_REPLACEMENT_UNAVAILABLE", message: "Disposable replacement failure", id: "fixture-replace-failure" } }) });
+    });
+    await dialog.getByRole("button", { name: "Replace everywhere" }).dblclick();
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await expect(dialog.getByRole("link")).toHaveCount(0);
+    await dialog.getByText("Disposable usage", { exact: true }).click();
+    await page.keyboard.press("Escape");
+    await expect(page).toHaveURL(`${fixture.runtime.url}/manage/assets`);
+    await expect(dialog).toBeVisible();
+    expect(replacements).toBe(1);
+    rejectReplacement();
+    await expect(dialog.getByText("Asset file was not replaced")).toBeVisible();
+    await expect(dialog.getByText("fixture-replace-failure", { exact: true })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Replace everywhere" })).toBeEnabled();
+    await dialog.getByRole("link", { name: "Disposable usage" }).click();
+    await expect(page).toHaveURL(`${fixture.runtime.url}/manage/modules/timers?ownerId=${timer.id}`);
+    await expect(page.locator(".asset-library")).toHaveCount(0);
+    const timerEditor = page.getByRole("dialog", { name: "Edit Disposable usage" });
+    await expect(timerEditor).toBeVisible();
+    await timerEditor.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(timerEditor).toHaveCount(0);
+    await page.unroute(`**/assets/${image.id}/replace`);
+    await page.getByRole("link", { name: "Assets", exact: true }).click();
+    await page.getByRole("button", { name: savedName, exact: true }).click();
+    await page.getByRole("button", { name: "Replace file" }).click();
+    await page.getByLabel("Replacement file").setInputFiles(resolve("apps/web/public/storybook-assets/tiny-image.png"));
+    await page.getByRole("button", { name: "Review replacement" }).click();
+    dialog = page.getByRole("dialog", { name: `Replace ${savedName}?` });
     await dialog.getByRole("button", { name: "Replace everywhere" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     const replaced = await (await fixture.request("/management/assets/library")).json() as AssetLibraryItem[];
@@ -116,6 +159,7 @@ test("rebuilt Assets retains real import, usage, dirty choices, stable replaceme
     await page.getByRole("link", { name: "Settings", exact: true }).click();
     await page.getByRole("dialog", { name: "Leave with unsaved changes?" }).getByRole("button", { name: "Discard" }).click();
     await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+    expect(expectedReplacementErrors).toHaveLength(2);
     expect(errors).toEqual([]);
   } finally { await fixture.close(); }
 });
