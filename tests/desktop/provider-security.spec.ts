@@ -83,6 +83,8 @@ test("packaged management and browser-source renderers preserve CSP-safe warped 
     const editorSaved = management.waitForResponse(response => response.request().method() === "PUT" && response.url().endsWith(`/management/alerts/${alert.id}/editor`));
     await management.getByRole("button", { name: "Save", exact: true }).click();
     expect((await editorSaved).status()).toBe(200);
+    // The response event precedes the editor clearing its dirty guard; navigating earlier triggers beforeunload.
+    await expect(management.getByText("Saved", { exact: true })).toBeVisible();
     alertDocument = alertEditorDocumentSchema.parse(await api(`/management/alerts/${alert.id}/editor`));
     expect(alertDocument.layers[0]).toMatchObject({ type: "text", textStyle: { fontAssetId: font.id } });
     await management.goto(`${base}/manage/modules/alerts/editor/${alert.id}?profile=landscape`);
