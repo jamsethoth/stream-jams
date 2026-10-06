@@ -67,7 +67,7 @@
 
 .twitch-reward-picker__validation {
   color: var(--color-negative);
-  font-size: 14px;
+  font-size: var(--font-size-sm);
 }
 
 .twitch-reward-picker__warning,
@@ -130,7 +130,7 @@
   border: 1px solid var(--color-warning);
   border-radius: 6px;
   color: var(--color-text);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   padding: 2px 6px;
 }
 

@@ -54,10 +54,19 @@ Dark values are defined under `:root[data-theme="dark"]`. System mode uses the s
 ## Typography
 
 - Font stack: `Inter`, system UI, `Segoe UI`, sans-serif.
-- Management page heading (`.management-page-header h2`): `26px`, `1.25` line-height.
-- Operator H1: `28px`; shared modal heading: `20px`.
-- Other component heading sizes are defined in their scoped styles; reuse those selectors instead of assuming one global H2/H3 size.
-- Compact labels and table headings: `13px` to `14px`.
+- Management and Operator text uses only the type scale below. `App.css` defines it as `--font-size-*` custom properties and `management-theme.ts` mirrors it as Mantine `fontSizes` and `headings.sizes`. `scripts/management-type-scale.test.mjs` rejects raw `font-size` values in management and Operator CSS.
+
+| Token | Size | Use |
+| --- | --- | --- |
+| `--font-size-xs` | `12px` | Metadata, captions, table headings, `small` |
+| `--font-size-sm` | `14px` | Labels, buttons, inputs, secondary text, Operator body |
+| `--font-size-md` | `16px` | Management body text, `h4` |
+| `--font-size-lg` | `18px` | `h3` subsection titles |
+| `--font-size-xl` | `20px` | `h2` section, editor and dialog titles |
+| `--font-size-page` | `26px` | Page titles (`PageHeader`, Operator `h1`) |
+
+- Unstyled headings inside the management shell, Operator and dialogs default to these steps; a component selector may pick another step but never a raw size.
+- Commands use Mantine sizes from the theme at weight `600`. The `App.css` control font reset applies only to native (non-Mantine) controls, so it cannot override Mantine's layered sizes.
 - Overlay text uses the validated per-layer typography and box-style contract; `alert-text-style.ts` projects it to CSS. Do not impose one fixed font size or weight on every authored layer.
 - Letter spacing should stay `0`.
 

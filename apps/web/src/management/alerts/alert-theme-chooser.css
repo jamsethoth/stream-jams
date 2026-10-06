@@ -15,7 +15,7 @@
 }
 
 .alert-theme-chooser__heading h3 {
-  font-size: 16px;
+  font-size: var(--font-size-md);
 }
 
 .alert-theme-chooser__heading p,
@@ -26,7 +26,7 @@
 
 .alert-theme-chooser__heading p,
 .alert-theme-chooser__choice > span > span {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 .alert-theme-chooser__options {
@@ -93,7 +93,7 @@
 }
 
 .alert-theme-chooser__preview > span {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
 }
 

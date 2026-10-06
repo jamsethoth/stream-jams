@@ -3,7 +3,22 @@ import { createTheme, defaultVariantColorsResolver, type CSSVariablesResolver } 
 // Semantic CSS tokens remain the only authored palette, including portal surfaces.
 export const managementTheme = createTheme({
   fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-  headings: { fontFamily: "inherit" },
+  // Mirrors the --font-size-* scale in App.css so Mantine and native rules draw from the same steps.
+  fontSizes: { xs: "12px", sm: "14px", md: "16px", lg: "18px", xl: "20px" },
+  lineHeights: { xs: "1.4", sm: "1.45", md: "1.5", lg: "1.4", xl: "1.3" },
+  spacing: { xs: "8px", sm: "12px", md: "16px", lg: "24px", xl: "32px" },
+  headings: {
+    fontFamily: "inherit",
+    fontWeight: "700",
+    sizes: {
+      h1: { fontSize: "26px", lineHeight: "1.25" },
+      h2: { fontSize: "20px", lineHeight: "1.3" },
+      h3: { fontSize: "18px", lineHeight: "1.35" },
+      h4: { fontSize: "16px", lineHeight: "1.4" },
+      h5: { fontSize: "14px", lineHeight: "1.45" },
+      h6: { fontSize: "12px", lineHeight: "1.45" }
+    }
+  },
   defaultRadius: "sm",
   radius: { sm: "6px", md: "8px" },
   respectReducedMotion: true,

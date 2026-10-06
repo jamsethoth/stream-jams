@@ -55,7 +55,7 @@
 
 .provider-page__table thead th {
   color: var(--color-text-muted);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 700;
 }
 
@@ -112,7 +112,7 @@
 
 .provider-page__facts dt {
   color: var(--color-text-muted);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 700;
 }
 
@@ -129,7 +129,7 @@
 }
 
 .provider-page__subsection h4 {
-  font-size: 16px;
+  font-size: var(--font-size-md);
   margin-bottom: 0;
 }
 
@@ -267,14 +267,14 @@
 }
 
 .provider-page__modal-content h2 {
-  font-size: 22px;
+  font-size: var(--font-size-xl);
   margin-bottom: 0;
 }
 
 .provider-page__eyebrow {
   color: var(--color-text-muted);
   display: block;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 700;
   margin-bottom: 6px;
 }
@@ -303,7 +303,7 @@
 
 .home-panel .provider-page__table td:last-child strong {
   color: var(--color-info);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
 }
 
@@ -360,7 +360,7 @@
 .home-panel__configuration-items span,
 .home-panel__configuration-items p {
   color: var(--color-text-muted);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 .home-panel__configuration-items p {
@@ -454,7 +454,7 @@
     color: var(--color-text-muted);
     content: attr(data-label);
     display: block;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     font-weight: 700;
     margin-bottom: 4px;
   }

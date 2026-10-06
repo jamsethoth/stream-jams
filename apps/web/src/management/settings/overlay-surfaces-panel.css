@@ -4,9 +4,9 @@
 .overlay-surfaces header { display: grid; gap: 6px; }
 .overlay-surfaces__surface { display: grid; gap: 12px; padding-block: 12px 24px; border-bottom: 1px solid var(--color-border); }
 .overlay-surfaces__heading { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
-.overlay-surfaces__heading span { color: var(--color-text-muted); font-size: 0.875rem; }
+.overlay-surfaces__heading span { color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .overlay-surfaces fieldset { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 0; border: 0; }
-.overlay-surfaces__legend { padding: 0 0 8px; font-size: 0.875rem; color: var(--color-text-muted); }
+.overlay-surfaces__legend { padding: 0 0 8px; font-size: var(--font-size-sm); color: var(--color-text-muted); }
 .overlay-surfaces__desktop-fields { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(100px, 160px); gap: 12px; align-items: end; }
 .overlay-surfaces__layers { display: grid; gap: 8px; margin: 0; padding-inline-start: 24px; }
 .overlay-surfaces__layers li { padding-inline-start: 4px; }

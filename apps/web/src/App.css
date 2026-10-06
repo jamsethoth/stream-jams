@@ -24,6 +24,13 @@
   --color-on-action: #ffffff;
   --shadow-modal: 0 18px 48px rgba(16, 24, 32, 0.24);
   --space-page: 28px;
+  /* Type scale: the only font sizes management and Operator UI may use. */
+  --font-size-xs: 12px;
+  --font-size-sm: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 20px;
+  --font-size-page: 26px;
 }
 
 :root[data-theme="dark"] {
@@ -100,10 +107,8 @@ body {
     sans-serif;
 }
 
-button,
-input,
-select,
-textarea {
+/* Native controls only: an unlayered reset would override Mantine's layered size rules. */
+:is(button, input, select, textarea):not([class*="mantine-"]) {
   font: inherit;
 }
 
@@ -134,13 +139,13 @@ textarea {
 
 .management-table th {
   color: var(--color-text-muted);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   text-transform: uppercase;
 }
 
 .management-table td {
   color: var(--color-text);
-  font-size: 14px;
+  font-size: var(--font-size-sm);
 }
 
 /* Slice 2 management shell and reusable interaction foundation. */
@@ -174,14 +179,14 @@ textarea {
 
 .management-brand h1 {
   color: var(--color-text);
-  font-size: 20px;
+  font-size: var(--font-size-xl);
   line-height: 1.2;
   margin: 0 0 3px;
 }
 
 .management-brand__current {
   color: var(--color-text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -208,7 +213,7 @@ textarea {
   border-inline-start: 3px solid transparent;
   color: var(--color-text-muted);
   display: block;
-  font-size: 14px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   line-height: 20px;
   min-height: 38px;
@@ -240,7 +245,7 @@ a:focus-visible {
 .management-sidebar .management-nav__group {
   color: var(--color-text-muted);
   display: block;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   letter-spacing: 0.08em;
   line-height: 18px;
@@ -254,7 +259,7 @@ a:focus-visible {
 }
 
 .management-sidebar .management-nav__children a {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   min-height: 34px;
   padding-block: 7px;
 }
@@ -304,7 +309,7 @@ a:focus-visible {
 }
 
 .operator-header h1 {
-  font-size: 28px;
+  font-size: var(--font-size-page);
 }
 
 .operator-status-strip,
@@ -328,7 +333,7 @@ a:focus-visible {
 .operator-boundary-note,
 .operator-announcement {
   color: var(--color-text-muted);
-  font-size: 14px;
+  font-size: var(--font-size-sm);
   margin: 10px 0 0;
 }
 
@@ -374,7 +379,7 @@ a:focus-visible {
 }
 
 .operator-module-heading {
-  font-size: 16px;
+  font-size: var(--font-size-md);
   margin: 0;
 }
 
@@ -400,7 +405,7 @@ a:focus-visible {
 }
 
 .operator-item dt {
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   margin-bottom: 3px;
   text-transform: uppercase;
@@ -415,7 +420,7 @@ a:focus-visible {
   align-items: center;
   color: var(--color-text-muted);
   display: flex;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   gap: 7px;
 }
 
@@ -478,7 +483,7 @@ a:focus-visible {
 
 .management-page-header h2 {
   color: var(--color-text);
-  font-size: 26px;
+  font-size: var(--font-size-page);
   line-height: 1.25;
   margin: 0 0 4px;
 }
@@ -495,7 +500,7 @@ a:focus-visible {
 
 .management-breadcrumbs [role="listitem"] {
   color: var(--color-text-muted);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 .management-breadcrumbs [aria-current="page"] {
@@ -509,7 +514,7 @@ a:focus-visible {
   border-radius: 999px;
   color: var(--color-text);
   display: inline-flex;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   line-height: 20px;
   padding: 1px 9px;
@@ -538,7 +543,7 @@ a:focus-visible {
 
 .management-eyebrow {
   color: var(--color-text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
   text-transform: uppercase;
 }
@@ -570,7 +575,7 @@ a:focus-visible {
 }
 
 .management-modal__header h2 {
-  font-size: 20px;
+  font-size: var(--font-size-xl);
   margin: 3px 0 7px;
 }
 
@@ -600,7 +605,7 @@ a:focus-visible {
 
 .management-confirmation-details dt {
   color: var(--color-text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
   margin-bottom: 3px;
   text-transform: uppercase;
@@ -617,7 +622,7 @@ a:focus-visible {
 
 .management-field > span {
   color: var(--color-text);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 700;
 }
 
@@ -714,7 +719,7 @@ a:focus-visible {
   align-items: flex-end;
   display: flex;
   flex-direction: column;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   gap: 5px;
   min-width: max-content;
 }
@@ -860,7 +865,7 @@ a:focus-visible {
 
 .theme-switcher legend {
   color: var(--color-text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   margin-bottom: 7px;
 }
@@ -981,24 +986,24 @@ a:focus-visible {
   }
 }
 /* Compact, responsive live controls: scope density to Operator. */
-.operator-console { padding: 12px; font-size: 14px; line-height: 1.35; }
+.operator-console { padding: 12px; font-size: var(--font-size-sm); line-height: 1.35; }
 .operator-header { align-items: center; gap: 8px; margin-bottom: 8px; padding-bottom: 8px; }
-.operator-header h1 { font-size: 24px; }
+.operator-header h1 { font-size: var(--font-size-page); }
 .operator-header .management-eyebrow { margin: 0 0 2px; }
 .operator-header .surface-switch-link { width: auto; }
 .operator-status-strip { gap: 6px; margin-bottom: 8px; }
 .operator-controls { align-items: center; gap: 6px; padding: 8px; }
 .operator-section { margin-top: 10px; }
-.operator-section h2 { font-size: 16px; }
+.operator-section h2 { font-size: var(--font-size-md); }
 .operator-list { gap: 4px; margin-top: 6px; }
 .operator-item { padding: 6px 10px; }
 .operator-item__summary { gap: 8px; }
 .operator-item__summary > div { min-width: 0; }
 .operator-item:not(.operator-timer-item):not(.operator-module-item) .operator-item__summary > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
 .operator-item__summary strong, .operator-item__summary span { overflow-wrap: anywhere; }
-.operator-item__summary span { font-size: 12px; }
+.operator-item__summary span { font-size: var(--font-size-xs); }
 .operator-item__summary > .management-command { flex-shrink: 0; }
-.operator-item dl { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 4px 0 0; font-size: 12px; }
+.operator-item dl { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 4px 0 0; font-size: var(--font-size-xs); }
 .operator-item dt { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .operator-item dd { color: var(--color-text-muted); }
 .operator-module-list { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
@@ -1009,7 +1014,7 @@ a:focus-visible {
 .operator-item__summary > .operator-controls { display: flex; flex-wrap: wrap; gap: 4px; border: 0; background: transparent; padding: 0; }
 .operator-timer-list { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
 .operator-timer-item { min-width: 0; }
-.operator-timer-adjustment { margin-top: 4px; font-size: 12px; }
+.operator-timer-adjustment { margin-top: 4px; font-size: var(--font-size-xs); }
 .operator-timer-adjustment summary { cursor: pointer; width: fit-content; padding: 4px 0; }
 .operator-timer-adjustment summary:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .operator-timer-adjustment .timer-adjustment { min-width: 0; margin: 4px 0 0; padding: 8px; gap: 8px; }
