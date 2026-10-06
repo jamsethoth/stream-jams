@@ -1,14 +1,14 @@
 ## 1. Reconcile scope and establish the foundation
 
-- [ ] 1.1 Refresh remote state, branch implementation from current `origin/main`, preserve existing local artifacts, inventory all management routes and cross-surface imports, reconcile F1–F7, and commit the spec before or with implementation.
-- [ ] 1.2 Verify Mantine release, React compatibility, license and advisories; install exact core/hooks dependencies in `apps/web` and update the workspace lockfile.
-- [ ] 1.3 Establish cross-surface compatibility: preserve provider-independent Operator modal/status/timer controls and required shared CSS; add a management-only Mantine modal boundary before converting consumers.
-- [ ] 1.4 Add the single management provider and one theme owner using `stream-jams-theme`, semantic CSS token mapping, system/OS synchronization and storage-failure feedback; preserve provider-independent bootstrap/error recovery.
-- [ ] 1.5 Define CSS order, portal theme/z-index and LTR/RTL behavior; preserve production CSP and verify Operator plus browser/private overlay JS/CSS isolation and existing route budgets.
-- [ ] 1.6 Define minimal control defaults/application wrappers; preserve native navigation anchors, submit intent, refs, field associations, semantic status colors and specialized numeric behavior (F7).
-- [ ] 1.7 Adapt management ModalSurface callers and DirtyNavigationDialog to the management-only modal; replace ActionMenu positioning/keyboard plumbing with Mantine Menu while preserving action contracts, nested overlays, focus fallback and asynchronous Save and leave safeguards.
-- [ ] 1.8 Add a provider-aware unit-test render helper and scoped management Storybook decorators; cover keyboard, disabled/pending, load/empty/error/success, long copy, themes, RTL and compact layout without suppressing browser portal/focus behavior.
-- [ ] 1.9 Update frontend/token ownership guidance, run foundation exit checks and smoke all management routes plus Operator status/timer/clear-dialog consumers; record build budgets, CSP and overlay isolation evidence before page migration.
+- [x] 1.1 Refresh remote state, branch implementation from current `origin/main`, preserve existing local artifacts, inventory all management routes and cross-surface imports, reconcile F1–F7, and commit the spec before or with implementation.
+- [x] 1.2 Verify Mantine release, React compatibility, license and advisories; install exact core/hooks dependencies in `apps/web` and update the workspace lockfile.
+- [x] 1.3 Establish cross-surface compatibility: preserve provider-independent Operator modal/status/timer controls and required shared CSS; add a management-only Mantine modal boundary before converting consumers.
+- [x] 1.4 Add the single management provider and one theme owner using `stream-jams-theme`, semantic CSS token mapping, system/OS synchronization and storage-failure feedback; preserve provider-independent bootstrap/error recovery.
+- [x] 1.5 Define CSS order, portal theme/z-index and LTR/RTL behavior; preserve production CSP and verify Operator plus browser/private overlay JS/CSS isolation and existing route budgets.
+- [x] 1.6 Define minimal control defaults/application wrappers; preserve native navigation anchors, submit intent, refs, field associations, semantic status colors and specialized numeric behavior (F7).
+- [x] 1.7 Adapt management ModalSurface callers and DirtyNavigationDialog to the management-only modal; replace ActionMenu positioning/keyboard plumbing with Mantine Menu while preserving action contracts, nested overlays, focus fallback and asynchronous Save and leave safeguards.
+- [x] 1.8 Add a provider-aware unit-test render helper and scoped management Storybook decorators; cover keyboard, disabled/pending, load/empty/error/success, long copy, themes, RTL and compact layout without suppressing browser portal/focus behavior.
+- [x] 1.9 Update frontend/token ownership guidance, run foundation exit checks and smoke all management routes plus Operator status/timer/clear-dialog consumers; record build budgets, CSP and overlay isolation evidence before page migration.
 
 ## 2. Migrate production Assets and repair confirmations
 
