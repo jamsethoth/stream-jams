@@ -31,7 +31,8 @@ export const managementTheme = createTheme({
     const edge = (borderColor: string) => `calc(0.0625rem * var(--mantine-scale)) solid ${borderColor}`;
     const hover = `var(--color-${semantic === "accent" || semantic === "negative" ? `${semantic}-hover` : semantic})`;
     if (input.variant === "filled") return { background: color, hover, color: "var(--color-on-action)", border: edge("transparent") };
-    if (input.variant === "light") return { background: `var(--color-${semantic}-soft)`, hover: `var(--color-${semantic}-soft)`, color, border: edge("transparent") };
+    // Accent text on its soft fill needs the darker hover shade to meet 4.5:1 in the light theme.
+    if (input.variant === "light") return { background: `var(--color-${semantic}-soft)`, hover: `var(--color-${semantic}-soft)`, color: semantic === "accent" ? "var(--color-accent-hover)" : color, border: edge("transparent") };
     if (input.variant === "outline") return { background: "var(--color-surface)", hover: "var(--color-surface-subtle)", color, border: edge(color) };
     if (input.variant === "default") return { background: "var(--color-surface)", hover: "var(--color-surface-subtle)", color: "var(--color-text)", border: edge("var(--color-border-strong)") };
     return { background: "transparent", hover: `var(--color-${semantic}-soft)`, color, border: edge("transparent") };

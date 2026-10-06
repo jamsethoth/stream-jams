@@ -1,7 +1,7 @@
-.browser-sources-panel__summary { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.browser-sources-panel__summary { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .browser-sources-panel__count { font-size: var(--font-size-xs); font-weight: 700; white-space: nowrap; }
 .browser-sources-panel__count--ready { color: var(--color-positive); }
 .browser-sources-panel__count--warning { color: var(--color-warning); }
 .browser-sources-panel__count--error { color: var(--color-negative); }
 .browser-sources-panel__context { color: var(--color-text-muted); font-size: var(--font-size-xs); }
-.browser-sources-panel__details { border-top: 1px solid var(--color-border); display: grid; gap: 8px; margin-top: 10px; padding-top: 10px; }
+.browser-sources-panel__details { border-top: 1px solid var(--color-border); display: grid; gap: 8px; margin-top: 8px; padding-top: 8px; }

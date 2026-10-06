@@ -14,8 +14,8 @@
 .management-menu__item[data-hovered] { background: var(--color-surface-subtle); }
 .management-menu__item[data-danger] { color: var(--color-negative); }
 .management-mantine-modal { background: var(--color-surface-raised); color: var(--color-text); border: 1px solid var(--color-border-strong); box-shadow: var(--shadow-modal); }
-.management-mantine-modal__body { display: grid; gap: 18px; padding: 22px; overflow-wrap: anywhere; }
-.management-modal-heading { color: var(--color-text); font-size: var(--font-size-xl); font-weight: 700; margin: 3px 0 7px; }
+.management-mantine-modal__body { display: grid; gap: 16px; padding: 24px; overflow-wrap: anywhere; }
+.management-modal-heading { color: var(--color-text); font-size: var(--font-size-xl); font-weight: 700; margin: 4px 0 8px; }
 .management-mantine-modal .management-modal__header p { color: var(--color-text-muted); }
 @media (max-width: 600px) {
   .management-mantine-modal__body { padding: 16px; }
@@ -43,7 +43,7 @@
 /* One disclosure affordance: a chevron that points right when closed and down when open. */
 .management-disclosure-icon, :where(.app-shell, .operator-console, .management-mantine-modal) details > summary::before {
   border-bottom: 2px solid currentColor; border-right: 2px solid currentColor; content: ""; display: inline-block; flex: none;
-  height: 7px; margin-inline: 2px 6px; transform: rotate(-45deg); transition: transform 120ms ease; width: 7px;
+  height: 7px; margin-inline: 2px 8px; transform: rotate(-45deg); transition: transform 120ms ease; width: 7px;
 }
 .management-disclosure-icon[data-expanded], :where(.app-shell, .operator-console, .management-mantine-modal) details[open] > summary::before { transform: rotate(45deg); }
 :where(.app-shell, .operator-console, .management-mantine-modal) details > summary { cursor: pointer; list-style: none; }
@@ -52,10 +52,11 @@
 @media (prefers-reduced-motion: reduce) { .management-disclosure-icon, details > summary::before { transition: none; } }
 
 /* Native anchors follow the theme instead of browser-default blue and purple. */
-:where(.app-shell, .operator-console, .management-mantine-modal) a:where(:not([class*="mantine-"])) { color: var(--color-accent); text-underline-offset: 2px; }
-:where(.app-shell, .operator-console, .management-mantine-modal) a:where(:not([class*="mantine-"])):hover { color: var(--color-accent-hover); }
+/* The hover shade keeps 4.5:1 on surfaces and on warning or error banner fills. */
+:where(.app-shell, .operator-console, .management-mantine-modal) a:where(:not([class*="mantine-"])) { color: var(--color-accent-hover); text-underline-offset: 2px; }
+:where(.app-shell, .operator-console, .management-mantine-modal) a:where(:not([class*="mantine-"])):hover { text-decoration-thickness: 2px; }
 /* File inputs keep their native behaviour but draw a button that matches default commands. */
-.mantine-Input-input[type="file"] { cursor: pointer; padding-block: 3px; }
+.mantine-Input-input[type="file"] { cursor: pointer; padding-block: 4px; }
 .mantine-Input-input[type="file"]::file-selector-button {
   background: var(--color-surface-subtle); border: 1px solid var(--color-border-strong); border-radius: 6px; color: var(--color-text);
   cursor: pointer; font: inherit; font-size: var(--font-size-sm); font-weight: 600; margin-inline-end: 12px; padding: 4px 12px;

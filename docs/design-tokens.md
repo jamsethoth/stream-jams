@@ -37,19 +37,17 @@ Dark values are defined under `:root[data-theme="dark"]`. System mode uses the s
 
 ## Spacing
 
+Management and Operator spacing sits on a 4px grid that favours multiples of 8. `management-theme.ts` sets Mantine `spacing` to the same steps, and `scripts/management-type-scale.test.mjs` rejects gaps, padding or margins in management CSS that are not multiples of 4 (1px and 2px hairlines excepted).
+
 | Value | Use |
 | --- | --- |
-| `4px` | Compact tab gap |
-| `6px` | Label/input gaps, small card radius |
-| `8px` | List gaps, card radius |
-| `10px` | Table cell vertical padding, compact controls |
-| `12px` | Form gaps, diagnostic padding, action gaps |
-| `14px` | Internal item padding, buttons |
-| `16px` | Mobile shell padding, section gaps |
-| `18px` | Workspace gaps |
-| `20px` | Panel padding and subsection spacing |
-| `24px` | Header bottom margin and header gaps |
-| `--space-page` (`28px`, `16px` at the compact breakpoint) | Shell page padding |
+| `4px` | Tight inline gaps, badge padding |
+| `8px` | List gaps, label-to-field gaps, compact controls, card radius |
+| `12px` | Form gaps, table cell padding, action gaps |
+| `16px` | Section gaps, item padding, mobile shell padding |
+| `20px` | Panel padding and subsection spacing (existing panels) |
+| `24px` | Header gaps, large section separation |
+| `--space-page` (`32px`, `16px` at the compact breakpoint) | Shell page padding |
 
 ## Typography
 

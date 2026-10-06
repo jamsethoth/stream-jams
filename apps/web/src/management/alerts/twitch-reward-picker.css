@@ -32,9 +32,9 @@
   border: 1px solid var(--color-border);
   border-radius: 8px;
   display: grid;
-  gap: 10px;
+  gap: 8px;
   margin: 0;
-  padding: 14px;
+  padding: 16px;
 }
 
 .twitch-reward-picker__coverage > label,
@@ -122,7 +122,7 @@
 .twitch-reward-picker__statuses {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
 .twitch-reward-picker__statuses > span {
@@ -131,7 +131,7 @@
   border-radius: 6px;
   color: var(--color-text);
   font-size: var(--font-size-sm);
-  padding: 2px 6px;
+  padding: 2px 8px;
 }
 
 .twitch-reward-picker__sample {

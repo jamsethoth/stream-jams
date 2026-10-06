@@ -1,6 +1,6 @@
 .browser-source-row {
   align-items: center; background: var(--color-surface); border: 1px solid var(--color-border);
-  display: grid; gap: 10px; min-width: 0; padding: 8px 10px;
+  display: grid; gap: 8px; min-width: 0; padding: 8px 8px;
   grid-template-areas: "heading telemetry guidance actions" "heading dimensions url actions";
   grid-template-columns: minmax(150px, .55fr) minmax(150px, .55fr) minmax(220px, 1fr) auto;
 }
@@ -13,7 +13,7 @@
 .browser-source-row__url > input, .browser-source-row__url > code {
   background: var(--color-surface-subtle); border: 1px solid var(--color-border-strong); border-radius: 4px;
   color: var(--color-text); font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: var(--font-size-xs); display: block; overflow: hidden; padding: 7px 8px; text-overflow: ellipsis; white-space: nowrap; width: 100%;
+  font-size: var(--font-size-xs); display: block; overflow: hidden; padding: 8px 8px; text-overflow: ellipsis; white-space: nowrap; width: 100%;
 }
 .browser-source-row__missing { color: var(--color-text-muted); font-size: var(--font-size-xs); }
 .browser-source-row__actions { grid-area: actions; display: flex; flex-wrap: wrap; gap: 8px; }

@@ -1,12 +1,12 @@
 .alert-sets-page {
   display: grid;
-  gap: 18px;
+  gap: 16px;
   min-width: 0;
 }
 
 .alert-sets-page__management {
   display: grid;
-  gap: 18px;
+  gap: 16px;
   min-width: 0;
 }
 
@@ -44,12 +44,12 @@
 
 .alert-sets-page__source-list {
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
 .alert-sets-page__set-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -74,7 +74,7 @@
   gap: 12px;
   grid-template-columns: minmax(220px, 1fr) auto;
   min-height: 56px;
-  padding: 8px 10px;
+  padding: 8px 8px;
 }
 
 .alert-sets-page__set--expanded .alert-sets-page__set-row {
@@ -112,7 +112,7 @@
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
 .alert-sets-page__set-state {
@@ -137,7 +137,7 @@
   border-radius: 4px;
   font-size: var(--font-size-xs);
   font-weight: 700;
-  padding: 3px 6px;
+  padding: 4px 8px;
   white-space: nowrap;
 }
 
@@ -161,8 +161,8 @@
 
 .alert-sets-page__inventory {
   display: grid;
-  gap: 10px;
-  padding: 12px 14px 14px;
+  gap: 8px;
+  padding: 12px 16px 16px;
 }
 
 .alert-sets-page__filters {
@@ -186,7 +186,7 @@
 .alert-sets-page__event-header {
   align-items: center;
   display: grid;
-  gap: 10px;
+  gap: 8px;
   grid-template-columns: minmax(0, 1fr) auto;
   padding: 8px 0;
 }
@@ -197,10 +197,10 @@
   border: 0;
   color: var(--color-text);
   display: grid;
-  gap: 10px;
+  gap: 8px;
   grid-template-columns: 20px minmax(130px, 0.7fr) minmax(230px, 1fr) auto;
   min-height: 40px;
-  padding: 4px 6px;
+  padding: 4px 8px;
   text-align: left;
   width: 100%;
 }
@@ -225,7 +225,7 @@
   border-radius: 4px;
   font-size: var(--font-size-xs);
   font-weight: 700;
-  padding: 3px 6px;
+  padding: 4px 8px;
   white-space: nowrap;
 }
 
@@ -248,7 +248,7 @@
 .alert-sets-page__event-content {
   display: grid;
   gap: 12px;
-  padding: 0 0 14px 30px;
+  padding: 0 0 16px 32px;
 }
 
 .alert-sets-page__event-empty,
@@ -302,7 +302,7 @@
 .alert-sets-page__table th,
 .alert-sets-page__table td {
   border-bottom: 1px solid var(--color-border);
-  padding: 8px 9px;
+  padding: 8px 8px;
   text-align: left;
   vertical-align: middle;
 }
@@ -353,7 +353,7 @@
 
 .alert-sets-page__variation-row th:first-child {
   border-left: 3px solid var(--color-accent);
-  padding-left: 22px;
+  padding-left: 24px;
 }
 
 .alert-sets-page__variation-row {
@@ -363,15 +363,15 @@
 .alert-sets-page__test-profiles {
   border-top: 1px solid var(--color-border);
   justify-content: flex-end;
-  margin-top: 6px;
-  padding-top: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
 }
 
 .alert-sets-page__test-summary {
   color: var(--color-text-muted);
   display: block;
   font-size: var(--font-size-xs);
-  margin-top: 6px;
+  margin-top: 8px;
   text-align: right;
 }
 
@@ -388,7 +388,7 @@
 
 .alert-sets-page__modal {
   display: grid;
-  gap: 18px;
+  gap: 16px;
 }
 
 .management-modal:has(.alert-sets-page__theme-dialog) {
@@ -397,18 +397,18 @@
 
 .alert-sets-page__theme-dialog > .twitch-reward-picker {
   border-block: 1px solid var(--color-border);
-  padding-block: 18px;
+  padding-block: 16px;
 }
 
 .alert-sets-page__modal h2 {
   font-size: var(--font-size-xl);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .alert-sets-page__modal-issues,
 .alert-sets-page__modal-issues ul {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .alert-sets-page__modal-issues h3 {
@@ -427,7 +427,7 @@
   border-left: 3px solid var(--color-warning);
   display: grid;
   gap: 4px;
-  padding: 10px 12px;
+  padding: 8px 12px;
 }
 
 .alert-sets-page__modal-issues span {
@@ -442,7 +442,7 @@
 
 .alert-sets-page__facts > div {
   border-right: 1px solid var(--color-border);
-  padding: 0 14px;
+  padding: 0 16px;
 }
 
 .alert-sets-page__facts > div:first-child {
@@ -460,7 +460,7 @@
 }
 
 .alert-sets-page__facts dd {
-  margin: 5px 0 0;
+  margin: 4px 0 0;
 }
 
 .alert-sets-page__eyebrow {
@@ -468,7 +468,7 @@
   display: block;
   font-size: var(--font-size-xs);
   font-weight: 700;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   text-transform: uppercase;
 }
 
@@ -551,9 +551,9 @@
     border: 1px solid var(--color-border);
     border-radius: 6px;
     display: grid;
-    gap: 10px;
+    gap: 8px;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    padding: 14px;
+    padding: 16px;
   }
 
   .alert-sets-page__table--inventory th,
@@ -593,7 +593,7 @@
   .alert-sets-page__facts > div {
     border-bottom: 1px solid var(--color-border);
     border-right: 0;
-    padding: 10px 0;
+    padding: 8px 0;
   }
 }
 .alert-sets-page__table tbody td > .management-status-badge { display: inline-flex; }

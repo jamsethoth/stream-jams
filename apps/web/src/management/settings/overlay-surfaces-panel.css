@@ -1,7 +1,7 @@
 .overlay-surfaces { display: grid; gap: 16px; min-width: 0; scroll-margin-top: 16px; }
 .overlay-surfaces h3, .overlay-surfaces h4 { margin: 0; }
 .overlay-surfaces p { margin: 0; color: var(--color-text-muted); }
-.overlay-surfaces header { display: grid; gap: 6px; }
+.overlay-surfaces header { display: grid; gap: 8px; }
 .overlay-surfaces__surface { display: grid; gap: 12px; padding-block: 12px 24px; border-bottom: 1px solid var(--color-border); }
 .overlay-surfaces__heading { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 .overlay-surfaces__heading span { color: var(--color-text-muted); font-size: var(--font-size-sm); }

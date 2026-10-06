@@ -48,7 +48,7 @@
 .provider-page__table th,
 .provider-page__table td {
   border-bottom: 1px solid var(--color-border);
-  padding: 10px 12px;
+  padding: 8px 12px;
   text-align: start;
   vertical-align: middle;
 }
@@ -107,7 +107,7 @@
   display: grid;
   gap: 12px;
   grid-template-columns: minmax(110px, 0.7fr) minmax(0, 1fr);
-  padding: 10px 0;
+  padding: 8px 0;
 }
 
 .provider-page__facts dt {
@@ -190,8 +190,8 @@
   border: 1px solid var(--color-border);
   border-radius: 6px;
   display: grid;
-  gap: 10px;
-  padding: 14px;
+  gap: 8px;
+  padding: 16px;
 }
 
 .provider-page__connection-panel h3,
@@ -225,13 +225,13 @@
   color: var(--color-text);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   overflow-wrap: anywhere;
-  padding: 6px 8px;
+  padding: 8px 8px;
   user-select: all;
 }
 
 .provider-page__review {
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
 
 .provider-page__actions {
@@ -246,7 +246,7 @@
   border-left: 3px solid var(--color-positive);
   color: var(--color-text);
   margin: 0;
-  padding: 12px 14px;
+  padding: 12px 16px;
 }
 
 .provider-page__empty {
@@ -263,7 +263,7 @@
 
 .provider-page__modal-content {
   display: grid;
-  gap: 18px;
+  gap: 16px;
 }
 
 .provider-page__modal-content h2 {
@@ -276,7 +276,7 @@
   display: block;
   font-size: var(--font-size-sm);
   font-weight: 700;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .home-panel__active-set {
@@ -298,7 +298,7 @@
 .home-panel .provider-page__table td:last-child {
   align-items: start;
   display: grid;
-  gap: 3px;
+  gap: 4px;
 }
 
 .home-panel .provider-page__table td:last-child strong {
@@ -310,7 +310,7 @@
 .home-panel__completed-setup {
   background: var(--color-surface-subtle);
   border: 1px solid var(--color-border);
-  padding: 10px 12px;
+  padding: 8px 12px;
 }
 
 .home-panel__completed-setup summary {
@@ -336,7 +336,7 @@
 
 .home-panel__configuration-items {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -349,7 +349,7 @@
   display: flex;
   gap: 20px;
   justify-content: space-between;
-  padding: 12px 14px;
+  padding: 12px 16px;
 }
 
 .home-panel__configuration-items strong,
@@ -386,7 +386,7 @@
   .home-panel__configuration-items li {
     align-items: flex-start;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
   }
 
   .provider-page__form,
@@ -434,9 +434,9 @@
     border: 1px solid var(--color-border);
     border-radius: 6px;
     display: grid;
-    gap: 10px;
+    gap: 8px;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    padding: 14px;
+    padding: 16px;
   }
 
   .provider-page__table th,
