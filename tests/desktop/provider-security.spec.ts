@@ -83,8 +83,10 @@ test("packaged management and browser-source renderers preserve CSP-safe warped 
     const editorSaved = management.waitForResponse(response => response.request().method() === "PUT" && response.url().endsWith(`/management/alerts/${alert.id}/editor`));
     await management.getByRole("button", { name: "Save", exact: true }).click();
     expect((await editorSaved).status()).toBe(200);
-    // The response event precedes the editor clearing its dirty guard; navigating earlier triggers beforeunload.
+    // The Saved badge renders before the dirty-navigation effects remove the beforeunload guard; navigating
+    // in that gap makes Electron cancel the unload itself, so wait until a synthetic beforeunload goes unprevented.
     await expect(management.getByText("Saved", { exact: true })).toBeVisible();
+    await expect.poll(() => management.evaluate(() => { const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; })).toBe(false);
     alertDocument = alertEditorDocumentSchema.parse(await api(`/management/alerts/${alert.id}/editor`));
     expect(alertDocument.layers[0]).toMatchObject({ type: "text", textStyle: { fontAssetId: font.id } });
     await management.goto(`${base}/manage/modules/alerts/editor/${alert.id}?profile=landscape`);
