@@ -1,3 +1,5 @@
+import { ModuleSection } from "../foundation/ModulePageLayout.js";
+import { Button, Group, NativeSelect, TextInput } from "@mantine/core";
 import { pearConfigurationSchema, type ActionableManagementError, type MusicManagementStatus, type MusicPairingAttemptView, type PearConfiguration, type ProviderValidationResult, type RegisteredProviderView } from "@stream-jams/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
@@ -197,15 +199,15 @@ export function MusicSourcesPage({ api, initialProviderId }: { readonly api: Mus
   if (error !== null && status === null) return <ManagementErrorBanner error={error} />;
   return <div className="provider-page">
     <p><a href="/manage/modules/music">Edit Music appearance and branding</a></p>
-    <section aria-label="Music status">
+    <ModuleSection label="Music status" title="Music status" level={3}>
       <p><strong>Music module:</strong> {status?.enabled ? "Enabled" : "Disabled"}</p>
       <p><strong>Selected source:</strong> {providers.find(provider => provider.id === status?.selectedProviderId)?.name ?? "None"}</p>
       <p role="status"><strong>Live connection:</strong> {status?.enabled ? status.status.state : "Not running while Music is disabled"}{status?.status.stale || refreshError !== null ? " — status stale" : ""}</p>
       {status?.status.state === "auth-required" ? <p role="alert">Pear authorization is required. Re-pair the selected source below.</p> : null}
       {status?.status.diagnosticReference ? <p>Diagnostic reference: <code>{status.status.diagnosticReference}</code></p> : null}
-      <button disabled={busy || status === null} onClick={() => void runAction(() => api.setOverlayModuleEnabled("music", !status!.enabled), status?.enabled ? "Music module disabled." : "Music module enabled.")} type="button">{status?.enabled ? "Disable Music" : "Enable Music"}</button>
-      {selected?.active ? <button disabled={busy} onClick={() => void runAction(() => api.reconnectMusicSource(selected.id), "Music source reconnecting.")} type="button">Reconnect source</button> : null}
-    </section>
+      <Group gap="sm" wrap="wrap"><Button disabled={busy || status === null} onClick={() => void runAction(() => api.setOverlayModuleEnabled("music", !status!.enabled), status?.enabled ? "Music module disabled." : "Music module enabled.")} type="button">{status?.enabled ? "Disable Music" : "Enable Music"}</Button>
+      {selected?.active ? <Button disabled={busy} onClick={() => void runAction(() => api.reconnectMusicSource(selected.id), "Music source reconnecting.")} type="button">Reconnect source</Button> : null}</Group>
+    </ModuleSection>
     {refreshError === null ? null : <ManagementErrorBanner error={refreshError} />}
     {status !== null && (status.missingAssetIds.landscape.length > 0 || status.missingAssetIds.vertical.length > 0) ? <section aria-label="Music asset diagnostics" role="status">
       <strong>Music branding or fonts unavailable</strong>
@@ -213,35 +215,33 @@ export function MusicSourcesPage({ api, initialProviderId }: { readonly api: Mus
       {status.missingAssetIds.landscape.length > 0 ? <p>Landscape: {status.missingAssetIds.landscape.join(", ")}</p> : null}
       {status.missingAssetIds.vertical.length > 0 ? <p>Vertical: {status.missingAssetIds.vertical.join(", ")}</p> : null}
     </section> : null}
-    <section aria-label="Music sources">
-      <h3>Registered sources</h3>
-      {providers.length === 0 ? <p>No Music sources registered.</p> : <ul>{providers.map(provider => <li key={provider.id}>
-        <button aria-current={!adding && selectedId === provider.id ? "true" : undefined} onClick={() => selectSource(provider.id)} type="button">{provider.name}</button>
+    <ModuleSection label="Music sources" title="Registered sources" level={3}>
+      {providers.length === 0 ? <p>No Music sources registered.</p> : <ul className="music-sources__inventory">{providers.map(provider => <li key={provider.id}>
+        <Button variant="subtle" aria-current={!adding && selectedId === provider.id ? "true" : undefined} onClick={() => selectSource(provider.id)} type="button">{provider.name}</Button>
         <span>{provider.active ? " Selected" : " Available"}</span>
-        {!provider.active ? <button disabled={busy} onClick={() => void runAction(() => api.activateProvider(provider.id), `${provider.name} selected.`)} type="button">Set active</button> : null}
+        {!provider.active ? <Button disabled={busy} onClick={() => void runAction(() => api.activateProvider(provider.id), `${provider.name} selected.`)} type="button">Set active</Button> : null}
       </li>)}</ul>}
-      <button onClick={() => selectSource(null)} type="button">Add Pear Desktop</button>
-    </section>
-    {(adding || selected !== null) ? <section aria-label="Pear Desktop setup" className="provider-page__form">
-      <h3>{adding ? "Add Pear Desktop" : `Re-pair ${selected?.name}`}</h3>
+      <Button onClick={() => selectSource(null)} type="button">Add Pear Desktop</Button>
+    </ModuleSection>
+    {(adding || selected !== null) ? <ModuleSection label="Pear Desktop setup" title={adding ? "Add Pear Desktop" : `Re-pair ${selected?.name}`} level={3}><div className="provider-page__form">
       <p>Pear Desktop must be running on this computer. Pairing opens an approval request in Pear. This connection uses a loopback address and stays local.</p>
-      {adding ? <label><span>Connection name</span><input required value={name} onChange={event => { cancelPairing(); setName(event.currentTarget.value); }} /></label> : null}
-      <label><span>Pear address</span><input value={config.baseUrl} onChange={event => changeConfig({ ...config, baseUrl: event.currentTarget.value })} /></label>
-      <label><span>Transport</span><select value={config.transport} onChange={event => changeConfig({ ...config, transport: event.currentTarget.value as PearConfiguration["transport"] })}>
+      {adding ? <TextInput label="Connection name" withAsterisk={false} required value={name} onChange={event => { cancelPairing(); setName(event.currentTarget.value); }} /> : null}
+      <TextInput label="Pear address" value={config.baseUrl} onChange={event => changeConfig({ ...config, baseUrl: event.currentTarget.value })} />
+      <NativeSelect label="Transport" value={config.transport} onChange={event => changeConfig({ ...config, transport: event.currentTarget.value as PearConfiguration["transport"] })}>
         <option value="auto">Automatic (WebSocket, then local polling)</option><option value="ws">WebSocket</option><option value="poll">Local polling</option>
-      </select></label>
+      </NativeSelect>
       <div className="provider-page__actions">
-        <button disabled={busy || name.trim() === ""} onClick={() => void beginPairing()} type="button">{pairing === null ? "Pair Pear Desktop" : "Start new pairing"}</button>
-        {pairing !== null ? <button disabled={busy} onClick={cancelPairing} type="button">Cancel pairing</button> : null}
-        <button disabled={busy || pairing?.status !== "approved"} onClick={() => void testConnection()} type="button">Test connection</button>
-        <button disabled={busy || pairing?.status !== "approved" || validation?.valid !== true} onClick={() => void save()} type="button">{adding ? "Save source" : "Replace authorization"}</button>
+        <Button disabled={busy || name.trim() === ""} onClick={() => void beginPairing()} type="button">{pairing === null ? "Pair Pear Desktop" : "Start new pairing"}</Button>
+        {pairing !== null ? <Button variant="default" disabled={busy} onClick={cancelPairing} type="button">Cancel pairing</Button> : null}
+        <Button disabled={busy || pairing?.status !== "approved"} onClick={() => void testConnection()} type="button">Test connection</Button>
+        <Button disabled={busy || pairing?.status !== "approved" || validation?.valid !== true} onClick={() => void save()} type="button">{adding ? "Save source" : "Replace authorization"}</Button>
       </div>
       {pairing !== null ? <p role="status">Pear approval: {pairing.status === "pending" ? "Waiting for approval in Pear Desktop" : pairing.status}</p> : null}
       {validation?.valid === true ? <p role="status">Connection test passed. Save to use this source.</p> : null}
       {validation?.error ? <ManagementErrorBanner error={validation.error} /> : null}
       {pairing?.status === "denied" || pairing?.status === "expired" ? <p role="alert">Pairing did not complete. Start a new pairing request and approve it in Pear Desktop.</p> : null}
       {error === null ? null : <ManagementErrorBanner error={error} />}
-    </section> : null}
+    </div></ModuleSection> : null}
     {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
   </div>;
 }

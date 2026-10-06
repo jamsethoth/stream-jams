@@ -1,3 +1,5 @@
+import { Table } from "@mantine/core";
+import { SectionHeading } from "../foundation/ModulePageLayout.js";
 import type { ActionableManagementError, HomeSetupSummary } from "@stream-jams/core";
 import { useEffect, useState } from "react";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
@@ -84,12 +86,7 @@ export function HomePanel({ managementApi }: HomePanelProps) {
       )}
       {summary.actionableProblems.length === 0 ? null : (
         <section aria-labelledby="home-problems-title" className="provider-page__section">
-          <div className="provider-page__section-heading">
-            <div>
-              <h2 id="home-problems-title">Needs attention</h2>
-              <p>Problems blocking or degrading setup.</p>
-            </div>
-          </div>
+          <SectionHeading id="home-problems-title" title="Needs attention" description="Problems blocking or degrading setup." />
           <div className="provider-page__errors">
             {summary.actionableProblems.map((error, index) => (
               <ManagementErrorBanner error={error} key={error.referenceId ?? `${error.summary}-${index}`} />
@@ -99,35 +96,29 @@ export function HomePanel({ managementApi }: HomePanelProps) {
       )}
 
       <section aria-labelledby="setup-readiness-title" className="provider-page__section">
-        <div className="provider-page__section-heading">
-          <div>
-            <h2 id="setup-readiness-title">Setup readiness</h2>
-            <p>{incompleteReadiness.length === 0 ? "Setup is complete." : "Complete setup tasks before configuring live alert behavior."}</p>
-          </div>
-          <StatusBadge
+        <SectionHeading id="setup-readiness-title" title="Setup readiness" description={incompleteReadiness.length === 0 ? "Setup is complete." : "Complete setup tasks before configuring live alert behavior."} summary={<StatusBadge
             label={`${summary.readiness.filter((item) => item.state === "complete").length} of ${summary.readiness.length} complete`}
             tone={summary.readiness.every((item) => item.state === "complete") ? "positive" : "info"}
-          />
-        </div>
+          />} />
         {incompleteReadiness.length === 0 ? null : <div className="provider-page__table-wrap">
-          <table className="provider-page__table">
-            <thead>
-              <tr>
-                <th scope="col">Setup item</th>
-                <th scope="col">Status</th>
-                <th scope="col">Action</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="provider-page__table">
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th scope="col">Setup item</Table.Th>
+                <Table.Th scope="col">Status</Table.Th>
+                <Table.Th scope="col">Action</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
               {incompleteReadiness.map((item, index) => (
-                <tr key={item.id}>
-                  <th scope="row">{item.label}</th>
-                  <td><StatusBadge label={formatState(item.state)} tone={readinessTone(item.state)} /></td>
-                  <td>{index === 0 ? <strong>Next action</strong> : null}<a href={item.actionRoute}>{item.actionLabel}</a></td>
-                </tr>
+                <Table.Tr key={item.id}>
+                  <Table.Th scope="row">{item.label}</Table.Th>
+                  <Table.Td data-label="Status"><StatusBadge label={formatState(item.state)} tone={readinessTone(item.state)} /></Table.Td>
+                  <Table.Td data-label="Action">{index === 0 ? <strong>Next action</strong> : null}<a href={item.actionRoute}>{item.actionLabel}</a></Table.Td>
+                </Table.Tr>
               ))}
-            </tbody>
-          </table>
+            </Table.Tbody>
+          </Table>
         </div>}
         {completedReadiness.length === 0 ? null : (
           <details className="home-panel__completed-setup">
@@ -138,13 +129,7 @@ export function HomePanel({ managementApi }: HomePanelProps) {
       </section>
 
       <section aria-labelledby="alert-configuration-title" className="provider-page__section">
-        <div className="provider-page__section-heading">
-          <div>
-            <h2 id="alert-configuration-title">Alert configuration</h2>
-            <p>Checks saved content and review state for enabled alerts. Connection and delivery still require the existing Test and output workflows.</p>
-          </div>
-          <StatusBadge label={configurationLabel(summary.alertConfiguration.state)} tone={configurationTone(summary.alertConfiguration.state)} />
-        </div>
+        <SectionHeading id="alert-configuration-title" title="Alert configuration" description="Checks saved content and review state for enabled alerts. Connection and delivery still require the existing Test and output workflows." summary={<StatusBadge label={configurationLabel(summary.alertConfiguration.state)} tone={configurationTone(summary.alertConfiguration.state)} />} />
         {summary.alertConfiguration.items.length === 0 ? (
           <p className="provider-page__empty">{configurationMessage(summary.alertConfiguration)}</p>
         ) : (
@@ -164,13 +149,7 @@ export function HomePanel({ managementApi }: HomePanelProps) {
       </section>
 
       <section aria-labelledby="active-alert-set-title" className="provider-page__section">
-        <div className="provider-page__section-heading">
-          <div>
-            <h2 id="active-alert-set-title">Active alert set</h2>
-            <p>Current set used by alert browser-source outputs.</p>
-          </div>
-          {activeSet === null ? null : <StatusBadge label="Active" tone="positive" />}
-        </div>
+        <SectionHeading id="active-alert-set-title" title="Active alert set" description="Current set used by alert browser-source outputs." summary={activeSet === null ? null : <StatusBadge label="Active" tone="positive" />} />
         {activeSet === null ? (
           <div className="provider-page__empty">
             <p>No active alert set is available.</p>

@@ -1,3 +1,5 @@
+import { Button, Checkbox, Fieldset, TextInput, Textarea } from "@mantine/core";
+import { SectionHeading } from "../../foundation/ModulePageLayout.js";
 import type { ActionableManagementError } from "@stream-jams/core";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ManagementErrorBanner } from "../../foundation/ManagementErrorBanner.js";
@@ -165,7 +167,7 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
     return (
       <section aria-label="Alert safety" className="alert-safety-page">
         {initialLoadError === null ? null : <ManagementErrorBanner error={initialLoadError} />}
-        <button className="button button--secondary" onClick={() => void load()} type="button">Retry loading safety settings</button>
+        <Button variant="default" onClick={() => void load()} type="button">Retry loading safety settings</Button>
       </section>
     );
   }
@@ -176,7 +178,7 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
       {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
 
       <section aria-labelledby="impact-heading" className="alert-safety-page__section">
-        <h3 id="impact-heading">Shared alert policy</h3>
+        <SectionHeading id="impact-heading" level={3} title="Shared alert policy" />
         <p>Saved changes apply immediately to local Preview, Test draft, live rendered alerts, browser speech, and provider TTS.</p>
         <p>Provider connection, voice, rate, volume, and provider registration safety remain on <a href="/manage/tts-providers">Review TTS provider settings</a>.</p>
       </section>
@@ -205,20 +207,18 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
           target="ttsText"
         />
         <div className="alert-safety-page__actions">
-          <button disabled={busy !== null || !dirty} type="submit">{busy === "save" ? "Saving..." : "Save safety settings"}</button>
-          <button className="button button--secondary" disabled={busy !== null || !dirty} onClick={revert} type="button">Revert changes</button>
+          <Button disabled={busy !== null || !dirty} type="submit">{busy === "save" ? "Saving..." : "Save safety settings"}</Button>
+          <Button variant="default" disabled={busy !== null || !dirty} onClick={revert} type="button">Revert changes</Button>
         </div>
       </form>
 
       <section aria-labelledby="example-heading" className="alert-safety-page__section alert-safety-page__example">
-        <div className="alert-safety-page__section-heading">
-          <div><h3 id="example-heading">Try an example</h3><p>This sample is kept only for this browser session and is never saved with the policy.</p></div>
-          <button disabled={busy !== null} onClick={() => void preview()} type="button">{busy === "preview" ? "Previewing..." : "Preview example"}</button>
-        </div>
-        <label><span>Moderation example</span><textarea onChange={(event) => {
+        <SectionHeading id="example-heading" level={3} title="Try an example" description="This sample is kept only for this browser session and is never saved with the policy."
+          actions={<Button disabled={busy !== null} onClick={() => void preview()} type="button">{busy === "preview" ? "Previewing..." : "Preview example"}</Button>} />
+        <Textarea label="Moderation example" onChange={(event) => {
           invalidatePreview();
           setExample(event.currentTarget.value);
-        }} rows={4} value={example} /></label>
+        }} rows={4} value={example} />
         {previews === null ? null : (
           <div className="alert-safety-page__previews">
             <PreviewResult label="Rendered text" result={previews[0]} />
@@ -238,16 +238,10 @@ function TargetFieldset({ disabled, draft, error, label, onChange, target }: {
   readonly onChange: (next: TargetDraft) => void;
   readonly target: TargetKey;
 }) {
-  const errorId = `${target}-max-length-error`;
   return (
-    <fieldset className="alert-safety-page__fieldset" disabled={disabled}>
-      <legend>{label}</legend>
+    <Fieldset className="alert-safety-page__fieldset" disabled={disabled} legend={label}>
       <p>Sanitize this output independently before it reaches an alert surface.</p>
-      <label>
-        <span>{label} maximum length</span>
-        <input
-          aria-describedby={error === undefined ? undefined : errorId}
-          aria-invalid={error === undefined ? undefined : true}
+      <TextInput label={`${label} maximum length`} id={`${target}-max-length`} error={error}
           max={10_000}
           min={1}
           onChange={(event) => onChange({ ...draft, maxLength: event.currentTarget.value })}
@@ -255,22 +249,14 @@ function TargetFieldset({ disabled, draft, error, label, onChange, target }: {
           type="number"
           value={draft.maxLength}
         />
-      </label>
-      {error === undefined ? null : <p className="alert-safety-page__field-error" id={errorId}>{error}</p>}
-      <label>
-        <span>{label} blocked terms</span>
-        <textarea
+      <Textarea label={`${label} blocked terms`}
           onChange={(event) => onChange({ ...draft, blockedTerms: event.currentTarget.value })}
           placeholder="One term per line"
           rows={6}
           value={draft.blockedTerms}
         />
-      </label>
-      <label className="alert-safety-page__checkbox">
-        <input checked={draft.stripUrls} onChange={(event) => onChange({ ...draft, stripUrls: event.currentTarget.checked })} type="checkbox" />
-        {label} strip web links
-      </label>
-    </fieldset>
+      <Checkbox label={`${label} strip web links`} checked={draft.stripUrls} onChange={(event) => onChange({ ...draft, stripUrls: event.currentTarget.checked })} />
+    </Fieldset>
   );
 }
 

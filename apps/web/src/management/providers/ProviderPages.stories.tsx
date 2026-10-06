@@ -91,8 +91,14 @@ const invalidValidation: ProviderValidationResult = {
 };
 
 const meta = {
+  tags: ["mantine-stage6a"],
   title: "Management/Providers",
-  component: EventSourcesPage
+  component: EventSourcesPage,
+  beforeEach: () => {
+    const originalOpen = window.open;
+    window.open = () => null; // Story API approval is fictional; keep the external browser boundary disposable.
+    return () => { window.open = originalOpen; };
+  }
 } satisfies Meta<typeof EventSourcesPage>;
 
 export default meta;
@@ -123,7 +129,7 @@ export const StreamerBotEffectSubscriptions: Story = {
     )
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body); // Includes the real setup/activation portals.
     await expect(await canvas.findByRole("checkbox", { name: "SceneChanged" })).toBeChecked();
     await expect(canvas.getByLabelText("Twitch reward broadcaster")).toHaveValue("provider-story");
   }
@@ -146,7 +152,7 @@ export const StreamerBotUnavailableSubscription: Story = {
     )
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body); // Includes the real setup/activation portals.
     await expect(await canvas.findByRole("alert")).toHaveTextContent("no longer advertised");
     await expect(canvas.getByRole("checkbox", { name: "MissingEvent (no longer advertised)" })).toBeChecked();
   }
@@ -155,7 +161,7 @@ export const StreamerBotUnavailableSubscription: Story = {
 export const TwitchReady: Story = {
   args: { managementApi: providerApi([], { getTwitchStatus: async () => connectedTwitchStatus }) },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body); // Includes the real setup/activation portals.
     await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
     await canvas.findByText("Story account (@storyaccount)");
@@ -170,7 +176,7 @@ export const TwitchAuthorizationUpdateRequired: Story = {
     )
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body); // Includes the real setup/activation portals.
     await canvas.findByRole("heading", { name: "Authorization update required" });
     await userEvent.click(await canvas.findByRole("button", { name: "Reconnect Twitch" }));
     await canvas.findByRole("dialog", { name: "Reconnect Main Twitch" });
@@ -206,7 +212,7 @@ export const TwitchRuntimeFailureRecovery: Story = {
     )
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body); // Includes the real setup/activation portals.
     await userEvent.click(await canvas.findByRole("button", { name: "Reconnect Twitch" }));
     await canvas.findByRole("dialog", { name: "Reconnect Main Twitch" });
   }
@@ -248,7 +254,7 @@ export const ValidationFailure: Story = {
     })
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body); // Includes the real setup/activation portals.
     await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Test connection" }));
@@ -259,7 +265,7 @@ export const ValidationFailure: Story = {
 export const StreamerBotAuthenticationRequired: Story = {
   args: { managementApi: providerApi([]) },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body); // Includes the real setup/activation portals.
     await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
     await userEvent.selectOptions(canvas.getByLabelText("Provider type"), "streamerbot");
     await userEvent.click(canvas.getByRole("button", { name: "Continue" }));
@@ -273,7 +279,7 @@ export const StreamerBotAuthenticationRequired: Story = {
 export const TwitchConnectionRequired: Story = {
   args: { managementApi: providerApi([]) },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body); // Includes the real setup/activation portals.
     await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
     await canvas.findByText("No Twitch account connected");
@@ -287,7 +293,7 @@ export const TwitchConnectionLoading: Story = {
     })
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body); // Includes the real setup/activation portals.
     await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
     await canvas.findByText("Checking Twitch connection...");
@@ -297,7 +303,7 @@ export const TwitchConnectionLoading: Story = {
 export const TwitchAuthorizationWaiting: Story = {
   args: { managementApi: providerApi([]) },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body); // Includes the real setup/activation portals.
     await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Connect Twitch" }));
@@ -309,7 +315,7 @@ export const TwitchAuthorizationWaiting: Story = {
 export const TwitchPopupFallback: Story = {
   args: { managementApi: providerApi([]) },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body); // Includes the real setup/activation portals.
     const originalOpen = window.open;
     window.open = () => null;
     try {
@@ -339,7 +345,7 @@ export const TwitchReview: Story = {
     })
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body); // Includes the real setup/activation portals.
     await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Connect Twitch" }));
@@ -364,7 +370,7 @@ export const TwitchAuthorizationDenied: Story = {
     })
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body); // Includes the real setup/activation portals.
     await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Connect Twitch" }));
@@ -389,7 +395,7 @@ export const TwitchAuthorizationExpired: Story = {
     })
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body); // Includes the real setup/activation portals.
     await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Connect Twitch" }));
@@ -418,7 +424,7 @@ export const RegistrationSuccess: Story = {
     })
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body); // Includes the real setup/activation portals.
     await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Test connection" }));
@@ -430,7 +436,7 @@ export const RegistrationSuccess: Story = {
 export const ActivationWarning: Story = {
   args: { managementApi: providerApi([activeTwitch, inactiveStreamerBot]) },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body); // Includes the real setup/activation portals.
     await userEvent.click(await canvas.findByRole("button", { name: "Activate Studio Streamer.bot" }));
     await canvas.findByRole("dialog", { name: "Activate Studio Streamer.bot?" });
   }
@@ -448,7 +454,7 @@ export const ActivationWithNoAffectedAlerts: Story = {
     })
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body); // Includes the real setup/activation portals.
     const row = await canvas.findByRole("row", { name: /Studio Streamer\.bot/u });
     await userEvent.click(row);
     await expect(await canvas.findByText(/No active alerts are affected/u)).toBeVisible();
@@ -458,9 +464,10 @@ export const ActivationWithNoAffectedAlerts: Story = {
 };
 
 export const DeactivationWarning: Story = {
+  tags: ["mantine-stage6a-deactivation"],
   args: { managementApi: providerApi([activeTwitch, inactiveStreamerBot]) },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    const canvas = within(canvasElement.ownerDocument.body); // Includes the real setup/activation portals.
     await userEvent.click(await canvas.findByRole("button", { name: "Deactivate Main Twitch" }));
     await canvas.findByRole("dialog", { name: "Deactivate Main Twitch?" });
   }

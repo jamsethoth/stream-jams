@@ -33,7 +33,7 @@ test("browser artwork recovers from a transient failure without reloading or cha
   } finally { await fixture.close(); }
 });
 
-test("built Music Sources page pairs, tests and saves against disposable Pear", async ({ page }) => {
+test("built Music Sources page pairs, tests and saves against disposable Pear", async ({ page }, testInfo) => {
   test.setTimeout(90_000);
   const fixture = await startMusicTestRuntime();
   try {
@@ -56,6 +56,16 @@ test("built Music Sources page pairs, tests and saves against disposable Pear", 
     await page.getByRole("button", { name: "Enable Music" }).click();
     await expect(page.getByRole("button", { name: "Disable Music" })).toBeVisible();
     await expect.poll(() => fixture.runtime.composition.musicRuntimeCoordinator.getProjection("landscape")?.snapshot.track?.title).toBe(song.title);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: testInfo.outputPath("music-sources-desktop-light.png") });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate(() => localStorage.setItem("stream-jams-theme", "dark"));
+    await page.reload();
+    await page.evaluate(() => { document.documentElement.dir = "rtl"; });
+    await expect(page.getByRole("button", { name: "Fixture Pear", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: testInfo.outputPath("music-sources-paired-390-dark-rtl.png") });
   } finally { await fixture.close(); }
 });
 
@@ -355,7 +365,6 @@ test("normal three-second Pear observations keep the same scrolling DOM and anim
     expect(after).toBeGreaterThan(before + 1_000);
   } finally { await fixture.close(); }
 });
-
 
 test("hidden Music reappears for a fresh idle period on resume", async ({ page }) => {
   const fixture = await startMusicTestRuntime();

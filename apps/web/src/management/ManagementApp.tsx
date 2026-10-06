@@ -1,3 +1,4 @@
+import { Button } from "@mantine/core";
 import { lazy, Suspense, useMemo, type MouseEvent } from "react";
 import { defaultAudioApi, type AudioApi } from "./audio/audio-api.js";
 import type { AssetApi } from "./assets/AssetManager.js";
@@ -104,9 +105,9 @@ function ManagementAppContent({ assetApi, audioApi, managementApi, screenEffects
       <main className={isFocusedEditor(navigation.route) ? "management-main management-main--focused" : "management-main"}>
         {isFocusedEditor(navigation.route) ? null : <PageHeader
           action={(
-            <a className="button button--secondary surface-switch-link" href="/operator">
+            <Button component="a" variant="default" className="surface-switch-link" href="/operator">
               Open Operator Console
-            </a>
+            </Button>
           )}
           breadcrumbs={definition.breadcrumbs}
           description={definition.description}

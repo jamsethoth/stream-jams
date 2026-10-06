@@ -1745,9 +1745,7 @@ describe("AlertEditorPage", () => {
   it("loads focused navigation and supports keyboard-accessible inspector tabs", async () => {
     const { user, onBack } = renderWorkspaceEditor();
     expect(await screen.findByRole("heading", { name: "New follower" })).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(
-      "AlertsEveryday alertsNew follower"
-    );
+    expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getAllByRole("listitem").map(item => item.textContent)).toEqual(["Alerts", "Everyday alerts", "New follower"]);
     await user.click(screen.getByRole("button", { name: "Back to alerts" }));
     expect(onBack).toHaveBeenCalledWith("set-default");
 

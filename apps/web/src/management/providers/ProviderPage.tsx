@@ -1,3 +1,5 @@
+import { Button, Checkbox, Fieldset, Group, Table, NativeSelect, TextInput } from "@mantine/core";
+import { SectionHeading } from "../foundation/ModulePageLayout.js";
 import type {
   ActionableManagementError,
   ProviderActivationImpact,
@@ -367,9 +369,9 @@ export function ProviderPage({
 
   return (
     <div className="provider-page">
-      <div className="provider-page__toolbar">
-        <button onClick={() => { setReconnectProvider(null); setSetupOpen(true); }} type="button">{copy.add}</button>
-      </div>
+      <Group gap="sm" wrap="wrap">
+        <Button onClick={() => { setReconnectProvider(null); setSetupOpen(true); }} type="button">{copy.add}</Button>
+      </Group>
 
       {pageError === null ? null : <ManagementErrorBanner error={pageError} />}
       {refreshError === null ? null : <ManagementErrorBanner error={refreshError} />}
@@ -381,34 +383,34 @@ export function ProviderPage({
       {providers.length > 0 ? (
         <div className="provider-page__workspace">
           <div className="provider-page__table-wrap">
-            <table className="provider-page__table">
-              <thead>
-                <tr>
-                  <th scope="col">Provider</th>
+            <Table className="provider-page__table">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th scope="col">Provider</Table.Th>
                   {capability === "event-source" ? (
                     <>
-                      <th scope="col">Usage</th>
-                      <th scope="col">Live status</th>
+                      <Table.Th scope="col">Usage</Table.Th>
+                      <Table.Th scope="col">Live status</Table.Th>
                     </>
                   ) : (
                     <>
-                      <th scope="col">Connection</th>
-                      <th scope="col">Used by alerts</th>
-                      <th scope="col">Runtime</th>
+                      <Table.Th scope="col">Connection</Table.Th>
+                      <Table.Th scope="col">Used by alerts</Table.Th>
+                      <Table.Th scope="col">Runtime</Table.Th>
                     </>
                   )}
-                  {capability === "event-source" ? <th scope="col">Actions</th> : null}
-                </tr>
-              </thead>
-              <tbody>
+                  {capability === "event-source" ? <Table.Th scope="col">Actions</Table.Th> : null}
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
                 {providers.map((provider) => (
-                  <tr
+                  <Table.Tr
                     className={provider.id === selectedProviderId ? "provider-page__selected-row" : undefined}
                     key={provider.id}
                     onClick={() => requestProviderSelection(provider.id)}
                   >
-                    <th data-label="Provider" scope="row">
-                      <button
+                    <Table.Th data-label="Provider" scope="row">
+                      <Button variant="subtle"
                         aria-label={`Select ${provider.name}`}
                         aria-pressed={provider.id === selectedProviderId}
                         className="provider-page__provider-select"
@@ -421,25 +423,25 @@ export function ProviderPage({
                         <span>{provider.name}</span>
                         <small>{formatProviderKind(provider.kind)}</small>
                         {provider.twitchAuthorization?.authorizationState === "update-required" ? <small>Authorization update required</small> : null}
-                      </button>
-                    </th>
+                      </Button>
+                    </Table.Th>
                     {capability === "event-source" ? (
                       <>
-                        <td data-label="Usage"><StatusBadge label={provider.active ? "In use" : "Not in use"} tone={provider.active ? "positive" : "neutral"} /></td>
-                        <td data-label="Live status"><StatusBadge label={formatLiveStatus(eventSourceLiveStatus(provider))} tone={liveStatusTone(eventSourceLiveStatus(provider))} /></td>
+                        <Table.Td data-label="Usage"><StatusBadge label={provider.active ? "In use" : "Not in use"} tone={provider.active ? "positive" : "neutral"} /></Table.Td>
+                        <Table.Td data-label="Live status"><StatusBadge label={formatLiveStatus(eventSourceLiveStatus(provider))} tone={liveStatusTone(eventSourceLiveStatus(provider))} /></Table.Td>
                       </>
                     ) : (
                       <>
-                        <td data-label="Connection"><StatusBadge label={formatState(provider.connectionState)} tone={connectionTone(provider.connectionState)} /></td>
-                        <td data-label="Used by alerts">{provider.usedByAlertCount}</td>
-                        <td data-label="Runtime"><StatusBadge label={provider.active ? "Active" : "Inactive"} tone={provider.active ? "positive" : "neutral"} /></td>
+                        <Table.Td data-label="Connection"><StatusBadge label={formatState(provider.connectionState)} tone={connectionTone(provider.connectionState)} /></Table.Td>
+                        <Table.Td data-label="Used by alerts">{provider.usedByAlertCount}</Table.Td>
+                        <Table.Td data-label="Runtime"><StatusBadge label={provider.active ? "Active" : "Inactive"} tone={provider.active ? "positive" : "neutral"} /></Table.Td>
                       </>
                     )}
                     {capability === "event-source" ? (
-                      <td data-label="Actions">
-                        <button
+                      <Table.Td data-label="Actions">
+                        <Button
                           aria-label={`${provider.active ? "Deactivate" : "Activate"} ${provider.name}`}
-                          className="provider-page__secondary-action"
+                          variant="default"
                           disabled={actionLoadingProviderId === provider.id}
                           onClick={(event) => {
                             event.stopPropagation();
@@ -449,13 +451,13 @@ export function ProviderPage({
                           type="button"
                         >
                           {actionLoadingProviderId === provider.id ? "Checking..." : provider.active ? "Deactivate" : "Activate"}
-                        </button>
-                      </td>
+                        </Button>
+                      </Table.Td>
                     ) : null}
-                  </tr>
+                  </Table.Tr>
                 ))}
-              </tbody>
-            </table>
+              </Table.Tbody>
+            </Table>
           </div>
 
           {detail === null ? <p className="provider-page__empty provider-page__detail">Loading provider details...</p> : (
@@ -551,9 +553,9 @@ export function ProviderPage({
             </>
           )}
           <div className="provider-page__actions">
-            <button className="provider-page__secondary-action" disabled={actionBusy} onClick={() => setPendingAction(null)} type="button">Cancel</button>
-            <button
-              className={pendingAction?.kind === "deactivate" ? "button button--danger" : undefined}
+            <Button variant="default" disabled={actionBusy} onClick={() => setPendingAction(null)} type="button">Cancel</Button>
+            <Button
+              color={pendingAction?.kind === "deactivate" ? "red" : "teal"}
               disabled={actionBusy || (pendingAction?.impact?.blockers.length ?? 0) > 0}
               onClick={() => void confirmProviderAction()}
               type="button"
@@ -561,7 +563,7 @@ export function ProviderPage({
               {pendingAction?.kind === "deactivate"
                 ? "Deactivate event source"
                 : capability === "event-source" ? "Activate event source" : "Activate TTS provider"}
-            </button>
+            </Button>
           </div>
         </div>
       </ModalSurface>
@@ -599,16 +601,10 @@ function ProviderDetail({
   const voiceTestDisabled = speakerBotVoiceMissing || (provider.kind === "speakerbot" && safetyDirty);
   return (
     <section aria-labelledby="provider-detail-title" className="provider-page__detail">
-      <div className="provider-page__section-heading">
-        <div>
-          <h3 id="provider-detail-title">{provider.name}</h3>
-          <p>{formatProviderKind(provider.kind)}</p>
-        </div>
-        <StatusBadge
+      <SectionHeading id="provider-detail-title" level={3} title={provider.name} description={formatProviderKind(provider.kind)} summary={<StatusBadge
           label={capability === "event-source" ? provider.active ? "In use" : "Not in use" : provider.active ? "Active" : "Inactive"}
           tone={provider.active ? "positive" : "neutral"}
-        />
-      </div>
+        />} />
       {provider.error === null ? null : <ManagementErrorBanner error={provider.error} />}
       {provider.twitchAuthorization?.authorizationState === "update-required" ? (
         <section aria-label="Twitch authorization status" className="provider-page__subsection">
@@ -618,7 +614,7 @@ function ProviderDetail({
       ) : null}
       {onReconnect === null ? null : (
         <div className="provider-page__connection-actions">
-          <button onClick={onReconnect} type="button">Reconnect Twitch</button>
+          <Button onClick={onReconnect} type="button">Reconnect Twitch</Button>
         </div>
       )}
       <dl className="provider-page__facts">
@@ -650,9 +646,9 @@ function ProviderDetail({
                 ))}
               </div>
               {onActivate === null ? null : (
-                <button disabled={impact.blockers.length > 0} onClick={onActivate} type="button">
+                <Button disabled={impact.blockers.length > 0} onClick={onActivate} type="button">
                   {impact.blockers.length > 0 ? "Resolve blockers to activate" : "Set active"}
-                </button>
+                </Button>
               )}
             </>
           )}
@@ -668,49 +664,32 @@ function ProviderDetail({
           <section aria-labelledby="tts-safety-title" className="provider-page__subsection">
             <h4 id="tts-safety-title">Safety defaults</h4>
             <form className="provider-page__form" onSubmit={onSafetySubmit}>
-              <label>
-                <span>{detail.provider.kind === "speakerbot" ? "Default voice alias" : "Default voice"}</span>
+              <div>
                 {detail.provider.kind === "speakerbot" && detail.availableVoices.length === 0 ? (
-                  <input
+                  <TextInput label="Default voice alias"
                     onChange={(event) => onSafetyChange({ ...safety, defaultVoiceId: event.currentTarget.value || null })}
                     placeholder="EventVoice"
-                    required
+                    withAsterisk={false} required
                     value={safety.defaultVoiceId ?? ""}
                   />
                 ) : (
-                  <select
-                    required={detail.provider.kind === "speakerbot"}
+                  <NativeSelect label={detail.provider.kind === "speakerbot" ? "Default voice alias" : "Default voice"}
+                    withAsterisk={false} required={detail.provider.kind === "speakerbot"}
                     value={safety.defaultVoiceId ?? ""}
                     onChange={(event) => onSafetyChange({ ...safety, defaultVoiceId: event.currentTarget.value || null })}
                   >
                     <option value="">{detail.provider.kind === "speakerbot" ? "Select voice alias" : "Provider default"}</option>
                     {detail.availableVoices.map((voice) => <option key={voice.id} value={voice.id}>{voice.label}</option>)}
-                  </select>
+                  </NativeSelect>
                 )}
-              </label>
-              <div className="provider-page__field-with-guidance">
-                <label>
-                  <span>Volume (0–1)</span>
-                  <input aria-describedby="tts-volume-guidance" max={1} min={0} onChange={(event) => onSafetyChange({ ...safety, volume: Number(event.currentTarget.value) })} required step={0.1} type="number" value={safety.volume} />
-                </label>
-                <p id="tts-volume-guidance">1 = 100% volume; 0 = silent</p>
               </div>
+              <TextInput label="Volume (0–1)" description="1 = 100% volume; 0 = silent" max={1} min={0} onChange={(event) => onSafetyChange({ ...safety, volume: Number(event.currentTarget.value) })} withAsterisk={false} required step={0.1} type="number" value={safety.volume} />
               <div className="provider-page__rate-fields">
-                <label>
-                  <span>Minimum rate (×)</span>
-                  <input aria-describedby="tts-rate-guidance" min={0.1} onChange={(event) => onSafetyChange({ ...safety, minimumRate: Number(event.currentTarget.value) })} required step={0.1} type="number" value={safety.minimumRate} />
-                </label>
-                <label>
-                  <span>Maximum rate (×)</span>
-                  <input aria-describedby="tts-rate-guidance" min={0.1} onChange={(event) => onSafetyChange({ ...safety, maximumRate: Number(event.currentTarget.value) })} required step={0.1} type="number" value={safety.maximumRate} />
-                </label>
-                <p id="tts-rate-guidance">1× is normal speed; 0.5× is half speed; 2× is double speed.</p>
+                <TextInput label="Minimum rate (×)" description="1× is normal speed; 0.5× is half speed; 2× is double speed." min={0.1} onChange={(event) => onSafetyChange({ ...safety, minimumRate: Number(event.currentTarget.value) })} withAsterisk={false} required step={0.1} type="number" value={safety.minimumRate} />
+                <TextInput label="Maximum rate (×)" description="1× is normal speed; 0.5× is half speed; 2× is double speed." min={0.1} onChange={(event) => onSafetyChange({ ...safety, maximumRate: Number(event.currentTarget.value) })} withAsterisk={false} required step={0.1} type="number" value={safety.maximumRate} />
               </div>
-              <label>
-                <span>Maximum text length</span>
-                <input min={1} onChange={(event) => onSafetyChange({ ...safety, maximumTextLength: Number(event.currentTarget.value) })} required step={1} type="number" value={safety.maximumTextLength} />
-              </label>
-              <button type="submit">Save safety settings</button>
+              <TextInput label="Maximum text length" min={1} onChange={(event) => onSafetyChange({ ...safety, maximumTextLength: Number(event.currentTarget.value) })} withAsterisk={false} required step={1} type="number" value={safety.maximumTextLength} />
+              <Button type="submit">Save safety settings</Button>
             </form>
           </section>
           <section aria-labelledby="voice-test-title" className="provider-page__subsection">
@@ -718,7 +697,7 @@ function ProviderDetail({
             <p>{safeVoiceTestText}</p>
             {speakerBotVoiceMissing ? <p>Save a default voice alias before testing Speaker.bot.</p> : null}
             {!speakerBotVoiceMissing && provider.kind === "speakerbot" && safetyDirty ? <p>Save voice settings before testing Speaker.bot.</p> : null}
-            <button disabled={voiceTestDisabled} onClick={onTestVoice} type="button">Test voice</button>
+            <Button disabled={voiceTestDisabled} onClick={onTestVoice} type="button">Test voice</Button>
           </section>
         </>
       ) : null}
@@ -840,9 +819,7 @@ function StreamerBotSubscriptionEditor({
       ) : null}
       {catalog?.available ? (
         <form className="provider-page__form" onSubmit={(event) => { event.preventDefault(); void persist(); }}>
-          <label>
-            <span>Twitch reward broadcaster</span>
-            <select
+          <NativeSelect label="Twitch reward broadcaster"
               onChange={(event) => { setBroadcasterId(event.currentTarget.value || null); setConfirmed(false); }}
               value={broadcasterId ?? ""}
             >
@@ -855,60 +832,48 @@ function StreamerBotSubscriptionEditor({
               {broadcasterId !== null && (!twitchStatus?.connected || twitchStatus.account.accountId !== broadcasterId) ? (
                 <option value={broadcasterId}>Unavailable saved broadcaster ({broadcasterId})</option>
               ) : null}
-            </select>
-          </label>
-          <fieldset>
-            <legend>Allowed source and event types</legend>
+            </NativeSelect>
+          <Fieldset legend="Allowed source and event types">
             {catalog.sources.map((source) => (
               <div key={source.sourceKey}>
                 <strong>{source.sourceKey}</strong>
                 {source.eventTypes.map((eventType) => (
-                  <label key={`${source.sourceKey}:${eventType}`}>
-                    <input
+                  <Checkbox key={`${source.sourceKey}:${eventType}`} label={eventType}
                       checked={selected.some((selection) =>
                         selection.sourceKey === source.sourceKey && selection.eventTypes.includes(eventType)
                       )}
                       onChange={(event) => toggle(source.sourceKey, eventType, event.currentTarget.checked)}
-                      type="checkbox"
+
                     />
-                    <span>{eventType}</span>
-                  </label>
                 ))}
               </div>
             ))}
-          </fieldset>
+          </Fieldset>
           {catalog.unavailableSelections.length > 0 ? (
-            <fieldset>
-              <legend>Unavailable saved source and event types</legend>
+            <Fieldset legend="Unavailable saved source and event types">
               <p>Clear entries that Streamer.bot no longer advertises, then save the configuration.</p>
               {catalog.unavailableSelections.map((selection) => (
                 <div key={selection.sourceKey}>
                   <strong>{selection.sourceKey}</strong>
                   {selection.eventTypes.map((eventType) => (
-                    <label key={`${selection.sourceKey}:${eventType}`}>
-                      <input
+                    <Checkbox key={`${selection.sourceKey}:${eventType}`} label={`${eventType} (no longer advertised)`}
                         checked={selected.some((candidate) =>
                           candidate.sourceKey === selection.sourceKey && candidate.eventTypes.includes(eventType)
                         )}
                         onChange={(event) => toggle(selection.sourceKey, eventType, event.currentTarget.checked)}
-                        type="checkbox"
+
                       />
-                      <span>{eventType} (no longer advertised)</span>
-                    </label>
                   ))}
                 </div>
               ))}
-            </fieldset>
+            </Fieldset>
           ) : null}
           {dirty ? (
-            <label>
-              <input checked={confirmed} onChange={(event) => setConfirmed(event.currentTarget.checked)} type="checkbox" />
-              <span>I understand saving changes the active Streamer.bot subscriptions immediately.</span>
-            </label>
+            <Checkbox label="I understand saving changes the active Streamer.bot subscriptions immediately." checked={confirmed} onChange={(event) => setConfirmed(event.currentTarget.checked)}  />
           ) : null}
           <div className="provider-page__actions">
-            <button className="provider-page__secondary-action" disabled={!dirty || busy} onClick={discard} type="button">Discard</button>
-            <button disabled={!dirty || !confirmed || busy} type="submit">{busy ? "Saving..." : "Save subscriptions"}</button>
+            <Button variant="default" disabled={!dirty || busy} onClick={discard} type="button">Discard</Button>
+            <Button disabled={!dirty || !confirmed || busy} type="submit">{busy ? "Saving..." : "Save subscriptions"}</Button>
           </div>
         </form>
       ) : null}
@@ -1202,12 +1167,9 @@ function ProviderSetupWizard({
 
         {step === "select" ? (
           <div className="provider-page__form">
-            <label>
-              <span>Provider type</span>
-              <select value={draft.kind} onChange={(event) => changeKind(event.currentTarget.value as ProviderKind)}>
+            <NativeSelect label="Provider type" value={draft.kind} onChange={(event) => changeKind(event.currentTarget.value as ProviderKind)}>
                 {allowedKinds.map((kind) => <option key={kind} value={kind}>{formatProviderKind(kind)}</option>)}
-              </select>
-            </label>
+              </NativeSelect>
             <p className="provider-page__setup-description">{providerSetupDescription(draft.kind)}</p>
           </div>
         ) : null}
@@ -1215,10 +1177,7 @@ function ProviderSetupWizard({
         {step === "configure" ? (
           <div className="provider-page__form">
             {reconnecting ? null : (
-              <label>
-                <span>Connection name</span>
-                <input onChange={(event) => updateDraft({ ...draft, name: event.currentTarget.value })} required value={draft.name} />
-              </label>
+              <TextInput label="Connection name" onChange={(event) => updateDraft({ ...draft, name: event.currentTarget.value })} withAsterisk={false} required value={draft.name} />
             )}
             {draft.kind === "twitch" ? (
               <section aria-labelledby="twitch-account-title" className="provider-page__connection-panel">
@@ -1237,9 +1196,9 @@ function ProviderSetupWizard({
                 {reconnecting || twitchStatus?.connected !== true || twitchStatus.authorizationState !== "ready" ? (
                   <div className="provider-page__connection-actions">
                     {twitchAuthorization === null || requestError !== null ? (
-                      <button disabled={busy} onClick={() => void startTwitchConnection()} type="button">
+                      <Button disabled={busy} onClick={() => void startTwitchConnection()} type="button">
                         {twitchAuthorization === null ? reconnecting || twitchStatus?.authorizationState === "update-required" ? "Reconnect Twitch" : "Connect Twitch" : "Try again"}
-                      </button>
+                      </Button>
                     ) : null}
                     {twitchAuthorization === null ? null : (
                       <>
@@ -1260,38 +1219,20 @@ function ProviderSetupWizard({
               <>
                 <p className="provider-page__setup-description">Enable the provider's WebSocket server. Use only 127.0.0.1, localhost, or ::1 and a path-only endpoint. Local ws transport and authentication are separate settings.</p>
                 {draft.kind === "speakerbot" ? <p>Speaker.bot documents no native WebSocket authentication. Keep its server restricted to this computer.</p> : null}
-                <label>
-                  <span>Protocol</span>
-                  <select value={draft.protocol} onChange={(event) => updateDraft({ ...draft, protocol: event.currentTarget.value as "ws" | "wss" })}>
+                <NativeSelect label="Protocol" value={draft.protocol} onChange={(event) => updateDraft({ ...draft, protocol: event.currentTarget.value as "ws" | "wss" })}>
                     <option value="ws">ws</option>
                     <option value="wss">wss</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Host</span>
-                  <input onChange={(event) => updateDraft({ ...draft, host: event.currentTarget.value })} required value={draft.host} />
-                </label>
-                <label>
-                  <span>Port</span>
-                  <input max={65535} min={1} onChange={(event) => updateDraft({ ...draft, port: Number(event.currentTarget.value) })} required type="number" value={draft.port} />
-                </label>
-                <label>
-                  <span>Endpoint</span>
-                  <input onChange={(event) => updateDraft({ ...draft, endpoint: event.currentTarget.value })} required value={draft.endpoint} />
-                </label>
+                  </NativeSelect>
+                <TextInput label="Host" onChange={(event) => updateDraft({ ...draft, host: event.currentTarget.value })} withAsterisk={false} required value={draft.host} />
+                <TextInput label="Port" max={65535} min={1} onChange={(event) => updateDraft({ ...draft, port: Number(event.currentTarget.value) })} withAsterisk={false} required type="number" value={draft.port} />
+                <TextInput label="Endpoint" onChange={(event) => updateDraft({ ...draft, endpoint: event.currentTarget.value })} withAsterisk={false} required value={draft.endpoint} />
               </>
             ) : null}
             {draft.kind === "streamerbot" ? (
               <>
               <p>Enable Authentication and Enforce in Streamer.bot's WebSocket server, then enter its password. Authentication does not encrypt local ws traffic.</p>
-              <label>
-                <span>Password</span>
-                <input autoComplete="new-password" onChange={(event) => updateDraft({ ...draft, credential: event.currentTarget.value })} type="password" value={draft.credential} />
-              </label>
-              <label>
-                <input checked={draft.allowUnauthenticatedLocalConnection} onChange={(event) => updateDraft({ ...draft, allowUnauthenticatedLocalConnection: event.currentTarget.checked })} type="checkbox" />
-                <span>Allow an unauthenticated local connection</span>
-              </label>
+              <TextInput label="Password" autoComplete="new-password" onChange={(event) => updateDraft({ ...draft, credential: event.currentTarget.value })} type="password" value={draft.credential} />
+              <Checkbox label="Allow an unauthenticated local connection" checked={draft.allowUnauthenticatedLocalConnection} onChange={(event) => updateDraft({ ...draft, allowUnauthenticatedLocalConnection: event.currentTarget.checked })}  />
               <p>Choose this only if you intentionally disabled authentication on the local Streamer.bot server.</p>
               </>
             ) : null}
@@ -1318,22 +1259,22 @@ function ProviderSetupWizard({
         {validation?.error === null || validation?.error === undefined ? null : <ManagementErrorBanner error={validation.error} />}
 
         <div className="provider-page__actions">
-          <button className="provider-page__secondary-action" onClick={cancelSetup} type="button">Cancel</button>
+          <Button variant="default" onClick={cancelSetup} type="button">Cancel</Button>
           {step === "select" ? (
-            <button onClick={() => setStep("configure")} type="button">Continue</button>
+            <Button onClick={() => setStep("configure")} type="button">Continue</Button>
           ) : null}
           {step === "configure" && !reconnecting ? (
             <>
-              <button className="provider-page__secondary-action" disabled={busy} onClick={() => setStep("select")} type="button">Back</button>
-              <button disabled={busy || twitchStatusLoading || draft.name.trim().length === 0 || (draft.kind === "streamerbot" && !draft.credential && !draft.allowUnauthenticatedLocalConnection)} onClick={() => void validate()} type="button">
+              <Button variant="default" disabled={busy} onClick={() => setStep("select")} type="button">Back</Button>
+              <Button disabled={busy || twitchStatusLoading || draft.name.trim().length === 0 || (draft.kind === "streamerbot" && !draft.credential && !draft.allowUnauthenticatedLocalConnection)} onClick={() => void validate()} type="button">
                 {busy ? "Testing..." : draft.kind === "twitch" && twitchStatus?.connected !== true ? "Check connection" : "Test connection"}
-              </button>
+              </Button>
             </>
           ) : null}
           {step === "review" ? (
             <>
-              <button className="provider-page__secondary-action" disabled={busy} onClick={() => setStep("configure")} type="button">Back</button>
-              <button disabled={busy || validation?.valid !== true} type="submit">Register {subject}</button>
+              <Button variant="default" disabled={busy} onClick={() => setStep("configure")} type="button">Back</Button>
+              <Button disabled={busy || validation?.valid !== true} type="submit">Register {subject}</Button>
             </>
           ) : null}
         </div>

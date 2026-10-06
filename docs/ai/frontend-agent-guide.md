@@ -29,6 +29,7 @@ Do not treat this as a marketing site. Build the actual management or overlay wo
 - Use `import type` for type-only imports and keep relative TypeScript imports ESM-compatible.
 - Preserve strict TypeScript. Do not weaken `strict`, `noUncheckedIndexedAccess`, or `exactOptionalPropertyTypes`.
 - Management standard controls use the installed Mantine components and the management presentation provider. Read the ownership contract in `docs/design-tokens.md`; keep workflow components and typed API boundaries intact.
+- The management shell and Home/Event sources/TTS providers/Music sources/Alert safety use direct Mantine controls and the shared section headings. Links remain native anchors (including Anchor/Button rendered as `a`) so modified clicks and dirty-navigation capture work. Home's derived completed-setup `details` remains a native product disclosure. Provider and moderation numeric fields use TextInput with native `type="number"`, retaining existing value conversion, blank drafts and HTML validity; do not replace them with NumberInput coercion. TTS help and moderation errors use Mantine's associated description/error props. Provider setup, live-health polling, credential/pairing generations, explicit activation and moderation save/preview owners remain in their pages.
 - Do not silently fail. User-visible failures need human-readable next steps and a log/reference ID when one is available.
 - Keep live-runtime changes explicit, especially actions that affect active alert consumption, active alert sets, overlay routes, or provider selection.
 

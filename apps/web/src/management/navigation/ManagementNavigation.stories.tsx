@@ -5,6 +5,7 @@ import type { ManagementRoute } from "../routing/management-route.js";
 import { ManagementNavigation } from "./ManagementNavigation.js";
 
 const meta = {
+  tags: ["mantine-stage6a"],
   title: "Management/Navigation",
   component: ManagementNavigation
 } satisfies Meta<typeof ManagementNavigation>;

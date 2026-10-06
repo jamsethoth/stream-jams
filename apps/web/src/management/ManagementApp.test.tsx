@@ -52,7 +52,7 @@ describe("ManagementApp", () => {
     expect(window.location.pathname).toBe("/manage/modules/alerts");
     expect(screen.getByRole("link", { name: "Alerts" })).toHaveAttribute("aria-current", "page");
     expect(screen.getAllByRole("link").filter((link) => link.getAttribute("aria-current") === "page")).toHaveLength(1);
-    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("ModulesAlerts");
+    expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getAllByRole("listitem").map(item => item.textContent)).toEqual(["Modules", "Alerts"]);
   });
 
   it("opens Screen Effects from Modules and enters its focused editor", async () => {
@@ -81,7 +81,7 @@ describe("ManagementApp", () => {
 
     expect(await screen.findByRole("group", { name: "Rendered text" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Safety" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("ModulesAlertsSafety");
+    expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getAllByRole("listitem").map(item => item.textContent)).toEqual(["Modules", "Alerts", "Safety"]);
     await user.click(screen.getByRole("link", { name: "Review TTS provider settings" }));
     expect(window.location.pathname).toBe("/manage/tts-providers");
   });

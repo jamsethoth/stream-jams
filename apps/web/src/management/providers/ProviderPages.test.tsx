@@ -897,11 +897,13 @@ describe("provider pages", () => {
     const testVoiceButton = screen.getByRole("button", { name: "Test voice" });
     expect(testVoiceButton).toBeDisabled();
     expect(screen.getByText("Save a default voice alias before testing Speaker.bot.")).toBeInTheDocument();
-    expect(screen.getByLabelText("Volume (0–1)")).toHaveAttribute("aria-describedby", "tts-volume-guidance");
+    expect(screen.getByLabelText("Volume (0–1)")).toHaveAccessibleDescription("1 = 100% volume; 0 = silent");
     expect(screen.getByText("1 = 100% volume; 0 = silent")).toBeVisible();
-    expect(screen.getByLabelText("Minimum rate (×)")).toHaveAttribute("aria-describedby", "tts-rate-guidance");
-    expect(screen.getByLabelText("Maximum rate (×)")).toHaveAttribute("aria-describedby", "tts-rate-guidance");
-    expect(screen.getByText("1× is normal speed; 0.5× is half speed; 2× is double speed.")).toBeVisible();
+    expect(screen.getByLabelText("Minimum rate (×)")).toHaveAccessibleDescription("1× is normal speed; 0.5× is half speed; 2× is double speed.");
+    expect(screen.getByLabelText("Maximum rate (×)")).toHaveAccessibleDescription("1× is normal speed; 0.5× is half speed; 2× is double speed.");
+    const rateGuidance = screen.getAllByText("1× is normal speed; 0.5× is half speed; 2× is double speed.");
+    expect(rateGuidance).toHaveLength(2);
+    rateGuidance.forEach(description => expect(description).toBeVisible());
     await user.type(screen.getByLabelText("Default voice alias"), "EventVoice");
     expect(testVoiceButton).toBeDisabled();
     await user.clear(screen.getByLabelText("Volume (0–1)"));
