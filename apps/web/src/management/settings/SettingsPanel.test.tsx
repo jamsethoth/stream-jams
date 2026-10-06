@@ -294,6 +294,45 @@ describe("SettingsPanel", () => {
     expect(window.location.pathname).toBe("/manage/settings");
   });
 
+  it("keeps navigation rebind confirmation under one announcement owner until explicit review", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/manage/settings");
+    const audioApi = createAudioApi();
+    const status = await audioApi.getStatus();
+    audioApi.getStatus = vi.fn(async () => ({ ...status, capability: { ...status.capability, devices: [...status.capability.devices, { deviceId: "endpoint-b", label: "Stream speakers" }] } }));
+    audioApi.updateRoute = vi.fn()
+      .mockRejectedValueOnce(new ManagementHttpError("Changing this binding affects saved items", "AUDIO_ROUTE_CONFIRMATION_REQUIRED", "ref-disposable-rebind", "Review the affected items, then confirm the binding change.", [], [{ moduleId: "alerts", ownerId: "alert-a", ownerName: "New follower", variantId: null }]))
+      .mockRejectedValueOnce(new ManagementHttpError("Changing this binding affects saved items", "AUDIO_ROUTE_CONFIRMATION_REQUIRED", "ref-disposable-rebind-retry", "Review the affected items, then confirm the binding change.", [], [{ moduleId: "alerts", ownerId: "alert-a", ownerName: "New follower", variantId: null }]))
+      .mockResolvedValueOnce({ id: "route-a", name: "Retained rebind draft", deviceId: "endpoint-b", deviceLabel: "Stream speakers", autoFollowDeviceName: false });
+    render(<DirtyNavigationProvider><SettingsNavigationHarness audioApi={audioApi} managementApi={createManagementApi()} /></DirtyNavigationProvider>);
+    await openDisclosure(user, /^Audio outputs ·/);
+    const name = await screen.findByLabelText("Output name");
+    await user.clear(name); await user.type(name, "Retained rebind draft");
+    const device = screen.getByLabelText("Output device");
+    await user.selectOptions(device, "endpoint-b");
+    await user.click(screen.getByRole("button", { name: "Go home" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Leave with unsaved changes?" }));
+    await user.click(dialog.getByRole("button", { name: "Save and leave" }));
+    expect(await dialog.findByRole("alert")).toHaveTextContent("ref-disposable-rebind");
+    expect(dialog.getByRole("alert")).toHaveTextContent("Review the affected items, then confirm the binding change.");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(audioApi.updateRoute).toHaveBeenCalledExactlyOnceWith("route-a", { name: "Retained rebind draft", deviceId: "endpoint-b", confirmLiveImpact: false });
+    await user.click(dialog.getByRole("button", { name: "Cancel" }));
+    expect(name).toHaveValue("Retained rebind draft");
+    expect(device).toHaveValue("endpoint-b");
+    expect(screen.getByText("Confirm affected items before rebinding")).toBeVisible();
+    expect(screen.getByText("Alerts: New follower")).toBeVisible();
+    expect(audioApi.updateRoute).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "Save output" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Confirm affected items before rebinding");
+    expect(audioApi.updateRoute).toHaveBeenCalledTimes(2);
+    expect(audioApi.updateRoute).toHaveBeenLastCalledWith("route-a", { name: "Retained rebind draft", deviceId: "endpoint-b", confirmLiveImpact: false });
+    await user.click(screen.getByRole("button", { name: "Confirm binding change" }));
+    expect(audioApi.updateRoute).toHaveBeenLastCalledWith("route-a", { name: "Retained rebind draft", deviceId: "endpoint-b", confirmLiveImpact: true });
+    expect(await screen.findByText("Retained rebind draft saved.")).toBeVisible();
+    expect(window.location.pathname).toBe("/manage/settings");
+  });
+
   it("keeps an Overlay save failure reference and retained draft inside the active navigation dialog", async () => {
     const user = userEvent.setup();
     window.history.replaceState(null, "", "/manage/settings");

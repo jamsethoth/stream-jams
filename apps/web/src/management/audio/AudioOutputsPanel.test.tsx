@@ -138,6 +138,7 @@ describe("AudioOutputsPanel", () => {
     await user.selectOptions(within(route).getByLabelText("Output device"), "endpoint-b");
     await user.click(within(route).getByRole("button", { name: "Save output" }));
     expect(await screen.findByText("Confirm affected items before rebinding")).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent("Confirm affected items before rebinding");
     expect(screen.getByText("Alerts: New follower")).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Confirm binding change" }));

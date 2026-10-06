@@ -39,6 +39,7 @@ interface RouteDraft {
 
 interface ConflictState {
   readonly kind: "delete" | "rebind";
+  readonly announceFailure: boolean;
   readonly routeId: string;
   readonly summary: string;
   readonly nextStep: string;
@@ -130,6 +131,8 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
       if (cause instanceof ManagementHttpError && cause.code === "AUDIO_ROUTE_CONFIRMATION_REQUIRED") {
         setConflict({
           kind: "rebind",
+          // The navigation dialog announces this failure; retain the explicit owner review for Cancel.
+          announceFailure: !navigationSavingRef.current,
           routeId: draft.id,
           summary: cause.message,
           nextStep: cause.nextStep ?? "Review the affected Alerts and Screen Effects, then confirm the binding change.",
@@ -236,6 +239,7 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
         setDeleteError(actionable("Audio output was not deleted", cause, "Remove this route from the listed Alerts and Screen Effects before deleting it."));
         setConflict({
           kind: "delete",
+          announceFailure: true,
           routeId: route.id,
           summary: cause.message,
           nextStep: cause.nextStep ?? "Remove this route from the listed Alerts and Screen Effects before deleting it.",
@@ -419,7 +423,7 @@ function ConflictNotice({ busy, conflict, onConfirm }: { readonly busy: boolean;
         variantId: null
       }));
   return (
-    <section className="audio-outputs__conflict" role="alert">
+    <section className="audio-outputs__conflict" role={conflict.announceFailure ? "alert" : undefined}>
       <strong>{conflict.kind === "rebind" ? "Confirm affected items before rebinding" : "Output is still in use"}</strong>
       <p>{conflict.summary}</p>
       {owners.length === 0 ? null : <ul>{owners.map((owner) => (

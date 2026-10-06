@@ -53,6 +53,40 @@ function NavigationSaveScenario(props: SettingsPanelProps) {
   return <><Button onClick={() => navigation.requestNavigation({ id: "diagnostics" })}>Open Diagnostics</Button><SettingsPanel {...props} />{navigation.guard}</>;
 }
 
+export const AudioRebindSaveAndLeaveReview: Story = {
+  tags: ["mantine-stage6b-fix"],
+  args: { audioApi: { ...createAudioStoryApi(), updateRoute: fn(async (routeId: string, input: Parameters<AudioApi["updateRoute"]>[1]) => {
+    if (!input.confirmLiveImpact) throw new ManagementHttpError("Changing this binding affects saved items", "AUDIO_ROUTE_CONFIRMATION_REQUIRED", "ref-disposable-rebind", "Review the affected items, then confirm the binding change.", [], [{ moduleId: "alerts", ownerId: "alert-a", ownerName: "New follower", variantId: null }]);
+    return { id: routeId, name: "Retained rebind draft", deviceId: null, deviceLabel: null, autoFollowDeviceName: false };
+  }) } },
+  render: args => <DirtyNavigationProvider><NavigationSaveScenario {...args} /></DirtyNavigationProvider>,
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText(/^Audio outputs ·/));
+    const name = await canvas.findByRole("textbox", { name: "Output name" });
+    await userEvent.clear(name); await userEvent.type(name, "Retained rebind draft");
+    const device = canvas.getByRole("combobox", { name: "Output device" });
+    await userEvent.selectOptions(device, "");
+    await userEvent.click(canvas.getByRole("button", { name: "Open Diagnostics" }));
+    const dialog = within(await within(document.body).findByRole("dialog", { name: "Leave with unsaved changes?" }));
+    await userEvent.click(dialog.getByRole("button", { name: "Save and leave" }));
+    await expect(await dialog.findByRole("alert")).toHaveTextContent("ref-disposable-rebind");
+    await expect(dialog.getByRole("alert")).toHaveTextContent("Review the affected items, then confirm the binding change.");
+    await expect(within(document.body).getAllByRole("alert")).toHaveLength(1);
+    await expect(args.audioApi?.updateRoute).toHaveBeenCalledTimes(1);
+    await expect(args.audioApi?.updateRoute).toHaveBeenCalledWith("route-a", { name: "Retained rebind draft", deviceId: null, confirmLiveImpact: false });
+    await userEvent.click(dialog.getByRole("button", { name: "Cancel" }));
+    await expect(name).toHaveValue("Retained rebind draft");
+    await expect(device).toHaveValue("");
+    await expect(canvas.getByText("Confirm affected items before rebinding")).toBeVisible();
+    await expect(canvas.getByText("Alerts: New follower")).toBeVisible();
+    await expect(args.audioApi?.updateRoute).toHaveBeenCalledTimes(1);
+    await userEvent.click(canvas.getByRole("button", { name: "Confirm binding change" }));
+    await expect(args.audioApi?.updateRoute).toHaveBeenLastCalledWith("route-a", { name: "Retained rebind draft", deviceId: null, confirmLiveImpact: true });
+    await expect(await canvas.findByRole("status")).toHaveTextContent("Retained rebind draft saved.");
+  }
+};
+
 export const CollapsedServerDraftRemainsAvailable: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
