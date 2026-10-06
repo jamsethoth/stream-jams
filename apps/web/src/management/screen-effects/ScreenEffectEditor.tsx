@@ -346,7 +346,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
           }} />
         </details>)}
         <div className="screen-effect-editor__variant-actions">
-          <Button disabled={document.variants.length >= 50} onClick={() => {
+          <Button variant="light" disabled={document.variants.length >= 50} onClick={() => {
             const id = generateId("variant");
             edit((current) => ({
               ...current,

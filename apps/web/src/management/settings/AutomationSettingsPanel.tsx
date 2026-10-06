@@ -56,7 +56,7 @@ export function AutomationSettingsPanel({ api = defaultAutomationSettingsApi }: 
     finally { if (mounted.current) { setBusy(false); fetching.current = null; void load(); } }
   }
   return <section aria-labelledby="automation-heading" className="automation-settings settings-page__section">
-    <SectionHeading level={3} id="automation-heading" title="Automation permissions" description="Approve local clients only after matching the comparison code shown in that client. Client names are self-reported." actions={<Button disabled={busy} onClick={() => void load()} type="button">Refresh automation</Button>} />
+    <SectionHeading level={3} id="automation-heading" title="Automation permissions" description="Approve local clients only after matching the comparison code shown in that client. Client names are self-reported." actions={<Button variant="default" disabled={busy} onClick={() => void load()} type="button">Refresh automation</Button>} />
     {error === null ? null : <><ManagementErrorBanner error={error} />{data === null ? null : <p role="status">Last known automation status is stale. Refresh before making a decision.</p>}</>}
     {notice === null ? null : <ManagementToast notice={{ tone: "success", message: notice }} onDismiss={() => setNotice(null)} />}
     {data === null ? (error === null ? <p role="status">Loading automation permissions...</p> : null) : <>

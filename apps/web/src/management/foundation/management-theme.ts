@@ -27,12 +27,14 @@ export const managementTheme = createTheme({
     const semantic = ({ teal: "accent", green: "positive", yellow: "warning", red: "negative", blue: "info" } as Record<string, string>)[input.color ?? "teal"];
     if (semantic === undefined) return defaultVariantColorsResolver(input);
     const color = `var(--color-${semantic})`;
+    // Mantine applies this value as the whole border shorthand, so it needs width and style too.
+    const edge = (borderColor: string) => `calc(0.0625rem * var(--mantine-scale)) solid ${borderColor}`;
     const hover = `var(--color-${semantic === "accent" || semantic === "negative" ? `${semantic}-hover` : semantic})`;
-    if (input.variant === "filled") return { background: color, hover, color: "var(--color-on-action)", border: "transparent" };
-    if (input.variant === "light") return { background: `var(--color-${semantic}-soft)`, hover: `var(--color-${semantic}-soft)`, color, border: "transparent" };
-    if (input.variant === "outline") return { background: "var(--color-surface)", hover: "var(--color-surface-subtle)", color, border: color };
-    if (input.variant === "default") return { background: "var(--color-surface)", hover: "var(--color-surface-subtle)", color: "var(--color-text)", border: "var(--color-border-strong)" };
-    return { background: "transparent", hover: `var(--color-${semantic}-soft)`, color, border: "transparent" };
+    if (input.variant === "filled") return { background: color, hover, color: "var(--color-on-action)", border: edge("transparent") };
+    if (input.variant === "light") return { background: `var(--color-${semantic}-soft)`, hover: `var(--color-${semantic}-soft)`, color, border: edge("transparent") };
+    if (input.variant === "outline") return { background: "var(--color-surface)", hover: "var(--color-surface-subtle)", color, border: edge(color) };
+    if (input.variant === "default") return { background: "var(--color-surface)", hover: "var(--color-surface-subtle)", color: "var(--color-text)", border: edge("var(--color-border-strong)") };
+    return { background: "transparent", hover: `var(--color-${semantic}-soft)`, color, border: edge("transparent") };
   },
   components: {
     // Mantine UnstyledButton defaults native commands to type="button";

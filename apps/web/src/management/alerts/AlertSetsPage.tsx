@@ -811,8 +811,8 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
                       <ValidationRollup set={set} />
                     </div>
                     <div className="alert-sets-page__row-actions alert-sets-page__set-actions">
-                      {set.starter && set.starterReviewState === "pending" && expanded ? <Button disabled={busy} onClick={() => void markStarterReviewComplete()} type="button">Mark starter review done</Button> : null}
-                      {set.active ? null : <Button aria-label={`Make ${set.name} active`} disabled={busy} onClick={() => void prepareActivation(set)} type="button">Activate</Button>}
+                      {set.starter && set.starterReviewState === "pending" && expanded ? <Button variant="light" disabled={busy} onClick={() => void markStarterReviewComplete()} type="button">Mark starter review done</Button> : null}
+                      {set.active ? null : <Button aria-label={`Make ${set.name} active`} variant="light" disabled={busy} onClick={() => void prepareActivation(set)} type="button">Activate</Button>}
                       <Button aria-label={`Rename ${set.name}`} variant="default" disabled={busy} onClick={() => openNameDialog("rename", set)} type="button">Rename</Button>
                       <Button aria-label={`Duplicate ${set.name}`} variant="default" disabled={busy} onClick={() => openNameDialog("duplicate", set)} type="button">Duplicate</Button>
                       <Button aria-label={`Delete ${set.name}`} color="red" variant="light" disabled={busy || set.active} onClick={() => { setConfirmationError(null); setDeleteSet(set); }} type="button">Delete</Button>
@@ -1024,7 +1024,7 @@ function AlertInventory({
                   </span>
                   <span className={`alert-sets-page__event-status alert-sets-page__event-status--${group.status}`}>{eventStatusLabel(group.status)}</span>
                 </button>
-                {group.known ? <Button variant="default" size="xs" disabled={busy} onClick={() => onAddForEvent(group.eventType as StreamEventType)} type="button">Add alert for {group.label}</Button> : null}
+                {group.known ? <Button aria-label={`Add alert for ${group.label}`} variant="default" size="xs" disabled={busy} onClick={() => onAddForEvent(group.eventType as StreamEventType)} type="button">Add alert</Button> : null}
               </header>
               {expanded ? (
                 <div className="alert-sets-page__event-content" id={contentId}>
@@ -1168,7 +1168,7 @@ function AlertRowsTable({
                   <div className="alert-sets-page__row-actions alert-sets-page__alert-actions">
                     <Button aria-label={`Edit ${alert.name}`} variant="default" size="xs" id={alertRowFocusId(alert.id)} onClick={() => onEdit(alert)} type="button">Edit</Button>
                     <Button aria-expanded={testMenuOpen} aria-label={`Test saved ${alert.name}`} variant="default" size="xs" disabled={testingAlertId === alert.id} onClick={() => onTest(alert)} type="button">{testingAlertId === alert.id ? "Testing..." : "Test saved"}</Button>
-                    <Button aria-label={`${alert.enabled ? "Disable" : "Enable"} ${alert.name}`} size="xs" className="alert-sets-page__toggle-action" disabled={busy} onClick={() => onToggle(alert)} type="button">{alert.enabled ? "Disable" : "Enable"}</Button>
+                    <Button aria-label={`${alert.enabled ? "Disable" : "Enable"} ${alert.name}`} variant="default" size="xs" className="alert-sets-page__toggle-action" disabled={busy} onClick={() => onToggle(alert)} type="button">{alert.enabled ? "Disable" : "Enable"}</Button>
                     <ActionMenu
                       items={[
                         { accessibleLabel: `Sample message ${alert.name}`, label: "Sample message", onSelect: () => onPreview(alert) },
@@ -1245,7 +1245,7 @@ function BrowserSources({
 
                 {source.copyableUrlStatus === "create-required" ? <Button disabled={busy} onClick={() => onCreate(source)} type="button">Create URL</Button> : null}
                 {source.url === null ? null : <><Button aria-label={`${revealed ? "Hide" : "Reveal"} ${label} URL`} variant="default" onClick={() => onToggleReveal(source)} type="button">{revealed ? "Hide" : "Reveal"}</Button><Button aria-label={`Copy ${label} URL`} variant="default" onClick={() => onCopy(source)} type="button">Copy</Button></>}
-                {source.copyableUrlStatus !== "create-required" ? <Button aria-label={`Regenerate ${label} URL`} color="red" disabled={busy} onClick={() => onRegenerate(source)} type="button">Regenerate</Button> : null}
+                {source.copyableUrlStatus !== "create-required" ? <Button aria-label={`Regenerate ${label} URL`} color="red" variant="light" disabled={busy} onClick={() => onRegenerate(source)} type="button">Regenerate</Button> : null}
             </>} />
           );
         })}

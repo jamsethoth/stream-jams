@@ -2,7 +2,7 @@
    Do not apply legacy .button/.management-field rules to migrated components. */
 /* Sizes come from the theme; labels may wrap, so height grows from the theme minimum. */
 .management-command { font-weight: 600; height: auto; min-height: var(--button-height); padding-block: 4px; }
-.management-command__label { white-space: normal; overflow-wrap: anywhere; }
+.management-command__label { white-space: normal; overflow-wrap: break-word; }
 .mantine-Input-input { background: var(--color-surface); color: var(--color-text); border-color: var(--color-border-strong); }
 .mantine-Input-input:focus { border-color: var(--color-focus); }
 .mantine-Input-input[data-error] { border-color: var(--color-negative); }
