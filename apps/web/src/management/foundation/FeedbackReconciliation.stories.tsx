@@ -1,7 +1,7 @@
 import { Button } from "@mantine/core";
 import type { RegisteredProviderView } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, userEvent, within } from "storybook/test";
+import { expect, fn, userEvent, within } from "storybook/test";
 import { createStoryAssetApi, createStoryManagementApi } from "../../stories/mock-apis.js";
 import { storyAssetLibraryItems } from "../../stories/story-fixtures.js";
 import { AssetManager } from "../assets/AssetManager.js";
@@ -11,6 +11,12 @@ import { TtsProvidersPage } from "../providers/TtsProvidersPage.js";
 import { DirtyNavigationProvider, useManagementNavigation } from "../navigation/dirty-navigation.js";
 
 const failure = Object.assign(new Error("Disposable local storage is unavailable."), { referenceId: "ref-guard-story", nextStep: "Restore local storage and retry." });
+function filterFixtureDiagnostic(reportError: (...args: unknown[]) => void) {
+  return (...args: unknown[]) => {
+    if (args.length === 2 && args[0] === "[ref-guard-story] Asset details were not saved" && args[1] === failure) return;
+    reportError(...args);
+  };
+}
 const speaker: RegisteredProviderView = { id: "story-speaker", name: "Story Speaker.bot", kind: "speakerbot", capability: "tts", active: true, connectionState: "connected", intakeState: null, validatedAt: null, error: null, usedByAlertCount: 0 };
 const backup = { ...speaker, id: "story-backup", name: "Backup Speaker.bot", active: false };
 const bot: RegisteredProviderView = { ...speaker, id: "story-bot", name: "Story Streamer.bot", kind: "streamerbot", capability: "event-source", intakeState: "active" };
@@ -39,10 +45,20 @@ function FeedbackReconciliation({ surface }: { readonly surface: "assets" | "tts
 const meta = {
   title: "Management/Foundation/Feedback reconciliation", component: FeedbackReconciliation,
   tags: ["mantine-stage7-feedback"],
-  beforeEach: () => {
+  beforeEach: async () => {
     const reportError = console.error;
-    // The fixture deliberately exercises the existing diagnostic-recording owner.
-    console.error = () => {};
+    // Only this exact diagnostic and fixture identity are intentional.
+    const forwarded = fn();
+    const checkedFilter = filterFixtureDiagnostic(forwarded);
+    checkedFilter("[ref-guard-story] Asset details were not saved", failure);
+    await expect(forwarded).not.toHaveBeenCalled();
+    checkedFilter("Unexpected feedback render error", failure);
+    const unexpected = new Error("Unexpected storage error");
+    checkedFilter("[ref-guard-story] Asset details were not saved", unexpected);
+    await expect(forwarded).toHaveBeenCalledTimes(2);
+    await expect(forwarded).toHaveBeenCalledWith("Unexpected feedback render error", failure);
+    await expect(forwarded).toHaveBeenCalledWith("[ref-guard-story] Asset details were not saved", unexpected);
+    console.error = filterFixtureDiagnostic(reportError);
     return () => { console.error = reportError; };
   }
 } satisfies Meta<typeof FeedbackReconciliation>;

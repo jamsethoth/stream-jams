@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, fn, userEvent, waitFor, within } from "storybook/test";
+import { expect, userEvent, waitFor, within } from "storybook/test";
 import { createStoryAssetApi, createStoryManagementApi } from "../../stories/mock-apis.js";
 import { AssetManager } from "./AssetManager.js";
 import { storyAssetLibraryItems } from "../../stories/story-fixtures.js";
@@ -8,6 +8,20 @@ import type { AssetRecord } from "./asset-api.js";
 const meta = { tags: ["stream-local-media", "mantine-assets"], title: "Management/Assets/Library", component: AssetManager, render: (args, context) => <AssetManager key={context.id} {...args} /> } satisfies Meta<typeof AssetManager>;
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+const deletionFailure = Object.assign(new Error("Asset usage changed"), { referenceId: "ref-story-asset-delete" });
+const refreshFailure = Object.assign(new Error("Local service refresh unavailable"), { referenceId: "ref-story-asset-refresh" });
+const loadFailure = Object.assign(new Error("The local service is unavailable."), { referenceId: "ref-story-asset-load" });
+const replacementFailure = Object.assign(new Error("Fixture replacement unavailable"), { referenceId: "ref-story-asset-replace" });
+
+function filterFixtureDiagnostic(summary: string, fixtureError: Error & { readonly referenceId: string }) {
+  const reportError = console.error;
+  console.error = (...args: unknown[]) => {
+    if (args.length === 2 && args[0] === `[${fixtureError.referenceId}] ${summary}` && args[1] === fixtureError) return;
+    reportError(...args);
+  };
+  return () => { console.error = reportError; };
+}
 
 export const PopulatedWithDetail: Story = {
   args: { assetApi: createStoryAssetApi(), managementApi: createStoryManagementApi() }
@@ -54,12 +68,12 @@ export const DeletionPending: Story = {
 
 let retryDeletionAttempts = 0;
 export const DeletionFailureRetry: Story = {
+  tags: ["mantine-stage7-console"],
   beforeEach: () => {
     retryDeletionAttempts = 0;
-    const reportError = console.error; console.error = fn();
-    return () => { console.error = reportError; };
+    return filterFixtureDiagnostic("Asset was not deleted", deletionFailure);
   },
-  args: { assetApi: createStoryAssetApi(), managementApi: createStoryManagementApi({ deleteAsset: async () => { if (retryDeletionAttempts++ === 0) throw new Error("Asset usage changed"); }, listAssetLibraryItems: async () => storyAssetLibraryItems }) },
+  args: { assetApi: createStoryAssetApi(), managementApi: createStoryManagementApi({ deleteAsset: async () => { if (retryDeletionAttempts++ === 0) throw deletionFailure; }, listAssetLibraryItems: async () => storyAssetLibraryItems }) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Short chime" }));
@@ -77,14 +91,14 @@ export const DeletionFailureRetry: Story = {
 
 let staleRefreshLoads = 0;
 export const RetainedDetailsAfterRefreshFailure: Story = {
+  tags: ["mantine-stage7-console"],
   beforeEach: () => {
     staleRefreshLoads = 0;
-    const reportError = console.error; console.error = fn();
-    return () => { console.error = reportError; };
+    return filterFixtureDiagnostic("Asset library could not be loaded", refreshFailure);
   },
   args: { assetApi: createStoryAssetApi(), managementApi: createStoryManagementApi({
     listAssetLibraryItems: async () => {
-      if (++staleRefreshLoads === 2) throw new Error("Local service refresh unavailable");
+      if (++staleRefreshLoads === 2) throw refreshFailure;
       return staleRefreshLoads === 1 ? storyAssetLibraryItems : storyAssetLibraryItems.filter(item => item.mediaType === "image");
     }
   }) },
@@ -102,15 +116,12 @@ export const RetainedDetailsAfterRefreshFailure: Story = {
 };
 
 export const InitialLoadFailure: Story = {
-  beforeEach: () => {
-    const reportError = console.error;
-    console.error = fn();
-    return () => { console.error = reportError; };
-  },
+  tags: ["mantine-stage7-console"],
+  beforeEach: () => filterFixtureDiagnostic("Asset library could not be loaded", loadFailure),
   args: {
     assetApi: createStoryAssetApi(),
     managementApi: createStoryManagementApi({
-      listAssetLibraryItems: async () => { throw new Error("The local service is unavailable."); }
+      listAssetLibraryItems: async () => { throw loadFailure; }
     })
   }
 };
@@ -159,11 +170,10 @@ export const InUseReplacementWarning: Story = {
 let rejectPendingReplacement: (error: Error) => void;
 let pendingReplacementCalls = 0;
 export const ReplacementPendingOwnerNavigation: Story = {
-  tags: ["mantine-assets-replacement"],
+  tags: ["mantine-assets-replacement", "mantine-stage7-console"],
   beforeEach: () => {
     pendingReplacementCalls = 0;
-    const reportError = console.error; console.error = fn();
-    return () => { console.error = reportError; };
+    return filterFixtureDiagnostic("Asset file was not replaced", replacementFailure);
   },
   args: {
     assetApi: { ...createStoryAssetApi(), replaceAsset: () => {
@@ -193,7 +203,7 @@ export const ReplacementPendingOwnerNavigation: Story = {
     await userEvent.keyboard("{Escape}");
     await expect(body.getByRole("dialog", { name: "Replace Follower burst?" })).toBeVisible();
     await expect(dialog.getByRole("button", { name: "Cancel" })).toBeDisabled();
-    rejectPendingReplacement(new Error("Fixture replacement unavailable"));
+    rejectPendingReplacement(replacementFailure);
     await expect(await dialog.findByText("Asset file was not replaced")).toBeVisible();
     await expect(dialog.getByRole("link", { name: "New follower" })).toBeVisible();
     await expect(dialog.getByRole("link", { name: "Timer icon" })).toHaveAttribute("href", "/manage/modules/timers?ownerId=fixture-timer");
