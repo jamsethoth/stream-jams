@@ -185,6 +185,29 @@ describe("AssetManager", () => {
     await waitFor(() => expect(fixture.metadataUpdates).toEqual([{ displayName: "Winter follower", tags: ["winter", "follow"] }]));
   });
 
+  it("adopts server-normalized metadata after saving so the draft is clean", async () => {
+    const fixture = createFixture();
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/manage/assets");
+    render(<DirtyNavigationProvider><AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} /><AssetNavigationProbe /></DirtyNavigationProvider>);
+    await screen.findByRole("button", { name: "Follower burst" });
+
+    const name = screen.getByLabelText("Display name");
+    await waitFor(() => expect(name).toHaveValue("Follower burst"));
+    await user.clear(name);
+    await user.type(name, "Winter follower ");
+    const tags = screen.getByLabelText("Tags");
+    await user.clear(tags);
+    await user.type(tags, " Winter, FOLLOW ");
+    await user.click(screen.getByRole("button", { name: "Save asset details" }));
+
+    await waitFor(() => expect(name).toHaveValue("Winter follower"));
+    expect(tags).toHaveValue("winter, follow");
+    await user.click(screen.getByRole("button", { name: "Go home" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe("/manage");
+  });
+
   it("requires an explicit choice before discarding metadata to select another asset", async () => {
     const fixture = createFixture();
     const user = userEvent.setup();

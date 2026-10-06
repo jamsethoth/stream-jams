@@ -157,6 +157,10 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
         tags: normalizedTags
       });
       setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
+      // Adopt the server-normalized values; the dirty-draft guard would otherwise keep the submitted text.
+      dirtyDraft.current = false;
+      setDisplayName(updated.displayName);
+      setTags(updated.tags.join(", "));
       setNotice({ tone: "success", message: "Asset details saved." });
       setError(null);
       return true;
