@@ -1,3 +1,4 @@
+import { ManagementHttpError } from "../management-http-client.js";
 import { renderManagement as render } from "../../test-support/render-management.js";
 import { createStoryEffectSets } from "../../stories/screen-effect-set-fixtures.js";
 import { createScreenEffectDocument, screenEffectDocumentSchema, type ScreenEffectDocument } from "@stream-jams/core";
@@ -7,9 +8,32 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ScreenEffectsPage } from "./ScreenEffectsPage.js";
 import type { ScreenEffectsApi } from "./screen-effects-api.js";
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("ScreenEffectsPage", () => {
+  it("keeps load failures inline and command failures in one dismissible diagnostic toast", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const user = userEvent.setup();
+    const service = api({ moduleEnabled: false });
+    service.setModuleEnabled = vi.fn().mockRejectedValueOnce(new ManagementHttpError("Service busy", "UNAVAILABLE", "fixture-effects-ref", "Wait for the local service."));
+    render(<ScreenEffectsPage api={service} onEdit={vi.fn()} />);
+    await user.click(await screen.findByRole("button", { name: "Enable Screen Effects module" }));
+    await user.click(screen.getByRole("button", { name: "Confirm change" }));
+    const alert = await screen.findByRole("alert");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(alert.closest(".management-toast")).toHaveClass("management-toast--failure");
+    expect(alert).toHaveTextContent("Wait for the local service.");
+    expect(screen.getByRole("link", { name: "Open Diagnostics" })).toHaveAttribute("href", "/manage/diagnostics?reference=fixture-effects-ref");
+    await user.click(screen.getByRole("button", { name: "Dismiss error" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    cleanup();
+    render(<ScreenEffectsPage api={{ ...api(), list: async () => { throw new ManagementHttpError("Read failed", "UNAVAILABLE", "fixture-effects-load-ref", "Restart the service."); } }} onEdit={vi.fn()} />);
+    const loadError = await screen.findByRole("alert");
+    expect(loadError.closest(".management-toast")).toBeNull();
+    expect(loadError).toHaveTextContent("fixture-effects-load-ref");
+    expect(screen.queryByRole("button", { name: "Dismiss error" })).not.toBeInTheDocument();
+  });
+
   it("creates an inactive set and requires confirmation before making it live", async () => {
     const user = userEvent.setup();
     const service = api();

@@ -11,7 +11,7 @@ import type { ScreenEffectsApi } from "./screen-effects-api.js";
 
 const savedEffect = effect();
 
-const meta = {
+const meta = { tags: ["mantine-feedback-tabs"],
   title: "Management/Screen Effects/Inventory",
   component: ScreenEffectsPage,
   args: {
@@ -76,6 +76,11 @@ export const Loading: Story = {
 };
 
 export const LoadError: Story = {
+  beforeEach: () => {
+    const report = console.error;
+    console.error = (...args: unknown[]) => { if (!String(args[0]).includes("Screen Effects could not be loaded.")) report(...args); };
+    return () => { console.error = report; };
+  },
   args: {
     api: createApi([], {
       list: async () => { throw new Error("Screen Effects service unavailable (ref-story-effects)"); }

@@ -34,25 +34,4 @@ export function uploadError(reason: string | null): ActionableManagementError {
   };
 }
 
-export function actionableError(error: unknown, summary: string, nextStep: string): ActionableManagementError {
-  const referenceId = readReferenceId(error) ?? `ui-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  console.error(`[${referenceId}] ${summary}`, error);
-  return {
-    summary,
-    cause: error instanceof Error ? error.message : "The request failed for an unknown reason.",
-    nextStep,
-    severity: "error",
-    occurredAt: new Date().toISOString(),
-    referenceId,
-    correction: { label: "Open Diagnostics", route: `/manage/diagnostics?reference=${encodeURIComponent(referenceId)}` }
-  };
-}
-
-function readReferenceId(error: unknown): string | null {
-  return typeof error === "object"
-    && error !== null
-    && "referenceId" in error
-    && typeof error.referenceId === "string"
-    ? error.referenceId
-    : null;
-}
+export { actionableError } from "../foundation/actionable-error.js";

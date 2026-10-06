@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { Tabs } from "@mantine/core";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   DiagnosticsEventView,
   DiagnosticsProblemArea,
@@ -108,6 +109,7 @@ export function DiagnosticsPanel({ initialReferenceId, managementApi }: Diagnost
   }
 
   function selectTab(tab: DiagnosticsTab): void {
+    if (tab === activeTab) return;
     setActiveTab(tab);
     setFilter("all");
     setNotice(null);
@@ -172,11 +174,12 @@ export function DiagnosticsPanel({ initialReferenceId, managementApi }: Diagnost
       {loadNotice === null ? null : <NoticeBanner notice={loadNotice} />}
       {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
 
-      <div aria-label="Diagnostics views" className="diagnostics-workspace__tabs" role="tablist">
-        <TabButton active={activeTab === "problems"} count={workspace?.problems.length ?? 0} label="Problems" onClick={() => selectTab("problems")} tab="problems" />
-        <TabButton active={activeTab === "events"} count={workspace?.events.length ?? 0} label="Events" onClick={() => selectTab("events")} tab="events" />
-        <TabButton active={activeTab === "raw-logs"} count={workspace?.rawLogs.length ?? 0} label="Raw logs" onClick={() => selectTab("raw-logs")} tab="raw-logs" />
-      </div>
+      <Tabs className="diagnostics-workspace__views" value={activeTab} onChange={(value) => { if (value === "problems" || value === "events" || value === "raw-logs") selectTab(value); }} keepMounted={false}>
+        <Tabs.List aria-label="Diagnostics views">
+          <Tabs.Tab value="problems" onFocus={() => selectTab("problems")}>Problems <span>{workspace?.problems.length ?? 0}</span></Tabs.Tab>
+          <Tabs.Tab value="events" onFocus={() => selectTab("events")}>Events <span>{workspace?.events.length ?? 0}</span></Tabs.Tab>
+          <Tabs.Tab value="raw-logs" onFocus={() => selectTab("raw-logs")}>Raw logs <span>{workspace?.rawLogs.length ?? 0}</span></Tabs.Tab>
+        </Tabs.List>
 
       <div className="diagnostics-workspace__toolbar">
         <label className="management-field diagnostics-workspace__search">
@@ -213,25 +216,14 @@ export function DiagnosticsPanel({ initialReferenceId, managementApi }: Diagnost
           <button onClick={() => void loadWorkspace()} type="button">Retry</button>
         </div>
       ) : null}
-      {!loading && workspace !== null ? (
-        <div
-          aria-labelledby={`diagnostics-tab-${activeTab}`}
-          className="diagnostics-workspace__content"
-          id={`diagnostics-panel-${activeTab}`}
-          role="tabpanel"
-          tabIndex={0}
-        >
-          {activeTab === "problems" ? (
-            <ProblemsView onCopy={copyText} onSelect={setSelectedProblemId} problems={problems} selected={selectedProblem} />
-          ) : null}
-          {activeTab === "events" ? (
-            <EventsView events={events} onSelect={setSelectedEventId} selected={selectedEvent} />
-          ) : null}
-          {activeTab === "raw-logs" ? (
-            <RawLogsView logs={rawLogs} onCopy={copyText} onSelect={setSelectedLogId} selected={selectedLog} />
-          ) : null}
-        </div>
-      ) : null}
+      {diagnosticsTabs.map((tab) => <Tabs.Panel key={tab} value={tab} tabIndex={0}>
+        {!loading && workspace !== null ? <div className="diagnostics-workspace__content">
+          {tab === "problems" ? <ProblemsView onCopy={copyText} onSelect={setSelectedProblemId} problems={problems} selected={selectedProblem} /> : null}
+          {tab === "events" ? <EventsView events={events} onSelect={setSelectedEventId} selected={selectedEvent} /> : null}
+          {tab === "raw-logs" ? <RawLogsView logs={rawLogs} onCopy={copyText} onSelect={setSelectedLogId} selected={selectedLog} /> : null}
+        </div> : null}
+      </Tabs.Panel>)}
+      </Tabs>
     </section>
   );
 }
@@ -300,29 +292,6 @@ function DetailPane({ children, label }: { readonly children: React.ReactNode; r
 }
 
 const diagnosticsTabs: readonly DiagnosticsTab[] = ["problems", "events", "raw-logs"];
-
-function TabButton({ active, count, label, onClick, tab }: { readonly active: boolean; readonly count: number; readonly label: string; readonly onClick: () => void; readonly tab: DiagnosticsTab }) {
-  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>): void {
-    const currentIndex = diagnosticsTabs.indexOf(tab);
-    const targetIndex = event.key === "ArrowRight"
-      ? (currentIndex + 1) % diagnosticsTabs.length
-      : event.key === "ArrowLeft"
-        ? (currentIndex - 1 + diagnosticsTabs.length) % diagnosticsTabs.length
-        : event.key === "Home"
-          ? 0
-          : event.key === "End"
-            ? diagnosticsTabs.length - 1
-            : null;
-    if (targetIndex === null) return;
-    event.preventDefault();
-    const target = diagnosticsTabs[targetIndex];
-    if (target === undefined) return;
-    document.getElementById(`diagnostics-tab-${target}`)?.focus();
-    document.getElementById(`diagnostics-tab-${target}`)?.click();
-  }
-
-  return <button aria-controls={`diagnostics-panel-${tab}`} aria-selected={active} className={active ? "is-active" : ""} id={`diagnostics-tab-${tab}`} onClick={onClick} onKeyDown={handleKeyDown} role="tab" tabIndex={active ? 0 : -1} type="button">{label}<span>{count}</span></button>;
-}
 
 function EmptyState({ detail, title }: { readonly detail: string; readonly title: string }) {
   return <div className="diagnostics-workspace__empty"><strong>{title}</strong><p>{detail}</p></div>;

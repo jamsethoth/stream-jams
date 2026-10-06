@@ -22,7 +22,7 @@ const managementApi = createStoryManagementApi({
   getAlertSet: async () => alertSetDetail()
 });
 
-const meta = { tags: ["stream-local-media"],
+const meta = { tags: ["stream-local-media", "mantine-feedback-tabs"],
   title: "Management/Alerts/Focused editor",
   component: AlertEditorPage,
   decorators: [(Story, context) => {
@@ -53,6 +53,24 @@ const meta = { tags: ["stream-local-media"],
 
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+export const AutomaticInspectorTabs: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const layers = await canvas.findByRole("tab", { name: "Layers" });
+    await userEvent.click(layers);
+    await userEvent.keyboard("{End}");
+    const event = canvas.getByRole("tab", { name: "Event" });
+    await expect(event).toHaveFocus();
+    await expect(event).toHaveAttribute("aria-selected", "true");
+    await expect(canvas.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", event.id);
+    await expect(canvas.getAllByRole("tabpanel")).toHaveLength(1);
+    await userEvent.keyboard("{Home}");
+    await expect(layers).toHaveFocus();
+    await expect(layers).toHaveAttribute("aria-selected", "true");
+    await expect(canvas.queryByRole("group", { name: "Test destinations" })).not.toBeInTheDocument();
+  }
+};
 
 function videoAudioStoryDocument(playEmbeddedAudio: boolean, separateAudio = false, silentOutputs = false): AlertEditorDocument {
   const base = editorDocument();

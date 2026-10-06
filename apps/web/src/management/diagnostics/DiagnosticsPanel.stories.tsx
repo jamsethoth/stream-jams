@@ -4,7 +4,7 @@ import { expect, userEvent, within } from "storybook/test";
 import { createStoryManagementApi } from "../../stories/mock-apis.js";
 import { DiagnosticsPanel } from "./DiagnosticsPanel.js";
 
-const meta = { title: "Management/Diagnostics/Workspace", component: DiagnosticsPanel } satisfies Meta<typeof DiagnosticsPanel>;
+const meta = { tags: ["mantine-feedback-tabs"], title: "Management/Diagnostics/Workspace", component: DiagnosticsPanel } satisfies Meta<typeof DiagnosticsPanel>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 
@@ -15,6 +15,27 @@ export const ActiveProblems: Story = {
     await expect(await canvas.findByRole("heading", { name: "Error · Providers" })).toBeVisible();
     await expect(canvas.getByRole("link", { name: "Open event sources" })).toHaveAttribute("href", expect.stringContaining("diagnostic=ref-provider-1"));
     await expect(canvas.getByRole("button", { name: "Copy error JSON" })).toBeVisible();
+  }
+};
+
+export const AutomaticKeyboardTabs: Story = {
+  args: ActiveProblems.args,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const problems = await canvas.findByRole("tab", { name: /Problems/ });
+    await canvas.findByRole("heading", { name: "Open problems" });
+    await userEvent.click(problems);
+    await userEvent.keyboard("{End}");
+    const logs = canvas.getByRole("tab", { name: /Raw logs/ });
+    await expect(logs).toHaveFocus();
+    await expect(logs).toHaveAttribute("aria-selected", "true");
+    await expect(canvas.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", logs.id);
+    await expect(canvas.queryByRole("button", { name: "Copy error JSON" })).not.toBeInTheDocument();
+    await userEvent.keyboard("{Home}");
+    await expect(problems).toHaveFocus();
+    await expect(problems).toHaveAttribute("aria-selected", "true");
+    await userEvent.keyboard("{ArrowRight}");
+    await expect(canvas.getByRole("tab", { name: /Events/ })).toHaveAttribute("aria-selected", "true");
   }
 };
 

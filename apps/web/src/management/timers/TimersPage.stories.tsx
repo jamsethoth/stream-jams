@@ -27,7 +27,7 @@ const buildApi = (states: readonly TimerRunState[], enabled = true): TimersApi =
   getAutomationCredential: async () => ({ configured: false, createdAt: null, rotatedAt: null }),
   rotateAutomationCredential: async () => ({ configured: true, createdAt: definition.createdAt, rotatedAt: null, token: `tmr_${"placeholder".repeat(4)}` }), revokeAutomationCredential: async () => {}
 });
-const meta = { tags: ["stream-local-media"], title: "Management/Timers", component: TimersPage, parameters: { layout: "fullscreen" }, args: {
+const meta = { tags: ["stream-local-media", "mantine-feedback-tabs", "mantine-feedback-timers"], title: "Management/Timers", component: TimersPage, parameters: { layout: "fullscreen" }, args: {
   assetApi, audioApi, managementApi: {} as AssetLibraryManagementApi, api: buildApi([])
 } } satisfies Meta<typeof TimersPage>;
 export default meta; type Story = StoryObj<typeof meta>;
@@ -46,10 +46,31 @@ export const IdleInventory: Story = { play: async ({ canvasElement }) => {
   const browserSources = canvas.getByRole("region", { name: "Browser sources" });
   await expect(within(browserSources).getByRole("button", { name: "Expand browser sources" })).toHaveAttribute("aria-expanded", "false");
 } };
+export const ProfileValueChoice: Story = { play: async ({ canvasElement }) => {
+  const canvas = within(canvasElement);
+  await canvas.findByRole("button", { name: /Wear oven mitts/u });
+  await expect(canvas.getByRole("radiogroup", { name: "Timer profile" })).toBeVisible();
+  await userEvent.click(canvas.getByRole("radio", { name: "Landscape" }));
+  await userEvent.keyboard("{ArrowRight}");
+  await expect(canvas.getByRole("radio", { name: "Vertical" })).toBeChecked();
+  await expect(canvas.getByLabelText("vertical timer preview")).toBeVisible();
+  await expect(canvas.queryByRole("tablist")).not.toBeInTheDocument();
+} };
+export const InvalidLayoutCorrection: Story = { play: async ({ canvasElement }) => {
+  const canvas = within(canvasElement);
+  await canvas.findByRole("button", { name: /Wear oven mitts/u });
+  const maximum = canvas.getByRole("spinbutton", { name: "Maximum shown" });
+  await userEvent.clear(maximum);
+  await userEvent.type(maximum, "99");
+  await expect(canvas.getByText("Correct the layout values to preview the timer stack.")).toBeVisible();
+  await userEvent.click(canvas.getByRole("button", { name: "Save overlay layout" }));
+  await expect(canvas.getByRole("alert").closest(".management-toast")).toBeNull();
+  await expect(maximum).toHaveValue(99);
+} };
 export const CreatingTimer: Story = { play: async ({ canvasElement }) => {
   const canvas = within(canvasElement);
   await userEvent.click(await canvas.findByRole("button", { name: "New timer" }));
-  const dialog = canvas.getByRole("dialog", { name: "Create timer" });
+  const dialog = await within(document.body).findByRole("dialog", { name: "Create timer" });
   await expect(dialog).toBeVisible();
   const outputLabels = within(dialog).getByRole("group", { name: "Audio outputs" }).querySelectorAll("label");
   for (const label of outputLabels) {
@@ -77,6 +98,11 @@ export const ModuleDisabled: Story = { args: { api: buildApi([], false) }, play:
 } };
 export const Paused: Story = { args: { api: buildApi([{ status: "paused", definitionId: definition.id, generation: "pause", snapshot: definition, remainingMs: 30_000 }]) } };
 export const CorrectionFailureAndRetry: Story = {
+  beforeEach: () => {
+    const report = console.error;
+    console.error = (...args: unknown[]) => { if (!String(args[0]).includes("Timer action failed")) report(...args); };
+    return () => { console.error = report; };
+  },
   render: args => {
     let attempts = 0;
     const state: TimerRunState = { status: "paused", definitionId: definition.id, generation: "retry", snapshot: definition, remainingMs: 30000 };
@@ -89,15 +115,16 @@ export const CorrectionFailureAndRetry: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: /Wear oven mitts/ }));
-    const input = canvas.getByLabelText("Time (seconds)");
+    const dialog = within(await within(document.body).findByRole("dialog", { name: `Edit ${definition.label}` }));
+    const input = dialog.getByLabelText("Time (seconds)");
     await userEvent.clear(input); await userEvent.type(input, "42");
-    await userEvent.click(canvas.getByRole("button", { name: "Apply adjustment" }));
-    await expect(await canvas.findByRole("alert")).toHaveTextContent("Check the local service and retry.");
+    await userEvent.click(dialog.getByRole("button", { name: "Apply adjustment" }));
+    await expect(await dialog.findByRole("alert")).toHaveTextContent("Check the local service and retry.");
     await expect(input).toHaveValue(42);
-    await expect(canvas.getByRole("button", { name: "Apply adjustment" })).toBeEnabled();
-    await userEvent.click(canvas.getByRole("button", { name: "Apply adjustment" }));
-    await expect(canvas.queryByRole("alert")).not.toBeInTheDocument();
-    await expect(canvas.getByText("Timer adjusted.")).toBeInTheDocument();
+    await expect(dialog.getByRole("button", { name: "Apply adjustment" })).toBeEnabled();
+    await userEvent.click(dialog.getByRole("button", { name: "Apply adjustment" }));
+    await expect(dialog.queryByRole("alert")).not.toBeInTheDocument();
+    await expect(dialog.getByText("Timer adjusted.")).toBeInTheDocument();
   }
 };
 export const Completed: Story = { args: { api: buildApi([{ status: "completed", definitionId: definition.id, generation: "done", snapshot: definition, completedAtEpochMs: Date.now(), expiresAtEpochMs: Date.now() + 3000 }]) } };
@@ -106,7 +133,7 @@ export const ConfirmCredentialRotation: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Rotate credential" }));
-    const dialog = canvas.getByRole("dialog", { name: "Rotate timer automation credential?" });
+    const dialog = await within(document.body).findByRole("dialog", { name: "Rotate timer automation credential?" });
     await expect(within(dialog).getByText(/Existing Stream Deck actions will stop working/)).toBeVisible();
     await expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeVisible();
   }

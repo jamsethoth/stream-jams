@@ -88,6 +88,15 @@ describe("ScreenEffectEditor", () => {
     await user.keyboard("{ArrowRight}");
     expect(screen.getByRole("tab", { name: "Triggers" })).toHaveFocus();
     expect(screen.getByRole("heading", { name: "Trusted triggers" })).toBeVisible();
+    expect(screen.queryByLabelText("Effect name")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", screen.getByRole("tab", { name: "Triggers" }).id);
+    await user.keyboard("{Home}");
+    expect(screen.getByRole("tab", { name: "Variant" })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "Variant" })).toHaveAttribute("aria-selected", "true");
+    await user.keyboard("{End}");
+    expect(screen.getByRole("tab", { name: "Triggers" })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "Triggers" })).toHaveAttribute("aria-selected", "true");
     await user.keyboard("{ArrowLeft}");
     expect(screen.getByLabelText("Effect name")).toHaveValue("Retained draft");
   });

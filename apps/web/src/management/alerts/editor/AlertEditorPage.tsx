@@ -1,3 +1,4 @@
+import { Tabs } from "@mantine/core";
 import {
   assessAlertConfiguration,
   alertFontPresets,
@@ -37,7 +38,7 @@ import {
   type RegisteredProviderView,
   type TargetProfileId
 } from "@stream-jams/core";
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AssetApi } from "../../assets/asset-api.js";
 import { AssetPicker } from "../../assets/AssetPicker.js";
 import { defaultAudioApi, type AudioApi } from "../../audio/audio-api.js";
@@ -204,11 +205,6 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [copyDesignOpen, setCopyDesignOpen] = useState(false);
   const [copyDesignSourceId, setCopyDesignSourceId] = useState("");
   const [profileCopy, setProfileCopy] = useState<{ readonly sourceId: TargetProfileId; readonly targetId: TargetProfileId } | null>(null);
-  const tabRefs = useRef<Record<InspectorTab, HTMLButtonElement | null>>({
-    layers: null,
-    alert: null,
-    event: null
-  });
   const activeTtsProvider = ttsProviders.find((provider) => provider.active) ?? null;
   const canvasAssetMediaTypes = useMemo(() => Object.fromEntries(assets.flatMap((asset) =>
     asset.mediaType === "audio" || asset.mediaType === "font" ? [] : [[asset.id, asset.mediaType]]
@@ -820,38 +816,6 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setPicker(null);
   }
 
-  function handleInspectorTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, currentTab: InspectorTab) {
-    const tabs: readonly InspectorTab[] = ["layers", "alert", "event"];
-    const currentIndex = tabs.indexOf(currentTab);
-    let nextTab: InspectorTab | undefined;
-
-    switch (event.key) {
-      case "ArrowRight":
-      case "ArrowDown":
-        nextTab = tabs[(currentIndex + 1) % tabs.length];
-        break;
-      case "ArrowLeft":
-      case "ArrowUp":
-        nextTab = tabs[(currentIndex - 1 + tabs.length) % tabs.length];
-        break;
-      case "Home":
-        nextTab = tabs[0];
-        break;
-      case "End":
-        nextTab = tabs[tabs.length - 1];
-        break;
-      default:
-        return;
-    }
-
-    if (nextTab === undefined) {
-      return;
-    }
-    event.preventDefault();
-    setTab(nextTab);
-    tabRefs.current[nextTab]?.focus();
-  }
-
   async function applyCopiedDesign() {
     if (copyDesignSourceId === "") return;
     setBusy(true);
@@ -1103,30 +1067,12 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         </main>
 
         <aside className="alert-editor-page__inspector" aria-label="Alert inspector">
-          <div className="alert-editor-page__tabs" role="tablist" aria-label="Inspector sections">
-            {(["layers", "alert", "event"] as const).map((value) => (
-              <button
-                aria-controls={`alert-editor-panel-${value}`}
-                aria-selected={tab === value}
-                id={`alert-editor-tab-${value}`}
-                key={value}
-                onClick={() => setTab(value)}
-                onKeyDown={(event) => handleInspectorTabKeyDown(event, value)}
-                ref={(element) => { tabRefs.current[value] = element; }}
-                role="tab"
-                tabIndex={tab === value ? 0 : -1}
-                type="button"
-              >
-                {capitalize(value)}
-              </button>
-            ))}
-          </div>
-          <div
-            aria-labelledby={`alert-editor-tab-${tab}`}
-            id={`alert-editor-panel-${tab}`}
-            role="tabpanel"
-            tabIndex={0}
-          >
+          <Tabs value={tab} onChange={(value) => { if (value === "layers" || value === "alert" || value === "event") setTab(value); }} keepMounted={false}>
+            <Tabs.List grow aria-label="Inspector sections">
+              {(["layers", "alert", "event"] as const).map((value) => <Tabs.Tab key={value} value={value} onFocus={() => setTab(value)}>{capitalize(value)}</Tabs.Tab>)}
+            </Tabs.List>
+            {(["layers", "alert", "event"] as const).map((value) => <Tabs.Panel key={value} value={value} tabIndex={0}>
+            {value !== tab ? null : <>
             {tab === "layers" ? (
               <LayerInspector
                 activeTtsProvider={activeTtsProvider}
@@ -1199,16 +1145,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                 variationEvaluation={variationEvaluation}
               /></>
             )}
-          </div>
-          {(["layers", "alert", "event"] as const).filter((value) => value !== tab).map((value) => (
-            <div
-              aria-labelledby={`alert-editor-tab-${value}`}
-              hidden
-              id={`alert-editor-panel-${value}`}
-              key={value}
-              role="tabpanel"
-            />
-          ))}
+            </>}
+            </Tabs.Panel>)}
+          </Tabs>
         </aside>
       </div>
 

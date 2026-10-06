@@ -135,6 +135,7 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
   await page.getByRole("button", { name: "New timer" }).click();
   const editor = page.getByRole("dialog", { name: "Create timer" });
   const outputLabels = editor.getByRole("group", { name: "Audio outputs" }).locator("label");
+  await expect(outputLabels).toHaveCount(2);
   const outputAlignment = await outputLabels.evaluateAll(labels => labels.map(label => {
     const labelBounds = label.getBoundingClientRect();
     const checkboxBounds = label.querySelector("input")!.getBoundingClientRect();
@@ -175,10 +176,12 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
     outputs: { browserSource: true, deviceRouteIds: ["speakers"] }
   });
 
-  await page.getByRole("tab", { name: "Landscape" }).click();
+  await page.getByRole("radiogroup", { name: "Timer profile" }).getByText("Landscape", { exact: true }).click();
+  await expect(page.getByRole("radio", { name: "Landscape" })).toBeChecked();
   await page.getByLabel("Orientation").selectOption("horizontal");
   await page.getByLabel("Maximum shown").fill("4");
-  await page.getByRole("tab", { name: "Vertical" }).click();
+  await page.getByRole("radiogroup", { name: "Timer profile" }).getByText("Vertical", { exact: true }).click();
+  await expect(page.getByRole("radio", { name: "Vertical" })).toBeChecked();
   await page.getByLabel("Maximum shown").fill("2");
   await page.getByRole("button", { name: "Save overlay layout" }).click();
   expect(layout.profiles.landscape).toMatchObject({ orientation: "horizontal", maxVisible: 4 });

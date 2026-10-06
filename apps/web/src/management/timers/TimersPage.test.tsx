@@ -1,3 +1,4 @@
+import { ManagementHttpError } from "../management-http-client.js";
 import { renderManagement as render } from "../../test-support/render-management.js";
 import { createTestMediaPreviewApi } from "../../test-support/media-preview-fixture.js";
 import { timersOverlayModuleDefinition, type AssetLibraryItem, type TimerDefinition, type TimerRunState } from "@stream-jams/core";
@@ -46,8 +47,86 @@ function harness(state: TimerRunState | null = null) {
   return { api, audioApi, setModuleEnabled };
 }
 function renderPage(state: TimerRunState | null = null) {
-  const values = harness(state); render(<TimersPage api={values.api} assetApi={{} as AssetApi} audioApi={values.audioApi} managementApi={{} as AssetLibraryManagementApi} />); return values;
+  const values = harness(state); const view = render(<TimersPage api={values.api} assetApi={{} as AssetApi} audioApi={values.audioApi} managementApi={{} as AssetLibraryManagementApi} />); return { ...values, view };
 }
+
+it("announces command outcomes once with fixed expiry, dismissal and typed diagnostics", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const values = harness();
+  const command = vi.fn().mockResolvedValueOnce({ changed: true, state: null }).mockRejectedValue(new ManagementHttpError("Unavailable", "UNAVAILABLE", "fixture-timer-ref", "Restart the local service."));
+  render(<TimersPage api={{ ...values.api, command }} assetApi={{} as AssetApi} audioApi={values.audioApi} managementApi={{} as AssetLibraryManagementApi} />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "Start" }));
+  await act(async () => {});
+  expect(screen.getAllByRole("status")).toHaveLength(1);
+  expect(screen.getByRole("status")).toHaveClass("management-toast");
+  expect(document.querySelectorAll('[aria-live="polite"]')).toHaveLength(0);
+  await act(async () => { await vi.advanceTimersByTimeAsync(3999); });
+  expect(screen.getByRole("status")).toBeInTheDocument();
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Start" }));
+  await act(async () => {});
+  expect(screen.getAllByRole("alert")).toHaveLength(1);
+  expect(screen.getByRole("alert").closest(".management-toast")).toHaveClass("management-toast--failure");
+  expect(screen.getByRole("alert")).toHaveTextContent("Restart the local service.");
+  expect(screen.getByRole("link", { name: "Open Diagnostics" })).toHaveAttribute("href", "/manage/diagnostics?reference=fixture-timer-ref");
+  await act(async () => { await vi.advanceTimersByTimeAsync(7999); });
+  expect(screen.getByRole("alert")).toBeInTheDocument();
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Start" }));
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "Dismiss error" }));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+it("keeps initial-load failure inline beyond toast expiry", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const values = harness();
+  render(<TimersPage api={{ ...values.api, list: async () => { throw new ManagementHttpError("Read failed", "UNAVAILABLE", "fixture-load-ref", "Restart the service."); } }} assetApi={{} as AssetApi} audioApi={values.audioApi} managementApi={{} as AssetLibraryManagementApi} />);
+  await act(async () => {});
+  expect(screen.getByRole("alert")).toHaveTextContent("Timers could not be loaded");
+  expect(screen.getByRole("alert").closest(".management-toast")).toBeNull();
+  await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
+  expect(screen.getByRole("alert")).toHaveTextContent("fixture-load-ref");
+});
+
+it("keeps failed command feedback inside the open dialog and clears its lifetime on close", async () => {
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const user = userEvent.setup();
+  const values = harness({ status: "paused", definitionId: definition.id, generation: "fixture", snapshot: definition, remainingMs: 60000 });
+  render(<TimersPage api={{ ...values.api, adjust: async () => { throw new ManagementHttpError("Unavailable", "UNAVAILABLE", "fixture-dialog-ref", "Restart the service."); } }} assetApi={{} as AssetApi} audioApi={values.audioApi} managementApi={{} as AssetLibraryManagementApi} />);
+  await user.click(await screen.findByRole("button", { name: /Wear oven mitts/ }));
+  await user.click(screen.getByRole("button", { name: "Apply adjustment" }));
+  const dialog = screen.getByRole("dialog", { name: "Edit Wear oven mitts" });
+  expect(await within(dialog).findByRole("alert")).toHaveTextContent("fixture-dialog-ref");
+  const dismiss = within(dialog).getByRole("button", { name: "Dismiss error" });
+  dismiss.focus();
+  expect(dismiss).toHaveFocus();
+  await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /Wear oven mitts/ }));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+it("keeps invalid timer definition and layout correction inline without issuing commands", async () => {
+  const user = userEvent.setup();
+  const values = harness();
+  render(<TimersPage api={values.api} assetApi={{} as AssetApi} audioApi={values.audioApi} managementApi={{} as AssetLibraryManagementApi} />);
+  await user.click(await screen.findByRole("button", { name: "New timer" }));
+  const dialog = screen.getByRole("dialog", { name: "Create timer" });
+  fireEvent.submit(within(dialog).getByRole("button", { name: "Create timer" }).closest("form")!);
+  expect(within(dialog).getByRole("alert").closest(".management-toast")).toBeNull();
+  expect(values.api.create).not.toHaveBeenCalled();
+  await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Maximum shown" }), { target: { value: "99" } });
+  await user.click(screen.getByRole("button", { name: "Save overlay layout" }));
+  expect(screen.getByRole("alert").closest(".management-toast")).toBeNull();
+  expect(values.api.saveModuleConfig).not.toHaveBeenCalled();
+});
 
 it("retains correction input after a failed request and permits an explicit retry", async () => {
   const user = userEvent.setup();
@@ -120,7 +199,7 @@ it("requires confirmation before rotating an existing automation credential", as
 
 it("polls runtime state without overwriting edits and retains stale state until recovery", async () => {
   vi.useFakeTimers();
-  const { api } = renderPage();
+  const { api, view } = renderPage();
   await act(async () => {});
   fireEvent.click(screen.getByRole("button", { name: /Wear oven mitts/ }));
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Unsaved name" } });
@@ -136,6 +215,10 @@ it("polls runtime state without overwriting edits and retains stale state until 
   expect(screen.queryByText("Timer status is stale")).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Delete" })).toBeEnabled();
   expect(api.list).toHaveBeenCalledTimes(1);
+  const polls = vi.mocked(api.listStates).mock.calls.length;
+  view.unmount();
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+  expect(api.listStates).toHaveBeenCalledTimes(polls);
 });
 
 it("presents profile-aware browser source setup in a collapsed output band", async () => {
@@ -168,7 +251,7 @@ it("discloses active snapshots, applies state-aware controls, and blocks active 
 it("edits both profile layouts and reveals a one-time automation credential", async () => {
   const user = userEvent.setup(); const { api } = renderPage(); await screen.findByText("Timer stack");
   screen.getByRole("button", { name: "Move timer region" }).focus(); await user.keyboard("{ArrowRight}");
-  await user.click(screen.getByRole("tab", { name: "Vertical" })); await user.selectOptions(screen.getByLabelText("Orientation"), "horizontal");
+  await user.click(screen.getByRole("radio", { name: "Vertical" })); await user.selectOptions(screen.getByLabelText("Orientation"), "horizontal");
   await user.click(screen.getByRole("button", { name: "Save overlay layout" })); await waitFor(() => expect(api.saveModuleConfig).toHaveBeenCalled());
   await user.click(screen.getByRole("button", { name: "Create credential" }));
   expect(await screen.findByDisplayValue(/^tmr_/)).toBeInTheDocument(); expect(screen.getByText(/will not be shown again/i)).toBeInTheDocument();

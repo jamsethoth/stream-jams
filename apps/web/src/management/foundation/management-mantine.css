@@ -19,3 +19,11 @@
   .management-mantine-modal__body { padding: 16px; }
   .management-modal__actions > .management-command { flex: 1 1 auto; }
 }
+
+.mantine-Tabs-root { --tab-border-color: var(--color-border); --tab-hover-color: var(--color-surface-subtle); }
+.mantine-Tabs-tab { color: var(--color-text-muted); }
+.mantine-Tabs-tab[data-active] { color: var(--color-text); }
+.mantine-SegmentedControl-root { background: var(--color-surface-subtle); }
+.mantine-SegmentedControl-indicator { background: var(--color-surface); }
+.mantine-SegmentedControl-label { color: var(--color-text-muted); }
+.mantine-SegmentedControl-label[data-active] { color: var(--color-text); }

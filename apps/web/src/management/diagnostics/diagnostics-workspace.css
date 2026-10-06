@@ -31,28 +31,6 @@
 .diagnostics-workspace__header p { color: var(--color-text-muted); margin-top: 5px; max-width: 720px; }
 .diagnostics-workspace__actions { flex-wrap: wrap; justify-content: flex-end; }
 
-.diagnostics-workspace__tabs {
-  border-bottom: 1px solid var(--color-border);
-  display: flex;
-  gap: 6px;
-}
-
-.diagnostics-workspace__tabs button {
-  background: transparent;
-  border: 0;
-  border-bottom: 3px solid transparent;
-  border-radius: 0;
-  color: var(--color-text-muted);
-  display: inline-flex;
-  gap: 8px;
-  padding: 10px 14px;
-}
-
-.diagnostics-workspace__tabs button:hover,
-.diagnostics-workspace__tabs button.is-active { background: var(--color-surface-subtle); color: var(--color-text); }
-.diagnostics-workspace__tabs button.is-active { border-bottom-color: var(--color-accent); }
-.diagnostics-workspace__tabs button span { color: var(--color-text-muted); font-size: 12px; }
-
 .diagnostics-workspace__toolbar { align-items: end; flex-wrap: wrap; }
 .diagnostics-workspace__toolbar .management-field { min-width: 150px; }
 .diagnostics-workspace__toolbar select { min-height: 40px; }
@@ -173,8 +151,6 @@
 @media (max-width: 640px) {
   .diagnostics-workspace__header { display: contents; }
   .diagnostics-workspace__actions { order: 5; }
-  .diagnostics-workspace__tabs { overflow-x: auto; }
-  .diagnostics-workspace__tabs button { flex: 1 0 auto; justify-content: center; }
   .diagnostics-workspace__actions button,
   .diagnostics-workspace__detail-actions .button { width: 100%; }
   .diagnostics-workspace__list-pane,
@@ -185,3 +161,5 @@
   .diagnostics-log-row strong,
   .diagnostics-log-row small { grid-column: 1 / -1; }
 }
+
+.diagnostics-workspace__views { display: grid; gap: 18px; }

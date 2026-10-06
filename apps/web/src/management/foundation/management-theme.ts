@@ -24,6 +24,7 @@ export const managementTheme = createTheme({
     // explicit type="submit" is preserved by direct Button/ActionIcon props.
     Button: { defaultProps: { size: "sm" }, classNames: { root: "management-command", label: "management-command__label" } },
     ActionIcon: { defaultProps: { size: "lg" } },
+    Tabs: { styles: { root: { "--tabs-color": "var(--color-accent)" } } },
     Input: { defaultProps: { size: "sm" } },
     Modal: { defaultProps: { zIndex: 1000 }, classNames: { title: "management-modal-heading" } },
     Menu: { defaultProps: { zIndex: 1100, withinPortal: true }, classNames: { dropdown: "management-menu", item: "management-menu__item" } },

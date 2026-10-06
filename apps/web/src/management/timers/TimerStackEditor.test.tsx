@@ -1,3 +1,4 @@
+import userEvent from "@testing-library/user-event";
 import { renderManagement as render } from "../../test-support/render-management.js";
 import { createTestMediaPreviewApi, previewDescriptor } from "../../test-support/media-preview-fixture.js";
 import { timersOverlayModuleDefinition, type TimerDefinition } from "@stream-jams/core";
@@ -8,11 +9,11 @@ import { TimerStackEditor } from "./TimerStackEditor.js";
 let resizeCallback: ResizeObserverCallback | undefined;
 
 class PreviewResizeObserver implements ResizeObserver {
-  constructor(callback: ResizeObserverCallback) {
-    resizeCallback = callback;
-  }
+  constructor(private readonly callback: ResizeObserverCallback) {}
   disconnect() {}
-  observe() {}
+  observe(target: Element) {
+    if (target.classList.contains("timer-layout__preview-shell")) resizeCallback = this.callback;
+  }
   unobserve() {}
 }
 
@@ -23,6 +24,28 @@ afterEach(() => {
 });
 
 describe("TimerStackEditor", () => {
+  it("selects labelled profile values over one keyboard-operable canvas", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const value = structuredClone(timersOverlayModuleDefinition.defaultConfig);
+    render(<TimerStackEditor assetApi={createTestMediaPreviewApi()} value={value} onChange={onChange} />);
+    const landscape = screen.getByRole("radio", { name: "Landscape" });
+    const vertical = screen.getByRole("radio", { name: "Vertical" });
+    expect(screen.getByRole("radiogroup", { name: "Timer profile" })).toBeInTheDocument();
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    expect(landscape).toBeChecked();
+    landscape.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(vertical).toBeChecked();
+    expect(vertical).toHaveFocus();
+    expect(screen.getByLabelText("vertical timer preview")).toBeInTheDocument();
+    const move = screen.getByRole("button", { name: "Move timer region" });
+    move.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(onChange).toHaveBeenCalledWith({ profiles: { ...value.profiles, vertical: { ...value.profiles.vertical, layout: { ...value.profiles.vertical.layout, x: value.profiles.vertical.layout.x + 1 } } } });
+    expect(screen.queryByRole("tabpanel")).not.toBeInTheDocument();
+  });
+
   it("fills the available preview width while preserving the output profile scale", () => {
     vi.stubGlobal("ResizeObserver", PreviewResizeObserver);
     render(<TimerStackEditor assetApi={createTestMediaPreviewApi()} value={structuredClone(timersOverlayModuleDefinition.defaultConfig)} onChange={() => {}} />);

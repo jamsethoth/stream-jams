@@ -40,7 +40,7 @@ const managementApi = createStoryManagementApi({
   }] })
 });
 
-const meta = { tags: ["stream-local-media"],
+const meta = { tags: ["stream-local-media", "mantine-feedback-tabs"],
   title: "Management/Screen Effects/Focused editor",
   component: ScreenEffectEditor,
   decorators: [(Story) => <DirtyNavigationProvider><div className="management-main management-main--focused"><Story /></div></DirtyNavigationProvider>],
@@ -68,6 +68,23 @@ export const NewDisabledDraft: Story = {
     await expect(await canvas.findByLabelText("Effect name")).toHaveValue("New Screen Effect");
     await expect(canvas.getByRole("checkbox", { name: /^Enabled$/u })).toBeDisabled();
     await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
+  }
+};
+
+export const KeyboardTabsRetainDraft: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Effect" }));
+    await userEvent.clear(canvas.getByLabelText("Effect name"));
+    await userEvent.type(canvas.getByLabelText("Effect name"), "Retained keyboard draft");
+    await userEvent.click(canvas.getByRole("tab", { name: "Effect" }));
+    await userEvent.keyboard("{End}");
+    const triggers = canvas.getByRole("tab", { name: "Triggers" });
+    await expect(triggers).toHaveFocus();
+    await expect(triggers).toHaveAttribute("aria-selected", "true");
+    await expect(canvas.queryByLabelText("Effect name")).not.toBeInTheDocument();
+    await userEvent.keyboard("{Home}{ArrowRight}");
+    await expect(canvas.getByLabelText("Effect name")).toHaveValue("Retained keyboard draft");
   }
 };
 
@@ -167,6 +184,11 @@ export const NoOutputs: Story = {
 };
 
 export const FailedSaveRetainsDraft: Story = {
+  beforeEach: () => {
+    const report = console.error;
+    console.error = (...args: unknown[]) => { if (!String(args[0]).includes("The Screen Effect was not saved. The draft is still here.")) report(...args); };
+    return () => { console.error = report; };
+  },
   args: {
     api: createApi(neutral, {
       update: async () => { throw new Error("Storage failed (ref-story-save)"); }

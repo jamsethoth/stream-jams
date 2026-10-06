@@ -1770,9 +1770,10 @@ describe("AlertEditorPage", () => {
     for (const inspectorTab of [layersTab, alertTab, eventTab]) {
       expect(globalThis.document.getElementById(inspectorTab.getAttribute("aria-controls")!)).not.toBeNull();
     }
-    expect(layersTab).toHaveAttribute("aria-controls", "alert-editor-panel-layers");
-    expect(screen.getByRole("tabpanel")).toHaveAttribute("id", "alert-editor-panel-layers");
-    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "alert-editor-tab-layers");
+    expect(layersTab).toHaveAttribute("aria-controls", screen.getByRole("tabpanel").id);
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", layersTab.id);
+    expect(screen.queryByRole("group", { name: "Test destinations" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Landscape/ })).toHaveAttribute("aria-pressed", "true");
   });
 

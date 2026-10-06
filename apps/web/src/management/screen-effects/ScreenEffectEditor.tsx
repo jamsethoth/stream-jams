@@ -1,3 +1,8 @@
+import { actionableError } from "../foundation/actionable-error.js";
+import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
+import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
+import type { ActionableManagementError } from "@stream-jams/core";
+import { Tabs } from "@mantine/core";
 import { ScreenEffectPreview } from "./ScreenEffectPreview.js";
 import { ManagementHttpError } from "../management-http-client.js";
 import {
@@ -102,8 +107,9 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
   const [loading, setLoading] = useState(true);
   const [contextRetrying, setContextRetrying] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<ActionableManagementError | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
   const [picker, setPicker] = useState<PickerTarget>(null);
   const preview = useRef<{ play(): void }>(null);
   const [testOpen, setTestOpen] = useState(false);
@@ -115,7 +121,6 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("Variant");
   const [simulationRows, setSimulationRows] = useState<readonly WeightSimulationRow[] | null>(null);
   const [simulationError, setSimulationError] = useState<string | null>(null);
-  const tabRefs = useRef<Partial<Record<InspectorTab, HTMLButtonElement | null>>>({});
   const variantRemovalFocusFallbackRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -143,7 +148,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
       setContext(loadedContext);
       setError(null);
     }).catch((loadError: unknown) => {
-      if (active) setError(message(loadError, "The Screen Effect editor could not be opened."));
+      if (active) setError(actionableError(loadError, "The Screen Effect editor could not be opened.", "Return to Screen Effects and reopen the saved effect."));
     }).finally(() => {
       if (active) setLoading(false);
     });
@@ -168,6 +173,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
   const edit = useCallback((update: (document: ScreenEffectDocument) => ScreenEffectDocument) => {
     setState((current) => current === null ? null : applyScreenEffectEdit(current, update));
     setNotice(null);
+    setValidationError(null);
     setSimulationRows(null);
     setSimulationError(null);
   }, []);
@@ -183,9 +189,11 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
 
   const save = useCallback(async (confirmLiveImpact = false) => {
     if (state === null) return false;
+    setError(null);
+    setNotice(null);
     const parsed = screenEffectDocumentSchema.safeParse(state.document);
     if (!parsed.success) {
-      setError(firstValidationMessage(parsed.error));
+      setValidationError(firstValidationMessage(parsed.error));
       return false;
     }
     if (!confirmLiveImpact && currentSet?.active !== false && (state.savedDocument.enabled || parsed.data.enabled)) {
@@ -193,6 +201,9 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
       return false;
     }
     setBusy(true);
+    setError(null);
+    setNotice(null);
+    setValidationError(null);
     try {
       const saved = persisted
         ? await props.api.update(props.effectId, parsed.data, confirmLiveImpact)
@@ -201,7 +212,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
         ? null
         : reconcileScreenEffectSaved(current, parsed.data, saved));
       setPersisted(true);
-      setNotice("Screen Effect saved.");
+      setNotice({ tone: "success", message: "Screen Effect saved." });
       setError(null);
       setSaveConfirmationOpen(false);
       return true;
@@ -209,7 +220,8 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
       if (saveError instanceof ManagementHttpError && saveError.code === "SCREEN_EFFECT_LIVE_IMPACT_CONFIRMATION_REQUIRED") {
         setSaveConfirmationOpen(true);
       }
-      setError(message(saveError, "The Screen Effect was not saved. The draft is still here."));
+      setNotice(null);
+      setError(actionableError(saveError, "The Screen Effect was not saved. The draft is still here.", "Review the draft and local service, then save again."));
       return false;
     } finally {
       setBusy(false);
@@ -219,6 +231,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
   const discard = useCallback(() => {
     setState((current) => current === null ? null : revertScreenEffectEdits(current));
     setError(null);
+    setValidationError(null);
   }, []);
 
   const saveForNavigation = useCallback(() => save(false), [save]);
@@ -269,9 +282,15 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
     discard
   });
 
+  const feedback = <>
+    {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
+    {error === null ? null : <ManagementErrorToast error={error} onDismiss={() => setError(null)} />}
+  </>;
+  const feedbackOwner = testOpen ? "test" : saveConfirmationOpen ? "save" : "page";
+
   if (loading) return <p role="status">Loading Screen Effect editor…</p>;
   if (document === null || state === null || selectedVariant === null) {
-    return <div className="management-card"><h2>The Screen Effect editor could not be opened</h2><p role="alert">{error ?? "The saved definition is unavailable."}</p><button className="button button--secondary" onClick={props.onBack} type="button">Back to Screen Effects</button></div>;
+    return <div className="management-card"><h2>The Screen Effect editor could not be opened</h2>{error === null ? <p role="alert">The saved definition is unavailable.</p> : <ManagementErrorBanner error={error} />}<button className="button button--secondary" onClick={props.onBack} type="button">Back to Screen Effects</button></div>;
   }
 
 
@@ -287,13 +306,13 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
       onPreview={() => preview.current?.play()}
       onRedo={() => setState((current) => current === null ? null : redoScreenEffectEdit(current))}
       onSave={() => void save(false)}
-      onTest={() => setTestOpen(true)}
+      onTest={() => { setError(null); setNotice(null); setTestOpen(true); }}
       onUndo={() => setState((current) => current === null ? null : undoScreenEffectEdit(current))}
       testDisabled={!persisted || dirty || !document.enabled}
     />
     <p className="screen-effect-editor__set-status">{currentSet?.active ? `Editing active set: ${currentSet.name}` : `Inactive set: ${currentSet?.name ?? "Unavailable"}. Changes will not affect live triggers until activated.`}</p>
-    {notice === null ? null : <p role="status">{notice}</p>}
-    {error === null ? null : <p role="alert">{error}</p>}
+    {feedbackOwner === "page" ? feedback : null}
+    {validationError === null ? null : <p role="alert">{validationError}</p>}
     {context.failures.length === 0 ? null : (
       <section className="screen-effect-editor__context-error" role="alert">
         <strong>Some editor context could not be loaded.</strong>
@@ -361,17 +380,12 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
         <ScreenEffectPreview assetApi={props.assetApi} assetDurations={assetDurations} ref={preview} key={selectedVariant.id} variant={previewVariant!} />
       </section>
       <aside aria-label="Effect inspector" className="screen-effect-editor__inspector">
-        <div aria-label="Inspector sections" className="screen-effect-editor__tabs" role="tablist">
-          {inspectorTabs.map((tab, index) => <button aria-controls={`effect-panel-${tab}`} aria-selected={inspectorTab === tab} id={`effect-tab-${tab}`} key={tab} onClick={() => setInspectorTab(tab)} onKeyDown={(event) => {
-            const next = event.key === "Home" ? 0 : event.key === "End" ? inspectorTabs.length - 1 : event.key === "ArrowRight" ? (index + 1) % inspectorTabs.length : event.key === "ArrowLeft" ? (index + inspectorTabs.length - 1) % inspectorTabs.length : null;
-            if (next === null) return;
-            event.preventDefault();
-            const target = inspectorTabs[next]!;
-            setInspectorTab(target);
-            tabRefs.current[target]?.focus();
-          }} ref={(element) => { tabRefs.current[tab] = element; }} role="tab" tabIndex={inspectorTab === tab ? 0 : -1} type="button">{tab}</button>)}
-        </div>
-        <div aria-labelledby={`effect-tab-${inspectorTab}`} className="screen-effect-editor__panel" id={`effect-panel-${inspectorTab}`} role="tabpanel" tabIndex={0}>
+        <Tabs className="screen-effect-editor__inspector-tabs" value={inspectorTab} onChange={(value) => { if (value === "Variant" || value === "Effect" || value === "Triggers") setInspectorTab(value); }} keepMounted={false}>
+          <Tabs.List grow aria-label="Inspector sections">
+            {inspectorTabs.map((tab) => <Tabs.Tab key={tab} value={tab} onFocus={() => setInspectorTab(tab)}>{tab}</Tabs.Tab>)}
+          </Tabs.List>
+          {inspectorTabs.map((tab) => <Tabs.Panel className="screen-effect-editor__panel" key={tab} value={tab} tabIndex={0}>
+          {tab !== inspectorTab ? null : <>
         {inspectorTab === "Effect" ? <DocumentPanel document={document} edit={edit} isNew={!persisted} /> : inspectorTab === "Triggers" ? <TriggerPanel context={context} document={document} edit={edit} generateId={generateId} /> : <VariantPanel
         context={context}
         edit={edit}
@@ -383,7 +397,9 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
         selected={selectedVariant}
         variants={document.variants}
       />}
-        </div>
+          </>}
+          </Tabs.Panel>)}
+        </Tabs>
       </aside>
     </div>
     <AssetPicker
@@ -422,15 +438,17 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
     <LiveTestDialog
       api={props.api}
       document={document}
+      feedback={feedbackOwner === "test" ? feedback : null}
       onClose={() => setTestOpen(false)}
+      onCancel={() => { setError(null); setNotice(null); setTestOpen(false); }}
       onError={setError}
       onNotice={setNotice}
       open={testOpen}
       routeNames={context.routeNames}
       variant={selectedVariant}
     />
-    <ModalSurface labelledBy="screen-effect-save-impact-title" onCancel={() => setSaveConfirmationOpen(false)} open={saveConfirmationOpen}>
-      <div><ManagementModalTitle>Save live Screen Effect changes?</ManagementModalTitle><p>Saving changes live admission. Current and queued occurrences keep their exact saved snapshot.</p><div className="management-modal__actions"><button className="button button--secondary" onClick={() => setSaveConfirmationOpen(false)} type="button">Cancel</button><button className="button button--primary" disabled={busy} onClick={() => void save(true)} type="button">Save live changes</button></div></div>
+    <ModalSurface labelledBy="screen-effect-save-impact-title" onCancel={() => { setError(null); setNotice(null); setSaveConfirmationOpen(false); }} open={saveConfirmationOpen}>
+      <div>{feedbackOwner === "save" ? feedback : null}<ManagementModalTitle>Save live Screen Effect changes?</ManagementModalTitle><p>Saving changes live admission. Current and queued occurrences keep their exact saved snapshot.</p><div className="management-modal__actions"><button className="button button--secondary" onClick={() => { setError(null); setNotice(null); setSaveConfirmationOpen(false); }} type="button">Cancel</button><button className="button button--primary" disabled={busy} onClick={() => void save(true)} type="button">Save live changes</button></div></div>
     </ModalSurface>
     <ModalSurface labelledBy="screen-effect-remove-variant-title" onCancel={() => setVariantRemoval(null)} open={variantRemoval !== null} restoreFocusFallbackRef={variantRemovalFocusFallbackRef}>
       <div>
@@ -708,12 +726,14 @@ function AddTriggerControls({ add, context, generateId }: {
   </div>;
 }
 
-function LiveTestDialog({ api, document, onClose, onError, onNotice, open, routeNames, variant }: {
+function LiveTestDialog({ api, document, feedback, onCancel, onClose, onError, onNotice, open, routeNames, variant }: {
   readonly api: ScreenEffectsApi;
   readonly document: ScreenEffectDocument;
+  readonly feedback: React.ReactNode;
+  readonly onCancel: () => void;
   readonly onClose: () => void;
-  readonly onError: (message: string | null) => void;
-  readonly onNotice: (message: string | null) => void;
+  readonly onError: (error: ActionableManagementError | null) => void;
+  readonly onNotice: (notice: ManagementToastNotice | null) => void;
   readonly open: boolean;
   readonly routeNames: ReadonlyMap<string, string>;
   readonly variant: EffectVariant;
@@ -722,29 +742,32 @@ function LiveTestDialog({ api, document, onClose, onError, onNotice, open, route
   const destinations = useMemo(() => effectDestinationNames(variant, routeNames), [routeNames, variant]);
   async function send() {
     setBusy(true);
+    onError(null);
+    onNotice(null);
     try {
       const result = await api.test(document.id, variant.id, true);
       if (result.status === "queued") {
-        onNotice(`Saved test queued as ${result.occurrenceId ?? "a new occurrence"}. Pause or DND may hold it; review Operator for authoritative state.`);
+        onNotice({ tone: "warning", message: `Saved test queued as ${result.occurrenceId ?? "a new occurrence"}. Pause or DND may hold it; review Operator for authoritative state.` });
         onError(null);
         onClose();
       } else {
-        onError(`Saved test was not queued: ${result.status.replace("-", " ")}.`);
+        onError(actionableError(new Error(`Saved test was not queued: ${result.status.replace("-", " ")}.`), "Saved test was not queued", "Review module enablement, outputs and Operator state before testing again."));
       }
     } catch (testError) {
-      onError(message(testError, "The live Screen Effect test did not start."));
+      onError(actionableError(testError, "The live Screen Effect test did not start.", "Review outputs and the local service before testing again."));
     } finally {
       setBusy(false);
     }
   }
-  return <ModalSurface labelledBy="screen-effect-live-test-title" onCancel={onClose} open={open}>
+  return <ModalSurface labelledBy="screen-effect-live-test-title" onCancel={onCancel} open={open}>
     <div>
+      {feedback}
       <p className="management-eyebrow">Explicit live output</p>
       <ManagementModalTitle>Test saved Screen Effect?</ManagementModalTitle>
       <p>Saved input · The saved {variant.name} variant is used exactly; weighted selection is not rerun.</p>
       <p>Selected destinations (current connection and device readiness are checked when you confirm):</p>
       {destinations.length === 0 ? <p role="alert">No destination is selected.</p> : <ul>{destinations.map((destination) => <li key={destination}>{destination}</li>)}</ul>}
-      <div className="management-modal__actions"><button className="button button--secondary" onClick={onClose} type="button">Cancel</button><button className="button button--primary" disabled={busy || destinations.length === 0} onClick={() => void send()} type="button">Confirm live test</button></div>
+      <div className="management-modal__actions"><button className="button button--secondary" onClick={onCancel} type="button">Cancel</button><button className="button button--primary" disabled={busy || destinations.length === 0} onClick={() => void send()} type="button">Confirm live test</button></div>
     </div>
   </ModalSurface>;
 }
