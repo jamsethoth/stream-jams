@@ -49,8 +49,8 @@
 - [x] 6.4 Migrate Settings and its Audio, Desktop, OverlaySurfaces and Automation sections; retain drafts, correction links, restore/export and device/grant safeguards.
 - [x] 6.5 Complete Diagnostics controls/sections while retaining already-migrated tabs, active filters, scroll/view state and safe error references.
 - [x] 6.6 Complete Alerts editor and related controls/dialogs, preserving canvas/warp/color/typography, raw numeric drafts, commit timing and preview ownership; reuse the picker and tabs already migrated.
-- [ ] 6.7 Complete Effects, Timer and Music embedded editor/appearance/audio controls; record native/media/canvas and cross-surface exceptions against the route inventory.
-- [ ] 6.8 After each family, pass affected checks and Storybook/route coverage, rebuild/restart, verify the live workflow, remove unused presentation and update evidence before proceeding.
+- [x] 6.7 Complete Effects, Timer and Music embedded editor/appearance/audio controls; record native/media/canvas and cross-surface exceptions against the route inventory.
+- [x] 6.8 After each family, pass affected checks and Storybook/route coverage, rebuild/restart, verify the live workflow, remove unused presentation and update evidence before proceeding.
 
 ## 7. Remove duplication and deliver
 
