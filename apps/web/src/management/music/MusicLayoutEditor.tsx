@@ -230,7 +230,7 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
       </div>
       <p>Drag the outer corner to resize the widget. Arrow keys adjust by 1 px; hold Shift for 10 px. Components keep their size and position where they fit.</p>
     </div> : null}
-    {editing && !customCssActive ? <div className="music-layout-editor__snapping"><Checkbox label="Snap to grid" checked={snapGrid} onChange={event => { setSnapGrid(event.currentTarget.checked); setGuides([]); }} />{editing ? <Checkbox label="Snap to alignment" checked={snapAlignment} onChange={event => { setSnapAlignment(event.currentTarget.checked); setGuides([]); }} /> : null}</div> : null}
+    {editing && !customCssActive ? <div className="music-layout-editor__snapping"><Checkbox label="Snap to grid" checked={snapGrid} onChange={event => { setSnapGrid(event.currentTarget.checked); setGuides([]); }} /><Checkbox label="Snap to alignment" checked={snapAlignment} onChange={event => { setSnapAlignment(event.currentTarget.checked); setGuides([]); }} /></div> : null}
     {editing && !customCssActive && activeRect !== null ? <div className="music-layout-editor__inspector">
       <div aria-label="Music component" className="music-layout-editor__roles">{musicComponentRoles.map(role => <Button variant={selected === role ? "filled" : "default"} aria-pressed={selected === role} key={role} onClick={() => selectComponent(role)} type="button">{labels[role]}</Button>)}</div>
       <div className="music-layout-editor__fields">
