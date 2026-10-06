@@ -21,10 +21,10 @@
 
 ## 3. Repair shared feedback and tab interactions
 
-- [ ] 3.1 Route Effects page/editor and Timer command outcomes through existing typed fixed feedback; preserve inline load/stale/validation state and diagnostic context (F1).
-- [ ] 3.2 Adopt shared Mantine tabs for Diagnostics and editor panels, retaining canonical automatic arrow/Home/End selection; render TimerStackEditor profile selection as labelled radio/segmented-radio values (F2).
-- [ ] 3.3 Verify focus entry, panel linkage, hidden keyboard stops, retained drafts, mounted-panel preview/polling cleanup and single announcements; preserve four/eight-second toast expiry, dismissal and diagnostics context.
-- [ ] 3.4 Pass affected slice checks and rebuilt browser workflows; remove superseded tab handlers/feedback markup and update the route evidence before module layout work.
+- [x] 3.1 Route Effects page/editor and Timer command outcomes through existing typed fixed feedback; preserve inline load/stale/validation state and diagnostic context (F1).
+- [x] 3.2 Adopt shared Mantine tabs for Diagnostics and editor panels, retaining canonical automatic arrow/Home/End selection; render TimerStackEditor profile selection as labelled radio/segmented-radio values (F2).
+- [x] 3.3 Verify focus entry, panel linkage, hidden keyboard stops, retained drafts, mounted-panel preview/polling cleanup and single announcements; preserve four/eight-second toast expiry, dismissal and diagnostics context.
+- [x] 3.4 Pass affected slice checks and rebuilt browser workflows; remove superseded tab handlers/feedback markup and update the route evidence before module layout work.
 
 ## 4. Establish and prove the module-page template
 
