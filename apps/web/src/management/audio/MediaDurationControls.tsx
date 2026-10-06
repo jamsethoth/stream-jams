@@ -1,3 +1,4 @@
+import { Button, Radio, TextInput } from "@mantine/core";
 import type { AssetLibraryItem, PlaybackDurationMode } from "@stream-jams/core";
 import { useId } from "react";
 import "./media-duration-controls.css";
@@ -20,18 +21,18 @@ export function MediaDurationControls({ mode, durationMs, assets, assetIds, fall
   return <fieldset className="media-duration-controls">
     <legend>Duration</legend>
     <div aria-label="Duration mode" className="media-duration-controls__modes" role="radiogroup">
-      <label className="media-duration-controls__mode"><input checked={mode === "media"} name={durationModeName} onChange={() => onChange({ mode: "media", durationMs: resolvedDurationMs })} type="radio" />Match longest media</label>
-      <label className="media-duration-controls__mode"><input checked={mode === "custom"} name={durationModeName} onChange={() => onChange({ mode: "custom", durationMs })} type="radio" />Custom</label>
+      <Radio label="Match longest media" checked={mode === "media"} name={durationModeName} onChange={() => onChange({ mode: "media", durationMs: resolvedDurationMs })} />
+      <Radio label="Custom" checked={mode === "custom"} name={durationModeName} onChange={() => onChange({ mode: "custom", durationMs })} />
     </div>
-    {mode === "custom" ? <label className="media-duration-controls__custom">Duration (milliseconds)<input aria-label="Duration (milliseconds)" max={120_000} min={100} onChange={(event) => {
+    {mode === "custom" ? <TextInput label="Duration (milliseconds)" className="media-duration-controls__custom" aria-label="Duration (milliseconds)" max={120_000} min={100} onChange={(event) => {
       const next = event.currentTarget.valueAsNumber;
       if (Number.isFinite(next)) onChange({ mode: "custom", durationMs: Math.round(next) });
-    }} type="number" value={durationMs} /></label> : null}
+    }} type="number" value={durationMs} /> : null}
     {mode === "media" ? <p className="media-duration-controls__feedback">{longest === null
       ? `No readable audio or video duration is available. Playback uses the ${fallbackDurationMs / 1000}-second fallback.`
       : `Matched to ${longest.displayName} (${formatDuration(resolvedDurationMs)}).`}</p> : null}
     {longest?.durationMs !== null && longest !== null && longest.durationMs > 120_000 ? <p className="media-duration-controls__feedback" role="alert">This media is longer than 2 minutes, so playback is capped at 2 minutes.</p> : null}
-    {missing.map((asset) => <div className="media-duration-controls__missing" key={asset.id}><span>{asset.displayName} has no readable duration.</span>{onRepair === undefined ? null : <button className="button button--secondary button--compact" onClick={() => void onRepair(asset.id)} type="button">Retry duration</button>}</div>)}
+    {missing.map((asset) => <div className="media-duration-controls__missing" key={asset.id}><span>{asset.displayName} has no readable duration.</span>{onRepair === undefined ? null : <Button variant="default" onClick={() => void onRepair(asset.id)} type="button">Retry duration</Button>}</div>)}
   </fieldset>;
 }
 

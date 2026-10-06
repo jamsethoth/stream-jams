@@ -17,7 +17,7 @@ function TypographyExample({ populated = false, uploadFailure = false }: { popul
     <AdvancedTypographyControls value={value} onChange={setValue} assets={assets} assetApi={api} onAssetsChanged={async () => {}} editingWarp={editing} onEditWarp={setEditing} />
   </div>;
 }
-const meta = { title: "Management/Alerts/Advanced typography controls", component: TypographyExample, parameters: { layout: "padded" } } satisfies Meta<typeof TypographyExample>;
+const meta = { tags: ["mantine-stage6c"], title: "Management/Alerts/Advanced typography controls", component: TypographyExample, parameters: { layout: "padded" } } satisfies Meta<typeof TypographyExample>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const LegacyDefaults: Story = {};

@@ -1,3 +1,4 @@
+import { Button, Checkbox, NativeSelect, TextInput, Textarea } from "@mantine/core";
 import {
   formatAlertConditionSummary,
   getAlertConditionFieldDefinitions,
@@ -70,7 +71,7 @@ export function AlertEventInspector(props: AlertEventInspectorProps) {
     : null;
   const relativeChanceControl = (
     <>
-      <label><span>Relative chance</span><input aria-describedby={relativeChanceError === null ? "alert-editor-relative-chance-help" : "alert-editor-relative-chance-error"} aria-invalid={relativeChanceError === null ? undefined : true} min="1" onChange={(event) => {
+      <TextInput label="Relative chance" attributes={{ input: { "aria-describedby": relativeChanceError === null ? "alert-editor-relative-chance-help" : "alert-editor-relative-chance-error" } }} error={relativeChanceError === null ? undefined : true} aria-invalid={relativeChanceError === null ? undefined : true} min="1" onChange={(event) => {
         const value = event.currentTarget.value;
         const weight = Number(value);
         if (value.trim() === "" || !Number.isInteger(weight) || weight <= 0) {
@@ -79,7 +80,7 @@ export function AlertEventInspector(props: AlertEventInspectorProps) {
         }
         setRelativeChanceDraft(null);
         props.onChange((document) => ({ ...document, weight }));
-      }} step="1" type="number" value={relativeChanceDraft ?? props.document.weight} /></label>
+      }} step="1" type="number" value={relativeChanceDraft ?? props.document.weight} />
       {relativeChanceError === null
         ? <p id="alert-editor-relative-chance-help">Used when this alert shares the first eligible priority group.</p>
         : <p className="alert-editor-inspector__field-error" id="alert-editor-relative-chance-error" role="alert">{relativeChanceError}</p>}
@@ -121,8 +122,8 @@ export function AlertEventInspector(props: AlertEventInspectorProps) {
           onChange={(conditions) => props.onChange((document) => ({ ...document, conditions: [...conditions] }))}
           onDraftError={setRuleDraftError}
         />
-        <label><span>Cooldown (seconds)</span><input min="0" onChange={(event) => { const cooldownSeconds = Number(event.currentTarget.value); props.onChange((document) => ({ ...document, cooldownSeconds })); }} type="number" value={props.document.cooldownSeconds} /></label>
-        <label><span>Rule priority</span><input onChange={(event) => { const rulePriority = Number(event.currentTarget.value); props.onChange((document) => ({ ...document, rulePriority })); }} type="number" value={props.document.rulePriority} /></label>
+        <TextInput label="Cooldown (seconds)" min="0" onChange={(event) => { const cooldownSeconds = Number(event.currentTarget.value); props.onChange((document) => ({ ...document, cooldownSeconds })); }} type="number" value={props.document.cooldownSeconds} />
+        <TextInput label="Rule priority" onChange={(event) => { const rulePriority = Number(event.currentTarget.value); props.onChange((document) => ({ ...document, rulePriority })); }} type="number" value={props.document.rulePriority} />
       </fieldset>
       <PriorityGroups
         candidates={candidatePresentations}
@@ -150,8 +151,8 @@ export function AlertEventInspector(props: AlertEventInspectorProps) {
         </fieldset>
       )}
       <h3>Event sample</h3>
-      <label><span>Sample payload</span><select onChange={(event) => props.onSample(event.currentTarget.value)} value={props.sampleId ?? ""}>{props.document.samplePayloads.map((sample) => <option key={sample.id} value={sample.id}>{sample.label}</option>)}</select></label>
-      <label><span>Session payload (JSON)</span><textarea aria-describedby={props.sampleError === null ? undefined : "alert-editor-sample-error"} aria-invalid={props.sampleError !== null} onChange={(event) => props.onSampleDraft(event.currentTarget.value)} rows={12} value={props.sampleDraft} /></label>
+      <NativeSelect label="Sample payload" onChange={(event) => props.onSample(event.currentTarget.value)} value={props.sampleId ?? ""}>{props.document.samplePayloads.map((sample) => <option key={sample.id} value={sample.id}>{sample.label}</option>)}</NativeSelect>
+      <Textarea label="Session payload (JSON)" attributes={{ input: { "aria-describedby": props.sampleError === null ? undefined : "alert-editor-sample-error" } }} error={props.sampleError !== null} aria-invalid={props.sampleError !== null} onChange={(event) => props.onSampleDraft(event.currentTarget.value)} rows={12} value={props.sampleDraft} />
       {props.sampleError === null ? <p>Session edits are used only for preview and testing.</p> : <p className="alert-editor-inspector__field-error" id="alert-editor-sample-error" role="alert">{props.sampleError}</p>}
       <SampleSelectionExplanation
         candidates={candidatePresentations}
@@ -159,10 +160,10 @@ export function AlertEventInspector(props: AlertEventInspectorProps) {
         document={props.document}
         evaluation={props.variationEvaluation}
       />
-      <button className="button button--secondary" onClick={props.onResetSample} type="button">Reset sample</button>
-      <fieldset className="alert-editor-inspector__audio"><legend>Local preview</legend><label className="alert-editor-inspector__check"><input checked={props.previewIncludeAudio} onChange={(event) => props.onPreviewIncludeAudio(event.currentTarget.checked)} type="checkbox" /><span>Preview audio</span></label><label className="alert-editor-inspector__check"><input checked={props.previewIncludeTts} onChange={(event) => props.onPreviewIncludeTts(event.currentTarget.checked)} type="checkbox" /><span>Preview TTS</span></label></fieldset>
-      <fieldset className="alert-editor-inspector__audio"><legend>Test draft delivery</legend><label className="alert-editor-inspector__check"><input checked={props.sendIncludeAudio} onChange={(event) => props.onSendIncludeAudio(event.currentTarget.checked)} type="checkbox" /><span>Send audio</span></label><label className="alert-editor-inspector__check"><input checked={props.sendIncludeTts} onChange={(event) => props.onSendIncludeTts(event.currentTarget.checked)} type="checkbox" /><span>Send TTS</span></label></fieldset>
-      <div className="alert-editor-inspector__actions"><button className="button button--secondary" disabled={props.previewDisabled} onClick={props.onPreview} type="button">Replay preview</button><button className="button button--primary" disabled={props.sendDisabled} onClick={props.onSend} type="button">Test draft</button></div>
+      <Button variant="default" onClick={props.onResetSample} type="button">Reset sample</Button>
+      <fieldset className="alert-editor-inspector__audio"><legend>Local preview</legend><Checkbox label="Preview audio" checked={props.previewIncludeAudio} onChange={(event) => props.onPreviewIncludeAudio(event.currentTarget.checked)} /><Checkbox label="Preview TTS" checked={props.previewIncludeTts} onChange={(event) => props.onPreviewIncludeTts(event.currentTarget.checked)} /></fieldset>
+      <fieldset className="alert-editor-inspector__audio"><legend>Test draft delivery</legend><Checkbox label="Send audio" checked={props.sendIncludeAudio} onChange={(event) => props.onSendIncludeAudio(event.currentTarget.checked)} /><Checkbox label="Send TTS" checked={props.sendIncludeTts} onChange={(event) => props.onSendIncludeTts(event.currentTarget.checked)} /></fieldset>
+      <div className="alert-editor-inspector__actions"><Button variant="default" disabled={props.previewDisabled} onClick={props.onPreview} type="button">Replay preview</Button><Button disabled={props.sendDisabled} onClick={props.onSend} type="button">Test draft</Button></div>
     </div>
   );
 }
@@ -192,8 +193,8 @@ function PriorityGroups({ candidates, groups, onMoveGroup, onMoveVariation }: {
           <div className="alert-editor-inspector__priority-heading">
             <span>{priorityGroupOrderCopy(groupIndex, groups.length)}</span>
             <div>
-              <button className="button button--secondary button--compact" disabled={groupIndex === 0} onClick={() => onMoveGroup(groupIndex, groupIndex - 1)} type="button">Move group earlier</button>
-              <button className="button button--secondary button--compact" disabled={groupIndex === groups.length - 1} onClick={() => onMoveGroup(groupIndex, groupIndex + 1)} type="button">Move group later</button>
+              <Button variant="default" disabled={groupIndex === 0} onClick={() => onMoveGroup(groupIndex, groupIndex - 1)} type="button">Move group earlier</Button>
+              <Button variant="default" disabled={groupIndex === groups.length - 1} onClick={() => onMoveGroup(groupIndex, groupIndex + 1)} type="button">Move group later</Button>
             </div>
           </div>
           {group.variationIds.map((variationId) => {
@@ -203,16 +204,10 @@ function PriorityGroups({ candidates, groups, onMoveGroup, onMoveVariation }: {
             return (
               <div className="alert-editor-inspector__priority-variation" key={variationId}>
                 <div><strong>{name}</strong><span>{enabled ? "Enabled" : "Disabled"}</span></div>
-                <label>
-                  <span>Move to priority group</span>
-                  <select aria-label={`Move ${name} to priority group`} onChange={(event) => {
+                <NativeSelect label="Move to priority group" aria-label={`Move ${name} to priority group`} onChange={(event) => {
                     const value = event.currentTarget.value;
                     onMoveVariation(variationId, value === "new-last" ? "new-last" : Number(value));
-                  }} value={String(groupIndex)}>
-                    {groups.map((_, optionIndex) => <option key={optionIndex} value={optionIndex}>Priority group {optionIndex + 1}</option>)}
-                    <option value="new-last">New lowest-priority group</option>
-                  </select>
-                </label>
+                  }} value={String(groupIndex)}>{groups.map((_, optionIndex) => <option key={optionIndex} value={optionIndex}>Priority group {optionIndex + 1}</option>)}<option value="new-last">New lowest-priority group</option></NativeSelect>
               </div>
             );
           })}
@@ -445,7 +440,7 @@ function ConditionList({ conditions, eventType, heading, hiddenFields, onChange,
           return (
             <div className="alert-editor-inspector__condition" key={`${condition.field}-${index}`} ref={(element) => { rowRefs.current[index] = element; }}>
               <div className="alert-editor-inspector__unknown-condition"><strong>Legacy condition</strong><span>{formatAlertConditionSummary(eventType, condition)}</span></div>
-              <button aria-label={`Remove ${condition.field} from ${heading}`} className="button button--danger-quiet button--compact" data-condition-primary onClick={() => removeCondition(index)} type="button">Remove</button>
+              <Button color="red" variant="light" aria-label={`Remove ${condition.field} from ${heading}`} data-condition-primary onClick={() => removeCondition(index)} type="button">Remove</Button>
             </div>
           );
         }
@@ -461,25 +456,25 @@ function ConditionList({ conditions, eventType, heading, hiddenFields, onChange,
         return (
           <div className="alert-editor-inspector__condition" key={`${condition.field}-${index}`} ref={(element) => { rowRefs.current[index] = element; }}>
             <div className="alert-editor-inspector__condition-controls">
-              <label><span>Field</span><select aria-label={`${heading} condition ${index + 1} field`} data-condition-primary onChange={(event) => {
+              <NativeSelect label="Field" aria-label={`${heading} condition ${index + 1} field`} data-condition-primary onChange={(event) => {
                 const nextDefinition = definitions.find((candidate) => candidate.field === event.currentTarget.value);
                 const operator = nextDefinition === undefined ? undefined : scalarOperators(nextDefinition)[0];
                 if (nextDefinition !== undefined && operator !== undefined) replaceAuthoredCondition(index, conditionWithDefault(nextDefinition, operator));
-              }} value={condition.field}>{fieldOptions.map((option) => <option key={option.field} value={option.field}>{option.label}</option>)}</select></label>
-              <label><span>Operator</span><select aria-label={`${heading} ${definition.label} operator`} onChange={(event) => replaceAuthoredCondition(index, conditionWithDefault(definition, event.currentTarget.value as ScalarAlertConditionOperator))} value={condition.operator}>{operators.map((operator) => <option key={operator} value={operator}>{operatorLabel(operator)}</option>)}</select></label>
+              }} value={condition.field}>{fieldOptions.map((option) => <option key={option.field} value={option.field}>{option.label}</option>)}</NativeSelect>
+              <NativeSelect label="Operator" aria-label={`${heading} ${definition.label} operator`} onChange={(event) => replaceAuthoredCondition(index, conditionWithDefault(definition, event.currentTarget.value as ScalarAlertConditionOperator))} value={condition.operator}>{operators.map((operator) => <option key={operator} value={operator}>{operatorLabel(operator)}</option>)}</NativeSelect>
               {condition.operator === "range" ? (
                 <div className="alert-editor-inspector__range">
-                  <label><span>Minimum</span><input aria-describedby={validationMessage === null ? undefined : errorId} aria-invalid={validationMessage !== null} aria-label={`${heading} ${definition.label} Minimum`} min={definition.minimum} onChange={(event) => updateRange(index, condition, definition, "minimum", event.currentTarget.value)} type="number" value={rangeDraft.minimum} /></label>
-                  <label><span>Maximum</span><input aria-describedby={validationMessage === null ? undefined : errorId} aria-invalid={validationMessage !== null} aria-label={`${heading} ${definition.label} Maximum`} min={definition.minimum} onChange={(event) => updateRange(index, condition, definition, "maximum", event.currentTarget.value)} type="number" value={rangeDraft.maximum} /></label>
+                  <TextInput label="Minimum" attributes={{ input: { "aria-describedby": validationMessage === null ? undefined : errorId } }} error={validationMessage !== null} aria-invalid={validationMessage !== null} aria-label={`${heading} ${definition.label} Minimum`} min={definition.minimum} onChange={(event) => updateRange(index, condition, definition, "minimum", event.currentTarget.value)} type="number" value={rangeDraft.minimum} />
+                  <TextInput label="Maximum" attributes={{ input: { "aria-describedby": validationMessage === null ? undefined : errorId } }} error={validationMessage !== null} aria-invalid={validationMessage !== null} aria-label={`${heading} ${definition.label} Maximum`} min={definition.minimum} onChange={(event) => updateRange(index, condition, definition, "maximum", event.currentTarget.value)} type="number" value={rangeDraft.maximum} />
                 </div>
               ) : <ConditionValueControl condition={condition} definition={definition} errorId={validationMessage === null ? undefined : errorId} heading={heading} onChange={(value) => onChange(replaceCondition(conditions, index, { ...condition, value }))} />}
             </div>
-            <button aria-label={`Remove ${definition.label} from ${heading}`} className="button button--danger-quiet button--compact" onClick={() => removeCondition(index)} type="button">Remove</button>
+            <Button color="red" variant="light" aria-label={`Remove ${definition.label} from ${heading}`} onClick={() => removeCondition(index)} type="button">Remove</Button>
             {validationMessage === null ? <p>{formatAlertConditionSummary(eventType, condition)}</p> : <p className="alert-editor-inspector__field-error" id={errorId} role="alert">{validationMessage}</p>}
           </div>
         );
       })}
-      {available.length === 0 ? null : <button className="button button--secondary button--compact" onClick={addCondition} ref={addButtonRef} type="button">Add condition</button>}
+      {available.length === 0 ? null : <Button variant="default" onClick={addCondition} ref={addButtonRef} type="button">Add condition</Button>}
     </fieldset>
   );
 }
@@ -493,15 +488,15 @@ function ConditionValueControl({ condition, definition, errorId, heading, onChan
 }) {
   const label = `${heading} ${definition.label} value`;
   if (definition.valueKind === "enum") {
-    return <label><span>Value</span><select aria-describedby={errorId} aria-invalid={errorId === undefined ? undefined : true} aria-label={label} onChange={(event) => onChange(event.currentTarget.value)} value={String(condition.value)}>{definition.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>;
+    return <NativeSelect label="Value" attributes={{ input: { "aria-describedby": errorId } }} error={errorId === undefined ? undefined : true} aria-invalid={errorId === undefined ? undefined : true} aria-label={label} onChange={(event) => onChange(event.currentTarget.value)} value={String(condition.value)}>{definition.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</NativeSelect>;
   }
   if (definition.valueKind === "boolean") {
-    return <label className="alert-editor-inspector__check"><input aria-describedby={errorId} aria-invalid={errorId === undefined ? undefined : true} aria-label={label} checked={condition.value === true} onChange={(event) => onChange(event.currentTarget.checked)} type="checkbox" /><span>Value</span></label>;
+    return <Checkbox label="Value" aria-describedby={errorId} error={errorId === undefined ? undefined : true} aria-invalid={errorId === undefined ? undefined : true} aria-label={label} checked={condition.value === true} onChange={(event) => onChange(event.currentTarget.checked)} />;
   }
   if (definition.valueKind === "number") {
-    return <label><span>Value</span><input aria-describedby={errorId} aria-invalid={errorId === undefined ? undefined : true} aria-label={label} min={definition.minimum} onChange={(event) => onChange(event.currentTarget.valueAsNumber)} type="number" value={typeof condition.value === "number" && Number.isFinite(condition.value) ? condition.value : ""} /></label>;
+    return <TextInput label="Value" attributes={{ input: { "aria-describedby": errorId } }} error={errorId === undefined ? undefined : true} aria-invalid={errorId === undefined ? undefined : true} aria-label={label} min={definition.minimum} onChange={(event) => onChange(event.currentTarget.valueAsNumber)} type="number" value={typeof condition.value === "number" && Number.isFinite(condition.value) ? condition.value : ""} />;
   }
-  return <label><span>Value</span><input aria-describedby={errorId} aria-invalid={errorId === undefined ? undefined : true} aria-label={label} onChange={(event) => onChange(event.currentTarget.value)} type="text" value={typeof condition.value === "string" ? condition.value : ""} /></label>;
+  return <TextInput label="Value" attributes={{ input: { "aria-describedby": errorId } }} error={errorId === undefined ? undefined : true} aria-invalid={errorId === undefined ? undefined : true} aria-label={label} onChange={(event) => onChange(event.currentTarget.value)} type="text" value={typeof condition.value === "string" ? condition.value : ""} />;
 }
 
 export function alertDocumentConditionError(document: AlertEditorDocument): string | null {

@@ -69,6 +69,31 @@ afterEach(() => {
 });
 
 describe("AlertEditorPage", () => {
+  it("locks active-save dismissal, issues one request, and keeps typed failure in its review for retry", async () => {
+    const { user, saveAlertEditorDocument } = renderWorkspaceEditor();
+    const template = await screen.findByRole("textbox", { name: "Message template" });
+    fireEvent.change(template, { target: { value: "Retained review draft" } });
+    let reject!: (cause: unknown) => void;
+    saveAlertEditorDocument.mockImplementationOnce(() => new Promise((_resolve, rejectRequest) => { reject = rejectRequest; }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const dialog = await screen.findByRole("dialog", { name: "Save changes to active alert?" });
+    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(dialog).toBeVisible();
+    expect(saveAlertEditorDocument).toHaveBeenCalledOnce();
+    await act(async () => reject(new ManagementHttpError("Disposable storage failed", "UNAVAILABLE", "fixture-active-save", "Restart storage, then retry this review.")));
+    const failure = await within(dialog).findByRole("alert");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(failure).toHaveTextContent("fixture-active-save");
+    expect(failure).toHaveTextContent("Restart storage, then retry this review.");
+    expect(template).toHaveValue("Retained review draft");
+    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("dialog", { name: "Save changes to active alert?" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("saves the video loop choice on the visual layer", async () => {
     const source = editorDocument();
     const visualDocument: AlertEditorDocument = {
@@ -450,7 +475,8 @@ describe("AlertEditorPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Preview" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(play).toHaveBeenCalledOnce();
-    await act(async () => { await vi.advanceTimersByTimeAsync(document.durationMs); });
+    // Batch virtual playback frames; do not rerender the complete inspector per millisecond tick.
+    await act(async () => { vi.advanceTimersByTime(document.durationMs); });
     expect(pause).toHaveBeenCalledOnce();
     expect(revoke).toHaveBeenCalledOnce();
   });
@@ -1105,6 +1131,7 @@ describe("AlertEditorPage", () => {
       fireEvent.change(chance, { target: { value: invalidValue } });
 
       expect(chance).toHaveAttribute("aria-invalid", "true");
+      expect(chance).toHaveAttribute("aria-describedby", "alert-editor-relative-chance-error");
       expect(screen.getByText("Relative chance must be a positive whole number.", { selector: "#alert-editor-relative-chance-error" })).toBeVisible();
       expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
       expect(screen.getAllByRole("button", { name: "Preview" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
@@ -1486,6 +1513,7 @@ describe("AlertEditorPage", () => {
     const fontSize = within(typography).getByLabelText("Font size");
     fireEvent.change(fontSize, { target: { value: "513" } });
     expect(fontSize).toHaveAttribute("aria-invalid", "true");
+    expect(fontSize.getAttribute("aria-describedby")).toContain("error");
     expect(within(typography).getByRole("alert")).toHaveTextContent("Font size must be between 8 and 512.");
     expect(screen.getByRole("button", { name: "Preview" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Test draft" })).toBeDisabled();
@@ -2855,7 +2883,7 @@ describe("AlertEditorPage", () => {
     await user.click(liveTtsSummary);
     expect(liveTtsSummary.closest("details")).toHaveAttribute("open");
     expect(enabled).toBeVisible();
-    expect(enabled.closest("label")).toHaveClass("alert-editor-inspector__check");
+    expect(enabled).toHaveAccessibleName("Enable TTS for this alert");
     expect(screen.getByText("Studio Speaker.bot")).toBeVisible();
     expect(screen.getByText("Speaker.bot is used for live TTS.")).toBeVisible();
     expect(enabled).toBeChecked();
@@ -3077,8 +3105,10 @@ describe("AlertEditorPage", () => {
     await user.click(screen.getByRole("button", { name: "Save and leave" }));
     await user.click(await screen.findByRole("button", { name: "Save changes" }));
 
-    expect(await screen.findByRole("dialog", { name: "Leave with unsaved changes?" }))
-      .toHaveTextContent("Database write failed. Reference ref-save-17.");
+    const navigationReview = await screen.findByRole("dialog", { name: "Leave with unsaved changes?" });
+    expect(navigationReview).toHaveTextContent("Database write failed. Reference ref-save-17.");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(within(navigationReview).getByRole("alert")).toHaveTextContent("ref-save-17");
     expect(window.location.pathname).toBe("/manage/modules/alerts/editor/alert-follow");
   });
 
@@ -3981,7 +4011,9 @@ describe("AlertEditorPage", () => {
     await user.selectOptions(within(dialog).getByRole("combobox", { name: "Source alert" }), source.id);
     await user.click(within(dialog).getByRole("button", { name: "Copy design" }));
     await user.keyboard("{Escape}");
-    expect(screen.queryByRole("dialog", { name: "Copy design from another alert?" })).not.toBeInTheDocument();
+    expect(dialog).toBeVisible();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(within(dialog).getByRole("combobox", { name: "Source alert" })).toBeDisabled();
 
     const name = screen.getByRole("textbox", { name: "Alert name" });
     fireEvent.change(name, { target: { value: "Edited while copying" } });

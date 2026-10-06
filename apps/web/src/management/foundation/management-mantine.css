@@ -4,6 +4,7 @@
 .management-command__label { white-space: normal; overflow-wrap: anywhere; }
 .mantine-Input-input { background: var(--color-surface); color: var(--color-text); border-color: var(--color-border-strong); }
 .mantine-Input-input:focus { border-color: var(--color-focus); }
+.mantine-Input-input[data-error] { border-color: var(--color-negative); }
 .mantine-InputWrapper-label { color: var(--color-text); font-size: 13px; }
 .mantine-InputWrapper-description { color: var(--color-text-muted); }
 .mantine-InputWrapper-error { color: var(--color-negative); }

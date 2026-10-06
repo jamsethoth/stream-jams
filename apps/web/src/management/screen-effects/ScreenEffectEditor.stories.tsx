@@ -108,6 +108,7 @@ export const LocalDraftPreview: Story = {
 };
 
 export const AudioOnly: Story = {
+  tags: ["mantine-stage6c"],
   args: { api: createApi(effect({ audioOnly: true })) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -118,12 +119,13 @@ export const AudioOnly: Story = {
 };
 
 export const VideoWithSeparateSound: Story = {
+  tags: ["mantine-stage6c", "mantine-stage6c-closure"],
   args: { api: createApi(effect({ video: true, separateSound: true })) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const embeddedAudio = await canvas.findByRole("checkbox", { name: "Play embedded audio" });
     await expect(embeddedAudio).toBeChecked();
-    await expect(embeddedAudio.closest("label")).toHaveClass("screen-effects-check");
+    await expect(canvasElement.querySelector(`label[for="${embeddedAudio.id}"]`)).toHaveClass("screen-effects-check");
     await expect(canvas.getByRole("checkbox", { name: /^OBS Browser Source$/u }).closest("label")).toHaveClass("screen-effects-check");
     await expect(canvas.getByText(/Both the video soundtrack and separate audio will play/u)).toBeVisible();
   }

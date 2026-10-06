@@ -22,7 +22,7 @@ const managementApi = createStoryManagementApi({
   getAlertSet: async () => alertSetDetail()
 });
 
-const meta = { tags: ["stream-local-media", "mantine-feedback-tabs"],
+const meta = { tags: ["stream-local-media", "mantine-feedback-tabs", "mantine-stage6c"],
   title: "Management/Alerts/Focused editor",
   component: AlertEditorPage,
   decorators: [(Story, context) => {
@@ -109,6 +109,7 @@ export const VideoSoundtrackWithSeparateSound: Story = {
 };
 
 export const VideoSoundtrackDraftUndo: Story = {
+  tags: ["mantine-stage6c-closure"],
   args: { managementApi: videoAudioStoryApi(false) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -346,10 +347,11 @@ export const ReducedMotionStyleAuthoring: Story = {
 };
 
 export const ReadyLandscape: Story = {
+  tags: ["mantine-stage6c-closure"],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(await canvas.findByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(
-      "AlertsEveryday alertsNew follower"
+      "Alerts/Everyday alerts/New follower"
     );
     await waitFor(() => expect(canvas.getByRole("status", { name: "Canvas zoom" })).not.toHaveTextContent("100%"));
   }
@@ -528,6 +530,7 @@ export const SafeLocalPreviewFailure: Story = {
 };
 
 export const TabletWorkspace: Story = {
+  tags: ["mantine-stage6c-closure"],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(await canvas.findByRole("region", { name: "Landscape alert canvas" })).toBeVisible();
@@ -610,6 +613,7 @@ export const UnsavedEdit: Story = {
 };
 
 export const ActiveSetSaveWarning: Story = {
+  tags: ["mantine-stage6c-closure"],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const template = await canvas.findByRole("textbox", { name: "Message template" });
@@ -802,7 +806,7 @@ export const ActiveSpeakerBotTts: Story = {
     await userEvent.click(liveTtsSummary);
     await expect(liveTtsSummary.closest("details")).toHaveAttribute("open");
     await expect(enabled).toBeVisible();
-    await expect(enabled.closest("label")).toHaveClass("alert-editor-inspector__check");
+    await expect(enabled).toHaveAccessibleName("Enable TTS for this alert");
     await expect(enabled).toBeChecked();
     await expect(canvas.getByText("Studio Speaker.bot")).toBeVisible();
     await expect(canvas.getByText("Speaker.bot is used for live TTS.")).toBeVisible();
@@ -893,6 +897,7 @@ export const DefaultInWeightedPool: Story = {
 };
 
 export const InvalidConditionInput: Story = {
+  tags: ["mantine-stage6c-closure"],
   args: {
     alertId: "variant-large-raid",
     managementApi: variationStoryApi({
@@ -1004,6 +1009,7 @@ export const InvalidRange: Story = {
 };
 
 export const InvalidRelativeChance: Story = {
+  tags: ["mantine-stage6c-closure"],
   args: {
     alertId: "variant-invalid-relative-chance",
     managementApi: variationStoryApi(selectionVariation({
@@ -1065,6 +1071,7 @@ export const ExpandedConditionCatalog: Story = {
 };
 
 export const PrioritySaveFailure: Story = {
+  tags: ["mantine-stage6c-closure"],
   args: {
     alertId: "variant-priority-failure",
     managementApi: variationStoryApi(
@@ -1086,7 +1093,8 @@ export const PrioritySaveFailure: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "Save" }));
     const dialog = within(await within(globalThis.document.body).findByRole("dialog", { name: "Save changes to active alert?" }));
     await userEvent.click(dialog.getByRole("button", { name: "Save changes" }));
-    await expect(await canvas.findByText("The alert was not saved")).toBeVisible();
+    await expect(await dialog.findByText("The alert was not saved")).toBeVisible();
+    await expect(dialog.getByRole("alert")).toHaveTextContent("err_story_priority_save");
     await expect(within(groups).getByRole("group", { name: "Priority group 1" })).toHaveTextContent("Lower priority raid");
     await expect(canvas.getByRole("button", { name: "Save" })).toBeEnabled();
   }

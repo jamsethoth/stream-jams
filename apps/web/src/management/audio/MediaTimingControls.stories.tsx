@@ -5,7 +5,7 @@ import { AudioFadeControls } from "./AudioFadeControls.js";
 import { MediaAudioControls } from "./MediaAudioControls.js";
 import { MediaDurationControls } from "./MediaDurationControls.js";
 
-const meta = {
+const meta = { tags: ["mantine-stage6c"],
   title: "Management/Audio/Media timing controls",
   component: MediaTimingExample,
   parameters: { layout: "padded" }

@@ -32,7 +32,21 @@ type Story = StoryObj<typeof meta>;
 export const Loaded: Story = {};
 export const Pending: Story = { args: { state: "loading" } };
 export const Empty: Story = { args: { state: "empty" } };
-export const FieldError: Story = { args: { state: "error" } };
+export const FieldError: Story = {
+  args: { state: "error" },
+  tags: ["mantine-stage6c-closure"],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const field = canvas.getByRole("textbox", { name: "Workspace name" });
+    const correction = canvas.getByText("Use a recognizable name before saving.");
+    await expect(field).toHaveAttribute("aria-invalid", "true");
+    await expect(field.getAttribute("aria-describedby")).toContain(correction.id);
+    await expect(getComputedStyle(field).borderColor).toBe(getComputedStyle(correction).color);
+    await userEvent.click(field);
+    await expect(field).toHaveFocus();
+    await expect(getComputedStyle(field).borderColor).toBe(getComputedStyle(correction).color);
+  }
+};
 export const Success: Story = { args: { state: "success" } };
 export const OpenDialogAndSelectPortal: Story = {
   play: async ({ canvasElement }) => {
