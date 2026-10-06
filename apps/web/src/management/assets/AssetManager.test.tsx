@@ -216,6 +216,44 @@ describe("AssetManager", () => {
     await waitFor(() => expect(fixture.replacements).toEqual([{ assetId: "asset-image", file, confirmed: true }]));
   });
 
+  it("preserves unsaved metadata when replacement refreshes the same stable asset", async () => {
+    const listAssetLibraryItems = vi.fn().mockResolvedValueOnce([imageItem, audioItem])
+      .mockResolvedValue([{ ...imageItem, updatedAt: "2026-10-06T00:00:00.000Z" }, audioItem]);
+    const fixture = createFixture({ listAssetLibraryItems });
+    render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
+    await screen.findByRole("button", { name: "Follower burst" });
+    await userEvent.type(screen.getByLabelText("Display name"), " draft");
+    await userEvent.click(screen.getByRole("button", { name: "Replace file" }));
+    await userEvent.upload(screen.getByLabelText("Replacement file"), new File([pngBytes], "replacement.png", { type: "image/png" }));
+    await userEvent.click(screen.getByRole("button", { name: "Review replacement" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Replace everywhere" }));
+    await waitFor(() => expect(listAssetLibraryItems).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByLabelText("Display name")).toHaveValue("Follower burst draft");
+    await userEvent.click(screen.getByRole("button", { name: "Raid chime" }));
+    expect(screen.getByRole("dialog", { name: "Switch assets with unsaved changes?" })).toBeVisible();
+  });
+
+  it("removes a confirmed deletion locally while a failed refresh marks retained details stale until retry", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const listAssetLibraryItems = vi.fn().mockResolvedValueOnce([imageItem, audioItem])
+      .mockRejectedValueOnce(new Error("Refresh unavailable")).mockResolvedValue([imageItem]);
+    const fixture = createFixture({ listAssetLibraryItems });
+    render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Raid chime" }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete asset" }));
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete asset" }));
+    expect(await screen.findByText("Showing last loaded asset details. Refresh before making another change.")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Raid chime" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Follower burst" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Replace file" })).toBeDisabled();
+    act(() => screen.getByRole("button", { name: "Save asset details" }).closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(fixture.metadataUpdates).toEqual([]);
+    await userEvent.click(screen.getByRole("button", { name: "Retry loading assets" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Replace file" })).toBeEnabled());
+    expect(listAssetLibraryItems).toHaveBeenCalledTimes(3);
+  });
+
   it("confirms manual deletion for unused assets and blocks in-use deletion", async () => {
     const fixture = createFixture();
     render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
@@ -231,6 +269,49 @@ describe("AssetManager", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Delete asset" }));
 
     await waitFor(() => expect(fixture.deleted).toEqual(["asset-audio"]));
+  });
+
+  it("keeps deferred deletion locked, scopes its failure and permits explicit same-target retry", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const first = deferred<void>();
+    const deleteAsset = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue(undefined);
+    const fixture = createFixture({ deleteAsset, listAssetLibraryItems: async () => deleteAsset.mock.calls.length >= 2 ? [imageItem] : [imageItem, audioItem] });
+    render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Raid chime" }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete asset" }));
+    const dialog = screen.getByRole("dialog", { name: "Delete Raid chime?" });
+    const confirm = within(dialog).getByRole("button", { name: "Delete asset" });
+    act(() => { confirm.click(); confirm.click(); });
+    expect(deleteAsset).toHaveBeenCalledExactlyOnceWith("asset-audio");
+    expect(confirm).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await userEvent.keyboard("{Escape}");
+    expect(dialog).toBeVisible();
+    await act(async () => first.reject(Object.assign(new Error("Usage changed"), { referenceId: "fixture-delete-failure" })));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("fixture-delete-failure");
+    expect(confirm).toBeEnabled();
+    await userEvent.click(confirm);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(deleteAsset).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Asset library" })).toHaveFocus());
+  });
+
+  it("locks dirty selection save and preserves its intended destination until the save completes", async () => {
+    const save = deferred<AssetLibraryItem>();
+    const updateAssetMetadata = vi.fn(() => save.promise);
+    const fixture = createFixture({ updateAssetMetadata });
+    render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
+    await screen.findByRole("button", { name: "Follower burst" });
+    await userEvent.type(screen.getByLabelText("Display name"), " draft");
+    await userEvent.click(screen.getByRole("button", { name: "Raid chime" }));
+    const dialog = screen.getByRole("dialog", { name: "Switch assets with unsaved changes?" });
+    await userEvent.dblClick(within(dialog).getByRole("button", { name: "Save and continue" }));
+    expect(updateAssetMetadata).toHaveBeenCalledOnce();
+    expect(within(dialog).getByRole("button", { name: "Discard" })).toBeDisabled();
+    await userEvent.keyboard("{Escape}");
+    expect(dialog).toBeVisible();
+    await act(async () => save.resolve({ ...imageItem, displayName: "Follower burst draft" }));
+    expect(screen.getByRole("region", { name: "Raid chime details" })).toBeVisible();
   });
 });
 

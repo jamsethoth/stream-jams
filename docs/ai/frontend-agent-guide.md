@@ -70,6 +70,10 @@ Management dialogs use `ManagementModalSurface` with `ManagementModalTitle`; pen
 
 Operator and browser/private overlays retain their provider-independent ModalSurface, StatusBadge, TimerAdjustmentControls and shared CSS. They must not import management Mantine CSS or JS. Bootstrap and recovery also remain native. Use `renderManagement` for management unit tests and the scoped Management Storybook decorator; never disable real browser portals or focus to make tests pass. Management axe checks include portal roots.
 
+Assets uses direct Mantine controls, inventory Table and picker Tabs. Its native secondary-filter disclosure, datalist tag suggestions and image/video/audio/font rendering retain their product-specific behavior. Media controls are siblings of picker selection buttons so playback remains independently reachable. Assets and Timers use the existing lazy route boundary to keep the shared picker out of management startup.
+
+For `DestructiveConfirmationDialog`, return the mutation Promise from `onConfirm` and guard submission synchronously in the workflow. `pending` also covers externally owned work; all dismissal is locked by default until completion. Set `cancelWhilePending` only when `onCancel` actually aborts that operation. Pass a stable `targetId`, scoped `error` and an available `restoreFocusFallbackRef` when the trigger can disappear or become disabled. Catch failures in the workflow, keep the reviewed same-target draft for explicit retry, and clear owned errors when opening a fresh review. Existing void handlers remain compatible; they must pass pending state or adopt the Promise contract to cover their entire request.
+
 ## Overlay Error Rule
 
 Production live overlays fail closed and transparent. Operators should see actionable diagnostics in `/manage`, logs, or diagnostic export. Visible overlay diagnostics are allowed only in Storybook, local development, or explicit test/debug routes.

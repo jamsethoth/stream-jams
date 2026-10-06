@@ -1,7 +1,7 @@
 import { lazy, Suspense, useMemo, type MouseEvent } from "react";
 import { defaultAudioApi, type AudioApi } from "./audio/audio-api.js";
 import type { AssetApi } from "./assets/AssetManager.js";
-import { AssetManager } from "./assets/AssetManager.js";
+const AssetManager = lazy(() => import("./assets/AssetManager.js").then(module => ({ default: module.AssetManager })));
 import { AlertSetsPage } from "./alerts/AlertSetsPage.js";
 import { AlertSafetyPage } from "./alerts/safety/AlertSafetyPage.js";
 const AlertEditorPage = lazy(() => import("./alerts/editor/AlertEditorPage.js").then(module => ({ default: module.AlertEditorPage })));
@@ -25,7 +25,7 @@ const SettingsPanel = lazy(() => import("./settings/SettingsPanel.js").then(modu
 const ScreenEffectEditor = lazy(() => import("./screen-effects/ScreenEffectEditor.js").then(module => ({ default: module.ScreenEffectEditor })));
 import { ScreenEffectsPage } from "./screen-effects/ScreenEffectsPage.js";
 import { defaultScreenEffectsApi, type ScreenEffectsApi } from "./screen-effects/screen-effects-api.js";
-import { TimersPage } from "./timers/TimersPage.js";
+const TimersPage = lazy(() => import("./timers/TimersPage.js").then(module => ({ default: module.TimersPage })));
 import { defaultTimersApi, type TimersApi } from "./timers/timers-api.js";
 
 export interface ManagementAppProps {
@@ -155,7 +155,7 @@ function RouteContent({
     case "modules-screen-effects":
       return <ScreenEffectsPage api={screenEffectsApi} initialSetId={route.setId} onEdit={(effectId, create, setId, variantId) => onNavigate({ id: "screen-effect-editor", effectId, ...(setId === undefined ? {} : { setId }), ...(variantId === undefined ? {} : { variantId }), ...(create ? { create: true as const } : {}) })} />;
     case "modules-timers":
-      return <TimersPage api={timersApi} assetApi={assetApi} audioApi={audioApi} managementApi={managementApi} ownerId={route.ownerId} />;
+      return <Suspense fallback={<p role="status">Loading Timers…</p>}><TimersPage api={timersApi} assetApi={assetApi} audioApi={audioApi} managementApi={managementApi} ownerId={route.ownerId} /></Suspense>;
     case "alert-safety":
       return <AlertSafetyPage managementApi={managementApi} />;
     case "alert-editor":
@@ -193,7 +193,7 @@ function RouteContent({
         </Suspense>
       );
     case "assets":
-      return <AssetManager assetApi={assetApi} managementApi={managementApi} />;
+      return <Suspense fallback={<p role="status">Loading asset library...</p>}><AssetManager assetApi={assetApi} managementApi={managementApi} /></Suspense>;
     case "diagnostics":
       return <DiagnosticsPanel initialReferenceId={route.referenceId} managementApi={managementApi} />;
     case "settings":

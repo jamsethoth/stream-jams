@@ -25,6 +25,31 @@ describe("AssetPicker", () => {
     expect(onSelect).toHaveBeenCalledWith("asset-image", "image", imageItem);
   });
 
+  it("automatically selects arrow, Home and End focused tabs and keeps drafts while hidden media is released", async () => {
+    const values = fixture();
+    const release = vi.spyOn(values.assetApi, "releasePreview");
+    render(<AssetPicker {...values} compatibleMediaTypes={["image"]} onCancel={vi.fn()} onSelect={vi.fn()} open />);
+    await screen.findByRole("button", { name: /Follower burst/ });
+    const existing = screen.getByRole("tab", { name: "Existing" });
+    const upload = screen.getByRole("tab", { name: "Upload new" });
+    await userEvent.click(existing);
+    await userEvent.keyboard("{End}");
+    expect(upload).toHaveFocus();
+    expect(upload).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", upload.id);
+    await userEvent.type(screen.getByLabelText("Display name"), "Draft upload");
+    expect(release).toHaveBeenCalledOnce();
+    await userEvent.click(upload);
+    await userEvent.keyboard("{Home}");
+    expect(existing).toHaveAttribute("aria-selected", "true");
+    await screen.findByRole("button", { name: /Follower burst/ });
+    await userEvent.keyboard("{ArrowRight}");
+    expect(upload).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Display name")).toHaveValue("Draft upload");
+    expect(values.managementApi.listAssetLibraryItems).toHaveBeenCalledOnce();
+    expect(release).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps invalid uploads in context with allowed types, limits, and a next step", async () => {
     const values = fixture();
     const user = userEvent.setup({ applyAccept: false });
@@ -159,6 +184,32 @@ describe("AssetPicker", () => {
     expect(screen.getByRole("button", { name: "Use selected asset" })).toBeDisabled();
     await act(async () => nextItems.resolve([imageItem, audioItem]));
     expect(await screen.findByRole("button", { name: /Follower burst/ })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("locks every upload dismissal path and does not import again when only metadata failed", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const values = fixture();
+    const imported = deferred<Awaited<ReturnType<AssetApi["importAsset"]>>>();
+    vi.mocked(values.assetApi.importAsset).mockReturnValue(imported.promise);
+    vi.mocked(values.managementApi.updateAssetMetadata).mockRejectedValueOnce(new Error("Metadata unavailable"))
+      .mockResolvedValueOnce({ ...imageItem, id: "asset-new" });
+    const onSelect = vi.fn(), onCancel = vi.fn();
+    render(<AssetPicker {...values} compatibleMediaTypes={["image"]} onCancel={onCancel} onSelect={onSelect} open />);
+    await screen.findByRole("button", { name: /Follower burst/ });
+    await userEvent.click(screen.getByRole("tab", { name: "Upload new" }));
+    await userEvent.upload(screen.getByLabelText("Asset file"), new File([pngBytes], "new.png", { type: "image/png" }));
+    await userEvent.dblClick(screen.getByRole("button", { name: "Upload and use" }));
+    expect(values.assetApi.importAsset).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(screen.getByRole("tab", { name: "Existing" })).toBeDisabled();
+    await userEvent.keyboard("{Escape}");
+    expect(onCancel).not.toHaveBeenCalled();
+    await act(async () => imported.resolve({ id: "asset-new", originalFileName: "new.png", mediaType: "image", mimeType: "image/png", sizeBytes: 8, checksum: "sha256:new", storagePath: "image/new.png", durationMs: null }));
+    expect(await screen.findByText("Asset upload did not complete")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Upload and use" }));
+    await waitFor(() => expect(onSelect).toHaveBeenCalledOnce());
+    expect(values.assetApi.importAsset).toHaveBeenCalledOnce();
+    expect(values.managementApi.updateAssetMetadata).toHaveBeenCalledTimes(2);
   });
 });
 
