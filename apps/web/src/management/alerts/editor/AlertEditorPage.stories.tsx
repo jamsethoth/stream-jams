@@ -2,6 +2,7 @@ import {
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
   type AlertEditorDocument,
+  type AlertEditorErrorReportInput,
   type AlertSetDetail,
   type AlertVariationAuthoringContext,
   type RegisteredProviderView,
@@ -625,6 +626,37 @@ export const ActiveSetSaveWarning: Story = {
     );
     await expect(dialog.getByText("Follow events")).toBeVisible();
     await expect(dialog.getByText("Landscape")).toBeVisible();
+  }
+};
+
+export const GeneratedReviewDiagnostic: Story = {
+  tags: ["mantine-stage6c-fix"],
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => document,
+      getAlertSet: async () => alertSetDetail(),
+      saveAlertEditorDocument: async () => { throw new Error("Disposable storage failed."); },
+      reportAlertEditorError: fn(async (_alertId: string, input: AlertEditorErrorReportInput) => ({ referenceId: input.error.referenceId! }))
+    })
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    const template = await canvas.findByRole("textbox", { name: "Message template" });
+    await userEvent.click(template);
+    await userEvent.clear(template);
+    await userEvent.paste("Retained diagnostic draft");
+    await userEvent.click(canvas.getByRole("button", { name: "Save" }));
+    const body = within(canvasElement.ownerDocument.body);
+    const review = within(await body.findByRole("dialog", { name: "Save changes to active alert?" }));
+    await expect(args.managementApi.reportAlertEditorError).not.toHaveBeenCalled();
+    await userEvent.click(review.getByRole("button", { name: "Save changes" }));
+    const failure = await review.findByRole("alert");
+    const displayedReference = failure.textContent?.match(/ui_[A-Za-z0-9_-]+/u)?.[0];
+    await expect(displayedReference).toBeTruthy();
+    await expect(args.managementApi.reportAlertEditorError).toHaveBeenCalledTimes(1);
+    await expect(args.managementApi.reportAlertEditorError).toHaveBeenCalledWith(document.id, expect.objectContaining({ error: expect.objectContaining({ referenceId: displayedReference }) }));
+    await expect(body.getAllByRole("alert")).toHaveLength(1);
+    await expect(template).toHaveValue("Retained diagnostic draft");
   }
 };
 

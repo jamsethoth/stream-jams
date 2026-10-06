@@ -217,15 +217,19 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     () => Object.fromEntries(assets.map((asset) => [asset.id, asset.durationMs])),
     [assets]
   );
+  const recordActionError = useCallback((nextError: ReportableActionError) => {
+    const report = props.managementApi.reportAlertEditorError;
+    if (report !== undefined && nextError.referenceId.startsWith("ui_")) {
+      void report(props.alertId, { setId: loadedSetId ?? null, error: nextError }).catch((cause: unknown) => {
+        console.error(`[${nextError.referenceId}] Alert editor error could not be recorded in Diagnostics.`, cause);
+      });
+    }
+    return nextError;
+  }, [loadedSetId, props.alertId, props.managementApi]);
   const showActionError = useCallback((nextError: ReportableActionError) => {
     setNotice(null);
-    setError(nextError);
-    const report = props.managementApi.reportAlertEditorError;
-    if (report === undefined || !nextError.referenceId.startsWith("ui_")) return;
-    void report(props.alertId, { setId: loadedSetId ?? null, error: nextError }).catch((cause: unknown) => {
-      console.error(`[${nextError.referenceId}] Alert editor error could not be recorded in Diagnostics.`, cause);
-    });
-  }, [loadedSetId, props.alertId, props.managementApi]);
+    setError(recordActionError(nextError));
+  }, [recordActionError]);
   const onPreviewError = useCallback((failure: AlertPreviewFailure) => {
     showActionError(actionableError(failure.summary, failure.cause, failure.nextStep));
   }, [showActionError]);
@@ -419,7 +423,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       if (!confirmLiveImpact && isLiveImpactConfirmationRequired(cause)) throw cause;
       if (!forNavigation) {
         const failure = actionableError("The alert was not saved", cause, "Review the selected profile and highlighted fields, then try again.");
-        if (confirmLiveImpact) setDialogError(failure);
+        if (confirmLiveImpact) setDialogError(recordActionError(failure));
         else showActionError(failure);
       }
       throw cause;
@@ -427,16 +431,16 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       mutationInFlight.current = false;
       setBusy(false);
     }
-  }, [activeTtsProvider, conditionDraftError, editor, props.alertId, props.managementApi, resetLocalPreview, showActionError, variationContext]);
+  }, [activeTtsProvider, conditionDraftError, editor, props.alertId, props.managementApi, recordActionError, resetLocalPreview, showActionError, variationContext]);
 
-  const requiresLiveImpactConfirmation = useCallback(async () => {
+  const requiresLiveImpactConfirmation = useCallback(async (forNavigation = false) => {
     if (editor === null || !isEditorDirty(editor) || (affectedProfileIds(editor, setDetail, variationContext).length === 0 && !hasAudioOutputImpact(editor))) return false;
     try {
       const latestSetDetail = await props.managementApi.getAlertSet(editor.document.setId);
       setSetDetail(latestSetDetail);
       return latestSetDetail.overview.active;
     } catch (cause) {
-      showActionError(actionableError(
+      if (!forNavigation) showActionError(actionableError(
         "The alert set status could not be checked",
         cause,
         "Confirm the local service is running, then try saving again."
@@ -459,7 +463,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setError(null);
     setDialogError(null);
     try {
-      if (await requiresLiveImpactConfirmation()) {
+      if (await requiresLiveImpactConfirmation(true)) {
         return new Promise<DirtyNavigationSaveResult>((resolve) => setSaveWarning({ resolveNavigation: resolve }));
       }
       return await save(false, true) === false ? false : true;
@@ -470,9 +474,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           resolveNavigation: resolve
         }));
       }
-      return { saved: false, error: actionableError("The alert was not saved", cause, "Review the selected profile and highlighted fields, then try Save and leave again.") };
+      return { saved: false, error: recordActionError(actionableError("The alert was not saved", cause, "Review the selected profile and highlighted fields, then try Save and leave again.")) };
     }
-  }, [requiresLiveImpactConfirmation, save]);
+  }, [recordActionError, requiresLiveImpactConfirmation, save]);
 
   useDirtyNavigationSource({
     id: `alert-editor:${props.alertId}`,
@@ -771,7 +775,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     } catch (cause) {
       if (pendingWarning?.resolveNavigation !== undefined) {
         setSaveWarning(null);
-        pendingWarning.resolveNavigation({ saved: false, error: actionableError("The alert was not saved", cause, "Review the selected profile and highlighted fields, then try Save and leave again.") });
+        pendingWarning.resolveNavigation({ saved: false, error: recordActionError(actionableError("The alert was not saved", cause, "Review the selected profile and highlighted fields, then try Save and leave again.")) });
       }
     }
   }
@@ -855,7 +859,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       setCopyDesignOpen(false);
       setNotice({ tone: "warning", message: "Design copied.", detail: "Review the result, then Save to keep it." });
     } catch (cause) {
-      setDialogError(actionableError("The alert design was not copied", cause, "Choose another alert or return to Alerts and review the source."));
+      setDialogError(recordActionError(actionableError("The alert design was not copied", cause, "Choose another alert or return to Alerts and review the source.")));
     } finally {
       mutationInFlight.current = false;
       setBusy(false);

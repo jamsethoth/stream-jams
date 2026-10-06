@@ -69,6 +69,49 @@ afterEach(() => {
 });
 
 describe("AlertEditorPage", () => {
+  it.each(["page", "confirmed save", "copy", "navigation", "confirmed navigation", "navigation preflight", "server confirmation"] as const)("records the displayed generated reference once for a %s failure", async (workflow) => {
+    const user = userEvent.setup();
+    const navigation = workflow.includes("navigation");
+    const confirmed = workflow.startsWith("confirmed");
+    const reportAlertEditorError = vi.fn<NonNullable<AlertEditorPageApi["reportAlertEditorError"]>>(async (_alertId, input) => ({ referenceId: input.error.referenceId! }));
+    const saveAlertEditorDocument = vi.fn<AlertEditorPageApi["saveAlertEditorDocument"]>().mockRejectedValue(new Error("Disposable storage failed."));
+    if (workflow === "server confirmation") saveAlertEditorDocument.mockRejectedValueOnce(new ManagementHttpError("Review live impact.", "ALERT_EDITOR_LIVE_IMPACT_CONFIRMATION_REQUIRED", null));
+    const getAlertSet = vi.fn(async () => alertSetDetail(confirmed));
+    window.history.replaceState(null, "", "/manage/modules/alerts/editor/alert-follow");
+    render(<DirtyNavigationProvider><AlertEditorPage alertId="alert-follow" assetApi={assetApi} managementApi={{
+      getAlertEditorDocument: vi.fn(async (alertId) => { if (alertId !== "alert-follow") throw new Error("Disposable source failed."); return editorDocument(); }),
+      getAlertSet, listRegisteredProviders: vi.fn(async () => []), getAssetChangeImpact: vi.fn(), listAssetLibraryItems: vi.fn(async () => []), deleteAsset: vi.fn(), updateAssetMetadata: vi.fn(), saveAlertEditorDocument, sendAlertEditorTest: vi.fn(), reportAlertEditorError
+    }} onBack={() => undefined} onOpenAlert={() => undefined} /><NavigationProbe /></DirtyNavigationProvider>);
+    const template = await screen.findByRole("textbox", { name: "Message template" });
+    fireEvent.change(template, { target: { value: "Retained diagnostic draft" } });
+    if (workflow === "copy") {
+      await user.click(screen.getByRole("tab", { name: "Alert" }));
+      await user.click(screen.getByRole("button", { name: "Copy design from..." }));
+      await user.click(within(screen.getByRole("dialog", { name: "Copy design from another alert?" })).getByRole("button", { name: "Copy design" }));
+    } else {
+      if (workflow === "navigation preflight") getAlertSet.mockRejectedValue(new Error("Disposable status failed."));
+      if (navigation) {
+        await user.click(screen.getByRole("button", { name: "Leave editor" }));
+        await user.click(screen.getByRole("button", { name: "Save and leave" }));
+      } else await user.click(screen.getByRole("button", { name: "Save" }));
+      if (confirmed || workflow === "server confirmation") {
+        const review = await screen.findByRole("dialog", { name: "Save changes to active alert?" });
+        expect(reportAlertEditorError).not.toHaveBeenCalled();
+        await user.click(within(review).getByRole("button", { name: "Save changes" }));
+      }
+    }
+    const failure = await screen.findByRole("alert");
+    await waitFor(() => expect(reportAlertEditorError).toHaveBeenCalledOnce());
+    const recorded = reportAlertEditorError.mock.calls[0]!;
+    expect(recorded[0]).toBe("alert-follow");
+    expect(recorded[1].setId).toBe("set-default");
+    expect(recorded[1].error.referenceId).toMatch(/^ui_/u);
+    expect(failure).toHaveTextContent(recorded[1].error.referenceId!);
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    if (workflow !== "page") expect(within(screen.getByRole("dialog")).getByRole("alert")).toBe(failure);
+    if (navigation) expect(window.location.pathname).toBe("/manage/modules/alerts/editor/alert-follow");
+  });
+
   it("locks active-save dismissal, issues one request, and keeps typed failure in its review for retry", async () => {
     const { user, saveAlertEditorDocument } = renderWorkspaceEditor();
     const template = await screen.findByRole("textbox", { name: "Message template" });
