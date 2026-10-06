@@ -28,11 +28,11 @@
 
 ## 4. Establish and prove the module-page template
 
-- [ ] 4.1 Add ModulePageLayout, ModuleControls, SectionHeading, ModuleSection and appropriate DisclosureSection presentation with optional ReactNode slots and consistent spacing (F4/F6).
-- [ ] 4.2 Adapt BrowserSourcesPanel/BrowserSourceRow presentation while keeping URL handling, clipboard, polling and security in existing owners (F5).
-- [ ] 4.3 Migrate Alerts as the inventory proof: common enablement/output/workspace/secondary order, shared outputs, explicit confirmations and existing hierarchy/deep links.
-- [ ] 4.4 Migrate Music as the different-workspace proof without adding feature booleans or a page engine; preserve credentials, normalized preview and appearance settings.
-- [ ] 4.5 Add stories and route checks for both proofs, including blockers, stale output state, long URLs, compact wrapping, disclosure correction links and focus return; pass slice checks and verify rebuilt workflows before remaining modules.
+- [x] 4.1 Add ModulePageLayout, ModuleControls, SectionHeading, ModuleSection and appropriate DisclosureSection presentation with optional ReactNode slots and consistent spacing (F4/F6).
+- [x] 4.2 Adapt BrowserSourcesPanel/BrowserSourceRow presentation while keeping URL handling, clipboard, polling and security in existing owners (F5).
+- [x] 4.3 Migrate Alerts as the inventory proof: common enablement/output/workspace/secondary order, shared outputs, explicit confirmations and existing hierarchy/deep links.
+- [x] 4.4 Migrate Music as the different-workspace proof without adding feature booleans or a page engine; preserve credentials, normalized preview and appearance settings.
+- [x] 4.5 Add stories and route checks for both proofs, including blockers, stale output state, long URLs, compact wrapping, disclosure correction links and focus return; pass slice checks and verify rebuilt workflows before remaining modules.
 
 ## 5. Complete module adoption
 
