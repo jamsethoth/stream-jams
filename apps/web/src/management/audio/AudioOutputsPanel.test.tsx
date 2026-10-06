@@ -8,6 +8,33 @@ import type { AudioApi } from "./audio-api.js";
 import { AudioOutputsPanel } from "./AudioOutputsPanel.js";
 
 describe("AudioOutputsPanel", () => {
+  it("retains a pending deletion review, one scoped failure and fresh-review focus", async () => {
+    const user = userEvent.setup();
+    let reject!: (cause: unknown) => void;
+    const deleteRoute = vi.fn().mockImplementationOnce(() => new Promise<void>((_resolve, fail) => { reject = fail; })).mockResolvedValue(undefined);
+    render(<AudioOutputsPanel audioApi={createApi({ deleteRoute, getStatus: vi.fn().mockResolvedValueOnce(status()).mockResolvedValue(status({ routes: [] })) })} />);
+    const trigger = await screen.findByRole("button", { name: "Delete Headphones" });
+    await user.click(trigger);
+    const dialog = screen.getByRole("dialog");
+    await user.dblClick(within(dialog).getByRole("button", { name: "Delete output" }));
+    expect(deleteRoute).toHaveBeenCalledTimes(1);
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(dialog).toBeVisible();
+    reject(new ManagementHttpError("Audio service unavailable", "UNAVAILABLE", "fixture-audio-delete", "Check the local service."));
+    const error = await within(dialog).findByRole("alert");
+    expect(error).toHaveTextContent("fixture-audio-delete");
+    expect(error.closest(".management-toast")).toBeNull();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+    await user.click(trigger);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Delete output" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(deleteRoute).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Audio outputs" })).toHaveFocus());
+  });
   afterEach(() => { cleanup(); vi.useRealTimers(); });
 
   it("creates and edits named routes only after explicit saves, without playing on selection", async () => {

@@ -1,3 +1,7 @@
+import { Button, TextInput } from "@mantine/core";
+import { BrowserSourceRow } from "../foundation/BrowserSourceRow.js";
+import { ModulePageLayout, ModuleControls, ModuleSection } from "../foundation/ModulePageLayout.js";
+import { DestructiveConfirmationDialog } from "../foundation/DestructiveConfirmationDialog.js";
 import { actionableError } from "../foundation/actionable-error.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
@@ -36,6 +40,10 @@ export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTim
   const [regenerateSource, setRegenerateSource] = useState<TimerBrowserSource | null>(null);
   const [moduleConfirmation, setModuleConfirmation] = useState<boolean | null>(null);
   const [rotateConfirmation, setRotateConfirmation] = useState(false);
+  const [revokeConfirmation, setRevokeConfirmation] = useState(false);
+  const [confirmationError, setConfirmationError] = useState<ActionableManagementError | null>(null);
+  const mutationRef = useRef(false);
+  const fallbackRef = useRef<HTMLButtonElement>(null);
   const [refreshError, setRefreshError] = useState<ActionableManagementError | null>(null);
   const [actionError, setActionError] = useState<ActionableManagementError | null>(null);
   const [definitionError, setDefinitionError] = useState<string | null>(null);
@@ -76,8 +84,15 @@ export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTim
       setSelectedId(ownerId); setDraft(toInput(definitions.find(item => item.id === ownerId)!)); setEditorOpen(true);
     }
   }, [ownerId, definitions]);
+  useEffect(() => {
+    function correction() { if (window.location.hash === "#browser-sources") { setSourcesExpanded(true); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>("#browser-sources button[aria-expanded]")?.focus()); } else if (["#timer-presentation", "#timer-credential"].includes(window.location.hash)) { document.getElementById(window.location.hash.slice(1))?.querySelector<HTMLElement>("button, input")?.focus(); } }
+    if (!loading) correction(); window.addEventListener("hashchange", correction); return () => window.removeEventListener("hashchange", correction);
+  }, [loading]);
   const stateById = useMemo(() => new Map(states.map(state => [state.definitionId, state])), [states]);
 
+  function reviewConfirmation() { if (mutationRef.current) return false; clearFeedback(); setConfirmationError(null); return true; }
+  function closeConfirmation() { if (mutationRef.current) return; clearFeedback(); setConfirmationError(null); setRotateConfirmation(false); setRevokeConfirmation(false); setRegenerateSource(null); setModuleConfirmation(null); }
+  function failConfirmation(reason: unknown) { setConfirmationError(actionableError(reason, "Timer action failed", "Review the timer configuration and local service, then retry the action.")); }
   function clearFeedback() { setNotice(null); setActionError(null); }
   function showNotice(message: string, tone: ManagementToastNotice["tone"] = "success") {
     setActionError(null);
@@ -90,64 +105,66 @@ export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTim
 
   function openCreate() { clearFeedback(); setSelectedId(null); setDraft(emptyDraft); setDefinitionError(null); setEditorOpen(true); }
   function openEdit(id: string) { clearFeedback(); const item = definitions.find(item => item.id === id); if (item === undefined) return; setSelectedId(id); setDraft(toInput(item)); setDefinitionError(null); setEditorOpen(true); }
-  function closeEditor() { clearFeedback(); setEditorOpen(false); setPickerRole(null); }
+  function closeEditor() { if (mutationRef.current) return; clearFeedback(); setEditorOpen(false); setPickerRole(null); }
   async function save(event: FormEvent) {
     event.preventDefault();
+    if (mutationRef.current) return;
     clearFeedback();
     const parsed = timerDefinitionInputSchema.safeParse(draft);
     if (!parsed.success) { setDefinitionError(parsed.error.issues[0]?.message ?? "Correct the timer definition before saving."); return; }
     setDefinitionError(null);
-    setBusy(true); clearFeedback();
+    mutationRef.current = true; setBusy(true); clearFeedback();
     try {
       const input = parsed.data; const creating = selected === null;
       await (creating ? api.create(input) : api.update(selected.id, input));
       setEditorOpen(false); setSelectedId(null); await load(); showNotice(creating ? "Timer created." : "Timer saved. Changes apply to the next run.");
-    } catch (reason) { showError(reason); } finally { setBusy(false); }
+    } catch (reason) { showError(reason); } finally { mutationRef.current = false; setBusy(false); }
   }
   async function command(commandName: TimerCommand, id = selectedId) {
-    if (id === null) return; setBusy(true); clearFeedback();
+    if (id === null || mutationRef.current) return; mutationRef.current = true; setBusy(true); clearFeedback();
     stateRevisionRef.current += 1;
     try { const result = await api.command(id, commandName); const nextStates = await api.listStates(); stateRevisionRef.current += 1; setStates(nextStates); setRefreshError(null); showNotice(result.changed ? `Timer ${commandName}ed.` : "Timer state did not change."); }
-    catch (reason) { showError(reason); } finally { setBusy(false); }
+    catch (reason) { showError(reason); } finally { mutationRef.current = false; setBusy(false); }
   }
   async function adjust(input: import("@stream-jams/core").TimerAdjustment) {
-    if (selectedId === null) return;
-    setBusy(true); clearFeedback(); stateRevisionRef.current += 1;
+    if (selectedId === null || mutationRef.current) return;
+    mutationRef.current = true; setBusy(true); clearFeedback(); stateRevisionRef.current += 1;
     try { await api.adjust(selectedId, input); const next = await api.listStates(); stateRevisionRef.current += 1; setStates(next); setRefreshError(null); showNotice("Timer adjusted."); }
-    catch (reason) { showError(reason); } finally { setBusy(false); }
+    catch (reason) { showError(reason); } finally { mutationRef.current = false; setBusy(false); }
   }
   async function remove() {
-    if (selectedId === null || active !== null) return; setBusy(true); clearFeedback();
+    if (selectedId === null || active !== null || mutationRef.current) return; mutationRef.current = true; setBusy(true); clearFeedback();
     try { await api.remove(selectedId); setEditorOpen(false); setSelectedId(null); await load(); showNotice("Timer deleted."); }
-    catch (reason) { showError(reason); } finally { setBusy(false); }
+    catch (reason) { showError(reason); } finally { mutationRef.current = false; setBusy(false); }
   }
   async function saveLayout() {
-    if (layout === null) return;
+    if (layout === null || mutationRef.current) return;
     const parsed = timersOverlayModuleConfigSchema.safeParse(layout);
     if (!parsed.success) { setLayoutError(parsed.error.issues[0]?.message ?? "Correct the overlay layout before saving."); return; }
     setLayoutError(null);
-    setBusy(true); clearFeedback();
+    mutationRef.current = true; setBusy(true); clearFeedback();
     try { const saved = await api.saveModuleConfig(enabled, parsed.data); setLayout(saved.config); showNotice("Timer overlay layout saved."); }
-    catch (reason) { showError(reason); } finally { setBusy(false); }
+    catch (reason) { showError(reason); } finally { mutationRef.current = false; setBusy(false); }
   }
   async function confirmModuleEnablement() {
-    if (moduleConfirmation === null) return; setBusy(true); clearFeedback();
+    if (moduleConfirmation === null || mutationRef.current) return; mutationRef.current = true; setBusy(true); clearFeedback();
     try {
       const nextEnabled = await api.setModuleEnabled(moduleConfirmation); setEnabled(nextEnabled);
       showNotice(`Timers module is now ${nextEnabled ? "enabled" : "disabled"}.`); setModuleConfirmation(null);
-    } catch (reason) { showError(reason); } finally { setBusy(false); }
+    } catch (reason) { failConfirmation(reason); } finally { mutationRef.current = false; setBusy(false); }
   }
   async function createBrowserSource(source: TimerBrowserSource) {
-    setBusy(true); clearFeedback();
+    if (mutationRef.current) return;
+    mutationRef.current = true; setBusy(true); clearFeedback();
     try { await api.createBrowserSource(source); setBrowserSources(await api.listBrowserSources()); showNotice(`${profileLabel(source.targetProfileId)} URL created.`); }
-    catch (reason) { showError(reason); } finally { setBusy(false); }
+    catch (reason) { showError(reason); } finally { mutationRef.current = false; setBusy(false); }
   }
   async function confirmRegenerateSource() {
-    if (regenerateSource === null) return; setBusy(true); clearFeedback();
+    if (regenerateSource === null || mutationRef.current) return; mutationRef.current = true; setBusy(true); clearFeedback();
     try {
       await api.regenerateBrowserSource(regenerateSource); setBrowserSources(await api.listBrowserSources());
       showNotice(`${profileLabel(regenerateSource.targetProfileId)} URL regenerated. Update OBS with the new URL.`, "warning"); setRegenerateSource(null);
-    } catch (reason) { showError(reason); } finally { setBusy(false); }
+    } catch (reason) { failConfirmation(reason); } finally { mutationRef.current = false; setBusy(false); }
   }
   async function copyBrowserSource(source: TimerBrowserSource) {
     if (source.url === null) return;
@@ -155,61 +172,65 @@ export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTim
     catch (reason) { showError(reason); }
   }
   async function rotateCredential() {
-    setBusy(true); clearFeedback(); try { const issued = await api.rotateAutomationCredential(); setCredential(issued); setIssuedToken(issued.token); setRotateConfirmation(false); showNotice("Automation credential created. Copy it now; it will not be shown again.", "warning"); }
-    catch (reason) { showError(reason); } finally { setBusy(false); }
+    if (mutationRef.current) return;
+    mutationRef.current = true; setBusy(true); clearFeedback(); try { const issued = await api.rotateAutomationCredential(); setCredential(issued); setIssuedToken(issued.token); setRotateConfirmation(false); showNotice("Automation credential created. Copy it now; it will not be shown again.", "warning"); }
+    catch (reason) { if (rotateConfirmation) failConfirmation(reason); else showError(reason); } finally { mutationRef.current = false; setBusy(false); }
   }
   async function revokeCredential() {
-    if (!window.confirm("Revoke the timer automation credential? Existing Stream Deck actions will stop working.")) return;
-    setBusy(true); clearFeedback(); try { await api.revokeAutomationCredential(); setCredential({ configured: false, createdAt: null, rotatedAt: null }); setIssuedToken(null); showNotice("Automation credential revoked."); }
-    catch (reason) { showError(reason); } finally { setBusy(false); }
+    if (mutationRef.current) return;
+    mutationRef.current = true; setBusy(true); clearFeedback(); try { await api.revokeAutomationCredential(); setCredential({ configured: false, createdAt: null, rotatedAt: null }); setIssuedToken(null); setRevokeConfirmation(false); showNotice("Automation credential revoked."); }
+    catch (reason) { failConfirmation(reason); } finally { mutationRef.current = false; setBusy(false); }
   }
 
   const feedback = <>
     {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
     {actionError === null ? null : <ManagementErrorToast error={actionError} onDismiss={() => setActionError(null)} />}
   </>;
-  const feedbackOwner = editorOpen ? "editor" : rotateConfirmation ? "rotate" : regenerateSource !== null ? "source" : moduleConfirmation !== null ? "module" : "page";
+  const feedbackOwner = editorOpen ? "editor" : "page";
 
   if (loading && layout === null) return <p className="management-empty" role="status">Loading timers…</p>;
-  return <div className="timers-page">
+  return <>
+    <ModulePageLayout className="timers-page" feedback={<>
     {refreshError === null ? null : <ManagementErrorBanner error={refreshError} />}
     {error === null ? null : <ManagementErrorBanner error={error} />}
     {feedbackOwner === "page" ? feedback : null}
-    <BrowserSources busy={busy} expanded={sourcesExpanded} onCopy={source => void copyBrowserSource(source)} onCreate={source => void createBrowserSource(source)}
-      onRegenerate={source => { clearFeedback(); setRegenerateSource(source); }} onToggle={() => setSourcesExpanded(value => !value)} onToggleReveal={source => setRevealedSourceIds(current => {
+    </>} controls={<ModuleControls status={<StatusBadge label={enabled ? "Module enabled" : "Module disabled"} tone={enabled ? "positive" : "neutral"} />} description="Create reusable countdowns and control their active runs."><Button ref={fallbackRef} variant="default" disabled={busy} onClick={() => { if (reviewConfirmation()) setModuleConfirmation(!enabled); }}>{enabled ? "Disable Timers module" : "Enable Timers module"}</Button></ModuleControls>} outputs={<BrowserSources busy={busy} expanded={sourcesExpanded} onCopy={source => void copyBrowserSource(source)} onCreate={source => void createBrowserSource(source)}
+      onRegenerate={source => { if (reviewConfirmation()) setRegenerateSource(source); }} onToggle={() => setSourcesExpanded(value => !value)} onToggleReveal={source => setRevealedSourceIds(current => {
         const next = new Set(current); if (next.has(source.id)) next.delete(source.id); else next.add(source.id); return next;
-      })} revealedSourceIds={revealedSourceIds} sources={browserSources} />
-    <section className="timers-inventory" aria-labelledby="timer-inventory-heading"><div className="timer-section-heading"><div><h2 id="timer-inventory-heading">Timers</h2><p>Create reusable countdowns and control their active runs.</p><StatusBadge label={enabled ? "Module enabled" : "Module disabled"} tone={enabled ? "positive" : "neutral"} /></div><div className="timer-row__actions"><button className="button button--secondary" disabled={busy} onClick={() => { clearFeedback(); setModuleConfirmation(!enabled); }} type="button">{enabled ? "Disable Timers module" : "Enable Timers module"}</button><button className="button button--primary" onClick={openCreate} type="button">New timer</button></div></div>
-      {definitions.length === 0 ? <div className="timers-empty"><h3>No timers yet</h3><p>Create one for a recurring stream activity.</p><button onClick={openCreate} type="button">Create timer</button></div> : <div className="timers-list">{definitions.map(item => { const state = stateById.get(item.id); return <article aria-label={`${item.label} timer`} className="timer-row" key={item.id}><button className="timer-row__identity" onClick={() => openEdit(item.id)} type="button"><strong>{item.label}</strong><span>{formatTimerRemaining(item.durationMs)}</span></button><StatusBadge label={state?.status ?? "Idle"} tone={state?.status === "running" ? "positive" : state?.status === "completed" ? "warning" : "neutral"} /><div className="timer-row__actions"><button className="button button--secondary button--compact" onClick={() => openEdit(item.id)} type="button">Edit</button><button className="button button--compact" disabled={busy} onClick={() => void command(state?.status === "paused" ? "resume" : "start", item.id)} type="button">{state?.status === "paused" ? "Resume" : "Start"}</button></div></article>; })}</div>}
-    </section>
-    {layout === null ? null : <section className="timer-presentation" aria-labelledby="timer-presentation-heading"><div className="timer-section-heading"><div><h2 id="timer-presentation-heading">Overlay layout</h2><p>Position the timer stack independently for each output profile.</p></div></div><TimerStackEditor assetApi={assetApi} definitions={definitions} value={layout} onChange={setLayout} /><div className="timer-layout-save">{layoutError === null ? null : <p role="alert">{layoutError}</p>}<button disabled={busy} onClick={() => void saveLayout()} type="button">Save overlay layout</button></div></section>}
-    <section className="timer-credential" aria-labelledby="timer-credential-heading"><div><p className="management-eyebrow">Stream Deck HTTP</p><h2 id="timer-credential-heading">Automation credential</h2><p>{credential?.configured ? "Configured. Rotating invalidates the previous credential immediately." : "Not configured."}</p></div>{issuedToken === null ? null : <div className="timer-token"><label>Copy this credential now<input readOnly value={issuedToken} /></label><button onClick={() => void navigator.clipboard?.writeText(issuedToken)} type="button">Copy</button><button className="button button--secondary" onClick={() => setIssuedToken(null)} type="button">Dismiss</button></div>}<div className="timer-credential__actions"><button disabled={busy} onClick={() => { clearFeedback(); if (credential?.configured) setRotateConfirmation(true); else void rotateCredential(); }} type="button">{credential?.configured ? "Rotate credential" : "Create credential"}</button><button className="button button--danger-quiet" disabled={busy || !credential?.configured} onClick={() => void revokeCredential()} type="button">Revoke</button></div></section>
-    <ModalSurface labelledBy="timer-rotate-title" onCancel={() => { clearFeedback(); setRotateConfirmation(false); }} open={rotateConfirmation}><div className="timer-confirmation">{feedbackOwner === "rotate" ? feedback : null}<ManagementModalTitle>Rotate timer automation credential?</ManagementModalTitle><p>The current credential stops working immediately. Existing Stream Deck actions will stop working until you update them with the new credential. The old credential cannot be recovered.</p><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={() => { clearFeedback(); setRotateConfirmation(false); }} type="button">Cancel</button><button className="button button--danger" disabled={busy} onClick={() => void rotateCredential()} type="button">Confirm rotation</button></div></div></ModalSurface>
-    <ModalSurface labelledBy="timer-editor-title" onCancel={closeEditor} open={editorOpen}><form className="timer-editor" onSubmit={save}>{feedbackOwner === "editor" ? feedback : null}<div className="timer-section-heading"><div><p className="management-eyebrow">Definition</p><ManagementModalTitle>{selected === null ? "Create timer" : `Edit ${selected.label}`}</ManagementModalTitle></div>{active === null ? null : <StatusBadge label={active.status} tone={active.status === "running" ? "positive" : "warning"} />}</div>
+      })} revealedSourceIds={revealedSourceIds} sources={browserSources} refreshFailed={refreshError !== null} />} >
+    <ModuleSection title="Timer definitions" label="Timer definitions" actions={<Button disabled={busy} onClick={openCreate}>New timer</Button>}>
+      {definitions.length === 0 ? <div className="timers-empty"><h3>No timers yet</h3><p>Create one for a recurring stream activity.</p><Button onClick={openCreate} type="button">Create timer</Button></div> : <div className="timers-list">{definitions.map(item => { const state = stateById.get(item.id); return <article aria-label={`${item.label} timer`} className="timer-row" key={item.id}><Button variant="subtle" className="timer-row__identity" onClick={() => openEdit(item.id)} type="button"><span className="timer-row__identity-label"><strong>{item.label}</strong><span>{formatTimerRemaining(item.durationMs)}</span></span></Button><StatusBadge label={state?.status ?? "Idle"} tone={state?.status === "running" ? "positive" : state?.status === "completed" ? "warning" : "neutral"} /><div className="timer-row__actions"><Button variant="default" onClick={() => openEdit(item.id)} type="button">Edit</Button><Button disabled={busy} onClick={() => void command(state?.status === "paused" ? "resume" : "start", item.id)} type="button">{state?.status === "paused" ? "Resume" : "Start"}</Button></div></article>; })}</div>}
+    </ModuleSection>
+    {layout === null ? null : <ModuleSection title="Overlay layout" label="Overlay layout" id="timer-presentation" description="Position the timer stack independently for each output profile."><TimerStackEditor assetApi={assetApi} definitions={definitions} value={layout} onChange={setLayout} /><div className="timer-layout-save">{layoutError === null ? null : <p role="alert">{layoutError}</p>}<Button disabled={busy} onClick={() => void saveLayout()} type="button">Save overlay layout</Button></div></ModuleSection>}
+    <ModuleSection title="Automation credential" label="Automation credential" id="timer-credential" description={credential?.configured ? "Configured. Rotating invalidates the previous credential immediately." : "Not configured."}>{issuedToken === null ? null : <div className="timer-token"><label>Copy this credential now<input readOnly value={issuedToken} /></label><Button onClick={() => void navigator.clipboard?.writeText(issuedToken)} type="button">Copy</Button><Button variant="default" onClick={() => setIssuedToken(null)} type="button">Dismiss</Button></div>}<div className="timer-credential__actions"><Button disabled={busy} onClick={() => { if (!reviewConfirmation()) return; if (credential?.configured) setRotateConfirmation(true); else void rotateCredential(); }} type="button">{credential?.configured ? "Rotate credential" : "Create credential"}</Button><Button color="red" variant="subtle" disabled={busy || !credential?.configured} onClick={() => { if (reviewConfirmation()) setRevokeConfirmation(true); }} type="button">Revoke</Button></div></ModuleSection>
+    </ModulePageLayout>
+    <ModalSurface labelledBy="timer-editor-title" onCancel={closeEditor} open={editorOpen} pending={busy} restoreFocusFallbackRef={fallbackRef}><form className="timer-editor" onSubmit={save}>{feedbackOwner === "editor" ? feedback : null}<div className="timer-section-heading"><div><p className="management-eyebrow">Definition</p><ManagementModalTitle>{selected === null ? "Create timer" : `Edit ${selected.label}`}</ManagementModalTitle></div>{active === null ? null : <StatusBadge label={active.status} tone={active.status === "running" ? "positive" : "warning"} />}</div>
       {active === null ? null : <p className="timer-editor__notice">This run keeps its current name, duration, assets, and outputs. Saved edits apply next time.</p>}
       {definitionError === null ? null : <p role="alert">{definitionError}</p>}
-      <label>Name<input required maxLength={120} value={draft.label} onChange={event => setDraft({ ...draft, label: event.currentTarget.value })} /></label>
+      <TextInput label="Name" required withAsterisk={false} maxLength={120} value={draft.label} onChange={event => setDraft({ ...draft, label: event.currentTarget.value })} />
       <label>Duration (seconds)<input required min="1" type="number" value={draft.durationMs / 1000} onChange={event => setDraft({ ...draft, durationMs: Math.round(Number(event.currentTarget.value) * 1000) })} /></label>
       <TimerEventRulesEditor rules={draft.eventRules ?? []} onChange={eventRules => setDraft({ ...draft, eventRules })} />
       {selectedId === null ? null : <TimerAdjustmentControls disabled={busy} onApply={adjust} />}
-      <fieldset><legend>Assets</legend>{(["iconAssetId", "startAudioAssetId", "endAudioAssetId"] as const).map(role => <div className="timer-asset-row" key={role}><span>{role === "iconAssetId" ? "Icon" : role === "startAudioAssetId" ? "Start sound" : "End sound"}</span><code>{draft[role] ?? "None"}</code><button className="button button--secondary button--compact" onClick={() => setPickerRole(role)} type="button">Choose</button>{draft[role] === null ? null : <button className="button button--secondary button--compact" onClick={() => setDraft({ ...draft, [role]: null })} type="button">Clear</button>}</div>)}</fieldset>
+      <fieldset><legend>Assets</legend>{(["iconAssetId", "startAudioAssetId", "endAudioAssetId"] as const).map(role => <div className="timer-asset-row" key={role}><span>{role === "iconAssetId" ? "Icon" : role === "startAudioAssetId" ? "Start sound" : "End sound"}</span><code>{draft[role] ?? "None"}</code><Button variant="default" onClick={() => setPickerRole(role)} type="button">Choose</Button>{draft[role] === null ? null : <Button variant="default" onClick={() => setDraft({ ...draft, [role]: null })} type="button">Clear</Button>}</div>)}</fieldset>
       <fieldset className="timer-output-options"><legend>Audio outputs</legend><label className="timer-output-option"><input checked={draft.outputs.browserSource} onChange={event => setDraft({ ...draft, outputs: { ...draft.outputs, browserSource: event.currentTarget.checked } })} type="checkbox" /> Browser Source</label>{routes.map(route => <label className="timer-output-option" key={route.id}><input checked={draft.outputs.deviceRouteIds.includes(route.id)} onChange={() => setDraft({ ...draft, outputs: { ...draft.outputs, deviceRouteIds: draft.outputs.deviceRouteIds.includes(route.id) ? draft.outputs.deviceRouteIds.filter(id => id !== route.id) : [...draft.outputs.deviceRouteIds, route.id] } })} type="checkbox" /> {route.name}</label>)}</fieldset>
-      <div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={closeEditor} type="button">Cancel</button>{selected === null ? null : <><button className="button button--secondary" disabled={busy || active?.status !== "running"} onClick={() => void command("pause")} type="button">Pause</button><button className="button button--secondary" disabled={busy || active?.status !== "paused"} onClick={() => void command("resume")} type="button">Resume</button><button className="button button--secondary" disabled={busy || active === null} onClick={() => void command("stop")} type="button">Stop</button><button className="button button--secondary" disabled={busy} onClick={() => void command("restart")} type="button">Restart</button><button className="button button--danger-quiet" disabled={busy || active !== null} onClick={() => void remove()} type="button">Delete</button></>}<button disabled={busy} type="submit">{selected === null ? "Create timer" : "Save timer"}</button></div>
+      <div className="management-modal__actions"><Button variant="default" disabled={busy} onClick={closeEditor} type="button">Cancel</Button>{selected === null ? null : <><Button variant="default" disabled={busy || active?.status !== "running"} onClick={() => void command("pause")} type="button">Pause</Button><Button variant="default" disabled={busy || active?.status !== "paused"} onClick={() => void command("resume")} type="button">Resume</Button><Button variant="default" disabled={busy || active === null} onClick={() => void command("stop")} type="button">Stop</Button><Button variant="default" disabled={busy} onClick={() => void command("restart")} type="button">Restart</Button><Button color="red" variant="subtle" disabled={busy || active !== null} onClick={() => void remove()} type="button">Delete</Button></>}<Button disabled={busy} type="submit">{selected === null ? "Create timer" : "Save timer"}</Button></div>
     </form></ModalSurface>
-    <ModalSurface labelledBy="timer-regenerate-title" onCancel={() => { clearFeedback(); setRegenerateSource(null); }} open={regenerateSource !== null}><div className="timer-confirmation">{feedbackOwner === "source" ? feedback : null}<ManagementModalTitle>Regenerate {regenerateSource === null ? "" : profileLabel(regenerateSource.targetProfileId)} URL?</ManagementModalTitle><p>The current URL will stop working immediately. Update the Browser Source in OBS after regeneration.</p><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={() => { clearFeedback(); setRegenerateSource(null); }} type="button">Cancel</button><button className="button button--danger" disabled={busy} onClick={() => void confirmRegenerateSource()} type="button">Regenerate URL</button></div></div></ModalSurface>
-    <ModalSurface labelledBy="timer-module-confirm-title" onCancel={() => { clearFeedback(); setModuleConfirmation(null); }} open={moduleConfirmation !== null}>{moduleConfirmation === null ? null : <div className="timer-confirmation">{feedbackOwner === "module" ? feedback : null}<ManagementModalTitle>{moduleConfirmation ? "Enable" : "Disable"} Timers module?</ManagementModalTitle><p>{moduleConfirmation ? "Timer runs can appear in enabled browser and desktop overlay surfaces." : "Timer definitions and active runs remain available, but Timers stop rendering until the module is enabled again."}</p><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={() => { clearFeedback(); setModuleConfirmation(null); }} type="button">Cancel</button><button className="button button--primary" disabled={busy} onClick={() => void confirmModuleEnablement()} type="button">Confirm change</button></div></div>}</ModalSurface>
+    <DestructiveConfirmationDialog open={rotateConfirmation} title="Rotate timer automation credential?" scope="Timer automation credential" consequences="The current credential stops working immediately. Existing Stream Deck actions will stop working until you update them with the new credential. The old credential cannot be recovered." recovery={null} actionLabel="Confirm rotation" targetId="timer-credential:rotate" pending={busy} error={confirmationError} restoreFocusFallbackRef={fallbackRef} onCancel={closeConfirmation} onConfirm={rotateCredential} />
+    <DestructiveConfirmationDialog open={revokeConfirmation} title="Revoke the timer automation credential?" scope="Timer automation credential" consequences="Existing Stream Deck actions will stop working." recovery={null} actionLabel="Revoke credential" targetId="timer-credential:revoke" pending={busy} error={confirmationError} restoreFocusFallbackRef={fallbackRef} onCancel={closeConfirmation} onConfirm={revokeCredential} />
+    <DestructiveConfirmationDialog open={regenerateSource !== null} title={`Regenerate ${regenerateSource === null ? "" : profileLabel(regenerateSource.targetProfileId)} URL?`} scope={regenerateSource === null ? "Timer browser source" : profileLabel(regenerateSource.targetProfileId)} consequences="The current URL will stop working immediately. Update the Browser Source in OBS after regeneration." recovery={null} actionLabel="Regenerate URL" targetId={regenerateSource?.id ?? "none"} pending={busy} error={confirmationError} restoreFocusFallbackRef={fallbackRef} onCancel={closeConfirmation} onConfirm={confirmRegenerateSource} />
+    <DestructiveConfirmationDialog open={moduleConfirmation !== null} title={`${moduleConfirmation ? "Enable" : "Disable"} Timers module?`} scope="Timers module" consequences={moduleConfirmation ? "Timer runs can appear in enabled browser and desktop overlay surfaces." : "Timer definitions and active runs remain available, but Timers stop rendering until the module is enabled again."} recovery={null} actionLabel="Confirm change" targetId={`module:${String(moduleConfirmation)}`} pending={busy} error={confirmationError} restoreFocusFallbackRef={fallbackRef} onCancel={closeConfirmation} onConfirm={confirmModuleEnablement} />
     <AssetPicker assetApi={assetApi} compatibleMediaTypes={pickerRole === "iconAssetId" ? ["image", "gif"] : ["audio"]} managementApi={managementApi} onCancel={() => setPickerRole(null)} onSelect={assetId => { if (pickerRole !== null) setDraft(current => ({ ...current, [pickerRole]: assetId })); setPickerRole(null); }} open={pickerRole !== null} selectedAssetId={pickerRole === null ? null : draft[pickerRole]} />
-  </div>;
+  </>;
 }
 
-function BrowserSources({ busy, expanded, onCopy, onCreate, onRegenerate, onToggle, onToggleReveal, revealedSourceIds, sources }: {
-  readonly busy: boolean; readonly expanded: boolean; readonly onCopy: (source: TimerBrowserSource) => void; readonly onCreate: (source: TimerBrowserSource) => void;
+function BrowserSources({ busy, expanded, refreshFailed, onCopy, onCreate, onRegenerate, onToggle, onToggleReveal, revealedSourceIds, sources }: {
+  readonly refreshFailed: boolean; readonly busy: boolean; readonly expanded: boolean; readonly onCopy: (source: TimerBrowserSource) => void; readonly onCreate: (source: TimerBrowserSource) => void;
   readonly onRegenerate: (source: TimerBrowserSource) => void; readonly onToggle: () => void; readonly onToggleReveal: (source: TimerBrowserSource) => void;
   readonly revealedSourceIds: ReadonlySet<string>; readonly sources: readonly TimerBrowserSource[];
 }) {
   const ready = sources.filter(source => source.status === "available").length; const needsSetup = sources.length - ready;
-  return <BrowserSourcesPanel detailsId="timer-browser-source-details" expanded={expanded} onToggle={onToggle} readyCount={ready} needsSetupCount={needsSetup}>
-    <div className="timer-browser-sources__list">{sources.map(source => { const label = profileLabel(source.targetProfileId); const dimensions = profileDimensions[source.targetProfileId]; const revealed = revealedSourceIds.has(source.id); return <article aria-label={`${label} browser source`} className="timer-browser-source" key={source.id}><div className="timer-browser-source__heading"><strong>{label}</strong><StatusBadge label={source.status === "available" ? "Ready" : "Needs setup"} tone={source.status === "available" ? "positive" : "warning"} /></div><p className="timer-browser-source__telemetry">{source.connectionState === "connected" ? "Listening now" : source.lastConnectedAt === null ? "Not listening. No connection recorded." : `Not listening. Last seen ${formatDateTime(source.lastConnectedAt)}`}</p><p className="timer-browser-source__dimensions"><strong>{dimensions.width} x {dimensions.height}</strong></p><p className="timer-browser-source__guidance">Add a Browser Source in OBS at {dimensions.width} x {dimensions.height}, then paste this URL.</p>{source.url === null ? <p className="timer-browser-source__missing">Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source URL`} readOnly value={source.url} /> : <code className="timer-browser-source__masked">{maskRouteKey(source.url)}</code>}<div className="timer-row__actions">{source.status === "create-required" ? <button disabled={busy} onClick={() => onCreate(source)} type="button">Create {label} URL</button> : null}{source.url === null ? null : <><button aria-label={`${revealed ? "Hide" : "Reveal"} ${label} URL`} className="button button--secondary" onClick={() => onToggleReveal(source)} type="button">{revealed ? "Hide" : "Reveal"}</button><button aria-label={`Copy ${label} URL`} className="button button--secondary" onClick={() => onCopy(source)} type="button">Copy</button></>}{source.status !== "create-required" ? <button aria-label={`Regenerate ${label} URL`} className="button button--danger" disabled={busy} onClick={() => onRegenerate(source)} type="button">Regenerate</button> : null}</div></article>; })}</div>
+  return <BrowserSourcesPanel id="browser-sources" refreshFailed={refreshFailed} detailsId="timer-browser-source-details" expanded={expanded} onToggle={onToggle} readyCount={ready} needsSetupCount={needsSetup}>
+    <div className="timer-browser-sources__list">{sources.map(source => { const label = profileLabel(source.targetProfileId); const dimensions = profileDimensions[source.targetProfileId]; const revealed = revealedSourceIds.has(source.id); return <BrowserSourceRow key={source.id} label={label} ready={source.status === "available"} telemetry={source.connectionState === "connected" ? "Listening now" : source.lastConnectedAt === null ? "Not listening. No connection recorded." : `Not listening. Last seen ${formatDateTime(source.lastConnectedAt)}`} metadata={<strong><bdi dir="ltr">{dimensions.width} x {dimensions.height}</bdi></strong>} guidance={<>Add a Browser Source in OBS at <bdi dir="ltr">{dimensions.width} x {dimensions.height}</bdi>, then paste this URL.</>} url={source.url === null ? <p>Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source URL`} readOnly value={source.url} /> : <code>{maskRouteKey(source.url)}</code>} actions={<>{source.status === "create-required" ? <Button disabled={busy} onClick={() => onCreate(source)}>Create {label} URL</Button> : null}{source.url === null ? null : <><Button aria-label={`${revealed ? "Hide" : "Reveal"} ${label} URL`} variant="default" onClick={() => onToggleReveal(source)}>{revealed ? "Hide" : "Reveal"}</Button><Button aria-label={`Copy ${label} URL`} variant="default" onClick={() => onCopy(source)}>Copy</Button></>}{source.status !== "create-required" ? <Button aria-label={`Regenerate ${label} URL`} color="red" disabled={busy} onClick={() => onRegenerate(source)}>Regenerate</Button> : null}</>} />; })}</div>
   </BrowserSourcesPanel>;
 }
 

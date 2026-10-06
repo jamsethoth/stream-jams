@@ -1,6 +1,6 @@
 import { Button, TextInput } from "@mantine/core";
 import type { ActionableManagementError } from "@stream-jams/core";
-import { useId, useRef, useState, type RefObject } from "react";
+import { useId, useRef, useState, type ReactNode, type RefObject } from "react";
 import { ManagementErrorBanner } from "./ManagementErrorBanner.js";
 import { ManagementModalSurface as ModalSurface, ManagementModalTitle } from "./ManagementModalSurface.js";
 
@@ -14,6 +14,8 @@ export interface DestructiveConfirmationDialogProps {
   readonly recovery: string | null;
   readonly scope: string;
   readonly title: string;
+  /** Owner-rendered impact facts; pending owners must remove navigable links. */
+  readonly details?: ReactNode;
   readonly targetId?: string;
   readonly pending?: boolean;
   readonly error?: ActionableManagementError | null;
@@ -57,6 +59,7 @@ function ConfirmationContent(props: DestructiveConfirmationDialogProps) {
         <div><dt>Consequence</dt><dd>{props.consequences}</dd></div>
         {props.recovery === null ? null : <div><dt>Recovery</dt><dd>{props.recovery}</dd></div>}
       </dl>
+      {props.details}
       {props.confirmText === undefined ? null : (
           <TextInput
             label={`Type ${props.confirmText} to confirm`}

@@ -70,6 +70,8 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
   const [conflict, setConflict] = useState<ConflictState | null>(null);
   const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
   const [actionError, setActionError] = useState<ActionableManagementError | null>(null);
+  const [deleteError, setDeleteError] = useState<ActionableManagementError | null>(null);
+  const fallbackRef = useRef<HTMLHeadingElement>(null);
   const mutationInProgressRef = useRef(false);
 
   useEffect(() => {
@@ -89,9 +91,9 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
   useEffect(() => {
     onSummaryChange?.({
       count: status?.routes.length ?? 0,
-      state: loading && status === null ? "loading" : refreshError !== null || actionError !== null || conflict !== null || status?.capability.available === false || status?.routes.some(route => route.state !== "ready") === true ? "attention" : "ready"
+      state: loading && status === null ? "loading" : refreshError !== null || actionError !== null || deleteError !== null || conflict !== null || status?.capability.available === false || status?.routes.some(route => route.state !== "ready") === true ? "attention" : "ready"
     });
-  }, [actionError, conflict, loading, onSummaryChange, refreshError, status]);
+  }, [actionError, conflict, deleteError, loading, onSummaryChange, refreshError, status]);
 
   const saveOne = useCallback(async (draft: RouteDraft, confirmLiveImpact = false): Promise<boolean> => {
     if (!isDirty(draft)) return true;
@@ -200,20 +202,22 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
   }
 
   async function confirmDelete() {
-    if (deleteRoute === null) return;
+    if (deleteRoute === null || mutationInProgressRef.current) return;
     const route = deleteRoute;
-    setDeleteRoute(null);
     mutationInProgressRef.current = true;
     setBusyId(route.id);
     setActionError(null);
+    setDeleteError(null);
     setConflict(null);
     try {
       await audioApi.deleteRoute(route.id);
       setDrafts((current) => current.filter((draft) => draft.id !== route.id));
-      setNotice({ tone: "success", message: `${route.name} deleted.` });
       await refresh();
+      setDeleteRoute(null);
+      setNotice({ tone: "success", message: `${route.name} deleted.` });
     } catch (cause) {
       if (cause instanceof ManagementHttpError && cause.code === "AUDIO_ROUTE_REFERENCED") {
+        setDeleteError(actionable("Audio output was not deleted", cause, "Remove this route from the listed Alerts and Screen Effects before deleting it."));
         setConflict({
           kind: "delete",
           routeId: route.id,
@@ -223,7 +227,7 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
           references: cause.references
         });
       } else {
-        setActionError(actionable("Audio output was not deleted", cause, "Resolve the reported problem and retry."));
+        setDeleteError(actionable("Audio output was not deleted", cause, "Resolve the reported problem and retry."));
       }
     } finally {
       mutationInProgressRef.current = false;
@@ -286,7 +290,7 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
     <section aria-labelledby="audio-outputs-heading" className="audio-outputs" id="audio-outputs">
       <div className="audio-outputs__heading">
         <div>
-          <h3 id="audio-outputs-heading">Audio outputs</h3>
+          <h3 id="audio-outputs-heading" ref={fallbackRef} tabIndex={-1}>Audio outputs</h3>
           <p>Name local playback destinations once, then select them from alert settings.</p>
         </div>
         <StatusBadge label={!status.capability.available ? "Device playback unavailable" : status.muted ? "Alerts muted" : "Device playback available"} tone={status.muted || !status.capability.available ? "warning" : "positive"} />
@@ -310,7 +314,7 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
         </div>
       )}
 
-      {conflict === null ? null : <ConflictNotice busy={busyId !== null} conflict={conflict} onConfirm={conflict.kind === "rebind" ? () => {
+      {conflict === null || conflict.kind === "delete" ? null : <ConflictNotice busy={busyId !== null} conflict={conflict} onConfirm={conflict.kind === "rebind" ? () => {
         const draft = drafts.find((candidate) => candidate.id === conflict.routeId);
         if (draft !== undefined) void saveOne(draft, true);
       } : null} />}
@@ -343,7 +347,7 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
                 <div className="audio-output-route__actions">
                   <button disabled={!isDirty(draft) || draft.name.trim() === ""} onClick={() => void saveOne(draft)} type="button">{routeBusy ? "Saving output..." : "Save output"}</button>
                   <button className="button button--secondary" disabled={routeStatus.state !== "ready" || isDirty(draft) || busyId !== null} onClick={() => void testOutput(route)} type="button">Test {route.name}</button>
-                  <button className="button button--danger-quiet" disabled={busyId !== null} onClick={() => setDeleteRoute(route)} type="button">Delete {route.name}</button>
+                  <button className="button button--danger-quiet" disabled={busyId !== null} onClick={() => { setActionError(null); setNotice(null); setDeleteError(null); setConflict(null); setDeleteRoute(route); }} type="button">Delete {route.name}</button>
                 </div>
               </fieldset>
             );
@@ -354,8 +358,13 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
       <DestructiveConfirmationDialog
         actionLabel="Delete output"
         consequences="The named route will be removed and cannot be undone. Referenced routes are blocked and the affected alerts will be listed."
-        onCancel={() => setDeleteRoute(null)}
-        onConfirm={() => void confirmDelete()}
+        onCancel={() => { if (mutationInProgressRef.current) return; setDeleteRoute(null); setDeleteError(null); setConflict(null); }}
+        onConfirm={confirmDelete}
+        pending={busyId !== null}
+        error={deleteError}
+        targetId={deleteRoute?.id ?? "none"}
+        restoreFocusFallbackRef={fallbackRef}
+        details={conflict?.kind === "delete" ? <ul>{(conflict.owners.length > 0 ? conflict.owners : conflict.references.map(reference => ({ moduleId: "alerts", ownerId: reference.alertId, ownerName: reference.name, variantId: null }))).map(owner => <li key={`${owner.moduleId}:${owner.ownerId}:${owner.variantId ?? ""}`}>{formatModuleLabel(owner.moduleId)}: {owner.ownerName}</li>)}</ul> : null}
         open={deleteRoute !== null}
         recovery="Create a new named output and reassign it to alerts if needed."
         scope={deleteRoute?.name ?? "Selected audio output"}

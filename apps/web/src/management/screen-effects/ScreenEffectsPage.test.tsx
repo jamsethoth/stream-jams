@@ -11,7 +11,49 @@ import type { ScreenEffectsApi } from "./screen-effects-api.js";
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("ScreenEffectsPage", () => {
-  it("keeps load failures inline and command failures in one dismissible diagnostic toast", async () => {
+  it("orders saved controls before outputs and workspace and expands output correction links", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/manage/modules/screen-effects#browser-sources");
+    render(<ScreenEffectsPage api={api({ moduleEnabled: false })} onEdit={vi.fn()} />);
+    const controls = await screen.findByLabelText("Module controls");
+    const outputs = screen.getByRole("region", { name: "Browser sources" });
+    const workspace = screen.getByRole("region", { name: "Screen Effect sets" });
+    expect(controls.compareDocumentPosition(outputs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(outputs.compareDocumentPosition(workspace) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText("Module disabled")).toBeVisible();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Collapse browser sources" })).toHaveFocus());
+    expect(screen.queryByText("Landscape")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Collapse browser sources" }));
+    expect(screen.queryByText("Screen Effects Live")).not.toBeInTheDocument();
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("locks pending confirmation and keeps a failed typed review scoped until an explicit retry", async () => {
+    const user = userEvent.setup();
+    let reject!: (cause: unknown) => void;
+    const service = api();
+    service.regenerateBrowserSource = vi.fn().mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; })).mockResolvedValue({});
+    render(<ScreenEffectsPage api={service} onEdit={vi.fn()} />);
+    await user.click(await screen.findByRole("button", { name: "Expand browser sources" }));
+    await user.click(screen.getByRole("button", { name: "Regenerate URL" }));
+    const dialog = screen.getByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Type REGENERATE to confirm"), "REGENERATE");
+    await user.dblClick(within(dialog).getByRole("button", { name: "Regenerate URL" }));
+    expect(service.regenerateBrowserSource).toHaveBeenCalledTimes(1);
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(dialog).toBeVisible();
+    reject(new ManagementHttpError("Service busy", "UNAVAILABLE", "fixture-effects-ref", "Wait for the local service."));
+    const error = await within(dialog).findByRole("alert");
+    expect(error.closest(".management-toast")).toBeNull();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(within(dialog).getByLabelText("Type REGENERATE to confirm")).toHaveValue("REGENERATE");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Regenerate URL" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Type REGENERATE to confirm")).toHaveValue("");
+  });
+  it("keeps load failures inline and confirmation failures persistent in their dialog", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const user = userEvent.setup();
     const service = api({ moduleEnabled: false });
@@ -21,10 +63,11 @@ describe("ScreenEffectsPage", () => {
     await user.click(screen.getByRole("button", { name: "Confirm change" }));
     const alert = await screen.findByRole("alert");
     expect(screen.getAllByRole("alert")).toHaveLength(1);
-    expect(alert.closest(".management-toast")).toHaveClass("management-toast--failure");
+    expect(alert.closest(".management-toast")).toBeNull();
+    expect(screen.getByRole("dialog")).toContainElement(alert);
     expect(alert).toHaveTextContent("Wait for the local service.");
     expect(screen.getByRole("link", { name: "Open Diagnostics" })).toHaveAttribute("href", "/manage/diagnostics?reference=fixture-effects-ref");
-    await user.click(screen.getByRole("button", { name: "Dismiss error" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     cleanup();
     render(<ScreenEffectsPage api={{ ...api(), list: async () => { throw new ManagementHttpError("Read failed", "UNAVAILABLE", "fixture-effects-load-ref", "Restart the service."); } }} onEdit={vi.fn()} />);
@@ -90,8 +133,8 @@ describe("ScreenEffectsPage", () => {
 
     const browserSources = await screen.findByRole("region", { name: "Browser sources" });
     await userEvent.click(screen.getByRole("button", { name: "Expand browser sources" }));
-    const liveSource = within(browserSources).getByText("Screen Effects Live").closest("li");
-    const testSource = within(browserSources).getByText("Screen Effects Test").closest("li");
+    const liveSource = within(browserSources).getByRole("article", { name: "Screen Effects Live browser source" });
+    const testSource = within(browserSources).getByRole("article", { name: "Screen Effects Test browser source" });
 
     expect(liveSource).not.toBeNull();
     expect(testSource).not.toBeNull();
@@ -147,7 +190,7 @@ describe("ScreenEffectsPage", () => {
     const dialog = screen.getByRole("dialog", { name: "Regenerate Screen Effects Live URL?" });
     const confirm = within(dialog).getByRole("button", { name: "Regenerate URL" });
     expect(confirm).toBeDisabled();
-    await user.type(within(dialog).getByLabelText("Type REGENERATE to continue"), "REGENERATE");
+    await user.type(within(dialog).getByLabelText("Type REGENERATE to confirm"), "REGENERATE");
     await user.click(confirm);
 
     expect(service.regenerateBrowserSource).toHaveBeenCalledWith(expect.objectContaining({

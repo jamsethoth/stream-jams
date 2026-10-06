@@ -11,7 +11,7 @@ import type { ScreenEffectsApi } from "./screen-effects-api.js";
 
 const savedEffect = effect();
 
-const meta = { tags: ["mantine-feedback-tabs"],
+const meta = { tags: ["mantine-feedback-tabs", "mantine-stage5"],
   title: "Management/Screen Effects/Inventory",
   component: ScreenEffectsPage,
   args: {
@@ -33,7 +33,9 @@ export const Inventory: Story = {
     const browserSources = canvas.getByRole("region", { name: "Browser sources" });
     const liveLabel = within(browserSources).getByText("Screen Effects Live");
     await expect(liveLabel).toBeVisible();
-    await expect(getComputedStyle(liveLabel.parentElement!).display).toBe("grid");
+    await expect(liveLabel.closest("article")).toHaveClass("browser-source-row");
+    const controls = canvas.getByLabelText("Module controls");
+    await expect(Boolean(controls.compareDocumentPosition(browserSources) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     await expect(within(browserSources).getByText("URL available")).toBeVisible();
     await expect(within(browserSources).getByText("Screen Effects Test")).toBeVisible();
     await expect(within(browserSources).getByText("create required")).toBeVisible();
@@ -74,6 +76,20 @@ export const Empty: Story = {
 export const Loading: Story = {
   args: { api: createApi([], { list: () => new Promise(() => undefined) }) }
 };
+
+export const PendingModuleReview: Story = {
+  args: { api: createApi([savedEffect], { setModuleEnabled: () => new Promise(() => undefined) }) },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(await within(canvasElement).findByRole("button", { name: "Disable Screen Effects module" }));
+    const dialog = within(await within(document.body).findByRole("dialog", { name: "Disable Screen Effects module?" }));
+    await userEvent.click(dialog.getByRole("button", { name: "Confirm change" }));
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await userEvent.keyboard("{Escape}");
+    await expect(dialog.getByText(/Disabling the module stops/)).toBeVisible();
+  }
+};
+
+export const DisabledModule: Story = { args: { api: createApi([savedEffect], { getModuleEnabled: async () => false }) } };
 
 export const LoadError: Story = {
   beforeEach: () => {

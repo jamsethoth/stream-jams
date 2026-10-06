@@ -1,8 +1,3 @@
-.screen-effects-page {
-  display: grid;
-  gap: 20px;
-  min-width: 0;
-}
 
 .screen-effect-editor {
   display: flex;
@@ -72,8 +67,6 @@
   margin-top: 16px;
 }
 
-.screen-effects-list,
-.screen-effects-page .browser-sources-panel ul,
 .screen-effect-triggers ul {
   display: grid;
   gap: 12px;
@@ -82,8 +75,6 @@
   padding: 0;
 }
 
-.screen-effects-list > li,
-.screen-effects-page .browser-sources-panel li,
 .screen-effect-triggers li {
   align-items: center;
   background: var(--color-surface-subtle);
@@ -96,11 +87,7 @@
   padding: 16px;
 }
 
-.screen-effects-list > li > div:first-child,
-.screen-effects-page .browser-sources-panel li > div:first-child {
-  display: grid;
-  gap: 4px;
-}
+
 
 .screen-effect-editor__workspace {
   display: grid;
@@ -312,18 +299,8 @@
   padding: 0 0 0 8px;
 }
 
-.screen-effect-tree li button {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  color: var(--color-text);
-  display: grid;
-  gap: 4px;
-  padding: 10px;
-  text-align: left;
-  overflow-wrap: anywhere;
-  width: 100%;
-}
+.screen-effect-tree li .mantine-Button-root { height: auto; justify-content: flex-start; }
+.screen-effect-tree__variant { display: grid; gap: 4px; text-align: start; overflow-wrap: anywhere; }
 
 .screen-effect-tree li [aria-current="true"] {
   background: var(--color-accent-soft);
@@ -369,20 +346,11 @@
   margin: 0;
 }
 
-.screen-effects-browser-sources {
-  background: var(--color-surface-subtle);
-  border-block: 1px solid var(--color-border);
-  padding: 12px 14px;
-}
 
-.screen-effects-inventory h2 {
-  margin: 0 0 4px;
-}
 
-.screen-effects-inventory header p {
-  color: var(--color-text-muted);
-  margin: 0 0 12px;
-}
+
+
+
 
 .screen-effects-disclosure {
   background: transparent;
@@ -392,9 +360,7 @@
   padding: 0;
 }
 
-.screen-effects-browser-sources h2 {
-  margin: 0;
-}
+
 
 .screen-effects-search {
   display: grid;
@@ -403,22 +369,11 @@
   max-width: 320px;
 }
 
-.screen-effects-list > li {
-  background: var(--color-surface);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  padding: 12px;
-}
 
-.screen-effects-list p {
-  margin: 0;
-  font-size: 12px;
-}
 
-.screen-effects-list strong,
-.screen-effects-list span {
-  overflow-wrap: anywhere;
-}
+
+
+
 
 .screen-effect-editor label,
 .screen-effect-trigger-adders label {
@@ -519,9 +474,7 @@
     overflow: visible;
   }
 
-  .screen-effects-list > li {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
+
 
   .screen-effects-list__actions {
     grid-column: 1 / -1;
@@ -537,3 +490,7 @@
 .screen-effect-editor__stage > .screen-effect-preview__canvas { width: 100%; flex: 0 1 auto; min-height: 0; }
 
 .screen-effect-preview__canvas > p { color: #f5f5f5; }
+
+.screen-effect-set > .module-section-heading { flex-wrap: wrap; align-items: center; }
+.screen-effect-set > .module-section-heading > .screen-effects-list__actions { flex: 1 1 100%; }
+.screen-effects-section-header .mantine-Button-root { flex: 0 0 auto; }

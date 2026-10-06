@@ -50,6 +50,47 @@ function renderPage(state: TimerRunState | null = null) {
   const values = harness(state); const view = render(<TimersPage api={values.api} assetApi={{} as AssetApi} audioApi={values.audioApi} managementApi={{} as AssetLibraryManagementApi} />); return { ...values, view };
 }
 
+it("orders saved controls before profile outputs and definitions with correction focus", async () => {
+  window.history.replaceState(null, "", "/manage/modules/timers#browser-sources");
+  renderPage();
+  const controls = await screen.findByLabelText("Module controls");
+  const outputs = screen.getByRole("region", { name: "Browser sources" });
+  const workspace = screen.getByRole("region", { name: "Timer definitions" });
+  expect(controls.compareDocumentPosition(outputs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(outputs.compareDocumentPosition(workspace) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Collapse browser sources" })).toHaveFocus());
+  expect(screen.getByRole("article", { name: "Landscape browser source" })).toHaveTextContent("Listening now");
+  expect(screen.getByText("Module enabled")).toBeVisible();
+  expect(screen.queryByRole("textbox", { name: "Landscape browser source URL" })).not.toBeInTheDocument();
+  window.history.replaceState(null, "", "/");
+});
+
+it("locks a pending module confirmation and retains one scoped failure for explicit retry", async () => {
+  const user = userEvent.setup();
+  const values = harness();
+  let reject!: (cause: unknown) => void;
+  values.api.setModuleEnabled = vi.fn().mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; })).mockResolvedValue(false);
+  render(<TimersPage {...values} assetApi={{} as AssetApi} managementApi={{} as AssetLibraryManagementApi} />);
+  const trigger = await screen.findByRole("button", { name: "Disable Timers module" });
+  await user.click(trigger);
+  const dialog = screen.getByRole("dialog");
+  await user.dblClick(within(dialog).getByRole("button", { name: "Confirm change" }));
+  expect(values.api.setModuleEnabled).toHaveBeenCalledTimes(1);
+  expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+  await user.keyboard("{Escape}");
+  expect(dialog).toBeVisible();
+  reject(new ManagementHttpError("Unavailable", "UNAVAILABLE", "fixture-timer-confirm", "Wait for the service."));
+  const error = await within(dialog).findByRole("alert");
+  expect(error).toHaveTextContent("fixture-timer-confirm");
+  expect(error.closest(".management-toast")).toBeNull();
+  expect(screen.getAllByRole("alert")).toHaveLength(1);
+  await user.click(within(dialog).getByRole("button", { name: "Confirm change" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  expect(values.api.setModuleEnabled).toHaveBeenCalledTimes(2);
+  await user.click(screen.getByRole("button", { name: "Enable Timers module" }));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
 it("announces command outcomes once with fixed expiry, dismissal and typed diagnostics", async () => {
   vi.useFakeTimers();
   vi.spyOn(console, "error").mockImplementation(() => {});

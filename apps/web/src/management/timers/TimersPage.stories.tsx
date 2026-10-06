@@ -27,11 +27,11 @@ const buildApi = (states: readonly TimerRunState[], enabled = true): TimersApi =
   getAutomationCredential: async () => ({ configured: false, createdAt: null, rotatedAt: null }),
   rotateAutomationCredential: async () => ({ configured: true, createdAt: definition.createdAt, rotatedAt: null, token: `tmr_${"placeholder".repeat(4)}` }), revokeAutomationCredential: async () => {}
 });
-const meta = { tags: ["stream-local-media", "mantine-feedback-tabs", "mantine-feedback-timers"], title: "Management/Timers", component: TimersPage, parameters: { layout: "fullscreen" }, args: {
+const meta = { tags: ["stream-local-media", "mantine-feedback-tabs", "mantine-feedback-timers", "mantine-stage5"], title: "Management/Timers", component: TimersPage, parameters: { layout: "fullscreen" }, args: {
   assetApi, audioApi, managementApi: {} as AssetLibraryManagementApi, api: buildApi([])
 } } satisfies Meta<typeof TimersPage>;
 export default meta; type Story = StoryObj<typeof meta>;
-export const IdleInventory: Story = { play: async ({ canvasElement }) => {
+export const IdleInventory: Story = { tags: ["mantine-stage5-identity"], play: async ({ canvasElement }) => {
   const canvas = within(canvasElement);
   await canvas.findByRole("button", { name: /Wear oven mitts/u });
   const preview = canvas.getByLabelText("landscape timer preview");
@@ -39,6 +39,10 @@ export const IdleInventory: Story = { play: async ({ canvasElement }) => {
   await expect(await within(preview).findByRole("img", { name: `${definition.label} icon` })).toBeVisible();
   await expect(within(preview).getAllByRole("img", { name: "Default timer icon" }).length).toBeGreaterThan(0);
   const timerRow = canvas.getByRole("article", { name: `${definition.label} timer` });
+  const identity = within(timerRow).getByRole("button", { name: /Wear oven mitts/u });
+  const identityStyle = getComputedStyle(identity);
+  const contentStart = parseFloat(identityStyle.paddingLeft) + parseFloat(identityStyle.borderLeftWidth);
+  await expect(Math.abs(within(identity).getByText(definition.label).getBoundingClientRect().left - identity.getBoundingClientRect().left - contentStart)).toBeLessThanOrEqual(1);
   const idleBounds = within(timerRow).getByText("Idle", { exact: true }).getBoundingClientRect();
   const editBounds = within(timerRow).getByRole("button", { name: "Edit" }).getBoundingClientRect();
   await expect(Math.abs((idleBounds.top + idleBounds.height / 2) - (editBounds.top + editBounds.height / 2))).toBeLessThanOrEqual(1);
@@ -86,7 +90,10 @@ export const BrowserSourceSetup: Story = { play: async ({ canvasElement }) => {
   await userEvent.click(await canvas.findByRole("button", { name: "Expand browser sources" }));
   const landscape = canvas.getByRole("article", { name: "Landscape browser source" });
   await expect(within(landscape).getByText("Listening now")).toBeVisible();
-  await expect(within(landscape).getByText("1920 x 1080")).toBeVisible();
+  for (const dimensions of within(landscape).getAllByText("1920 x 1080")) {
+    await expect(dimensions).toBeVisible();
+    await expect(dimensions).toHaveAttribute("dir", "ltr");
+  }
   await userEvent.click(within(landscape).getByRole("button", { name: "Reveal Landscape URL" }));
   await expect(within(landscape).getByRole("button", { name: "Hide Landscape URL" })).toBeVisible();
 } };

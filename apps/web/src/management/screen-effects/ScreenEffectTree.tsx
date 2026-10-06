@@ -1,5 +1,6 @@
 import type { ScreenEffectDocument } from "@stream-jams/core";
 import type { ReactNode } from "react";
+import { Button } from "@mantine/core";
 
 export function ScreenEffectTree({ documents, selectedEffectId, selectedVariantId, onSelect, actions }: {
   readonly documents: readonly ScreenEffectDocument[];
@@ -18,9 +19,9 @@ export function ScreenEffectTree({ documents, selectedEffectId, selectedVariantI
       <summary><strong>{document.name}</strong><span>{document.enabled ? "Enabled" : "Disabled"} · {document.variants.length} variants</span></summary>
       {actions?.(document)}
       <ul>{document.variants.map((variant) => <li key={variant.id}>
-        <button aria-label={`${variant.name} variant`} aria-current={document.id === selectedEffectId && variant.id === selectedVariantId ? "true" : undefined} onClick={() => onSelect(document.id, variant.id)} type="button">
-          <strong>{variant.name}</strong><small>Weight {variant.weight} · {formatPercent(variant.enabled && enabledWeight > 0 ? variant.weight / enabledWeight * 100 : 0)} expected · {variant.enabled ? "Enabled" : "Disabled"}</small>
-        </button>
+        <Button variant="default" fullWidth aria-label={`${variant.name} variant`} aria-current={document.id === selectedEffectId && variant.id === selectedVariantId ? "true" : undefined} onClick={() => onSelect(document.id, variant.id)}>
+          <span className="screen-effect-tree__variant"><strong>{variant.name}</strong><small>Weight {variant.weight} · {formatPercent(variant.enabled && enabledWeight > 0 ? variant.weight / enabledWeight * 100 : 0)} expected · {variant.enabled ? "Enabled" : "Disabled"}</small></span>
+        </Button>
       </li>)}</ul>
     </details>
   );})}</div>;
