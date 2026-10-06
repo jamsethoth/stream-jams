@@ -1,3 +1,4 @@
+import type { ProviderRegistrationRecord, ProviderActivationRecordResult, ProviderRegistrationRepository } from "./provider-registration-repository.js";
 import type { DatabaseSync } from "node:sqlite";
 import {
   actionableManagementErrorSchema,
@@ -7,27 +8,13 @@ import {
   ttsProviderSafetySettingsSchema,
   ttsVoiceSchema,
   type ProviderCapability,
-  type RegisteredProviderView,
-  type SecretRef,
   type TtsProviderSafetySettings,
-  type TtsVoice
 } from "@stream-jams/core";
 import { runInTransaction } from "../db/database.js";
 
-export interface ProviderRegistrationRecord {
-  readonly provider: RegisteredProviderView;
-  readonly configuration: Readonly<Record<string, unknown>>;
-  readonly availableVoices: readonly TtsVoice[];
-  readonly secretRef: SecretRef | null;
-  readonly ttsSafety: TtsProviderSafetySettings | null;
-  readonly createdAt: string;
-  readonly updatedAt: string;
-}
 
-export interface ProviderActivationRecordResult {
-  readonly provider: ProviderRegistrationRecord;
-  readonly replacedProviderId: string | null;
-}
+
+
 
 interface ProviderRegistrationRow {
   readonly id: unknown;
@@ -53,7 +40,7 @@ const providerColumns = `
   tts_safety_json, created_at, updated_at
 `;
 
-export class SqliteProviderRegistrationRepository {
+export class SqliteProviderRegistrationRepository implements ProviderRegistrationRepository {
   readonly #connection: DatabaseSync;
   readonly #now: () => Date;
 

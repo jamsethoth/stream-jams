@@ -22,7 +22,6 @@ import {
   redoEditorUpdate,
   reorderLayer,
   revertEditorChanges,
-  snapLayerGeometry,
   toggleLayerVisible,
   undoEditorUpdate,
   updateLayer,
@@ -492,39 +491,7 @@ describe("alert editor profile geometry", () => {
     });
   });
 
-  it("snaps positions to grid, canvas edges, and center lines for each profile", () => {
-    expect(
-      snapLayerGeometry(
-        { x: 13, y: 27, width: 100, height: 80 },
-        "landscape",
-        { gridSize: 10, threshold: 4 }
-      )
-    ).toEqual({ x: 10, y: 30, width: 100, height: 80 });
 
-    expect(
-      snapLayerGeometry(
-        { x: 3, y: 997, width: 100, height: 80 },
-        "landscape",
-        { gridSize: 64, threshold: 4 }
-      )
-    ).toEqual({ x: 0, y: 1000, width: 100, height: 80 });
-
-    expect(
-      snapLayerGeometry(
-        { x: 913, y: 497, width: 100, height: 80 },
-        "landscape",
-        { gridSize: 64, threshold: 4 }
-      )
-    ).toEqual({ x: 910, y: 500, width: 100, height: 80 });
-
-    expect(
-      snapLayerGeometry(
-        { x: 977, y: 1837, width: 100, height: 80 },
-        "vertical",
-        { gridSize: 64, threshold: 4 }
-      )
-    ).toEqual({ x: 980, y: 1840, width: 100, height: 80 });
-  });
 });
 
 const animation = {

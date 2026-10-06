@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ProviderRegistrationRecord } from "../modules/providers/sqlite-provider-registration-repository.js";
+import type { ProviderRegistrationRecord } from "../modules/providers/provider-registration-repository.js";
+
 import { syncEventSourceRuntimes } from "./event-source-runtime-coordinator.js";
 
 describe("syncEventSourceRuntimes", () => {

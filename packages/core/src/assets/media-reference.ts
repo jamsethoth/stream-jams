@@ -32,9 +32,6 @@ export const desktopMediaOwnershipSchema = z.object({
   recipientId: identity,
   ownerId: identity
 }).strict();
-export function assertDesktopMediaProtocolVersion(candidate: unknown): asserts candidate is typeof desktopMediaProtocolVersion {
-  if (candidate !== desktopMediaProtocolVersion) throw new Error("Incompatible desktop media protocol. Restart using a complete matching Stream Jams package.");
-}
 export type MediaVersionSnapshot = z.infer<typeof mediaVersionSnapshotSchema>;
 export type TrustedMediaGrant = z.infer<typeof trustedMediaGrantSchema>;
 export type PrivateMediaReference = z.infer<typeof privateMediaReferenceSchema>;

@@ -1,7 +1,8 @@
-import type { SqliteProviderRegistrationRepository } from "../modules/providers/sqlite-provider-registration-repository.js";
+import type { ProviderRegistrationRepository } from "../modules/providers/provider-registration-repository.js";
+
 
 export interface EventSourceRuntimeCoordinatorOptions {
-  readonly repository: Pick<SqliteProviderRegistrationRepository, "findActive">;
+  readonly repository: Pick<ProviderRegistrationRepository, "findActive">;
   readonly twitchRuntime: {
     connectStoredAccount(): Promise<unknown>;
     disconnect(): void;

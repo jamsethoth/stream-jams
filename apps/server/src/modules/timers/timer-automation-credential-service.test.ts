@@ -1,12 +1,26 @@
+import { SqliteTimerAutomationCredentialRepository } from "./sqlite-timer-automation-credential-repository.js";
 import { describe, expect, it } from "vitest";
 import { createInMemoryStreamJamsDatabase } from "../db/database.js";
 import { TimerAutomationCredentialService } from "./timer-automation-credential-service.js";
 
 describe("TimerAutomationCredentialService", () => {
+  it("does not issue a token when a substitute repository rejects persistence", () => {
+    const service = new TimerAutomationCredentialService({
+      repository: {
+        read: () => null,
+        issueOrRotate: () => { throw new Error("write failed"); },
+        revoke: () => {}
+      },
+      generateToken: () => "tmr_first-generated-token_1234567890"
+    });
+    expect(() => service.createOrRotate()).toThrow("write failed");
+    expect(service.verify("tmr_first-generated-token_1234567890")).toBe(false);
+  });
+
   it("returns the raw token only on issue while storing one hash-only verifier", () => {
     using database = createInMemoryStreamJamsDatabase();
     const service = new TimerAutomationCredentialService({
-      connection: database.connection,
+      repository: new SqliteTimerAutomationCredentialRepository(database.connection),
       now: () => new Date("2026-09-29T01:00:00.000Z"),
       generateToken: () => "tmr_first-generated-token_1234567890"
     });
@@ -31,7 +45,7 @@ describe("TimerAutomationCredentialService", () => {
     const tokens = ["tmr_first-generated-token_1234567890", "tmr_second-generated-token_123456789"];
     let now = new Date("2026-09-29T01:00:00.000Z");
     const service = new TimerAutomationCredentialService({
-      connection: database.connection,
+      repository: new SqliteTimerAutomationCredentialRepository(database.connection),
       now: () => now,
       generateToken: () => tokens.shift()!
     });
@@ -48,7 +62,7 @@ describe("TimerAutomationCredentialService", () => {
   it("revokes idempotently and rejects malformed or revoked bearer values", () => {
     using database = createInMemoryStreamJamsDatabase();
     const service = new TimerAutomationCredentialService({
-      connection: database.connection,
+      repository: new SqliteTimerAutomationCredentialRepository(database.connection),
       generateToken: () => "tmr_revocable-generated-token_123456"
     });
     const issued = service.createOrRotate();

@@ -897,6 +897,11 @@ describe("AlertSetsPage", () => {
     expect(within(dialog).getByLabelText("Event type")).toHaveValue("raid");
     expect(within(dialog).getByLabelText("Alert name")).toHaveValue("Retry raid");
     expect(dialog).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Add alert" }));
+    const reopened = screen.getByRole("dialog", { name: "Add alert" });
+    expect(within(reopened).queryByRole("alert")).not.toBeInTheDocument();
+    expect(within(reopened).getByLabelText("Alert name")).not.toHaveValue("Retry raid");
 
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(createAlert).toHaveBeenCalledOnce();

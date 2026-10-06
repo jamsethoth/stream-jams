@@ -1,3 +1,4 @@
+import { moduleOccurrenceKey } from "../playback/occurrence-identity.js";
 import {
   overlayInstructionSchema,
   type AudioPlaybackSink,
@@ -14,7 +15,7 @@ import {
 import type {
   DesktopVisualPlaybackSink,
   OverlayPlaybackInstructionSink
-} from "../playback/playback-coordinator.js";
+} from "../playback/playback-ports.js";
 
 export interface EffectPlaybackAudioOutputService {
   preparePlayback(playbackId: string, audio: readonly ResolvedAlertAudio[]): Promise<{
@@ -66,9 +67,6 @@ interface ActivePlayback {
 const COMPLETION_GRACE_MS = 5_000;
 const START_DELAY_MS = 100;
 
-export function effectOccurrenceKey(moduleId: string, occurrenceId: string): string {
-  return JSON.stringify([moduleId, occurrenceId]);
-}
 
 export class EffectPlaybackCoordinator {
   readonly #localMediaService: LocalMediaService | undefined;
@@ -133,7 +131,7 @@ export class EffectPlaybackCoordinator {
       while (!this.#closed && this.#active === null && await this.#isModuleEnabled()) {
         const occurrence = this.#queue.advance(this.#getSafety());
         if (occurrence === null) return;
-        const ready = await this.#validateReferences(occurrence.content, effectOccurrenceKey("screen-effects", occurrence.id))
+        const ready = await this.#validateReferences(occurrence.content, moduleOccurrenceKey("screen-effects", occurrence.id))
           && await this.#validateOutputAvailability(occurrence.content)
           && await this.#isModuleEnabled();
         if (this.#queue.snapshot().current?.id !== occurrence.id) return;
@@ -205,7 +203,7 @@ export class EffectPlaybackCoordinator {
   }
 
   #start(occurrence: EffectOccurrence): void {
-    const transportId = effectOccurrenceKey("screen-effects", occurrence.id);
+    const transportId = moduleOccurrenceKey("screen-effects", occurrence.id);
     const startsAtEpochMs = this.#now() + START_DELAY_MS;
     const versions = this.#localMediaService?.versions(transportId);
     const bind = (instruction: OverlayInstruction): OverlayInstruction => versions === undefined ? instruction : { ...instruction, assetVersions: versions };
@@ -535,7 +533,7 @@ function createBrowserInstructions(
     if (variant.visual !== null && variant.visualOutputs.browserSource) {
       instructions.push(createInstruction({
         occurrence,
-        id: `${effectOccurrenceKey("screen-effects", occurrence.id)}:visual:${suffix}`,
+        id: `${moduleOccurrenceKey("screen-effects", occurrence.id)}:visual:${suffix}`,
         purpose,
         target,
         startsAtEpochMs,
@@ -550,7 +548,7 @@ function createBrowserInstructions(
     if (variant.outputs.browserSource && variant.visual?.mediaType === "video" && variant.visual.playEmbeddedAudio) {
       instructions.push(createInstruction({
         occurrence,
-        id: `${effectOccurrenceKey("screen-effects", occurrence.id)}:video-audio:${suffix}`,
+        id: `${moduleOccurrenceKey("screen-effects", occurrence.id)}:video-audio:${suffix}`,
         purpose,
         target,
         startsAtEpochMs,
@@ -568,7 +566,7 @@ function createBrowserInstructions(
     if (variant.outputs.browserSource && variant.sound !== null) {
       instructions.push(createInstruction({
         occurrence,
-        id: `${effectOccurrenceKey("screen-effects", occurrence.id)}:sound:${suffix}`,
+        id: `${moduleOccurrenceKey("screen-effects", occurrence.id)}:sound:${suffix}`,
         purpose,
         target,
         startsAtEpochMs,
@@ -595,7 +593,7 @@ function createDesktopInstructions(
   if (variant.visual === null || !variant.visualOutputs.desktop) return [];
   return [createInstruction({
     occurrence,
-    id: `${effectOccurrenceKey("screen-effects", occurrence.id)}:desktop-visual`,
+    id: `${moduleOccurrenceKey("screen-effects", occurrence.id)}:desktop-visual`,
     purpose: "live",
     target: { scope: "module", targetProfileId: "landscape" },
     startsAtEpochMs,

@@ -80,7 +80,7 @@ describe("SettingsPanel", () => {
     await user.click(screen.getByRole("button", { name: "Go home" }));
     await user.click(await screen.findByRole("button", { name: "Save and leave" }));
     await waitFor(() => expect(window.location.pathname).toBe("/manage"));
-    expect(managementApi.updateServerConfig).toHaveBeenCalledWith({ host: "127.0.0.1", port: 40123 });
+    expect(managementApi.updateServerConfig).toHaveBeenCalledWith({ host: "127.0.0.1" as const, port: 40123 });
     expect(surfaceApi.save).toHaveBeenCalledWith(expect.objectContaining({ layers: [{ moduleId: "alerts", visible: false }] }));
   });
 
@@ -127,14 +127,14 @@ describe("SettingsPanel", () => {
     await user.clear(port);
     await user.type(port, "40123");
     await user.click(within(panel).getByRole("button", { name: "Save server settings" }));
-    expect(managementApi.updateServerConfig).toHaveBeenCalledWith({ host: "127.0.0.1", port: 40123 });
+    expect(managementApi.updateServerConfig).toHaveBeenCalledWith({ host: "127.0.0.1" as const, port: 40123 });
   });
 
   it("shows only retry when the initial settings load fails", async () => {
     const user = userEvent.setup();
     const getServerConfig = vi.fn()
       .mockRejectedValueOnce(new Error("Local service unavailable"))
-      .mockResolvedValue({ host: "127.0.0.1", port: 39187 });
+      .mockResolvedValue({ host: "127.0.0.1" as const, port: 39187 });
     const managementApi = createManagementApi({ getServerConfig });
 
     render(<SettingsPanel managementApi={managementApi} />);
@@ -410,7 +410,7 @@ function createManagementApi(overrides: Partial<SettingsApi> = {}): SettingsApi 
   return {
     getDesktopConfig: vi.fn(async () => ({ available: false, closeToTray: true })),
     updateDesktopConfig: vi.fn(async (input) => ({ ...input, available: true })),
-    getServerConfig: vi.fn(async () => ({ host: "127.0.0.1", port: 39187 })),
+    getServerConfig: vi.fn(async () => ({ host: "127.0.0.1" as const, port: 39187 })),
     updateServerConfig: vi.fn(async (input) => input),
     getConfigurationBackupSummary: vi.fn(async () => ({
       state: "ready" as const,

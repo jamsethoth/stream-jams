@@ -1,3 +1,4 @@
+import { projectMediaDurationCandidates } from "./media-duration-candidates.js";
 import type {
   AlertMatcher,
   AlertMatch,
@@ -23,7 +24,8 @@ import type {
 import { collectAlertDurationAssetIds, PlaybackQueueItemNotFoundError, resolveAlertAudio, resolveMediaDuration } from "@stream-jams/core";
 import type { AudioPlaybackSink, DeviceAudioBatch, DeviceAudioResult, PlaybackQueueItem } from "@stream-jams/core";
 import type { AudioOutputService } from "../audio/audio-output-service.js";
-import { effectOccurrenceKey } from "../screen-effects/effect-playback-coordinator.js";
+import { moduleOccurrenceKey } from "./occurrence-identity.js";
+import type { OverlayPlaybackInstructionSink, DesktopVisualPlaybackSink } from "./playback-ports.js";
 import type { LocalMediaService } from "../assets/local-media-service.js";
 
 type PlaybackAudioOutputService = Pick<AudioOutputService, "preparePlayback"> & Partial<Pick<AudioOutputService, "listRoutes">>;
@@ -52,21 +54,6 @@ function dedupeTargets(targets: readonly AlertResolverTarget[]): readonly AlertR
   }
 
   return deduped;
-}
-
-export interface OverlayPlaybackInstructionSink {
-  preparePlaybackInstruction?(instruction: OverlayInstruction): Promise<{ readonly deliveredClientIds: readonly string[]; start(startsAtEpochMs: number): void }>;
-  deliverPlaybackInstruction(instruction: OverlayInstruction): { readonly deliveredClientIds: readonly string[] } | void;
-  setPlaybackMuted?(muted: boolean): void;
-  setModuleMutes?(state: import("@stream-jams/core").ModuleMuteState): void;
-  stopPlaybackInstructions?(instructionIds: readonly string[]): void;
-}
-
-export interface DesktopVisualPlaybackSink {
-  prepare?(occurrenceId: string, instructions: readonly OverlayInstruction[]): Promise<{ start(startsAtEpochMs: number): Promise<void> }>;
-  play(occurrenceId: string, instructions: readonly OverlayInstruction[], startsAtEpochMs: number): Promise<void>;
-  stop(occurrenceId: string): Promise<void>;
-  close(): Promise<void>;
 }
 
 export interface PlaybackCoordinatorDependencies {
@@ -159,6 +146,9 @@ export class PlaybackCoordinator {
     this.#assetRepository = dependencies.assetRepository ?? null;
     this.#assetDurationCatalog = dependencies.assetDurationCatalog ?? null;
     this.#overlayPlaybackSink = dependencies.overlayPlaybackSink ?? null;
+    if (this.#overlayPlaybackSink !== null && (typeof this.#overlayPlaybackSink.setPlaybackMuted !== "function" || typeof this.#overlayPlaybackSink.setModuleMutes !== "function")) {
+      throw new Error("Browser overlay mute capabilities are required.");
+    }
     this.#audioPlaybackSink = dependencies.audioPlaybackSink ?? null;
     this.#desktopVisualSink = dependencies.desktopVisualSink ?? null;
     this.#audioOutputService = dependencies.audioOutputService ?? null;
@@ -192,7 +182,7 @@ export class PlaybackCoordinator {
     const ids = this.#browserInstructionIds;
     this.#stopBrowserInstructions(ids);
     this.#closePromise = Promise.allSettled([this.#audioPlaybackSink?.close(), this.#desktopVisualSink?.close(),
-      ...(this.#localMediaService === undefined || this.#queue.getSnapshot().current === null ? [] : [this.#localMediaService.release(effectOccurrenceKey("alerts", this.#queue.getSnapshot().current!.id))])
+      ...(this.#localMediaService === undefined || this.#queue.getSnapshot().current === null ? [] : [this.#localMediaService.release(moduleOccurrenceKey("alerts", this.#queue.getSnapshot().current!.id))])
     ]).then(results => {
       const failures = results.filter(result => result.status === "rejected").map(result => result.reason as unknown);
       if (failures.length > 0) throw new AggregateError(failures, "Playback output cleanup failed");
@@ -300,16 +290,7 @@ export class PlaybackCoordinator {
     const records = this.#localMediaService === undefined ? await this.#assetDurationCatalog.getMany(ids) : await this.#localMediaService.captureAdmission(ids);
     const assetDurations = Object.fromEntries(ids.map((assetId) => [assetId, records.get(assetId)?.durationMs ?? null]));
     const resolvedDocuments = new Map([...documents].map(([id, document]) => {
-      const candidates = collectAlertDurationAssetIds(document).flatMap((assetId) => {
-        const record = records.get(assetId);
-        return record === undefined ? [] : [{
-          assetId,
-          label: record.originalFileName,
-          mediaType: record.mediaType,
-          durationMs: record.durationMs,
-          eligible: true
-        }];
-      });
+      const candidates = projectMediaDurationCandidates(collectAlertDurationAssetIds(document), records);
       const resolution = resolveMediaDuration({
         mode: document.durationMode ?? "custom",
         customDurationMs: document.durationMs,
@@ -399,7 +380,7 @@ export class PlaybackCoordinator {
     const snapshot = this.#queue.enqueue({ ...input, alerts: input.alerts.map(alert => ({ ...alert, overlayInstruction: { ...alert.overlayInstruction, assetVersions } })) });
     const admitted = [snapshot.current, ...snapshot.queued].find(item => item !== null && !existing.has(item.id));
     if (admitted !== undefined && admitted !== null) {
-      this.#localMediaService.commitAdmission(effectOccurrenceKey("alerts", admitted.id));
+      this.#localMediaService.commitAdmission(moduleOccurrenceKey("alerts", admitted.id));
       this.#replayDocuments.set(admitted.id, structuredClone(input.replayDocuments ?? []));
     }
     return this.#deliverCurrent(snapshot);
@@ -481,8 +462,8 @@ export class PlaybackCoordinator {
     const snapshot = this.#deliverCurrent(this.#queue.setSafetyState(state));
     const failures: unknown[] = [];
     try {
-      if (state.moduleMutes !== undefined) this.#overlayPlaybackSink?.setModuleMutes?.(state.moduleMutes);
-      else this.#overlayPlaybackSink?.setPlaybackMuted?.(snapshot.muted);
+      if (state.moduleMutes !== undefined) this.#overlayPlaybackSink?.setModuleMutes(state.moduleMutes);
+      else this.#overlayPlaybackSink?.setPlaybackMuted(snapshot.muted);
     } catch (error) {
       void this.#recordOverlayTransportFailure(
         "Browser overlay mute state could not be updated.",
@@ -549,7 +530,7 @@ export class PlaybackCoordinator {
   async mute(): Promise<PlaybackQueueSnapshot> {
     await this.#persistPlaybackSafetyState({ muted: true });
     const snapshot = this.#queue.mute();
-    this.#overlayPlaybackSink?.setPlaybackMuted?.(snapshot.muted);
+    this.#overlayPlaybackSink?.setPlaybackMuted(snapshot.muted);
     await this.#audioPlaybackSink?.setMuted(snapshot.muted);
     return snapshot;
   }
@@ -557,7 +538,7 @@ export class PlaybackCoordinator {
   async unmute(): Promise<PlaybackQueueSnapshot> {
     await this.#persistPlaybackSafetyState({ muted: false });
     const snapshot = this.#queue.unmute();
-    this.#overlayPlaybackSink?.setPlaybackMuted?.(snapshot.muted);
+    this.#overlayPlaybackSink?.setPlaybackMuted(snapshot.muted);
     await this.#audioPlaybackSink?.setMuted(snapshot.muted);
     return snapshot;
   }
@@ -618,7 +599,7 @@ export class PlaybackCoordinator {
       this.#browserDispatchComplete = false;
       this.#devicePlayback = null;
       this.#desktopPlayback = null;
-      const transportId = effectOccurrenceKey("alerts", snapshot.current.id);
+      const transportId = moduleOccurrenceKey("alerts", snapshot.current.id);
       const desktopInstructions = snapshot.current.alerts.filter(alert => alert.desktopVisualEligible === true).map(alert => alert.overlayInstruction).filter(instruction =>
         instruction.moduleId === "alerts" && instruction.scope === "module" && instruction.targetProfileId === "landscape" &&
         (instruction.visual !== null || instruction.text !== null || instruction.shape != null));

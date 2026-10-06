@@ -41,11 +41,13 @@ import type { ScreenEffectsApi } from "./screen-effects-api.js";
 import "./screen-effects.css";
 import { ScreenEffectTree } from "./ScreenEffectTree.js";
 
+export type ScreenEffectEditorManagementApi = Pick<ManagementApi, "listAssetLibraryItems" | "updateAssetMetadata" | "getAssetChangeImpact" | "deleteAsset" | "getTwitchStatus" | "getTwitchCustomRewards" | "listRegisteredProviders" | "getStreamerBotSubscriptions"> & Partial<Pick<ManagementApi, "repairAssetDuration">>;
+
 export interface ScreenEffectEditorProps {
   readonly api: ScreenEffectsApi;
   readonly assetApi: AssetApi;
   readonly audioApi: AudioApi;
-  readonly managementApi: ManagementApi;
+  readonly managementApi: ScreenEffectEditorManagementApi;
   readonly effectId: string;
   readonly create: boolean;
   readonly onBack: () => void;
@@ -750,7 +752,7 @@ function LiveTestDialog({ api, document, onClose, onError, onNotice, open, route
 }
 
 async function loadEditorContext(
-  managementApi: ManagementApi,
+  managementApi: ScreenEffectEditorManagementApi,
   audioApi: AudioApi,
   previous: EditorContext = emptyContext
 ): Promise<EditorContext> {
@@ -802,7 +804,7 @@ function toContextFailure(
     : { source, detail: message(result.reason, fallback) };
 }
 
-async function loadStreamerBotContext(managementApi: ManagementApi): Promise<StreamerBotSubscriptionCatalog | null> {
+async function loadStreamerBotContext(managementApi: ScreenEffectEditorManagementApi): Promise<StreamerBotSubscriptionCatalog | null> {
   const providers = await managementApi.listRegisteredProviders("event-source");
   const provider = providers.find((candidate) => candidate.kind === "streamerbot" && candidate.active);
   return provider === undefined ? null : managementApi.getStreamerBotSubscriptions(provider.id);

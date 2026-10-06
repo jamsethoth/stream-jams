@@ -1,3 +1,4 @@
+import { projectMediaDurationCandidates } from "../playback/media-duration-candidates.js";
 import {
   DefaultTemplateRenderer,
   SafeTemplateRenderer,
@@ -527,16 +528,7 @@ export class AlertEditorService {
       customDurationMs: document.durationMs,
       fallbackDurationMs: 5_000,
       maximumDurationMs: 120_000,
-      candidates: collectAlertDurationAssetIds(document).flatMap((assetId) => {
-        const asset = assets.get(assetId);
-        return asset === undefined ? [] : [{
-          assetId,
-          label: asset.originalFileName,
-          mediaType: asset.mediaType,
-          durationMs: asset.durationMs,
-          eligible: true
-        }];
-      })
+      candidates: projectMediaDurationCandidates(collectAlertDurationAssetIds(document), assets)
     });
     return { ...document, durationMs: resolution.durationMs };
   }

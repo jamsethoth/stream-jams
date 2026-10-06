@@ -1,3 +1,4 @@
+import type { MusicRuntimeSourceAdapter, MusicArtworkCapability } from "./music-source-adapter.js";
 import { isPearProtocolSocketError } from "./pear-socket-error.js";
 import { NamedError } from "@stream-jams/core";
 import { pearArtworkPolicy, type MusicArtworkPolicy, type PrivateArtworkDescriptor } from "./music-artwork-policy.js";
@@ -6,7 +7,7 @@ import * as http from "node:http";
 import * as https from "node:https";
 import { isIP } from "node:net";
 import WebSocket, { type RawData } from "ws";
-import { musicSnapshotSchema, musicStatusSchema, type MusicConnectionTestResult, type MusicSnapshot, type MusicSourceAdapter, type MusicStatus, type PearConfiguration, type ProviderValidationResult } from "@stream-jams/core";
+import { musicSnapshotSchema, musicStatusSchema, type MusicConnectionTestResult, type MusicSnapshot, type MusicStatus, type PearConfiguration, type ProviderValidationResult } from "@stream-jams/core";
 import { parsePearConfiguration, resolvePearDestination } from "./pear-config.js";
 import { extractPearArtworkDescriptor, normalizePearObservation } from "./pear-normalization.js";
 
@@ -37,7 +38,11 @@ export interface PearMusicSourceOptions {
 interface SongResponse { readonly observation: unknown; }
 interface OpenSocket { readonly socket: WebSocket; readonly closed: Promise<never>; }
 
-export class PearMusicSource implements MusicSourceAdapter {
+export class PearMusicSource implements MusicRuntimeSourceAdapter {
+  readonly artwork: MusicArtworkCapability = {
+    getArtworkPolicy: () => this.getArtworkPolicy(),
+    getArtworkDescriptor: (ref, owner) => this.getArtworkDescriptor(ref, owner)
+  };
   readonly #options: PearMusicSourceOptions;
   readonly #config: PearConfiguration;
   readonly #now: () => number;

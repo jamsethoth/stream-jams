@@ -342,7 +342,7 @@ describe("ManagementApp", () => {
     await user.click(within(settingsPanel).getByRole("button", { name: "Save server settings" }));
 
     expect(managementApi.updateServerConfig).toHaveBeenCalledWith({
-      host: "127.0.0.1",
+      host: "127.0.0.1" as const,
       port: 40123
     });
     expect(screen.queryByRole("link", { name: "Playback controls" })).not.toBeInTheDocument();
@@ -559,7 +559,7 @@ function createManagementApi(): ManagementApi {
       return {
         provider,
         configuration: provider.kind === "streamerbot"
-          ? { protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/" }
+          ? { protocol: "ws", host: "127.0.0.1" as const, port: 8080, endpoint: "/" }
           : {},
         availableVoices: [],
         ttsSafety: null
@@ -693,7 +693,7 @@ function createManagementApi(): ManagementApi {
     preflightConfigurationRestore: vi.fn(async () => { throw new Error("not called"); }),
     restoreConfiguration: vi.fn(async () => { throw new Error("not called"); }),
     getServerConfig: vi.fn(async () => ({
-      host: "127.0.0.1",
+      host: "127.0.0.1" as const,
       port: 39187
     })),
     getDesktopConfig: vi.fn(async () => ({ available: false, closeToTray: true })),
@@ -821,7 +821,7 @@ function createManagementApi(): ManagementApi {
       providerErrors: [],
       runtimeLogging: null,
       runtimeLogEntries: [],
-      runtimeLogTruncated: false
+      runtimeLogTruncated: false, runtimeLogSkippedCorruptRecords: 0,
     }))
   };
 }

@@ -272,7 +272,7 @@ function createManagementApi(): ManagementApi {
       };
     },
     async exportDebugDiagnostics() {
-      return {
+      return { runtimeLogSkippedCorruptRecords: 0,
         generatedAt: "2026-05-31T02:05:00.000Z",
         debugExport: true as const,
         rawEventLogs: [],

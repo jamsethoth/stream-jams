@@ -1,6 +1,7 @@
 import type { EffectTrigger, NormalizedStreamEvent, SecretRef, StreamerBotSubscriptionSelection } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
-import type { ProviderRegistrationRecord } from "../providers/sqlite-provider-registration-repository.js";
+import type { ProviderRegistrationRecord } from "../providers/provider-registration-repository.js";
+
 import type {
   StreamerBotClientStatus,
   StreamerBotConnectionInput,

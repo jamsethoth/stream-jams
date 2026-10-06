@@ -1,3 +1,4 @@
+import { renderAlertTemplatePreview } from "./template-preview.js";
 import {
   assessAlertConfiguration,
   alertFontPresets,
@@ -668,14 +669,14 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           layerId: layer.id,
           text: (await props.managementApi.previewModeration({
             target: "rendered",
-            text: renderTemplateValue(layer.template, templateContext)
+            text: renderAlertTemplatePreview(layer.template, templateContext)
           })).text
         }))),
         Promise.all(ttsLayers.map(async (layer) => ({
           layerId: layer.id,
           text: (await props.managementApi.previewModeration({
             target: "tts",
-            text: renderTemplateValue(layer.template, templateContext)
+            text: renderAlertTemplatePreview(layer.template, templateContext)
           })).text
         })))
       ]);
@@ -2115,13 +2116,6 @@ function parseSample(value: string): Record<string, unknown> | null {
   }
 }
 
-function renderTemplateValue(template: string, values: Record<string, unknown>): string {
-  return template.replace(/\{([^{}]+)\}/gu, (_match, path: string) => {
-    const value = path.trim().split(".").reduce<unknown>((current, segment) =>
-      typeof current === "object" && current !== null ? (current as Record<string, unknown>)[segment] : undefined, values);
-    return value === null || value === undefined || typeof value === "object" ? "" : String(value);
-  });
-}
 
 function compatibleMediaTypes(type: PickerState["type"]): readonly AssetMediaType[] {
   return type === "image" ? ["image"] : type === "video" ? ["gif", "video"] : ["audio"];

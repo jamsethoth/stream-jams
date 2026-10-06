@@ -290,5 +290,5 @@ function basicExport(): DiagnosticsExportView {
 }
 
 function debugExport(): DiagnosticsDebugExportView {
-  return { ...basicExport(), debugExport: true, runtimeLogEntries: [], runtimeLogTruncated: false };
+  return { ...basicExport(), debugExport: true, runtimeLogEntries: [], runtimeLogTruncated: false, runtimeLogSkippedCorruptRecords: 0 };
 }

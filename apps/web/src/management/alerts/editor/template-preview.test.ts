@@ -7,6 +7,10 @@ afterEach(() => {
 });
 
 describe("renderAlertTemplatePreview", () => {
+  it("ignores inherited and non-data values", () => {
+    const values: Record<string, unknown> = Object.assign(Object.create({ inherited: "hidden" }), { fn: () => "hidden", symbol: Symbol("hidden"), own: "<Viewer>" });
+    expect(renderAlertTemplatePreview("{inherited}/{fn}/{symbol}/{own}", values)).toBe("///<Viewer>");
+  });
   it("delegates nested placeholder interpolation to DefaultTemplateRenderer without HTML escaping", () => {
     const render = vi.spyOn(DefaultTemplateRenderer.prototype, "render");
     const values = { actor: { displayName: "<Viewer>" } };

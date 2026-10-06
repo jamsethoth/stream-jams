@@ -7,10 +7,8 @@ import {
   type StreamerBotSubscriptionSelection
 } from "@stream-jams/core";
 import type { EventIngestionResult } from "../events/event-ingestion-service.js";
-import type {
-  ProviderRegistrationRecord,
-  SqliteProviderRegistrationRepository
-} from "../providers/sqlite-provider-registration-repository.js";
+import type { ProviderRegistrationRecord, ProviderRegistrationRepository } from "../providers/provider-registration-repository.js";
+
 import type {
   StreamerBotClientStatus,
   StreamerBotConnectionInput,
@@ -65,7 +63,7 @@ export interface StreamerBotRuntimeStatus {
 }
 
 export interface StreamerBotRuntimeServiceOptions {
-  readonly repository: Pick<SqliteProviderRegistrationRepository, "findActive">;
+  readonly repository: Pick<ProviderRegistrationRepository, "findActive">;
   readonly secretStore: Pick<SecretStore, "getSecret">;
   readonly createClient: (
     onEvent: (envelope: StreamerBotEventEnvelope) => void | Promise<void>

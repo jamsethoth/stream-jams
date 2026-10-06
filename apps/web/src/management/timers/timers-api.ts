@@ -70,7 +70,7 @@ export function createHttpTimersApi(options: HttpManagementClientOptions = {}): 
     async list() { return timerDefinitionSchema.array().parse(await client.getJson("/timers", "Unable to load timers.")); },
     async listStates() { return timerRunStateSchema.array().parse(await client.getJson("/timers/state", "Unable to load active timers.")); },
     async listBrowserSources() {
-      const response = await client.getJson<unknown>("/timers/browser-sources", "Unable to load Timers Browser Sources.");
+      const response = await client.getJson("/timers/browser-sources", "Unable to load Timers Browser Sources.");
       if (!Array.isArray(response)) throw new TypeError("Expected a Timers Browser Sources response array");
       return response.map(parseBrowserSource);
     },

@@ -1,3 +1,6 @@
+import type { DiagnosticsExportView, DiagnosticsDebugExportView } from "@stream-jams/core";
+import type { DiagnosticsEventLogView, DiagnosticsPlaybackLogView, DiagnosticsProviderErrorView, DiagnosticsView } from "@stream-jams/core";
+export type { DiagnosticsEventLogView, DiagnosticsAlertMatchLogView, DiagnosticsPlaybackLogView, DiagnosticsProviderErrorView, DiagnosticsView } from "@stream-jams/core";
 import {
   diagnosticsWorkspaceViewSchema,
   type DiagnosticsEventView,
@@ -52,55 +55,19 @@ export interface DiagnosticsWorkspaceOptions extends DiagnosticsListOptions {
   readonly sinceHours?: number | undefined;
 }
 
-export interface DiagnosticsEventLogView {
-  readonly id: string;
-  readonly eventId: string;
-  readonly providerId: string;
-  readonly eventType: string;
-  readonly actorDisplayName: string;
-  readonly status: EventLogRecord["status"];
-  readonly receivedAt: string;
-  readonly correlationId: string;
-  readonly processingId: string | null;
-  readonly errorMessage: string | null;
-}
 
-export type DiagnosticsAlertMatchLogView = AlertMatchLogRecord;
 
-export type DiagnosticsPlaybackLogView = PlaybackLogRecord;
 
-export interface DiagnosticsProviderErrorView {
-  readonly id: string;
-  readonly providerId: string;
-  readonly label: string;
-  readonly occurredAt: string;
-  readonly message: string;
-  readonly correlationId: string | null;
-  readonly processingId: string | null;
-}
 
-export interface DiagnosticsView {
-  readonly eventLogs: readonly DiagnosticsEventLogView[];
-  readonly alertMatchLogs: readonly DiagnosticsAlertMatchLogView[];
-  readonly playbackLogs: readonly DiagnosticsPlaybackLogView[];
-  readonly providerErrors: readonly DiagnosticsProviderErrorView[];
-  readonly runtimeLogging: RuntimeLogMetadata | null;
-}
 
-export interface DiagnosticsExport extends DiagnosticsView {
-  readonly generatedAt: string;
-  readonly debugExport: false;
-  readonly rawEventLogs: readonly EventLogRecord[];
-}
 
-export interface DiagnosticsDebugExport extends DiagnosticsView {
-  readonly generatedAt: string;
-  readonly debugExport: true;
-  readonly rawEventLogs: readonly EventLogRecord[];
-  readonly runtimeLogEntries: readonly RuntimeLogEntry[];
-  readonly runtimeLogTruncated: boolean;
-  readonly runtimeLogSkippedCorruptRecords: number;
-}
+
+
+
+
+export type DiagnosticsExport = DiagnosticsExportView & { readonly rawEventLogs: readonly EventLogRecord[] };
+
+export type DiagnosticsDebugExport = DiagnosticsDebugExportView & { readonly rawEventLogs: readonly EventLogRecord[]; readonly runtimeLogEntries: readonly RuntimeLogEntry[] };
 
 export class DiagnosticsService {
   readonly #repository: Pick<DiagnosticsLogRepository, "listEventLogs" | "listAlertMatchLogs" | "listPlaybackLogs">;

@@ -1,3 +1,6 @@
+import { overlayOutputKeyResultViewSchema, serverConfigViewSchema, desktopConfigViewSchema, moderationSettingsViewSchema, diagnosticsExportViewSchema, diagnosticsDebugExportViewSchema } from "@stream-jams/core";
+import type { ServerConfigView, DesktopConfigView, ModerationTargetSettingsView, ModerationSettingsView, DiagnosticsExportView, DiagnosticsDebugExportView } from "@stream-jams/core";
+export type { ServerConfigView, DesktopConfigView, ModerationTargetSettingsView, ModerationSettingsView, DiagnosticsEventLogView, DiagnosticsAlertMatchLogView, DiagnosticsPlaybackLogView, DiagnosticsProviderErrorView, RuntimeLogMetadataView, DiagnosticsView, DiagnosticsExportView, DiagnosticsDebugExportView } from "@stream-jams/core";
 import {
   alertInventoryRowSchema,
   alertEditorDocumentSchema,
@@ -76,26 +79,13 @@ import {
 import { createManagementHttpClient, type HttpManagementClientOptions } from "./management-http-client.js";
 import { createMusicApi, type MusicApi } from "./music/music-api.js";
 
-export interface ServerConfigView {
-  readonly host: string;
-  readonly port: number;
-}
 
-export interface DesktopConfigView {
-  readonly available: boolean;
-  readonly closeToTray: boolean;
-}
 
-export interface ModerationTargetSettingsView {
-  readonly maxLength: number;
-  readonly blockedTerms: readonly string[];
-  readonly stripUrls: boolean;
-}
 
-export interface ModerationSettingsView {
-  readonly renderedText: ModerationTargetSettingsView;
-  readonly ttsText: ModerationTargetSettingsView;
-}
+
+
+
+
 
 export type ModerationTargetView = "rendered" | "tts";
 
@@ -145,83 +135,21 @@ export interface OverlayOutputKeyResultView {
   readonly url: string;
 }
 
-export interface DiagnosticsEventLogView {
-  readonly id: string;
-  readonly eventId: string;
-  readonly providerId: string;
-  readonly eventType: string;
-  readonly actorDisplayName: string;
-  readonly status: "received" | "processed" | "failed";
-  readonly receivedAt: string;
-  readonly correlationId: string;
-  readonly processingId: string | null;
-  readonly errorMessage: string | null;
-}
 
-export interface DiagnosticsAlertMatchLogView {
-  readonly id: string;
-  readonly sourceEventId: string;
-  readonly ruleId: string;
-  readonly variantId: string;
-  readonly matchedAt: string;
-  readonly correlationId: string;
-  readonly processingId: string | null;
-}
 
-export interface DiagnosticsPlaybackLogView {
-  readonly id: string;
-  readonly queueItemId: string;
-  readonly sourceEventId: string;
-  readonly alertIds: readonly string[];
-  readonly status: "queued" | "playing" | "completed" | "skipped" | "failed";
-  readonly occurredAt: string;
-  readonly correlationId: string;
-  readonly processingId: string | null;
-  readonly message: string | null;
-}
 
-export interface DiagnosticsProviderErrorView {
-  readonly id: string;
-  readonly providerId: string;
-  readonly label: string;
-  readonly occurredAt: string;
-  readonly message: string;
-  readonly correlationId: string | null;
-  readonly processingId: string | null;
-}
 
-export interface RuntimeLogMetadataView {
-  readonly logDirectory: string;
-  readonly level: "DEBUG" | "INFO" | "WARN" | "ERROR";
-  readonly rollover: "hourly";
-  readonly retentionHours: number;
-  readonly fileCount: number;
-  readonly currentLogFile: string;
-  readonly oldestLogFile: string | null;
-  readonly newestLogFile: string | null;
-}
 
-export interface DiagnosticsView {
-  readonly eventLogs: readonly DiagnosticsEventLogView[];
-  readonly alertMatchLogs: readonly DiagnosticsAlertMatchLogView[];
-  readonly playbackLogs: readonly DiagnosticsPlaybackLogView[];
-  readonly providerErrors: readonly DiagnosticsProviderErrorView[];
-  readonly runtimeLogging: RuntimeLogMetadataView | null;
-}
 
-export interface DiagnosticsExportView extends DiagnosticsView {
-  readonly generatedAt: string;
-  readonly debugExport: false;
-  readonly rawEventLogs: readonly unknown[];
-}
 
-export interface DiagnosticsDebugExportView extends DiagnosticsView {
-  readonly generatedAt: string;
-  readonly debugExport: true;
-  readonly rawEventLogs: readonly unknown[];
-  readonly runtimeLogEntries: readonly unknown[];
-  readonly runtimeLogTruncated: boolean;
-}
+
+
+
+
+
+
+
+
 
 export interface DiagnosticsRequestView {
   readonly limit?: number | undefined;
@@ -339,7 +267,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
   const client = createManagementHttpClient(options);
 
   async function getContract<T>(path: string, contract: RuntimeContract<T>, errorMessage: string): Promise<T> {
-    return contract.parse(await client.getJson<unknown>(path, errorMessage));
+    return contract.parse(await client.getJson(path, errorMessage));
   }
 
   async function postContract<T>(
@@ -348,7 +276,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     contract: RuntimeContract<T>,
     errorMessage: string
   ): Promise<T> {
-    return contract.parse(await client.postJson<unknown>(path, body, errorMessage));
+    return contract.parse(await client.postJson(path, body, errorMessage));
   }
 
   async function getContractList<T>(
@@ -356,7 +284,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     contract: RuntimeContract<T>,
     errorMessage: string
   ): Promise<readonly T[]> {
-    const response = await client.getJson<unknown>(path, errorMessage);
+    const response = await client.getJson(path, errorMessage);
     if (!Array.isArray(response)) {
       throw new TypeError("Expected a management response array");
     }
@@ -368,7 +296,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     path: string,
     input: OverlayOutputKeyRequestView
   ): Promise<OverlayOutputKeyResultView> {
-    return client.postJson<OverlayOutputKeyResultView>(path, input, "Unable to update overlay output key.");
+    return overlayOutputKeyResultViewSchema.parse(await client.postJson(path, input, "Unable to update overlay output key."));
   }
 
   function withLimit(path: string, input: DiagnosticsRequestView = {}): string {
@@ -467,7 +395,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
 
     async updateStreamerBotSubscriptions(providerId, input) {
       return streamerBotSubscriptionCatalogSchema.parse(
-        await client.putJson<unknown>(
+        await client.putJson(
           `/providers/${encodeURIComponent(providerId)}/streamerbot-subscriptions`,
           input,
           "Unable to update Streamer.bot subscriptions."
@@ -511,7 +439,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
 
     async updateTtsSafety(providerId, input) {
       return ttsProviderSafetySettingsSchema.parse(
-        await client.putJson<unknown>(
+        await client.putJson(
           `/management/providers/${encodeURIComponent(providerId)}/tts-safety`,
           input,
           "Unable to update TTS provider safety settings."
@@ -542,13 +470,13 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
 
     async createAlertSet(input) {
       return alertSetOverviewSchema.parse(
-        await client.postJson<unknown>("/management/alert-sets", input, "Unable to create alert set.")
+        await client.postJson("/management/alert-sets", input, "Unable to create alert set.")
       );
     },
 
     async createAlert(setId, input) {
       return alertInventoryRowSchema.parse(
-        await client.postJson<unknown>(
+        await client.postJson(
           `/management/alert-sets/${encodeURIComponent(setId)}/alerts`,
           input,
           "Unable to create alert."
@@ -593,7 +521,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
 
     async renameAlertSet(setId, input) {
       return alertSetOverviewSchema.parse(
-        await client.patchJson<unknown>(
+        await client.patchJson(
           `/management/alert-sets/${encodeURIComponent(setId)}`,
           input,
           "Unable to rename alert set."
@@ -638,7 +566,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
 
     async setManagedAlertEnabled(alertId, enabled) {
       return alertSetDetailSchema.parse(
-        await client.patchJson<unknown>(
+        await client.patchJson(
           `/management/alerts/${encodeURIComponent(alertId)}/enabled`,
           { enabled },
           "Unable to update alert."
@@ -668,7 +596,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
 
     async saveAlertEditorDocument(alertId, document, confirmLiveImpact = false, priorityAssignments = []) {
       return alertEditorDocumentSchema.parse(
-        await client.putJson<unknown>(
+        await client.putJson(
           `/management/alerts/${encodeURIComponent(alertId)}/editor`,
           { document, confirmLiveImpact, priorityAssignments },
           "Unable to save alert editor changes."
@@ -704,7 +632,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
 
     async updateAssetMetadata(assetId, input) {
       return assetLibraryItemSchema.parse(
-        await client.patchJson<unknown>(
+        await client.patchJson(
           `/management/assets/${encodeURIComponent(assetId)}`,
           input,
           "Unable to update asset metadata."
@@ -797,26 +725,26 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     },
 
     async getServerConfig() {
-      return client.getJson<ServerConfigView>("/config/server", "Unable to load server settings.");
+      return serverConfigViewSchema.parse(await client.getJson("/config/server", "Unable to load server settings."));
     },
 
     async getDesktopConfig() {
-      return client.getJson<DesktopConfigView>("/config/desktop", "Unable to load desktop settings.");
+      return desktopConfigViewSchema.parse(await client.getJson("/config/desktop", "Unable to load desktop settings."));
     },
     async updateDesktopConfig(input) {
-      return client.patchJson<DesktopConfigView>("/config/desktop", input, "Unable to save desktop settings.");
+      return desktopConfigViewSchema.parse(await client.patchJson("/config/desktop", input, "Unable to save desktop settings."));
     },
 
     async updateServerConfig(input: ServerConfigView) {
-      return client.patchJson<ServerConfigView>("/config/server", input, "Unable to update server settings.");
+      return serverConfigViewSchema.parse(await client.patchJson("/config/server", input, "Unable to update server settings."));
     },
 
     async getModerationSettings() {
-      return client.getJson<ModerationSettingsView>("/moderation/settings", "Unable to load moderation settings.");
+      return moderationSettingsViewSchema.parse(await client.getJson("/moderation/settings", "Unable to load moderation settings."));
     },
 
     async updateModerationSettings(input: ModerationSettingsView) {
-      return client.patchJson<ModerationSettingsView>("/moderation/settings", input, "Unable to update moderation settings.");
+      return moderationSettingsViewSchema.parse(await client.patchJson("/moderation/settings", input, "Unable to update moderation settings."));
     },
 
     previewModeration(input) {
@@ -851,18 +779,18 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     },
 
     async exportDiagnostics(input: DiagnosticsRequestView = {}) {
-      return client.getJson<DiagnosticsExportView>(
+      return diagnosticsExportViewSchema.parse(await client.getJson(
         withLimit("/diagnostics/export", input),
         "Unable to export diagnostics."
-      );
+      ));
     },
 
     async exportDebugDiagnostics(input: DiagnosticsDebugExportRequestView = {}) {
-      return client.postJson<DiagnosticsDebugExportView>(
+      return diagnosticsDebugExportViewSchema.parse(await client.postJson(
         "/diagnostics/export/debug",
         input,
         "Unable to export diagnostics with recent runtime logs."
-      );
+      ));
     }
   };
 }

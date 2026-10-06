@@ -31,7 +31,7 @@ export function createClientErrorReporter(options: ClientErrorReporterOptions = 
       if (attempted.has(input.referenceId)) return;
       attempted.add(input.referenceId);
       try {
-        const result = await client.postJson<unknown>(
+        const result = await client.postJson(
           "/management/diagnostics/client-errors",
           input,
           "Unable to record the management interface error."

@@ -1,3 +1,4 @@
+import type { OverlayPlaybackInstructionSink } from "./playback-ports.js";
 import {
   DefaultAlertMatcher,
   DefaultAlertResolver,
@@ -24,20 +25,25 @@ import type { AudioPlaybackSink, DeviceAudioResult, ResolvedAlertAudio } from "@
 import { describe, expect, it, vi } from "vitest";
 import {
   PlaybackCoordinator,
-  type OverlayPlaybackInstructionSink,
   type PlaybackCoordinatorDependencies
 } from "./playback-coordinator.js";
-import { effectOccurrenceKey } from "../screen-effects/effect-playback-coordinator.js";
+import { moduleOccurrenceKey } from "./occurrence-identity.js";
 
-const alertPlaybackId = (occurrenceId: string) => effectOccurrenceKey("alerts", occurrenceId);
+const alertPlaybackId = (occurrenceId: string) => moduleOccurrenceKey("alerts", occurrenceId);
 
 describe("PlaybackCoordinator", () => {
+  it("rejects a configured browser output without mute capabilities", () => {
+    expect(() => createCoordinator({
+      overlayPlaybackSink: { deliverPlaybackInstruction: () => {} } as unknown as OverlayPlaybackInstructionSink
+    })).toThrow("Browser overlay mute capabilities are required");
+  });
+
   it("records a watchdog expiry even when every stop succeeds", async () => {
     vi.useFakeTimers();
     try {
       const error = vi.fn(async () => {});
       const coordinator = createCoordinator({ logger: { error }, generateReferenceId: () => "ref",
-        overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: ["obs"] }), stopPlaybackInstructions: vi.fn() } });
+        overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(), deliverPlaybackInstruction: () => ({ deliveredClientIds: ["obs"] }), stopPlaybackInstructions: vi.fn() } });
       const event = createCheerEvent();
       coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [createResolvedAlert(event.id, "alert", "instruction")] });
       await vi.advanceTimersByTimeAsync(8100);
@@ -65,7 +71,7 @@ describe("PlaybackCoordinator", () => {
       const coordinator = createCoordinator({ ...audio.dependencies,
         audioPlaybackSink: { ...audio.sink, prepare: async () => { await ready.promise; return { start: audioStart }; } },
         desktopVisualSink: { play: vi.fn(async () => {}), prepare: async () => ({ start: desktopStart }), stop: vi.fn(async () => {}), close: vi.fn(async () => {}) },
-        overlayPlaybackSink: { deliverPlaybackInstruction: vi.fn(), preparePlaybackInstruction: async () => ({ deliveredClientIds: ["obs"], start: browserStart }) }
+        overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(), deliverPlaybackInstruction: vi.fn(), preparePlaybackInstruction: async () => ({ deliveredClientIds: ["obs"], start: browserStart }) }
       });
       const event = createCheerEvent(); const alert = createResolvedAlert(event.id, "resolved", "instruction");
       coordinator.enqueueResolvedTest({ sourceEvent: event, audio: [deviceAudio()], alerts: [{ ...alert, desktopVisualEligible: true, overlayInstruction: { ...alert.overlayInstruction, targetProfileId: "landscape" } }] });
@@ -85,7 +91,7 @@ describe("PlaybackCoordinator", () => {
   it("skips preparation without allowing late starts and plays the next occurrence", async () => {
     const ready = deferred<{ deliveredClientIds: readonly string[]; start(at: number): void }>();
     const lateStart = vi.fn(); const nextStart = vi.fn();
-    const coordinator = createCoordinator({ overlayPlaybackSink: {
+    const coordinator = createCoordinator({ overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
       deliverPlaybackInstruction: vi.fn(),
       preparePlaybackInstruction: vi.fn().mockReturnValueOnce(ready.promise).mockResolvedValue({ deliveredClientIds: ["obs"], start: nextStart }),
       stopPlaybackInstructions: vi.fn()
@@ -104,7 +110,7 @@ describe("PlaybackCoordinator", () => {
 
   it("starts healthy browser recipients when another preparation fails", async () => {
     const started = vi.fn();
-    const coordinator = createCoordinator({ overlayPlaybackSink: {
+    const coordinator = createCoordinator({ overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
       deliverPlaybackInstruction: vi.fn(),
       async preparePlaybackInstruction(instruction) {
         if (instruction.id.endsWith(":failed")) throw new Error("media unavailable");
@@ -123,7 +129,7 @@ describe("PlaybackCoordinator", () => {
     try {
       const late = deferred<{ deliveredClientIds: readonly string[]; start(at: number): void }>();
       const healthyStart = vi.fn(); const lateStart = vi.fn(); const stop = vi.fn();
-      const coordinator = createCoordinator({ overlayPlaybackSink: {
+      const coordinator = createCoordinator({ overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
         deliverPlaybackInstruction: vi.fn(),
         preparePlaybackInstruction: async instruction => instruction.id.endsWith(":stalled") ? late.promise : { deliveredClientIds: ["obs"], start: healthyStart },
         stopPlaybackInstructions: stop
@@ -142,7 +148,7 @@ describe("PlaybackCoordinator", () => {
   });
   it("shares one scheduled epoch between browser, desktop and routed audio", async () => {
     const audio = audioFixture();
-    const browser = { deliverPlaybackInstruction: vi.fn<OverlayPlaybackInstructionSink["deliverPlaybackInstruction"]>(() => ({ deliveredClientIds: ["obs"] })) };
+    const browser = { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(), deliverPlaybackInstruction: vi.fn<OverlayPlaybackInstructionSink["deliverPlaybackInstruction"]>(() => ({ deliveredClientIds: ["obs"] })) };
     const desktop = { play: vi.fn<NonNullable<PlaybackCoordinatorDependencies["desktopVisualSink"]>["play"]>(async () => {}), stop: vi.fn(async () => {}), close: vi.fn(async () => {}) };
     const coordinator = createCoordinator({ ...audio.dependencies, desktopVisualSink: desktop, overlayPlaybackSink: browser });
     const event = createCheerEvent();
@@ -161,7 +167,7 @@ describe("PlaybackCoordinator", () => {
   it("waits for a first-class desktop recipient without any OBS client", async () => {
     let complete!: () => void;
     const desktop = { play: vi.fn(() => new Promise<void>(resolve => { complete = resolve; })), stop: vi.fn(async () => {}), close: vi.fn(async () => {}) };
-    const coordinator = createCoordinator({ desktopVisualSink: desktop, overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: [] }) } });
+    const coordinator = createCoordinator({ desktopVisualSink: desktop, overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(), deliverPlaybackInstruction: () => ({ deliveredClientIds: [] }) } });
     const event = createCheerEvent({ id: "desktop-only" });
     const alert = createResolvedAlert(event.id, "resolved", "instruction");
     const snapshot = coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [{ ...alert, desktopVisualEligible: true, overlayInstruction: { ...alert.overlayInstruction, targetProfileId: "landscape" } }] });
@@ -176,7 +182,7 @@ describe("PlaybackCoordinator", () => {
 
   it("does not settle healthy browser recipients when desktop playback fails", async () => {
     const desktop = { play: vi.fn(async () => { throw new Error("display removed"); }), stop: vi.fn(async () => {}), close: vi.fn(async () => {}) };
-    const coordinator = createCoordinator({ desktopVisualSink: desktop, overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: ["obs"] }) } });
+    const coordinator = createCoordinator({ desktopVisualSink: desktop, overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(), deliverPlaybackInstruction: () => ({ deliveredClientIds: ["obs"] }) } });
     const event = createCheerEvent({ id: "desktop-failure" });
     const alert = createResolvedAlert(event.id, "resolved", "instruction");
     coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [{ ...alert, desktopVisualEligible: true, overlayInstruction: { ...alert.overlayInstruction, targetProfileId: "landscape" } }] });
@@ -238,7 +244,7 @@ describe("PlaybackCoordinator", () => {
 
   it("retains a browser completion reported synchronously during delivery", () => {
     const coordinator = createCoordinator({
-      overlayPlaybackSink: {
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
         deliverPlaybackInstruction(instruction) {
           coordinator.reportInstructionFinished("obs", instruction.id);
           return { deliveredClientIds: ["obs"] };
@@ -259,7 +265,7 @@ describe("PlaybackCoordinator", () => {
   it("gives replayed browser instructions occurrence-specific acknowledgement IDs", () => {
     const deliveredIds: string[] = [];
     const coordinator = createCoordinator({
-      overlayPlaybackSink: {
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
         deliverPlaybackInstruction(instruction) {
           deliveredIds.push(instruction.id);
           return { deliveredClientIds: ["obs"] };
@@ -285,7 +291,7 @@ describe("PlaybackCoordinator", () => {
   it("settles a failed browser dispatch without clearing a healthy recipient", () => {
     const deliveredIds: string[] = [];
     const coordinator = createCoordinator({
-      overlayPlaybackSink: {
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
         deliverPlaybackInstruction(instruction) {
           if (instruction.id.includes("failed-instruction")) throw new Error("browser disconnected");
           deliveredIds.push(instruction.id);
@@ -314,7 +320,7 @@ describe("PlaybackCoordinator", () => {
       audio.dependencies.audioOutputService.preparePlayback.mockReturnValueOnce(preparation.promise);
       const stopPlaybackInstructions = vi.fn();
       const delivered: string[] = [];
-      const coordinator = createCoordinator({ ...audio.dependencies, overlayPlaybackSink: {
+      const coordinator = createCoordinator({ ...audio.dependencies, overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
         deliverPlaybackInstruction(instruction) { delivered.push(instruction.id); return { deliveredClientIds: ["obs"] }; },
         stopPlaybackInstructions
       } });
@@ -345,7 +351,7 @@ describe("PlaybackCoordinator", () => {
       const delivered: string[] = [];
       const coordinator = createCoordinator({
         ...audio.dependencies,
-        overlayPlaybackSink: {
+        overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
           deliverPlaybackInstruction(instruction) {
             delivered.push(instruction.id);
             return { deliveredClientIds: [] };
@@ -397,7 +403,7 @@ describe("PlaybackCoordinator", () => {
       const stoppedBrowser: string[][] = [];
       const coordinator = createCoordinator({
         ...audio.dependencies,
-        overlayPlaybackSink: {
+        overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
           deliverPlaybackInstruction(instruction) {
             delivered.push(instruction.id);
             return { deliveredClientIds: instruction.id.includes("first") ? ["obs"] : [] };
@@ -447,7 +453,7 @@ describe("PlaybackCoordinator", () => {
       const delivered: string[] = [];
       const coordinator = createCoordinator({
         ...audio.dependencies,
-        overlayPlaybackSink: {
+        overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
           deliverPlaybackInstruction(instruction) {
             delivered.push(instruction.id);
             return { deliveredClientIds: ["obs"] };
@@ -485,7 +491,7 @@ describe("PlaybackCoordinator", () => {
       ...audio.dependencies,
       logger: { error: logError },
       generateReferenceId: () => "browser-stop-ref",
-      overlayPlaybackSink: {
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
         deliverPlaybackInstruction() {
           return { deliveredClientIds: ["obs"] };
         },
@@ -518,7 +524,7 @@ describe("PlaybackCoordinator", () => {
     const audio = audioFixture();
     const coordinator = createCoordinator({
       ...audio.dependencies,
-      overlayPlaybackSink: {
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
         deliverPlaybackInstruction() {
           return { deliveredClientIds: ["obs"] };
         },
@@ -686,7 +692,7 @@ describe("PlaybackCoordinator", () => {
   it("retains browser completion after device audio finishes first", async () => {
     const audio = audioFixture();
     const coordinator = createCoordinator({ ...audio.dependencies,
-      overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: ["obs"] }) }
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(), deliverPlaybackInstruction: () => ({ deliveredClientIds: ["obs"] }) }
     });
     const event = createCheerEvent();
     coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [createResolvedAlert(event.id, "first", "visual")], audio: [deviceAudio()] });
@@ -771,7 +777,7 @@ describe("PlaybackCoordinator", () => {
         overlayId: "overlay-1", purpose: "live" as const, scope: "module" as const,
         targetProfileId: targetProfileId as "landscape" | "vertical"
       })),
-      overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: [] }) }
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(), deliverPlaybackInstruction: () => ({ deliveredClientIds: [] }) }
     });
     await coordinator.enqueueEvent(createCheerEvent());
     await vi.waitFor(() => expect(audio.sink.play).toHaveBeenCalledTimes(1));
@@ -839,7 +845,7 @@ describe("PlaybackCoordinator", () => {
     };
     const coordinator = createCoordinator({ ...audio.dependencies,
       alertService: new RecordingAlertService([rule]), findEditorDocument: async () => document,
-      overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: [] }) }
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(), deliverPlaybackInstruction: () => ({ deliveredClientIds: [] }) }
     });
     await coordinator.enqueueEvent(createCheerEvent());
     expect(audio.dependencies.audioOutputService.preparePlayback).not.toHaveBeenCalled();
@@ -870,7 +876,7 @@ describe("PlaybackCoordinator", () => {
       alertService: new RecordingAlertService([rule]),
       assetRepository: new InMemoryAssetRepository({ "asset-gif": "gif" }),
       findEditorDocument: async () => document,
-      overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: [] }) }
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(), deliverPlaybackInstruction: () => ({ deliveredClientIds: [] }) }
     });
 
     await coordinator.enqueueEvent(createCheerEvent());
@@ -885,7 +891,7 @@ describe("PlaybackCoordinator", () => {
     const stop = deferred<void>();
     audio.sink.stop.mockReturnValue(stop.promise);
     const coordinator = createCoordinator({ ...audio.dependencies,
-      overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: ["obs"] }) }
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(), deliverPlaybackInstruction: () => ({ deliveredClientIds: ["obs"] }) }
     });
     const event = createCheerEvent();
     coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [createResolvedAlert(event.id, "first", "visual")], audio: [deviceAudio()] });
@@ -928,7 +934,7 @@ describe("PlaybackCoordinator", () => {
   it("stops current playback and cannot advance on late client disconnects after shutdown", () => {
     const deliveries: string[] = [];
     const stops: string[][] = [];
-    const coordinator = createCoordinator({ overlayPlaybackSink: {
+    const coordinator = createCoordinator({ overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
       deliverPlaybackInstruction(instruction) { deliveries.push(instruction.id); return { deliveredClientIds: ["obs"] }; },
       stopPlaybackInstructions(ids) { stops.push([...ids]); }
     } });
@@ -1045,7 +1051,7 @@ describe("PlaybackCoordinator", () => {
           variants: [createVariant({ id: "variant-overlay" })]
         })
       ]),
-      overlayPlaybackSink: {
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
         deliverPlaybackInstruction(instruction) {
           deliveredInstructionIds.push(instruction.id);
         }
@@ -1088,7 +1094,7 @@ describe("PlaybackCoordinator", () => {
         calls.push(`persist:${String(patch.muted)}`);
         return { paused: false, muted: patch.muted ?? false, doNotDisturb: false };
       },
-      overlayPlaybackSink: {
+      overlayPlaybackSink: { setModuleMutes: vi.fn(),
         deliverPlaybackInstruction(instruction) {
           calls.push(`deliver:${instruction.id}`);
         },
@@ -1132,7 +1138,7 @@ describe("PlaybackCoordinator", () => {
     const deliveredInstructionIds: string[] = [];
     const coordinator = createCoordinator({
       alertService,
-      overlayPlaybackSink: {
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
         deliverPlaybackInstruction(instruction) {
           deliveredInstructionIds.push(instruction.id);
         }
@@ -1168,7 +1174,7 @@ describe("PlaybackCoordinator", () => {
 
   it("advances only after every delivered client finishes every current instruction", () => {
     const coordinator = createCoordinator({
-      overlayPlaybackSink: {
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
         deliverPlaybackInstruction() {
           return { deliveredClientIds: ["client-1", "client-2"] };
         }
@@ -1197,7 +1203,7 @@ describe("PlaybackCoordinator", () => {
 
   it("releases every pending instruction when a delivered client disconnects", () => {
     const coordinator = createCoordinator({
-      overlayPlaybackSink: {
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
         deliverPlaybackInstruction() {
           return { deliveredClientIds: ["client-1", "client-2"] };
         }
@@ -1221,7 +1227,7 @@ describe("PlaybackCoordinator", () => {
 
   it("immediately completes an item delivered to zero clients", () => {
     const coordinator = createCoordinator({
-      overlayPlaybackSink: {
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
         deliverPlaybackInstruction() {
           return { deliveredClientIds: [] };
         }
@@ -1243,7 +1249,7 @@ describe("PlaybackCoordinator", () => {
     let deliveryCount = 0;
     const coordinator = createCoordinator({
       queue: createSequentialPlaybackQueue(itemCount),
-      overlayPlaybackSink: {
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
         deliverPlaybackInstruction() {
           deliveryCount += 1;
           return { deliveredClientIds: [] };
@@ -1271,7 +1277,7 @@ describe("PlaybackCoordinator", () => {
           scope: "unified"
         }
       ],
-      overlayPlaybackSink: {
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
         deliverPlaybackInstruction(instruction) {
           deliveredScopes.push(instruction.scope);
         }
@@ -1378,7 +1384,7 @@ describe("PlaybackCoordinator", () => {
           };
         }
       },
-      overlayPlaybackSink: {
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
         deliverPlaybackInstruction(instruction) {
           deliveredProfiles.push(instruction.targetProfileId);
           calls.push(`overlay:${String(instruction.targetProfileId)}`);
@@ -1477,7 +1483,7 @@ describe("PlaybackCoordinator", () => {
         }
       },
       generateReferenceId: () => "ref-tts-failure",
-      overlayPlaybackSink: {
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
         deliverPlaybackInstruction() {
           deliveryCount += 1;
           return { deliveredClientIds: [] };
@@ -2002,7 +2008,7 @@ it("tries every mute output and propagates failure after attempting both transpo
   const browser = vi.fn(() => { throw new Error("socket unavailable"); });
   const coordinator = createCoordinator({ ...audio.dependencies,
     audioPlaybackSink: { ...audio.sink, setModuleMutes: device },
-    overlayPlaybackSink: { deliverPlaybackInstruction: vi.fn(), setModuleMutes: browser }
+    overlayPlaybackSink: { setPlaybackMuted: vi.fn(), deliverPlaybackInstruction: vi.fn(), setModuleMutes: browser }
   });
   const moduleMutes = { alerts: true, "screen-effects": false };
   await expect(coordinator.applySafetyState({ paused: false, muted: true, doNotDisturb: false, moduleMutes })).rejects.toBeInstanceOf(AggregateError);

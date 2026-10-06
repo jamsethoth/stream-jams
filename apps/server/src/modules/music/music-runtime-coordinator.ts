@@ -1,7 +1,8 @@
+import type { MusicRuntimeSourceAdapter } from "./music-source-adapter.js";
 import { randomUUID } from "node:crypto";
 import {
   musicLimits, musicModuleConfigSchema, musicSnapshotSchema, musicStatusSchema, projectMusicWidget,
-  type MusicModuleConfig, type MusicSnapshot, type MusicSourceAdapter, type MusicStatus, type MusicWidgetProjection,
+  type MusicModuleConfig, type MusicSnapshot, type MusicStatus, type MusicWidgetProjection,
   type OverlayTargetProfileId, type PearConfiguration
 } from "@stream-jams/core";
 import type { MusicArtworkPolicy, PrivateArtworkDescriptor } from "./music-artwork-policy.js";
@@ -13,18 +14,11 @@ export interface MusicRuntimeSource {
   readonly token: string;
 }
 
-export interface MusicRuntimePublication {
-  readonly revision: number;
-  readonly generation: string | null;
-  readonly status: MusicStatus;
-  getProjection(targetProfileId: OverlayTargetProfileId): MusicWidgetProjection | null;
-}
 
 export interface MusicRuntimeCoordinatorOptions {
   readonly getConfig: () => Promise<{ readonly enabled: boolean; readonly config: unknown }>;
   readonly getActiveSource: () => Promise<MusicRuntimeSource | null>;
-  readonly createSource: (source: MusicRuntimeSource, generation: string) => MusicSourceAdapter;
-  readonly sink?: (publication: MusicRuntimePublication) => Promise<void> | void;
+  readonly createSource: (source: MusicRuntimeSource, generation: string) => MusicRuntimeSourceAdapter;
   readonly now?: () => number;
   readonly schedule?: (callback: () => void, delayMs: number) => unknown;
   readonly cancel?: (handle: unknown) => void;
@@ -37,7 +31,7 @@ export class MusicRuntimeCoordinator {
   readonly #options: MusicRuntimeCoordinatorOptions;
   readonly #now: () => number;
   #config: MusicModuleConfig | null = null;
-  #source: MusicSourceAdapter | null = null;
+  #source: MusicRuntimeSourceAdapter | null = null;
   #controller: AbortController | null = null;
   #generation: string | null = null;
   #snapshot: MusicSnapshot | null = null;
@@ -48,8 +42,6 @@ export class MusicRuntimeCoordinator {
   #lifecycle = 0;
   #transition: Promise<void> = Promise.resolve();
   #deadline: unknown = null;
-  #activePublication: Promise<void> | null = null;
-  #pendingPublication: MusicRuntimePublication | null = null;
   #listeners = new Set<(revision: number) => void>();
   #closed = false;
   #suspended = false;
@@ -68,13 +60,11 @@ export class MusicRuntimeCoordinator {
   }
   getArtworkPolicy(owner: Pick<MusicSnapshot, "providerId" | "generation">): MusicArtworkPolicy | null {
     if (this.#generation !== owner.generation || this.#snapshot?.providerId !== owner.providerId) return null;
-    const source = this.#source as (MusicSourceAdapter & { getArtworkPolicy?: () => MusicArtworkPolicy }) | null;
-    return source?.getArtworkPolicy?.() ?? null;
+    return this.#source?.artwork?.getArtworkPolicy() ?? null;
   }
   getArtworkDescriptor(ref: string, owner: Pick<MusicSnapshot, "providerId" | "generation">): PrivateArtworkDescriptor | null {
     if (this.#generation !== owner.generation || this.#snapshot?.providerId !== owner.providerId || this.#snapshot.track?.artworkRef !== ref) return null;
-    const source = this.#source as (MusicSourceAdapter & { getArtworkDescriptor?: (ref: string, owner: Pick<MusicSnapshot, "providerId" | "generation">) => PrivateArtworkDescriptor | null }) | null;
-    return source?.getArtworkDescriptor?.(ref, owner) ?? null;
+    return this.#source?.artwork?.getArtworkDescriptor(ref, owner) ?? null;
   }
   getCurrentArtwork(): { readonly ref: string; readonly owner: Pick<MusicSnapshot, "providerId" | "generation">; readonly descriptor: PrivateArtworkDescriptor } | null {
     if (this.#status.state !== "connected" || this.#status.stale || this.#snapshot?.track?.artworkRef == null) return null;
@@ -250,29 +240,5 @@ export class MusicRuntimeCoordinator {
       // error-provenance: allow expected -- recipient callbacks cannot interrupt source ownership
       catch { /* The latest revision remains available to the recipient. */ }
     }
-    if (this.#options.sink === undefined) return;
-    const status = { ...this.#status };
-    const snapshot = this.#snapshot;
-    const config = this.#config;
-    const epoch = this.#appearanceStartedAtEpochMs;
-    const now = this.#now();
-    const event: MusicRuntimePublication = {
-      revision, generation: this.#generation, status,
-      getProjection: target => config === null ? null : projectMusicWidget(snapshot, status, config, target, epoch, now)
-    };
-    this.#pendingPublication = event;
-    this.#drainPublication();
-  }
-  #drainPublication(): void {
-    if (this.#activePublication !== null || this.#pendingPublication === null || this.#options.sink === undefined) return;
-    const publication = this.#pendingPublication;
-    this.#pendingPublication = null;
-    this.#activePublication = Promise.resolve().then(() => this.#options.sink!(publication)).catch(
-      // error-provenance: allow expected -- a failed recipient publication cannot stall newer pending state
-      () => {}
-    ).then(() => {
-      this.#activePublication = null;
-      this.#drainPublication();
-    });
   }
 }

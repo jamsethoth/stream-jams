@@ -54,7 +54,7 @@ export interface DesktopAudioTransport extends AudioDeviceHost {
   play(payload: AudioPlaybackPayload): Promise<DeviceAudioResult>;
   stop(playbackId: string): Promise<void>;
   setMuted(muted: boolean): Promise<void>;
-  setModuleMutes?(state: import("../playback/types.js").ModuleMuteState): Promise<void>;
+  setModuleMutes(state: import("../playback/types.js").ModuleMuteState): Promise<void>;
   retry(): Promise<void>;
   close(): Promise<void>;
 }

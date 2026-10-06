@@ -14,7 +14,7 @@ import {
   type PlaybackLogRecord,
   type PlaybackQueueSnapshot
 } from "@stream-jams/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { EventPipeline } from "./event-pipeline.js";
 import { PlaybackCoordinator, type PlaybackEnqueueResult } from "../playback/playback-coordinator.js";
 
@@ -265,7 +265,7 @@ function createPlaybackCoordinator(options: {
         scope: "unified"
       }
     ],
-    overlayPlaybackSink: {
+    overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
       deliverPlaybackInstruction(instruction) {
         options.deliveredInstructions.push(instruction);
       }

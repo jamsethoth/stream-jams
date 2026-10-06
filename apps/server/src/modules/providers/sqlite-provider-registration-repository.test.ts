@@ -1,9 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createInMemoryStreamJamsDatabase, type StreamJamsDatabase } from "../db/database.js";
-import {
-  SqliteProviderRegistrationRepository,
-  type ProviderRegistrationRecord
-} from "./sqlite-provider-registration-repository.js";
+import type { ProviderRegistrationRecord } from "./provider-registration-repository.js";
+import { SqliteProviderRegistrationRepository } from "./sqlite-provider-registration-repository.js";
 
 describe("SqliteProviderRegistrationRepository", () => {
   let database: StreamJamsDatabase;

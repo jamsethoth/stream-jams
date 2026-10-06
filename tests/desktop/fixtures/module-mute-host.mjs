@@ -3,6 +3,7 @@ import process from "node:process";
 import console from "node:console";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
+import { clearInterval, setInterval } from "node:timers";
 const build = process.argv.at(-1);
 const { AudioHost } = await import(pathToFileURL(resolve(build, "audio/audio-host.js")).href);
 const { AudioWindow, registerAudioPlayerScheme } = await import(pathToFileURL(resolve(build, "audio/audio-window.js")).href);
@@ -52,9 +53,11 @@ void app.whenReady().then(async () => {
     void host.play(payload).then(result => globalThis.muteResults.push({ playbackId, result }), error => globalThis.muteResults.push({ playbackId, error: error.message }));
   };
   host.beginOwnership();
+  // This isolated fixture replaces the service that renews ownership in production.
+  const leaseTimer = setInterval(() => host.refreshLease(), 1000);
   await host.setModuleMutes({ alerts: false, "screen-effects": false });
   await host.listOutputDevices();
   globalThis.muteReady = true;
-  app.on("before-quit", () => host.serviceLost());
+  app.on("before-quit", () => { clearInterval(leaseTimer); host.serviceLost(); });
 
 }).catch(error => { globalThis.muteFixtureError = `${error.stack} CAUSE: ${error.cause?.stack} DIAGNOSTICS: ${globalThis.muteDiagnostics?.map(item => item.exception?.stack ?? item.message).join("\n")}`; console.error(error); });

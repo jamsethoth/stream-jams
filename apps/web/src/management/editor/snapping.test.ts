@@ -4,6 +4,17 @@ import { snapEditorRect, type EditorSnapOptions } from "./snapping.js";
 const options: EditorSnapOptions = { mode: "move", bounds: { width: 500, height: 400 }, peers: [], grid: true, alignment: true, scale: 1 };
 const rect = { x: 113, y: 127, width: 80, height: 40 };
 describe("shared editor snapping", () => {
+  it("preserves alert profile grid, edge and center snapping", () => {
+    const cases = [
+      [{ x: 13, y: 27, width: 100, height: 80 }, { width: 1920, height: 1080 }, 10, { x: 10, y: 30, width: 100, height: 80 }],
+      [{ x: 3, y: 997, width: 100, height: 80 }, { width: 1920, height: 1080 }, 64, { x: 0, y: 1000, width: 100, height: 80 }],
+      [{ x: 913, y: 497, width: 100, height: 80 }, { width: 1920, height: 1080 }, 64, { x: 910, y: 500, width: 100, height: 80 }],
+      [{ x: 977, y: 1837, width: 100, height: 80 }, { width: 1080, height: 1920 }, 64, { x: 980, y: 1840, width: 100, height: 80 }]
+    ] as const;
+    for (const [geometry, bounds, gridSize, expected] of cases) {
+      expect(snapEditorRect(geometry, { ...options, bounds, gridSize, threshold: 4 }).rect).toEqual(expected);
+    }
+  });
   it("snaps grid independently and allows exact free movement", () => {
     expect(snapEditorRect(rect, { ...options, alignment: false }).rect).toEqual({ ...rect, x: 110, y: 130 });
     expect(snapEditorRect(rect, { ...options, grid: false, alignment: false })).toEqual({ rect, guides: [] });

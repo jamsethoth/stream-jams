@@ -289,7 +289,7 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
       };
     },
     async exportDebugDiagnostics() {
-      return {
+      return { runtimeLogSkippedCorruptRecords: 0,
         ...storyDiagnostics,
         generatedAt: "2026-06-19T16:01:00.000Z",
         debugExport: true,

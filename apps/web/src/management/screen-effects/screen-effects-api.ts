@@ -84,12 +84,12 @@ export function createHttpScreenEffectsApi(options: HttpManagementClientOptions 
       await client.deleteRequest(`/screen-effect-sets/${encodeURIComponent(id)}`, "Unable to delete Screen Effect set.");
     },
     async list() {
-      const response = await client.getJson<unknown>("/screen-effects", "Unable to load Screen Effects.");
+      const response = await client.getJson("/screen-effects", "Unable to load Screen Effects.");
       if (!Array.isArray(response)) throw new TypeError("Expected a Screen Effects response array");
       return response.map((item) => screenEffectDocumentSchema.parse(item));
     },
     async listBrowserSources() {
-      const response = await client.getJson<unknown>(
+      const response = await client.getJson(
         "/management/overlay-outputs",
         "Unable to load Screen Effects Browser Sources."
       );
@@ -146,7 +146,7 @@ export function createHttpScreenEffectsApi(options: HttpManagementClientOptions 
       await client.deleteRequest(path(effectId), "Unable to delete the Screen Effect.");
     },
     async test(effectId, variantId, confirmLiveImpact) {
-      const response = await client.postJson<unknown>(
+      const response = await client.postJson(
         `${path(effectId)}/test`,
         { variantId, confirmLiveImpact },
         "Unable to send the Screen Effect test."

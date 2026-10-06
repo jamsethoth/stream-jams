@@ -1,3 +1,5 @@
+import { createMusicOutputSyncQueue } from "../modules/music/music-output-sync-queue.js";
+import { SqliteTimerAutomationCredentialRepository } from "../modules/timers/sqlite-timer-automation-credential-repository.js";
 import { AutomationControlService } from "../modules/automation/automation-control-service.js";
 import { AutomationCredentialService } from "../modules/automation/automation-credential-service.js";
 import { SqliteAutomationGrantRepository } from "../modules/automation/sqlite-automation-grant-repository.js";
@@ -42,7 +44,7 @@ import {
   type SecretStore,
   type SerializedException
 } from "@stream-jams/core";
-import { effectOccurrenceKey } from "../modules/screen-effects/effect-playback-coordinator.js";
+import { moduleOccurrenceKey } from "../modules/playback/occurrence-identity.js";
 import type { FastifyInstance } from "fastify";
 import { createServerApp, type ProductionServerAppDependencies } from "../app.js";
 import { createDefaultAppConfig, resolveConfigFilePath } from "../config/default-config.js";
@@ -515,13 +517,13 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     }
   });
   const playbackQueue = new DefaultPlaybackQueue({
-    onRelease: itemId => { void trackRuntimeWork(() => localMediaService.release(effectOccurrenceKey("alerts", itemId))); },
+    onRelease: itemId => { void trackRuntimeWork(() => localMediaService.release(moduleOccurrenceKey("alerts", itemId))); },
     generateId: generatePlaybackQueueItemId,
     initialSafetyState: { ...initialConfig.playback, muted: currentModuleMutes.alerts, moduleMutes: currentModuleMutes },
     initialModulePaused: initialAlertModuleSettings.paused
   });
   const effectQueue = new DefaultEffectQueue({
-    onRelease: occurrenceId => { void trackRuntimeWork(() => localMediaService.release(effectOccurrenceKey("screen-effects", occurrenceId))); },
+    onRelease: occurrenceId => { void trackRuntimeWork(() => localMediaService.release(moduleOccurrenceKey("screen-effects", occurrenceId))); },
     modulePaused: initialEffectModuleSettings.paused
   });
   const maintenanceGate = new RuntimeMaintenanceGate();
@@ -529,7 +531,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   if (options.desktopAudioTransport !== undefined) {
     try {
       await options.desktopAudioTransport.setMuted(false);
-      await options.desktopAudioTransport.setModuleMutes?.(currentModuleMutes);
+      await options.desktopAudioTransport.setModuleMutes(currentModuleMutes);
     } catch (error) {
       try { await options.desktopAudioTransport.close(); }
       catch (cleanupError) {
@@ -617,7 +619,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   await timerRuntimeCoordinator.restore();
   const timerAutomationCredentialService = new TimerAutomationCredentialService({
-    connection: database.connection,
+    repository: new SqliteTimerAutomationCredentialRepository(database.connection),
     now
   });
   const timerAutomationAuthPreHandler = createTimerAutomationSecurityPreHandler({
@@ -1438,41 +1440,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     if (musicRuntimeCoordinator.revision !== revision || musicRuntimeCoordinator.generation !== generation) return;
     await desktopModuleSnapshotSink?.syncMusic();
   };
-  let activeMusicOutputSync: Promise<void> | null = null;
-  let activeMusicIncludesTest = false;
-  let pendingMusicOutputSync: { includeTest: boolean; promise: Promise<void>; resolve(): void; reject(error: unknown): void } | null = null;
-  const launchMusicOutputSync = (includeTest: boolean): Promise<void> => {
-    activeMusicIncludesTest = includeTest;
-    const work = trackRuntimeWork(() => syncMusicOutputs(includeTest));
-    activeMusicOutputSync = work;
-    const finish = () => {
-      activeMusicOutputSync = null;
-      const pending = pendingMusicOutputSync;
-      pendingMusicOutputSync = null;
-      if (pending !== null) {
-        const next = launchMusicOutputSync(pending.includeTest);
-        void next.then(pending.resolve, pending.reject);
-      }
-    };
-    void work.then(finish, finish);
-    return work;
-  };
-  const queueMusicOutputSync = (includeTest = false): Promise<void> => {
-    if (activeMusicOutputSync === null) return launchMusicOutputSync(includeTest);
-    if (pendingMusicOutputSync === null) {
-      let resolve!: () => void;
-      let reject!: (error: unknown) => void;
-      const promise = new Promise<void>((accept, fail) => { resolve = accept; reject = fail; });
-      void promise.catch(
-        // error-provenance: allow expected -- tracked output work records failures; callers choose whether refresh failure is fatal
-        () => {}
-      );
-      pendingMusicOutputSync = { includeTest: includeTest || activeMusicIncludesTest, promise, resolve, reject };
-    } else {
-      pendingMusicOutputSync.includeTest ||= includeTest;
-    }
-    return pendingMusicOutputSync.promise;
-  };
+  const queueMusicOutputSync = createMusicOutputSyncQueue(includeTest => trackRuntimeWork(() => syncMusicOutputs(includeTest)));
   const unsubscribeMusicOutputs = musicRuntimeCoordinator.subscribe(() => { void queueMusicOutputSync(); });
   for (const surface of await surfaceRepository.list()) {
     if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);

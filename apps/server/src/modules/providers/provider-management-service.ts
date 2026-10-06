@@ -38,10 +38,8 @@ import {
   type StreamerBotSubscriptionUpdateInput,
   type TtsProviderSafetySettings
 } from "@stream-jams/core";
-import type {
-  ProviderRegistrationRecord,
-  SqliteProviderRegistrationRepository
-} from "./sqlite-provider-registration-repository.js";
+import type { ProviderRegistrationRecord, ProviderRegistrationRepository } from "./provider-registration-repository.js";
+
 import type { PearPairingClaim, PearPairingService } from "../music/pear-pairing-service.js";
 
 export interface ProviderVoiceTestInput {
@@ -55,7 +53,7 @@ export interface ProviderManagementAdapter {
 }
 
 export interface ProviderManagementServiceOptions {
-  readonly repository: SqliteProviderRegistrationRepository;
+  readonly repository: ProviderRegistrationRepository;
   readonly adapters: ReadonlyMap<ProviderKind, ProviderManagementAdapter>;
   readonly secretStore: Pick<SecretStoreBoundary, "setSecret" | "getSecret" | "deleteSecret">;
   readonly musicPairing?: Pick<PearPairingService, "reserve"> | undefined;
@@ -129,7 +127,7 @@ export class StreamerBotSubscriptionSelectionUnavailableError extends Error {
 
 
 export class ProviderManagementService {
-  readonly #repository: SqliteProviderRegistrationRepository;
+  readonly #repository: ProviderRegistrationRepository;
   readonly #adapters: ReadonlyMap<ProviderKind, ProviderManagementAdapter>;
   readonly #secretStore: ProviderManagementServiceOptions["secretStore"];
   readonly #musicPairing: ProviderManagementServiceOptions["musicPairing"];

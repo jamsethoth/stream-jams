@@ -6,11 +6,12 @@ import {
   type MusicModuleConfig
 } from "@stream-jams/core";
 import type { AssetLibraryService } from "../assets/asset-library-service.js";
-import type { SqliteProviderRegistrationRepository } from "../providers/sqlite-provider-registration-repository.js";
+import type { ProviderRegistrationRepository } from "../providers/provider-registration-repository.js";
+
 import type { MusicRuntimeCoordinator } from "./music-runtime-coordinator.js";
 
 export interface MusicManagementServiceOptions {
-  readonly providers: Pick<SqliteProviderRegistrationRepository, "findActive" | "findById">;
+  readonly providers: Pick<ProviderRegistrationRepository, "findActive" | "findById">;
   readonly runtime: Pick<MusicRuntimeCoordinator, "getStatus" | "reconcile">;
   readonly getConfig: () => Promise<{ readonly enabled: boolean; readonly config: unknown }>;
   readonly assets: Pick<AssetLibraryService, "resolveMusicAssets">;

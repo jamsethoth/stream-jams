@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertDesktopMediaProtocolVersion, mediaPreviewDescriptorSchema, privateMediaReferenceSchema, trustedMediaGrantSchema } from "./media-reference.js";
+import { mediaPreviewDescriptorSchema, privateMediaReferenceSchema, trustedMediaGrantSchema } from "./media-reference.js";
 
 const snapshot = { assetId: "large-video", version: "a".repeat(64), mimeType: "video/mp4", sizeBytes: 100 * 1024 * 1024, durationMs: 60_000 };
 describe("private media contracts", () => {
@@ -14,7 +14,6 @@ describe("private media contracts", () => {
     }
     expect(privateMediaReferenceSchema.safeParse({ ...reference, handle: `med_${"a".repeat(43)}` }).success).toBe(false);
     expect(privateMediaReferenceSchema.safeParse({ ...reference, protocolVersion: 0 }).success).toBe(false);
-    expect(() => assertDesktopMediaProtocolVersion(0)).toThrow("Incompatible desktop media protocol");
   });
   it("rejects unsafe identity, metadata and arbitrary grant URLs", () => {
     const grant = { snapshot, handle: `med_${"a".repeat(43)}`, expiresAt: Date.now() + 10_000 };

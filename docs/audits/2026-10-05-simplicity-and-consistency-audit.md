@@ -2,6 +2,8 @@
 
 This pass supplements [the class/interface audit](./2026-10-05-class-interface-structure-audit.md). A1–A7 remain open recommendations. This is an investigation, not an implementation or publication of repairs.
 
+Implementation follow-up: S1–S5 and A1–A7 have been implemented on `codex/architecture-audit-repairs`. See the [execution ledger](2026-10-05-architecture-repair-progress.md) for source/test reconciliation and verification status. The audit findings below retain their original baseline and estimates.
+
 The useful simplifications are fewer supported paths, shared transformations, and state grouped by the operation it represents. None of these findings calls for a deeper inheritance hierarchy. Prefer ordinary functions and local state ownership; introduce an abstraction only when it reduces the work required to understand the callers.
 
 ## Findings

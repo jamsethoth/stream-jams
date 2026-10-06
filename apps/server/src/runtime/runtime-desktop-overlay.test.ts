@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  DefaultOverlayCompositionService,
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
   type AlertEditorDocument,
@@ -14,6 +15,7 @@ import { InMemorySecretStore } from "@stream-jams/test-support";
 import { afterEach, expect, it, vi } from "vitest";
 import { createRuntimeAppComposition, type RuntimeAppComposition } from "./runtime-composition.js";
 import { DesktopModuleSnapshotSink } from "../modules/overlay-surfaces/desktop-module-snapshot-sink.js";
+import { OverlayGateway } from "../websocket/overlay-gateway.js";
 
 const roots: string[] = [];
 const runtimes: RuntimeAppComposition[] = [];
@@ -172,6 +174,39 @@ it("coalesces production Music output work while a desktop composition is blocke
     await first;
     await vi.waitFor(() => expect(calls).toBe(2));
   } finally { release(); spy.mockRestore(); }
+});
+
+it.each(["generation-replacement", "shutdown"] as const)("rejects blocked browser Music composition after %s", async transition => {
+  const { runtime } = await setup();
+  const route = { overlayId: "default", moduleId: "music", purpose: "live", scope: "module", targetProfileId: "landscape" } as const;
+  const clients = vi.spyOn(OverlayGateway.prototype, "clients", "get").mockReturnValue([
+    { ...route, id: "browser-music", connectedAt: "2026-10-05", lastSeenAt: "2026-10-05", userAgent: null }
+  ]);
+  let release!: () => void;
+  let entered!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const original = DefaultOverlayCompositionService.prototype.resolveModuleOutput;
+  const deliver = vi.spyOn(OverlayGateway.prototype, "deliverComposition");
+  const generation = vi.spyOn(runtime.musicRuntimeCoordinator, "generation", "get");
+  let obsolete: Awaited<ReturnType<typeof original>> | undefined;
+  let first = true;
+  const resolution = vi.spyOn(DefaultOverlayCompositionService.prototype, "resolveModuleOutput").mockImplementation(async function (this: DefaultOverlayCompositionService, input) {
+    const composition = await original.call(this, input);
+    if (input.moduleId === "music" && first) { first = false; obsolete = composition; entered(); await blocked; }
+    return composition;
+  });
+  try {
+    await runtime.musicRuntimeCoordinator.reconcile();
+    await started;
+    // Isolate the generation guard from the independent revision guard.
+    if (transition === "generation-replacement") generation.mockReturnValue("replacement-generation");
+    else await runtime.musicRuntimeCoordinator.stop();
+    release();
+    await resolution.mock.results[0]!.value;
+    expect(obsolete).toBeDefined();
+    expect(deliver.mock.calls.some(([, composition]) => composition === obsolete)).toBe(false);
+  } finally { release(); clients.mockRestore(); generation.mockRestore(); resolution.mockRestore(); deliver.mockRestore(); }
 });
 
 it("bounds rejection observers under many Music revisions and recovers after output failure", async () => {

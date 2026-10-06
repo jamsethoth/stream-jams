@@ -1,3 +1,4 @@
+import { projectMediaDurationCandidates } from "../playback/media-duration-candidates.js";
 import {
   effectTriggerSchema,
   matchesEffectBinding,
@@ -15,7 +16,7 @@ import {
   type ScreenEffectRepository
 } from "@stream-jams/core";
 import { MediaUnavailableError, type LocalMediaService } from "../assets/local-media-service.js";
-import { effectOccurrenceKey } from "./effect-playback-coordinator.js";
+import { moduleOccurrenceKey } from "../playback/occurrence-identity.js";
 
 export type EffectAdmissionOutcomeStatus =
   | "queued"
@@ -238,7 +239,7 @@ export class EffectAdmissionService {
 
     const occurrenceId = this.#generateOccurrenceId();
     const queued = this.#queue.enqueue(this.#createOccurrence(occurrenceId, content, trigger));
-    if (queued !== "full") this.#localMediaService?.commitAdmission(effectOccurrenceKey("screen-effects", occurrenceId));
+    if (queued !== "full") this.#localMediaService?.commitAdmission(moduleOccurrenceKey("screen-effects", occurrenceId));
     return queued === "full"
       ? { effectId: content.effectId, status: "full" }
       : { effectId: content.effectId, status: "queued", occurrenceId };
@@ -294,16 +295,7 @@ export class EffectAdmissionService {
       customDurationMs: content.variant.durationMs,
       fallbackDurationMs: 10_000,
       maximumDurationMs: 120_000,
-      candidates: ids.flatMap((assetId) => {
-        const record = records.get(assetId);
-        return record === undefined ? [] : [{
-          assetId,
-          label: record.originalFileName,
-          mediaType: record.mediaType,
-          durationMs: record.durationMs,
-          eligible: true
-        }];
-      })
+      candidates: projectMediaDurationCandidates(ids, records)
     });
     return {
       ...content,

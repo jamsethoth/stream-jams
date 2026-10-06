@@ -1,6 +1,7 @@
+import type { MusicRuntimeSourceAdapter, MusicArtworkCapability } from "./music-source-adapter.js";
 import { pearArtworkPolicy } from "./music-artwork-policy.js";
 import { describe, expect, it, vi } from "vitest";
-import { createDefaultMusicModuleConfig, type MusicSnapshot, type MusicSourceAdapter, type MusicStatus } from "@stream-jams/core";
+import { createDefaultMusicModuleConfig, type MusicSnapshot, type MusicStatus } from "@stream-jams/core";
 import { MusicRuntimeCoordinator } from "./music-runtime-coordinator.js";
 
 const connected: MusicStatus = { state: "connected", stale: false, diagnosticReference: null };
@@ -8,7 +9,8 @@ const configuration = createDefaultMusicModuleConfig();
 function snapshot(generation: string, revision: number, observedAtEpochMs: number, trackId = "song"): MusicSnapshot {
   return { providerId: "pear", generation, revision, track: { id: trackId, title: trackId, artists: ["Artist"], album: null, artworkRef: null }, playbackState: "playing", positionMs: 0, durationMs: null, observedAtEpochMs, session: null };
 }
-class ControlledSource implements MusicSourceAdapter {
+class ControlledSource implements MusicRuntimeSourceAdapter {
+  artwork: MusicArtworkCapability | null = null;
   onSnapshot: ((value: MusicSnapshot) => void) | null = null;
   onStatus: ((value: MusicStatus) => void) | null = null;
   signal: AbortSignal | null = null;
@@ -31,9 +33,9 @@ function fixture() {
     getConfig: async () => ({ enabled, config: configuration }),
     getActiveSource: async () => providerId === null ? null : ({ providerId, configuration: { baseUrl: "http://127.0.0.1:26538", transport: "poll" as const }, token: "test" }),
     createSource: () => { const source = new ControlledSource(); sources.push(source); return source; },
-    now: () => now,
-    sink: async event => { publications.push({ revision: event.revision, projection: event.getProjection("landscape") }); }
+    now: () => now
   });
+  runtime.subscribe(revision => { publications.push({ revision, projection: runtime.getProjection("landscape") }); });
   return { runtime, sources, publications, setEnabled(value: boolean) { enabled = value; }, setProvider(value: string | null) { providerId = value; }, setNow(value: number) { now = value; } };
 }
 
@@ -45,7 +47,7 @@ describe("MusicRuntimeCoordinator", () => {
     const source = f.sources[0]!;
     source.onSnapshot?.(snapshot(generation, 1, 1000));
     expect(f.runtime.getArtworkPolicy(owner)).toBeNull();
-    Object.assign(source, { getArtworkPolicy: () => pearArtworkPolicy });
+    source.artwork = { getArtworkPolicy: () => pearArtworkPolicy, getArtworkDescriptor: () => null };
     expect(f.runtime.getArtworkPolicy(owner)).toBe(pearArtworkPolicy);
     expect(f.runtime.getArtworkPolicy({ ...owner, generation: "obsolete" })).toBeNull();
     expect(f.runtime.getArtworkPolicy({ ...owner, providerId: "other" })).toBeNull();
@@ -194,27 +196,7 @@ describe("MusicRuntimeCoordinator", () => {
     }
   });
 
-  it("keeps each slow publication bound to its original snapshot and status", async () => {
-    let release!: () => void;
-    const blocked = new Promise<void>(resolve => { release = resolve; });
-    let firstStarted!: () => void;
-    const started = new Promise<void>(resolve => { firstStarted = resolve; });
-    const delivered: string[] = [];
-    const source = new ControlledSource();
-    const runtime = new MusicRuntimeCoordinator({
-      getConfig: async () => ({ enabled: true, config: createDefaultMusicModuleConfig() }),
-      getActiveSource: async () => ({ providerId: "pear", configuration: { baseUrl: "http://127.0.0.1:26538", transport: "poll" }, token: "test" }),
-      createSource: () => source, now: () => 1000,
-      sink: async event => { if (event.getProjection("landscape")?.snapshot.track?.id === "first") { firstStarted(); await blocked; delivered.push(`${event.getProjection("landscape")?.snapshot.track?.id ?? "none"}:${event.status.state}`); } }
-    });
-    await runtime.reconcile(); source.onStatus?.(connected);
-    source.onSnapshot?.(snapshot(runtime.generation!, 1, 1000, "first"));
-    await started;
-    source.onSnapshot?.(snapshot(runtime.generation!, 2, 1000, "second"));
-    source.onStatus?.({ state: "reconnecting", stale: false, diagnosticReference: null });
-    release(); await vi.waitFor(() => expect(delivered).toEqual(["first:connected"]));
-    await runtime.stop();
-  });
+
 
   it("retains auth-required when start rejects after reporting revoked credentials", async () => {
     const source = new ControlledSource();
@@ -236,9 +218,9 @@ describe("MusicRuntimeCoordinator", () => {
     const runtime = new MusicRuntimeCoordinator({
       getConfig: async () => ({ enabled: true, config: createDefaultMusicModuleConfig() }),
       getActiveSource: async () => ({ providerId: "pear", configuration: { baseUrl: "http://127.0.0.1:26538", transport: "poll" }, token: "test" }),
-      createSource: () => source,
-      sink: async () => blocking
+      createSource: () => source
     });
+    runtime.subscribe(async () => { await blocking; });
     await runtime.reconcile(); await Promise.resolve();
     const result = await Promise.race([runtime.stop().then(() => "stopped"), new Promise<string>(resolve => setTimeout(() => resolve("blocked"), 50))]);
     expect(result).toBe("stopped");
@@ -254,29 +236,7 @@ describe("MusicRuntimeCoordinator", () => {
     expect(f.sources[0]?.stopCount).toBe(1);
   });
 
-  it("keeps only the latest publication queued behind a slow sink", async () => {
-    let release!: () => void;
-    const blocked = new Promise<void>(resolve => { release = resolve; });
-    const received: number[] = [];
-    let holdFirst = true;
-    const source = new ControlledSource();
-    const runtime = new MusicRuntimeCoordinator({
-      getConfig: async () => ({ enabled: true, config: createDefaultMusicModuleConfig() }),
-      getActiveSource: async () => ({ providerId: "pear", configuration: { baseUrl: "http://127.0.0.1:26538", transport: "poll" }, token: "test" }),
-      createSource: () => source,
-      now: () => 1000,
-      sink: async event => { received.push(event.revision); if (holdFirst) { holdFirst = false; await blocked; } }
-    });
-    await runtime.reconcile();
-    await Promise.resolve();
-    source.onStatus?.(connected);
-    for (let revision = 1; revision <= 20; revision++) source.onSnapshot?.(snapshot(runtime.generation!, revision, 1000));
-    expect(received).toHaveLength(1);
-    release();
-    await vi.waitFor(() => expect(received).toHaveLength(2));
-    expect(received[1]).toBe(runtime.revision);
-    await runtime.stop();
-  });
+
 
   it("offers the current identity to a new subscriber and rejects an old revision after disconnect", async () => {
     const f = fixture(); f.setEnabled(true); await f.runtime.reconcile();

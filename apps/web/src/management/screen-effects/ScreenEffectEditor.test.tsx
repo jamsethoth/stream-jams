@@ -13,7 +13,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssetApi } from "../assets/asset-api.js";
 import type { AudioApi } from "../audio/audio-api.js";
-import type { ManagementApi } from "../management-api.js";
+import type { ScreenEffectEditorManagementApi } from "./ScreenEffectEditor.js";
 import { DirtyNavigationProvider } from "../navigation/dirty-navigation.js";
 import { ScreenEffectEditor } from "./ScreenEffectEditor.js";
 import type { ScreenEffectsApi } from "./screen-effects-api.js";
@@ -398,7 +398,7 @@ function renderEditor(options: {
   readonly api: ScreenEffectsApi;
   readonly create: boolean;
   readonly document?: ScreenEffectDocument;
-  readonly managementApi?: ManagementApi;
+  readonly managementApi?: ScreenEffectEditorManagementApi;
 }) {
   render(<DirtyNavigationProvider><ScreenEffectEditor
     api={options.api}
@@ -474,15 +474,18 @@ function asset(id: string, displayName: string, mediaType: "image" | "video" | "
   };
 }
 
-function managementApi(overrides: Partial<ManagementApi> = {}): ManagementApi {
+function managementApi(overrides: Partial<ScreenEffectEditorManagementApi> = {}): ScreenEffectEditorManagementApi {
   return {
     listAssetLibraryItems: vi.fn(async () => assets),
-    getTwitchStatus: vi.fn(async () => ({ connected: false, authorizationState: "disconnected", missingScopes: [], account: null })),
+    updateAssetMetadata: vi.fn(async (id) => assets.find(item => item.id === id)!),
+    getAssetChangeImpact: vi.fn(async (id: string) => ({ assetId: id, usage: { assetId: id, totalUsageCount: 0, usages: [] }, owners: [], canDelete: true, requiresConfirmation: false, warnings: [] })),
+    deleteAsset: vi.fn(async () => {}),
+    getTwitchStatus: vi.fn(async () => ({ connected: false as const, authorizationState: "disconnected" as const, missingScopes: [], account: null })),
     getTwitchCustomRewards: vi.fn(async () => ({ rewards: [] })),
     listRegisteredProviders: vi.fn(async () => []),
     getStreamerBotSubscriptions: vi.fn(async () => { throw new Error("not configured"); }),
     ...overrides
-  } as unknown as ManagementApi;
+  };
 }
 
 function audioApi(): AudioApi {

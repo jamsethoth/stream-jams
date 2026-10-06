@@ -3,6 +3,15 @@ import { alertEditorDocumentSchema, type TwitchCustomReward } from "@stream-jams
 import { createHttpManagementApi } from "./management-api.js";
 
 describe("createHttpManagementApi", () => {
+  it("rejects malformed successful settings responses", async () => {
+    const api = createHttpManagementApi({ fetch: async (input) => jsonResponse(
+      String(input) === "/auth/management/sessions" ? managementSession() : { host: 17, port: "not-a-port" }
+    ) });
+    await expect(api.getServerConfig()).rejects.toThrow();
+    await expect(api.getDesktopConfig()).rejects.toThrow();
+    await expect(api.getModerationSettings()).rejects.toThrow();
+  });
+
   it("loads and updates overlay module enablement", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -967,7 +976,7 @@ describe("createHttpManagementApi", () => {
       rawEventLogs: [],
       ...diagnostics
     };
-    const debugExported = {
+    const debugExported = { runtimeLogSkippedCorruptRecords: 0,
       ...exported,
       debugExport: true,
       runtimeLogEntries: [],

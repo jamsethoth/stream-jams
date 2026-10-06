@@ -28,12 +28,12 @@ interface JsonRequestOptions {
 
 export interface ManagementHttpClient {
   request(path: string, options: ManagementRawRequestOptions): Promise<Response>;
-  getJson<T>(path: string, fallbackMessage: string): Promise<T>;
-  postJson<T>(path: string, body: unknown | undefined, fallbackMessage: string): Promise<T>;
+  getJson(path: string, fallbackMessage: string): Promise<unknown>;
+  postJson(path: string, body: unknown | undefined, fallbackMessage: string): Promise<unknown>;
   postRequest(path: string, fallbackMessage: string, body?: unknown): Promise<void>;
-  putJson<T>(path: string, body: unknown, fallbackMessage: string): Promise<T>;
-  patchJson<T>(path: string, body: unknown, fallbackMessage: string): Promise<T>;
-  deleteJson<T>(path: string, fallbackMessage: string): Promise<T>;
+  putJson(path: string, body: unknown, fallbackMessage: string): Promise<unknown>;
+  patchJson(path: string, body: unknown, fallbackMessage: string): Promise<unknown>;
+  deleteJson(path: string, fallbackMessage: string): Promise<unknown>;
   deleteRequest(path: string, fallbackMessage: string, body?: unknown): Promise<void>;
 }
 
@@ -155,7 +155,7 @@ export function createManagementHttpClient(options: HttpManagementClientOptions 
     );
   }
 
-  async function requestJson<T>(path: string, options: JsonRequestOptions): Promise<T> {
+  async function requestJson(path: string, options: JsonRequestOptions): Promise<unknown> {
     const method = options.method ?? "GET";
     const hasBody = options.body !== undefined;
     const response = await request(path, {
@@ -167,16 +167,16 @@ export function createManagementHttpClient(options: HttpManagementClientOptions 
       fallbackMessage: options.fallbackMessage
     });
 
-    return (await response.json()) as T;
+    return response.json() as Promise<unknown>;
   }
 
   return {
     request,
-    getJson<T>(path: string, fallbackMessage: string) {
-      return requestJson<T>(path, { fallbackMessage });
+    getJson(path: string, fallbackMessage: string) {
+      return requestJson(path, { fallbackMessage });
     },
-    postJson<T>(path: string, body: unknown | undefined, fallbackMessage: string) {
-      return requestJson<T>(path, { method: "POST", body, fallbackMessage });
+    postJson(path: string, body: unknown | undefined, fallbackMessage: string) {
+      return requestJson(path, { method: "POST", body, fallbackMessage });
     },
     async postRequest(path: string, fallbackMessage: string, body?: unknown) {
       const hasBody = body !== undefined;
@@ -189,14 +189,14 @@ export function createManagementHttpClient(options: HttpManagementClientOptions 
         fallbackMessage
       });
     },
-    putJson<T>(path: string, body: unknown, fallbackMessage: string) {
-      return requestJson<T>(path, { method: "PUT", body, fallbackMessage });
+    putJson(path: string, body: unknown, fallbackMessage: string) {
+      return requestJson(path, { method: "PUT", body, fallbackMessage });
     },
-    patchJson<T>(path: string, body: unknown, fallbackMessage: string) {
-      return requestJson<T>(path, { method: "PATCH", body, fallbackMessage });
+    patchJson(path: string, body: unknown, fallbackMessage: string) {
+      return requestJson(path, { method: "PATCH", body, fallbackMessage });
     },
-    deleteJson<T>(path: string, fallbackMessage: string) {
-      return requestJson<T>(path, { method: "DELETE", fallbackMessage });
+    deleteJson(path: string, fallbackMessage: string) {
+      return requestJson(path, { method: "DELETE", fallbackMessage });
     },
     async deleteRequest(path: string, fallbackMessage: string, body?: unknown) {
       const hasBody = body !== undefined;

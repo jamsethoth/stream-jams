@@ -378,3 +378,6 @@ export * from "./management/local-websocket-connection.js";
 export { moduleMuteStateSchema } from "./playback/schemas.js";
 export { defaultModuleMuteState, type ModuleMuteState, type MutablePlaybackModuleId } from "./playback/types.js";
 export { NamedError } from "./shared/named-error.js";
+
+export * from "./management/settings-response-contracts.js";
+export * from "./management/diagnostics-response-contracts.js";

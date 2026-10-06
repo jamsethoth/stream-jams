@@ -112,7 +112,7 @@ function batchFixture(overrides: Partial<DeviceAudioBatch> = {}): DeviceAudioBat
 function transportFixture(result: DeviceAudioResult = { failedRouteIds: [] }): DesktopAudioTransport & {
   readonly play: ReturnType<typeof vi.fn<(payload: AudioPlaybackPayload) => Promise<typeof result>>>;
 } {
-  return {
+  return { setModuleMutes: vi.fn(async () => {}),
     listOutputDevices: vi.fn(async () => []),
     testOutput: vi.fn(async () => {}),
     play: vi.fn(async () => result),

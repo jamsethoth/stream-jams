@@ -8,7 +8,6 @@ import {
   type AlertPriorityGroup
 } from "@stream-jams/core";
 
-import { snapEditorRect } from "../../editor/snapping.js";
 
 type LayerLayout = AlertEditorDocument["targetProfiles"][number]["layerLayouts"][number];
 export type TargetProfileId = AlertEditorDocument["targetProfiles"][number]["id"];
@@ -36,10 +35,6 @@ export interface AlertEditorState {
   readonly historyLimit: number;
 }
 
-export interface SnapOptions {
-  readonly gridSize?: number;
-  readonly threshold?: number;
-}
 
 export interface AddShapeLayerResult {
   readonly document: AlertEditorDocument;
@@ -438,16 +433,6 @@ export function updateLayerGeometry(
   return changed ? { ...document, targetProfiles } : document;
 }
 
-export function snapLayerGeometry(
-  geometry: LayerGeometry,
-  profileId: TargetProfileId,
-  options: SnapOptions = {}
-): LayerGeometry {
-  const profile = targetProfileDefinitions.find((candidate) => candidate.id === profileId)!;
-  return snapEditorRect(geometry, { mode: "move", bounds: profile, peers: [], grid: true, alignment: true, scale: 1,
-    ...(options.gridSize === undefined ? {} : { gridSize: options.gridSize }),
-    ...(options.threshold === undefined ? {} : { threshold: options.threshold }) }).rect;
-}
 
 function synchronizeLayerOrder(
   document: AlertEditorDocument,

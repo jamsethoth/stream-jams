@@ -1,3 +1,4 @@
+import { moduleOccurrenceKey } from "../playback/occurrence-identity.js";
 import {
   DefaultEffectQueue,
   type DeviceAudioBatch,
@@ -7,7 +8,6 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   EffectPlaybackCoordinator,
-  effectOccurrenceKey,
   type EffectPlaybackAudioOutputService
 } from "./effect-playback-coordinator.js";
 
@@ -71,7 +71,7 @@ function harness(item: EffectOccurrence, options: {
   const audioBatches: DeviceAudioBatch[] = [];
   const stopFailures: Array<{ readonly error: unknown; readonly occurrenceId: string }> = [];
   const playbackFailures: Array<{ error: unknown; occurrenceId: string; recipient: string }> = [];
-  const browser = {
+  const browser = { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(),
     deliverPlaybackInstruction: vi.fn((instruction: OverlayInstruction) => {
       delivered.push(instruction);
       return { deliveredClientIds: options.noOutputs ? [] : ["obs"] };
@@ -145,7 +145,7 @@ describe("EffectPlaybackCoordinator", () => {
     await h.coordinator.startNext(); await vi.advanceTimersByTimeAsync(14_999);
     expect(h.delivered).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(1);
-    expect(h.desktop.stop).toHaveBeenCalledWith(effectOccurrenceKey("screen-effects", "stalled"));
+    expect(h.desktop.stop).toHaveBeenCalledWith(moduleOccurrenceKey("screen-effects", "stalled"));
     expect(h.browser.stopPlaybackInstructions).not.toHaveBeenCalled();
     expect(h.audio.stop).not.toHaveBeenCalled();
     expect(h.delivered.length).toBeGreaterThan(0);
@@ -167,7 +167,7 @@ describe("EffectPlaybackCoordinator", () => {
     Object.assign(h.audio, { prepare });
     await h.coordinator.startNext(); await vi.advanceTimersByTimeAsync(15_000);
     expect(h.delivered.length).toBeGreaterThan(0);
-    finish({ unavailableRouteIds: [], batches: [{ playbackId: effectOccurrenceKey("screen-effects", "late-routes"), documentId: "effect-late-routes", durationMs: 10000, muted: false, layers: [], destinations: [{ deviceId: "device", routeIds: ["headphones"] }] }] });
+    finish({ unavailableRouteIds: [], batches: [{ playbackId: moduleOccurrenceKey("screen-effects", "late-routes"), documentId: "effect-late-routes", durationMs: 10000, muted: false, layers: [], destinations: [{ deviceId: "device", routeIds: ["headphones"] }] }] });
     await vi.advanceTimersByTimeAsync(0);
     expect(prepare).not.toHaveBeenCalled(); expect(h.audio.play).not.toHaveBeenCalled();
     await h.coordinator.close(); expect(vi.getTimerCount()).toBe(0);
@@ -201,7 +201,7 @@ describe("EffectPlaybackCoordinator", () => {
     const onStopFailure = vi.fn(async () => { throw new Error("log unavailable"); });
     const coordinator = new EffectPlaybackCoordinator({
       queue, getSafety: () => ({ paused: false, muted: false, doNotDisturb: false }),
-      overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: ["obs"] }) },
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(), deliverPlaybackInstruction: () => ({ deliveredClientIds: ["obs"] }) },
       desktopVisualSink: { play: async () => {}, stop: vi.fn().mockRejectedValueOnce(new Error("stop unavailable")).mockResolvedValue(undefined), close: async () => {} },
       onStopFailure
     });
@@ -257,8 +257,8 @@ describe("EffectPlaybackCoordinator", () => {
   afterEach(() => vi.useRealTimers());
 
   it("does not collide with another module's local occurrence ID", () => {
-    expect(effectOccurrenceKey("alerts", "same")).not.toBe(
-      effectOccurrenceKey("screen-effects", "same")
+    expect(moduleOccurrenceKey("alerts", "same")).not.toBe(
+      moduleOccurrenceKey("screen-effects", "same")
     );
   });
 
@@ -338,7 +338,7 @@ describe("EffectPlaybackCoordinator", () => {
       finishAlert = () => resolve({ failedRouteIds: [] });
     }));
     const alertBatch = audio.play({
-      playbackId: effectOccurrenceKey("alerts", "same"),
+      playbackId: moduleOccurrenceKey("alerts", "same"),
       documentId: "alert",
       durationMs: 10_000,
       muted: false,
@@ -352,8 +352,8 @@ describe("EffectPlaybackCoordinator", () => {
     await coordinator.startNext();
     await coordinator.skip("same");
 
-    expect(audio.stop).toHaveBeenCalledWith(effectOccurrenceKey("screen-effects", "same"));
-    expect(audio.stop).not.toHaveBeenCalledWith(effectOccurrenceKey("alerts", "same"));
+    expect(audio.stop).toHaveBeenCalledWith(moduleOccurrenceKey("screen-effects", "same"));
+    expect(audio.stop).not.toHaveBeenCalledWith(moduleOccurrenceKey("alerts", "same"));
     expect(alertSettled).toBe(false);
     finishAlert();
     await expect(alertBatch).resolves.toEqual({ failedRouteIds: [] });
@@ -451,7 +451,7 @@ describe("EffectPlaybackCoordinator", () => {
     finishPreparation({
       unavailableRouteIds: [],
       batches: [{
-        playbackId: effectOccurrenceKey("screen-effects", "preparing"),
+        playbackId: moduleOccurrenceKey("screen-effects", "preparing"),
         documentId: "effect-preparing",
         durationMs: 10_000,
         muted: false,
@@ -463,7 +463,7 @@ describe("EffectPlaybackCoordinator", () => {
 
     expect(audio.play).not.toHaveBeenCalled();
     expect(audio.stop).toHaveBeenCalledExactlyOnceWith(
-      effectOccurrenceKey("screen-effects", "preparing")
+      moduleOccurrenceKey("screen-effects", "preparing")
     );
     expect(queue.snapshot().recent[0]).toMatchObject({ id: "preparing", status: "skipped" });
   });
@@ -499,7 +499,7 @@ it("reports outstanding recipients when the watchdog stops cleanly", async () =>
     const queue = new DefaultEffectQueue(); queue.enqueue(occurrence("timeout", "visual"));
     const expired = vi.fn();
     const coordinator = new EffectPlaybackCoordinator({ queue, getSafety: () => ({ paused: false, muted: false, doNotDisturb: false }),
-      overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: ["obs"] }), stopPlaybackInstructions: vi.fn() },
+      overlayPlaybackSink: { setPlaybackMuted: vi.fn(), setModuleMutes: vi.fn(), deliverPlaybackInstruction: () => ({ deliveredClientIds: ["obs"] }), stopPlaybackInstructions: vi.fn() },
       onWatchdogExpired: expired });
     await coordinator.startNext();
     await vi.advanceTimersByTimeAsync(15100);

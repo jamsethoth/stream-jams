@@ -89,6 +89,23 @@ const targetProfileDimensions: Record<TargetProfileId, Readonly<{ width: number;
   vertical: { width: 1080, height: 1920 }
 };
 
+interface CreateAlertDialogState {
+  readonly eventLocked: boolean;
+  readonly eventType: StreamEventType;
+  readonly name: string;
+  readonly rewardSelection: ChannelPointRewardSelection;
+  readonly error: ActionableManagementError | null;
+}
+interface VariationDialogState {
+  readonly parent: AlertInventoryRow;
+  readonly name: string;
+  readonly error: ActionableManagementError | null;
+}
+const closedCreateAlertDraft: CreateAlertDialogState = {
+  eventLocked: false, eventType: alertStarterTemplates[0].eventType,
+  name: alertStarterTemplates[0].defaultName, rewardSelection: { mode: "all" }, error: null
+};
+
 export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: AlertSetsPageProps) {
   const [sets, setSets] = useState<readonly AlertSetOverview[]>([]);
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
@@ -101,15 +118,14 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
   const [nameDialog, setNameDialog] = useState<NameDialogState | null>(null);
   const [nameDraft, setNameDraft] = useState("");
-  const [createAlertOpen, setCreateAlertOpen] = useState(false);
-  const [createAlertEventLocked, setCreateAlertEventLocked] = useState(false);
-  const [createAlertEventType, setCreateAlertEventType] = useState<StreamEventType>(alertStarterTemplates[0].eventType);
-  const [createAlertName, setCreateAlertName] = useState<string>(alertStarterTemplates[0].defaultName);
-  const [createAlertRewardSelection, setCreateAlertRewardSelection] = useState<ChannelPointRewardSelection>({ mode: "all" });
-  const [createAlertError, setCreateAlertError] = useState<ActionableManagementError | null>(null);
-  const [variationParent, setVariationParent] = useState<AlertInventoryRow | null>(null);
-  const [variationName, setVariationName] = useState("");
-  const [variationError, setVariationError] = useState<ActionableManagementError | null>(null);
+  const [createAlertDialog, setCreateAlertDialog] = useState<CreateAlertDialogState | null>(null);
+  const [variationDialog, setVariationDialog] = useState<VariationDialogState | null>(null);
+  const { eventLocked: createAlertEventLocked, eventType: createAlertEventType, name: createAlertName,
+    rewardSelection: createAlertRewardSelection, error: createAlertError } = createAlertDialog ?? closedCreateAlertDraft;
+  const createAlertOpen = createAlertDialog !== null;
+  const variationParent = variationDialog?.parent ?? null;
+  const variationName = variationDialog?.name ?? "";
+  const variationError = variationDialog?.error ?? null;
   const [alertMutation, setAlertMutation] = useState<AlertMutationDialogState | null>(null);
   const [activationImpact, setActivationImpact] = useState<AlertSetActivationImpact | null>(null);
   const [activationSet, setActivationSet] = useState<AlertSetOverview | null>(null);
@@ -381,27 +397,37 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     }
   }
 
+  function updateCreateAlertDialog(patch: Partial<CreateAlertDialogState>) {
+    setCreateAlertDialog(current => current === null ? null : { ...current, ...patch });
+  }
+  function updateVariationDialog(patch: Partial<VariationDialogState>) {
+    setVariationDialog(current => current === null ? null : { ...current, ...patch });
+  }
+  async function revealCreatedAlert(created: Pick<AlertInventoryRow, "id" | "setId" | "eventType">): Promise<void> {
+    const groupKey = `event:${created.eventType}`;
+    revealMutationTarget(groupKey);
+    await refresh(created.setId);
+    pendingFocus.current = { alertId: created.id, groupKey };
+    setManualExpandedEventKeys(current => new Set([...current, groupKey]));
+  }
+
   function openCreateAlertDialog(eventType?: StreamEventType) {
-    const template = alertStarterTemplates.find((candidate) => candidate.eventType === eventType) ?? alertStarterTemplates[0];
-    setCreateAlertEventType(template.eventType);
-    setCreateAlertName(template.defaultName);
-    setCreateAlertRewardSelection({ mode: "all" });
-    setCreateAlertEventLocked(eventType !== undefined);
-    setCreateAlertError(null);
-    setCreateAlertOpen(true);
+    const template = alertStarterTemplates.find(candidate => candidate.eventType === eventType) ?? alertStarterTemplates[0];
+    setCreateAlertDialog({ eventType: template.eventType, name: template.defaultName, rewardSelection: { mode: "all" },
+      eventLocked: eventType !== undefined, error: null });
   }
 
   function selectAlertEventType(eventType: StreamEventType) {
-    const template = alertStarterTemplates.find((candidate) => candidate.eventType === eventType);
-    setCreateAlertEventType(eventType);
-    setCreateAlertRewardSelection({ mode: "all" });
-    if (template !== undefined) setCreateAlertName(template.defaultName);
+    const template = alertStarterTemplates.find(candidate => candidate.eventType === eventType);
+    updateCreateAlertDialog({ eventType, rewardSelection: { mode: "all" },
+      ...(template === undefined ? {} : { name: template.defaultName }) });
   }
 
   async function submitCreateAlert(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (
       detail === null
+      || createAlertDialog === null
       || createAlertName.trim() === ""
       || (
         createAlertEventType === "channel_point_redemption"
@@ -410,7 +436,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
       )
     ) return;
     setBusy(true);
-    setCreateAlertError(null);
+    updateCreateAlertDialog({ error: null });
     try {
       const created = await managementApi.createAlert(detail.overview.id, {
         eventType: createAlertEventType,
@@ -419,50 +445,40 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
           ? { channelPointRewardSelection: createAlertRewardSelection }
           : {})
       });
-      const groupKey = `event:${created.eventType}`;
-      revealMutationTarget(groupKey);
-      await refresh(created.setId);
-      pendingFocus.current = { alertId: created.id, groupKey };
-      setManualExpandedEventKeys((current) => new Set([...current, groupKey]));
-      setCreateAlertOpen(false);
+      await revealCreatedAlert(created);
+      setCreateAlertDialog(null);
       setNotice({ tone: "warning", message: `${created.name} created disabled and marked Needs review.` });
     } catch (cause) {
-      setCreateAlertError(toActionableError(
+      updateCreateAlertDialog({ error: toActionableError(
         "The alert was not created",
         cause,
         "Review the event type and alert name, then try again."
-      ));
+      ) });
     } finally {
       setBusy(false);
     }
   }
 
   function openVariationDialog(alert: AlertInventoryRow) {
-    setVariationParent(alert);
-    setVariationName(`${alert.name} variation`);
-    setVariationError(null);
+    setVariationDialog({ parent: alert, name: `${alert.name} variation`, error: null });
   }
 
   async function submitVariation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (variationParent === null || variationName.trim() === "") return;
     setBusy(true);
-    setVariationError(null);
+    updateVariationDialog({ error: null });
     try {
       const created = await managementApi.createAlertVariation(variationParent.id, { name: variationName.trim() });
-      const groupKey = `event:${created.eventType}`;
-      revealMutationTarget(groupKey);
-      await refresh(created.setId);
-      pendingFocus.current = { alertId: created.id, groupKey };
-      setManualExpandedEventKeys((current) => new Set([...current, groupKey]));
-      setVariationParent(null);
+      await revealCreatedAlert(created);
+      setVariationDialog(null);
       setNotice({ tone: "warning", message: `${created.name} created disabled and marked Needs review.` });
     } catch (cause) {
-      setVariationError(toActionableError(
+      updateVariationDialog({ error: toActionableError(
         "The variation was not created",
         cause,
         "Choose a unique name for this alert, then try again."
-      ));
+      ) });
     } finally {
       setBusy(false);
     }
@@ -474,11 +490,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     setNotice(null);
     try {
       const created = await managementApi.duplicateManagedAlert(alert.id);
-      const groupKey = `event:${created.eventType}`;
-      revealMutationTarget(groupKey);
-      await refresh(created.setId);
-      pendingFocus.current = { alertId: created.id, groupKey };
-      setManualExpandedEventKeys((current) => new Set([...current, groupKey]));
+      await revealCreatedAlert(created);
       setNotice({ tone: "warning", message: `${created.name} duplicated disabled and marked Needs review.` });
     } catch (cause) {
       setError(toActionableError("The alert was not duplicated", cause, "Review the alert and try again."));
@@ -854,16 +866,16 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         eventTypeLocked={createAlertEventLocked}
         loadTwitchCustomRewards={loadTwitchCustomRewards}
         name={createAlertName}
-        onCancel={() => setCreateAlertOpen(false)}
+        onCancel={() => setCreateAlertDialog(null)}
         onEventType={selectAlertEventType}
-        onName={setCreateAlertName}
-        onRewardSelection={setCreateAlertRewardSelection}
+        onName={name => updateCreateAlertDialog({ name })}
+        onRewardSelection={rewardSelection => updateCreateAlertDialog({ rewardSelection })}
         onSubmit={submitCreateAlert}
         open={createAlertOpen}
         overlapAlertNames={createAlertOverlapNames}
         rewardSelection={createAlertRewardSelection}
       />
-      <VariationDialog alert={variationParent} busy={busy} error={variationError} name={variationName} onCancel={() => setVariationParent(null)} onName={setVariationName} onSubmit={submitVariation} />
+      <VariationDialog alert={variationParent} busy={busy} error={variationError} name={variationName} onCancel={() => setVariationDialog(null)} onName={name => updateVariationDialog({ name })} onSubmit={submitVariation} />
       <ActivationDialog busy={busy} impact={activationImpact} onCancel={() => { setActivationSet(null); setActivationImpact(null); }} onConfirm={() => void confirmActivation()} set={activationSet} />
       <PreviewDialog alert={previewAlert} onCancel={() => setPreviewAlert(null)} />
       <RegenerateDialog busy={busy} confirmation={regenerateConfirmation} onCancel={() => setRegenerateDialog(null)} onChange={setRegenerateConfirmation} onConfirm={() => void regenerateBrowserSource()} state={regenerateDialog} />

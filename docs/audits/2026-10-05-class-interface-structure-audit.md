@@ -2,6 +2,8 @@
 
 Date: October 5, 2026. Baseline: `b1f505807bc2ece68792d0fa79214056fd348b57` on `codex/repair-error-taxonomy`, after the error-class repairs. This audit changes documentation only; it does not implement, commit or publish repairs.
 
+Implementation follow-up: A1–A7 have been implemented on `codex/architecture-audit-repairs`. See the [execution ledger](2026-10-05-architecture-repair-progress.md) for source/test reconciliation and verification status. The observations below retain their original audited baseline.
+
 The principal remaining problems are incomplete capability contracts, duplicated wire models, and misplaced persistence/shared-contract ownership. There is no evidence that a broad superclass hierarchy would improve this architecture. Seven actionable findings follow: three P2 and four P3. None establishes an urgent incident in the current production wiring.
 
 ## Findings

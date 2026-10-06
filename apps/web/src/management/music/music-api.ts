@@ -30,13 +30,13 @@ export interface MusicApi {
 export function createMusicApi(client: ManagementHttpClient): MusicApi {
   return {
     async getMusicConfig() {
-      return parseMusicConfig(await client.getJson<unknown>("/overlay-modules/music/config", "Unable to load Music appearance."));
+      return parseMusicConfig(await client.getJson("/overlay-modules/music/config", "Unable to load Music appearance."));
     },
     async saveMusicConfig(enabled, config) {
-      return parseMusicConfig(await client.putJson<unknown>("/overlay-modules/music/config", { enabled, config: musicModuleConfigSchema.parse(config) }, "Unable to save Music appearance."));
+      return parseMusicConfig(await client.putJson("/overlay-modules/music/config", { enabled, config: musicModuleConfigSchema.parse(config) }, "Unable to save Music appearance."));
     },
     async listMusicOutputs() {
-      const response = await client.getJson<unknown>("/management/overlay-outputs", "Unable to load Music output links.");
+      const response = await client.getJson("/management/overlay-outputs", "Unable to load Music output links.");
       if (!Array.isArray(response)) throw new Error("Music output response is invalid. Reload the page and retry.");
       // The service also returns a legacy profile-less Music URL. This editor only exposes fixed profiles.
       const music = response.filter(item => typeof item === "object" && item !== null && "moduleId" in item && item.moduleId === "music" && ("targetProfileId" in item ? item.targetProfileId !== null : true));
@@ -44,22 +44,22 @@ export function createMusicApi(client: ManagementHttpClient): MusicApi {
       return music;
     },
     async beginMusicPairing(config) {
-      return musicPairingAttemptViewSchema.parse(await client.postJson<unknown>("/management/music/pairing", pearConfigurationSchema.parse(config), "Unable to start Pear pairing."));
+      return musicPairingAttemptViewSchema.parse(await client.postJson("/management/music/pairing", pearConfigurationSchema.parse(config), "Unable to start Pear pairing."));
     },
     async getMusicPairing(attemptId) {
-      return musicPairingAttemptViewSchema.parse(await client.getJson<unknown>(`/management/music/pairing/${encodeURIComponent(attemptId)}`, "Unable to check Pear pairing."));
+      return musicPairingAttemptViewSchema.parse(await client.getJson(`/management/music/pairing/${encodeURIComponent(attemptId)}`, "Unable to check Pear pairing."));
     },
     cancelMusicPairing(attemptId) {
       return client.deleteRequest(`/management/music/pairing/${encodeURIComponent(attemptId)}`, "Unable to cancel Pear pairing.");
     },
     async getMusicStatus() {
-      return musicManagementStatusSchema.parse(await client.getJson<unknown>("/management/music/status", "Unable to load Music status."));
+      return musicManagementStatusSchema.parse(await client.getJson("/management/music/status", "Unable to load Music status."));
     },
     async reconnectMusicSource(providerId) {
-      return musicManagementStatusSchema.parse(await client.postJson<unknown>(`/management/music/providers/${encodeURIComponent(providerId)}/reconnect`, undefined, "Unable to reconnect Music source."));
+      return musicManagementStatusSchema.parse(await client.postJson(`/management/music/providers/${encodeURIComponent(providerId)}/reconnect`, undefined, "Unable to reconnect Music source."));
     },
     async replaceMusicCredential(providerId, input) {
-      return musicCredentialReplacementResultSchema.parse(await client.postJson<unknown>(`/management/music/providers/${encodeURIComponent(providerId)}/credential`, musicCredentialReplacementInputSchema.parse(input), "Unable to replace Pear authorization."));
+      return musicCredentialReplacementResultSchema.parse(await client.postJson(`/management/music/providers/${encodeURIComponent(providerId)}/credential`, musicCredentialReplacementInputSchema.parse(input), "Unable to replace Pear authorization."));
     }
   };
 }
