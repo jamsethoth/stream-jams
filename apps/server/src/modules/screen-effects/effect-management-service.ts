@@ -10,12 +10,8 @@ import {
 } from "@stream-jams/core";
 import type { EffectAdmissionOutcome } from "./effect-admission-service.js";
 
-export class EffectDefinitionNotFoundError extends Error {
-  constructor(readonly effectId: string) {
-    super(`Screen Effect "${effectId}" was not found`);
-    this.name = "EffectDefinitionNotFoundError";
-  }
-}
+import { EffectDefinitionNotFoundError } from "./effect-errors.js";
+export { EffectDefinitionNotFoundError } from "./effect-errors.js";
 
 export class EffectDefinitionConflictError extends Error {
   constructor(readonly effectId: string) {

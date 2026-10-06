@@ -1,3 +1,4 @@
+import { NamedError } from "@stream-jams/core";
 import type { ConfigStore } from "@stream-jams/core";
 
 export interface LocalServerApp {
@@ -26,7 +27,7 @@ export interface PortInUseStartupResult {
 export type StartServerResult = PortInUseStartupResult | StartedServerResult;
 
 /** Describes a startup bind failure with alternate ports the operator can try. */
-export class StartupPortInUseError extends Error {
+export class StartupPortInUseError extends NamedError {
   readonly code = "PORT_IN_USE_AT_STARTUP";
 
   constructor(
@@ -35,7 +36,7 @@ export class StartupPortInUseError extends Error {
     readonly suggestedPorts: readonly number[],
     options?: ErrorOptions
   ) {
-    super(`Port ${port} is already in use on ${host}`, options);
+    super("StartupPortInUseError", `Port ${port} is already in use on ${host}`, options);
   }
 }
 

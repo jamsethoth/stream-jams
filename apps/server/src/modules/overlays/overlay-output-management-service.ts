@@ -1,3 +1,4 @@
+import { NamedError } from "@stream-jams/core";
 import {
   moduleOverlayPath,
   unifiedOverlayPath,
@@ -219,19 +220,19 @@ export class OverlayOutputManagementService {
   }
 }
 
-export class UnknownOverlayOutputError extends Error {
+export class UnknownOverlayOutputError extends NamedError {
   readonly code = "OVERLAY_OUTPUT_NOT_FOUND";
 
   constructor(readonly output: CreateOverlayKeyInput) {
-    super("Overlay output not found");
+    super("UnknownOverlayOutputError", "Overlay output not found");
   }
 }
 
-export class UnrecoverableOverlayRouteKeyError extends Error {
+export class UnrecoverableOverlayRouteKeyError extends NamedError {
   readonly code = "OVERLAY_ROUTE_KEY_UNRECOVERABLE";
 
   constructor(readonly keyId: string) {
-    super("Overlay route key is not recoverable");
+    super("UnrecoverableOverlayRouteKeyError", "Overlay route key is not recoverable");
   }
 }
 

@@ -1,4 +1,4 @@
-import { PlaybackQueueItemNotFoundError, type Logger, type PlaybackQueueSnapshot } from "@stream-jams/core";
+import { isPlaybackQueueItemNotFoundError, type Logger, type PlaybackQueueSnapshot } from "@stream-jams/core";
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
 import { PlaybackOperationsConflictError } from "../../modules/playback/playback-operations-service.js";
 import { sendHttpError } from "../errors.js";
@@ -126,8 +126,4 @@ function parseReplayPayload(body: unknown): { readonly itemId: string } | null {
   return typeof candidate.itemId === "string" && candidate.itemId.trim() !== ""
     ? { itemId: candidate.itemId }
     : null;
-}
-
-function isPlaybackQueueItemNotFoundError(error: unknown): error is PlaybackQueueItemNotFoundError {
-  return error instanceof PlaybackQueueItemNotFoundError || (error instanceof Error && error.name === "PlaybackQueueItemNotFoundError");
 }

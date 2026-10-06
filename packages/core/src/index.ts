@@ -264,7 +264,7 @@ export {
 export type * from "./playback/types.js";
 export { defaultPlaybackSafetyState } from "./playback/types.js";
 export type * from "./playback/playback-queue.js";
-export { DefaultPlaybackQueue, PlaybackQueueItemNotFoundError } from "./playback/playback-queue.js";
+export { DefaultPlaybackQueue, PlaybackQueueItemNotFoundError, isPlaybackQueueItemNotFoundError } from "./playback/playback-queue.js";
 export * from "./playback/operations.js";
 export type * from "./playback/cooldown-service.js";
 export { DefaultPlaybackCooldownService } from "./playback/cooldown-service.js";
@@ -377,3 +377,4 @@ export * from "./music/asset-references.js";
 export * from "./management/local-websocket-connection.js";
 export { moduleMuteStateSchema } from "./playback/schemas.js";
 export { defaultModuleMuteState, type ModuleMuteState, type MutablePlaybackModuleId } from "./playback/types.js";
+export { NamedError } from "./shared/named-error.js";

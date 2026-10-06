@@ -1,7 +1,8 @@
+import { SafeHttpError } from "../http/safe-http-error.js";
 import { desktopConfigUpdateSchema, type ConfigStore, type DesktopConfig } from "@stream-jams/core";
 
-export class DesktopConfigError extends Error {
-  constructor(readonly statusCode: number, readonly code: string, message: string, options?: ErrorOptions) { super(message, options); }
+export class DesktopConfigError extends SafeHttpError {
+  constructor(statusCode: number, code: string, message: string, options?: ErrorOptions) { super("DesktopConfigError", statusCode, code, message, options); }
 }
 
 /** Configuration is owned by the server; host availability is never persisted. */

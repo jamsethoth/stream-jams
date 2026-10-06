@@ -13,6 +13,23 @@ import {
 } from "./streamerbot-runtime-service.js";
 
 describe("StreamerBotRuntimeService", () => {
+  it("does not promote message-prefix lookalikes into safe operator copy", async () => {
+    const client = new FakeClient({ Twitch: supportedEvents });
+    client.getEvents = async () => { throw new Error("Streamer.bot request secret-sentinel"); };
+    const service = runtime({ client, active: registration() });
+    await service.syncActiveRegistration();
+    expect(service.getStatus()).toMatchObject({ state: "error", message: "Streamer.bot runtime could not be started" });
+    expect(JSON.stringify(service.getStatus())).not.toContain("secret-sentinel");
+  });
+
+  it.each([
+    [{ OBS: ["SceneChanged"] }, "Streamer.bot did not expose a Twitch event category"],
+    [{ Twitch: ["Unrecognized"] }, "Streamer.bot did not expose any supported Twitch events"]
+  ] as const)("retains safe catalog failure copy for %j", async (events, message) => {
+    const service = runtime({ client: new FakeClient(events), active: registration() });
+    await service.syncActiveRegistration();
+    expect(service.getStatus()).toMatchObject({ state: "error", message });
+  });
   it("blocks unsafe legacy connection fields without dialing or exposing them", async () => {
     const client = new FakeClient({ Twitch: supportedEvents });
     const active = registration();

@@ -1,3 +1,4 @@
+import { NamedError } from "@stream-jams/core";
 import {
   musicManagementStatusSchema,
   musicModuleConfigSchema,
@@ -49,6 +50,6 @@ export class MusicManagementService {
   }
 }
 
-export class MusicSourceNotFoundError extends Error {
-  constructor() { super("Music source was not found"); }
+export class MusicSourceNotFoundError extends NamedError {
+  constructor() { super("MusicSourceNotFoundError", "Music source was not found"); }
 }

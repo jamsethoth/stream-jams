@@ -1,3 +1,5 @@
+import { StreamerBotSubscriptionError } from "./provider-errors.js";
+import { NamedError } from "@stream-jams/core";
 import { randomBytes } from "node:crypto";
 import {
   evaluateProviderActivation,
@@ -114,23 +116,7 @@ export class ProviderRegistrationNotFoundError extends Error {
   }
 }
 
-export class StreamerBotSubscriptionWrongProviderError extends Error {
-  readonly code = "STREAMERBOT_SUBSCRIPTIONS_WRONG_PROVIDER";
 
-  constructor() {
-    super("Streamer.bot subscriptions require a Streamer.bot provider");
-    this.name = "StreamerBotSubscriptionWrongProviderError";
-  }
-}
-
-export class StreamerBotSubscriptionInactiveError extends Error {
-  readonly code = "STREAMERBOT_SUBSCRIPTIONS_INACTIVE";
-
-  constructor() {
-    super("Only the active Streamer.bot provider can update subscriptions");
-    this.name = "StreamerBotSubscriptionInactiveError";
-  }
-}
 
 export class StreamerBotSubscriptionSelectionUnavailableError extends Error {
   readonly code = "STREAMERBOT_SUBSCRIPTION_UNAVAILABLE";
@@ -141,14 +127,6 @@ export class StreamerBotSubscriptionSelectionUnavailableError extends Error {
   }
 }
 
-export class StreamerBotBroadcasterUnverifiedError extends Error {
-  readonly code = "STREAMERBOT_BROADCASTER_UNVERIFIED";
-
-  constructor() {
-    super("The selected Twitch broadcaster is not the currently verified catalog account");
-    this.name = "StreamerBotBroadcasterUnverifiedError";
-  }
-}
 
 export class ProviderManagementService {
   readonly #repository: SqliteProviderRegistrationRepository;
@@ -556,13 +534,13 @@ export class ProviderManagementService {
     const parsed = streamerBotSubscriptionUpdateInputSchema.parse(input);
     const record = await this.#requireStreamerBot(providerId);
     if (!record.provider.active || this.#streamerBotSubscriptions === null) {
-      throw new StreamerBotSubscriptionInactiveError();
+      throw new StreamerBotSubscriptionError("STREAMERBOT_SUBSCRIPTIONS_INACTIVE");
     }
 
     if (parsed.twitchBroadcasterId !== null) {
       const verifiedBroadcasterId = await this.#getVerifiedTwitchBroadcasterId();
       if (verifiedBroadcasterId !== parsed.twitchBroadcasterId) {
-        throw new StreamerBotBroadcasterUnverifiedError();
+        throw new StreamerBotSubscriptionError("STREAMERBOT_BROADCASTER_UNVERIFIED");
       }
     }
 
@@ -698,7 +676,7 @@ export class ProviderManagementService {
   async #requireStreamerBot(providerId: string): Promise<ProviderRegistrationRecord> {
     const record = await this.#requireRecord(providerId);
     if (record.provider.kind !== "streamerbot") {
-      throw new StreamerBotSubscriptionWrongProviderError();
+      throw new StreamerBotSubscriptionError("STREAMERBOT_SUBSCRIPTIONS_WRONG_PROVIDER");
     }
     return record;
   }
@@ -739,9 +717,9 @@ export class ProviderManagementService {
   }
 }
 
-export class MusicCredentialReplacementUnavailableError extends Error {
+export class MusicCredentialReplacementUnavailableError extends NamedError {
   readonly code = "MUSIC_CREDENTIAL_REPLACEMENT_UNAVAILABLE";
-  constructor() { super("This registration cannot be re-paired with Pear Desktop"); }
+  constructor() { super("MusicCredentialReplacementUnavailableError", "This registration cannot be re-paired with Pear Desktop"); }
 }
 
 type StreamerBotConfiguration = Extract<
@@ -755,7 +733,7 @@ function readStreamerBotConfiguration(record: ProviderRegistrationRecord): Strea
     kind: "streamerbot",
     configuration: record.configuration
   });
-  if (parsed.kind !== "streamerbot") throw new StreamerBotSubscriptionWrongProviderError();
+  if (parsed.kind !== "streamerbot") throw new StreamerBotSubscriptionError("STREAMERBOT_SUBSCRIPTIONS_WRONG_PROVIDER");
   return parsed.configuration;
 }
 

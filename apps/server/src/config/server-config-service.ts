@@ -1,3 +1,4 @@
+import { NamedError } from "@stream-jams/core";
 import {
   appConfigUpdateSchema,
   type AppServerConfig,
@@ -14,25 +15,25 @@ export interface ServerConfigServiceOptions {
 }
 
 /** Signals that a server config patch failed schema validation before persistence. */
-export class ServerConfigValidationError extends Error {
+export class ServerConfigValidationError extends NamedError {
   readonly code = "INVALID_SERVER_CONFIG_UPDATE";
   readonly issues: unknown;
 
   constructor(issues: unknown) {
-    super("Invalid server config update");
+    super("ServerConfigValidationError", "Invalid server config update");
     this.issues = issues;
   }
 }
 
 /** Signals that a requested localhost port is already unavailable for the server. */
-export class PortUnavailableError extends Error {
+export class PortUnavailableError extends NamedError {
   readonly code = "PORT_UNAVAILABLE";
 
   constructor(
     readonly host: "127.0.0.1",
     readonly port: number
   ) {
-    super(`Port ${port} is not available on ${host}`);
+    super("PortUnavailableError", `Port ${port} is not available on ${host}`);
   }
 }
 

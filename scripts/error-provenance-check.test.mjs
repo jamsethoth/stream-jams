@@ -1,10 +1,41 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { scanErrorProvenance } from "./error-provenance-check.mjs";
+import { scanErrorProvenance, scanErrorNames } from "./error-provenance-check.mjs";
 
 function rules(source, fileName = "apps/server/src/example.ts") {
   return scanErrorProvenance(source, fileName).map((diagnostic) => diagnostic.rule);
 }
+
+test("rejects unnamed, generic and constructor-derived custom error names", () => {
+  for (const source of [
+    'class DomainError extends Error {}',
+    'class DomainError extends Error { constructor() { super("detail"); this.name = "Error"; } }',
+    'class DomainError extends Error { constructor() { super("detail"); this.name = this.constructor.name; } }'
+  ]) {
+    const result = scanErrorNames([{ fileName: "apps/server/src/example.ts", sourceText: source }]);
+    assert.deepEqual(result.map(d => d.rule), ["stable-error-name"]);
+    assert.equal(result[0].fileName, "apps/server/src/example.ts");
+    assert.ok(result[0].line > 0);
+  }
+});
+
+test("accepts explicit names, imported aliases and indirect named inheritance", () => {
+  const sources = [
+    { fileName: "packages/core/src/shared/named-error.ts", sourceText: 'export class NamedError extends Error { constructor(name: string, message: string) { super(message); this.name = name; } }' },
+    { fileName: "apps/server/src/http/safe-http-error.ts", sourceText: 'import { NamedError } from "../../../../packages/core/src/shared/named-error.js"; export class SafeHttpError extends NamedError { constructor(name: string, message: string) { super(name, message); } }' },
+    { fileName: "apps/server/src/example.ts", sourceText: 'import { SafeHttpError as Safe } from "./http/safe-http-error.js"; class DomainError extends Safe { constructor() { super("DomainError", "detail"); } } class ChildError extends DomainError {} class DirectError extends Error { name = "DirectError"; }' }
+  ];
+  assert.deepEqual(scanErrorNames(sources), []);
+  sources[2].sourceText += ' class MissingNameError extends Safe { constructor(name: string) { super(name, "detail"); } }';
+  assert.deepEqual(scanErrorNames(sources).map(d => d.rule), ["stable-error-name"]);
+});
+
+test("accepts a bounded literal diagnostic-name map but rejects arbitrary naming", () => {
+  assert.deepEqual(scanErrorNames([
+    { fileName: "packages/core/src/shared/named-error.ts", sourceText: 'export class NamedError extends Error { constructor(name: string, message: string) { super(message); this.name = name; } }' },
+    { fileName: "apps/server/src/example.ts", sourceText: 'import { NamedError } from "../../../packages/core/src/shared/named-error.js"; const failures = { a: { name: "OldAError" }, b: { name: "OldBError" } } as const; class FamilyError extends NamedError { constructor(code: keyof typeof failures) { const failure = failures[code]; super(failure.name, "detail"); } }' }
+  ]), []);
+});
 
 test("rejects optional and unused catch bindings", () => {
   assert.deepEqual(rules("try { work(); } catch { recover(); }"), ["catch-binding"]);

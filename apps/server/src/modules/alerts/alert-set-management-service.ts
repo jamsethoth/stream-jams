@@ -1,3 +1,4 @@
+import { NamedError } from "@stream-jams/core";
 import {
   alertCollectionSchema,
   alertInventoryRowSchema,
@@ -824,15 +825,15 @@ export class AlertSetManagementService {
   }
 }
 
-export class AlertSetNotFoundError extends Error {
+export class AlertSetNotFoundError extends NamedError {
   constructor(readonly setId: string) {
-    super(`Alert set "${setId}" was not found`);
+    super("AlertSetNotFoundError", `Alert set "${setId}" was not found`);
   }
 }
 
-export class AlertRuleForSetNotFoundError extends Error {
+export class AlertRuleForSetNotFoundError extends NamedError {
   constructor(readonly ruleId: string) {
-    super(`Alert "${ruleId}" was not found in an alert set`);
+    super("AlertRuleForSetNotFoundError", `Alert "${ruleId}" was not found in an alert set`);
   }
 }
 
@@ -845,33 +846,33 @@ export class AlertManagedLiveImpactConfirmationRequiredError extends Error {
   }
 }
 
-export class AlertSetNameConflictError extends Error {
+export class AlertSetNameConflictError extends NamedError {
   constructor(readonly setName: string) {
-    super(`An alert set named "${setName}" already exists`);
+    super("AlertSetNameConflictError", `An alert set named "${setName}" already exists`);
   }
 }
 
-export class AlertVariationNameConflictError extends Error {
+export class AlertVariationNameConflictError extends NamedError {
   constructor(readonly ruleId: string, readonly variationName: string) {
-    super(`An alert variation named "${variationName}" already exists for alert "${ruleId}"`);
+    super("AlertVariationNameConflictError", `An alert variation named "${variationName}" already exists for alert "${ruleId}"`);
   }
 }
 
-export class AlertSetActivationBlockedError extends Error {
+export class AlertSetActivationBlockedError extends NamedError {
   constructor(readonly setId: string, readonly impact: AlertSetActivationImpact) {
-    super(`Alert set "${setId}" has activation blockers`);
+    super("AlertSetActivationBlockedError", `Alert set "${setId}" has activation blockers`);
   }
 }
 
-export class AlertSetActivationConfirmationRequiredError extends Error {
+export class AlertSetActivationConfirmationRequiredError extends NamedError {
   constructor(readonly setId: string, readonly impact: AlertSetActivationImpact) {
-    super(`Alert set "${setId}" activation requires warning confirmation`);
+    super("AlertSetActivationConfirmationRequiredError", `Alert set "${setId}" activation requires warning confirmation`);
   }
 }
 
-export class AlertSetDeleteBlockedError extends Error {
+export class AlertSetDeleteBlockedError extends NamedError {
   constructor(readonly setId: string, readonly reason: "active" | "only-set") {
-    super(reason === "active" ? "Activate another alert set before deleting this one" : "At least one alert set must remain");
+    super("AlertSetDeleteBlockedError", reason === "active" ? "Activate another alert set before deleting this one" : "At least one alert set must remain");
   }
 }
 

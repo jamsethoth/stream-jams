@@ -1,3 +1,5 @@
+import { isPearProtocolSocketError } from "./pear-socket-error.js";
+import { NamedError } from "@stream-jams/core";
 import { pearArtworkPolicy, type MusicArtworkPolicy, type PrivateArtworkDescriptor } from "./music-artwork-policy.js";
 import { randomUUID } from "node:crypto";
 import * as http from "node:http";
@@ -16,11 +18,11 @@ const maxFrameBytes = 256 * 1024;
 const retryDelaysMs = [1_000, 2_000, 5_000] as const;
 const capabilities = { artwork: true, position: true, duration: true, sessionSelection: false } as const;
 
-export class PearAuthenticationError extends Error { constructor() { super("Pear authorization is required"); } }
-export class PearTransportUnavailableError extends Error {
-  constructor(readonly retryAfterMs: number | null = null, readonly webSocketUnavailable = false) { super("Pear transport is unavailable"); }
+export class PearAuthenticationError extends NamedError { constructor() { super("PearAuthenticationError", "Pear authorization is required"); } }
+export class PearTransportUnavailableError extends NamedError {
+  constructor(readonly retryAfterMs: number | null = null, readonly webSocketUnavailable = false) { super("PearTransportUnavailableError", "Pear transport is unavailable"); }
 }
-export class PearProtocolError extends Error { constructor() { super("Pear returned invalid player data"); } }
+export class PearProtocolError extends NamedError { constructor() { super("PearProtocolError", "Pear returned invalid player data"); } }
 
 export interface PearMusicSourceOptions {
   readonly config: PearConfiguration;
@@ -354,7 +356,7 @@ export class PearMusicSource implements MusicSourceAdapter {
             : new PearTransportUnavailableError(parseRetryAfter(response.headers["retry-after"], this.#now()), [404, 405, 501, 503].includes(status)));
       });
       socket.on("error", error => {
-        fail(/max payload|too big|invalid webSocket frame|utf-8/iu.test(error.message)
+        fail(isPearProtocolSocketError(error)
           ? new PearProtocolError() : new PearTransportUnavailableError());
       });
       socket.on("close", code => {

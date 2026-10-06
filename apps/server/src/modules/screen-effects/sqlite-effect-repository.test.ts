@@ -256,7 +256,7 @@ describe("SqliteEffectRepository", () => {
     expect(() => runInTransaction(database.connection, () => {
       assets.deleteSync("asset-tone");
       effects.saveSync(document);
-    })).toThrow(/missing or incompatible/iu);
+    })).toThrow(expect.objectContaining({ code: "SCREEN_EFFECT_REFERENCE_UNAVAILABLE", kind: "sound-asset", referenceId: "asset-tone" }));
     await expect(assets.findById("asset-tone")).resolves.not.toBeNull();
     await expect(effects.find(document.id)).resolves.toBeNull();
 

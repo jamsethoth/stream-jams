@@ -1,9 +1,10 @@
+import { SafeHttpError } from "../../http/safe-http-error.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { TimerAdjustment, TimerCommandResult, TimerRunState } from "@stream-jams/core";
 import type { PlaybackOperationsService } from "../playback/playback-operations-service.js";
 
-export class AutomationControlError extends Error {
-  constructor(readonly statusCode: number, readonly code: string, message: string) { super(message); }
+export class AutomationControlError extends SafeHttpError {
+  constructor(statusCode: number, code: string, message: string, options?: ErrorOptions) { super("AutomationControlError", statusCode, code, message, options); }
 }
 interface Grant { readonly scopes: readonly string[]; }
 interface TimerControl {

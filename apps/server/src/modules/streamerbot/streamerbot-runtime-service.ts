@@ -1,3 +1,4 @@
+import { StreamerBotRuntimeError, safeRuntimeFailure } from "./streamerbot-runtime-error.js";
 import {
   providerSetupInputSchema,
   type EffectTrigger,
@@ -264,7 +265,7 @@ export class StreamerBotRuntimeService {
         return advertised === undefined || selection.eventTypes.some((eventType) => !advertised.includes(eventType));
       });
       if (unavailable) {
-        throw new Error("One or more selected Streamer.bot events are no longer advertised");
+        throw new StreamerBotRuntimeError("STREAMERBOT_RUNTIME_SUBSCRIPTION_UNAVAILABLE");
       }
     }
 
@@ -341,25 +342,25 @@ export class StreamerBotRuntimeService {
       const status = this.#client.getStatus();
       if (status.state === "connected") return;
       if (status.state === "error" || status.state === "degraded") {
-        throw new Error(status.message ?? "Streamer.bot connection failed");
+        throw new StreamerBotRuntimeError("STREAMERBOT_RUNTIME_CONNECTION_FAILED");
       }
       await this.#sleep(this.#pollIntervalMs);
     }
-    throw new Error("Streamer.bot connection timed out");
+    throw new StreamerBotRuntimeError("STREAMERBOT_RUNTIME_CONNECTION_TIMEOUT");
   }
 
   async #subscribeSupportedEvents(): Promise<void> {
     const available = await this.#client.getEvents();
     const sourceKey = Object.keys(available).find((key) => key.toLowerCase() === "twitch");
     if (sourceKey === undefined) {
-      throw new Error("Streamer.bot did not expose a Twitch event category");
+      throw new StreamerBotRuntimeError("STREAMERBOT_RUNTIME_TWITCH_CATEGORY_UNAVAILABLE");
     }
 
     const availableTypes = new Set(available[sourceKey]);
     const subscribed = supportedTwitchEventTypes.filter((type) => availableTypes.has(type));
     const missing = supportedTwitchEventTypes.filter((type) => !availableTypes.has(type));
     if (subscribed.length === 0) {
-      throw new Error("Streamer.bot did not expose any supported Twitch events");
+      throw new StreamerBotRuntimeError("STREAMERBOT_RUNTIME_EVENT_CATALOG_UNAVAILABLE");
     }
 
     this.#requiredSubscriptions = [{ sourceKey, eventTypes: subscribed }];
@@ -510,16 +511,4 @@ function cloneSelection(selection: StreamerBotSubscriptionSelection): StreamerBo
 
 function cloneCatalog(catalog: Record<string, readonly string[]>): Record<string, readonly string[]> {
   return Object.fromEntries(Object.entries(catalog).map(([sourceKey, eventTypes]) => [sourceKey, [...eventTypes]]));
-}
-
-function safeRuntimeFailure(error: unknown): string {
-  if (!(error instanceof Error)) return "Streamer.bot runtime could not be started";
-  if (
-    error.message.startsWith("Streamer.bot connection") ||
-    error.message.startsWith("Streamer.bot did not expose") ||
-    error.message.startsWith("Streamer.bot request")
-  ) {
-    return error.message;
-  }
-  return "Streamer.bot runtime could not be started";
 }

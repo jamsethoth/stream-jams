@@ -1,15 +1,17 @@
+import { isSchemaValidationError } from "../schema-validation-error.js";
 import { screenEffectDocumentSchema, screenEffectSetInputSchema, ScreenEffectSetError } from "@stream-jams/core";
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
 import {
   EffectBindingUnavailableError,
   EffectDefinitionConflictError,
-  EffectDefinitionNotFoundError,
   EffectLiveImpactConfirmationRequiredError,
   type EffectManagementService,
   EffectTestDisabledError,
   EffectTestVariantUnavailableError
 } from "../../modules/screen-effects/effect-management-service.js";
 import { sendHttpError } from "../errors.js";
+import { EffectDefinitionNotFoundError, EffectReferenceUnavailableError } from "../../modules/screen-effects/effect-errors.js";
+import { EffectVariantNotFoundError } from "../../modules/screen-effects/effect-admission-service.js";
 
 export interface ScreenEffectRouteDependencies {
   readonly effectSets?: Pick<EffectManagementService, "listSets" | "createSet" | "renameSet" | "activateSet" | "removeSet">;
@@ -186,13 +188,19 @@ function sendScreenEffectError(reply: Parameters<typeof sendHttpError>[0], error
       message: error.message
     });
   }
-  if (error instanceof Error && /^Screen Effect (visual asset|sound asset|audio route)/u.test(error.message)) {
+  if (error instanceof EffectVariantNotFoundError) {
+    return sendHttpError(reply, 409, {
+      code: "SCREEN_EFFECT_VARIANT_UNAVAILABLE",
+      message: `Screen Effect variant "${error.variantId}" is unavailable for live testing`
+    });
+  }
+  if (error instanceof EffectReferenceUnavailableError) {
     return sendHttpError(reply, 409, {
       code: "SCREEN_EFFECT_REFERENCE_UNAVAILABLE",
       message: error.message
     });
   }
-  if (error instanceof TypeError || (error instanceof Error && error.name === "ZodError")) {
+  if (error instanceof TypeError || isSchemaValidationError(error)) {
     return sendHttpError(reply, 400, {
       code: "INVALID_SCREEN_EFFECT_REQUEST",
       message: "Invalid Screen Effect request"

@@ -11,9 +11,28 @@ import {
   type TimerDefinition
 } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
+import { DatabaseSync } from "node:sqlite";
 import { AssetLibraryInUseError, AssetLibraryService, InvalidMusicAssetReferenceError, type AssetLibraryMetadata } from "./asset-library-service.js";
 
 describe("AssetLibraryService", () => {
+  it("does not convert an English foreign-key lookalike into an in-use domain error", async () => {
+    const error = new Error("foreign key constraint private failure");
+    const fixture = createFixture({ rules: [], deleteError: error, rulesAfterDeleteError: [rule] });
+    await expect(fixture.service.deleteAsset(asset.id)).rejects.toBe(error);
+  });
+
+  it("uses the native SQLite extended code for raced foreign-key references", async () => {
+    const error = sqliteConstraint("DELETE FROM parent WHERE id = 1");
+    expect(error).toMatchObject({ code: "ERR_SQLITE_ERROR", errcode: 787 });
+    const fixture = createFixture({ rules: [], deleteError: error, rulesAfterDeleteError: [rule] });
+    await expect(fixture.service.deleteAsset(asset.id)).rejects.toMatchObject({ impact: { canDelete: false }, cause: error });
+  });
+
+  it("does not convert unrelated native SQLite constraints into in-use failures", async () => {
+    const error = sqliteConstraint("INSERT INTO parent VALUES (1)");
+    const fixture = createFixture({ rules: [], deleteError: error, rulesAfterDeleteError: [rule] });
+    await expect(fixture.service.deleteAsset(asset.id)).rejects.toBe(error);
+  });
   it("builds searchable metadata, health, and set/event/profile usage summaries", async () => {
     const fixture = createFixture();
 
@@ -204,7 +223,7 @@ describe("AssetLibraryService", () => {
     const fixture = createFixture({
       rules: [],
       rulesAfterDeleteError: [rule],
-      deleteError: new Error("FOREIGN KEY constraint failed")
+      deleteError: sqliteConstraint("DELETE FROM parent WHERE id = 1")
     });
 
     await expect(fixture.service.deleteAsset("asset-image-1")).rejects.toBeInstanceOf(AssetLibraryInUseError);
@@ -240,6 +259,15 @@ describe("AssetLibraryService", () => {
     expect(catalog.store).toHaveBeenCalledWith(expect.objectContaining({ id: timedAsset.id, durationMs: 7_500 }));
   });
 });
+
+function sqliteConstraint(statement: string): Error {
+  const database = new DatabaseSync(":memory:");
+  try {
+    database.exec("PRAGMA foreign_keys = ON; CREATE TABLE parent(id INTEGER PRIMARY KEY); CREATE TABLE child(parent_id INTEGER REFERENCES parent(id)); INSERT INTO parent VALUES (1); INSERT INTO child VALUES (1)");
+    try { database.exec(statement); } catch (error) { if (error instanceof Error) return error; throw error; }
+    throw new Error("Expected a native constraint failure");
+  } finally { database.close(); }
+}
 
 function createFixture(options: {
   readonly rules?: readonly AlertRule[];

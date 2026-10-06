@@ -1,10 +1,11 @@
+import { SafeHttpError } from "../../http/safe-http-error.js";
 import { randomUUID } from "node:crypto";
 import { desktopOverlayStatusSchema, findExactUniqueLabelMatch, surfaceConfigurationSchema, surfaceConfigurationUpdateSchema,
   surfaceSettingsViewSchema, validateSurfaceOrder, type AutomaticBindingState, type DesktopOverlayStatus,
   type DesktopOverlayTransport, type Logger, type SurfaceConfiguration, type SurfaceRepository, type SurfaceSettingsView } from "@stream-jams/core";
 
-export class SurfaceSettingsError extends Error {
-  constructor(readonly statusCode: number, readonly code: string, message: string, options?: ErrorOptions) { super(message, options); }
+export class SurfaceSettingsError extends SafeHttpError {
+  constructor(statusCode: number, code: string, message: string, options?: ErrorOptions) { super("SurfaceSettingsError", statusCode, code, message, options); }
 }
 
 export interface SurfaceSettingsServiceDependencies {

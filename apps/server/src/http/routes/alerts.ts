@@ -1,3 +1,4 @@
+import { isSchemaValidationError } from "../schema-validation-error.js";
 import {
   AlertCollectionNotFoundError,
   AlertRuleNotFoundError,
@@ -139,7 +140,7 @@ function parseEnabledPayload(body: unknown): { readonly enabled: boolean } | nul
 }
 
 function sendAlertError(reply: Parameters<typeof sendHttpError>[0], error: unknown) {
-  if (isZodError(error)) {
+  if (isSchemaValidationError(error)) {
     return sendHttpError(reply, 400, {
       code: "INVALID_ALERT_RULE_REQUEST",
       message: "Invalid alert rule request"
@@ -182,8 +183,4 @@ function sendAlertError(reply: Parameters<typeof sendHttpError>[0], error: unkno
   }
 
   throw error;
-}
-
-function isZodError(error: unknown): boolean {
-  return error instanceof Error && error.name === "ZodError";
 }

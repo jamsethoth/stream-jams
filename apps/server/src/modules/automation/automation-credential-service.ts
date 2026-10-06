@@ -1,3 +1,4 @@
+import { SafeHttpError } from "../../http/safe-http-error.js";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 export const automationScopes = ["timers:read", "timers:control", "playback:read", "playback:pause:alerts", "playback:pause:screen-effects", "playback:skip:alerts", "playback:skip:screen-effects", "playback:clear:alerts", "playback:clear:screen-effects", "playback:mute:alerts", "playback:mute:screen-effects"] as const;
@@ -11,7 +12,7 @@ export interface StoredAutomationGrant extends AutomationGrant { readonly tokenH
 export interface AutomationGrantRepository { insert(grant: StoredAutomationGrant): void; findByHash(hash: string): StoredAutomationGrant | null; list(): readonly AutomationGrant[]; revoke(id: string, at: string): boolean; expireUnclaimed(cutoff: string, at: string): void; claim(id: string, at: string): void }
 export interface AutomationPairing { readonly id: string; readonly clientName: string; readonly scopes: readonly AutomationScope[]; readonly comparisonCode: string; readonly expiresAt: string; readonly approvalUrl: string; readonly status: "pending" | "approved" | "denied" }
 interface Pending { view: AutomationPairing; challenge: string; expiresMs: number; approvedScopes: readonly AutomationScope[] | null }
-export class AutomationCredentialError extends Error { constructor(readonly statusCode: number, readonly code: string, message: string) { super(message); } }
+export class AutomationCredentialError extends SafeHttpError { constructor(statusCode: number, code: string, message: string, options?: ErrorOptions) { super("AutomationCredentialError", statusCode, code, message, options); } }
 export class AutomationCredentialService {
   readonly #pending = new Map<string, Pending>();
   readonly #now: () => number;

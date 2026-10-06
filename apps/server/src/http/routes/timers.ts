@@ -1,3 +1,4 @@
+import { isSchemaValidationError } from "../schema-validation-error.js";
 import { timerDefinitionInputSchema, timerAdjustmentSchema, type TimerCommandResult } from "@stream-jams/core";
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
 import {
@@ -111,7 +112,7 @@ export function sendTimerError(reply: Parameters<typeof sendHttpError>[0], error
   if (error instanceof TimerDefinitionReferenceError) {
     return sendHttpError(reply, 409, { code: "TIMER_REFERENCE_UNAVAILABLE", message: error.message });
   }
-  if (error instanceof TypeError || (error instanceof Error && error.name === "ZodError")) {
+  if (error instanceof TypeError || isSchemaValidationError(error)) {
     return sendHttpError(reply, 400, { code: "INVALID_TIMER_REQUEST", message: "Invalid timer request" });
   }
   throw error;

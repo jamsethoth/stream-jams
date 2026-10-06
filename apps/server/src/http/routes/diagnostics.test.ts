@@ -12,8 +12,16 @@ import {
   LocalManagementRateLimiter
 } from "../middleware/local-management-rate-limit.js";
 import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
+import { isDiagnosticsLimitError } from "./diagnostics.js";
 
 describe("diagnostics routes", () => {
+  it("requires validated diagnostic codes rather than a name-only lookalike", () => {
+    const fake = new Error("private detail");
+    fake.name = "DiagnosticsLimitError";
+    expect(isDiagnosticsLimitError(fake)).toBe(false);
+    expect(isDiagnosticsLimitError({ code: "INVALID_DIAGNOSTICS_LIMIT", maxLimit: -1, message: "private" })).toBe(false);
+    expect(isDiagnosticsLimitError({ code: "INVALID_DIAGNOSTICS_LIMIT", maxLimit: 200 })).toBe(true);
+  });
   it("returns diagnostics views and redacted export data for management sessions", async () => {
     const { app, authHeaders, service } = await createAppWithDiagnostics();
 

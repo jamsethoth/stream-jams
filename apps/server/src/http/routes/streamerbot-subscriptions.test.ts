@@ -1,3 +1,4 @@
+import { StreamerBotSubscriptionError } from "../../modules/providers/provider-errors.js";
 import type {
   StreamerBotSubscriptionCatalog,
   StreamerBotSubscriptionUpdateInput
@@ -5,7 +6,6 @@ import type {
 import { describe, expect, it } from "vitest";
 import { createStreamerBotSubscriptionRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
-import { StreamerBotSubscriptionInactiveError } from "../../modules/providers/provider-management-service.js";
 import { createLocalManagementRateLimitPreHandler, LocalManagementRateLimiter } from "../middleware/local-management-rate-limit.js";
 import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 
@@ -19,6 +19,18 @@ const catalog: StreamerBotSubscriptionCatalog = {
 };
 
 describe("Streamer.bot subscription routes", () => {
+  it.each([
+    ["STREAMERBOT_SUBSCRIPTIONS_WRONG_PROVIDER", 422, "Streamer.bot subscriptions require a Streamer.bot provider"],
+    ["STREAMERBOT_SUBSCRIPTIONS_INACTIVE", 409, "Only the active Streamer.bot provider can update subscriptions"],
+    ["STREAMERBOT_BROADCASTER_UNVERIFIED", 409, "Reconnect or verify the selected Twitch broadcaster before saving"]
+  ] as const)("preserves the safe response for %s", async (code, status, message) => {
+    const { app, headers } = await fixture({ error: new StreamerBotSubscriptionError(code) });
+    try {
+      const response = await app.inject({ url: "/providers/provider-streamerbot/streamerbot-subscriptions", headers });
+      expect(response.statusCode).toBe(status);
+      expect(response.json()).toEqual({ error: { code, message } });
+    } finally { await app.close(); }
+  });
   it("returns and updates the active provider's explicit subscriptions", async () => {
     const { app, headers, service } = await fixture();
     const input: StreamerBotSubscriptionUpdateInput = {
@@ -57,7 +69,7 @@ describe("Streamer.bot subscription routes", () => {
   });
 
   it("maps inactive providers and invalid request bodies to bounded errors", async () => {
-    const { app, headers } = await fixture({ error: new StreamerBotSubscriptionInactiveError() });
+    const { app, headers } = await fixture({ error: new StreamerBotSubscriptionError("STREAMERBOT_SUBSCRIPTIONS_INACTIVE") });
     const inactive = await app.inject({
       method: "GET",
       url: "/providers/provider-streamerbot/streamerbot-subscriptions",

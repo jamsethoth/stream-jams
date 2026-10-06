@@ -1,3 +1,4 @@
+import { EffectReferenceUnavailableError } from "./effect-errors.js";
 import type { DatabaseSync } from "node:sqlite";
 import {
   effectBindingIdentity,
@@ -188,18 +189,18 @@ export class SqliteEffectRepository implements ScreenEffectRepository {
       if (variant.visual !== null) {
         const row = findAsset.get(variant.visual.assetId);
         if (row === undefined || row.media_type !== variant.visual.mediaType) {
-          throw new Error(`Screen Effect visual asset "${variant.visual.assetId}" is missing or incompatible`);
+          throw new EffectReferenceUnavailableError("visual-asset", variant.visual.assetId);
         }
       }
       if (variant.sound !== null) {
         const row = findAsset.get(variant.sound.assetId);
         if (row === undefined || row.media_type !== "audio") {
-          throw new Error(`Screen Effect sound asset "${variant.sound.assetId}" is missing or incompatible`);
+          throw new EffectReferenceUnavailableError("sound-asset", variant.sound.assetId);
         }
       }
       for (const routeId of variant.outputs.deviceRouteIds) {
         if (findRoute.get(routeId) === undefined) {
-          throw new Error(`Screen Effect audio route "${routeId}" does not exist`);
+          throw new EffectReferenceUnavailableError("audio-route", routeId);
         }
       }
     }

@@ -1,7 +1,8 @@
 import type { Logger } from "@stream-jams/core";
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
 import type { DiagnosticsService } from "../../modules/diagnostics/diagnostics-service.js";
-import { DiagnosticsLimitError } from "../../modules/diagnostics/diagnostics-service.js";
+import { isDiagnosticsLimitError } from "../../modules/diagnostics/diagnostics-service.js";
+export { isDiagnosticsLimitError } from "../../modules/diagnostics/diagnostics-service.js";
 import { sendHttpError } from "../errors.js";
 
 export interface DiagnosticsRouteDependencies {
@@ -29,7 +30,7 @@ export function registerDiagnosticsRoutes(app: FastifyInstance, dependencies: Di
       if (isDiagnosticsLimitError(error)) {
         return sendHttpError(reply, 400, {
           code: "INVALID_DIAGNOSTICS_LIMIT",
-          message: error.message
+          message: `Diagnostics limit must be a positive integer no greater than ${error.maxLimit}`
         });
       }
 
@@ -60,7 +61,7 @@ export function registerDiagnosticsRoutes(app: FastifyInstance, dependencies: Di
       if (isDiagnosticsLimitError(error)) {
         return sendHttpError(reply, 400, {
           code: "INVALID_DIAGNOSTICS_LIMIT",
-          message: error.message
+          message: `Diagnostics limit must be a positive integer no greater than ${error.maxLimit}`
         });
       }
 
@@ -96,7 +97,7 @@ export function registerDiagnosticsRoutes(app: FastifyInstance, dependencies: Di
       if (isDiagnosticsLimitError(error)) {
         return sendHttpError(reply, 400, {
           code: "INVALID_DIAGNOSTICS_LIMIT",
-          message: error.message
+          message: `Diagnostics limit must be a positive integer no greater than ${error.maxLimit}`
         });
       }
 
@@ -122,9 +123,6 @@ function parseLimit(query: unknown): number | undefined | null {
   return Number(limit);
 }
 
-export function isDiagnosticsLimitError(error: unknown): error is DiagnosticsLimitError {
-  return error instanceof DiagnosticsLimitError || (error instanceof Error && error.name === "DiagnosticsLimitError");
-}
 
 function parseDebugExportInput(body: unknown): {
   readonly limit?: number | undefined;

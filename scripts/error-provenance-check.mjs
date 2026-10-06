@@ -1,7 +1,93 @@
 import ts from "typescript";
+import { resolve } from "node:path";
 
 const exemptionPattern = /^\s*\/\/\s*error-provenance:\s*allow\s+(expected|cleanup)\s+--\s+(.+?)\s*$/u;
 const anyExemptionPattern = /^\s*\/\/\s*error-provenance:\s*allow\b.*$/u;
+
+/** Resolve imported/aliased bases once across the scanned sources, without emitting code. */
+export function scanErrorNames(sources) {
+  const normalize = name => resolve(name).replaceAll("\\", "/").toLowerCase();
+  const included = sources.filter(source => !isExcluded(source.fileName));
+  const sourceByPath = new Map(included.map(source => [normalize(source.fileName), source]));
+  const options = {
+    target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.NodeNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeNext, strict: true,
+    jsx: ts.JsxEmit.ReactJSX, noEmit: true,
+    paths: { "@stream-jams/core": [resolve("packages/core/src/index.ts")] }
+  };
+  const host = ts.createCompilerHost(options);
+  const originalRead = host.readFile.bind(host);
+  const originalExists = host.fileExists.bind(host);
+  host.readFile = name => sourceByPath.get(normalize(name))?.sourceText ?? originalRead(name);
+  host.fileExists = name => sourceByPath.has(normalize(name)) || originalExists(name);
+  const program = ts.createProgram(included.map(source => resolve(source.fileName)), options, host);
+  const checker = program.getTypeChecker();
+  const diagnostics = [];
+  const cache = new Map();
+
+  const baseOf = node => {
+    const expression = node.heritageClauses?.find(clause => clause.token === ts.SyntaxKind.ExtendsKeyword)?.types[0]?.expression;
+    if (expression === undefined) return null;
+    let symbol = checker.getSymbolAtLocation(expression);
+    if (symbol?.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+    const declaration = symbol?.declarations?.find(ts.isClassDeclaration);
+    if (declaration !== undefined) return declaration;
+    return symbol?.name === "Error" || expression.getText() === "Error" ? "native" : null;
+  };
+  const stableLiteral = expression => {
+    const type = checker.getTypeAtLocation(expression);
+    const types = type.isUnion() ? type.types : [type];
+    return types.length > 0 && types.every(part => part.isStringLiteral() && part.value.length > 0 && part.value !== "Error");
+  };
+  const naming = (node, visiting = new Set()) => {
+    if (node === "native") return { error: true, stable: false, forwardsName: false };
+    if (node === null || visiting.has(node)) return { error: false, stable: false, forwardsName: false };
+    if (cache.has(node)) return cache.get(node);
+    visiting.add(node);
+    const base = naming(baseOf(node), visiting);
+    if (!base.error) return base;
+    const constructor = node.members.find(ts.isConstructorDeclaration);
+    const statements = constructor?.body?.statements ?? [];
+    const assignments = statements.filter(ts.isExpressionStatement).map(statement => statement.expression)
+      .filter(expression => ts.isBinaryExpression(expression) && expression.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        ts.isPropertyAccessExpression(expression.left) && expression.left.expression.kind === ts.SyntaxKind.ThisKeyword && expression.left.name.text === "name");
+    const nameField = node.members.find(member => ts.isPropertyDeclaration(member) && member.name?.getText() === "name");
+    const explicit = assignments.length > 0 || nameField?.initializer !== undefined;
+    const ownStable = explicit && assignments.every(assignment => stableLiteral(assignment.right)) &&
+      (nameField?.initializer === undefined || stableLiteral(nameField.initializer));
+    const superCall = statements.filter(ts.isExpressionStatement).map(statement => statement.expression)
+      .find(expression => ts.isCallExpression(expression) && expression.expression.kind === ts.SyntaxKind.SuperKeyword);
+    const fileName = normalize(node.getSourceFile().fileName);
+    const isNamedFoundation = fileName.endsWith("/packages/core/src/shared/named-error.ts") && node.name?.text === "NamedError" &&
+      assignments.some(assignment => ts.isIdentifier(assignment.right) && assignment.right.text === "name");
+    const isHttpFoundation = fileName.endsWith("/apps/server/src/http/safe-http-error.ts") && node.name?.text === "SafeHttpError" &&
+      base.forwardsName && superCall?.arguments[0]?.getText() === "name";
+    const forwardsName = isNamedFoundation || isHttpFoundation;
+    const stable = forwardsName || (explicit ? ownStable : base.forwardsName
+      ? superCall?.arguments[0] !== undefined && stableLiteral(superCall.arguments[0])
+      : base.stable);
+    const result = { error: true, stable, forwardsName };
+    cache.set(node, result);
+    return result;
+  };
+
+  for (const source of included) {
+    const file = program.getSourceFile(resolve(source.fileName));
+    if (file === undefined) continue;
+    const visit = node => {
+      if (ts.isClassDeclaration(node) || ts.isClassExpression(node)) {
+        const result = naming(node);
+        if (result.error && !result.stable) {
+          const diagnostic = createDiagnostic(file, node.getStart(file), "stable-error-name", "Custom errors must initialize an explicit stable diagnostic name or use a supported named foundation.");
+          diagnostics.push({ ...diagnostic, fileName: source.fileName });
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(file);
+  }
+  return diagnostics;
+}
 
 export function scanErrorProvenance(sourceText, fileName) {
   if (isExcluded(fileName)) return [];

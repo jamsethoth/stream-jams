@@ -1,3 +1,4 @@
+import { PlaybackQueueItemNotFoundError } from "@stream-jams/core";
 import type { PlaybackQueueSnapshot } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
 import { createPlaybackRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
@@ -6,6 +7,19 @@ import { createLocalManagementRateLimitPreHandler, LocalManagementRateLimiter } 
 import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 
 describe("playback routes", () => {
+  it("rejects name-only replay failure lookalikes without disclosure", async () => {
+    const { app, authHeaders, playbackCoordinator } = await createAppWithPlayback();
+    playbackCoordinator.replayRecent = () => {
+      const error = new Error("private replay detail");
+      error.name = "PlaybackQueueItemNotFoundError";
+      throw error;
+    };
+    try {
+      const response = await app.inject({ method: "POST", url: "/playback/replay", headers: authHeaders, payload: { itemId: "item" } });
+      expect(response.statusCode).toBe(500);
+      expect(response.body).not.toContain("private replay detail");
+    } finally { await app.close(); }
+  });
   it("returns a protected playback snapshot", async () => {
     const { app, authHeaders } = await createAppWithPlayback();
 
@@ -230,9 +244,7 @@ class RecordingPlaybackCoordinator {
 
   replayRecent(itemId: string): PlaybackQueueSnapshot {
     if (itemId === "missing") {
-      const error = new Error('Playback queue item "missing" was not found');
-      error.name = "PlaybackQueueItemNotFoundError";
-      throw error;
+      throw new PlaybackQueueItemNotFoundError("missing");
     }
 
     this.calls.push(`replay:${itemId}`);

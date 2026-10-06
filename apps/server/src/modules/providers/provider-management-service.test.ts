@@ -16,7 +16,6 @@ import {
   ProviderActivationConfirmationRequiredError,
   ProviderManagementService,
   StreamerBotSubscriptionSelectionUnavailableError,
-  StreamerBotSubscriptionWrongProviderError,
   type ProviderManagementAdapter
 } from "./provider-management-service.js";
 import { SqliteProviderRegistrationRepository } from "./sqlite-provider-registration-repository.js";
@@ -719,9 +718,9 @@ describe("ProviderManagementService", () => {
     const speaker = await service.registerProvider(speakerBotSetup());
     if (bot.status !== "registered" || speaker.status !== "registered") throw new Error("Expected registrations");
 
-    await expect(service.getStreamerBotSubscriptions(speaker.provider.provider.id)).rejects.toBeInstanceOf(
-      StreamerBotSubscriptionWrongProviderError
-    );
+    await expect(service.getStreamerBotSubscriptions(speaker.provider.provider.id)).rejects.toMatchObject({
+      code: "STREAMERBOT_SUBSCRIPTIONS_WRONG_PROVIDER"
+    });
     await expect(service.updateStreamerBotSubscriptions(bot.provider.provider.id, {
       twitchBroadcasterId: null,
       externalSubscriptions: [{ sourceKey: "OBS", eventTypes: ["Missing"] }]

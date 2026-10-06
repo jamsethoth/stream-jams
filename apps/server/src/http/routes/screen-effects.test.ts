@@ -1,17 +1,24 @@
 import {
   createScreenEffectDocument,
+  DefaultEffectQueue,
+  DefaultPlaybackCooldownService,
+  DefaultPlaybackDedupeService,
   screenEffectDocumentSchema,
-  type ScreenEffectDocument
+  type ScreenEffectDocument,
+  type ScreenEffectRepository
 } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
 import { createScreenEffectRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import {
   EffectDefinitionNotFoundError,
+  EffectManagementService,
   EffectLiveImpactConfirmationRequiredError
 } from "../../modules/screen-effects/effect-management-service.js";
 import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 import { createLocalManagementRateLimitPreHandler, LocalManagementRateLimiter } from "../middleware/local-management-rate-limit.js";
+import { EffectAdmissionService } from "../../modules/screen-effects/effect-admission-service.js";
+import { EffectReferenceUnavailableError } from "../../modules/screen-effects/effect-errors.js";
 
 function effect(): ScreenEffectDocument {
   const draft = createScreenEffectDocument({ id: "effect-one", name: "Effect one", defaultVariantId: "variant-one" });
@@ -26,6 +33,99 @@ function effect(): ScreenEffectDocument {
 }
 
 describe("Screen Effects routes", () => {
+  it.each([
+    ["visual-asset", 'Screen Effect visual asset "missing" is missing or incompatible'],
+    ["sound-asset", 'Screen Effect sound asset "missing" is missing or incompatible'],
+    ["audio-route", 'Screen Effect audio route "missing" does not exist']
+  ] as const)("maps typed %s reference failures to the safe conflict contract", async (kind, message) => {
+    const { app, headers, service } = await fixture();
+    service.update.mockRejectedValueOnce(new EffectReferenceUnavailableError(kind, "missing"));
+    try {
+      const response = await app.inject({ method: "PUT", url: "/screen-effects/effect-one", headers,
+        payload: { document: effect(), confirmLiveImpact: true } });
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toEqual({ error: { code: "SCREEN_EFFECT_REFERENCE_UNAVAILABLE", message } });
+    } finally { await app.close(); }
+  });
+  it("does not classify an unrelated exception by reference-message wording", async () => {
+    const { app, headers, service } = await fixture();
+    service.update.mockRejectedValueOnce(new Error("Screen Effect sound asset private-detail"));
+    try {
+      const response = await app.inject({ method: "PUT", url: "/screen-effects/effect-one", headers,
+        payload: { document: effect(), confirmLiveImpact: true } });
+      expect(response.statusCode).toBe(500);
+      expect(response.body).not.toContain("private-detail");
+    } finally { await app.close(); }
+  });
+  it.each(["definition", "variant", "success", "unknown"] as const)(
+    "maps %s outcomes across management and asynchronous admission",
+    async (outcome) => {
+      let current: ScreenEffectDocument | null = { ...effect(), enabled: true };
+      const repository: ScreenEffectRepository = {
+        list: async () => current === null ? [] : [current],
+        find: async () => current,
+        save: async (value) => { current = value; },
+        remove: async () => { current = null; }
+      };
+      let release!: () => void;
+      let entered!: () => void;
+      const reachedAdmission = new Promise<void>((resolve) => { entered = resolve; });
+      const resumeAdmission = new Promise<void>((resolve) => { release = resolve; });
+      const admission = new EffectAdmissionService({
+        repository, queue: new DefaultEffectQueue(),
+        dedupe: new DefaultPlaybackDedupeService(),
+        cooldowns: new DefaultPlaybackCooldownService(),
+        getModuleCooldownSeconds: async () => 0,
+        generateOccurrenceId: () => "test-occurrence",
+        isModuleEnabled: async () => {
+          entered();
+          await resumeAdmission;
+          if (outcome === "unknown") throw new Error("private transport detail");
+          return true;
+        }
+      });
+      const service = new EffectManagementService({
+        repository,
+        testEffectVariant: (id, variantId) => admission.testEffectVariant(id, variantId)
+      });
+      const serverErrors = vi.fn();
+      const app = createServerApp({
+        metadata: { appName: "stream-jams", version: "test" },
+        effectManagementService: service,
+        managementAuthPreHandler: async () => {},
+        managementRateLimitPreHandler: async () => {},
+        generateServerErrorId: () => "failure-reference",
+        serverErrorLogger: serverErrors
+      });
+      try {
+        const responsePromise = app.inject({ method: "POST", url: "/screen-effects/effect-one/test",
+          payload: { variantId: "variant-one", confirmLiveImpact: true } });
+        await reachedAdmission;
+        if (outcome === "definition") current = null;
+        if (outcome === "variant") current = screenEffectDocumentSchema.parse({
+          ...current!,
+          variants: [{ ...current!.variants[0]!, id: "variant-two" }]
+        });
+        release();
+        const response = await responsePromise;
+        if (outcome === "definition") {
+          expect(response.statusCode).toBe(404);
+          expect(response.json()).toEqual({ error: { code: "SCREEN_EFFECT_NOT_FOUND", message: 'Screen Effect "effect-one" was not found' } });
+        } else if (outcome === "variant") {
+          expect(response.statusCode).toBe(409);
+          expect(response.json()).toEqual({ error: { code: "SCREEN_EFFECT_VARIANT_UNAVAILABLE", message: 'Screen Effect variant "variant-one" is unavailable for live testing' } });
+        } else if (outcome === "unknown") {
+          expect(response.statusCode).toBe(500);
+          expect(response.json()).toMatchObject({ error: { code: "INTERNAL_SERVER_ERROR" } });
+          expect(response.body).not.toContain("private transport detail");
+        } else {
+          expect(response.statusCode).toBe(200);
+          expect(response.json()).toMatchObject({ status: "queued" });
+        }
+        expect(serverErrors).toHaveBeenCalledTimes(outcome === "unknown" ? 1 : 0);
+      } finally { release(); await app.close(); }
+    }
+  );
   it("protects set CRUD and delegates explicit activation and scoped effect creation", async () => {
     const { app, headers, service, sets } = await fixture();
     expect((await app.inject({ method: "GET", url: "/screen-effect-sets" })).statusCode).toBe(401);

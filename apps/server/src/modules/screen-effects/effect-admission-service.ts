@@ -68,12 +68,8 @@ interface MatchedEffect {
 const EFFECT_DEDUPE_NAMESPACE = "screen-effects";
 const MODULE_COOLDOWN_NAMESPACE = "screen-effects-module";
 
-export class EffectDefinitionNotFoundError extends Error {
-  constructor(readonly effectId: string) {
-    super(`Screen Effect "${effectId}" was not found`);
-    this.name = "EffectDefinitionNotFoundError";
-  }
-}
+import { EffectDefinitionNotFoundError } from "./effect-errors.js";
+export { EffectDefinitionNotFoundError } from "./effect-errors.js";
 
 export class EffectRecentOccurrenceNotFoundError extends Error {
   constructor(readonly occurrenceId: string) {

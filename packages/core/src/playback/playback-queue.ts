@@ -37,10 +37,18 @@ export interface PlaybackQueueDependencies {
 }
 
 export class PlaybackQueueItemNotFoundError extends Error {
+  readonly code = "PLAYBACK_QUEUE_ITEM_NOT_FOUND";
   constructor(readonly itemId: string) {
     super(`Playback queue item "${itemId}" was not found`);
     this.name = "PlaybackQueueItemNotFoundError";
   }
+}
+
+export function isPlaybackQueueItemNotFoundError(error: unknown): error is Pick<PlaybackQueueItemNotFoundError, "itemId"> {
+  return error instanceof PlaybackQueueItemNotFoundError || (
+    typeof error === "object" && error !== null && "code" in error && error.code === "PLAYBACK_QUEUE_ITEM_NOT_FOUND" &&
+    "itemId" in error && typeof error.itemId === "string" && error.itemId.trim().length > 0
+  );
 }
 
 type InternalPlaybackQueueItem = PlaybackQueueItem;

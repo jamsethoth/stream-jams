@@ -12,6 +12,7 @@ test("creates, saves, enables, tests, and reloads one Screen Effect", async ({ p
   let saved: Record<string, unknown> | null = null;
   let moduleEnabled = false;
   let browserSourceCreated = false;
+  let rejectNextLiveTest = true;
   await page.route("**/screen-effect-sets", (route) => route.fulfill({ json: [{ id: "screen-effects-default", name: "Default", active: true, effectIds: saved === null ? [] : [saved.id] }] }));
 
   await page.route("**/management/overlay-outputs", (route) => route.fulfill({ json: [{
@@ -67,6 +68,14 @@ test("creates, saves, enables, tests, and reloads one Screen Effect", async ({ p
     if (path.endsWith("/test")) {
       const body = request.postDataJSON() as Record<string, unknown>;
       testRequests.push(body);
+      if (rejectNextLiveTest) {
+        rejectNextLiveTest = false;
+        await route.fulfill({ status: 409, json: { error: {
+          code: "SCREEN_EFFECT_VARIANT_UNAVAILABLE",
+          message: "The saved variant is unavailable. Reload the saved effect before testing again."
+        } } });
+        return;
+      }
       await route.fulfill({ json: {
         effectId: String(saved?.id),
         occurrenceId: `occurrence-${String(body.variantId)}`,
@@ -182,9 +191,19 @@ test("creates, saves, enables, tests, and reloads one Screen Effect", async ({ p
   const dialog = page.getByRole("dialog", { name: "Test saved Screen Effect?" });
   await expect(dialog).toContainText("Saved input");
   await expect(dialog).toContainText("OBS Browser Source visual");
+  const failedLiveTest = page.waitForResponse(response => response.url().endsWith("/test") && response.status() === 409);
+  await dialog.getByRole("button", { name: "Confirm live test" }).click();
+  await failedLiveTest;
+  await expect(dialog.getByRole("button", { name: "Confirm live test" })).toBeEnabled();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("alert")).toContainText("The saved variant is unavailable");
+  await page.getByRole("button", { name: "Test saved…" }).click();
   await dialog.getByRole("button", { name: "Confirm live test" }).click();
   await expect(page.getByRole("status")).toContainText("Saved test queued");
   expect(testRequests).toEqual([{
+    variantId: (createRequests[0]!.variants as { id: string }[])[0]!.id,
+    confirmLiveImpact: true
+  }, {
     variantId: (createRequests[0]!.variants as { id: string }[])[0]!.id,
     confirmLiveImpact: true
   }]);

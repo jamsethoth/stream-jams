@@ -582,8 +582,16 @@ function nextStepForArea(area: DiagnosticsProblemArea): string {
 }
 
 export class DiagnosticsLimitError extends Error {
+  readonly code = "INVALID_DIAGNOSTICS_LIMIT";
   constructor(readonly maxLimit: number) {
     super(`Diagnostics limit must be a positive integer no greater than ${maxLimit}`);
     this.name = "DiagnosticsLimitError";
   }
+}
+
+export function isDiagnosticsLimitError(error: unknown): error is Pick<DiagnosticsLimitError, "maxLimit"> {
+  return error instanceof DiagnosticsLimitError || (
+    typeof error === "object" && error !== null && "code" in error && error.code === "INVALID_DIAGNOSTICS_LIMIT" &&
+    "maxLimit" in error && typeof error.maxLimit === "number" && Number.isSafeInteger(error.maxLimit) && error.maxLimit > 0
+  );
 }

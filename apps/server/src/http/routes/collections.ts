@@ -1,3 +1,4 @@
+import { isSchemaValidationError } from "../schema-validation-error.js";
 import {
   AlertCollectionNotFoundError,
   LastActiveAlertCollectionError,
@@ -84,7 +85,7 @@ function parseEnabledPayload(body: unknown): { readonly enabled: boolean } | nul
 }
 
 function sendCollectionError(reply: Parameters<typeof sendHttpError>[0], error: unknown) {
-  if (isZodError(error)) {
+  if (isSchemaValidationError(error)) {
     return sendHttpError(reply, 400, {
       code: "INVALID_ALERT_COLLECTION_REQUEST",
       message: "Invalid alert collection request"
@@ -106,8 +107,4 @@ function sendCollectionError(reply: Parameters<typeof sendHttpError>[0], error: 
   }
 
   throw error;
-}
-
-function isZodError(error: unknown): boolean {
-  return error instanceof Error && error.name === "ZodError";
 }

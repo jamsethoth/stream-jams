@@ -463,5 +463,6 @@ function uniqueOwners(owners: readonly ModuleMediaReference[]): ModuleMediaRefer
 }
 
 function isForeignKeyConstraintError(error: unknown): boolean {
-  return error instanceof Error && /foreign key constraint/iu.test(error.message);
+  return error instanceof Error && "code" in error && error.code === "ERR_SQLITE_ERROR" &&
+    "errcode" in error && error.errcode === 787;
 }

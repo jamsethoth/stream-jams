@@ -1,3 +1,4 @@
+import { SafeHttpError } from "./safe-http-error.js";
 import type { FastifyReply } from "fastify";
 
 export interface HttpErrorBody {
@@ -13,14 +14,14 @@ export interface HttpErrorBody {
   };
 }
 
-export class HttpResponseError extends Error {
+export class HttpResponseError extends SafeHttpError {
   constructor(
-    readonly statusCode: number,
-    readonly code: string,
-    readonly safeMessage: string,
+    statusCode: number,
+    code: string,
+    safeMessage: string,
     options?: ErrorOptions
   ) {
-    super(safeMessage, options);
+    super("HttpResponseError", statusCode, code, safeMessage, options);
   }
 }
 

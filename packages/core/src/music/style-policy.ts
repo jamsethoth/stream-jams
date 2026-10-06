@@ -1,3 +1,4 @@
+import { NamedError } from "../shared/named-error.js";
 import * as css from "css-tree";
 import { musicLimits } from "./schemas.js";
 
@@ -36,8 +37,8 @@ export const musicCssNativeVariables = [
 ] as const;
 const nativeVariables = new Set<string>(musicCssNativeVariables);
 
-class PolicyError extends Error {
-  constructor(message: string, readonly line: number, readonly column: number) { super(message); }
+class PolicyError extends NamedError {
+  constructor(message: string, readonly line: number, readonly column: number) { super("PolicyError", message); }
 }
 
 function reject(node: css.CssNode, message: string): never {
