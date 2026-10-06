@@ -16,11 +16,11 @@ export default tseslint.config(
     }
   },
   {
-    files: ["apps/web/src/management/**/*.{ts,tsx}"],
+    files: ["apps/web/src/management/**/*.{ts,tsx}", "apps/web/src/operator/**/*.{ts,tsx}"],
     ignores: ["**/*.test.tsx", "**/*.test.ts"],
     rules: {
       "no-restricted-imports": ["error", {
-        patterns: [{ group: ["**/ModalSurface.js", "./ModalSurface.js"], allowTypeImports: true, message: "Management dialogs use ManagementModalSurface; native ModalSurface remains for Operator. Type-only shared contracts are allowed." }]
+        patterns: [{ group: ["**/ModalSurface.js", "./ModalSurface.js"], allowTypeImports: true, message: "Management and Operator dialogs use ManagementModalSurface. Type-only shared contracts are allowed." }]
       }]
     }
   },

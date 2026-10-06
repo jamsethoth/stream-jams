@@ -6,7 +6,7 @@ export interface ManagementModalSurfaceProps extends ModalSurfaceProps {
   readonly pending?: boolean;
 }
 // Title registers the accessible name with Mantine. Existing caller headers and
-// content stay owned by their workflow; Operator retains its native ModalSurface.
+// content stay owned by their workflow; Management and Operator share this surface.
 export function ManagementModalTitle({ children, ...props }: { readonly children: ReactNode; readonly ref?: Ref<HTMLHeadingElement>; readonly tabIndex?: number }) {
   return <Modal.Title {...props}>{children}</Modal.Title>;
 }

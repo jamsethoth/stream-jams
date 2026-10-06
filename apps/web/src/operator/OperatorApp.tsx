@@ -1,9 +1,11 @@
+import { ActionIcon, Button } from "@mantine/core";
 import { formatTimerRemaining, type MergedOperationsSnapshot, type OperationRow, type TimerRunState } from "@stream-jams/core";
 import { useEffect, useRef, useState } from "react";
 import "../App.css";
 import { getDesktopBridge } from "../management/desktop/desktop-bridge.js";
 import { formatDateTime } from "../management/foundation/formatters.js";
-import { ModalSurface } from "../management/foundation/ModalSurface.js";
+import { ManagementModalSurface, ManagementModalTitle } from "../management/foundation/ManagementModalSurface.js";
+import { ManagementPresentationProvider } from "../management/foundation/ManagementPresentationProvider.js";
 import { StatusBadge, type StatusBadgeTone } from "../management/foundation/StatusBadge.js";
 import { ManagementHttpError } from "../management/management-http-client.js";
 import {
@@ -33,7 +35,12 @@ export interface OperatorAppProps {
   readonly timersApi?: OperatorTimersApi;
 }
 
-export function OperatorApp({ api = defaultPlaybackApi, timersApi = defaultOperatorTimersApi }: OperatorAppProps) {
+// Operator shares the management presentation provider so its commands, dialogs and theme match management.
+export function OperatorApp(props: OperatorAppProps) {
+  return <ManagementPresentationProvider><OperatorConsole {...props} /></ManagementPresentationProvider>;
+}
+
+function OperatorConsole({ api = defaultPlaybackApi, timersApi = defaultOperatorTimersApi }: OperatorAppProps) {
   useEffect(() => {
     const bridge = getDesktopBridge();
     return bridge?.onQuitRequested((requestId) => bridge.resolveQuit(requestId, true));
@@ -204,7 +211,7 @@ export function OperatorApp({ api = defaultPlaybackApi, timersApi = defaultOpera
         <OperatorHeader />
         {initialError === null ? <p aria-live="polite" role="status">Loading playback state…</p> : (
           <OperatorErrorBanner error={initialError} title="Unable to load playback state">
-            <button className="button button--secondary" onClick={retry} type="button">Retry loading playback state</button>
+            <Button variant="default" onClick={retry}>Retry loading playback state</Button>
           </OperatorErrorBanner>
         )}
       </main>
@@ -223,24 +230,24 @@ export function OperatorApp({ api = defaultPlaybackApi, timersApi = defaultOpera
       </section>
 
       <section aria-label="Global playback controls" className="operator-controls">
-        <button className="button button--primary" disabled={disabled} onClick={(event) => void runCommand(
+        <Button disabled={disabled} onClick={(event) => void runCommand(
           snapshot.paused ? "resume" : "pause",
           snapshot.paused ? api.resume : api.pause,
           snapshot.paused ? "All queues resumed. Module pauses remain in place." : "All queues paused. Current playback continues.",
           event.currentTarget
-        )} type="button">{snapshot.paused ? "Resume all queues" : "Pause all queues"}</button>
-        <button className="button button--secondary" disabled={disabled} onClick={(event) => void runCommand(
+        )}>{snapshot.paused ? "Resume all queues" : "Pause all queues"}</Button>
+        <Button variant="default" disabled={disabled} onClick={(event) => void runCommand(
           snapshot.muted ? "unmute" : "mute",
           snapshot.muted ? api.unmute : api.mute,
           snapshot.muted ? "Alerts and Effects audio unmuted." : "Alerts and Effects audio muted.",
           event.currentTarget
-        )} type="button">{snapshot.muted ? "Unmute Alerts and Effects" : "Mute Alerts and Effects"}</button>
-        <button aria-pressed={snapshot.doNotDisturb} className="button button--secondary" disabled={disabled} onClick={(event) => void runCommand(
+        )}>{snapshot.muted ? "Unmute Alerts and Effects" : "Mute Alerts and Effects"}</Button>
+        <Button aria-pressed={snapshot.doNotDisturb} variant="default" disabled={disabled} onClick={(event) => void runCommand(
           "dnd",
           () => api.setDoNotDisturb(!snapshot.doNotDisturb),
           snapshot.doNotDisturb ? "Do-not-disturb disabled." : "Do-not-disturb enabled.",
           event.currentTarget
-        )} type="button">{snapshot.doNotDisturb ? "Disable do-not-disturb" : "Enable do-not-disturb"}</button>
+        )}>{snapshot.doNotDisturb ? "Disable do-not-disturb" : "Enable do-not-disturb"}</Button>
       </section>
 
       {snapshot.paused ? <p className="operator-boundary-note">Current playback continues; pending items wait in their owning module queues.</p> : null}
@@ -261,12 +268,12 @@ export function OperatorApp({ api = defaultPlaybackApi, timersApi = defaultOpera
         {snapshot.current.length === 0 ? <p className="management-empty">No playback is active.</p> : (
           <ol className="operator-list">
             {snapshot.current.map((item) => <li key={operationKey(item)}><OperationCard item={item} action={(
-              <button aria-label={`Skip ${item.name} in ${moduleLabel(item.moduleId)}`} className="button button--danger-quiet button--compact" disabled={disabled} onClick={(event) => void runCommand(
+              <Button aria-label={`Skip ${item.name} in ${moduleLabel(item.moduleId)}`} color="red" variant="light" size="xs" disabled={disabled} onClick={(event) => void runCommand(
                 `skip:${operationKey(item)}`,
                 () => api.skip(item.moduleId, item.occurrenceId),
                 `${item.name} skipped in ${moduleLabel(item.moduleId)}.`,
                 event.currentTarget
-              )} type="button">Skip</button>
+              )}>Skip</Button>
             )} /></li>)}
           </ol>
         )}
@@ -304,37 +311,37 @@ export function OperatorApp({ api = defaultPlaybackApi, timersApi = defaultOpera
         </div>
       </section>
 
-      <ModalSurface labelledBy="operator-clear-title" onCancel={() => setClearRequest(null)} open={clearRequest !== null} restoreFocusFallbackRef={clearFallbackFocusRef}>
+      <ManagementModalSurface labelledBy="operator-clear-title" onCancel={() => setClearRequest(null)} open={clearRequest !== null} pending={disabled} restoreFocusFallbackRef={clearFallbackFocusRef}>
         {clearRequest === null ? null : <>
-          <h2 id="operator-clear-title">Clear {clearRequest.count} pending {moduleLabel(clearRequest.moduleId)} item{clearRequest.count === 1 ? "" : "s"}?</h2>
+          <ManagementModalTitle>Clear {clearRequest.count} pending {moduleLabel(clearRequest.moduleId)} item{clearRequest.count === 1 ? "" : "s"}?</ManagementModalTitle>
           <p>Current playback and the other module queue will not be changed.</p>
           <div className="management-modal__actions">
-            <button className="button button--secondary" disabled={disabled} onClick={() => setClearRequest(null)} type="button">Cancel</button>
-            <button className="button button--danger" disabled={disabled} onClick={(event) => void runCommand(
+            <Button variant="default" disabled={disabled} onClick={() => setClearRequest(null)}>Cancel</Button>
+            <Button color="red" disabled={disabled} onClick={(event) => void runCommand(
               `module:${clearRequest.moduleId}:clear`,
               () => api.clear(clearRequest.moduleId, clearRequest.count, snapshot.revision),
               `${moduleLabel(clearRequest.moduleId)} pending queue cleared.`,
               event.currentTarget
-            )} type="button">Clear pending</button>
+            )}>Clear pending</Button>
           </div>
         </>}
-      </ModalSurface>
+      </ManagementModalSurface>
 
       <OperationList heading={`Pending (${snapshot.queued.length})`} items={snapshot.queued} renderAction={(item) => (
-        <button aria-label={`Remove ${item.name} from ${moduleLabel(item.moduleId)}`} className="button button--secondary button--compact" disabled={disabled} onClick={(event) => void runCommand(
+        <Button aria-label={`Remove ${item.name} from ${moduleLabel(item.moduleId)}`} variant="default" size="xs" disabled={disabled} onClick={(event) => void runCommand(
           `remove:${operationKey(item)}`,
           () => api.remove(item.moduleId, item.occurrenceId),
           `${item.name} removed from ${moduleLabel(item.moduleId)}.`,
           event.currentTarget
-        )} type="button">Remove</button>
+        )}>Remove</Button>
       )} />
       <OperationList heading={`Recent (${snapshot.recent.length})`} items={snapshot.recent} renderAction={(item) => (
-        <button aria-label={`Replay ${item.name} in ${moduleLabel(item.moduleId)}`} className="button button--secondary button--compact" disabled={disabled} onClick={(event) => void runCommand(
+        <Button aria-label={`Replay ${item.name} in ${moduleLabel(item.moduleId)}`} variant="default" size="xs" disabled={disabled} onClick={(event) => void runCommand(
           `replay:${operationKey(item)}`,
           () => api.replay(item.moduleId, item.occurrenceId),
           `${item.name} added to the ${moduleLabel(item.moduleId)} queue.`,
           event.currentTarget
-        )} type="button">Replay</button>
+        )}>Replay</Button>
       )} />
     </main>
   );
@@ -354,11 +361,11 @@ function OperatorTimerCard({ disabled, onCommand, onAdjust, timer }: { readonly 
 
 function OperatorActionButton({ label, disabled, onClick }: { readonly label: "Pause" | "Resume" | "Restart" | "Stop" | "Pause module" | "Resume module" | "Clear pending"; readonly disabled: boolean; readonly onClick: (button: HTMLButtonElement) => void }) {
   const paths = { Pause: "M8 5v14M16 5v14", Resume: "m8 5 11 7-11 7Z", Restart: "M4 10a8 8 0 1 1 1 8M4 4v6h6", Stop: "M6 6h12v12H6Z", "Pause module": "M8 5v14M16 5v14", "Resume module": "m8 5 11 7-11 7Z", "Clear pending": "M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" };
-  return <button aria-label={label} title={label} className={`button ${label === "Clear pending" ? "button--danger-quiet" : "button--secondary"} operator-icon-action`} disabled={disabled} onClick={event => onClick(event.currentTarget)} type="button"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={paths[label]} /></svg></button>;
+  return <ActionIcon aria-label={label} title={label} className="operator-icon-action" {...(label === "Clear pending" ? { color: "red", variant: "light" } : { variant: "default" })} disabled={disabled} onClick={event => onClick(event.currentTarget)}><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={paths[label]} /></svg></ActionIcon>;
 }
 
 function OperatorHeader() {
-  return <header className="operator-header"><div><p className="management-eyebrow">Stream Jams</p><h1>Operator Console</h1></div><a className="button button--secondary surface-switch-link" href="/manage">Back to management</a></header>;
+  return <header className="operator-header"><div><p className="management-eyebrow">Stream Jams</p><h1>Operator Console</h1></div><Button component="a" variant="default" className="surface-switch-link" href="/manage">Back to management</Button></header>;
 }
 
 function OperatorErrorBanner({ children, error, title }: { readonly children?: React.ReactNode; readonly error: OperatorError; readonly title: string }) {

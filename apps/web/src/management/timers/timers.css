@@ -177,10 +177,9 @@
   gap: 12px;
   margin-top: 12px;
 }
-.timer-adjustment label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.timer-adjustment > .mantine-InputWrapper-root {
+  flex: 1 1 140px;
+  min-width: 0;
 }
 .timer-event-rules > fieldset {
   display: grid;

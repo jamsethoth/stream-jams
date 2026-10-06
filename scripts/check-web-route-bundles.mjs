@@ -8,7 +8,7 @@ const defaultBuildDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "
 const defaultBudgets = {
   bootstrap: 100 * 1024,
   overlay: 150 * 1024,
-  operator: 175 * 1024,
+  operator: 190 * 1024,
   management: 250 * 1024
 };
 const routeSources = {
@@ -63,7 +63,8 @@ export async function checkWebRouteBundles({
   })));
 
   const errors = [];
-  for (const route of ["bootstrap", "operator", "overlay"]) {
+  // Operator shares the management presentation; transparent outputs and bootstrap stay Mantine-free.
+  for (const route of ["bootstrap", "overlay"]) {
     for (const source of routes[route].sources) {
       if (source.includes("@mantine/") || source.includes("@mantine+")) {
         errors.push(`${title(route)} route includes management Mantine source ${source}.`);

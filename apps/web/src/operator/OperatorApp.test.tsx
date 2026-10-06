@@ -1,5 +1,5 @@
 import type { MergedOperationsSnapshot, OperationRow } from "@stream-jams/core";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ManagementHttpError } from "../management/management-http-client.js";
@@ -182,7 +182,8 @@ describe("OperatorApp", () => {
 
     await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
     expect(trigger).toBeDisabled();
-    await act(async () => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); });
+    // Mantine's modal handles Escape from the focused element inside the dialog, as a real keypress does.
+    await act(async () => { fireEvent.keyDown(document.activeElement ?? screen.getByRole("dialog"), { key: "Escape" }); });
 
     expect(screen.getByRole("heading", { name: "Screen Effects" })).toHaveFocus();
   });

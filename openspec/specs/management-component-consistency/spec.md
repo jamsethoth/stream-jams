@@ -34,7 +34,7 @@ The existing semantic CSS token and persisted theme-preference contract SHALL re
 
 ### Requirement: Management Presentation Preserves Other Application Surfaces
 
-Mantine management provider, styles and components SHALL remain outside Operator, live browser-source and private desktop-overlay rendering entry points. Existing provider-independent shared consumers and required CSS SHALL remain functional. Existing light/dark/system management preferences, production CSP and route bundle budgets SHALL remain effective.
+The Operator console SHALL use the management presentation provider, theme and Mantine command, field and dialog components so it matches management. Mantine management provider, styles and components SHALL remain outside live browser-source and private desktop-overlay rendering entry points. Existing provider-independent shared consumers and required CSS SHALL remain functional. Existing light/dark/system management preferences, production CSP and route bundle budgets SHALL remain effective.
 
 #### Scenario: Management theme changes
 - **WHEN** the user changes the supported management theme preference
@@ -42,9 +42,9 @@ Mantine management provider, styles and components SHALL remain outside Operator
 - **AND** overlay transparency and fail-closed error behavior remain unchanged
 
 #### Scenario: A foundation component or shared style migrates
-- **WHEN** management migrates a dependency also consumed by Operator or a private renderer
+- **WHEN** management migrates a dependency also consumed by a browser-source or private renderer
 - **THEN** the other surface retains a provider-independent compatible component/style boundary
-- **AND** Operator badges, timer adjustments, clear confirmation and focus/cancellation behavior continue to work without a Mantine provider
+- **AND** Operator badges, timer adjustments, clear confirmation and focus/cancellation behavior continue to work under the shared management provider
 - **AND** built JS/CSS dependency graphs retain the declared surface isolation
 
 #### Scenario: Provider initialization fails

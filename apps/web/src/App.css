@@ -336,7 +336,7 @@ a:focus-visible {
   margin-top: 14px;
 }
 
-.operator-error .button {
+.operator-error .management-command {
   margin-top: 10px;
 }
 
@@ -970,9 +970,9 @@ a:focus-visible {
     flex-direction: column;
   }
 
-  .operator-controls > .button,
-  .operator-section__heading > .button,
-  .operator-item__summary > .button {
+  .operator-controls > .management-command,
+  .operator-section__heading > .management-command,
+  .operator-item__summary > .management-command {
     width: 100%;
   }
 
@@ -985,10 +985,9 @@ a:focus-visible {
 .operator-header { align-items: center; gap: 8px; margin-bottom: 8px; padding-bottom: 8px; }
 .operator-header h1 { font-size: 24px; }
 .operator-header .management-eyebrow { margin: 0 0 2px; }
-.operator-header .surface-switch-link { padding: 6px 10px; width: auto; }
+.operator-header .surface-switch-link { width: auto; }
 .operator-status-strip { gap: 6px; margin-bottom: 8px; }
 .operator-controls { align-items: center; gap: 6px; padding: 8px; }
-.operator-console .button { min-height: 32px; padding: 6px 10px; }
 .operator-section { margin-top: 10px; }
 .operator-section h2 { font-size: 16px; }
 .operator-list { gap: 4px; margin-top: 6px; }
@@ -998,7 +997,7 @@ a:focus-visible {
 .operator-item:not(.operator-timer-item):not(.operator-module-item) .operator-item__summary > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
 .operator-item__summary strong, .operator-item__summary span { overflow-wrap: anywhere; }
 .operator-item__summary span { font-size: 12px; }
-.operator-item__summary > .button { flex-shrink: 0; }
+.operator-item__summary > .management-command { flex-shrink: 0; }
 .operator-item dl { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 4px 0 0; font-size: 12px; }
 .operator-item dt { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .operator-item dd { color: var(--color-text-muted); }
@@ -1010,21 +1009,16 @@ a:focus-visible {
 .operator-item__summary > .operator-controls { display: flex; flex-wrap: wrap; gap: 4px; border: 0; background: transparent; padding: 0; }
 .operator-timer-list { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
 .operator-timer-item { min-width: 0; }
-.operator-console .operator-icon-action { display: inline-flex; align-items: center; justify-content: center; width: 32px; padding: 6px; }
 .operator-timer-adjustment { margin-top: 4px; font-size: 12px; }
 .operator-timer-adjustment summary { cursor: pointer; width: fit-content; padding: 4px 0; }
 .operator-timer-adjustment summary:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .operator-timer-adjustment .timer-adjustment { min-width: 0; margin: 4px 0 0; padding: 8px; gap: 8px; }
-.operator-timer-adjustment .timer-adjustment label { flex: 1 1 120px; min-width: 0; }
-.operator-timer-adjustment input, .operator-timer-adjustment select { width: 100%; min-width: 0; }
-.operator-timer-adjustment .timer-adjustment button { min-height: 32px; padding: 6px 10px; }
 .operator-console .management-empty { padding: 8px 10px; margin: 6px 0 0; }
 @media (max-width: 650px) {
   .operator-header { flex-direction: row; flex-wrap: wrap; }
   .operator-item__summary { align-items: center; flex-direction: row; }
-  .operator-controls > .button, .operator-item__summary > .button { width: auto; }
-  .operator-console > .operator-controls > .button { flex: 1 1 auto; }
-  .operator-header .surface-switch-link { font-size: 12px; }
+  .operator-controls > .management-command, .operator-item__summary > .management-command { width: auto; }
+  .operator-console > .operator-controls > .management-command { flex: 1 1 auto; }
 }
 @media (max-width: 380px) {
   .operator-timer-item .operator-item__summary { flex-wrap: wrap; }
