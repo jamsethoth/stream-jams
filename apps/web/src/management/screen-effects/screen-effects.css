@@ -312,8 +312,12 @@
 
 
 .screen-effects-disclosure {
+  align-items: center;
   background: transparent;
   border: 0;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 8px;
   color: var(--color-text);
   font-size: var(--font-size-md);
   padding: 0;

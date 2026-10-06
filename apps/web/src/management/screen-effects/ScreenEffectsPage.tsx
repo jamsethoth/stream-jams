@@ -1,6 +1,6 @@
 import { Button, TextInput } from "@mantine/core";
 import { BrowserSourceRow } from "../foundation/BrowserSourceRow.js";
-import { ModulePageLayout, ModuleControls, ModuleSection, SectionHeading } from "../foundation/ModulePageLayout.js";
+import { DisclosureIcon, ModulePageLayout, ModuleControls, ModuleSection, SectionHeading } from "../foundation/ModulePageLayout.js";
 import { DestructiveConfirmationDialog } from "../foundation/DestructiveConfirmationDialog.js";
 import { actionableError } from "../foundation/actionable-error.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
@@ -218,7 +218,7 @@ export function ScreenEffectsPage({ api, onEdit, initialSetId, generateId = defa
       <div className="screen-effect-sets">
         {sets.map((set) => <section aria-label={`${set.name} Screen Effect set`} className="screen-effect-set" key={set.id}>
           <SectionHeading level={3} title={<button aria-expanded={expandedSetId === set.id || query.trim() !== ""} aria-controls={`effect-set-${set.id}`} className="screen-effects-disclosure" onClick={() => setExpandedSetId((current) => current === set.id ? null : set.id)} type="button">
-              <strong>{set.name}</strong> · {set.effectIds.length} {set.effectIds.length === 1 ? "effect" : "effects"}
+              <DisclosureIcon expanded={expandedSetId === set.id || query.trim() !== ""} /><strong>{set.name}</strong> · {set.effectIds.length} {set.effectIds.length === 1 ? "effect" : "effects"}
             </button>} actions={<div className="screen-effects-list__actions">
               <StatusBadge label={set.active ? "Live set" : "Inactive set"} tone={set.active ? "positive" : "neutral"} />
               {!set.active ? <Button variant="default" disabled={busy} onClick={() => reviewConfirmation({ kind: "activate-set", set })} type="button">Activate set</Button> : null}

@@ -710,9 +710,6 @@
   padding: 9px;
 }
 
-.alert-editor-inspector__disclosure > summary::marker {
-  color: var(--color-accent);
-}
 
 .alert-editor-inspector__disclosure > summary:focus-visible {
   outline: 2px solid var(--color-focus);

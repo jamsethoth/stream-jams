@@ -329,7 +329,7 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
           <form className="settings-page__form" onSubmit={submitServer}>
             <TextInput label="Host" disabled readOnly value={configDraft.host} />
             <TextInput label="Port" min={1} max={65535} onChange={(event) => setConfigDraft({ ...configDraft, port: Number(event.currentTarget.value) })} type="number" value={configDraft.port} />
-            <Button disabled={busy || !serverDirty} type="submit">Save server settings</Button>
+            {serverDirty || busy ? <Button disabled={busy || !serverDirty} type="submit">Save server settings</Button> : null}
           </form>
         </section>
       </details>
@@ -339,18 +339,18 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
           <SectionHeading level={3} id="desktop-heading" title="Desktop app" description="Choose what happens when you close the management window." />
           <form className="settings-page__form" onSubmit={submitDesktop}>
             <DesktopSettingsPanel closeToTray={closeToTray} disabled={busy} onChange={setCloseToTray} />
-            <Button disabled={busy || !desktopDirty} type="submit">Save desktop settings</Button>
+            {desktopDirty || busy ? <Button disabled={busy || !desktopDirty} type="submit">Save desktop settings</Button> : null}
           </form>
         </section>
       )}
 
       <details className="settings-page__disclosure" onToggle={(event) => setAudioOpen(event.currentTarget.open)} open={audioOpen}>
         <summary><span className="settings-page__summary-content"><strong>Audio outputs · {summaryText(audioSummary, "configured")}{audioDirty ? " · Unsaved" : ""}</strong></span></summary>
-        <AudioOutputsPanel audioApi={audioApi} onDirtyChange={setAudioDirty} onSummaryChange={setAudioSummary} ref={audioPanelRef} />
+        <AudioOutputsPanel audioApi={audioApi} embedded onDirtyChange={setAudioDirty} onSummaryChange={setAudioSummary} ref={audioPanelRef} />
       </details>
       <details className="settings-page__disclosure" onToggle={(event) => setSurfacesOpen(event.currentTarget.open)} open={surfacesOpen}>
         <summary><span className="settings-page__summary-content"><strong>Overlay surfaces · {summaryText(surfaceSummary, "configured")}{surfacesDirty ? " · Unsaved" : ""}</strong></span></summary>
-        <OverlaySurfacesPanel api={surfaceApi} manageNavigation={false} onDirtyChange={setSurfacesDirty} onSummaryChange={setSurfaceSummary} ref={surfacesPanelRef} />
+        <OverlaySurfacesPanel api={surfaceApi} embedded manageNavigation={false} onDirtyChange={setSurfacesDirty} onSummaryChange={setSurfaceSummary} ref={surfacesPanelRef} />
       </details>
 
       <details className="settings-page__disclosure" id="automation" onToggle={event => setAutomationOpen(event.currentTarget.open)} open={automationOpen}>

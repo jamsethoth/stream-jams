@@ -39,3 +39,14 @@
 :where(.app-shell, .operator-console, .management-mantine-modal) :where(h4) { font-size: var(--font-size-md); }
 :where(.app-shell, .operator-console, .management-mantine-modal) :where(h5, h6) { font-size: var(--font-size-sm); }
 :where(.app-shell, .operator-console, .management-mantine-modal) :where(small) { font-size: var(--font-size-xs); }
+
+/* One disclosure affordance: a chevron that points right when closed and down when open. */
+.management-disclosure-icon, :where(.app-shell, .operator-console, .management-mantine-modal) details > summary::before {
+  border-bottom: 2px solid currentColor; border-right: 2px solid currentColor; content: ""; display: inline-block; flex: none;
+  height: 7px; margin-inline: 2px 6px; transform: rotate(-45deg); transition: transform 120ms ease; width: 7px;
+}
+.management-disclosure-icon[data-expanded], :where(.app-shell, .operator-console, .management-mantine-modal) details[open] > summary::before { transform: rotate(45deg); }
+:where(.app-shell, .operator-console, .management-mantine-modal) details > summary { cursor: pointer; list-style: none; }
+:where(.app-shell, .operator-console, .management-mantine-modal) details > summary::-webkit-details-marker { display: none; }
+[dir="rtl"] .management-disclosure-icon:not([data-expanded]), [dir="rtl"] details:not([open]) > summary::before { transform: rotate(135deg); }
+@media (prefers-reduced-motion: reduce) { .management-disclosure-icon, details > summary::before { transition: none; } }

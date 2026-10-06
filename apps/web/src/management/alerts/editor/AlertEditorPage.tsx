@@ -48,6 +48,7 @@ import { AudioFadeControls } from "../../audio/AudioFadeControls.js";
 import { MediaDurationControls } from "../../audio/MediaDurationControls.js";
 import { useAudioStatus } from "../../audio/use-audio-status.js";
 import { Breadcrumbs } from "../../foundation/Breadcrumbs.js";
+import { DisclosureIcon } from "../../foundation/ModulePageLayout.js";
 import { ManagementErrorBanner } from "../../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../../foundation/ManagementToast.js";
 import { ManagementModalSurface as ModalSurface, ManagementModalTitle } from "../../foundation/ManagementModalSurface.js";
@@ -985,7 +986,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                       const next = new Set(current);
                       if (next.has(group.key)) next.delete(group.key); else next.add(group.key);
                       return next;
-                    })} type="button"><span aria-hidden="true">{expanded ? "−" : "+"}</span><span><strong>{group.label}</strong><small>{group.defaultCount} defaults · {group.variationCount} variations</small></span></UnstyledButton>
+                    })} type="button"><DisclosureIcon expanded={expanded} /><span><strong>{group.label}</strong><small>{group.defaultCount} defaults · {group.variationCount} variations</small></span></UnstyledButton>
                   {expanded ? (
                     <div className="alert-editor-page__event-content" id={contentId}>
                       {group.defaults.length === 0 && group.orphanVariations.length === 0 ? <p className="alert-editor-page__empty">No alerts configured.</p> : null}

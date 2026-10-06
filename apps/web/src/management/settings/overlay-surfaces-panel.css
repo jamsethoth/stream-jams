@@ -7,10 +7,11 @@
 .overlay-surfaces__heading span { color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .overlay-surfaces fieldset { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .overlay-surfaces__legend { padding: 0 0 8px; font-size: var(--font-size-sm); color: var(--color-text-muted); }
-.overlay-surfaces__desktop-fields { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(100px, 160px); gap: 12px; align-items: end; }
-.overlay-surfaces__layers { display: grid; gap: 8px; margin: 0; padding-inline-start: 24px; }
-.overlay-surfaces__layers li { padding-inline-start: 4px; }
-.overlay-surfaces__row-actions { display: inline-flex; gap: 6px; margin-inline-start: 16px; }
+.overlay-surfaces__desktop-fields { display: grid; grid-template-columns: minmax(200px, 2fr) minmax(120px, 1fr); gap: 12px 16px; align-items: start; max-width: 720px; }
+.overlay-surfaces__field--full { grid-column: 1 / -1; }
+.overlay-surfaces__layers { display: grid; gap: 4px; margin: 0; max-width: 720px; padding-inline-start: 24px; }
+.overlay-surfaces__layers li { align-items: center; border-bottom: 1px solid var(--color-border); display: flex; gap: 12px; justify-content: space-between; min-height: 40px; padding-inline-start: 4px; }
+.overlay-surfaces__row-actions { display: inline-flex; flex: none; gap: 4px; }
 .overlay-surfaces__actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .overlay-surfaces__message { overflow-wrap: anywhere; }
 @media (max-width: 760px) { .overlay-surfaces__desktop-fields { grid-template-columns: 1fr; } .overlay-surfaces__actions > button { flex: 1 1 200px; } }

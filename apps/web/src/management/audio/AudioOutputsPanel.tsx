@@ -56,10 +56,12 @@ export interface AudioOutputsPanelProps {
   readonly audioApi: AudioApi;
   readonly onDirtyChange?: ((dirty: boolean) => void) | undefined;
   readonly onSummaryChange?: ((summary: { readonly count: number; readonly state: "loading" | "ready" | "attention" }) => void) | undefined;
+  /** Hosted inside a disclosure whose summary already shows the title. */
+  readonly embedded?: boolean | undefined;
 }
 
 export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutputsPanelProps>(function AudioOutputsPanel(
-  { audioApi, onDirtyChange, onSummaryChange },
+  { audioApi, embedded = false, onDirtyChange, onSummaryChange },
   ref
 ) {
   const { status, loading, error: refreshError, refresh } = useAudioStatus(audioApi);
@@ -73,7 +75,9 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
   const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
   const [actionError, setActionError] = useState<ActionableManagementError | null>(null);
   const [deleteError, setDeleteError] = useState<ActionableManagementError | null>(null);
-  const fallbackRef = useRef<HTMLHeadingElement>(null);
+  const fallbackRef = useRef<HTMLElement>(null);
+  const sectionLabel = embedded ? { "aria-label": "Audio outputs" } : { "aria-labelledby": "audio-outputs-heading" };
+  const heading = embedded ? null : <h3 id="audio-outputs-heading">Audio outputs</h3>;
   const mutationInProgressRef = useRef(false);
   const navigationSavingRef = useRef(false);
   const navigationErrorRef = useRef<ActionableManagementError | null>(null);
@@ -290,13 +294,13 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
   }
 
   if (status === null && loading) {
-    return <section aria-labelledby="audio-outputs-heading" className="audio-outputs" id="audio-outputs"><h3 id="audio-outputs-heading">Audio outputs</h3><p className="management-empty" role="status">Loading audio outputs...</p></section>;
+    return <section {...sectionLabel} className="audio-outputs" id="audio-outputs">{heading}<p className="management-empty" role="status">Loading audio outputs...</p></section>;
   }
 
   if (status === null) {
     return (
-      <section aria-labelledby="audio-outputs-heading" className="audio-outputs" id="audio-outputs">
-        <h3 id="audio-outputs-heading">Audio outputs</h3>
+      <section {...sectionLabel} className="audio-outputs" id="audio-outputs">
+        {heading}
         <ManagementErrorBanner error={actionable("Audio outputs could not be loaded", refreshError, "Check the local service, then retry." )} />
         <Button onClick={() => void refresh()} type="button">Retry loading audio outputs</Button>
       </section>
@@ -307,11 +311,11 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
   const devices = status.capability.devices;
 
   return (
-    <section aria-labelledby="audio-outputs-heading" className="audio-outputs" id="audio-outputs">
+    <section {...sectionLabel} className="audio-outputs" id="audio-outputs">
       <Group align="flex-start" justify="space-between" wrap="wrap">
         <div>
-          <h3 id="audio-outputs-heading" ref={fallbackRef} tabIndex={-1}>Audio outputs</h3>
-          <p>Name local playback destinations once, then select them from alert settings.</p>
+          {embedded ? null : <h3 id="audio-outputs-heading" ref={(element) => { fallbackRef.current = element; }} tabIndex={-1}>Audio outputs</h3>}
+          <p ref={embedded ? (element) => { fallbackRef.current = element; } : undefined} tabIndex={embedded ? -1 : undefined}>Name local playback destinations once, then select them from alert settings.</p>
         </div>
         <StatusBadge label={!status.capability.available ? "Device playback unavailable" : status.muted ? "Alerts muted" : "Device playback available"} tone={status.muted || !status.capability.available ? "warning" : "positive"} />
       </Group>

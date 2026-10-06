@@ -147,7 +147,8 @@ describe("SettingsPanel", () => {
     expect(screen.queryByText("No backup selected.")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Retry loading settings" }));
-    expect(await screen.findByRole("button", { name: "Save server settings" })).toBeInTheDocument();
+    // Save appears once there is an unsaved change, so the reloaded form is checked through its field.
+    expect(await screen.findByLabelText("Port")).toHaveValue(39187);
     expect(getServerConfig).toHaveBeenCalledTimes(2);
   });
 
@@ -228,7 +229,8 @@ describe("SettingsPanel", () => {
     render(<SettingsPanel audioApi={createAudioApi()} managementApi={createManagementApi()} />);
 
     expect(await screen.findByText("Headphones")).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Audio outputs" })).toBeVisible();
+    // The Settings disclosure summary carries the title; the embedded panel no longer repeats it.
+    expect(screen.getByRole("region", { name: "Audio outputs" })).toBeVisible();
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" }));
   });
 

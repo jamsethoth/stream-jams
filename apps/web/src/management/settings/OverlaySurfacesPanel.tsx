@@ -1,4 +1,4 @@
-import { Button, Checkbox, NativeSelect, TextInput } from "@mantine/core";
+import { ActionIcon, Button, Checkbox, NativeSelect, TextInput } from "@mantine/core";
 import { surfaceConfigurationSchema, surfaceConfigurationUpdateSchema, type ActionableManagementError, type SurfaceConfiguration, type SurfaceConfigurationUpdate, type SurfaceSettingsView } from "@stream-jams/core";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
@@ -16,11 +16,13 @@ export interface OverlaySurfacesPanelProps {
   readonly onDirtyChange?: ((dirty: boolean) => void) | undefined;
   readonly manageNavigation?: boolean | undefined;
   readonly onSummaryChange?: ((summary: { readonly count: number; readonly state: "loading" | "ready" | "attention" }) => void) | undefined;
+  /** Hosted inside a disclosure whose summary already shows the title. */
+  readonly embedded?: boolean | undefined;
 }
 type Model = { view: SurfaceSettingsView | null; drafts: ReadonlyMap<string, SurfaceConfiguration> };
 
 export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, OverlaySurfacesPanelProps>(function OverlaySurfacesPanel(
-  { api = defaultSurfaceSettingsApi, onDirtyChange, manageNavigation = true, onSummaryChange }, ref
+  { api = defaultSurfaceSettingsApi, embedded = false, onDirtyChange, manageNavigation = true, onSummaryChange }, ref
 ) {
   const [model, setModel] = useState<Model>({ view: null, drafts: new Map() });
   const [loading, setLoading] = useState(true);
@@ -124,8 +126,8 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
   }
 
   const view = model.view;
-  return <section className="overlay-surfaces" id="overlay-surfaces" aria-labelledby="overlay-surfaces-heading">
-    <SectionHeading level={3} id="overlay-surfaces-heading" title="Overlay surfaces" description="Choose where modules appear and their order. Save each surface to apply changes." />
+  return <section className="overlay-surfaces" id="overlay-surfaces" {...(embedded ? { "aria-label": "Overlay surfaces" } : { "aria-labelledby": "overlay-surfaces-heading" })}>
+    {embedded ? <p className="module-section-description">Choose where modules appear and their order. Save each surface to apply changes.</p> : <SectionHeading level={3} id="overlay-surfaces-heading" title="Overlay surfaces" description="Choose where modules appear and their order. Save each surface to apply changes." />}
     {loading && view === null ? <p role="status">Loading overlay surfaces…</p> : null}
     {refreshError === null ? null : <div><ManagementErrorBanner error={refreshError} /><Button type="button" disabled={busy} onClick={() => { setLoading(true); setReload(value => value + 1); }}>Refresh overlay settings</Button>{view === null ? null : <p>Showing last known status; it may be stale.</p>}</div>}
     {view !== null && view.surfaces.length === 0 ? <p>No overlay surfaces are configured.</p> : null}
@@ -145,14 +147,14 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
         <fieldset disabled={busy || unavailable}>
           <legend className="overlay-surfaces__legend">{name} configuration</legend>
           {draft.kind === "desktop" ? <div className="overlay-surfaces__desktop-fields">
-            <Checkbox checked={draft.enabled} onChange={event => edit({ ...draft, enabled: event.currentTarget.checked })} label="Enable desktop overlay" />
+            <div className="overlay-surfaces__field--full"><Checkbox checked={draft.enabled} onChange={event => edit({ ...draft, enabled: event.currentTarget.checked })} label="Enable desktop overlay" /></div>
             <NativeSelect label="Desktop display" value={draft.displayId ?? ""} onChange={event => { const displayId = event.currentTarget.value || null; const display = view.desktop.displays.find(candidate => candidate.id === displayId); edit({ ...draft, displayId, displayLabel: display?.label ?? null, ...(displayId === null ? { autoFollowDisplayName: false } : {}) }); }}>
               <option value="">Select a display</option>
               {draft.displayId !== null && !view.desktop.displays.some(display => display.id === draft.displayId) ? <option value={draft.displayId}>{draft.displayId} (missing)</option> : null}
               {view.desktop.displays.map(display => <option key={display.id} value={display.id}>{display.label}</option>)}
             </NativeSelect>
-            <Checkbox checked={draft.autoFollowDisplayName} disabled={draft.displayId === null || draft.displayLabel === null} onChange={event => edit({ ...draft, autoFollowDisplayName: event.currentTarget.checked })} label="Automatically follow this display name" />
             <TextInput label="Desktop opacity" type="number" min="0" max="1" step="0.05" value={Number.isFinite(draft.opacity) ? draft.opacity : ""} onChange={event => edit({ ...draft, opacity: event.currentTarget.valueAsNumber })} />
+            <div className="overlay-surfaces__field--full"><Checkbox checked={draft.autoFollowDisplayName} disabled={draft.displayId === null || draft.displayLabel === null} onChange={event => edit({ ...draft, autoFollowDisplayName: event.currentTarget.checked })} label="Automatically follow this display name" /></div>
           </div> : null}
           {draft.kind === "desktop" ? <p className="overlay-surfaces__message">{automaticBindingDescription(view.desktopBindingState, draft.displayLabel)}</p> : null}
           {invalid ? <p role="alert">Select a display when enabled and enter an opacity from 0 to 1 before saving.</p> : null}
@@ -160,12 +162,12 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
           {draft.layers.length === 0 ? <p>No registered modules on this surface.</p> : <ol className="overlay-surfaces__layers" aria-label={`${name} module order`}>
             {draft.layers.map((layer, index) => <li key={layer.moduleId}>
               <Checkbox aria-label={`Show ${formatModuleLabel(layer.moduleId)} on ${name}`} checked={layer.visible} onChange={event => edit({ ...draft, layers: draft.layers.map(row => row.moduleId === layer.moduleId ? { ...row, visible: event.currentTarget.checked } : row) })} label={formatModuleLabel(layer.moduleId)} />
-              <div className="overlay-surfaces__row-actions"><Button variant="default" type="button" aria-label={`Move ${formatModuleLabel(layer.moduleId)} up on ${name}`} disabled={index === 0} onClick={() => move(draft, index, -1)}>Up</Button><Button variant="default" type="button" aria-label={`Move ${formatModuleLabel(layer.moduleId)} down on ${name}`} disabled={index === draft.layers.length - 1} onClick={() => move(draft, index, 1)}>Down</Button></div>
+              <div className="overlay-surfaces__row-actions"><ActionIcon variant="default" size="md" aria-label={`Move ${formatModuleLabel(layer.moduleId)} up on ${name}`} title="Move up" disabled={index === 0} onClick={() => move(draft, index, -1)}><ReorderArrow direction="up" /></ActionIcon><ActionIcon variant="default" size="md" aria-label={`Move ${formatModuleLabel(layer.moduleId)} down on ${name}`} title="Move down" disabled={index === draft.layers.length - 1} onClick={() => move(draft, index, 1)}><ReorderArrow direction="down" /></ActionIcon></div>
             </li>)}
           </ol>}
         </fieldset>
-        <div className="overlay-surfaces__actions"><Button type="submit" disabled={busy || unavailable || !changed || invalid}>Save {name}</Button><Button variant="default" type="button" disabled={busy || !changed} onClick={() => edit(saved)}>Revert {name}</Button>
-          {draft.kind === "desktop" ? <Button variant="default" type="button" disabled={busy || unavailable || savedDesktop?.enabled !== true} onClick={() => void retry()}>Retry desktop output</Button> : null}
+        <div className="overlay-surfaces__actions">{changed || busy ? <><Button type="submit" disabled={busy || unavailable || !changed || invalid}>Save {name}</Button><Button variant="default" type="button" disabled={busy || !changed} onClick={() => edit(saved)}>Revert {name}</Button></> : null}
+          {draft.kind === "desktop" && savedDesktop?.enabled === true ? <Button variant="default" type="button" disabled={busy || unavailable || savedDesktop?.enabled !== true} onClick={() => void retry()}>Retry desktop output</Button> : null}
         </div>
         {draft.kind === "desktop" && changed ? <p>Retry uses saved desktop settings. Unsaved changes will not be applied.</p> : null}
       </form>;
@@ -207,4 +209,8 @@ function automaticBindingDescription(state: SurfaceSettingsView["desktopBindingS
 function actionable(summary: string, cause: unknown, nextStep: string): ActionableManagementError {
   const error = cause instanceof ManagementHttpError ? cause : null;
   return { summary, cause: cause instanceof Error ? cause.message : "The operation did not complete.", nextStep: error?.nextStep ?? nextStep, severity: "error", occurredAt: new Date().toISOString(), referenceId: error?.referenceId ?? null, correction: null };
+}
+
+function ReorderArrow({ direction }: { readonly direction: "up" | "down" }) {
+  return <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={direction === "up" ? "M12 19V5M5 12l7-7 7 7" : "M12 5v14M19 12l-7 7-7-7"} /></svg>;
 }

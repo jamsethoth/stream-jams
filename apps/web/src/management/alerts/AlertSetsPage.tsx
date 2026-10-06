@@ -1,7 +1,7 @@
 import { actionableError } from "../foundation/actionable-error.js";
 import { DestructiveConfirmationDialog } from "../foundation/DestructiveConfirmationDialog.js";
 import { Button, Checkbox, NativeSelect, TextInput } from "@mantine/core";
-import { ModulePageLayout, ModuleControls, SectionHeading } from "../foundation/ModulePageLayout.js";
+import { DisclosureIcon, ModulePageLayout, ModuleControls, SectionHeading } from "../foundation/ModulePageLayout.js";
 import { BrowserSourceRow } from "../foundation/BrowserSourceRow.js";
 import { BrowserSourcesPanel } from "../foundation/BrowserSourcesPanel.js";
 import {
@@ -801,7 +801,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
                       onClick={() => void toggleSet(set.id)}
                       type="button"
                     >
-                      <span aria-hidden="true">{expanded ? "−" : "+"}</span>
+                      <DisclosureIcon expanded={expanded} />
                       <strong>{set.name}</strong>
                       {set.starter ? <small>Starter</small> : null}
                     </button>
@@ -1014,7 +1014,7 @@ function AlertInventory({
                   onClick={() => onToggleGroup(group.key)}
                   type="button"
                 >
-                  <span aria-hidden="true">{expanded ? "−" : "+"}</span>
+                  <DisclosureIcon expanded={expanded} />
                   <span className="alert-sets-page__event-identity"><strong>{group.label}</strong><small>{group.catalogGroup}</small></span>
                   <span className="alert-sets-page__event-counts">
                     {formatCount(group.defaultCount, { one: "default", other: "defaults" })}

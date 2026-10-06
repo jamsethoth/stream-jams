@@ -1,4 +1,4 @@
-import { Button, Group, Stack } from "@mantine/core";
+import { Group, Stack, UnstyledButton } from "@mantine/core";
 import type { ReactNode } from "react";
 import "./module-page-layout.css";
 
@@ -29,6 +29,11 @@ export function ModuleSection({ title, label, id, description, actions, children
   return <section aria-label={label} className="module-section" id={id}><SectionHeading title={title} description={description} actions={actions} level={level} />{children}</section>;
 }
 
+/** The one expand/collapse affordance; native details summaries draw the same chevron in CSS. */
+export function DisclosureIcon({ expanded }: { readonly expanded: boolean }) {
+  return <span aria-hidden="true" className="management-disclosure-icon" data-expanded={expanded || undefined} />;
+}
+
 /** Controlled disclosure keeps correction targets and conditional child lifetimes with the page. */
 export function DisclosureSection({ title, label = title, detailsId, id, expanded, onToggle, description, summary, children, className = "" }: {
   readonly title: string; readonly label?: string; readonly detailsId: string; readonly id?: string;
@@ -36,7 +41,7 @@ export function DisclosureSection({ title, label = title, detailsId, id, expande
   readonly summary?: ReactNode; readonly children: ReactNode; readonly className?: string;
 }) {
   return <section aria-label={label} className={`module-section module-disclosure ${className}`} id={id}>
-    <SectionHeading title={<Button variant="subtle" className="module-disclosure-toggle" aria-controls={detailsId} aria-expanded={expanded} aria-label={`${expanded ? "Collapse" : "Expand"} ${title.toLowerCase()}`} onClick={onToggle}><span aria-hidden="true">{expanded ? "−" : "+"}</span><span>{title}</span></Button>} description={description} summary={summary} />
+    <SectionHeading title={<UnstyledButton className="module-disclosure-toggle" aria-controls={detailsId} aria-expanded={expanded} aria-label={`${expanded ? "Collapse" : "Expand"} ${title.toLowerCase()}`} onClick={onToggle}><DisclosureIcon expanded={expanded} /><span>{title}</span></UnstyledButton>} description={description} summary={summary} />
     {expanded ? <div className="module-disclosure-body" id={detailsId}>{children}</div> : null}
   </section>;
 }

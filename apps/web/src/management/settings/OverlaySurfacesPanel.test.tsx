@@ -116,7 +116,7 @@ it("ignores an older poll response that arrives after an explicit save", async (
   render(<OverlaySurfacesPanel api={state.api} />); await act(async () => {});
   state.api.load.mockImplementationOnce(() => new Promise(resolve => { loaded = resolve; })); await act(() => vi.advanceTimersByTimeAsync(5000));
   fireEvent.click(screen.getByRole("checkbox", { name: "Enable desktop overlay" })); await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save Desktop overlay" })); });
-  await act(async () => loaded(old)); expect(screen.getByRole("checkbox", { name: "Enable desktop overlay" })).toBeChecked(); expect(screen.getByRole("button", { name: "Save Desktop overlay" })).toBeDisabled();
+  await act(async () => loaded(old)); expect(screen.getByRole("checkbox", { name: "Enable desktop overlay" })).toBeChecked(); expect(screen.queryByRole("button", { name: "Save Desktop overlay" })).not.toBeInTheDocument();
 });
 it("shows a warning when settings save but desktop runtime remains failed", async () => {
   const state = harness(); state.view.desktop.state = "failed"; state.view.desktop.message = "Use Retry to restore future alerts.";
