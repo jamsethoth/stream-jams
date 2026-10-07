@@ -6,13 +6,16 @@ import { registerMusicManagementRoutes } from "./music-management.js";
 import { createRouteTestApp } from "./test-support/route-test-app.js";
 import { musicManagementStatusSchema, musicCredentialReplacementResultSchema } from "@stream-jams/core";
 
+// Keep tests off the network: a Pear instance on this machine must not change pairing outcomes.
+const hermeticTls = { inspectCertificate: async () => null };
+
 const createApp = createRouteTestApp(registerMusicManagementRoutes);
 
 describe("Music pairing management routes", () => {
   it("protects creation, polling and cancellation with management auth", async () => {
     const sessions = new LocalManagementSessionService({ generateId: () => "session-1", sessionTtlMs: 60_000 });
     const session = await sessions.createSession();
-    const pairing = new PearPairingService({
+    const pairing = new PearPairingService({ ...hermeticTls,
       identityStore: { getSecret: async () => null, setSecret: async () => undefined },
       requestApproval: async () => ({ status: 200, body: { accessToken: "sentinel-secret" } }),
       generateId: () => "pair_opaque_1234567890", generateClientId: () => "stable-client"
@@ -42,7 +45,7 @@ describe("Music pairing management routes", () => {
     const sessions = new LocalManagementSessionService({ generateId: () => "session-cert", sessionTtlMs: 60_000 });
     const session = await sessions.createSession();
     const sha256 = Array.from({ length: 32 }, () => "AB").join(":");
-    const pairing = new PearPairingService({
+    const pairing = new PearPairingService({ ...hermeticTls,
       identityStore: { getSecret: async () => "stable-client", setSecret: async () => undefined },
       inspectCertificate: async () => ({ pem: "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n", sha256, subject: "CN=localhost", issuer: "CN=localhost", validFrom: "a", validTo: "b", authorized: false }),
       requestApproval: async () => new Promise(() => {}),

@@ -143,7 +143,8 @@ export function MusicSourcesPage({ api, initialProviderId }: { readonly api: Mus
     try {
       const next = await api.beginMusicPairing(pearConfigurationSchema.parse(config));
       if (request !== generation.current) { await api.cancelMusicPairing(next.attemptId); return; }
-      pairRef.current = next.attemptId; setPairing(next);
+      // The service may have switched to HTTPS after finding Pear serving TLS on the requested port.
+      pairRef.current = next.attemptId; setPairing(next); setConfig(next.configuration);
     } catch (cause) { if (request === generation.current) setError(actionError(cause, "Unable to start Pear pairing", "Open Pear Desktop on this computer and retry.")); }
     finally { if (request === generation.current) setBusy(false); }
   }

@@ -75,10 +75,17 @@ export class PearPairingService {
     try { clientId = await this.#stableClientId(); }
     finally { this.#pendingBegins -= 1; }
     let review: Attempt["review"] = null;
-    const presented = await this.#inspectCertificate(config, AbortSignal.timeout(lifetimeMs)).catch(
+    const inspect = (candidate: PearConfiguration) => this.#inspectCertificate(candidate, AbortSignal.timeout(lifetimeMs)).catch(
       // error-provenance: allow expected -- an unreachable Pear surfaces through the approval request, which reports denied
       () => null
     );
+    let presented = await inspect(config);
+    if (presented === null && new URL(config.baseUrl).protocol === "http:") {
+      // Pear's API can be switched to HTTPS on the same port; follow it rather than failing the plain-HTTP request as denied.
+      const secure = parsePearConfiguration({ ...config, baseUrl: config.baseUrl.replace(/^http:/u, "https:") });
+      presented = await inspect(secure);
+      if (presented !== null) config = secure;
+    }
     if (presented !== null) {
       const { trustedCertificate, ...withoutTrust } = config;
       if (presented.authorized) config = parsePearConfiguration(withoutTrust);

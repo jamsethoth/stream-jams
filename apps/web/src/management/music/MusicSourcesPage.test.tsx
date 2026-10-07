@@ -143,6 +143,18 @@ describe("MusicSourcesPage", () => {
       await startPairing(api);
       expect(await screen.findByRole("dialog", { name: "Pear Desktop's certificate changed" })).toHaveTextContent("different self-signed certificate");
     });
+
+    it("shows the HTTPS address when pairing from the default HTTP address finds Pear serving TLS", async () => {
+      const api = createApi({ beginMusicPairing: vi.fn(async () => review) });
+      const user = userEvent.setup();
+      render(<MusicSourcesPage api={api} />);
+      await screen.findByText("No Music sources registered.");
+      await user.click(screen.getByRole("button", { name: "Add Pear Desktop" }));
+      await user.click(screen.getByRole("button", { name: "Pair Pear Desktop" }));
+      expect(api.beginMusicPairing).toHaveBeenCalledWith({ baseUrl: "http://127.0.0.1:26538", transport: "auto" });
+      expect(await screen.findByRole("dialog", { name: "Trust Pear Desktop's certificate?" })).toHaveTextContent(httpsConfig.baseUrl);
+      expect(screen.getByLabelText("Pear address")).toHaveValue(httpsConfig.baseUrl);
+    });
   });
 
   it.each(["denied", "expired"] as const)("keeps %s pairing incomplete and offers a retry", async outcome => {
