@@ -122,6 +122,43 @@ describe("StreamerBotRuntimeService", () => {
     ]]);
   });
 
+  it("subscribes General/Custom for the manual event handler and routes handled broadcasts away from ingestion", async () => {
+    const client = new FakeClient({ Twitch: supportedEvents, General: ["Custom", "Test"] });
+    const handled: StreamerBotEventEnvelope[] = [];
+    const ingested: string[] = [];
+    const service = runtime({
+      client,
+      active: registration(),
+      customEventHandler: envelope => {
+        handled.push(envelope);
+        return envelope.data.source === "StreamJams";
+      },
+      async ingestNormalizedEvent(event) { ingested.push(event.type); return { status: "accepted", event }; },
+      async ingestEffectTriggers(eventId) { ingested.push(`effects:${eventId}`); return { status: "accepted", eventId }; }
+    });
+    await service.syncActiveRegistration();
+
+    expect(client.subscriptionBatches).toEqual([[
+      { sourceKey: "Twitch", eventTypes: supportedEvents },
+      { sourceKey: "General", eventTypes: ["Custom"] }
+    ]]);
+    await client.emit({ timeStamp: "2026-07-17T12:00:00.000Z", event: { source: "General", type: "Custom" }, data: { source: "StreamJams", type: "VideoShoutout" } });
+    await client.emit({ timeStamp: "2026-07-17T12:00:00.000Z", event: { source: "General", type: "Custom" }, data: { source: "Other" } });
+    expect(handled).toHaveLength(2);
+    expect(ingested).toEqual([]);
+    expect(service.getStatus().state).toBe("connected");
+  });
+
+  it("does not subscribe General/Custom without a handler or when Streamer.bot does not advertise it", async () => {
+    const withoutHandler = new FakeClient({ Twitch: supportedEvents, General: ["Custom"] });
+    await runtime({ client: withoutHandler, active: registration() }).syncActiveRegistration();
+    expect(withoutHandler.subscriptionBatches).toEqual([[{ sourceKey: "Twitch", eventTypes: supportedEvents }]]);
+
+    const notAdvertised = new FakeClient({ Twitch: supportedEvents });
+    await runtime({ client: notAdvertised, active: registration(), customEventHandler: () => true }).syncActiveRegistration();
+    expect(notAdvertised.subscriptionBatches).toEqual([[{ sourceKey: "Twitch", eventTypes: supportedEvents }]]);
+  });
+
   it("forwards a configured custom event and ignores an unsubscribed event", async () => {
     const client = new FakeClient({ Twitch: supportedEvents, OBS: ["SceneChanged", "RecordingStarted"] });
     const batches: Array<readonly EffectTrigger[]> = [];
@@ -564,6 +601,7 @@ function runtime(options: {
     | { readonly status: "rejected"; readonly message: string; readonly referenceId: string }
   >;
   readonly onDiagnostic?: (entry: StreamerBotRuntimeDiagnostic) => void | Promise<void>;
+  readonly customEventHandler?: (envelope: StreamerBotEventEnvelope) => boolean | Promise<boolean>;
 }) {
   let active = options.active;
   let reference = 0;
@@ -579,6 +617,7 @@ function runtime(options: {
       ingestEffectTriggers: options.ingestEffectTriggers ?? (async (eventId) => ({ status: "accepted", eventId }))
     },
     generateReferenceId: () => `ref-${++reference}`,
+    customEventHandler: options.customEventHandler,
     onDiagnostic: options.onDiagnostic,
     now: () => new Date("2026-07-17T12:00:00.000Z"),
     sleep: async () => {},

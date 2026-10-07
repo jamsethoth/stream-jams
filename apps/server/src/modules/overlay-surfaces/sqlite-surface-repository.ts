@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import {
-  reconcileSurfaceLayers, surfaceConfigurationSchema, validateSurfaceOrder,
+  listUnifiedOverlayModuleIds, reconcileSurfaceLayers, surfaceConfigurationSchema, validateSurfaceOrder,
   type OverlayModuleRegistry, type SurfaceConfiguration, type SurfaceRepository
 } from "@stream-jams/core";
 import { runInTransaction } from "../db/database.js";
@@ -15,7 +15,7 @@ export class SqliteSurfaceRepository implements SurfaceRepository {
   async save(configuration: SurfaceConfiguration): Promise<void> {
     const parsed = surfaceConfigurationSchema.parse(configuration);
     runInTransaction(this.connection, () => {
-      validateSurfaceOrder(parsed.layers, this.registry.listModules().map(module => module.id));
+      validateSurfaceOrder(parsed.layers, listUnifiedOverlayModuleIds(this.registry));
       const surfaces = this.reconcile();
       if (!surfaces.some(surface => surface.id === parsed.id)) throw new Error("Unknown overlay surface");
       this.write(parsed);
@@ -23,7 +23,8 @@ export class SqliteSurfaceRepository implements SurfaceRepository {
   }
 
   private reconcile(): SurfaceConfiguration[] {
-    const modules = this.registry.listModules();
+    // Module-only modules (such as Video shoutout) never join unified or desktop layering.
+    const modules = this.registry.listModules().filter(module => module.renderer.supportedOutputs.includes("unified"));
     const ids = modules.map(module => module.id);
     const rows = this.connection.prepare("SELECT configuration_json FROM overlay_surfaces ORDER BY id").all();
     const surfaces = rows.map(row => surfaceConfigurationSchema.parse(JSON.parse(String(row.configuration_json))));

@@ -228,7 +228,7 @@ export type { SelectedDesktopDisplay, DesktopOverlayDiagnostic, DesktopOverlaySt
 export type { AlertsOverlayModuleConfig } from "./overlay-modules/module-definition.js";
 export { alertsOverlayModuleConfigSchema, alertsOverlayModuleDefinition } from "./overlay-modules/module-definition.js";
 export type { OverlayModuleRegistry } from "./overlay-modules/module-registry.js";
-export { StaticOverlayModuleRegistry, createDefaultOverlayModuleRegistry } from "./overlay-modules/module-registry.js";
+export { StaticOverlayModuleRegistry, createDefaultOverlayModuleRegistry, listUnifiedOverlayModuleIds } from "./overlay-modules/module-registry.js";
 export type { OverlayModuleConfigRepository, OverlayModuleConfigService, SaveOverlayModuleConfigInput } from "./overlay-modules/module-config-service.js";
 export { DefaultOverlayModuleConfigService, InMemoryOverlayModuleConfigRepository, InvalidOverlayModuleConfigError, UnknownOverlayModuleError } from "./overlay-modules/module-config-service.js";
 export type { OverlayCompositionService, OverlayModuleRuntime, OverlayModuleSnapshotRequest } from "./overlay-modules/overlay-composition-service.js";
@@ -373,6 +373,9 @@ export * from "./music/management.js";
 export * from "./music/module-definition.js";
 export * from "./music/projection.js";
 export * from "./music/asset-references.js";
+export type * from "./video-shoutout/types.js";
+export * from "./video-shoutout/schemas.js";
+export { videoShoutoutModuleDefinition } from "./video-shoutout/module-definition.js";
 
 export * from "./management/local-websocket-connection.js";
 export { moduleMuteStateSchema } from "./playback/schemas.js";

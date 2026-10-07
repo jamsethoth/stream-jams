@@ -21,6 +21,7 @@ import {
   DefaultTtsService,
   createAppVersion,
   createDefaultOverlayModuleRegistry,
+  listUnifiedOverlayModuleIds,
   isStreamerBotSubscriptionAvailable,
   overlayScopeSchema,
   pearConfigurationSchema,
@@ -125,6 +126,8 @@ import { MusicManagementService } from "../modules/music/music-management-servic
 import { saveValidatedMusicConfig } from "../modules/music/music-config-save.js";
 import { MusicArtworkService, type MusicArtworkServiceOptions } from "../modules/music/music-artwork-service.js";
 import { MusicOutputRuntime } from "../modules/music/music-output-runtime.js";
+import { VideoShoutoutService } from "../modules/video-shoutout/video-shoutout-service.js";
+import { createStreamerBotVideoShoutoutIntake } from "../modules/video-shoutout/streamerbot-video-shoutout-intake.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
 import { evaluateProviderActivationImpact } from "../modules/providers/provider-activation-impact.js";
 import { SqliteProviderRegistrationRepository } from "../modules/providers/sqlite-provider-registration-repository.js";
@@ -458,6 +461,22 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const twitchApiClient = options.twitchApiClient ?? defaultTwitchApiClient;
   const twitchRewardApiClient = options.twitchRewardApiClient ?? defaultTwitchApiClient;
   let currentModuleMutes = initialConfig.playback.moduleMutes ?? { alerts: false, "screen-effects": false };
+  const videoShoutoutService = new VideoShoutoutService({
+    clock: { now: () => now().getTime() },
+    scheduler: {
+      schedule(delayMs, callback) {
+        const handle = setTimeout(callback, delayMs);
+        return { cancel: () => clearTimeout(handle) };
+      }
+    },
+    generateActivationId: randomUUID,
+    onTransition(transition) {
+      void runtimeLogger.info("Video shoutout state changed.", {
+        module: "video-shoutout", source: "video-shoutout.state", correlationId: transition.activationId ?? "video-shoutout", processingId: null,
+        metadata: { purpose: transition.purpose, from: transition.from, to: transition.to, cause: transition.cause }
+      });
+    }
+  });
   const overlayGateway = new OverlayGateway({
     overlayAccessService,
     generateClientId: options.generateOverlayClientId ?? generateOverlayClientId,
@@ -504,6 +523,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
           report.exception
         );
       }
+      // Video shoutout players report against their activation id through the same path.
+      if (videoShoutoutService.reportPlayback(report.instructionId, report.status)) return;
       if (report.status === "completed" || report.status === "failed") {
         playbackCoordinator.reportInstructionFinished(report.clientId, report.instructionId);
         effectPlaybackCoordinator.reportInstructionFinished(
@@ -882,6 +903,14 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         maintenanceGate.runIntake(() => eventIngestionService.ingestEffectTriggers(eventId, triggers))
     },
     generateReferenceId: generateEventSourceReferenceId,
+    customEventHandler: createStreamerBotVideoShoutoutIntake({
+      service: videoShoutoutService,
+      isModuleEnabled: async () => (await overlayModuleConfigService.getModuleConfig("video-shoutout")).enabled,
+      onDiagnostic: async (entry) => {
+        const context = { module: "video-shoutout", source: "video-shoutout.streamerbot", correlationId: generateEventSourceReferenceId(), processingId: null, metadata: { ...entry.metadata } };
+        await (entry.level === "warn" ? runtimeLogger.warn(entry.message, context) : runtimeLogger.info(entry.message, context));
+      }
+    }),
     onDiagnostic: (entry) => writeStreamerBotRuntimeDiagnostic(runtimeLogger, entry),
     now
   });
@@ -1375,7 +1404,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     }],
     ["screen-effects", effectPlaybackCoordinator],
     ["timers", timerRuntimeCoordinator],
-    ["music", musicOutputRuntime]
+    ["music", musicOutputRuntime],
+    ["video-shoutout", videoShoutoutService]
   ]);
   const overlayCompositionService = new DefaultOverlayCompositionService({
     surfaceRepository,
@@ -1398,7 +1428,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateReferenceId: generateRuntimeReferenceId
   });
   const syncBrowserTimerCompositions = async () => {
-    const moduleIds = overlayModuleRegistry.listModules().map(module => module.id);
+    const moduleIds = listUnifiedOverlayModuleIds(overlayModuleRegistry);
     await Promise.all(overlayGateway.clients
       .filter(client => client.purpose === "live" && (client.scope === "unified" || client.moduleId === "timers"))
       .map(async client => {
@@ -1425,7 +1455,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const syncMusicOutputs = async (includeTest: boolean) => {
     const revision = musicRuntimeCoordinator.revision;
     const generation = musicRuntimeCoordinator.generation;
-    const moduleIds = overlayModuleRegistry.listModules().map(module => module.id);
+    const moduleIds = listUnifiedOverlayModuleIds(overlayModuleRegistry);
     await Promise.all(overlayGateway.clients.filter(client =>
       (includeTest || client.purpose === "live") && (client.scope === "unified" || client.moduleId === "music")
     ).map(async client => {
@@ -1474,6 +1504,27 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     return pendingMusicOutputSync.promise;
   };
   const unsubscribeMusicOutputs = musicRuntimeCoordinator.subscribe(() => { void queueMusicOutputSync(); });
+  const syncVideoShoutoutOutputs = async (purpose: "live" | "test") => {
+    await Promise.all(overlayGateway.clients
+      .filter(client => client.scope === "module" && client.moduleId === "video-shoutout" && client.purpose === purpose)
+      .map(async client => {
+        overlayGateway.deliverComposition(client.id, await overlayCompositionService.resolveModuleOutput({
+          moduleId: "video-shoutout", overlayId: client.overlayId, purpose: client.purpose,
+          ...(client.targetProfileId == null ? {} : { targetProfileId: client.targetProfileId })
+        }));
+      }));
+  };
+  let videoShoutoutOutputSyncTail = Promise.resolve();
+  const unsubscribeVideoShoutoutOutputs = videoShoutoutService.subscribe(purpose => {
+    void trackRuntimeWork(() => {
+      const pending = videoShoutoutOutputSyncTail.then(() => syncVideoShoutoutOutputs(purpose));
+      videoShoutoutOutputSyncTail = pending.catch(
+        // error-provenance: allow expected -- pending preserves the rejection for tracked diagnostics; the tail only keeps later syncs ordered
+        () => undefined
+      );
+      return pending;
+    });
+  });
   for (const surface of await surfaceRepository.list()) {
     if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
   }
@@ -1484,7 +1535,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       retry: () => options.desktopOverlayTransport!.retry(),
       ...(options.desktopOverlayTransport.getStatus === undefined ? {} : { getStatus: () => options.desktopOverlayTransport!.getStatus!() })
     } }),
-    moduleIds: () => overlayModuleRegistry.listModules().map(module => module.id),
+    moduleIds: () => listUnifiedOverlayModuleIds(overlayModuleRegistry),
     changed: async surface => {
       if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
       if (surface.kind === "desktop") await Promise.all([queueTimerOutputSync(), queueMusicOutputSync()]);
@@ -1703,6 +1754,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   cleanups.push(async () => {
     unsubscribeTimerOutputs();
     unsubscribeMusicOutputs();
+    unsubscribeVideoShoutoutOutputs();
+    videoShoutoutService.dispose();
+    await videoShoutoutOutputSyncTail;
     await timerOutputSyncTail;
     await desktopModuleSnapshotSink?.close();
   });
