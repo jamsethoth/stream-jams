@@ -17,6 +17,10 @@
     "./music-style-policy": {
       "types": "./dist/music/style-policy.d.ts",
       "default": "./dist/music/style-policy.js"
+    },
+    "./video-shoutout": {
+      "types": "./dist/video-shoutout/contract.d.ts",
+      "default": "./dist/video-shoutout/contract.js"
     }
   },
   "scripts": {

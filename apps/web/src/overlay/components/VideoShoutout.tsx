@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { serializeException, videoShoutoutProjectionSchema, type VideoShoutoutClip, type VideoShoutoutProjection } from "@stream-jams/core";
+import { serializeException, type VideoShoutoutClip, type VideoShoutoutProjection } from "@stream-jams/core";
+import { videoShoutoutProjectionSchema } from "@stream-jams/core/video-shoutout";
 import type { OverlayPlaybackEvent } from "./OverlaySurface.js";
 import "../overlay.css";
 

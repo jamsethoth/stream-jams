@@ -1,16 +1,18 @@
 import { z } from "zod";
 import {
   overlayPurposeSchema,
+  videoShoutoutMaximumDurationMs,
+  videoShoutoutMaximumUrlLength,
+  type VideoShoutoutCommandParseResult
+} from "@stream-jams/core";
+import {
   twitchClipIdSchema,
   twitchLoginSchema,
   validateTwitchClipEmbedUrl,
   validateVideoShoutoutAvatarUrl,
   videoShoutoutDisplayNameSchema,
-  videoShoutoutMaximumDurationMs,
-  videoShoutoutMaximumUrlLength,
-  videoShoutoutTitleSchema,
-  type VideoShoutoutCommandParseResult
-} from "@stream-jams/core";
+  videoShoutoutTitleSchema
+} from "@stream-jams/core/video-shoutout";
 
 /**
  * Streamer.bot broadcasts custom WebSocket JSON (CPH.WebsocketBroadcastJson) as

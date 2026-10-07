@@ -4,7 +4,7 @@ import {
   validateTwitchClipEmbedUrl,
   validateVideoShoutoutAvatarUrl,
   videoShoutoutProjectionSchema
-} from "./schemas.js";
+} from "./contract.js";
 
 const embedUrl = "https://clips.twitch.tv/embed?clip=CleverClipSlug-abc_123&parent=127.0.0.1";
 
@@ -53,6 +53,11 @@ describe("video shoutout projection", () => {
     ]) {
       expect(overlayModulePresentationSchema.safeParse({ kind: "video-shoutout", shoutout }).success).toBe(true);
     }
+  });
+
+  it("keeps only a shape guard in the shared presentation union", () => {
+    expect(overlayModulePresentationSchema.safeParse({ kind: "video-shoutout", shoutout: "idle" }).success).toBe(false);
+    expect(overlayModulePresentationSchema.safeParse({ kind: "video-shoutout", shoutout: null }).success).toBe(false);
   });
 
   it("re-validates embed and avatar URLs at the overlay boundary", () => {
