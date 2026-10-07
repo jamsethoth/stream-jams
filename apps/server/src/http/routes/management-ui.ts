@@ -40,7 +40,7 @@ export interface ManagementUiRouteDependencies {
     | "testVoice"
     | "replaceMusicCredential"
   >;
-  readonly musicPairingService?: Pick<PearPairingService, "begin" | "get" | "cancel"> | undefined;
+  readonly musicPairingService?: Pick<PearPairingService, "begin" | "get" | "cancel" | "acceptCertificate"> | undefined;
   readonly musicManagementService?: Pick<MusicManagementService, "getStatus" | "reconnect"> | undefined;
   readonly alertSetManagementService: Pick<
     AlertSetManagementService,

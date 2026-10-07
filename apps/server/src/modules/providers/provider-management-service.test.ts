@@ -23,6 +23,9 @@ import { SqliteProviderRegistrationRepository } from "./sqlite-provider-registra
 import { PearPairingService } from "../music/pear-pairing-service.js";
 import { RuntimeMaintenanceGate, RuntimeMaintenanceUnavailableError } from "../backup/runtime-maintenance-gate.js";
 
+// Keep tests off the network: a Pear instance on this machine must not change pairing outcomes.
+const hermeticTls = { inspectCertificate: async () => null };
+
 describe("ProviderManagementService", () => {
   let database: StreamJamsDatabase;
   let repository: SqliteProviderRegistrationRepository;
@@ -44,7 +47,7 @@ describe("ProviderManagementService", () => {
     eventSourceSyncCount = 0;
     musicSourceSyncCount = 0;
     logger = { error: vi.fn(async () => {}) };
-    pairing = new PearPairingService({
+    pairing = new PearPairingService({ ...hermeticTls,
       identityStore: secrets,
       requestApproval: async () => ({ status: 200, body: { accessToken: "music-secret" } }),
       generateClientId: () => "client-stable",

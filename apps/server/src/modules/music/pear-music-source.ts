@@ -5,7 +5,7 @@ import * as https from "node:https";
 import { isIP } from "node:net";
 import WebSocket, { type RawData } from "ws";
 import { musicSnapshotSchema, musicStatusSchema, type MusicConnectionTestResult, type MusicSnapshot, type MusicSourceAdapter, type MusicStatus, type PearConfiguration, type ProviderValidationResult } from "@stream-jams/core";
-import { parsePearConfiguration, resolvePearDestination } from "./pear-config.js";
+import { parsePearConfiguration, pearTlsOptions, resolvePearDestination } from "./pear-config.js";
 import { extractPearArtworkDescriptor, normalizePearObservation } from "./pear-normalization.js";
 
 const requestTimeoutMs = 5_000;
@@ -276,7 +276,7 @@ export class PearMusicSource implements MusicSourceAdapter {
       const request = (url.protocol === "https:" ? https : http).request({
         protocol: url.protocol, hostname: destination, port: url.port, path: url.pathname,
         method: "GET", headers: { host: url.host, authorization: `Bearer ${this.#options.token}` },
-        ...(url.protocol === "https:" ? { servername: url.hostname.replace(/^\[|\]$/g, "") } : {}), signal: combined
+        ...(url.protocol === "https:" ? pearTlsOptions(this.#config, url.hostname) : {}), signal: combined
       }, response => {
         const status = response.statusCode ?? 0;
         if (status === 401 || status === 403) { response.resume(); reject(new PearAuthenticationError()); return; }
@@ -309,6 +309,7 @@ export class PearMusicSource implements MusicSourceAdapter {
     if (signal.aborted) throw signal.reason;
     const socket = new WebSocket(url, {
       handshakeTimeout: requestTimeoutMs, maxPayload: maxFrameBytes, followRedirects: false,
+      ...(url.protocol === "wss:" ? pearTlsOptions(this.#config, url.hostname) : {}),
       lookup: (_host, _options, callback) => callback(null, destination, isIP(destination))
     });
     let closeReject!: (error: unknown) => void;

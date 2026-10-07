@@ -8,10 +8,10 @@ const status = { enabled: false, selectedProviderId: null, status: { state: "dis
 describe("Music API", () => {
   it("uses typed management endpoints and opaque pairing handles", async () => {
     const getJson = vi.fn(async (path: string) => path.includes("/pairing/")
-      ? { attemptId: "pair_123", status: "approved", expiresAt: "2026-10-04T12:00:00.000Z" }
+      ? { attemptId: "pair_123", status: "approved", expiresAt: "2026-10-04T12:00:00.000Z", configuration: { baseUrl: "http://127.0.0.1:26538", transport: "auto" }, certificate: null }
       : status);
     const postJson = vi.fn(async (path: string) => path === "/management/music/pairing"
-      ? { attemptId: "pair_123", status: "pending", expiresAt: "2026-10-04T12:00:00.000Z" }
+      ? { attemptId: "pair_123", status: "pending", expiresAt: "2026-10-04T12:00:00.000Z", configuration: { baseUrl: "http://127.0.0.1:26538", transport: "auto" }, certificate: null }
       : path.endsWith("/credential")
         ? { validation: { valid: true, connectionState: "connected", intakeState: null, validatedAt: "2026-10-04T12:00:00.000Z", availableVoices: [], error: null }, runtimeReconcilePending: false, credentialRetirementPending: false }
         : status);

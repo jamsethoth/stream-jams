@@ -1,14 +1,20 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import * as http from "node:http";
 import * as https from "node:https";
-import type { PearConfiguration, SecretRef } from "@stream-jams/core";
-import { buildPearAuthUrl, parsePearConfiguration, resolvePearDestination } from "./pear-config.js";
+import type { PearCertificateReview, PearConfiguration, SecretRef } from "@stream-jams/core";
+import { buildPearAuthUrl, inspectPearCertificate, parsePearConfiguration, pearTlsOptions, resolvePearDestination, type PresentedPearCertificate } from "./pear-config.js";
 
 const lifetimeMs = 60_000;
 const maxAttempts = 32;
 const identityRef: SecretRef = { namespace: "music", accountId: "pear-desktop", name: "client-id" };
-type PairingStatus = "pending" | "approved" | "denied" | "expired" | "cancelled";
-export interface MusicPairingAttemptView { readonly attemptId: string; readonly status: PairingStatus; readonly expiresAt: string; }
+type PairingStatus = "certificate-review" | "pending" | "approved" | "denied" | "expired" | "cancelled";
+export interface MusicPairingAttemptView {
+  readonly attemptId: string;
+  readonly status: PairingStatus;
+  readonly expiresAt: string;
+  readonly configuration: PearConfiguration;
+  readonly certificate: PearCertificateReview | null;
+}
 export interface PearApprovalResponse { readonly status: number; readonly body: unknown; }
 export interface PearPairingClaim {
   readonly token: string;
@@ -19,19 +25,23 @@ export interface PearPairingClaim {
 }
 export interface PearPairingServiceOptions {
   readonly identityStore: Pick<{ getSecret(ref: SecretRef): Promise<string | null>; setSecret(ref: SecretRef, value: string): Promise<void> }, "getSecret" | "setSecret">;
-  readonly requestApproval?: (url: URL, signal: AbortSignal) => Promise<PearApprovalResponse>;
+  readonly requestApproval?: (url: URL, signal: AbortSignal, config: PearConfiguration) => Promise<PearApprovalResponse>;
+  /** Reads the certificate an HTTPS Pear endpoint presents; null for plain HTTP. */
+  readonly inspectCertificate?: (config: PearConfiguration, signal: AbortSignal) => Promise<PresentedPearCertificate | null>;
   readonly now?: () => number;
   readonly generateId?: () => string;
   readonly generateClientId?: () => string;
 }
 interface Attempt {
   readonly id: string;
-  readonly config: PearConfiguration;
+  config: PearConfiguration;
   readonly clientId: string;
-  readonly expiresAt: number;
+  expiresAt: number;
   readonly abort: AbortController;
-  readonly timer: ReturnType<typeof setTimeout>;
+  timer: ReturnType<typeof setTimeout>;
   status: PairingStatus;
+  /** Untrusted certificate awaiting the user's explicit acceptance. */
+  review: (PresentedPearCertificate & { readonly replacesTrusted: boolean }) | null;
   token: string | null;
   claimed: boolean;
   claimVersion: number;
@@ -41,7 +51,8 @@ export class PearPairingService {
   readonly #options: PearPairingServiceOptions;
   readonly #attempts = new Map<string, Attempt>();
   readonly #now: () => number;
-  readonly #requestApproval: (url: URL, signal: AbortSignal) => Promise<PearApprovalResponse>;
+  readonly #requestApproval: (url: URL, signal: AbortSignal, config: PearConfiguration) => Promise<PearApprovalResponse>;
+  readonly #inspectCertificate: (config: PearConfiguration, signal: AbortSignal) => Promise<PresentedPearCertificate | null>;
   #identityPromise: Promise<string> | null = null;
   #identityEpoch = 0;
   #identityChanging = false;
@@ -51,26 +62,72 @@ export class PearPairingService {
     this.#options = options;
     this.#now = options.now ?? Date.now;
     this.#requestApproval = options.requestApproval ?? requestPearApproval;
+    this.#inspectCertificate = options.inspectCertificate ?? inspectPearCertificate;
   }
 
   async begin(input: PearConfiguration): Promise<MusicPairingAttemptView> {
     if (this.#identityChanging) throw new Error("Pear pairing identity is changing");
     const identityEpoch = this.#identityEpoch;
-    const config = parsePearConfiguration(input);
+    let config = parsePearConfiguration(input);
     this.#makeRoom();
     this.#pendingBegins += 1;
     let clientId: string;
     try { clientId = await this.#stableClientId(); }
     finally { this.#pendingBegins -= 1; }
+    let review: Attempt["review"] = null;
+    const inspect = (candidate: PearConfiguration) => this.#inspectCertificate(candidate, AbortSignal.timeout(lifetimeMs)).catch(
+      // error-provenance: allow expected -- an unreachable Pear surfaces through the approval request, which reports denied
+      () => null
+    );
+    let presented = await inspect(config);
+    if (presented === null && new URL(config.baseUrl).protocol === "http:") {
+      // Pear's API can be switched to HTTPS on the same port; follow it rather than failing the plain-HTTP request as denied.
+      const secure = parsePearConfiguration({ ...config, baseUrl: config.baseUrl.replace(/^http:/u, "https:") });
+      presented = await inspect(secure);
+      if (presented !== null) config = secure;
+    }
+    if (presented !== null) {
+      const { trustedCertificate, ...withoutTrust } = config;
+      if (presented.authorized) config = parsePearConfiguration(withoutTrust);
+      else if (trustedCertificate?.sha256 !== presented.sha256) review = { ...presented, replacesTrusted: trustedCertificate !== undefined };
+    }
     if (this.#identityChanging || identityEpoch !== this.#identityEpoch) throw new Error("Pear pairing identity changed; begin pairing again");
     const id = this.#options.generateId?.() ?? `pair_${randomBytes(24).toString("base64url")}`;
     const abort = new AbortController();
     const expiresAt = this.#now() + lifetimeMs;
     const timer = setTimeout(() => this.#expire(id), lifetimeMs);
     timer.unref?.();
-    const attempt: Attempt = { id, config, clientId, expiresAt, abort, timer, status: "pending", token: null, claimed: false, claimVersion: 0 };
+    const attempt: Attempt = {
+      id, config, clientId, expiresAt, abort, timer, status: review === null ? "pending" : "certificate-review", review,
+      token: null, claimed: false, claimVersion: 0
+    };
     this.#attempts.set(id, attempt);
-    void this.#requestApproval(buildPearAuthUrl(config, clientId), abort.signal).then((response) => {
+    if (review === null) this.#startApproval(attempt);
+    return this.#view(attempt);
+  }
+
+  /** Trust the reviewed self-signed certificate for this attempt only after the user explicitly accepts its fingerprint. */
+  acceptCertificate(attemptId: string, sha256: string): MusicPairingAttemptView {
+    const attempt = this.#require(attemptId);
+    if (this.#now() >= attempt.expiresAt) this.#expire(attemptId);
+    const review = attempt.review;
+    if (attempt.status !== "certificate-review" || review === null || review.sha256 !== sha256) {
+      throw new Error("Pear certificate review is unavailable or does not match");
+    }
+    attempt.config = parsePearConfiguration({ ...attempt.config, trustedCertificate: { sha256: review.sha256, pem: review.pem } });
+    attempt.review = null;
+    attempt.status = "pending";
+    // Pear approval gets its full window once the user has finished reviewing.
+    clearTimeout(attempt.timer);
+    attempt.expiresAt = this.#now() + lifetimeMs;
+    attempt.timer = setTimeout(() => this.#expire(attempt.id), lifetimeMs);
+    attempt.timer.unref?.();
+    this.#startApproval(attempt);
+    return this.#view(attempt);
+  }
+
+  #startApproval(attempt: Attempt): void {
+    void this.#requestApproval(buildPearAuthUrl(attempt.config, attempt.clientId), attempt.abort.signal, attempt.config).then((response) => {
       if (attempt.status !== "pending") return;
       if (response.status === 200 && isApprovalBody(response.body)) {
         attempt.token = response.body.accessToken;
@@ -84,7 +141,6 @@ export class PearPairingService {
       if (attempt.status === "pending") attempt.status = "denied";
       }
     );
-    return this.#view(attempt);
   }
 
   get(attemptId: string): MusicPairingAttemptView {
@@ -147,12 +203,13 @@ export class PearPairingService {
 
   #expire(id: string): void {
     const attempt = this.#attempts.get(id);
-    if (attempt !== undefined && (attempt.status === "pending" || attempt.status === "approved")) this.#end(attempt, "expired");
+    if (attempt !== undefined && (attempt.status === "certificate-review" || attempt.status === "pending" || attempt.status === "approved")) this.#end(attempt, "expired");
   }
   #end(attempt: Attempt, status: PairingStatus): void {
     clearTimeout(attempt.timer);
     attempt.abort.abort();
     attempt.token = null;
+    attempt.review = null;
     attempt.claimed = false;
     attempt.status = status;
   }
@@ -162,7 +219,13 @@ export class PearPairingService {
     return attempt;
   }
   #view(attempt: Attempt): MusicPairingAttemptView {
-    return { attemptId: attempt.id, status: attempt.status, expiresAt: new Date(attempt.expiresAt).toISOString() };
+    const review = attempt.review;
+    return {
+      attemptId: attempt.id, status: attempt.status, expiresAt: new Date(attempt.expiresAt).toISOString(), configuration: attempt.config,
+      certificate: review === null ? null : {
+        sha256: review.sha256, subject: review.subject, issuer: review.issuer, validFrom: review.validFrom, validTo: review.validTo, replacesTrusted: review.replacesTrusted
+      }
+    };
   }
   async #stableClientId(): Promise<string> {
     this.#identityPromise ??= this.#loadClientId();
@@ -179,7 +242,7 @@ export class PearPairingService {
   #makeRoom(): void {
     for (const [id, attempt] of this.#attempts) {
       if (this.#now() >= attempt.expiresAt) this.#expire(id);
-      if (attempt.status !== "pending" && attempt.status !== "approved") this.#attempts.delete(id);
+      if (attempt.status !== "certificate-review" && attempt.status !== "pending" && attempt.status !== "approved") this.#attempts.delete(id);
     }
     if (this.#attempts.size + this.#pendingBegins >= maxAttempts) throw new Error("Too many active Pear pairing attempts");
   }
@@ -190,7 +253,7 @@ function isApprovalBody(value: unknown): value is { accessToken: string } {
     && typeof value.accessToken === "string" && value.accessToken.length > 0 && value.accessToken.length <= 4096;
 }
 
-async function requestPearApproval(url: URL, signal: AbortSignal): Promise<PearApprovalResponse> {
+async function requestPearApproval(url: URL, signal: AbortSignal, config: PearConfiguration): Promise<PearApprovalResponse> {
   const destination = await resolvePearDestination(url);
   return new Promise((resolve, reject) => {
     const request = (url.protocol === "https:" ? https : http).request({
@@ -200,7 +263,7 @@ async function requestPearApproval(url: URL, signal: AbortSignal): Promise<PearA
       path: url.pathname,
       method: "POST",
       headers: { host: url.host },
-      ...(url.protocol === "https:" ? { servername: url.hostname.replace(/^\[|\]$/g, "") } : {}),
+      ...(url.protocol === "https:" ? pearTlsOptions(config, url.hostname) : {}),
       signal
     }, (response) => {
       const chunks: Buffer[] = [];
