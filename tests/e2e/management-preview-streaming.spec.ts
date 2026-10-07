@@ -133,6 +133,11 @@ for (const mediaType of ["image", "audio", "video"] as const) {
       }
       await expect.poll(() => runtime.composition.localMediaService.counts).toEqual(baseline);
       await page.getByRole("link", { name: "Settings", exact: true }).click();
+      // Lazy route transitions must actually leave Assets before a fresh visit.
+      await expect(page.locator(".asset-library")).toHaveCount(0);
+      await expect(tableFailure).toHaveCount(0);
+      await expect(detailsFailure).toHaveCount(0);
+      await expect.poll(() => runtime.composition.localMediaService.counts).toEqual(baseline);
       await page.getByRole("link", { name: "Assets", exact: true }).click();
       await expect(tableFailure).toBeVisible();
       await expect(detailsFailure).toBeVisible();

@@ -1,3 +1,4 @@
+import { Group, Text, Title } from "@mantine/core";
 import type { ReactNode } from "react";
 import { Breadcrumbs } from "./Breadcrumbs.js";
 
@@ -13,15 +14,15 @@ export function PageHeader({ action, breadcrumbs, description, status, title }: 
   return (
     <header className="management-page-header">
       {breadcrumbs.length > 1 ? <Breadcrumbs items={breadcrumbs} /> : null}
-      <div className="management-page-header__row">
+      <Group className="management-page-header__row" align="flex-start" justify="space-between" wrap="wrap">
         <div>
-          <h2>{title}</h2>
-          <p>{description}</p>
+          <Title order={2}>{title}</Title>
+          <Text component="p">{description}</Text>
         </div>
         {status === undefined && action === undefined ? null : (
-          <div className="management-page-header__actions">{status}{action}</div>
+          <Group className="management-page-header__actions" gap="sm" wrap="wrap">{status}{action}</Group>
         )}
-      </div>
+      </Group>
     </header>
   );
 }

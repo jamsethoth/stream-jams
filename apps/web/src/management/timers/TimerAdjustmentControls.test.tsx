@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
+import { renderManagement as render } from "../../test-support/render-management.js";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 import { TimerAdjustmentControls } from "./TimerAdjustmentControls.js";

@@ -1,3 +1,4 @@
+import { Checkbox } from "@mantine/core";
 import type { AlertEditorDocument, AudioOutputStatus } from "@stream-jams/core";
 
 type Outputs = AlertEditorDocument["outputs"];
@@ -17,12 +18,9 @@ export function AlertAudioOutputs({ value, status, loading, error, onChange }: {
   return <div className="alert-editor-inspector"><fieldset>
     <legend>Audio outputs</legend>
     <p>All visible audio layers and enabled video soundtracks use these outputs. Each source keeps its own volume. Save to apply changes.</p>
-    <label className="alert-editor-inspector__check"><input checked={value.browserSource} onChange={(event) => onChange({ ...value, browserSource: event.currentTarget.checked })} type="checkbox" />Browser Source</label>
-    {routes.map(({ route, state }) => <label className="alert-editor-inspector__check" key={route.id}>
-      <input checked={value.deviceRouteIds.includes(route.id)} onChange={(event) => toggleRoute(route.id, event.currentTarget.checked)} type="checkbox" />
-      {route.name} — {state === "ready" ? "Ready" : state === "unbound" ? "Needs setup" : state === "missing-device" ? "Missing device" : "Desktop unavailable"}
-    </label>)}
-    {missing.map((id) => <label className="alert-editor-inspector__check" key={id}><input checked onChange={() => toggleRoute(id, false)} type="checkbox" />{id} — Route unavailable (selection retained)</label>)}
+    <Checkbox label="Browser Source" checked={value.browserSource} onChange={(event) => onChange({ ...value, browserSource: event.currentTarget.checked })} />
+    {routes.map(({ route, state }) => <Checkbox label={<>{route.name} — {state === "ready" ? "Ready" : state === "unbound" ? "Needs setup" : state === "missing-device" ? "Missing device" : "Desktop unavailable"}</>} key={route.id} checked={value.deviceRouteIds.includes(route.id)} onChange={(event) => toggleRoute(route.id, event.currentTarget.checked)} />)}
+    {missing.map((id) => <Checkbox label={<>{id} — Route unavailable (selection retained)</>} key={id} checked onChange={() => toggleRoute(id, false)} />)}
     {loading && status === null ? <p role="status">Loading audio routes…</p> : null}
     {error === null ? null : <p role="status">Audio route status could not refresh. {error} {status === null ? "Saved selections are retained." : "Showing last-known status."}</p>}
     {status?.capability.available === false ? <p>Device routing is unavailable. {status.capability.nextStep}</p> : null}

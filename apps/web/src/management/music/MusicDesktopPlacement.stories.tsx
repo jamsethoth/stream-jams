@@ -1,15 +1,27 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { createDefaultMusicModuleConfig, type MusicSnapshot } from "@stream-jams/core";
 import { useState } from "react";
-import { expect, fn, userEvent, within } from "storybook/test";
+import { expect, fireEvent, fn, userEvent, waitFor, within } from "storybook/test";
 import { MusicDesktopPlacement } from "./MusicDesktopPlacement.js";
 const snapshot: MusicSnapshot = { providerId: "sample", generation: "sample", revision: 1, track: { id: "song", title: "Sample desktop placement", artists: ["Artist"], album: null, artworkRef: null }, playbackState: "playing", positionMs: 0, durationMs: 10000, observedAtEpochMs: 1000, session: null };
 const status = { surfaces: [{ id: "desktop:primary" as const, kind: "desktop" as const, enabled: true, displayId: "main", displayLabel: "Main monitor", autoFollowDisplayName: false, opacity: 1, layers: [{ moduleId: "music", visible: true }] }], desktop: { available: true, displays: [], state: "ready" as const, message: null }, desktopBindingState: "not-needed" as const };
-const meta = { title: "Management/Music Desktop Placement", component: MusicDesktopPlacement, tags: ["music-desktop-placement"], args: { config: createDefaultMusicModuleConfig(), snapshot, now: 1000, resolveAsset: { resolveAsset: () => null, resolveArtwork: () => null }, onChange: fn(), surfaceApi: { load: async () => status } }, render: function Example(args) { const [config, setConfig] = useState(args.config); return <MusicDesktopPlacement {...args} config={config} onChange={setConfig} />; } } satisfies Meta<typeof MusicDesktopPlacement>;
+const meta = { title: "Management/Music Desktop Placement", component: MusicDesktopPlacement, tags: ["mantine-stage6d", "music-desktop-placement"], args: { config: createDefaultMusicModuleConfig(), snapshot, now: 1000, resolveAsset: { resolveAsset: () => null, resolveArtwork: () => null }, onChange: fn(), surfaceApi: { load: async () => status } }, render: function Example(args) { const [config, setConfig] = useState(args.config); return <MusicDesktopPlacement {...args} config={config} onChange={setConfig} />; } } satisfies Meta<typeof MusicDesktopPlacement>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Ready: Story = { play: async ({ canvasElement }) => { const canvas = within(canvasElement); await expect(await canvas.findByText(/Main monitor/u)).toBeVisible(); const handle = canvas.getByRole("button", { name: "Move Music widget on desktop overlay" }); await handle.focus(); await userEvent.keyboard("{ArrowRight}"); await expect(canvas.getByLabelText("Desktop Music X (px)")).toHaveValue(1); } };
 export const Disabled: Story = { args: { surfaceApi: { load: async () => ({ ...status, surfaces: status.surfaces.map(surface => ({ ...surface, enabled: false })), desktop: { ...status.desktop, state: "disabled" } }) } } };
+
+export const InvalidPlacementDraft: Story = { tags: ["mantine-stage6d-fields"], play: async ({ canvasElement }) => {
+  const canvas = within(canvasElement);
+  const x = await canvas.findByRole("spinbutton", { name: "Desktop Music X (px)" });
+  fireEvent.change(x, { target: { value: "" } });
+  await userEvent.click(x);
+  await userEvent.tab();
+  const correction = canvas.getByRole("alert");
+  await expect(x).toHaveAttribute("aria-invalid", "true");
+  await expect(x).toHaveAttribute("aria-describedby", correction.id);
+  await waitFor(() => expect(getComputedStyle(x).borderColor).toBe(getComputedStyle(correction).color));
+} };
 export const StatusFailure: Story = { beforeEach: () => { const original = console.error; console.error = (...args: unknown[]) => { if (!String(args[0]).includes("Unable to refresh desktop overlay status")) original(...args); }; return () => { console.error = original; }; }, args: { surfaceApi: { load: async () => { throw new Error("Local service unavailable"); } } } };
 export const CustomCss: Story = { args: { config: { ...createDefaultMusicModuleConfig(), css: { enabled: true, source: ".sj-title { color: red; }", styleContractVersion: 1 } } } };
 

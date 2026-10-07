@@ -1,3 +1,4 @@
+import { renderManagement as render } from "../../test-support/render-management.js";
 import {
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
@@ -8,7 +9,7 @@ import {
   type StreamEventType,
   type TwitchCustomReward
 } from "@stream-jams/core";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ManagementApi } from "../management-api.js";
@@ -42,6 +43,10 @@ describe("AlertSetsPage", () => {
     expect(within(verticalSource).getByText("Not listening. No connection recorded.")).toBeInTheDocument();
     expect(within(verticalSource).getByText("1080 x 1920")).toBeInTheDocument();
     expect(screen.queryByText("4 alerts need review")).not.toBeInTheDocument();
+    const controls = screen.getByLabelText("Module controls");
+    const outputs = screen.getByRole("region", { name: "Browser sources" });
+    expect(controls.compareDocumentPosition(outputs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(outputs.compareDocumentPosition(screen.getByRole("region", { name: "Alert sets" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("shows explicit alert module enablement and confirms disabling it", async () => {
@@ -72,7 +77,7 @@ describe("AlertSetsPage", () => {
     );
     await user.click(screen.getByRole("button", { name: "Hide Landscape URL" }));
     expect(screen.queryByRole("textbox", { name: "Landscape browser source" })).not.toBeInTheDocument();
-    expect(landscapeSource.querySelector(".alert-sets-page__source-masked")).toBeInTheDocument();
+    expect(landscapeSource.querySelector("code")).toBeInTheDocument();
     expect(api.createOverlayOutputKey).not.toHaveBeenCalled();
     expect(api.regenerateOverlayOutputKey).not.toHaveBeenCalled();
   });
@@ -220,6 +225,14 @@ describe("AlertSetsPage", () => {
     expect(screen.getByText("Test queued on Vertical. Reference ref-inline-test.").closest(".management-toast")).toHaveClass("management-toast--success");
   });
 
+  it("shows the Test saved routing summary as a tooltip on keyboard focus", async () => {
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({ getAlertSet: vi.fn(async () => detail()) })} onEditAlert={vi.fn()} />);
+    await screen.findByRole("button", { name: "Test saved New follower" });
+    while (document.activeElement !== screen.getByRole("button", { name: "Test saved New follower" })) await user.tab();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(/Saved input · Browser/u);
+  });
+
   it("keeps the saved Landscape profile selected when only the desktop overlay is available", async () => {
     const source = detail();
     source.browserSources = source.browserSources.map((entry) => entry.targetProfileId === "landscape"
@@ -250,7 +263,8 @@ describe("AlertSetsPage", () => {
       document: saved,
       targetProfileId: "landscape"
     })));
-    expect(screen.getAllByText(/Desktop Landscape when ready/u)[0]).toBeVisible();
+    // The routing summary is the Test saved button's tooltip and accessible description.
+    expect(screen.getByRole("button", { name: "Test saved New follower" })).toHaveAccessibleDescription(/Desktop Landscape when ready/u);
     expect(screen.getByText("Test queued on Desktop Overlay. Reference ref-desktop-test.")).toBeVisible();
   });
 
@@ -266,7 +280,7 @@ describe("AlertSetsPage", () => {
 
     const more = within(row).getByRole("button", { name: "More actions for New follower" });
     await user.click(more);
-    const menu = screen.getByRole("menu", { name: "More actions for New follower" });
+    const menu = await screen.findByRole("menu", { name: "More actions for New follower" });
     expect(row).not.toContainElement(menu);
     await waitFor(() => expect(within(menu).getByRole("menuitem", { name: "Sample message New follower" })).toHaveFocus());
     await user.keyboard("{ArrowDown}");
@@ -275,7 +289,7 @@ describe("AlertSetsPage", () => {
     expect(screen.queryByRole("menu", { name: "More actions for New follower" })).not.toBeInTheDocument();
     expect(more).toHaveFocus();
     await user.click(more);
-    const reopenedMenu = screen.getByRole("menu", { name: "More actions for New follower" });
+    const reopenedMenu = await screen.findByRole("menu", { name: "More actions for New follower" });
     await user.click(within(reopenedMenu).getByRole("menuitem", { name: "Sample message New follower" }));
 
     const dialog = screen.getByRole("dialog", { name: "Sample message for New follower" });
@@ -844,7 +858,7 @@ describe("AlertSetsPage", () => {
     expect(screen.getByRole("row", { name: /VIP follower/u })).toHaveClass("alert-sets-page__variation-row");
 
     await user.click(screen.getByRole("button", { name: "More actions for New follower" }));
-    await user.click(screen.getByRole("menuitem", { name: "Add variation to New follower" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Add variation to New follower" }));
     const dialog = screen.getByRole("dialog", { name: "Add variation to New follower" });
     await user.clear(within(dialog).getByLabelText("Variation name"));
     await user.type(within(dialog).getByLabelText("Variation name"), "Large follower");
@@ -852,7 +866,7 @@ describe("AlertSetsPage", () => {
     await waitFor(() => expect(createAlertVariation).toHaveBeenCalledWith("alert-follow", { name: "Large follower" }));
 
     await user.click(screen.getByRole("button", { name: "More actions for VIP follower" }));
-    await user.click(screen.getByRole("menuitem", { name: "Duplicate VIP follower" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Duplicate VIP follower" }));
     await waitFor(() => expect(duplicateManagedAlert).toHaveBeenCalledWith("variant-vip"));
   });
 
@@ -863,18 +877,42 @@ describe("AlertSetsPage", () => {
     render(<AlertSetsPage managementApi={alertSetsApi({ resetManagedAlert, deleteManagedAlert })} onEditAlert={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: "More actions for New follower" }));
-    await user.click(screen.getByRole("menuitem", { name: "Reset New follower" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Reset New follower" }));
     const resetDialog = screen.getByRole("dialog", { name: "Reset New follower?" });
     expect(resetDialog).toHaveTextContent("return to the event default");
     await user.click(within(resetDialog).getByRole("button", { name: "Reset alert" }));
     await waitFor(() => expect(resetManagedAlert).toHaveBeenCalledWith("alert-follow", true));
 
     await user.click(screen.getByRole("button", { name: "More actions for New follower" }));
-    await user.click(screen.getByRole("menuitem", { name: "Delete New follower" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Delete New follower" }));
     const deleteDialog = screen.getByRole("dialog", { name: "Delete New follower?" });
     expect(deleteDialog).toHaveTextContent("all of its variations");
     await user.click(within(deleteDialog).getByRole("button", { name: "Delete alert" }));
     await waitFor(() => expect(deleteManagedAlert).toHaveBeenCalledWith("alert-follow", true));
+  });
+
+  it("locks a pending reset decision and retains a single scoped actionable failure", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const user = userEvent.setup();
+    let reject!: (cause: Error) => void;
+    const resetManagedAlert = vi.fn(() => new Promise<AlertSetDetail["inventory"][number]>((_resolve, rejectRequest) => { reject = rejectRequest; }));
+    render(<AlertSetsPage managementApi={alertSetsApi({ resetManagedAlert })} onEditAlert={vi.fn()} />);
+    await user.click(await screen.findByRole("button", { name: "More actions for New follower" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Reset New follower" }));
+    const dialog = screen.getByRole("dialog", { name: "Reset New follower?" });
+    await user.dblClick(within(dialog).getByRole("button", { name: "Reset alert" }));
+    expect(resetManagedAlert).toHaveBeenCalledOnce();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(dialog).toBeVisible();
+    reject(Object.assign(new Error("Disposable persistence unavailable"), { referenceId: "fixture-reset-ref", nextStep: "Restart the disposable service before retrying." }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("fixture-reset-ref");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Restart the disposable service before retrying.");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "More actions for New follower" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Reset New follower" }));
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("keeps alert creation open with an actionable error when the command fails", async () => {
@@ -1028,7 +1066,7 @@ describe("AlertSetsPage", () => {
     expect(dialog).toBeInTheDocument();
     expect(confirmButton).toBeDisabled();
 
-    await user.type(screen.getByLabelText("Type REGENERATE to continue"), "REGENERATE");
+    await user.type(screen.getByLabelText("Type REGENERATE to confirm"), "REGENERATE");
     await user.click(confirmButton);
 
     await waitFor(() => expect(api.regenerateOverlayOutputKey).toHaveBeenCalledWith({

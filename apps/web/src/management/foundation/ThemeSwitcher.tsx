@@ -1,65 +1,23 @@
-import { useEffect, useState } from "react";
+import { SegmentedControl } from "@mantine/core";
+import { useManagementTheme } from "./ManagementPresentationProvider.js";
 import { ManagementToast } from "./ManagementToast.js";
 
-export type ThemePreference = "system" | "dark" | "light";
-const storageKey = "stream-jams-theme";
+export type { ThemePreference } from "./ManagementPresentationProvider.js";
 
 export function ThemeSwitcher() {
-  const initial = readThemePreference();
-  const [preference, setPreference] = useState<ThemePreference>(initial.preference);
-  const [error, setError] = useState(initial.error);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = preference;
-  }, [preference]);
-
-  function selectPreference(nextPreference: ThemePreference) {
-    setPreference(nextPreference);
-    document.documentElement.dataset.theme = nextPreference;
-    try {
-      window.localStorage.setItem(storageKey, nextPreference);
-      setError(null);
-    }
-    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
-    catch {
-      setError("Theme preference could not be saved for the next session.");
-    }
-  }
+  const { preference, error, selectPreference, dismissError } = useManagementTheme();
 
   return (
     <>
       <fieldset className="theme-switcher">
         <legend>Theme</legend>
-        <div className="theme-switcher__segments">
-          {(["system", "dark", "light"] as const).map((value) => (
-            <label key={value}>
-              <input
-                checked={preference === value}
-                name="theme-preference"
-                onChange={() => selectPreference(value)}
-                type="radio"
-                value={value}
-              />
-              <span>{value[0]?.toUpperCase()}{value.slice(1)}</span>
-            </label>
-          ))}
-        </div>
+        <SegmentedControl
+          aria-label="Theme" name="theme-preference" size="xs" value={preference}
+          data={[{ value: "system", label: "System" }, { value: "dark", label: "Dark" }, { value: "light", label: "Light" }]}
+          onChange={(value) => { if (value === "system" || value === "dark" || value === "light") selectPreference(value); }}
+        />
       </fieldset>
-      {error === null ? null : <ManagementToast notice={{ tone: "failure", message: error }} onDismiss={() => setError(null)} />}
+      {error === null ? null : <ManagementToast notice={{ tone: "failure", message: error }} onDismiss={dismissError} />}
     </>
   );
-}
-
-function readThemePreference(): { readonly preference: ThemePreference; readonly error: string | null } {
-  try {
-    const stored = window.localStorage.getItem(storageKey);
-    return {
-      preference: stored === "dark" || stored === "light" ? stored : "system",
-      error: null
-    };
-  }
-  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
-  catch {
-    return { preference: "system", error: "Theme preference storage is unavailable in this browser session." };
-  }
 }

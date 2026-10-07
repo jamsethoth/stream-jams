@@ -269,7 +269,7 @@ test("management alerts reviews the starter set and safely manages its landscape
   await page.getByRole("button", { name: "Regenerate Landscape URL" }).click();
   const dialog = page.getByRole("dialog", { name: "Regenerate Landscape URL?" });
   await expect(dialog.getByRole("button", { name: "Regenerate URL" })).toBeDisabled();
-  await dialog.getByLabel("Type REGENERATE to continue").fill("REGENERATE");
+  await dialog.getByLabel("Type REGENERATE to confirm").fill("REGENERATE");
   await dialog.getByRole("button", { name: "Regenerate URL" }).click();
   await expect(page.locator(".management-toast--warning")).toContainText("Landscape URL regenerated.");
   await expect(page.locator(".management-toast--warning")).toContainText("Update every browser source that used the old URL.");
@@ -1229,6 +1229,8 @@ test("alert variation can be created edited duplicated and selectively deleted",
   await expect(reloadedGroups.getByRole("group", { name: "Priority group 1" })).toContainText("Lower raid");
   await expect(reloadedMinimum).toHaveValue("20");
   await expect(reloadedMaximum).toHaveValue("60");
+  await page.getByRole("dialog", { name: "Save changes to active alert?" }).getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "Revert" }).click();
   await page.getByRole("button", { name: "Back to alerts" }).click();
 
@@ -1444,6 +1446,11 @@ test("focused alert editor saves layouts and separates preview from test deliver
 
   await expect(page).toHaveURL(/\/modules\/alerts\/editor\/alert-follow\?.*profile=landscape/u);
   await expect(page.getByRole("region", { name: "Landscape alert canvas" })).toBeVisible();
+  const tabletCanvas = page.getByRole("region", { name: "Landscape alert canvas" });
+  await tabletCanvas.scrollIntoViewIfNeeded();
+  expect((await tabletCanvas.boundingBox())!.height).toBeGreaterThanOrEqual(160);
+  expect(await page.locator(".alert-editor-page__stage").evaluate(element => getComputedStyle(element).overflowY)).toBe("auto");
+  await page.screenshot({ path: ".superpowers/sdd/adopt-mantine-management-components/stage-7-captures/alerts-tablet-canvas-fixed.png" });
   const selectedEvent = page.getByRole("button", { name: "Follow alerts, selected event" });
   await expect(selectedEvent).toHaveAttribute("aria-expanded", "true");
   await expect(selectedEvent).toBeDisabled();
@@ -1750,7 +1757,7 @@ test("focused alert editor authors TTS against the active provider", async ({ pa
   await expect.poll(() => enabled.evaluate((element) => {
     const bounds = element.getBoundingClientRect();
     return { width: bounds.width, height: bounds.height };
-  })).toEqual({ width: 16, height: 16 });
+  })).toEqual({ width: 20, height: 20 });
   await expect(page.getByText("Studio Speaker.bot")).toBeVisible();
   await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
   await page.getByRole("textbox", { name: "TTS template" }).fill("Hello {actor.displayName}");

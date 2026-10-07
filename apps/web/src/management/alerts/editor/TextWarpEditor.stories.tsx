@@ -14,7 +14,7 @@ function WarpExample({ expanded = false }: { expanded?: boolean }) {
     </div>
   </div>;
 }
-const meta = { title: "Management/Alerts/Text warp editor", component: WarpExample, parameters: { layout: "padded" } } satisfies Meta<typeof WarpExample>;
+const meta = { tags: ["mantine-stage6c"], title: "Management/Alerts/Text warp editor", component: WarpExample, parameters: { layout: "padded" } } satisfies Meta<typeof WarpExample>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const IdentityGrid: Story = {};

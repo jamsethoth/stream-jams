@@ -8,7 +8,7 @@ import { MusicPage } from "./MusicPage.js";
 
 const baseApi = () => createStoryManagementApi({ listMusicOutputs: async () => [] });
 const meta = {
-  title: "Management/Music Appearance", component: MusicPage, tags: ["music-task-13", "music-editor-refinement"],
+  title: "Management/Music Appearance", component: MusicPage, tags: ["mantine-stage6d", "mantine-module-proof", "music-task-13", "music-editor-refinement"],
   args: { api: baseApi(), assetApi: createStoryAssetApi() },
   decorators: [(Story) => <DirtyNavigationProvider><div className="management-main"><Story /></div></DirtyNavigationProvider>]
 } satisfies Meta<typeof MusicPage>;
@@ -28,6 +28,22 @@ export const BrowserSources: Story = {
 
 export const Saved: Story = {
   play: async ({ canvasElement }) => { await expect(await within(canvasElement).findByText("All changes saved")).toBeVisible(); }
+};
+
+export const InvalidAppearanceDraft: Story = {
+  tags: ["mantine-stage6d-fields", "mantine-stage6d-page-closure"],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Expand appearance" }));
+    const width = await canvas.findByRole("spinbutton", { name: "Widget width (px)" });
+    fireEvent.change(width, { target: { value: "" } });
+    await userEvent.click(width);
+    await userEvent.tab();
+    const correction = canvas.getByRole("alert");
+    await expect(width).toHaveAttribute("aria-invalid", "true");
+    await expect(width).toHaveAttribute("aria-describedby", correction.id);
+    await waitFor(() => expect(getComputedStyle(width).borderColor).toBe(getComputedStyle(correction).color));
+  }
 };
 export const EmptyAssets: Story = {
   args: { api: createStoryManagementApi({ listAssetLibraryItems: async () => [], listMusicOutputs: async () => [] }) },

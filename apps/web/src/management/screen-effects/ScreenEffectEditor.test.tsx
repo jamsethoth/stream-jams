@@ -1,3 +1,4 @@
+import { renderManagement as render } from "../../test-support/render-management.js";
 import { createTestMediaPreviewApi } from "../../test-support/media-preview-fixture.js";
 import { ManagementHttpError } from "../management-http-client.js";
 import { createStoryEffectSets } from "../../stories/screen-effect-set-fixtures.js";
@@ -8,13 +9,13 @@ import {
   type RegisteredProviderView,
   type ScreenEffectDocument
 } from "@stream-jams/core";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssetApi } from "../assets/asset-api.js";
 import type { AudioApi } from "../audio/audio-api.js";
 import type { ManagementApi } from "../management-api.js";
-import { DirtyNavigationProvider } from "../navigation/dirty-navigation.js";
+import { DirtyNavigationProvider, useManagementNavigation } from "../navigation/dirty-navigation.js";
 import { ScreenEffectEditor } from "./ScreenEffectEditor.js";
 import type { ScreenEffectsApi } from "./screen-effects-api.js";
 
@@ -25,6 +26,57 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("ScreenEffectEditor", () => {
+  it("owns failed Save and leave once in the real guard, retaining context, retry and the draft", async () => {
+    const user = userEvent.setup();
+    const saved = enabledEffect(false);
+    const api = effectApi(saved);
+    let rejectSave!: (error: unknown) => void;
+    api.update = vi.fn(() => new Promise<ScreenEffectDocument>((_resolve, reject) => { rejectSave = reject; }));
+    window.history.replaceState(null, "", `/manage/modules/screen-effects/editor/${saved.id}`);
+    // Stable API identities preserve the editor load across guard renders.
+    const management = managementApi();
+    const audio = audioApi();
+    const assets = assetApi();
+    function StableHarness() {
+      const navigation = useManagementNavigation();
+      return <>{navigation.guard}<ScreenEffectEditor api={api} assetApi={assets} audioApi={audio} create={false} effectId={saved.id} managementApi={management} onBack={() => navigation.requestNavigation({ id: "modules-screen-effects" })} /></>;
+    }
+    render(<DirtyNavigationProvider><StableHarness /></DirtyNavigationProvider>);
+    await user.click(await screen.findByRole("tab", { name: "Effect" }));
+    fireEvent.change(screen.getByLabelText("Effect name"), { target: { value: "Navigation draft" } });
+    await user.click(screen.getByRole("button", { name: "Back to Screen Effects" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Leave with unsaved changes?" }));
+    await user.dblClick(dialog.getByRole("button", { name: "Save and leave" }));
+    expect(api.update).toHaveBeenCalledOnce();
+    expect(dialog.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog")).toBeVisible();
+    await act(async () => rejectSave(new ManagementHttpError("Storage unavailable", "UNAVAILABLE", "navigation-ref", "Restart the local service.")));
+    const alert = await dialog.findByRole("alert");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(alert).toHaveTextContent("The Screen Effect was not saved. The draft is still here.");
+    expect(alert).toHaveTextContent("Storage unavailable");
+    expect(alert).toHaveTextContent("Restart the local service.");
+    expect(alert).toHaveTextContent("navigation-ref");
+    expect(dialog.getByRole("link", { name: "Open Diagnostics" })).toHaveAttribute("href", "/manage/diagnostics?reference=navigation-ref");
+    await user.click(dialog.getByRole("button", { name: "Dismiss error" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await user.click(dialog.getByRole("button", { name: "Save and leave" }));
+    expect(api.update).toHaveBeenCalledTimes(2);
+    await act(async () => rejectSave(new ManagementHttpError("Storage unavailable", "UNAVAILABLE", "navigation-ref", "Restart the local service.")));
+    await dialog.findByRole("alert");
+    await user.click(dialog.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Effect name")).toHaveValue("Navigation draft");
+    await user.click(screen.getByRole("button", { name: "Back to Screen Effects" }));
+    expect(await screen.findByRole("dialog")).not.toHaveTextContent("navigation-ref");
+    api.update = vi.fn(async (_id, candidate) => candidate);
+    await user.click(screen.getByRole("button", { name: "Save and leave" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(api.update).toHaveBeenCalledExactlyOnceWith(saved.id, expect.objectContaining({ name: "Navigation draft" }), false);
+    expect(window.location.pathname).toBe("/manage/modules/screen-effects");
+  });
+
   it("does not offer animation controls for Screen Effects", async () => {
     renderEditor({ api: effectApi(enabledEffect(false)), create: false, document: enabledEffect(false) });
     expect(await screen.findByRole("heading", { name: "Variant settings" })).toBeVisible();
@@ -33,9 +85,58 @@ describe("ScreenEffectEditor", () => {
 
   it("groups related asset commands into consistently spaced rows", async () => {
     renderEditor({ api: effectApi(enabledEffect(false)), create: false, document: enabledEffect(false) });
-    expect(await screen.findByRole("button", { name: "Choose visual asset" })).toHaveClass("button");
+    expect(await screen.findByRole("button", { name: "Choose visual asset" })).toHaveClass("mantine-Button-root");
     expect(screen.getByRole("button", { name: "Choose visual asset" }).parentElement).toHaveClass("screen-effects-button-row");
     expect(screen.getByRole("button", { name: "Choose sound asset" }).parentElement).toHaveClass("screen-effects-button-row");
+  });
+
+  it("locks reviewed saving, keeps one typed failure, then retries the preserved draft", async () => {
+    const saved = enabledEffect(true);
+    let reject!: (error: unknown) => void;
+    const api = effectApi(saved);
+    api.update = vi.fn(() => new Promise<ScreenEffectDocument>((_resolve, fail) => { reject = fail; }));
+    const user = userEvent.setup();
+    renderEditor({ api, create: false, document: saved });
+    await user.click(await screen.findByRole("tab", { name: "Effect" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Effect name" }), { target: { value: "Reviewed draft" } });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Save live Screen Effect changes?" }));
+    const confirm = dialog.getByRole("button", { name: "Save live changes" });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(api.update).toHaveBeenCalledTimes(1);
+    expect(confirm).toBeDisabled();
+    expect(dialog.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog")).toBeVisible();
+    await act(async () => reject(new ManagementHttpError("Unavailable", "UNAVAILABLE", "review-reference", "Restart storage, then retry.")));
+    expect(await dialog.findByRole("alert")).toHaveTextContent("review-reference");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    api.update = vi.fn(async (_id, candidate) => candidate);
+    await user.click(confirm);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(api.update).toHaveBeenCalledExactlyOnceWith(saved.id, expect.objectContaining({ name: "Reviewed draft" }), true);
+  });
+
+  it("locks explicit live-test cancellation while its single request remains pending", async () => {
+    const saved = enabledEffect(true);
+    let resolve!: (value: Awaited<ReturnType<ScreenEffectsApi["test"]>>) => void;
+    const api = effectApi(saved);
+    api.test = vi.fn(() => new Promise<Awaited<ReturnType<ScreenEffectsApi["test"]>>>(done => { resolve = done; }));
+    const user = userEvent.setup();
+    renderEditor({ api, create: false, document: saved });
+    await user.click(await screen.findByRole("button", { name: "Test saved…" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Test saved Screen Effect?" }));
+    const confirm = dialog.getByRole("button", { name: "Confirm live test" });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(api.test).toHaveBeenCalledTimes(1);
+    expect(dialog.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog")).toBeVisible();
+    await act(async () => resolve({ effectId: saved.id, occurrenceId: "reviewed-test", status: "queued" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByRole("status")).toHaveTextContent("reviewed-test");
   });
 
   it("edits every media volume as a percentage through 200 percent", async () => {
@@ -87,6 +188,15 @@ describe("ScreenEffectEditor", () => {
     await user.keyboard("{ArrowRight}");
     expect(screen.getByRole("tab", { name: "Triggers" })).toHaveFocus();
     expect(screen.getByRole("heading", { name: "Trusted triggers" })).toBeVisible();
+    expect(screen.queryByLabelText("Effect name")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", screen.getByRole("tab", { name: "Triggers" }).id);
+    await user.keyboard("{Home}");
+    expect(screen.getByRole("tab", { name: "Variant" })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "Variant" })).toHaveAttribute("aria-selected", "true");
+    await user.keyboard("{End}");
+    expect(screen.getByRole("tab", { name: "Triggers" })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "Triggers" })).toHaveAttribute("aria-selected", "true");
     await user.keyboard("{ArrowLeft}");
     expect(screen.getByLabelText("Effect name")).toHaveValue("Retained draft");
   });

@@ -5,7 +5,7 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    ignores: ["**/dist/**", "**/dist-desktop-overlay/**", "**/coverage/**", "**/node_modules/**", "**/storybook-static/**", "apps/desktop/.stage/**", "apps/desktop/out/**", ".agents/**", ".codex/**", ".superpowers/**", "test-results/**", "playwright-report/**"]
+    ignores: ["**/dist/**", "**/dist-desktop-overlay/**", "**/coverage/**", "**/node_modules/**", "**/storybook-static/**", "apps/desktop/.stage/**", "apps/desktop/out/**", ".agents/**", ".codex/**", ".superpowers/**", "prototypes/**", "test-results/**", "playwright-report/**"]
   },
   {
     files: ["scripts/**/*.mjs"],
@@ -13,6 +13,15 @@ export default tseslint.config(
       globals: {
         console: "readonly"
       }
+    }
+  },
+  {
+    files: ["apps/web/src/management/**/*.{ts,tsx}", "apps/web/src/operator/**/*.{ts,tsx}"],
+    ignores: ["**/*.test.tsx", "**/*.test.ts"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: [{ group: ["**/ModalSurface.js", "./ModalSurface.js"], allowTypeImports: true, message: "Management and Operator dialogs use ManagementModalSurface. Type-only shared contracts are allowed." }]
+      }]
     }
   },
   {

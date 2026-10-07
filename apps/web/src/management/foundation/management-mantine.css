@@ -1,0 +1,65 @@
+/* Mantine styles are layered; these management-only, unlayered policy rules win.
+   Do not apply legacy .button/.management-field rules to migrated components. */
+/* Sizes come from the theme; labels may wrap, so height grows from the theme minimum. */
+.management-command { font-weight: 600; height: auto; min-height: var(--button-height); padding-block: 4px; }
+.management-command__label { white-space: normal; overflow-wrap: break-word; }
+.mantine-Input-input { background: var(--color-surface); color: var(--color-text); border-color: var(--color-border-strong); }
+.mantine-Input-input:focus { border-color: var(--color-focus); }
+.mantine-Input-input[data-error] { border-color: var(--color-negative); }
+.mantine-InputWrapper-label { color: var(--color-text); font-size: var(--font-size-sm); }
+.mantine-InputWrapper-description { color: var(--color-text-muted); }
+.mantine-InputWrapper-error { color: var(--color-negative); }
+.mantine-Select-dropdown, .management-menu { background: var(--color-surface-raised); border-color: var(--color-border-strong); color: var(--color-text); max-width: calc(100vw - 16px); }
+.management-menu__item { color: var(--color-text); overflow-wrap: anywhere; white-space: normal; }
+.management-menu__item[data-hovered] { background: var(--color-surface-subtle); }
+.management-menu__item[data-danger] { color: var(--color-negative); }
+.management-mantine-modal { background: var(--color-surface-raised); color: var(--color-text); border: 1px solid var(--color-border-strong); box-shadow: var(--shadow-modal); }
+.management-mantine-modal__body { display: grid; gap: 16px; padding: 24px; overflow-wrap: anywhere; }
+.management-modal-heading { color: var(--color-text); font-size: var(--font-size-xl); font-weight: 700; margin: 4px 0 8px; }
+.management-mantine-modal .management-modal__header p { color: var(--color-text-muted); }
+@media (max-width: 600px) {
+  .management-mantine-modal__body { padding: 16px; }
+  .management-modal__actions > .management-command { flex: 1 1 auto; }
+}
+
+.mantine-Tabs-root { --tab-border-color: var(--color-border); --tab-hover-color: var(--color-surface-subtle); }
+.mantine-Tabs-tab { color: var(--color-text-muted); }
+.mantine-Tabs-tab[data-active] { color: var(--color-text); }
+.mantine-SegmentedControl-root { background: var(--color-surface-subtle); }
+.mantine-SegmentedControl-indicator { background: var(--color-surface); }
+.mantine-SegmentedControl-label { color: var(--color-text-muted); }
+.mantine-SegmentedControl-label[data-active] { color: var(--color-text); }
+
+.management-toast > .mantine-Button-root { flex-shrink: 0; }
+
+/* Default heading steps for management and Operator; component selectors may refine them. */
+:where(.app-shell, .operator-console, .management-mantine-modal) :where(h1) { font-size: var(--font-size-page); }
+:where(.app-shell, .operator-console, .management-mantine-modal) :where(h2) { font-size: var(--font-size-xl); }
+:where(.app-shell, .operator-console, .management-mantine-modal) :where(h3) { font-size: var(--font-size-lg); }
+:where(.app-shell, .operator-console, .management-mantine-modal) :where(h4) { font-size: var(--font-size-md); }
+:where(.app-shell, .operator-console, .management-mantine-modal) :where(h5, h6) { font-size: var(--font-size-sm); }
+:where(.app-shell, .operator-console, .management-mantine-modal) :where(small) { font-size: var(--font-size-xs); }
+
+/* One disclosure affordance: a chevron that points right when closed and down when open. */
+.management-disclosure-icon, :where(.app-shell, .operator-console, .management-mantine-modal) details > summary::before {
+  border-bottom: 2px solid currentColor; border-right: 2px solid currentColor; content: ""; display: inline-block; flex: none;
+  height: 7px; margin-inline: 2px 8px; transform: rotate(-45deg); transition: transform 120ms ease; width: 7px;
+}
+.management-disclosure-icon[data-expanded], :where(.app-shell, .operator-console, .management-mantine-modal) details[open] > summary::before { transform: rotate(45deg); }
+:where(.app-shell, .operator-console, .management-mantine-modal) details > summary { cursor: pointer; list-style: none; }
+:where(.app-shell, .operator-console, .management-mantine-modal) details > summary::-webkit-details-marker { display: none; }
+[dir="rtl"] .management-disclosure-icon:not([data-expanded]), [dir="rtl"] details:not([open]) > summary::before { transform: rotate(135deg); }
+@media (prefers-reduced-motion: reduce) { .management-disclosure-icon, details > summary::before { transition: none; } }
+
+/* Native anchors follow the theme instead of browser-default blue and purple. */
+/* The hover shade keeps 4.5:1 on surfaces and on warning or error banner fills. */
+:where(.app-shell, .operator-console, .management-mantine-modal) a:where(:not([class*="mantine-"])) { color: var(--color-accent-hover); text-underline-offset: 2px; }
+:where(.app-shell, .operator-console, .management-mantine-modal) a:where(:not([class*="mantine-"])):hover { text-decoration-thickness: 2px; }
+/* File inputs keep their native behaviour but draw a button that matches default commands. */
+.mantine-Input-input[type="file"] { cursor: pointer; padding-block: 4px; }
+.mantine-Input-input[type="file"]::file-selector-button {
+  background: var(--color-surface-subtle); border: 1px solid var(--color-border-strong); border-radius: 6px; color: var(--color-text);
+  cursor: pointer; font: inherit; font-size: var(--font-size-sm); font-weight: 600; margin-inline-end: 12px; padding: 4px 12px;
+}
+.mantine-Input-input[type="file"]:hover::file-selector-button { background: var(--color-surface); }
+.mantine-Tooltip-tooltip { background: var(--color-text); color: var(--color-surface); font-size: var(--font-size-xs); line-height: 1.45; }

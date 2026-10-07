@@ -1,3 +1,4 @@
+import { Anchor, Button } from "@mantine/core";
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import {
   managementPrimaryRoutes,
@@ -30,7 +31,7 @@ export function ManagementNavigation({ activeRoute, onNavigate }: ManagementNavi
     <aside className="management-sidebar" onKeyDown={handleKeyDown}>
       <div className="management-brand">
         <div><h1>Stream Jams</h1><span className="management-brand__current">{activeLabel}</span></div>
-        <button
+        <Button variant="default"
           aria-controls="management-primary-navigation"
           aria-expanded={mobileOpen}
           aria-label="Navigation"
@@ -40,7 +41,7 @@ export function ManagementNavigation({ activeRoute, onNavigate }: ManagementNavi
           type="button"
         >
           Menu
-        </button>
+        </Button>
       </div>
       <nav aria-label="Primary" className={`management-nav${mobileOpen ? " management-nav--mobile-open" : ""}`} id="management-primary-navigation">
         <ul>
@@ -98,8 +99,8 @@ function NavigationLink({
   }
 
   return (
-    <a aria-current={active ? "page" : undefined} href={route.path} onClick={handleClick}>
+    <Anchor aria-current={active ? "page" : undefined} href={route.path} onClick={handleClick}>
       {route.label}
-    </a>
+    </Anchor>
   );
 }

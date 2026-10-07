@@ -1,7 +1,8 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { renderManagement as render } from "../../../test-support/render-management.js";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DirtyNavigationProvider } from "../../navigation/dirty-navigation.js";
+import { DirtyNavigationProvider, useManagementNavigation } from "../../navigation/dirty-navigation.js";
 import type {
   ManagementApi,
   ModerationPreviewInputView,
@@ -18,6 +19,29 @@ const savedSettings = {
 } satisfies ModerationSettingsView;
 
 describe("AlertSafetyPage", () => {
+  it("owns a failed navigation save in one typed guard and retains the policy for explicit retry", async () => {
+    const user = userEvent.setup();
+    const api = createApi();
+    vi.mocked(api.updateModerationSettings)
+      .mockRejectedValueOnce(Object.assign(new Error("Policy store unavailable"), { referenceId: "ref-policy-save", nextStep: "Restore policy storage and retry." }))
+      .mockImplementationOnce(async input => input);
+    window.history.replaceState(null, "", "/manage/modules/alerts/safety");
+    render(<DirtyNavigationProvider><AlertSafetyPage managementApi={api} /><SafetyNavigationProbe /></DirtyNavigationProvider>);
+    await screen.findByRole("group", { name: "Rendered text" });
+    await replaceNumber(user, "Rendered text maximum length", "300");
+    await user.click(screen.getByRole("button", { name: "Go home" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Save and leave" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("ref-policy-save");
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Restore policy storage and retry.");
+    expect(screen.getAllByRole("alert", { hidden: true })).toHaveLength(1);
+    expect(screen.getByLabelText("Rendered text maximum length")).toHaveValue(300);
+    expect(window.location.pathname).toBe("/manage/modules/alerts/safety");
+    await user.click(within(dialog).getByRole("button", { name: "Save and leave" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(api.updateModerationSettings).toHaveBeenCalledTimes(2);
+    expect(window.location.pathname).toBe("/manage");
+  });
   it("loads both saved target policies and explains provider-owned safety", async () => {
     renderPage();
 
@@ -256,6 +280,11 @@ function createApi(): Pick<ManagementApi, "getModerationSettings" | "updateModer
 
 function renderPage(api = createApi()) {
   return render(<DirtyNavigationProvider><AlertSafetyPage managementApi={api} /></DirtyNavigationProvider>);
+}
+
+function SafetyNavigationProbe() {
+  const navigation = useManagementNavigation();
+  return <><button onClick={() => navigation.requestNavigation({ id: "home" })}>Go home</button>{navigation.guard}</>;
 }
 
 async function replaceNumber(user: ReturnType<typeof userEvent.setup>, label: string, value: string) {

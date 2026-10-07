@@ -57,7 +57,7 @@ test("audio outputs save explicitly and alert drafts retain routing through undo
   });
 
   await page.goto("/manage/settings#audio-outputs");
-  await expect(page.getByRole("heading", { name: "Audio outputs", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Audio outputs", exact: true })).toBeVisible();
   await page.getByLabel("New output name").fill("Private mix");
   await page.getByLabel("New output device").selectOption("fake-private");
   await page.getByRole("checkbox", { name: "Automatically follow this device name" }).check();

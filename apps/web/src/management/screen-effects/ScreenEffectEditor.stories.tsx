@@ -8,8 +8,9 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { createStoryAudioApi } from "../../stories/audio-fixtures.js";
 import { createStoryAssetApi, createStoryManagementApi } from "../../stories/mock-apis.js";
-import { DirtyNavigationProvider } from "../navigation/dirty-navigation.js";
-import { ScreenEffectEditor } from "./ScreenEffectEditor.js";
+import { DirtyNavigationProvider, useManagementNavigation } from "../navigation/dirty-navigation.js";
+import { ManagementHttpError } from "../management-http-client.js";
+import { ScreenEffectEditor, type ScreenEffectEditorProps } from "./ScreenEffectEditor.js";
 import type { ScreenEffectsApi } from "./screen-effects-api.js";
 
 const neutral = effect();
@@ -40,7 +41,7 @@ const managementApi = createStoryManagementApi({
   }] })
 });
 
-const meta = { tags: ["stream-local-media"],
+const meta = { tags: ["stream-local-media", "mantine-feedback-tabs", "mantine-stage6d", "mantine-stage6d-closure"],
   title: "Management/Screen Effects/Focused editor",
   component: ScreenEffectEditor,
   decorators: [(Story) => <DirtyNavigationProvider><div className="management-main management-main--focused"><Story /></div></DirtyNavigationProvider>],
@@ -71,6 +72,23 @@ export const NewDisabledDraft: Story = {
   }
 };
 
+export const KeyboardTabsRetainDraft: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Effect" }));
+    await userEvent.clear(canvas.getByLabelText("Effect name"));
+    await userEvent.type(canvas.getByLabelText("Effect name"), "Retained keyboard draft");
+    await userEvent.click(canvas.getByRole("tab", { name: "Effect" }));
+    await userEvent.keyboard("{End}");
+    const triggers = canvas.getByRole("tab", { name: "Triggers" });
+    await expect(triggers).toHaveFocus();
+    await expect(triggers).toHaveAttribute("aria-selected", "true");
+    await expect(canvas.queryByLabelText("Effect name")).not.toBeInTheDocument();
+    await userEvent.keyboard("{Home}{ArrowRight}");
+    await expect(canvas.getByLabelText("Effect name")).toHaveValue("Retained keyboard draft");
+  }
+};
+
 export const LocalDraftPreview: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -90,6 +108,7 @@ export const LocalDraftPreview: Story = {
 };
 
 export const AudioOnly: Story = {
+  tags: ["mantine-stage6c"],
   args: { api: createApi(effect({ audioOnly: true })) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -100,13 +119,15 @@ export const AudioOnly: Story = {
 };
 
 export const VideoWithSeparateSound: Story = {
+  tags: ["mantine-stage6c", "mantine-stage6c-closure"],
   args: { api: createApi(effect({ video: true, separateSound: true })) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const embeddedAudio = await canvas.findByRole("checkbox", { name: "Play embedded audio" });
     await expect(embeddedAudio).toBeChecked();
-    await expect(embeddedAudio.closest("label")).toHaveClass("screen-effects-check");
-    await expect(canvas.getByRole("checkbox", { name: /^OBS Browser Source$/u }).closest("label")).toHaveClass("screen-effects-check");
+    await expect(canvasElement.querySelector(`label[for="${embeddedAudio.id}"]`)).toHaveTextContent("Play embedded audio");
+    const browserVisual = canvas.getByRole("checkbox", { name: /^OBS Browser Source$/u });
+    await expect(canvasElement.querySelector(`label[for="${browserVisual.id}"]`)).toHaveTextContent("OBS Browser Source");
     await expect(canvas.getByText(/Both the video soundtrack and separate audio will play/u)).toBeVisible();
   }
 };
@@ -167,6 +188,11 @@ export const NoOutputs: Story = {
 };
 
 export const FailedSaveRetainsDraft: Story = {
+  beforeEach: () => {
+    const report = console.error;
+    console.error = (...args: unknown[]) => { if (!String(args[0]).includes("The Screen Effect was not saved. The draft is still here.")) report(...args); };
+    return () => { console.error = report; };
+  },
   args: {
     api: createApi(neutral, {
       update: async () => { throw new Error("Storage failed (ref-story-save)"); }
@@ -181,6 +207,47 @@ export const FailedSaveRetainsDraft: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "Save" }));
     await expect(await canvas.findByRole("alert")).toHaveTextContent("ref-story-save");
     await expect(name).toHaveValue("Unsaved neutral effect");
+  }
+};
+
+function NavigationEditor(args: ScreenEffectEditorProps) {
+  const navigation = useManagementNavigation();
+  return <>{navigation.guard}<main><ScreenEffectEditor {...args} onBack={() => navigation.requestNavigation({ id: "modules-screen-effects" })} /></main></>;
+}
+
+export const NavigationSaveFailure: Story = {
+  tags: ["mantine-navigation-feedback"],
+  render: (args) => <NavigationEditor {...args} />,
+  beforeEach: () => {
+    const report = console.error;
+    console.error = (...args: unknown[]) => { if (!String(args[0]).startsWith("[story-navigation-ref] The Screen Effect was not saved.")) report(...args); };
+    return () => { console.error = report; };
+  },
+  args: { api: createApi(neutral, { update: async () => { throw new ManagementHttpError("Local storage unavailable", "UNAVAILABLE", "story-navigation-ref", "Restart the local service, then try Save and leave again."); } }) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const body = within(canvasElement.ownerDocument.body);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Effect" }));
+    await userEvent.clear(canvas.getByLabelText("Effect name"));
+    await userEvent.type(canvas.getByLabelText("Effect name"), "Retained navigation draft");
+    await userEvent.click(canvas.getByRole("button", { name: "Back to Screen Effects" }));
+    let dialog = within(await body.findByRole("dialog", { name: "Leave with unsaved changes?" }));
+    await userEvent.click(dialog.getByRole("button", { name: "Save and leave" }));
+    await expect(await dialog.findByRole("alert")).toHaveTextContent("story-navigation-ref");
+    await expect(body.getAllByRole("alert")).toHaveLength(1);
+    await expect(dialog.getByRole("link", { name: "Open Diagnostics" })).toHaveAttribute("href", "/manage/diagnostics?reference=story-navigation-ref");
+    await userEvent.click(dialog.getByRole("button", { name: "Dismiss error" }));
+    await expect(body.queryByRole("alert")).not.toBeInTheDocument();
+    await userEvent.click(dialog.getByRole("button", { name: "Save and leave" }));
+    await dialog.findByRole("alert");
+    await userEvent.click(dialog.getByRole("button", { name: "Cancel" }));
+    await expect(canvas.getByLabelText("Effect name")).toHaveValue("Retained navigation draft");
+    await expect(body.queryByRole("alert")).not.toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("button", { name: "Back to Screen Effects" }));
+    dialog = within(await body.findByRole("dialog"));
+    await expect(dialog.queryByRole("alert")).not.toBeInTheDocument();
+    await userEvent.click(dialog.getByRole("button", { name: "Save and leave" }));
+    await expect(await dialog.findByRole("alert")).toHaveTextContent("Restart the local service");
   }
 };
 

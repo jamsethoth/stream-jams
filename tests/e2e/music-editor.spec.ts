@@ -126,7 +126,7 @@ test("Music appearance remains usable at desktop and narrow widths", async ({ pa
     await page.getByLabel("Appearance component").selectOption("artwork");
     await expect(page.getByLabel("Artwork size (px)")).toBeVisible();
     const artworkSize = (await page.getByLabel("Artwork size (px)").boundingBox())!;
-    expect(artworkSize.height).toBe(32);
+    expect(artworkSize.height).toBe(36);
     const placeholderColor = (await page.getByLabel("Artwork placeholder color", { exact: true }).boundingBox())!;
     expect(placeholderColor.y).toBeGreaterThan(artworkSize.y + artworkSize.height);
     await expect(page.getByLabel("Widget width (px)")).toHaveCount(0);
@@ -140,7 +140,7 @@ test("Music appearance remains usable at desktop and narrow widths", async ({ pa
     await page.getByText("Custom shadow", { exact: true }).click();
     await expect(page.getByLabel("Shadow blur (px)")).toHaveValue("12");
     const heights = await Promise.all(["Shadow X (px)", "Shadow Y (px)", "Shadow blur (px)", "Shadow spread (px)"].map(async label => (await page.getByLabel(label).boundingBox())!.height));
-    expect(heights).toEqual([32, 32, 32, 32]);
+    expect(heights).toEqual([36, 36, 36, 36]);
     const spread = (await page.getByLabel("Shadow spread (px)").boundingBox())!;
     const shadowColor = (await page.getByLabel("Shadow color", { exact: true }).boundingBox())!;
     expect(shadowColor.y).toBeGreaterThan(spread.y + spread.height);

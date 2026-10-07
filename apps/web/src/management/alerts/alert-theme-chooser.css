@@ -15,7 +15,7 @@
 }
 
 .alert-theme-chooser__heading h3 {
-  font-size: 16px;
+  font-size: var(--font-size-md);
 }
 
 .alert-theme-chooser__heading p,
@@ -26,12 +26,12 @@
 
 .alert-theme-chooser__heading p,
 .alert-theme-chooser__choice > span > span {
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 .alert-theme-chooser__options {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
@@ -76,7 +76,7 @@
 
 .alert-theme-chooser__choice > span {
   display: grid;
-  gap: 3px;
+  gap: 4px;
 }
 
 .alert-theme-chooser__previews {
@@ -88,12 +88,12 @@
 
 .alert-theme-chooser__preview {
   display: grid;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
 }
 
 .alert-theme-chooser__preview > span {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
 }
 

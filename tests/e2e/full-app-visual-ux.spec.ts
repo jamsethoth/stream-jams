@@ -169,8 +169,15 @@ test.describe.serial("full application visual UX acceptance", () => {
     const embeddedAudio = page.getByRole("checkbox", { name: "Play embedded audio" });
     await expect(browserSource).toBeVisible();
     await expect(embeddedAudio).toBeVisible();
-    await expect.poll(() => browserSource.evaluate((element) => getComputedStyle(element.closest("label")!).display)).toBe("flex");
-    await expect.poll(() => embeddedAudio.evaluate((element) => getComputedStyle(element.closest("label")!).display)).toBe("flex");
+    for (const checkbox of [browserSource, embeddedAudio]) {
+      const label = page.locator(`label[for="${await checkbox.getAttribute("id")}"]`);
+      await expectInlineCheckbox(checkbox, label);
+      const checked = await checkbox.isChecked();
+      await label.click();
+      await expect(checkbox).toBeChecked({ checked: !checked });
+      await label.click();
+      await expect(checkbox).toBeChecked({ checked });
+    }
     await captureEvidence(page, "screen-effects-phone-light.png");
   });
 
@@ -220,7 +227,8 @@ test.describe.serial("full application visual UX acceptance", () => {
     await server.press("Enter");
     await expect(page.locator(".overlay-surfaces").getByText("Screen Effects", { exact: true })).toBeVisible();
     await surfacesSummary.click();
-    await expect(page.getByRole("button", { name: "Save server settings" })).toBeVisible();
+    // Save server settings appears only after a change; the open section shows its fields.
+    await expect(page.getByLabel("Port", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Export backup" })).toBeHidden();
     await captureEvidence(page, "settings-server-open-desktop-light.png");
     await server.press("Enter");
@@ -306,7 +314,11 @@ test.describe.serial("full application visual UX acceptance", () => {
     await expect(page.getByLabel("Volume (0–1)")).toBeVisible();
     await expect(page.getByText("1 = 100% volume; 0 = silent")).toBeVisible();
     await expect(page.getByLabel("Minimum rate (×)")).toBeVisible();
-    await expect(page.getByText("1× is normal speed; 0.5× is half speed; 2× is double speed.")).toBeVisible();
+    const rateGuidance = "1× is normal speed; 0.5× is half speed; 2× is double speed.";
+    const guidance = page.getByText(rateGuidance, { exact: true });
+    await expect(guidance).toHaveCount(2);
+    for (const paragraph of await guidance.all()) await expect(paragraph).toBeVisible();
+    for (const field of ["Minimum rate (×)", "Maximum rate (×)"]) await expect(page.getByLabel(field)).toHaveAccessibleDescription(rateGuidance);
     await captureEvidence(page, "tts-units-desktop-light.png");
   });
 });
@@ -329,7 +341,13 @@ async function unusedPort(): Promise<number> {
 
 async function expectInlineCheckbox(checkbox: Locator, textLocator: Locator): Promise<void> {
   const checkboxBox = await checkbox.boundingBox();
-  const textBox = await textLocator.boundingBox();
+  const textBox = await textLocator.evaluate(element => {
+    const text = document.createRange();
+    text.selectNodeContents(element);
+    // Wrapped labels align their first text line with the checkbox.
+    const box = text.getClientRects()[0]!;
+    return { x: box.x, y: box.y, width: box.width, height: box.height };
+  });
   expect(checkboxBox).not.toBeNull();
   expect(textBox).not.toBeNull();
   expect(textBox!.x).toBeGreaterThan(checkboxBox!.x + checkboxBox!.width);

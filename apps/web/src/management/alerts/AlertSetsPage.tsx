@@ -1,3 +1,8 @@
+import { actionableError } from "../foundation/actionable-error.js";
+import { DestructiveConfirmationDialog } from "../foundation/DestructiveConfirmationDialog.js";
+import { Button, Checkbox, NativeSelect, TextInput, Tooltip } from "@mantine/core";
+import { DisclosureIcon, ModulePageLayout, ModuleControls, SectionHeading } from "../foundation/ModulePageLayout.js";
+import { BrowserSourceRow } from "../foundation/BrowserSourceRow.js";
 import { BrowserSourcesPanel } from "../foundation/BrowserSourcesPanel.js";
 import {
   alertStarterTemplates,
@@ -17,7 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { ActionMenu, type ActionMenuItem } from "../foundation/ActionMenu.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
-import { ModalSurface } from "../foundation/ModalSurface.js";
+import { ManagementModalSurface as ModalSurface, ManagementModalTitle } from "../foundation/ManagementModalSurface.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
 import { formatCount, formatDateTime } from "../foundation/formatters.js";
 import { formatEventLabel } from "../foundation/presentation-labels.js";
@@ -118,7 +123,6 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [testMenuProfileIds, setTestMenuProfileIds] = useState<readonly TargetProfileId[]>([]);
   const [testingAlertId, setTestingAlertId] = useState<string | null>(null);
   const [regenerateDialog, setRegenerateDialog] = useState<RegenerateDialogState | null>(null);
-  const [regenerateConfirmation, setRegenerateConfirmation] = useState("");
   const [deleteSet, setDeleteSet] = useState<AlertSetOverview | null>(null);
   const [revealedSourceIds, setRevealedSourceIds] = useState<ReadonlySet<string>>(() => new Set());
   const [query, setQuery] = useState("");
@@ -130,6 +134,8 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [browserSourceRefreshError, setBrowserSourceRefreshError] = useState<ActionableManagementError | null>(null);
   const [browserSourcesExpanded, setBrowserSourcesExpanded] = useState(false);
   const [moduleEnabled, setModuleEnabled] = useState<boolean | null>(null);
+  const confirmationInFlight = useRef(false);
+  const [confirmationError, setConfirmationError] = useState<ActionableManagementError | null>(null);
   const [moduleConfirmation, setModuleConfirmation] = useState<boolean | null>(null);
   const [manualExpandedEventKeys, setManualExpandedEventKeys] = useState<ReadonlySet<string>>(() => new Set());
   const [rewardTitleContext, setRewardTitleContext] = useState<{ readonly setId: string; readonly key: string; readonly titles: ReadonlyMap<string, string> } | null>(null);
@@ -184,12 +190,18 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   }, [managementApi, selectedSetId]);
 
   useEffect(() => {
-    if (detail === null || window.location.hash !== "#browser-sources") return;
-    setBrowserSourcesExpanded(true);
-    const browserSources = document.getElementById("browser-sources");
-    if (browserSources === null || typeof browserSources.scrollIntoView !== "function") return;
-    browserSources.scrollIntoView({ block: "start" });
-  }, [detail]);
+    if (selectedSetId === null) return;
+    const revealCorrection = () => {
+      if (window.location.hash !== "#browser-sources") return;
+      setBrowserSourcesExpanded(true);
+      const region = document.getElementById("browser-sources");
+      region?.scrollIntoView?.({ block: "start" });
+      region?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+    };
+    revealCorrection();
+    window.addEventListener("hashchange", revealCorrection);
+    return () => window.removeEventListener("hashchange", revealCorrection);
+  }, [selectedSetId]);
 
   const eventGroups = useMemo(() => buildAlertEventGroups(
     detail?.inventory ?? [],
@@ -335,7 +347,9 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   }
 
   async function confirmModuleEnablement() {
-    if (moduleConfirmation === null) return;
+    if (moduleConfirmation === null || confirmationInFlight.current) return;
+    confirmationInFlight.current = true;
+    setConfirmationError(null);
     setBusy(true);
     setError(null);
     try {
@@ -344,13 +358,16 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
       setNotice({ tone: "success", message: `Alerts module is now ${nextEnabled ? "enabled" : "disabled"}.` });
       setModuleConfirmation(null);
     } catch (cause) {
-      setError(toActionableError("Alerts module could not be updated", cause, "Try again or open Diagnostics for the server reference."));
+      setConfirmationError(toActionableError("Alerts module could not be updated", cause, "Try again or open Diagnostics for the server reference."));
     } finally {
+      confirmationInFlight.current = false;
       setBusy(false);
     }
   }
 
   function openNameDialog(action: NameAction, set: AlertSetOverview | null) {
+    setError(null);
+    setNotice(null);
     setNameDraft(action === "rename" ? set?.name ?? "" : action === "duplicate" ? `${set?.name ?? "Alert set"} copy` : "");
     setNameDialog({ action, set });
   }
@@ -488,7 +505,9 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   }
 
   async function confirmAlertMutation() {
-    if (alertMutation === null) return;
+    if (alertMutation === null || confirmationInFlight.current) return;
+    confirmationInFlight.current = true;
+    setConfirmationError(null);
     const { action, alert } = alertMutation;
     const deleteFocus = action === "delete" ? focusTargetAfterDelete(eventGroups, alert) : null;
     setBusy(true);
@@ -512,17 +531,19 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
       });
       setAlertMutation(null);
     } catch (cause) {
-      setError(toActionableError(
+      setConfirmationError(toActionableError(
         action === "reset" ? "The alert was not reset" : "The alert was not deleted",
         cause,
         action === "reset" ? "Review the alert state and try again." : "Confirm the alert still exists, then try again."
       ));
     } finally {
+      confirmationInFlight.current = false;
       setBusy(false);
     }
   }
 
   async function prepareActivation(set: AlertSetOverview) {
+    setConfirmationError(null);
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -538,7 +559,9 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   }
 
   async function confirmActivation() {
-    if (activationSet === null || activationImpact === null || activationImpact.blockers.length > 0) return;
+    if (activationSet === null || activationImpact === null || activationImpact.blockers.length > 0 || confirmationInFlight.current) return;
+    confirmationInFlight.current = true;
+    setConfirmationError(null);
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -549,8 +572,9 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
       setActivationSet(null);
       setActivationImpact(null);
     } catch (cause) {
-      setError(toActionableError("The alert set was not activated", cause, "Resolve blockers or review warnings, then try again."));
+      setConfirmationError(toActionableError("The alert set was not activated", cause, "Resolve blockers or review warnings, then try again."));
     } finally {
+      confirmationInFlight.current = false;
       setBusy(false);
     }
   }
@@ -653,7 +677,9 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   }
 
   async function regenerateBrowserSource() {
-    if (regenerateDialog === null) return;
+    if (regenerateDialog === null || confirmationInFlight.current) return;
+    confirmationInFlight.current = true;
+    setConfirmationError(null);
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -666,10 +692,10 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         detail: "Update every browser source that used the old URL."
       });
       setRegenerateDialog(null);
-      setRegenerateConfirmation("");
     } catch (cause) {
-      setError(toActionableError("The browser-source URL was not regenerated", cause, "Keep the current URL and retry after checking Diagnostics."));
+      setConfirmationError(toActionableError("The browser-source URL was not regenerated", cause, "Keep the current URL and retry after checking Diagnostics."));
     } finally {
+      confirmationInFlight.current = false;
       setBusy(false);
     }
   }
@@ -688,7 +714,9 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   }
 
   async function confirmDelete() {
-    if (deleteSet === null) return;
+    if (deleteSet === null || confirmationInFlight.current) return;
+    confirmationInFlight.current = true;
+    setConfirmationError(null);
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -698,8 +726,9 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
       setNotice({ tone: "success", message: `${deleteSet.name} deleted.` });
       setDeleteSet(null);
     } catch (cause) {
-      setError(toActionableError("The alert set was not deleted", cause, "Activate another set first, then retry."));
+      setConfirmationError(toActionableError("The alert set was not deleted", cause, "Activate another set first, then retry."));
     } finally {
+      confirmationInFlight.current = false;
       setBusy(false);
     }
   }
@@ -711,21 +740,17 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   if (loading && detail === null) {
     return <p className="management-empty" role="status">Loading alert sets...</p>;
   }
-  if (initialLoadFailed && error !== null) return <section aria-label="Alert sets" className="alert-sets-page"><ManagementErrorBanner error={error} /><button onClick={() => void loadAlertSets(initialSetId, true)} type="button">Retry loading alert sets</button></section>;
+  if (initialLoadFailed && error !== null) return <section aria-label="Alert sets" className="alert-sets-page"><ManagementErrorBanner error={error} /><Button onClick={() => void loadAlertSets(initialSetId, true)} type="button">Retry loading alert sets</Button></section>;
 
   return (
-    <div className="alert-sets-page">
-      {error === null ? null : <ManagementErrorToast error={error} onDismiss={() => setError(null)} />}
-      {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
-
-      {detail === null ? null : (
+    <ModulePageLayout className="alert-sets-page" controls={<ModuleControls status={moduleEnabled === null ? null : <StatusBadge label={moduleEnabled ? "Module enabled" : "Module disabled"} tone={moduleEnabled ? "positive" : "neutral"} />} description="Saved module enablement controls rendering for new live events."><Button variant="default" disabled={busy || moduleEnabled === null} onClick={() => { setConfirmationError(null); setModuleConfirmation(!moduleEnabled); }}>{moduleEnabled ? "Disable Alerts module" : "Enable Alerts module"}</Button></ModuleControls>} outputs={detail === null ? null : (
         <BrowserSources
           busy={busy}
           expanded={browserSourcesExpanded}
           onCopy={(source) => void copyBrowserSource(source)}
           onCreate={(source) => void createBrowserSource(source)}
           onRegenerate={(source) => {
-            setRegenerateConfirmation("");
+            setConfirmationError(null);
             setRegenerateDialog({
               source,
               requiresTypedConfirmation: source.connectionState !== "never-connected" || source.lastConnectedAt !== null
@@ -743,23 +768,19 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
           sources={detail.browserSources}
           statusUpdatedAt={browserSourceStatusUpdatedAt}
         />
-      )}
+      )}>
+      {error === null || nameDialog !== null ? null : <ManagementErrorToast error={error} onDismiss={() => setError(null)} />}
+      {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
+
 
       <section aria-labelledby="alert-sets-heading" className="alert-sets-page__management">
-        <div className="alert-sets-page__toolbar">
-          <div>
-            <h2 id="alert-sets-heading">Alert sets</h2>
-            <p>Prepare collections of alerts, validate their profiles, and choose the one used for live events.</p>
-            {moduleEnabled === null ? null : <StatusBadge label={moduleEnabled ? "Module enabled" : "Module disabled"} tone={moduleEnabled ? "positive" : "neutral"} />}
-          </div>
-          <div className="alert-sets-page__toolbar-actions"><button className="button button--secondary" disabled={busy || moduleEnabled === null} onClick={() => setModuleConfirmation(!moduleEnabled)} type="button">{moduleEnabled ? "Disable Alerts module" : "Enable Alerts module"}</button><button onClick={() => openNameDialog("create", null)} type="button">Create set</button></div>
-        </div>
+        <SectionHeading id="alert-sets-heading" title="Alert sets" description="Prepare collections of alerts, validate their profiles, and choose the one used for live events." actions={<Button onClick={() => openNameDialog("create", null)}>Create set</Button>} />
 
       {sets.length === 0 ? (
         <section className="alert-sets-page__empty">
           <h3>No alert sets</h3>
           <p>Create an alert set to configure stream event responses.</p>
-          <button onClick={() => openNameDialog("create", null)} type="button">Create alert set</button>
+          <Button onClick={() => openNameDialog("create", null)} type="button">Create alert set</Button>
         </section>
       ) : (
         <section aria-labelledby="available-alert-sets-heading" className="alert-sets-page__set-list">
@@ -780,7 +801,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
                       onClick={() => void toggleSet(set.id)}
                       type="button"
                     >
-                      <span aria-hidden="true">{expanded ? "−" : "+"}</span>
+                      <DisclosureIcon expanded={expanded} />
                       <strong>{set.name}</strong>
                       {set.starter ? <small>Starter</small> : null}
                     </button>
@@ -790,11 +811,11 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
                       <ValidationRollup set={set} />
                     </div>
                     <div className="alert-sets-page__row-actions alert-sets-page__set-actions">
-                      {set.starter && set.starterReviewState === "pending" && expanded ? <button disabled={busy} onClick={() => void markStarterReviewComplete()} type="button">Mark starter review done</button> : null}
-                      {set.active ? null : <button aria-label={`Make ${set.name} active`} disabled={busy} onClick={() => void prepareActivation(set)} type="button">Activate</button>}
-                      <button aria-label={`Rename ${set.name}`} className="button button--secondary" disabled={busy} onClick={() => openNameDialog("rename", set)} type="button">Rename</button>
-                      <button aria-label={`Duplicate ${set.name}`} className="button button--secondary" disabled={busy} onClick={() => openNameDialog("duplicate", set)} type="button">Duplicate</button>
-                      <button aria-label={`Delete ${set.name}`} className="button button--danger-quiet" disabled={busy || set.active} onClick={() => setDeleteSet(set)} type="button">Delete</button>
+                      {set.starter && set.starterReviewState === "pending" && expanded ? <Button variant="light" disabled={busy} onClick={() => void markStarterReviewComplete()} type="button">Mark starter review done</Button> : null}
+                      {set.active ? null : <Button aria-label={`Make ${set.name} active`} variant="light" disabled={busy} onClick={() => void prepareActivation(set)} type="button">Activate</Button>}
+                      <Button aria-label={`Rename ${set.name}`} variant="default" disabled={busy} onClick={() => openNameDialog("rename", set)} type="button">Rename</Button>
+                      <Button aria-label={`Duplicate ${set.name}`} variant="default" disabled={busy} onClick={() => openNameDialog("duplicate", set)} type="button">Duplicate</Button>
+                      <Button aria-label={`Delete ${set.name}`} color="red" variant="light" disabled={busy || set.active} onClick={() => { setConfirmationError(null); setDeleteSet(set); }} type="button">Delete</Button>
                     </div>
                   </div>
                   {expandedDetail === null ? null : (
@@ -811,13 +832,13 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
                       onAdd={() => openCreateAlertDialog()}
                       onAddForEvent={openCreateAlertDialog}
                       onCreateVariation={openVariationDialog}
-                      onDelete={(alert) => setAlertMutation({ action: "delete", alert })}
+                      onDelete={(alert) => { setConfirmationError(null); setAlertMutation({ action: "delete", alert }); }}
                       onDuplicate={(alert) => void duplicateAlert(alert)}
                       onEdit={onEditAlert}
                       onPreview={setPreviewAlert}
                       onProfileFilter={setProfileFilter}
                       onQuery={setQuery}
-                      onReset={(alert) => setAlertMutation({ action: "reset", alert })}
+                      onReset={(alert) => { setConfirmationError(null); setAlertMutation({ action: "reset", alert }); }}
                       onStatusFilter={setStatusFilter}
                       onShowUnusedEventTypes={setShowUnusedEventTypes}
                       onTest={requestInlineTest}
@@ -846,7 +867,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
       )}
       </section>
 
-      <NameDialog busy={busy} draft={nameDraft} onCancel={() => setNameDialog(null)} onChange={setNameDraft} onSubmit={submitNameDialog} state={nameDialog} />
+      <NameDialog busy={busy} error={error} onDismissError={() => setError(null)} draft={nameDraft} onCancel={() => { setNameDialog(null); setError(null); }} onChange={setNameDraft} onSubmit={submitNameDialog} state={nameDialog} />
       <CreateAlertDialog
         busy={busy}
         error={createAlertError}
@@ -864,13 +885,13 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         rewardSelection={createAlertRewardSelection}
       />
       <VariationDialog alert={variationParent} busy={busy} error={variationError} name={variationName} onCancel={() => setVariationParent(null)} onName={setVariationName} onSubmit={submitVariation} />
-      <ActivationDialog busy={busy} impact={activationImpact} onCancel={() => { setActivationSet(null); setActivationImpact(null); }} onConfirm={() => void confirmActivation()} set={activationSet} />
+      <ActivationDialog error={confirmationError} busy={busy} impact={activationImpact} onCancel={() => { setActivationSet(null); setActivationImpact(null); setConfirmationError(null); }} onConfirm={() => void confirmActivation()} set={activationSet} />
       <PreviewDialog alert={previewAlert} onCancel={() => setPreviewAlert(null)} />
-      <RegenerateDialog busy={busy} confirmation={regenerateConfirmation} onCancel={() => setRegenerateDialog(null)} onChange={setRegenerateConfirmation} onConfirm={() => void regenerateBrowserSource()} state={regenerateDialog} />
-      <DeleteDialog busy={busy} onCancel={() => setDeleteSet(null)} onConfirm={() => void confirmDelete()} set={deleteSet} />
-      <AlertMutationDialog busy={busy} onCancel={() => setAlertMutation(null)} onConfirm={() => void confirmAlertMutation()} state={alertMutation} />
-      <ModalSurface labelledBy="alert-module-confirm-title" onCancel={() => setModuleConfirmation(null)} open={moduleConfirmation !== null}>{moduleConfirmation === null ? null : <div className="alert-sets-page__modal"><div><h2 id="alert-module-confirm-title">{moduleConfirmation ? "Enable" : "Disable"} Alerts module?</h2><p>{moduleConfirmation ? "Enabled alerts in the active set may render for new live events." : "Saved alert sets and individual alert settings remain unchanged, but Alerts stop rendering until the module is enabled again."}</p></div><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={() => setModuleConfirmation(null)} type="button">Cancel</button><button className="button button--primary" disabled={busy} onClick={() => void confirmModuleEnablement()} type="button">Confirm change</button></div></div>}</ModalSurface>
-    </div>
+      <DestructiveConfirmationDialog actionLabel="Regenerate URL" title={`Regenerate ${regenerateDialog === null ? "browser-source" : formatProfile(regenerateDialog.source.targetProfileId)} URL?`} scope="Alerts browser source" targetId={regenerateDialog?.source.id ?? "closed"} open={regenerateDialog !== null} pending={busy} error={confirmationError} {...(regenerateDialog?.requiresTypedConfirmation ? { confirmText: "REGENERATE" } : {})} consequences="The current URL will stop working immediately. Update every browser source that uses it." recovery={null} onCancel={() => { setRegenerateDialog(null); setConfirmationError(null); }} onConfirm={regenerateBrowserSource} />
+      <DeleteDialog error={confirmationError} busy={busy} onCancel={() => { setDeleteSet(null); setConfirmationError(null); }} onConfirm={() => void confirmDelete()} set={deleteSet} />
+      <AlertMutationDialog error={confirmationError} busy={busy} onCancel={() => { setAlertMutation(null); setConfirmationError(null); }} onConfirm={() => void confirmAlertMutation()} state={alertMutation} />
+      <DestructiveConfirmationDialog actionLabel="Confirm change" title={`${moduleConfirmation ? "Enable" : "Disable"} Alerts module?`} scope="Alerts module" targetId={`alerts-${String(moduleConfirmation)}`} open={moduleConfirmation !== null} pending={busy} error={confirmationError} consequences={moduleConfirmation ? "Enabled alerts in the active set may render for new live events." : "Saved alert sets and individual alert settings remain unchanged, but Alerts stop rendering until the module is enabled again."} recovery="Change saved module enablement again when ready." onCancel={() => { setModuleConfirmation(null); setConfirmationError(null); }} onConfirm={confirmModuleEnablement} />
+    </ModulePageLayout>
   );
 }
 
@@ -968,13 +989,13 @@ function AlertInventory({
 }) {
   return (
     <section aria-labelledby="alert-inventory-heading" className="alert-sets-page__inventory">
-      <div className="alert-sets-page__section-heading"><div><h3 id="alert-inventory-heading">Alerts</h3><p>{filtered.matchingAlertCount} of {filtered.totalAlertCount} shown</p></div><button disabled={busy} id="alert-inventory-add" onClick={onAdd} type="button">Add alert</button></div>
+      <div className="alert-sets-page__section-heading"><div><h3 id="alert-inventory-heading">Alerts</h3><p>{filtered.matchingAlertCount} of {filtered.totalAlertCount} shown</p></div><Button disabled={busy} id="alert-inventory-add" onClick={onAdd} type="button">Add alert</Button></div>
       <div className="alert-sets-page__filters">
-        <label><span>Search</span><input aria-label="Search" onChange={(event) => onQuery(event.currentTarget.value)} placeholder="Name, event, or provider" type="search" value={query} /></label>
-        <label><span>Event</span><select onChange={(event) => onEventFilter(event.currentTarget.value)} value={eventFilter}><option value="all">All events</option>{eventTypes.map((eventType) => <option key={eventType} value={eventType}>{formatEventType(eventType)}</option>)}</select></label>
-        <label><span>Status</span><select onChange={(event) => onStatusFilter(event.currentTarget.value)} value={statusFilter}><option value="all">All statuses</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></label>
-        <label><span>Profile</span><select onChange={(event) => onProfileFilter(event.currentTarget.value)} value={profileFilter}><option value="all">All profiles</option><option value="landscape">Landscape</option><option value="vertical">Vertical</option></select></label>
-        <label className="alert-sets-page__unused-events"><input checked={showUnusedEventTypes} onChange={(event) => onShowUnusedEventTypes(event.currentTarget.checked)} type="checkbox" /><span>Show unused event types</span></label>
+        <TextInput label="Search" aria-label="Search" onChange={(event) => onQuery(event.currentTarget.value)} placeholder="Name, event, or provider" type="search" value={query} />
+        <NativeSelect label="Event" onChange={(event) => onEventFilter(event.currentTarget.value)} value={eventFilter}><option value="all">All events</option>{eventTypes.map((eventType) => <option key={eventType} value={eventType}>{formatEventType(eventType)}</option>)}</NativeSelect>
+        <NativeSelect label="Status" onChange={(event) => onStatusFilter(event.currentTarget.value)} value={statusFilter}><option value="all">All statuses</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option></NativeSelect>
+        <NativeSelect label="Profile" onChange={(event) => onProfileFilter(event.currentTarget.value)} value={profileFilter}><option value="all">All profiles</option><option value="landscape">Landscape</option><option value="vertical">Vertical</option></NativeSelect>
+        <Checkbox className="alert-sets-page__unused-events" checked={showUnusedEventTypes} onChange={(event) => onShowUnusedEventTypes(event.currentTarget.checked)} label="Show unused event types" />
       </div>
       <div className="alert-sets-page__event-groups">
         {filtered.groups.map((group) => {
@@ -993,7 +1014,7 @@ function AlertInventory({
                   onClick={() => onToggleGroup(group.key)}
                   type="button"
                 >
-                  <span aria-hidden="true">{expanded ? "−" : "+"}</span>
+                  <DisclosureIcon expanded={expanded} />
                   <span className="alert-sets-page__event-identity"><strong>{group.label}</strong><small>{group.catalogGroup}</small></span>
                   <span className="alert-sets-page__event-counts">
                     {formatCount(group.defaultCount, { one: "default", other: "defaults" })}
@@ -1003,7 +1024,7 @@ function AlertInventory({
                   </span>
                   <span className={`alert-sets-page__event-status alert-sets-page__event-status--${group.status}`}>{eventStatusLabel(group.status)}</span>
                 </button>
-                {group.known ? <button className="button button--secondary button--compact" disabled={busy} onClick={() => onAddForEvent(group.eventType as StreamEventType)} type="button">Add alert for {group.label}</button> : null}
+                {group.known ? <Button aria-label={`Add alert for ${group.label}`} variant="default" size="xs" disabled={busy} onClick={() => onAddForEvent(group.eventType as StreamEventType)} type="button">Add alert</Button> : null}
               </header>
               {expanded ? (
                 <div className="alert-sets-page__event-content" id={contentId}>
@@ -1061,7 +1082,7 @@ function AlertInventory({
           );
         })}
       </div>
-      {filtered.groups.length === 0 ? <div className="alert-sets-page__empty-row">{groups.every((group) => group.defaultCount + group.variationCount === 0) && !filtered.hasActiveFilters ? <p>No alerts configured yet.</p> : <><p>No alerts match these filters.</p><button onClick={() => { onQuery(""); onEventFilter("all"); onStatusFilter("all"); onProfileFilter("all"); }} type="button">Clear filters</button></>}</div> : null}
+      {filtered.groups.length === 0 ? <div className="alert-sets-page__empty-row">{groups.every((group) => group.defaultCount + group.variationCount === 0) && !filtered.hasActiveFilters ? <p>No alerts configured yet.</p> : <><p>No alerts match these filters.</p><Button onClick={() => { onQuery(""); onEventFilter("all"); onStatusFilter("all"); onProfileFilter("all"); }} type="button">Clear filters</Button></>}</div> : null}
     </section>
   );
 }
@@ -1127,6 +1148,8 @@ function AlertRowsTable({
             const blockerCount = alertIssues.filter((issue) => issue.severity === "blocker").length;
             const warningCount = alertIssues.filter((issue) => issue.severity === "warning").length;
             const testMenuOpen = testMenuAlertId === alert.id;
+            // Shown as the Test saved tooltip (hover and focus) and description instead of a line under every row.
+            const testSummary = `Saved input · Browser ${alert.targetProfileIds.map(formatProfile).join(", ") || "none"}${alert.targetProfileIds.includes("landscape") ? " · Desktop Landscape when ready" : ""} · Selected device outputs · Audio and TTS included`;
             const summary = summarizeAlertInventoryRow(alert, siblings, fullGroup.known, rewardTitles);
             return (
               <tr className={alert.kind === "variation" ? "alert-sets-page__variation-row" : undefined} key={alert.id}>
@@ -1145,9 +1168,9 @@ function AlertRowsTable({
                 </span></td>
                 <td data-label="Actions">
                   <div className="alert-sets-page__row-actions alert-sets-page__alert-actions">
-                    <button aria-label={`Edit ${alert.name}`} className="button button--secondary button--compact" id={alertRowFocusId(alert.id)} onClick={() => onEdit(alert)} type="button">Edit</button>
-                    <button aria-expanded={testMenuOpen} aria-label={`Test saved ${alert.name}`} className="button button--secondary button--compact" disabled={testingAlertId === alert.id} onClick={() => onTest(alert)} type="button">{testingAlertId === alert.id ? "Testing..." : "Test saved"}</button>
-                    <button aria-label={`${alert.enabled ? "Disable" : "Enable"} ${alert.name}`} className="button button--compact alert-sets-page__toggle-action" disabled={busy} onClick={() => onToggle(alert)} type="button">{alert.enabled ? "Disable" : "Enable"}</button>
+                    <Button aria-label={`Edit ${alert.name}`} variant="default" size="xs" id={alertRowFocusId(alert.id)} onClick={() => onEdit(alert)} type="button">Edit</Button>
+                    <Tooltip label={testSummary} events={{ hover: true, focus: true, touch: false }} multiline w={320} openDelay={300} withinPortal><Button aria-describedby={`alert-test-summary-${alert.id}`} aria-expanded={testMenuOpen} aria-label={`Test saved ${alert.name}`} variant="default" size="xs" disabled={testingAlertId === alert.id} onClick={() => onTest(alert)} type="button">{testingAlertId === alert.id ? "Testing..." : "Test saved"}</Button></Tooltip>
+                    <Button aria-label={`${alert.enabled ? "Disable" : "Enable"} ${alert.name}`} variant="default" size="xs" className="alert-sets-page__toggle-action" disabled={busy} onClick={() => onToggle(alert)} type="button">{alert.enabled ? "Disable" : "Enable"}</Button>
                     <ActionMenu
                       items={[
                         { accessibleLabel: `Sample message ${alert.name}`, label: "Sample message", onSelect: () => onPreview(alert) },
@@ -1157,11 +1180,11 @@ function AlertRowsTable({
                         { accessibleLabel: `Delete ${alert.name}`, disabled: busy, label: "Delete", onSelect: () => onDelete(alert), tone: "danger" }
                       ]}
                       label={`More actions for ${alert.name}`}
-                      triggerClassName="button button--secondary button--compact"
+                      triggerSize="xs"
                     />
                   </div>
-                  <small className="alert-sets-page__test-summary">Saved input · Browser {alert.targetProfileIds.map(formatProfile).join(", ") || "none"}{alert.targetProfileIds.includes("landscape") ? " · Desktop Landscape when ready" : ""} · Selected device outputs · Audio and TTS included</small>
-                  {testMenuOpen ? <div aria-label={`Choose test profile for ${alert.name}`} className="alert-sets-page__test-profiles" role="group">{testMenuProfileIds.map((targetProfileId) => <button aria-label={`Send ${alert.name} saved test to ${formatProfile(targetProfileId)}`} className="button button--secondary button--compact" key={targetProfileId} onClick={() => onTestProfile(alert, targetProfileId)} type="button">{formatProfile(targetProfileId)}</button>)}</div> : null}
+                  <small className="alert-sets-page__test-summary sr-only" id={`alert-test-summary-${alert.id}`}>{testSummary}</small>
+                  {testMenuOpen ? <div aria-label={`Choose test profile for ${alert.name}`} className="alert-sets-page__test-profiles" role="group">{testMenuProfileIds.map((targetProfileId) => <Button aria-label={`Send ${alert.name} saved test to ${formatProfile(targetProfileId)}`} variant="default" size="xs" key={targetProfileId} onClick={() => onTestProfile(alert, targetProfileId)} type="button">{formatProfile(targetProfileId)}</Button>)}</div> : null}
                 </td>
               </tr>
             );
@@ -1220,18 +1243,12 @@ function BrowserSources({
               ? "Not listening. No connection recorded."
               : `Not listening. Last seen ${formatDateTime(source.lastConnectedAt)}`;
           return (
-            <article aria-label={`${label} browser source`} className="alert-sets-page__source" key={source.id}>
-              <div className="alert-sets-page__source-heading"><strong>{label}</strong><StatusBadge label={ready ? "Ready" : "Needs setup"} tone={ready ? "positive" : "warning"} /></div>
-              <p className="alert-sets-page__source-telemetry">{listenerStatus}</p>
-              <p className="alert-sets-page__source-dimensions"><strong>{dimensions.width} x {dimensions.height}</strong></p>
-              <p className="alert-sets-page__source-guidance">Add a Browser source in OBS at {dimensions.width} x {dimensions.height}, then paste this URL.</p>
-              {source.url === null ? <p className="alert-sets-page__source-missing">Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source`} readOnly value={source.url} /> : <code className="alert-sets-page__source-masked">{maskRouteKey(source.url)}</code>}
-              <div className="alert-sets-page__row-actions">
-                {source.copyableUrlStatus === "create-required" ? <button disabled={busy} onClick={() => onCreate(source)} type="button">Create URL</button> : null}
-                {source.url === null ? null : <><button aria-label={`${revealed ? "Hide" : "Reveal"} ${label} URL`} className="button button--secondary" onClick={() => onToggleReveal(source)} type="button">{revealed ? "Hide" : "Reveal"}</button><button aria-label={`Copy ${label} URL`} className="button button--secondary" onClick={() => onCopy(source)} type="button">Copy</button></>}
-                {source.copyableUrlStatus !== "create-required" ? <button aria-label={`Regenerate ${label} URL`} className="button button--danger" disabled={busy} onClick={() => onRegenerate(source)} type="button">Regenerate</button> : null}
-              </div>
-            </article>
+            <BrowserSourceRow key={source.id} label={label} ready={ready} telemetry={listenerStatus} metadata={<strong><bdi dir="ltr">{dimensions.width} x {dimensions.height}</bdi></strong>} guidance={<>Add a Browser source in OBS at {dimensions.width} x {dimensions.height}, then paste this URL.</>} url={source.url === null ? <p className="browser-source-row__missing">Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source`} readOnly value={source.url} /> : <code>{maskRouteKey(source.url)}</code>} actions={<>
+
+                {source.copyableUrlStatus === "create-required" ? <Button disabled={busy} onClick={() => onCreate(source)} type="button">Create URL</Button> : null}
+                {source.url === null ? null : <><Button aria-label={`${revealed ? "Hide" : "Reveal"} ${label} URL`} variant="default" onClick={() => onToggleReveal(source)} type="button">{revealed ? "Hide" : "Reveal"}</Button><Button aria-label={`Copy ${label} URL`} variant="default" onClick={() => onCopy(source)} type="button">Copy</Button></>}
+                {source.copyableUrlStatus !== "create-required" ? <Button aria-label={`Regenerate ${label} URL`} color="red" variant="light" disabled={busy} onClick={() => onRegenerate(source)} type="button">Regenerate</Button> : null}
+            </>} />
           );
         })}
       </div>
@@ -1239,9 +1256,9 @@ function BrowserSources({
   );
 }
 
-function NameDialog({ busy, draft, onCancel, onChange, onSubmit, state }: { readonly busy: boolean; readonly draft: string; readonly onCancel: () => void; readonly onChange: (value: string) => void; readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void; readonly state: NameDialogState | null }) {
+function NameDialog({ busy, error, onDismissError, draft, onCancel, onChange, onSubmit, state }: { readonly error: ActionableManagementError | null; readonly onDismissError: () => void; readonly busy: boolean; readonly draft: string; readonly onCancel: () => void; readonly onChange: (value: string) => void; readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void; readonly state: NameDialogState | null }) {
   const title = state?.action === "create" ? "Create alert set" : state?.action === "rename" ? "Rename alert set" : "Duplicate alert set";
-  return <ModalSurface labelledBy="alert-set-name-dialog-title" onCancel={onCancel} open={state !== null}><form className="alert-sets-page__modal" onSubmit={onSubmit}><div><h2 id="alert-set-name-dialog-title">{title}</h2><p>Saving does not change which alert set is active.</p></div><label><span>Alert set name</span><input autoComplete="off" autoFocus maxLength={120} onChange={(event) => onChange(event.currentTarget.value)} required value={draft} /></label><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button><button disabled={busy || draft.trim() === ""} type="submit">{state?.action === "duplicate" ? "Duplicate" : "Save"}</button></div></form></ModalSurface>;
+  return <ModalSurface pending={busy} labelledBy="alert-set-name-dialog-title" onCancel={onCancel} open={state !== null}><form className="alert-sets-page__modal" onSubmit={onSubmit}>{error === null ? null : <ManagementErrorToast error={error} onDismiss={onDismissError} />}<div><ManagementModalTitle>{title}</ManagementModalTitle><p>Saving does not change which alert set is active.</p></div><TextInput label="Alert set name" autoComplete="off" autoFocus maxLength={120} onChange={(event) => onChange(event.currentTarget.value)} required withAsterisk={false} value={draft} /><div className="management-modal__actions"><Button variant="default" disabled={busy} onClick={onCancel} type="button">Cancel</Button><Button disabled={busy || draft.trim() === ""} type="submit">{state?.action === "duplicate" ? "Duplicate" : "Save"}</Button></div></form></ModalSurface>;
 }
 
 function CreateAlertDialog({ busy, error, eventType, eventTypeLocked, loadTwitchCustomRewards, name, onCancel, onEventType, onName, onRewardSelection, onSubmit, open, overlapAlertNames, rewardSelection }: {
@@ -1265,27 +1282,21 @@ function CreateAlertDialog({ busy, error, eventType, eventTypeLocked, loadTwitch
     && rewardSelection.mode === "selected"
     && rewardSelection.rewardIds.length === 0;
   return (
-    <ModalSurface labelledBy="alert-create-dialog-title" onCancel={onCancel} open={open}>
+    <ModalSurface pending={busy} labelledBy="alert-create-dialog-title" onCancel={onCancel} open={open}>
       <form className="alert-sets-page__modal" onSubmit={onSubmit}>
         <div>
-          <h2 id="alert-create-dialog-title">Add alert</h2>
+          <ManagementModalTitle>Add alert</ManagementModalTitle>
           <p>The alert starts empty and disabled. Add its content, then review both target profiles in the editor before enabling it.</p>
         </div>
         {error === null ? null : <ManagementErrorBanner error={error} />}
-        <label>
-          <span>Event type</span>
-          <select autoFocus={!eventTypeLocked} disabled={eventTypeLocked || busy} onChange={(event) => onEventType(event.currentTarget.value as StreamEventType)} value={eventType}>
+        <NativeSelect label="Event type" autoFocus={!eventTypeLocked} disabled={eventTypeLocked || busy} onChange={(event) => onEventType(event.currentTarget.value as StreamEventType)} value={eventType}>
             {groups.map((group) => (
               <optgroup key={group} label={group}>
                 {alertStarterTemplates.filter((candidate) => candidate.group === group).map((candidate) => <option key={candidate.eventType} value={candidate.eventType}>{candidate.label}</option>)}
               </optgroup>
             ))}
-          </select>
-        </label>
-        <label>
-          <span>Alert name</span>
-          <input autoComplete="off" autoFocus={eventTypeLocked} disabled={busy} maxLength={120} onChange={(event) => onName(event.currentTarget.value)} required value={name} />
-        </label>
+        </NativeSelect>
+        <TextInput label="Alert name" autoComplete="off" autoFocus={eventTypeLocked} disabled={busy} maxLength={120} onChange={(event) => onName(event.currentTarget.value)} required withAsterisk={false} value={name} />
         {eventType === "channel_point_redemption" ? (
           <TwitchRewardPicker
             disabled={busy}
@@ -1296,8 +1307,8 @@ function CreateAlertDialog({ busy, error, eventType, eventTypeLocked, loadTwitch
           />
         ) : null}
         <div className="management-modal__actions">
-          <button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button>
-          <button disabled={busy || name.trim() === "" || rewardSelectionInvalid} type="submit">{busy ? "Creating..." : "Create alert"}</button>
+          <Button variant="default" disabled={busy} onClick={onCancel} type="button">Cancel</Button>
+          <Button disabled={busy || name.trim() === "" || rewardSelectionInvalid} type="submit">{busy ? "Creating..." : "Create alert"}</Button>
         </div>
       </form>
     </ModalSurface>
@@ -1314,25 +1325,25 @@ function VariationDialog({ alert, busy, error, name, onCancel, onName, onSubmit 
   readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <ModalSurface labelledBy="alert-variation-dialog-title" onCancel={onCancel} open={alert !== null}>
+    <ModalSurface pending={busy} labelledBy="alert-variation-dialog-title" onCancel={onCancel} open={alert !== null}>
       <form className="alert-sets-page__modal" onSubmit={onSubmit}>
         <div>
-          <h2 id="alert-variation-dialog-title">Add variation to {alert?.name}</h2>
+          <ManagementModalTitle>Add variation to {alert?.name}</ManagementModalTitle>
           <p>The variation copies the default design and starts disabled until reviewed.</p>
         </div>
         {error === null ? null : <ManagementErrorBanner error={error} />}
-        <label><span>Variation name</span><input autoComplete="off" autoFocus maxLength={120} onChange={(event) => onName(event.currentTarget.value)} required value={name} /></label>
+        <TextInput label="Variation name" autoComplete="off" autoFocus maxLength={120} onChange={(event) => onName(event.currentTarget.value)} required withAsterisk={false} value={name} />
         <div className="management-modal__actions">
-          <button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button>
-          <button disabled={busy || name.trim() === ""} type="submit">Create variation</button>
+          <Button variant="default" disabled={busy} onClick={onCancel} type="button">Cancel</Button>
+          <Button disabled={busy || name.trim() === ""} type="submit">Create variation</Button>
         </div>
       </form>
     </ModalSurface>
   );
 }
 
-function ActivationDialog({ busy, impact, onCancel, onConfirm, set }: { readonly busy: boolean; readonly impact: AlertSetActivationImpact | null; readonly onCancel: () => void; readonly onConfirm: () => void; readonly set: AlertSetOverview | null }) {
-  return <ModalSurface labelledBy="alert-set-activation-title" onCancel={onCancel} open={set !== null && impact !== null}><div className="alert-sets-page__modal"><div><h2 id="alert-set-activation-title">Activate {set?.name}?</h2><p>{impact?.replacingActiveSetName === null ? "This set will receive live events." : `${impact?.replacingActiveSetName} will become inactive. Saved configuration will not be deleted.`}</p></div><ImpactFacts impact={impact} />{(impact?.blockers.length ?? 0) > 0 ? <IssueGroup heading="Resolve before activation" issues={impact?.blockers ?? []} /> : null}{(impact?.warnings.length ?? 0) > 0 ? <IssueGroup heading="Review before activation" issues={impact?.warnings ?? []} /> : null}<div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button><button disabled={busy || (impact?.blockers.length ?? 0) > 0} onClick={onConfirm} type="button">{(impact?.warnings.length ?? 0) > 0 ? "Activate with warnings" : "Activate"}</button></div></div></ModalSurface>;
+function ActivationDialog({ busy, error, impact, onCancel, onConfirm, set }: { readonly error: ActionableManagementError | null; readonly busy: boolean; readonly impact: AlertSetActivationImpact | null; readonly onCancel: () => void; readonly onConfirm: () => void; readonly set: AlertSetOverview | null }) {
+  return <ModalSurface pending={busy} labelledBy="alert-set-activation-title" onCancel={onCancel} open={set !== null && impact !== null}><div className="alert-sets-page__modal">{error === null ? null : <ManagementErrorBanner error={error} />}<div><ManagementModalTitle>Activate {set?.name}?</ManagementModalTitle><p>{impact?.replacingActiveSetName === null ? "This set will receive live events." : `${impact?.replacingActiveSetName} will become inactive. Saved configuration will not be deleted.`}</p></div><ImpactFacts impact={impact} />{(impact?.blockers.length ?? 0) > 0 ? <IssueGroup heading="Resolve before activation" issues={impact?.blockers ?? []} /> : null}{(impact?.warnings.length ?? 0) > 0 ? <IssueGroup heading="Review before activation" issues={impact?.warnings ?? []} /> : null}<div className="management-modal__actions"><Button variant="default" disabled={busy} onClick={onCancel} type="button">Cancel</Button><Button disabled={busy || (impact?.blockers.length ?? 0) > 0} onClick={onConfirm} type="button">{(impact?.warnings.length ?? 0) > 0 ? "Activate with warnings" : "Activate"}</Button></div></div></ModalSurface>;
 }
 
 function ImpactFacts({ impact }: { readonly impact: AlertSetActivationImpact | null }) {
@@ -1345,21 +1356,15 @@ function IssueGroup({ heading, issues }: { readonly heading: string; readonly is
 }
 
 function PreviewDialog({ alert, onCancel }: { readonly alert: AlertInventoryRow | null; readonly onCancel: () => void }) {
-  return <ModalSurface labelledBy="alert-preview-title" onCancel={onCancel} open={alert !== null}><div className="alert-sets-page__modal"><div><span className="alert-sets-page__eyebrow">Text-only sample</span><h2 id="alert-preview-title">Sample message for {alert?.name}</h2></div><div className="alert-sets-page__preview"><span>{alert?.previewText}</span></div><p>This is sample text, not the rendered alert design. Template variables may remain unresolved. It does not send a test or play media.</p><div className="management-modal__actions"><button onClick={onCancel} type="button">Close</button></div></div></ModalSurface>;
+  return <ModalSurface labelledBy="alert-preview-title" onCancel={onCancel} open={alert !== null}><div className="alert-sets-page__modal"><div><span className="alert-sets-page__eyebrow">Text-only sample</span><ManagementModalTitle>Sample message for {alert?.name}</ManagementModalTitle></div><div className="alert-sets-page__preview"><span>{alert?.previewText}</span></div><p>This is sample text, not the rendered alert design. Template variables may remain unresolved. It does not send a test or play media.</p><div className="management-modal__actions"><Button onClick={onCancel} type="button">Close</Button></div></div></ModalSurface>;
 }
 
-function RegenerateDialog({ busy, confirmation, onCancel, onChange, onConfirm, state }: { readonly busy: boolean; readonly confirmation: string; readonly onCancel: () => void; readonly onChange: (value: string) => void; readonly onConfirm: () => void; readonly state: RegenerateDialogState | null }) {
-  const label = state === null ? "Browser source" : formatProfile(state.source.targetProfileId);
-  const confirmed = !state?.requiresTypedConfirmation || confirmation === "REGENERATE";
-  return <ModalSurface labelledBy="regenerate-browser-source-title" onCancel={onCancel} open={state !== null}><div className="alert-sets-page__modal"><div><h2 id="regenerate-browser-source-title">Regenerate {label} URL?</h2><p>The current URL will stop working immediately. Update every browser source that uses it.</p></div>{state?.requiresTypedConfirmation ? <label><span>Type REGENERATE to continue</span><input autoComplete="off" onChange={(event) => onChange(event.currentTarget.value)} value={confirmation} /></label> : null}<div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button><button className="button button--danger" disabled={busy || !confirmed} onClick={onConfirm} type="button">Regenerate URL</button></div></div></ModalSurface>;
+function DeleteDialog({ busy, error, onCancel, onConfirm, set }: { readonly error: ActionableManagementError | null; readonly busy: boolean; readonly onCancel: () => void; readonly onConfirm: () => void; readonly set: AlertSetOverview | null }) {
+  return <ModalSurface pending={busy} labelledBy="delete-alert-set-title" onCancel={onCancel} open={set !== null}><div className="alert-sets-page__modal">{error === null ? null : <ManagementErrorBanner error={error} />}<div><ManagementModalTitle>Delete {set?.name}?</ManagementModalTitle><p>This permanently deletes the set and its alerts. Assets used elsewhere remain available.</p></div><div className="management-modal__actions"><Button variant="default" disabled={busy} onClick={onCancel} type="button">Cancel</Button><Button color="red" disabled={busy} onClick={onConfirm} type="button">Delete alert set</Button></div></div></ModalSurface>;
 }
 
-function DeleteDialog({ busy, onCancel, onConfirm, set }: { readonly busy: boolean; readonly onCancel: () => void; readonly onConfirm: () => void; readonly set: AlertSetOverview | null }) {
-  return <ModalSurface labelledBy="delete-alert-set-title" onCancel={onCancel} open={set !== null}><div className="alert-sets-page__modal"><div><h2 id="delete-alert-set-title">Delete {set?.name}?</h2><p>This permanently deletes the set and its alerts. Assets used elsewhere remain available.</p></div><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button><button className="button button--danger" disabled={busy} onClick={onConfirm} type="button">Delete alert set</button></div></div></ModalSurface>;
-}
-
-function AlertMutationDialog({ busy, onCancel, onConfirm, state }: {
-  readonly busy: boolean;
+function AlertMutationDialog({ busy, error, onCancel, onConfirm, state }: {
+  readonly error: ActionableManagementError | null; readonly busy: boolean;
   readonly onCancel: () => void;
   readonly onConfirm: () => void;
   readonly state: AlertMutationDialogState | null;
@@ -1367,10 +1372,11 @@ function AlertMutationDialog({ busy, onCancel, onConfirm, state }: {
   const reset = state?.action === "reset";
   const title = reset ? `Reset ${state?.alert.name}?` : `Delete ${state?.alert.name}?`;
   return (
-    <ModalSurface labelledBy="alert-mutation-dialog-title" onCancel={onCancel} open={state !== null}>
+    <ModalSurface pending={busy} labelledBy="alert-mutation-dialog-title" onCancel={onCancel} open={state !== null}>
       <div className="alert-sets-page__modal">
+        {error === null ? null : <ManagementErrorBanner error={error} />}
         <div>
-          <h2 id="alert-mutation-dialog-title">{title}</h2>
+          <ManagementModalTitle>{title}</ManagementModalTitle>
           <p>{reset
             ? "The saved design and matching controls will return to the event default. The alert will be disabled and require review."
             : state?.alert.kind === "default"
@@ -1379,8 +1385,8 @@ function AlertMutationDialog({ busy, onCancel, onConfirm, state }: {
           {state?.alert.enabled ? <p><strong>Live impact:</strong> This alert is enabled in the selected set. Confirming can change live output immediately.</p> : null}
         </div>
         <div className="management-modal__actions">
-          <button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button>
-          <button className={reset ? "button button--primary" : "button button--danger"} disabled={busy} onClick={onConfirm} type="button">{reset ? "Reset alert" : "Delete alert"}</button>
+          <Button variant="default" disabled={busy} onClick={onCancel} type="button">Cancel</Button>
+          <Button {...(reset ? {} : { color: "red" })} disabled={busy} onClick={onConfirm} type="button">{reset ? "Reset alert" : "Delete alert"}</Button>
         </div>
       </div>
     </ModalSurface>
@@ -1446,17 +1452,9 @@ function formatProfile(value: "landscape" | "vertical"): string {
 }
 
 function toActionableError(summary: string, cause: unknown, nextStep: string): ActionableManagementError {
-  const message = cause instanceof Error ? cause.message : "An unexpected error occurred.";
-  const referenceId = /\b(?:ref|err)[_-][A-Za-z0-9_-]+\b/u.exec(message)?.[0]
-    ?? `ui_${globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36)}`;
-  console.error(`[${referenceId}] ${summary}`, cause);
-  return {
-    summary,
-    cause: message,
-    nextStep,
-    severity: "error",
-    occurredAt: new Date().toISOString(),
-    referenceId,
-    correction: { label: "Open Diagnostics", route: `/manage/diagnostics?reference=${encodeURIComponent(referenceId)}` }
-  };
+  // Legacy alert clients may carry the server reference in their message.
+  const legacyReference = cause instanceof Error ? /\b(?:ref|err)[_-][A-Za-z0-9_-]+\b/u.exec(cause.message)?.[0] : undefined;
+  const contextualCause = cause instanceof Error && legacyReference !== undefined && !("referenceId" in cause)
+    ? Object.assign(new Error(cause.message), cause, { referenceId: legacyReference }) : cause;
+  return actionableError(contextualCause, summary, nextStep);
 }

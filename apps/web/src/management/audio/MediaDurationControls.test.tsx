@@ -1,5 +1,6 @@
+import { renderManagement as render } from "../../test-support/render-management.js";
 import type { AssetLibraryItem } from "@stream-jams/core";
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 import { MediaDurationControls } from "./MediaDurationControls.js";

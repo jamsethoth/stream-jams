@@ -1,3 +1,4 @@
+import { Button, Checkbox, NativeSelect } from "@mantine/core";
 import { alertFontPresets, musicLimits, type MusicAppearance, type MusicProfileConfig, type MusicTypography } from "@stream-jams/core";
 import { useEffect, useState } from "react";
 import { MusicNumberField } from "./MusicNumberField.js";
@@ -29,20 +30,20 @@ export function MusicAppearanceEditor({ profile, view, onChange, onPickFont, sel
     const font = appearance[role];
     const update = (patch: Partial<MusicTypography>) => changeView({ ...appearance, [role]: { ...font, ...patch } });
     return <fieldset><legend>{label}</legend>
-      <label>{label} preset<select value={font.fontPreset} onChange={event => update({ fontPreset: event.currentTarget.value as MusicTypography["fontPreset"] })}>{alertFontPresets.map(preset => <option key={preset.id} value={preset.id}>{preset.label}</option>)}</select></label>
-      <span>{font.fontAssetId ?? "System font"}</span><button type="button" onClick={() => onPickFont(role)}>Choose {label.toLowerCase()} font</button>{font.fontAssetId === null ? null : <button type="button" onClick={() => update({ fontAssetId: null })}>Remove {label.toLowerCase()} font</button>}
+      <NativeSelect label={`${label} preset`} value={font.fontPreset} onChange={event => update({ fontPreset: event.currentTarget.value as MusicTypography["fontPreset"] })}>{alertFontPresets.map(preset => <option key={preset.id} value={preset.id}>{preset.label}</option>)}</NativeSelect>
+      <span>{font.fontAssetId ?? "System font"}</span><Button variant="default" type="button" onClick={() => onPickFont(role)}>Choose {label.toLowerCase()} font</Button>{font.fontAssetId === null ? null : <Button variant="default" type="button" onClick={() => update({ fontAssetId: null })}>Remove {label.toLowerCase()} font</Button>}
       <MusicNumberField label={`${label} size (px)`} value={font.fontSizePx} min={8} max={144} onCommit={fontSizePx => update({ fontSizePx })} />
       <details><summary>More text options</summary><div className="music-editor__grid">
-      <label>{label} weight<select value={font.fontWeight} onChange={event => update({ fontWeight: Number(event.currentTarget.value) })}>{[100, 200, 300, 400, 500, 600, 700, 800, 900].map(weight => <option key={weight} value={weight}>{weight}</option>)}</select></label>
+      <NativeSelect label={`${label} weight`} value={font.fontWeight} onChange={event => update({ fontWeight: Number(event.currentTarget.value) })}>{[100, 200, 300, 400, 500, 600, 700, 800, 900].map(weight => <option key={weight} value={weight}>{weight}</option>)}</NativeSelect>
       <MusicNumberField label={`${label} letter spacing (px)`} value={font.letterSpacingPx} min={musicLimits.letterSpacingPx.min} max={musicLimits.letterSpacingPx.max} allowFraction onCommit={letterSpacingPx => update({ letterSpacingPx })} />
-      <label><input checked={font.italic} onChange={event => update({ italic: event.currentTarget.checked })} type="checkbox" /> Italic {label.toLowerCase()}</label>
-      <label><input checked={font.underline} onChange={event => update({ underline: event.currentTarget.checked })} type="checkbox" /> Underline {label.toLowerCase()}</label>
+      <Checkbox label={<>Italic {label.toLowerCase()}</>} checked={font.italic} onChange={event => update({ italic: event.currentTarget.checked })} />
+      <Checkbox label={<>Underline {label.toLowerCase()}</>} checked={font.underline} onChange={event => update({ underline: event.currentTarget.checked })} />
     </div></details></fieldset>;
   };
   return <section className="music-editor__section" aria-label="Appearance controls">
-    <label>Appearance component<select value={selectedComponent} onChange={event => onSelectComponent?.(event.currentTarget.value as NonNullable<Props["selectedComponent"]>)}>
+    <NativeSelect label="Appearance component" value={selectedComponent} onChange={event => onSelectComponent?.(event.currentTarget.value as NonNullable<Props["selectedComponent"]>)}>
       {(["widget", "artwork", "title", "details", "progress"] as const).map(component => <option key={component} value={component}>{component[0]!.toUpperCase() + component.slice(1)}</option>)}
-    </select></label>
+    </NativeSelect>
     {selectedComponent === "widget" ? <>
     <div className="music-editor__grid">
       {number("Widget width (px)", "widthPx", musicLimits.widthPx)}{number("Widget height (px)", "heightPx", musicLimits.heightPx)}
@@ -51,10 +52,9 @@ export function MusicAppearanceEditor({ profile, view, onChange, onPickFont, sel
     </div>
     <div className="music-editor__grid">{color("backgroundStart", "Background start RGBA")}{color("backgroundEnd", "Background end RGBA")}{color("border", "Border RGBA")}</div>
     <details><summary>Advanced spacing</summary><div className="music-editor__grid">{(["top", "right", "bottom", "left"] as const).map(inset)}</div></details>
-    <label>Shadow preset<select value={appearance.shadow.color.endsWith("00") ? "off" : appearance.shadow.offsetX === 0 && appearance.shadow.offsetY === 4 && appearance.shadow.blur === 12 && appearance.shadow.spread === 0 && appearance.shadow.color === "#00000033" ? "subtle" : appearance.shadow.offsetX === 0 && appearance.shadow.offsetY === 18 && appearance.shadow.blur === 50 && appearance.shadow.spread === 0 && appearance.shadow.color === "#00000047" ? "strong" : "custom"}
-      onChange={event => { const preset = event.currentTarget.value; if (preset === "custom") return; changeView({ ...appearance, shadow: preset === "off" ? { ...appearance.shadow, color: appearance.shadow.color.slice(0, 7) + "00" } : { offsetX: 0, offsetY: preset === "subtle" ? 4 : 18, blur: preset === "subtle" ? 12 : 50, spread: 0, color: preset === "subtle" ? "#00000033" : "#00000047" } }); }}>
+    <NativeSelect label="Shadow preset" value={appearance.shadow.color.endsWith("00") ? "off" : appearance.shadow.offsetX === 0 && appearance.shadow.offsetY === 4 && appearance.shadow.blur === 12 && appearance.shadow.spread === 0 && appearance.shadow.color === "#00000033" ? "subtle" : appearance.shadow.offsetX === 0 && appearance.shadow.offsetY === 18 && appearance.shadow.blur === 50 && appearance.shadow.spread === 0 && appearance.shadow.color === "#00000047" ? "strong" : "custom"} onChange={event => { const preset = event.currentTarget.value; if (preset === "custom") return; changeView({ ...appearance, shadow: preset === "off" ? { ...appearance.shadow, color: appearance.shadow.color.slice(0, 7) + "00" } : { offsetX: 0, offsetY: preset === "subtle" ? 4 : 18, blur: preset === "subtle" ? 12 : 50, spread: 0, color: preset === "subtle" ? "#00000033" : "#00000047" } }); }}>
       <option value="off">Off</option><option value="subtle">Subtle</option><option value="strong">Strong</option><option value="custom">Custom</option>
-    </select></label>
+    </NativeSelect>
     <details><summary>Custom shadow</summary><div className="music-editor__shadow"><div className="music-editor__grid music-editor__shadow-dimensions">
       {([ ["offsetX", "Shadow X (px)", -128, 128], ["offsetY", "Shadow Y (px)", -128, 128], ["blur", "Shadow blur (px)", 0, 128], ["spread", "Shadow spread (px)", -64, 64] ] as const).map(([key, label, min, max]) => <MusicNumberField key={key} label={label} min={min} max={max} value={appearance.shadow[key]} onCommit={value => changeView({ ...appearance, shadow: { ...appearance.shadow, [key]: value } })} />)}
     </div>

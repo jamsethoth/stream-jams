@@ -11,8 +11,3 @@ fieldset.audio-fade-controls {
   display: grid;
   gap: 8px;
 }
-
-.audio-fade-controls__duration {
-  display: grid;
-  gap: 5px;
-}

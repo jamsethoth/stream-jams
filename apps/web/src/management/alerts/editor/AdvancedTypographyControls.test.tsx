@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { renderManagement as render } from "../../../test-support/render-management.js";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { compatibilityAlertTextStyle, type AlertTextStyle, type AssetRecord } from "@stream-jams/core";
 import { useState } from "react";

@@ -1,3 +1,4 @@
+import { renderManagement as render } from "../../../test-support/render-management.js";
 import { createTestMediaPreviewApi, previewDescriptor } from "../../../test-support/media-preview-fixture.js";
 import {
   compatibilityAlertTextBoxStyle,
@@ -9,7 +10,7 @@ import {
   type RegisteredProviderView,
   type TwitchCustomReward
 } from "@stream-jams/core";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AssetApi } from "../../assets/asset-api.js";
@@ -68,6 +69,74 @@ afterEach(() => {
 });
 
 describe("AlertEditorPage", () => {
+  it.each(["page", "confirmed save", "copy", "navigation", "confirmed navigation", "navigation preflight", "server confirmation"] as const)("records the displayed generated reference once for a %s failure", async (workflow) => {
+    const user = userEvent.setup();
+    const navigation = workflow.includes("navigation");
+    const confirmed = workflow.startsWith("confirmed");
+    const reportAlertEditorError = vi.fn<NonNullable<AlertEditorPageApi["reportAlertEditorError"]>>(async (_alertId, input) => ({ referenceId: input.error.referenceId! }));
+    const saveAlertEditorDocument = vi.fn<AlertEditorPageApi["saveAlertEditorDocument"]>().mockRejectedValue(new Error("Disposable storage failed."));
+    if (workflow === "server confirmation") saveAlertEditorDocument.mockRejectedValueOnce(new ManagementHttpError("Review live impact.", "ALERT_EDITOR_LIVE_IMPACT_CONFIRMATION_REQUIRED", null));
+    const getAlertSet = vi.fn(async () => alertSetDetail(confirmed));
+    window.history.replaceState(null, "", "/manage/modules/alerts/editor/alert-follow");
+    render(<DirtyNavigationProvider><AlertEditorPage alertId="alert-follow" assetApi={assetApi} managementApi={{
+      getAlertEditorDocument: vi.fn(async (alertId) => { if (alertId !== "alert-follow") throw new Error("Disposable source failed."); return editorDocument(); }),
+      getAlertSet, listRegisteredProviders: vi.fn(async () => []), getAssetChangeImpact: vi.fn(), listAssetLibraryItems: vi.fn(async () => []), deleteAsset: vi.fn(), updateAssetMetadata: vi.fn(), saveAlertEditorDocument, sendAlertEditorTest: vi.fn(), reportAlertEditorError
+    }} onBack={() => undefined} onOpenAlert={() => undefined} /><NavigationProbe /></DirtyNavigationProvider>);
+    const template = await screen.findByRole("textbox", { name: "Message template" });
+    fireEvent.change(template, { target: { value: "Retained diagnostic draft" } });
+    if (workflow === "copy") {
+      await user.click(screen.getByRole("tab", { name: "Alert" }));
+      await user.click(screen.getByRole("button", { name: "Copy design from..." }));
+      await user.click(within(screen.getByRole("dialog", { name: "Copy design from another alert?" })).getByRole("button", { name: "Copy design" }));
+    } else {
+      if (workflow === "navigation preflight") getAlertSet.mockRejectedValue(new Error("Disposable status failed."));
+      if (navigation) {
+        await user.click(screen.getByRole("button", { name: "Leave editor" }));
+        await user.click(screen.getByRole("button", { name: "Save and leave" }));
+      } else await user.click(screen.getByRole("button", { name: "Save" }));
+      if (confirmed || workflow === "server confirmation") {
+        const review = await screen.findByRole("dialog", { name: "Save changes to active alert?" });
+        expect(reportAlertEditorError).not.toHaveBeenCalled();
+        await user.click(within(review).getByRole("button", { name: "Save changes" }));
+      }
+    }
+    const failure = await screen.findByRole("alert");
+    await waitFor(() => expect(reportAlertEditorError).toHaveBeenCalledOnce());
+    const recorded = reportAlertEditorError.mock.calls[0]!;
+    expect(recorded[0]).toBe("alert-follow");
+    expect(recorded[1].setId).toBe("set-default");
+    expect(recorded[1].error.referenceId).toMatch(/^ui_/u);
+    expect(failure).toHaveTextContent(recorded[1].error.referenceId!);
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    if (workflow !== "page") expect(within(screen.getByRole("dialog")).getByRole("alert")).toBe(failure);
+    if (navigation) expect(window.location.pathname).toBe("/manage/modules/alerts/editor/alert-follow");
+  });
+
+  it("locks active-save dismissal, issues one request, and keeps typed failure in its review for retry", async () => {
+    const { user, saveAlertEditorDocument } = renderWorkspaceEditor();
+    const template = await screen.findByRole("textbox", { name: "Message template" });
+    fireEvent.change(template, { target: { value: "Retained review draft" } });
+    let reject!: (cause: unknown) => void;
+    saveAlertEditorDocument.mockImplementationOnce(() => new Promise((_resolve, rejectRequest) => { reject = rejectRequest; }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const dialog = await screen.findByRole("dialog", { name: "Save changes to active alert?" });
+    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(dialog).toBeVisible();
+    expect(saveAlertEditorDocument).toHaveBeenCalledOnce();
+    await act(async () => reject(new ManagementHttpError("Disposable storage failed", "UNAVAILABLE", "fixture-active-save", "Restart storage, then retry this review.")));
+    const failure = await within(dialog).findByRole("alert");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(failure).toHaveTextContent("fixture-active-save");
+    expect(failure).toHaveTextContent("Restart storage, then retry this review.");
+    expect(template).toHaveValue("Retained review draft");
+    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("dialog", { name: "Save changes to active alert?" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("saves the video loop choice on the visual layer", async () => {
     const source = editorDocument();
     const visualDocument: AlertEditorDocument = {
@@ -238,7 +307,7 @@ describe("AlertEditorPage", () => {
     expect(screen.getByRole("checkbox", { name: "Play embedded audio" })).toBeChecked();
     expect(screen.getByText(/Both the video soundtrack and separate audio will play/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Save" }));
-    await user.click(within(screen.getByRole("dialog", { name: "Save changes to active alert?" })).getByRole("button", { name: "Save changes" }));
+    await user.click(within(await screen.findByRole("dialog", { name: "Save changes to active alert?" })).getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
     expect(saveAlertEditorDocument.mock.calls[0]![1].layers.find(layer => layer.type === "video")).toMatchObject({ playEmbeddedAudio: true, audioVolume: 1 });
   });
@@ -288,7 +357,7 @@ describe("AlertEditorPage", () => {
     await user.click(screen.getByRole("button", { name: "Redo" }));
     expect(saveAlertEditorDocument).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Save" }));
-    await user.click(within(screen.getByRole("dialog", { name: "Save changes to active alert?" })).getByRole("button", { name: "Save changes" }));
+    await user.click(within(await screen.findByRole("dialog", { name: "Save changes to active alert?" })).getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
     const saved = saveAlertEditorDocument.mock.calls[0]![1];
     expect(saved.layers.find(layer => layer.type === "video")).toMatchObject({ playEmbeddedAudio: true, audioVolume: 2 });
@@ -351,10 +420,13 @@ describe("AlertEditorPage", () => {
       fireEvent.click(screen.getByRole("button", { name: "Preview" }));
       await vi.advanceTimersByTimeAsync(0);
     });
-    await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
+    // Batch the simulated animation frames into the observed boundary. Flushing
+    // React after every fake frame makes this integration check depend on CPU
+    // pressure rather than the controller's media/visual-exit timing.
+    await act(async () => { vi.advanceTimersByTime(4_000); });
     expect(screen.getByRole("slider", { name: "Preview position" })).toHaveValue("4000");
     expect(screen.getByRole("button", { name: "Pause preview" })).toBeInTheDocument();
-    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    await act(async () => { vi.advanceTimersByTime(300); });
     expect(screen.getByRole("slider", { name: "Preview position" })).toHaveValue("4271");
     expect(screen.getByRole("button", { name: "Replay preview" })).toBeInTheDocument();
   });
@@ -446,7 +518,8 @@ describe("AlertEditorPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Preview" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(play).toHaveBeenCalledOnce();
-    await act(async () => { await vi.advanceTimersByTimeAsync(document.durationMs); });
+    // Batch virtual playback frames; do not rerender the complete inspector per millisecond tick.
+    await act(async () => { vi.advanceTimersByTime(document.durationMs); });
     expect(pause).toHaveBeenCalledOnce();
     expect(revoke).toHaveBeenCalledOnce();
   });
@@ -455,7 +528,7 @@ describe("AlertEditorPage", () => {
     await user.click(await screen.findByText("Sound", { selector: ".alert-editor-inspector__layer-list span" }));
     fireEvent.change(screen.getByRole("spinbutton", { name: "Volume" }), { target: { value: "70" } });
     await user.click(screen.getByRole("button", { name: "Save" }));
-    const dialog = screen.getByRole("dialog", { name: "Save changes to active alert?" });
+    const dialog = await screen.findByRole("dialog", { name: "Save changes to active alert?" });
     expect(dialog).toHaveTextContent("Private headphones");
     expect(saveAlertEditorDocument).not.toHaveBeenCalled();
   });
@@ -484,7 +557,7 @@ describe("AlertEditorPage", () => {
     await user.click(await screen.findByRole("tab", { name: "Alert" }));
     await user.click(await screen.findByRole("checkbox", { name: /Private headphones/ }));
     await user.click(screen.getByRole("button", { name: "Save" }));
-    const dialog = screen.getByRole("dialog", { name: "Save changes to active alert?" });
+    const dialog = await screen.findByRole("dialog", { name: "Save changes to active alert?" });
     expect(dialog).toHaveTextContent("Private headphones");
     expect(saveAlertEditorDocument).not.toHaveBeenCalled();
     await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
@@ -507,7 +580,7 @@ describe("AlertEditorPage", () => {
     expect(browser()).toBeChecked();
     await user.click(browser());
     await user.click(screen.getByRole("button", { name: "Save" }));
-    const dialog = screen.getByRole("dialog", { name: "Save changes to active alert?" });
+    const dialog = await screen.findByRole("dialog", { name: "Save changes to active alert?" });
     expect(dialog).toHaveTextContent("Audio outputs");
     await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
@@ -1101,6 +1174,7 @@ describe("AlertEditorPage", () => {
       fireEvent.change(chance, { target: { value: invalidValue } });
 
       expect(chance).toHaveAttribute("aria-invalid", "true");
+      expect(chance).toHaveAttribute("aria-describedby", "alert-editor-relative-chance-error");
       expect(screen.getByText("Relative chance must be a positive whole number.", { selector: "#alert-editor-relative-chance-error" })).toBeVisible();
       expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
       expect(screen.getAllByRole("button", { name: "Preview" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
@@ -1482,6 +1556,7 @@ describe("AlertEditorPage", () => {
     const fontSize = within(typography).getByLabelText("Font size");
     fireEvent.change(fontSize, { target: { value: "513" } });
     expect(fontSize).toHaveAttribute("aria-invalid", "true");
+    expect(fontSize.getAttribute("aria-describedby")).toContain("error");
     expect(within(typography).getByRole("alert")).toHaveTextContent("Font size must be between 8 and 512.");
     expect(screen.getByRole("button", { name: "Preview" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Test draft" })).toBeDisabled();
@@ -1741,9 +1816,7 @@ describe("AlertEditorPage", () => {
   it("loads focused navigation and supports keyboard-accessible inspector tabs", async () => {
     const { user, onBack } = renderWorkspaceEditor();
     expect(await screen.findByRole("heading", { name: "New follower" })).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(
-      "AlertsEveryday alertsNew follower"
-    );
+    expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getAllByRole("listitem").map(item => item.textContent)).toEqual(["Alerts", "Everyday alerts", "New follower"]);
     await user.click(screen.getByRole("button", { name: "Back to alerts" }));
     expect(onBack).toHaveBeenCalledWith("set-default");
 
@@ -1766,9 +1839,10 @@ describe("AlertEditorPage", () => {
     for (const inspectorTab of [layersTab, alertTab, eventTab]) {
       expect(globalThis.document.getElementById(inspectorTab.getAttribute("aria-controls")!)).not.toBeNull();
     }
-    expect(layersTab).toHaveAttribute("aria-controls", "alert-editor-panel-layers");
-    expect(screen.getByRole("tabpanel")).toHaveAttribute("id", "alert-editor-panel-layers");
-    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "alert-editor-tab-layers");
+    expect(layersTab).toHaveAttribute("aria-controls", screen.getByRole("tabpanel").id);
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", layersTab.id);
+    expect(screen.queryByRole("group", { name: "Test destinations" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Landscape/ })).toHaveAttribute("aria-pressed", "true");
   });
 
@@ -1780,7 +1854,7 @@ describe("AlertEditorPage", () => {
     await user.paste("Welcome, James!");
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Save" }));
-    const saveWarning = screen.getByRole("dialog", { name: "Save changes to active alert?" });
+    const saveWarning = await screen.findByRole("dialog", { name: "Save changes to active alert?" });
     expect(saveWarning).toHaveTextContent("Follow events");
     expect(saveWarning).toHaveTextContent("Landscape");
     expect(saveAlertEditorDocument).not.toHaveBeenCalled();
@@ -2356,7 +2430,7 @@ describe("AlertEditorPage", () => {
     await user.click(screen.getByRole("button", { name: "Leave editor" }));
     await user.click(screen.getByRole("button", { name: "Save and leave" }));
 
-    expect(screen.getByRole("dialog", { name: "Save changes to active alert?" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Save changes to active alert?" })).toBeInTheDocument();
     expect(saveAlertEditorDocument).not.toHaveBeenCalled();
     expect(window.location.pathname).toBe("/manage/modules/alerts/editor/alert-follow");
 
@@ -2852,7 +2926,7 @@ describe("AlertEditorPage", () => {
     await user.click(liveTtsSummary);
     expect(liveTtsSummary.closest("details")).toHaveAttribute("open");
     expect(enabled).toBeVisible();
-    expect(enabled.closest("label")).toHaveClass("alert-editor-inspector__check");
+    expect(enabled).toHaveAccessibleName("Enable TTS for this alert");
     expect(screen.getByText("Studio Speaker.bot")).toBeVisible();
     expect(screen.getByText("Speaker.bot is used for live TTS.")).toBeVisible();
     expect(enabled).toBeChecked();
@@ -3074,8 +3148,10 @@ describe("AlertEditorPage", () => {
     await user.click(screen.getByRole("button", { name: "Save and leave" }));
     await user.click(await screen.findByRole("button", { name: "Save changes" }));
 
-    expect(await screen.findByRole("dialog", { name: "Leave with unsaved changes?" }))
-      .toHaveTextContent("Database write failed. Reference ref-save-17.");
+    const navigationReview = await screen.findByRole("dialog", { name: "Leave with unsaved changes?" });
+    expect(navigationReview).toHaveTextContent("Database write failed. Reference ref-save-17.");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(within(navigationReview).getByRole("alert")).toHaveTextContent("ref-save-17");
     expect(window.location.pathname).toBe("/manage/modules/alerts/editor/alert-follow");
   });
 
@@ -3978,7 +4054,9 @@ describe("AlertEditorPage", () => {
     await user.selectOptions(within(dialog).getByRole("combobox", { name: "Source alert" }), source.id);
     await user.click(within(dialog).getByRole("button", { name: "Copy design" }));
     await user.keyboard("{Escape}");
-    expect(screen.queryByRole("dialog", { name: "Copy design from another alert?" })).not.toBeInTheDocument();
+    expect(dialog).toBeVisible();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(within(dialog).getByRole("combobox", { name: "Source alert" })).toBeDisabled();
 
     const name = screen.getByRole("textbox", { name: "Alert name" });
     fireEvent.change(name, { target: { value: "Edited while copying" } });

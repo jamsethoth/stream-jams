@@ -8,7 +8,7 @@ function api(pairings: readonly AutomationPairingView[] = [], grants: readonly A
   let pending = [...pairings]; let paired = [...grants];
   return { listPairings: fn(async () => pending), listGrants: fn(async () => paired), approve: fn(async id => { pending = pending.map(p => p.id === id ? { ...p, status: "approved" } : p); return pending.find(p => p.id === id)!; }), deny: fn(async id => { pending = pending.map(p => p.id === id ? { ...p, status: "denied" } : p); return pending.find(p => p.id === id)!; }), revoke: fn(async id => { paired = paired.map(g => g.id === id ? { ...g, revokedAt: "2026-10-03T00:01:00Z" } : g); return { revoked: true }; }) };
 }
-const meta = { title: "Management/Settings/Automation", component: AutomationSettingsPanel, tags: ["scoped-automation"], args: { api: api() }, parameters: { layout: "padded" } } satisfies Meta<typeof AutomationSettingsPanel>;
+const meta = { title: "Management/Settings/Automation", component: AutomationSettingsPanel, tags: ["mantine-stage6b", "scoped-automation"], args: { api: api() }, parameters: { layout: "padded" } } satisfies Meta<typeof AutomationSettingsPanel>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Empty: Story = {};

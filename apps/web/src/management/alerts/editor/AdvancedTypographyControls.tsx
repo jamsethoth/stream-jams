@@ -1,3 +1,4 @@
+import { Button, Checkbox, NativeSelect, TextInput } from "@mantine/core";
 import { createDefaultTextWarp, type AlertTextStyle, type AssetLibraryItem } from "@stream-jams/core";
 import { useEffect, useRef, useState } from "react";
 import type { AssetApi } from "../../assets/asset-api.js";
@@ -30,22 +31,18 @@ export function AdvancedTypographyControls({ value, onChange, assets, assetApi, 
     } finally { if (active.current) setUploading(false); }
   }
   return <>
-    <label><span>Uploaded font</span><select aria-label="Uploaded font" value={value.fontAssetId ?? ""} onChange={(event) => onChange({ ...value, fontAssetId: event.currentTarget.value || null })}>
-      <option value="">Use font preset</option>
-      {value.fontAssetId && !fonts.some((font) => font.id === value.fontAssetId) ? <option value={value.fontAssetId}>Unavailable font — select another</option> : null}
-      {fonts.map((font) => <option key={font.id} value={font.id}>{font.displayName}</option>)}
-    </select></label>
-    <label><span>{uploading ? "Uploading font…" : "Upload reusable font"}</span><input aria-label="Upload reusable font" type="file" accept=".ttf,.otf,.woff,.woff2" disabled={uploading} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void upload(file); }} /></label>
+    <NativeSelect label="Uploaded font" aria-label="Uploaded font" value={value.fontAssetId ?? ""} onChange={(event) => onChange({ ...value, fontAssetId: event.currentTarget.value || null })}><option value="">Use font preset</option>{value.fontAssetId && !fonts.some((font) => font.id === value.fontAssetId) ? <option value={value.fontAssetId}>Unavailable font — select another</option> : null}{fonts.map((font) => <option key={font.id} value={font.id}>{font.displayName}</option>)}</NativeSelect>
+    <TextInput label={<>{uploading ? "Uploading font…" : "Upload reusable font"}</>} aria-label="Upload reusable font" type="file" accept=".ttf,.otf,.woff,.woff2" disabled={uploading} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void upload(file); }} />
     {error ? <p role="alert">{error}</p> : null}
-    <label className="alert-editor-inspector__check"><input type="checkbox" checked={value.italic ?? false} onChange={(event) => onChange({ ...value, italic: event.currentTarget.checked })} />Italic</label>
-    <label className="alert-editor-inspector__check"><input type="checkbox" checked={value.underline ?? false} onChange={(event) => onChange({ ...value, underline: event.currentTarget.checked })} />Underline</label>
-    <label><span>Letter spacing</span><input aria-label="Letter spacing" type="number" min={-20} max={100} step={0.5} value={value.letterSpacingPx ?? 0} onChange={(event) => { const amount = event.currentTarget.valueAsNumber; if (Number.isFinite(amount)) onChange({ ...value, letterSpacingPx: Math.max(-20, Math.min(100, amount)) }); }} /></label>
-    <label className="alert-editor-inspector__check"><input type="checkbox" checked={value.outline != null} onChange={(event) => onChange({ ...value, outline: event.currentTarget.checked ? { color: "#000000FF", widthPx: 2 } : null })} />Text outline</label>
+    <Checkbox label="Italic" checked={value.italic ?? false} onChange={(event) => onChange({ ...value, italic: event.currentTarget.checked })} />
+    <Checkbox label="Underline" checked={value.underline ?? false} onChange={(event) => onChange({ ...value, underline: event.currentTarget.checked })} />
+    <TextInput label="Letter spacing" aria-label="Letter spacing" type="number" min={-20} max={100} step={0.5} value={value.letterSpacingPx ?? 0} onChange={(event) => { const amount = event.currentTarget.valueAsNumber; if (Number.isFinite(amount)) onChange({ ...value, letterSpacingPx: Math.max(-20, Math.min(100, amount)) }); }} />
+    <Checkbox label="Text outline" checked={value.outline != null} onChange={(event) => onChange({ ...value, outline: event.currentTarget.checked ? { color: "#000000FF", widthPx: 2 } : null })} />
     {value.outline ? <>
       <RgbaColorControl label="Outline color" value={value.outline.color} onChange={(color) => onChange({ ...value, outline: { ...value.outline!, color } })} />
-      <label><span>Outline thickness</span><input aria-label="Outline thickness" type="number" min={0} max={32} step={0.5} value={value.outline.widthPx} onChange={(event) => { const width = event.currentTarget.valueAsNumber; if (Number.isFinite(width)) onChange({ ...value, outline: { ...value.outline!, widthPx: Math.max(0, Math.min(32, width)) } }); }} /></label>
+      <TextInput label="Outline thickness" aria-label="Outline thickness" type="number" min={0} max={32} step={0.5} value={value.outline.widthPx} onChange={(event) => { const width = event.currentTarget.valueAsNumber; if (Number.isFinite(width)) onChange({ ...value, outline: { ...value.outline!, widthPx: Math.max(0, Math.min(32, width)) } }); }} />
     </> : null}
-    <label className="alert-editor-inspector__check"><input type="checkbox" checked={value.warp != null} onChange={(event) => { onChange({ ...value, warp: event.currentTarget.checked ? createDefaultTextWarp() : null }); onEditWarp(event.currentTarget.checked); }} />Warp text</label>
-    {value.warp ? <button className="button button--secondary button--compact" type="button" onClick={() => onEditWarp(!editingWarp)}>{editingWarp ? "Done editing warp" : "Edit warp"}</button> : null}
+    <Checkbox label="Warp text" checked={value.warp != null} onChange={(event) => { onChange({ ...value, warp: event.currentTarget.checked ? createDefaultTextWarp() : null }); onEditWarp(event.currentTarget.checked); }} />
+    {value.warp ? <Button variant="default" type="button" onClick={() => onEditWarp(!editingWarp)}>{editingWarp ? "Done editing warp" : "Edit warp"}</Button> : null}
   </>;
 }

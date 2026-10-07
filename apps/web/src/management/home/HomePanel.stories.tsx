@@ -30,6 +30,7 @@ const configuredSummary: HomeSetupSummary = {
 };
 
 const meta = {
+  tags: ["mantine-stage6a"],
   title: "Management/Home",
   component: HomePanel
 } satisfies Meta<typeof HomePanel>;

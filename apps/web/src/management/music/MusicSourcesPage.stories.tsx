@@ -7,7 +7,7 @@ import { MusicSourcesPage } from "./MusicSourcesPage.js";
 const provider: RegisteredProviderView = { id: "provider-story", name: "Studio Pear", kind: "pear-desktop", capability: "music-source", active: true, connectionState: "connected", intakeState: null, validatedAt: "2026-10-04T12:00:00.000Z", error: null, usedByAlertCount: 0 };
 const baseStatus = { enabled: true, selectedProviderId: provider.id, status: { state: "connected" as const, stale: false, diagnosticReference: null }, missingAssetIds: { landscape: [], vertical: [] } };
 
-const meta = { title: "Management/Music Sources", component: MusicSourcesPage, tags: ["music-task-12"], args: { api: createStoryManagementApi() } } satisfies Meta<typeof MusicSourcesPage>;
+const meta = { title: "Management/Music Sources", component: MusicSourcesPage, tags: ["music-task-12", "mantine-stage6a"], args: { api: createStoryManagementApi() } } satisfies Meta<typeof MusicSourcesPage>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 

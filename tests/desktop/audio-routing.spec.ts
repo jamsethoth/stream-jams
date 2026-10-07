@@ -122,7 +122,8 @@ test("packaged audio player is isolated, hidden, persistent, and lists only expl
     await management.getByRole("link", { name: "Settings", exact: true }).click();
     const audioSummary = management.locator("summary").filter({ hasText: "Audio outputs" });
     if (!await audioSummary.evaluate((summary) => (summary.parentElement as HTMLDetailsElement).open)) await audioSummary.click();
-    await expect(management.getByRole("heading", { name: "Audio outputs", exact: true })).toBeVisible();
+    // Settings shows the title in the disclosure summary; the embedded panel is a named region.
+    await expect(management.getByRole("region", { name: "Audio outputs", exact: true })).toBeVisible();
     await management.getByLabel("New output name").fill("Silent UI route");
     await management.getByRole("button", { name: "Create output", exact: true }).click();
     const uiRoute = management.getByRole("group", { name: "Silent UI route audio output" });

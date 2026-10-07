@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Button } from "@mantine/core";
 import { ManagementToast, type ManagementToastNotice } from "./ManagementToast.js";
 
 export interface MaskedValueProps {
@@ -27,9 +28,9 @@ export function MaskedValue({ label, value }: MaskedValueProps) {
     <div className="management-masked-value">
       <code aria-label={label}>{revealed ? value : maskValue(value)}</code>
       <div className="management-masked-value__actions">
-        <button
+        <Button
           aria-label={`${revealed ? "Hide" : "Reveal"} ${label}`}
-          className="button button--secondary button--compact"
+          variant="default"
           onClick={() => {
             setRevealed((current) => !current);
             setFeedback(null);
@@ -37,15 +38,15 @@ export function MaskedValue({ label, value }: MaskedValueProps) {
           type="button"
         >
           {revealed ? "Hide" : "Reveal"}
-        </button>
-        <button
+        </Button>
+        <Button
           aria-label={`Copy ${label}`}
-          className="button button--secondary button--compact"
+          variant="default"
           onClick={() => void copyValue()}
           type="button"
         >
           Copy
-        </button>
+        </Button>
       </div>
       {feedback === null ? null : <ManagementToast notice={feedback} onDismiss={() => setFeedback(null)} />}
     </div>

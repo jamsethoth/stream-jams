@@ -1,5 +1,6 @@
+import { renderManagement as render } from "../../test-support/render-management.js";
 import { createDefaultMusicModuleConfig } from "@stream-jams/core";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createStoryAssetApi, createStoryManagementApi } from "../../stories/mock-apis.js";
@@ -25,6 +26,30 @@ async function openEditorControls() {
 }
 
 describe("Music appearance", () => {
+  it("keeps a failed module confirmation scoped, blocks duplicate requests and clears fresh reviews", async () => {
+    const user = userEvent.setup();
+    let reject!: (cause: Error) => void;
+    const setEnabled = vi.fn(() => new Promise<boolean>((_resolve, rejectRequest) => { reject = rejectRequest; }));
+    const reportError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    renderPage({ setOverlayModuleEnabled: setEnabled });
+    const trigger = await screen.findByRole("button", { name: "Enable Music module" });
+    await user.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Enable Music module?" });
+    await user.dblClick(within(dialog).getByRole("button", { name: "Confirm change" }));
+    expect(setEnabled).toHaveBeenCalledTimes(1);
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(dialog).toBeVisible();
+    reject(Object.assign(new Error("Disposable storage unavailable"), { referenceId: "fixture-music-ref", nextStep: "Restart the disposable service." }));
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveTextContent("fixture-music-ref"));
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Restart the disposable service.");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+    await user.click(trigger);
+    expect(screen.queryByRole("alert")).toBeNull();
+    reportError.mockRestore();
+  });
   it("shows both profile rows with masked URLs and confirms regeneration separately from appearance", async () => {
     const user = userEvent.setup();
     const outputs = (["landscape", "vertical"] as const).map(targetProfileId => ({ id: targetProfileId, overlayId: "default", moduleId: "music", scope: "module" as const, targetProfileId, purpose: "live" as const, label: targetProfileId, enabled: true, keyId: "example", url: `http://127.0.0.1:39187/overlay/modules/music/live/example-${targetProfileId}`, copyableUrlStatus: "available" as const }));
@@ -53,7 +78,7 @@ describe("Music appearance", () => {
     const button = await screen.findByRole("button", { name: "Enable Music module" });
     expect(screen.queryByLabelText("Enable Music module after saving")).toBeNull();
     const sources = screen.getByRole("region", { name: "Music output links" });
-    expect(sources.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(button.compareDocumentPosition(sources) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     await user.selectOptions(screen.getByLabelText("Theme"), "light");
     await user.click(button);
     await user.click(screen.getByRole("button", { name: "Cancel" }));
@@ -246,6 +271,27 @@ describe("Music appearance", () => {
     expect(screen.getByRole("heading", { name: "Leave with unsaved changes?" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(window.location.pathname).toBe("/manage/modules/music");
+  });
+
+  it("delegates actionable Save and leave failure to the navigation focus surface", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/manage/modules/music");
+    const reportError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const api = createStoryManagementApi({ listAssetLibraryItems: async () => [], listMusicOutputs: async () => [], saveMusicConfig: async () => { throw Object.assign(new Error("Disposable persistence unavailable"), { referenceId: "fixture-navigation-music", nextStep: "Restart the disposable service before retrying." }); } });
+    render(<DirtyNavigationProvider><MusicNavigationHarness api={api} /></DirtyNavigationProvider>);
+    await openEditorControls();
+    await user.selectOptions(screen.getByLabelText("Theme"), "light");
+    await user.click(screen.getByRole("button", { name: "Leave Music editor" }));
+    const dialog = screen.getByRole("dialog", { name: "Leave with unsaved changes?" });
+    await user.click(within(dialog).getByRole("button", { name: "Save and leave" }));
+    const failure = await within(dialog).findByRole("alert");
+    expect(failure).toHaveTextContent("fixture-navigation-music");
+    expect(failure).toHaveTextContent("Restart the disposable service before retrying.");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByLabelText("Theme")).toHaveValue("light");
+    reportError.mockRestore();
   });
 
   it("keeps navigation blocked if a newer edit appears during Save and leave", async () => {

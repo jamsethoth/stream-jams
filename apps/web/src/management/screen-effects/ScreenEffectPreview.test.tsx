@@ -1,7 +1,8 @@
+import { renderManagement as render } from "../../test-support/render-management.js";
 import { createTestMediaPreviewApi, previewDescriptor } from "../../test-support/media-preview-fixture.js";
 import type { MediaPreviewDescriptor } from "@stream-jams/core";
 import { createScreenEffectDocument, screenEffectDocumentSchema } from "@stream-jams/core";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ScreenEffectPreview } from "./ScreenEffectPreview.js";
 

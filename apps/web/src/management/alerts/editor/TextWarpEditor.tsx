@@ -1,3 +1,4 @@
+import { Button, TextInput } from "@mantine/core";
 import { createDefaultTextWarp, evaluateTextWarp, insertTextWarpSplit, removeTextWarpSplit, type AlertTextWarp } from "@stream-jams/core";
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
@@ -52,14 +53,14 @@ export function TextWarpEditor({ warp, onPreview, onCommit, onDone }: {
       onKeyDown={(event) => { if (!event.key.startsWith("Arrow")) return; event.preventDefault(); event.stopPropagation(); const amount = event.shiftKey ? .05 : .005; onCommit(changePoint(warp, handleIndex, handle.x + (event.key === "ArrowLeft" ? -amount : event.key === "ArrowRight" ? amount : 0), handle.y + (event.key === "ArrowUp" ? -amount : event.key === "ArrowDown" ? amount : 0))); }} />)}
     <div className="text-warp-editor__toolbar" role="group" aria-label="Warp controls" onPointerDown={(event) => event.stopPropagation()}>
       <span>{warp.columns.length} columns × {warp.rows.length} rows</span>
-      <button type="button" onClick={() => setSplit("horizontal")} disabled={warp.rows.length >= 7}>Add horizontal split</button>
-      <button type="button" onClick={() => setSplit("vertical")} disabled={warp.columns.length >= 7}>Add vertical split</button>
-      <button type="button" disabled={warp.rows.length <= 3 || row === 0 || row === warp.rows.length - 1} onClick={() => { onCommit(removeTextWarpSplit(warp, "horizontal", row)); setSelected(0); }}>Remove row</button>
-      <button type="button" disabled={warp.columns.length <= 3 || column === 0 || column === warp.columns.length - 1} onClick={() => { onCommit(removeTextWarpSplit(warp, "vertical", column)); setSelected(0); }}>Remove column</button>
-      <label>Handle X (%)<input aria-label="Warp handle X" type="number" min={-50} max={150} step={1} value={Math.round(point.x * 100)} onChange={(event) => { const x = event.currentTarget.valueAsNumber / 100; if (Number.isFinite(x)) onCommit(changePoint(warp, index, x, point.y)); }} /></label>
-      <label>Handle Y (%)<input aria-label="Warp handle Y" type="number" min={-100} max={200} step={1} value={Math.round(point.y * 100)} onChange={(event) => { const y = event.currentTarget.valueAsNumber / 100; if (Number.isFinite(y)) onCommit(changePoint(warp, index, point.x, y)); }} /></label>
-      <button type="button" onClick={() => { onCommit(createDefaultTextWarp()); setSelected(0); }}>Reset warp</button>
-      <button type="button" onClick={onDone}>Done</button>
+      <Button variant="default" type="button" onClick={() => setSplit("horizontal")} disabled={warp.rows.length >= 7}>Add horizontal split</Button>
+      <Button variant="default" type="button" onClick={() => setSplit("vertical")} disabled={warp.columns.length >= 7}>Add vertical split</Button>
+      <Button variant="default" type="button" disabled={warp.rows.length <= 3 || row === 0 || row === warp.rows.length - 1} onClick={() => { onCommit(removeTextWarpSplit(warp, "horizontal", row)); setSelected(0); }}>Remove row</Button>
+      <Button variant="default" type="button" disabled={warp.columns.length <= 3 || column === 0 || column === warp.columns.length - 1} onClick={() => { onCommit(removeTextWarpSplit(warp, "vertical", column)); setSelected(0); }}>Remove column</Button>
+      <TextInput label="Handle X (%)" aria-label="Warp handle X" type="number" min={-50} max={150} step={1} value={Math.round(point.x * 100)} onChange={(event) => { const x = event.currentTarget.valueAsNumber / 100; if (Number.isFinite(x)) onCommit(changePoint(warp, index, x, point.y)); }} />
+      <TextInput label="Handle Y (%)" aria-label="Warp handle Y" type="number" min={-100} max={200} step={1} value={Math.round(point.y * 100)} onChange={(event) => { const y = event.currentTarget.valueAsNumber / 100; if (Number.isFinite(y)) onCommit(changePoint(warp, index, point.x, y)); }} />
+      <Button variant="default" type="button" onClick={() => { onCommit(createDefaultTextWarp()); setSelected(0); }}>Reset warp</Button>
+      <Button variant="default" type="button" onClick={onDone}>Done</Button>
       {split ? <span role="status">Click the text to add a {split} split. Escape cancels.</span> : null}
       {notice ? <span role="status">{notice}</span> : null}
     </div>

@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { renderManagement as render } from "../../test-support/render-management.js";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { MediaAudioControls } from "./MediaAudioControls.js";
@@ -8,7 +9,7 @@ afterEach(cleanup);
 it("accepts a host-specific checkbox layout class", () => {
   render(<MediaAudioControls checkboxClassName="screen-effects-check" value={{ playEmbeddedAudio: true, audioVolume: 1 }} hasSeparateAudio={false} onChange={vi.fn()} />);
 
-  expect(screen.getByRole("checkbox", { name: "Play embedded audio" }).closest("label")).toHaveClass("screen-effects-check");
+  expect(document.querySelector(`label[for="${screen.getByRole("checkbox", { name: "Play embedded audio" }).id}"]`)).toHaveClass("screen-effects-check");
 });
 
 it("does not change the switch when a separate sound appears", () => {

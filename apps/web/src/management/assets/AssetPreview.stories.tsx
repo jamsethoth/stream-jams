@@ -4,7 +4,7 @@ import { storyAssetLibraryItems } from "../../stories/story-fixtures.js";
 import { createTestMediaPreviewApi } from "../../test-support/media-preview-fixture.js";
 import { AssetPreview } from "./AssetPreview.js";
 
-const meta = { title: "Management/Assets/Stream preview", component: AssetPreview, tags: ["stream-local-media"], args: { assetApi: createTestMediaPreviewApi(), item: storyAssetLibraryItems[0]! } } satisfies Meta<typeof AssetPreview>;
+const meta = { title: "Management/Assets/Stream preview", component: AssetPreview, tags: ["stream-local-media", "mantine-assets"], args: { assetApi: createTestMediaPreviewApi(), item: storyAssetLibraryItems[0]! } } satisfies Meta<typeof AssetPreview>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Image: Story = { play: async ({ canvasElement }) => { await expect(await within(canvasElement).findByRole("img")).toBeVisible(); } };

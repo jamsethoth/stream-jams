@@ -6,6 +6,7 @@ import { DirtyNavigationProvider } from "../../navigation/dirty-navigation.js";
 import { AlertSafetyPage } from "./AlertSafetyPage.js";
 
 const meta = {
+  tags: ["mantine-stage6a"],
   title: "Management/Alerts/AlertSafetyPage",
   component: AlertSafetyPage,
   decorators: [(Story) => <DirtyNavigationProvider><Story /></DirtyNavigationProvider>],

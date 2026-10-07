@@ -6,6 +6,7 @@ import type { AudioApi } from "./audio-api.js";
 import { AudioOutputsPanel } from "./AudioOutputsPanel.js";
 
 const meta = {
+  tags: ["mantine-stage6b-closure", "mantine-stage6b", "mantine-stage5"],
   title: "Management/Settings/Audio outputs",
   component: AudioOutputsPanel,
   args: { audioApi: createAudioApi() },
@@ -16,6 +17,20 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const LoadedRoutes: Story = {};
+
+export const DeviceSelectionRemainsAnExplicitDraft: Story = {
+  args: { audioApi: createAudioApi() },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    await userEvent.type(await canvas.findByRole("textbox", { name: "New output name" }), "Disposable monitor");
+    const device = canvas.getByRole("combobox", { name: "New output device" });
+    await userEvent.selectOptions(device, within(device).getAllByRole("option")[1]!);
+    await userEvent.click(canvas.getAllByRole("checkbox", { name: "Automatically follow this device name" })[0]!);
+    await expect(args.audioApi.createRoute).not.toHaveBeenCalled();
+    await userEvent.click(canvas.getByRole("button", { name: "Create output" }));
+    await expect(args.audioApi.createRoute).toHaveBeenCalledWith(expect.objectContaining({ name: "Disposable monitor", autoFollowDeviceName: true }));
+  }
+};
 
 export const Empty: Story = {
   args: { audioApi: createAudioApi({ getStatus: fn(async () => status({ routes: [] })) }) }
@@ -66,9 +81,22 @@ export const DeletionConflict: Story = {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Delete Headphones" }));
     await userEvent.click(within(document.body).getByRole("button", { name: "Delete output" }));
-    const conflict = await canvas.findByRole("alert");
-    await expect(conflict).toHaveTextContent("New follower");
-    await expect(conflict).toHaveTextContent("Large raid");
+    const dialog = within(within(document.body).getByRole("dialog"));
+    await expect(await dialog.findByRole("alert")).toHaveTextContent("Remove the route");
+    await expect(dialog.getByText("Alerts: New follower")).toBeVisible();
+    await expect(dialog.getByText("Alerts: Large raid")).toBeVisible();
+  }
+};
+
+export const PendingDeletionReview: Story = {
+  args: { audioApi: createAudioApi({ deleteRoute: fn(() => new Promise<void>(() => undefined)) }) },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(await within(canvasElement).findByRole("button", { name: "Delete Headphones" }));
+    const dialog = within(await within(document.body).findByRole("dialog"));
+    await userEvent.click(dialog.getByRole("button", { name: "Delete output" }));
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await userEvent.keyboard("{Escape}");
+    await expect(dialog.getByText(/cannot be undone/)).toBeVisible();
   }
 };
 

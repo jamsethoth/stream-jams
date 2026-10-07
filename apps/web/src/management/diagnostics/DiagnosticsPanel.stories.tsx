@@ -4,7 +4,7 @@ import { expect, userEvent, within } from "storybook/test";
 import { createStoryManagementApi } from "../../stories/mock-apis.js";
 import { DiagnosticsPanel } from "./DiagnosticsPanel.js";
 
-const meta = { title: "Management/Diagnostics/Workspace", component: DiagnosticsPanel } satisfies Meta<typeof DiagnosticsPanel>;
+const meta = { tags: ["mantine-stage6b-diagnostics", "mantine-stage6b", "mantine-feedback-tabs"], title: "Management/Diagnostics/Workspace", component: DiagnosticsPanel } satisfies Meta<typeof DiagnosticsPanel>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 
@@ -18,10 +18,50 @@ export const ActiveProblems: Story = {
   }
 };
 
+export const AutomaticKeyboardTabs: Story = {
+  args: ActiveProblems.args,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const problems = await canvas.findByRole("tab", { name: /Problems/ });
+    await canvas.findByRole("heading", { name: "Open problems" });
+    await userEvent.click(problems);
+    await userEvent.keyboard("{End}");
+    const logs = canvas.getByRole("tab", { name: /Raw logs/ });
+    await expect(logs).toHaveFocus();
+    await expect(logs).toHaveAttribute("aria-selected", "true");
+    await expect(canvas.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", logs.id);
+    await expect(canvas.queryByRole("button", { name: "Copy error JSON" })).not.toBeInTheDocument();
+    await userEvent.keyboard("{Home}");
+    await expect(problems).toHaveFocus();
+    await expect(problems).toHaveAttribute("aria-selected", "true");
+    await userEvent.keyboard("{ArrowRight}");
+    await expect(canvas.getByRole("tab", { name: /Events/ })).toHaveAttribute("aria-selected", "true");
+  }
+};
+
 export const NoProblems: Story = {
   args: { managementApi: createStoryManagementApi({ getDiagnosticsWorkspace: async () => ({ ...diagnosticsWorkspace(), problems: [] }) }) },
   play: async ({ canvasElement }) => {
     await expect(await within(canvasElement).findByText("No active problems")).toBeVisible();
+  }
+};
+
+export const FiltersAndSelectedEvidenceSurviveRefresh: Story = {
+  args: ActiveProblems.args,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole("heading", { name: "Open problems" });
+    await userEvent.click(canvas.getByRole("tab", { name: /Raw logs/ }));
+    await userEvent.type(canvas.getByRole("searchbox", { name: "Search" }), "ref-runtime-2");
+    await userEvent.selectOptions(canvas.getByRole("combobox", { name: "Level" }), "ERROR");
+    await userEvent.selectOptions(canvas.getByRole("combobox", { name: "Sort diagnostics" }), "oldest");
+    await userEvent.click(canvas.getByRole("button", { name: /ref-runtime-2/ }));
+    await userEvent.click(canvas.getByRole("button", { name: "Refresh" }));
+    await expect(await canvas.findByLabelText("Raw log detail")).toHaveTextContent("ref-runtime-2");
+    await expect(canvas.getByRole("tab", { name: /Raw logs/ })).toHaveAttribute("aria-selected", "true");
+    await expect(canvas.getByRole("searchbox", { name: "Search" })).toHaveValue("ref-runtime-2");
+    await expect(canvas.getByRole("combobox", { name: "Level" })).toHaveValue("ERROR");
+    await expect(canvas.getByRole("combobox", { name: "Sort diagnostics" })).toHaveValue("oldest");
   }
 };
 

@@ -1,4 +1,5 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { renderManagement as render } from "../../test-support/render-management.js";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { DiagnosticsWorkspaceView } from "@stream-jams/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -12,6 +13,35 @@ afterEach(() => {
 });
 
 describe("DiagnosticsPanel", () => {
+  it("automatically activates boundary tabs, links every panel and retains selected evidence without reloading", async () => {
+    const user = userEvent.setup();
+    const api = managementApi();
+    api.getDiagnosticsWorkspace = vi.fn(async () => workspace());
+    render(<DiagnosticsPanel managementApi={api} />);
+    await screen.findByRole("heading", { name: "Open problems" });
+    const first = screen.getByRole("tab", { name: /Problems/ });
+    await user.click(first);
+    await user.keyboard("{End}");
+    const last = screen.getByRole("tab", { name: /Raw logs/ });
+    expect(last).toHaveFocus();
+    expect(last).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", last.id);
+    expect(screen.queryByRole("button", { name: "Copy error JSON" })).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Level"), "ERROR");
+    await user.click(last);
+    expect(screen.getByLabelText("Level")).toHaveValue("ERROR");
+    await user.click(screen.getByRole("button", { name: /ref-runtime-2/ }));
+    await user.click(last);
+    await user.keyboard("{Home}");
+    expect(first).toHaveFocus();
+    expect(first).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByRole("button", { name: "Copy sanitized event" })).not.toBeInTheDocument();
+    await user.keyboard("{End}");
+    expect(screen.getByLabelText("Raw log detail")).toHaveTextContent("ref-runtime-2");
+    for (const tab of screen.getAllByRole("tab")) expect(document.getElementById(tab.getAttribute("aria-controls")!)).toHaveAttribute("aria-labelledby", tab.id);
+    expect(api.getDiagnosticsWorkspace).toHaveBeenCalledOnce();
+  });
+
   it("groups active problems and searches by reference ID without hiding correction context", async () => {
     const user = userEvent.setup();
     render(<DiagnosticsPanel managementApi={managementApi()} />);

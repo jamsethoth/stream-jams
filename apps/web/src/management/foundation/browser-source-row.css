@@ -1,21 +1,21 @@
 .browser-source-row {
   align-items: center; background: var(--color-surface); border: 1px solid var(--color-border);
-  display: grid; gap: 10px; min-width: 0; padding: 8px 10px;
+  display: grid; gap: 8px; min-width: 0; padding: 8px 8px;
   grid-template-areas: "heading telemetry guidance actions" "heading dimensions url actions";
   grid-template-columns: minmax(150px, .55fr) minmax(150px, .55fr) minmax(220px, 1fr) auto;
 }
-.browser-source-row__heading { grid-area: heading; display: flex; align-items: center; gap: 8px; }
+.browser-source-row__heading { overflow-wrap: anywhere; flex-wrap: wrap; grid-area: heading; display: flex; align-items: center; gap: 8px; }
 .browser-source-row p { margin: 0; }
-.browser-source-row__telemetry { grid-area: telemetry; font-size: 12px; color: var(--color-text-muted); }
+.browser-source-row__telemetry { grid-area: telemetry; font-size: var(--font-size-xs); color: var(--color-text-muted); }
 .browser-source-row__dimensions { grid-area: dimensions; }
-.browser-source-row__guidance { grid-area: guidance; font-size: 13px; color: var(--color-text-muted); }
-.browser-source-row > input, .browser-source-row > code, .browser-source-row__missing { grid-area: url; min-width: 0; }
-.browser-source-row > input, .browser-source-row > code {
+.browser-source-row__guidance { grid-area: guidance; font-size: var(--font-size-sm); color: var(--color-text-muted); }
+.browser-source-row__url { grid-area: url; min-width: 0; }
+.browser-source-row__url > input, .browser-source-row__url > code {
   background: var(--color-surface-subtle); border: 1px solid var(--color-border-strong); border-radius: 4px;
   color: var(--color-text); font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 11px; overflow: hidden; padding: 7px 8px; text-overflow: ellipsis; white-space: nowrap; width: 100%;
+  font-size: var(--font-size-xs); display: block; overflow: hidden; padding: 8px 8px; text-overflow: ellipsis; white-space: nowrap; width: 100%;
 }
-.browser-source-row__missing { color: var(--color-text-muted); font-size: 12px; }
+.browser-source-row__missing { color: var(--color-text-muted); font-size: var(--font-size-xs); }
 .browser-source-row__actions { grid-area: actions; display: flex; flex-wrap: wrap; gap: 8px; }
 @media (max-width: 1120px) {
   .browser-source-row { grid-template-areas: "heading telemetry guidance" "dimensions url url" "actions actions actions"; grid-template-columns: minmax(150px, .6fr) minmax(180px, .7fr) minmax(220px, 1fr); }

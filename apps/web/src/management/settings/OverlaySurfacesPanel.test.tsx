@@ -1,4 +1,5 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { renderManagement as render } from "../../test-support/render-management.js";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import type { SurfaceSettingsView } from "@stream-jams/core";
@@ -15,6 +16,32 @@ function harness() {
   const api = { load: vi.fn<SurfaceSettingsApi["load"]>(async () => structuredClone(view)), save: vi.fn<SurfaceSettingsApi["save"]>(async value => { view = { ...view, surfaces: view.surfaces.map(surface => surface.id === value.id ? (value.kind === "desktop" ? { ...value, displayLabel: view.desktop.displays.find(display => display.id === value.displayId)?.label ?? null } : value) : surface) }; return structuredClone(view); }), retry: vi.fn<SurfaceSettingsApi["retry"]>(async () => structuredClone(view)) };
   return { api, get view() { return view; }, set view(value: SurfaceSettingsView) { view = value; } };
 }
+it("embedded in Settings, names the region without a repeated heading", async () => {
+  const { api } = harness(); render(<OverlaySurfacesPanel api={api} embedded />);
+  expect(await screen.findByRole("region", { name: "Overlay surfaces" })).toBeVisible();
+  expect(screen.queryByRole("heading", { name: "Overlay surfaces" })).not.toBeInTheDocument();
+  expect(screen.getByText("Choose where modules appear and their order. Save each surface to apply changes.")).toBeVisible();
+});
+it("shows Save and Revert only for a changed surface and returns keyboard focus to its heading", async () => {
+  const { api } = harness(); const user = userEvent.setup(); render(<OverlaySurfacesPanel api={api} />);
+  const enable = await screen.findByRole("checkbox", { name: "Enable desktop overlay" });
+  expect(screen.queryByRole("button", { name: "Save Desktop overlay" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Revert Desktop overlay" })).not.toBeInTheDocument();
+  await user.click(enable);
+  expect(screen.getByRole("button", { name: "Save Desktop overlay" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Revert Desktop overlay" })).toBeEnabled();
+  // The unchanged surface stays free of actions while the other surface saves.
+  expect(screen.queryByRole("button", { name: "Save Unified browser: default" })).not.toBeInTheDocument();
+  screen.getByRole("button", { name: "Save Desktop overlay" }).focus();
+  await user.keyboard("{Enter}");
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Save Desktop overlay" })).not.toBeInTheDocument());
+  expect(screen.getByRole("heading", { name: "Desktop overlay" })).toHaveFocus();
+  await user.click(enable);
+  screen.getByRole("button", { name: "Revert Desktop overlay" }).focus();
+  await user.keyboard("{Enter}");
+  expect(screen.queryByRole("button", { name: "Revert Desktop overlay" })).not.toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Desktop overlay" })).toHaveFocus();
+});
 it("shows readable known and unknown module names without changing saved IDs", async () => {
   const { api } = harness();
   render(<OverlaySurfacesPanel api={api} />);
@@ -115,7 +142,7 @@ it("ignores an older poll response that arrives after an explicit save", async (
   render(<OverlaySurfacesPanel api={state.api} />); await act(async () => {});
   state.api.load.mockImplementationOnce(() => new Promise(resolve => { loaded = resolve; })); await act(() => vi.advanceTimersByTimeAsync(5000));
   fireEvent.click(screen.getByRole("checkbox", { name: "Enable desktop overlay" })); await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save Desktop overlay" })); });
-  await act(async () => loaded(old)); expect(screen.getByRole("checkbox", { name: "Enable desktop overlay" })).toBeChecked(); expect(screen.getByRole("button", { name: "Save Desktop overlay" })).toBeDisabled();
+  await act(async () => loaded(old)); expect(screen.getByRole("checkbox", { name: "Enable desktop overlay" })).toBeChecked(); expect(screen.queryByRole("button", { name: "Save Desktop overlay" })).not.toBeInTheDocument();
 });
 it("shows a warning when settings save but desktop runtime remains failed", async () => {
   const state = harness(); state.view.desktop.state = "failed"; state.view.desktop.message = "Use Retry to restore future alerts.";

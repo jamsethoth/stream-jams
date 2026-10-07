@@ -1,3 +1,4 @@
+import { Button, Checkbox, NativeSelect, Tabs, TextInput, Textarea, UnstyledButton } from "@mantine/core";
 import {
   assessAlertConfiguration,
   alertFontPresets,
@@ -37,7 +38,7 @@ import {
   type RegisteredProviderView,
   type TargetProfileId
 } from "@stream-jams/core";
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AssetApi } from "../../assets/asset-api.js";
 import { AssetPicker } from "../../assets/AssetPicker.js";
 import { defaultAudioApi, type AudioApi } from "../../audio/audio-api.js";
@@ -47,12 +48,14 @@ import { AudioFadeControls } from "../../audio/AudioFadeControls.js";
 import { MediaDurationControls } from "../../audio/MediaDurationControls.js";
 import { useAudioStatus } from "../../audio/use-audio-status.js";
 import { Breadcrumbs } from "../../foundation/Breadcrumbs.js";
+import { DisclosureIcon } from "../../foundation/ModulePageLayout.js";
 import { ManagementErrorBanner } from "../../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../../foundation/ManagementToast.js";
-import { ModalSurface } from "../../foundation/ModalSurface.js";
+import { ManagementModalSurface as ModalSurface, ManagementModalTitle } from "../../foundation/ManagementModalSurface.js";
 import { StatusBadge } from "../../foundation/StatusBadge.js";
 import type { ManagementApi } from "../../management-api.js";
 import { ManagementHttpError } from "../../management-http-client.js";
+import type { DirtyNavigationSaveResult } from "../../navigation/dirty-navigation.js";
 import { useDirtyNavigationSource } from "../../navigation/dirty-navigation.js";
 import { buildAlertEventGroups, filterAlertEventGroups } from "../alert-event-groups.js";
 import { alertTestNotice } from "../alert-test-notice.js";
@@ -145,8 +148,7 @@ type PickerState = { readonly layerId: string | null; readonly type: "image" | "
 type ReportableActionError = ActionableManagementError & { readonly referenceId: string };
 type SaveWarningState = {
   readonly serverMessage?: string;
-  readonly rejectNavigation?: (cause: unknown) => void;
-  readonly resolveNavigation?: (saved: boolean) => void;
+  readonly resolveNavigation?: (result: DirtyNavigationSaveResult) => void;
 };
 type AlertEditorSessionState = {
   readonly editor: AlertEditorState | null;
@@ -155,6 +157,8 @@ type AlertEditorSessionState = {
 const emptyAlertEditorSessionState: AlertEditorSessionState = {
   editor: null
 };
+
+const geometryLabels = { x: "X", y: "Y", width: "Width", height: "Height" } as const;
 
 export function AlertEditorPage(props: AlertEditorPageProps) {
   const [editorSession, setEditorSession] = useState<AlertEditorSessionState>(emptyAlertEditorSessionState);
@@ -197,6 +201,10 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [previewTextByLayerId, setPreviewTextByLayerId] = useState<Readonly<Record<string, string>>>({});
   const previewModerationRequestIdRef = useRef(0);
   const [busy, setBusy] = useState(false);
+  const mutationInFlight = useRef(false);
+  const saveReviewInFlight = useRef(false);
+  const editorHeadingRef = useRef<HTMLHeadingElement>(null);
+  const [dialogError, setDialogError] = useState<ReportableActionError | null>(null);
   const [error, setError] = useState<ActionableManagementError | null>(null);
   const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
   const [picker, setPicker] = useState<PickerState | null>(null);
@@ -204,11 +212,6 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [copyDesignOpen, setCopyDesignOpen] = useState(false);
   const [copyDesignSourceId, setCopyDesignSourceId] = useState("");
   const [profileCopy, setProfileCopy] = useState<{ readonly sourceId: TargetProfileId; readonly targetId: TargetProfileId } | null>(null);
-  const tabRefs = useRef<Record<InspectorTab, HTMLButtonElement | null>>({
-    layers: null,
-    alert: null,
-    event: null
-  });
   const activeTtsProvider = ttsProviders.find((provider) => provider.active) ?? null;
   const canvasAssetMediaTypes = useMemo(() => Object.fromEntries(assets.flatMap((asset) =>
     asset.mediaType === "audio" || asset.mediaType === "font" ? [] : [[asset.id, asset.mediaType]]
@@ -217,15 +220,19 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     () => Object.fromEntries(assets.map((asset) => [asset.id, asset.durationMs])),
     [assets]
   );
+  const recordActionError = useCallback((nextError: ReportableActionError) => {
+    const report = props.managementApi.reportAlertEditorError;
+    if (report !== undefined && nextError.referenceId.startsWith("ui_")) {
+      void report(props.alertId, { setId: loadedSetId ?? null, error: nextError }).catch((cause: unknown) => {
+        console.error(`[${nextError.referenceId}] Alert editor error could not be recorded in Diagnostics.`, cause);
+      });
+    }
+    return nextError;
+  }, [loadedSetId, props.alertId, props.managementApi]);
   const showActionError = useCallback((nextError: ReportableActionError) => {
     setNotice(null);
-    setError(nextError);
-    const report = props.managementApi.reportAlertEditorError;
-    if (report === undefined || !nextError.referenceId.startsWith("ui_")) return;
-    void report(props.alertId, { setId: loadedSetId ?? null, error: nextError }).catch((cause: unknown) => {
-      console.error(`[${nextError.referenceId}] Alert editor error could not be recorded in Diagnostics.`, cause);
-    });
-  }, [loadedSetId, props.alertId, props.managementApi]);
+    setError(recordActionError(nextError));
+  }, [recordActionError]);
   const onPreviewError = useCallback((failure: AlertPreviewFailure) => {
     showActionError(actionableError(failure.summary, failure.cause, failure.nextStep));
   }, [showActionError]);
@@ -363,16 +370,18 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     return () => { active = false; };
   }, [props.managementApi, soundtrackAssetKey]);
 
-  const save = useCallback(async (confirmLiveImpact = false) => {
+  const save = useCallback(async (confirmLiveImpact = false, forNavigation = false) => {
+    if (mutationInFlight.current) return false;
     if (editor === null || variationContext === null) return;
     const conditionError = conditionDraftError ?? alertDocumentConditionError(editor.document);
     if (conditionError !== null) throw new Error(conditionError);
     const styleError = alertDocumentVisualStyleError(editor.document);
     if (styleError !== null) throw new Error(styleError);
     if (hasEnabledTts(editor.document) && activeTtsProvider === null) {
-      showActionError(missingActiveTtsProviderError());
+      if (!forNavigation) showActionError(missingActiveTtsProviderError());
       throw new Error("An active TTS provider is required before enabled TTS layers can be saved.");
     }
+    mutationInFlight.current = true;
     const sourceDocument = editor.document;
     const sourcePriorityGroups = editor.priorityGroups;
     const submittedDocument = applyActiveTtsProvider(sourceDocument, activeTtsProvider);
@@ -415,21 +424,26 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       }
     } catch (cause) {
       if (!confirmLiveImpact && isLiveImpactConfirmationRequired(cause)) throw cause;
-      showActionError(actionableError("The alert was not saved", cause, "Review the selected profile and highlighted fields, then try again."));
+      if (!forNavigation) {
+        const failure = actionableError("The alert was not saved", cause, "Review the selected profile and highlighted fields, then try again.");
+        if (confirmLiveImpact) setDialogError(recordActionError(failure));
+        else showActionError(failure);
+      }
       throw cause;
     } finally {
+      mutationInFlight.current = false;
       setBusy(false);
     }
-  }, [activeTtsProvider, conditionDraftError, editor, props.alertId, props.managementApi, resetLocalPreview, showActionError, variationContext]);
+  }, [activeTtsProvider, conditionDraftError, editor, props.alertId, props.managementApi, recordActionError, resetLocalPreview, showActionError, variationContext]);
 
-  const requiresLiveImpactConfirmation = useCallback(async () => {
+  const requiresLiveImpactConfirmation = useCallback(async (forNavigation = false) => {
     if (editor === null || !isEditorDirty(editor) || (affectedProfileIds(editor, setDetail, variationContext).length === 0 && !hasAudioOutputImpact(editor))) return false;
     try {
       const latestSetDetail = await props.managementApi.getAlertSet(editor.document.setId);
       setSetDetail(latestSetDetail);
       return latestSetDetail.overview.active;
     } catch (cause) {
-      showActionError(actionableError(
+      if (!forNavigation) showActionError(actionableError(
         "The alert set status could not be checked",
         cause,
         "Confirm the local service is running, then try saving again."
@@ -448,25 +462,24 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setNotice({ tone: "success", message: "Unsaved changes reverted." });
   }, [resetEventInspectorDraft, resetLocalPreview]);
 
-  const saveForNavigation = useCallback(async () => {
-    if (await requiresLiveImpactConfirmation()) {
-      return new Promise<boolean>((resolve, reject) => setSaveWarning({
-        rejectNavigation: reject,
-        resolveNavigation: resolve
-      }));
-    }
+  const saveForNavigation = useCallback(async (): Promise<DirtyNavigationSaveResult> => {
+    setError(null);
+    setDialogError(null);
     try {
-      await save(false);
-      return true;
+      if (await requiresLiveImpactConfirmation(true)) {
+        return new Promise<DirtyNavigationSaveResult>((resolve) => setSaveWarning({ resolveNavigation: resolve }));
+      }
+      return await save(false, true) === false ? false : true;
     } catch (cause) {
-      if (!isLiveImpactConfirmationRequired(cause)) throw cause;
-      return new Promise<boolean>((resolve, reject) => setSaveWarning({
-        serverMessage: cause instanceof Error ? cause.message : "The server requires live-impact confirmation.",
-        rejectNavigation: reject,
-        resolveNavigation: resolve
-      }));
+      if (isLiveImpactConfirmationRequired(cause)) {
+        return new Promise<DirtyNavigationSaveResult>((resolve) => setSaveWarning({
+          serverMessage: cause instanceof Error ? cause.message : "The server requires live-impact confirmation.",
+          resolveNavigation: resolve
+        }));
+      }
+      return { saved: false, error: recordActionError(actionableError("The alert was not saved", cause, "Review the selected profile and highlighted fields, then try Save and leave again.")) };
     }
-  }, [requiresLiveImpactConfirmation, save]);
+  }, [recordActionError, requiresLiveImpactConfirmation, save]);
 
   useDirtyNavigationSource({
     id: `alert-editor:${props.alertId}`,
@@ -698,12 +711,14 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   }
 
   async function sendTest() {
+    if (mutationInFlight.current) return;
     if (document === null || samplePayload === null || profile === null) return;
     if (alertDocumentVisualStyleError(document) !== null) return;
     if (sendIncludeTts && hasEnabledTts(document) && activeTtsProvider === null) {
       showActionError(missingActiveTtsProviderError());
       return;
     }
+    mutationInFlight.current = true;
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -719,11 +734,16 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     } catch (cause) {
       showActionError(actionableError("The alert test was not sent", cause, "Review selected Audio outputs in Settings, or connect and review the browser source, then try again."));
     } finally {
+      mutationInFlight.current = false;
       setBusy(false);
     }
   }
 
   async function requestSave() {
+    if (mutationInFlight.current || saveReviewInFlight.current) return;
+    saveReviewInFlight.current = true;
+    setError(null);
+    setDialogError(null);
     try {
       if (await requiresLiveImpactConfirmation()) {
         setSaveWarning({});
@@ -734,24 +754,32 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       if (isLiveImpactConfirmationRequired(cause)) setSaveWarning({
         serverMessage: cause instanceof Error ? cause.message : "The server requires live-impact confirmation."
       });
-      // Save and status-check failures are rendered through the page error banner.
+      // Save and status-check failures retain their workflow-owned feedback.
+    } finally {
+      saveReviewInFlight.current = false;
     }
   }
 
   function cancelSaveWarning() {
+    if (mutationInFlight.current) return;
+    setDialogError(null);
     saveWarning?.resolveNavigation?.(false);
     setSaveWarning(null);
   }
 
   async function confirmSaveWarning() {
+    if (mutationInFlight.current) return;
     const pendingWarning = saveWarning;
+    setDialogError(null);
     try {
-      await save(true);
+      await save(true, pendingWarning?.resolveNavigation !== undefined);
       setSaveWarning(null);
       pendingWarning?.resolveNavigation?.(true);
     } catch (cause) {
-      setSaveWarning(null);
-      pendingWarning?.rejectNavigation?.(cause);
+      if (pendingWarning?.resolveNavigation !== undefined) {
+        setSaveWarning(null);
+        pendingWarning.resolveNavigation({ saved: false, error: recordActionError(actionableError("The alert was not saved", cause, "Review the selected profile and highlighted fields, then try Save and leave again.")) });
+      }
     }
   }
 
@@ -820,40 +848,10 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setPicker(null);
   }
 
-  function handleInspectorTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, currentTab: InspectorTab) {
-    const tabs: readonly InspectorTab[] = ["layers", "alert", "event"];
-    const currentIndex = tabs.indexOf(currentTab);
-    let nextTab: InspectorTab | undefined;
-
-    switch (event.key) {
-      case "ArrowRight":
-      case "ArrowDown":
-        nextTab = tabs[(currentIndex + 1) % tabs.length];
-        break;
-      case "ArrowLeft":
-      case "ArrowUp":
-        nextTab = tabs[(currentIndex - 1 + tabs.length) % tabs.length];
-        break;
-      case "Home":
-        nextTab = tabs[0];
-        break;
-      case "End":
-        nextTab = tabs[tabs.length - 1];
-        break;
-      default:
-        return;
-    }
-
-    if (nextTab === undefined) {
-      return;
-    }
-    event.preventDefault();
-    setTab(nextTab);
-    tabRefs.current[nextTab]?.focus();
-  }
-
   async function applyCopiedDesign() {
-    if (copyDesignSourceId === "") return;
+    if (copyDesignSourceId === "" || mutationInFlight.current) return;
+    mutationInFlight.current = true;
+    setDialogError(null);
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -864,8 +862,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       setCopyDesignOpen(false);
       setNotice({ tone: "warning", message: "Design copied.", detail: "Review the result, then Save to keep it." });
     } catch (cause) {
-      showActionError(actionableError("The alert design was not copied", cause, "Choose another alert or return to Alerts and review the source."));
+      setDialogError(recordActionError(actionableError("The alert design was not copied", cause, "Choose another alert or return to Alerts and review the source.")));
     } finally {
+      mutationInFlight.current = false;
       setBusy(false);
     }
   }
@@ -873,7 +872,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   if (document === null || editor === null || profile === null || variationContext === null) {
     return error === null
       ? <p className="management-empty" role="status">Loading alert editor...</p>
-      : <div className="alert-editor-page alert-editor-page--load-error"><button className="alert-editor-page__back" onClick={() => props.onBack(loadedSetId)} type="button">Back to alerts</button><ManagementErrorBanner error={error} /></div>;
+      : <div className="alert-editor-page alert-editor-page--load-error"><Button variant="default" className="alert-editor-page__back" onClick={() => props.onBack(loadedSetId)} type="button">Back to alerts</Button><ManagementErrorBanner error={error} /></div>;
   }
 
   const ttsLiveBlocked = hasEnabledTts(document) && activeTtsProvider === null;
@@ -919,22 +918,22 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     <div className="alert-editor-page">
       <header className="alert-editor-page__header">
         <div>
-          <button className="alert-editor-page__back" onClick={() => props.onBack(document.setId)} type="button">Back to alerts</button>
+          <Button variant="default" size="xs" className="alert-editor-page__back" onClick={() => props.onBack(document.setId)} type="button">Back to alerts</Button>
           <Breadcrumbs items={["Alerts", setDetail?.overview.name ?? "Alert set", document.name]} />
           <div className="alert-editor-page__title-row">
-            <h2>{document.name}</h2>
+            <h2 ref={editorHeadingRef} tabIndex={-1}>{document.name}</h2>
             <StatusBadge label={isEditorDirty(editor) ? "Unsaved" : "Saved"} tone={isEditorDirty(editor) ? "warning" : "positive"} />
             <StatusBadge label={document.enabled ? "Alert enabled" : "Alert disabled"} tone={document.enabled ? "info" : "neutral"} />
           </div>
           <p>{formatEventType(document.eventType)} / {document.kind === "default" ? "Default alert" : "Variation"}</p>
         </div>
         <div className="alert-editor-page__header-actions">
-          <button className="button button--secondary" disabled={!isEditorDirty(editor) || busy} onClick={discard} type="button">Revert</button>
-          <button className="button button--secondary" disabled={samplePayload === null || sampleError !== null || documentConditionError !== null || documentStyleError !== null} onClick={previewLocally} type="button">Preview</button>
-          {preview ? <button className="button button--secondary" onClick={() => previewElapsedMs >= previewDocument!.durationMs ? previewLocally() : previewPlaying ? pausePreview() : playPreview()} type="button">{previewPlaying ? "Pause preview" : previewElapsedMs >= previewDocument!.durationMs ? "Replay preview" : "Resume preview"}</button> : null}
+          <Button variant="default" disabled={!isEditorDirty(editor) || busy} onClick={discard} type="button">Revert</Button>
+          <Button variant="default" disabled={samplePayload === null || sampleError !== null || documentConditionError !== null || documentStyleError !== null} onClick={previewLocally} type="button">Preview</Button>
+          {preview ? <Button variant="default" onClick={() => previewElapsedMs >= previewDocument!.durationMs ? previewLocally() : previewPlaying ? pausePreview() : playPreview()} type="button">{previewPlaying ? "Pause preview" : previewElapsedMs >= previewDocument!.durationMs ? "Replay preview" : "Resume preview"}</Button> : null}
           {preview ? <label className="alert-editor-page__preview-position"><span>{previewPlaying ? "Preview playing" : "Preview paused"}</span><input aria-label="Preview position" max={previewDocument!.durationMs} min="0" onChange={(event) => seekPreview(Number(event.currentTarget.value))} step="100" type="range" value={previewElapsedMs} /></label> : null}
-          <button className="button button--secondary" disabled={!canSend} onClick={() => void sendTest()} type="button">Test draft</button>
-          <button className="button button--primary" disabled={!isEditorDirty(editor) || documentConditionError !== null || documentStyleError !== null || ttsLiveBlocked || busy} onClick={() => void requestSave()} type="button">Save</button>
+          <Button variant="default" disabled={!canSend} onClick={() => void sendTest()} type="button">Test draft</Button>
+          <Button disabled={!isEditorDirty(editor) || documentConditionError !== null || documentStyleError !== null || ttsLiveBlocked || busy} onClick={() => void requestSave()} type="button">Save</Button>
           <p className="alert-editor-page__preview-help">Preview renders this draft locally. Audio and TTS follow the preview options. · Draft input · Browser {sendDeviceOnly ? "none" : profileLabel(profileId)} · Devices {testDeviceNames.join(", ") || "none"} · Audio {sendIncludeAudio ? "included" : "excluded"} · TTS {sendIncludeTts ? "included" : "excluded"}</p>
         </div>
       </header>
@@ -948,7 +947,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
       <section aria-labelledby="live-readiness-title" className={`alert-editor-page__live-readiness${liveReadiness.ready ? " alert-editor-page__live-readiness--ready" : ""}`}>
         <div><strong id="live-readiness-title">Live readiness</strong><span>{liveReadiness.message}</span></div>
-        {liveReadiness.actionLabel === null ? null : <button className="button button--secondary button--compact" onClick={applyReadinessAction} type="button">{liveReadiness.actionLabel}</button>}
+        {liveReadiness.actionLabel === null ? null : <Button variant="default" onClick={applyReadinessAction} type="button">{liveReadiness.actionLabel}</Button>}
       </section>
       {document.layers.some((layer) => layer.type === "video" && !layer.playEmbeddedAudio) ? <p>Videos with embedded audio off stay silent. Existing videos keep this setting until you enable Play embedded audio in Layers and save.</p> : null}
       {documentConditionError === null ? null : <p className="alert-editor-page__condition-error" id="alert-editor-validation" role="alert" tabIndex={-1}>Event settings need correction: {documentConditionError} Open Event settings to fix it before saving or testing the draft.</p>}
@@ -976,8 +975,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           <div className="alert-editor-page__panel-heading">
             <div><strong>{setDetail?.overview.name ?? "Alert set"}</strong><span>{setDetail?.inventory.length ?? 0} alerts</span></div>
           </div>
-          <label className="alert-editor-page__search"><span>Search alerts</span><input aria-label="Search alerts" onChange={(event) => setSearch(event.currentTarget.value)} type="search" value={search} /></label>
-          <label className="alert-editor-page__unused-events"><input checked={showUnusedEventTypes} onChange={(event) => setShowUnusedEventTypes(event.currentTarget.checked)} type="checkbox" />Show unused event types</label>
+          <TextInput label="Search alerts" className="alert-editor-page__search" aria-label="Search alerts" onChange={(event) => setSearch(event.currentTarget.value)} type="search" value={search} />
+          <Checkbox label="Show unused event types" className="alert-editor-page__unused-events" checked={showUnusedEventTypes} onChange={(event) => setShowUnusedEventTypes(event.currentTarget.checked)} />
           <nav aria-label="Alert editor selection" className="alert-editor-page__event-navigation">
             {filteredEventGroups.groups.map((group) => {
               const expanded = expandedEventKeys.has(group.key);
@@ -985,22 +984,11 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
               const contentId = editorEventGroupContentId(group.key);
               return (
                 <section className="alert-editor-page__event-group" key={group.key}>
-                  <button
-                    aria-controls={contentId}
-                    aria-expanded={expanded}
-                    aria-label={selected ? `${group.label} alerts, selected event` : `${expanded ? "Collapse" : "Expand"} ${group.label} alerts`}
-                    className="alert-editor-page__event-toggle"
-                    disabled={selected}
-                    onClick={() => setManualExpandedEventKeys((current) => {
+                  <UnstyledButton className="alert-editor-page__event-toggle" aria-controls={contentId} aria-expanded={expanded} aria-label={selected ? `${group.label} alerts, selected event` : `${expanded ? "Collapse" : "Expand"} ${group.label} alerts`} disabled={selected} onClick={() => setManualExpandedEventKeys((current) => {
                       const next = new Set(current);
                       if (next.has(group.key)) next.delete(group.key); else next.add(group.key);
                       return next;
-                    })}
-                    type="button"
-                  >
-                    <span aria-hidden="true">{expanded ? "−" : "+"}</span>
-                    <span><strong>{group.label}</strong><small>{group.defaultCount} defaults · {group.variationCount} variations</small></span>
-                  </button>
+                    })} type="button"><DisclosureIcon expanded={expanded} /><span><strong>{group.label}</strong><small>{group.defaultCount === 1 ? "1 default" : `${group.defaultCount} defaults`} · {group.variationCount === 1 ? "1 variation" : `${group.variationCount} variations`}</small></span></UnstyledButton>
                   {expanded ? (
                     <div className="alert-editor-page__event-content" id={contentId}>
                       {group.defaults.length === 0 && group.orphanVariations.length === 0 ? <p className="alert-editor-page__empty">No alerts configured.</p> : null}
@@ -1035,7 +1023,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           {filteredEventGroups.groups.length === 0 ? (
             <div className="alert-editor-page__empty alert-editor-page__no-matches">
               <p>No matching alerts.</p>
-              <button className="button button--secondary button--compact" onClick={() => setSearch("")} type="button">Clear filters</button>
+              <Button variant="default" onClick={() => setSearch("")} type="button">Clear filters</Button>
             </div>
           ) : null}
         </aside>
@@ -1044,33 +1032,30 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           <div className="alert-editor-page__stage-toolbar">
             <div aria-label="Target profile" className="alert-editor-page__segments">
               {document.targetProfiles.map((candidate) => (
-                <button aria-pressed={candidate.id === profileId} key={candidate.id} onClick={() => requestProfileSwitch(candidate.id)} type="button">
-                  {profileLabel(candidate.id)}
-                  {candidate.reviewState === "needs-review" ? <span>Needs review</span> : candidate.enabled ? <span>Active</span> : <span>Off</span>}
-                </button>
+                <Button variant="default" aria-pressed={candidate.id === profileId} key={candidate.id} onClick={() => requestProfileSwitch(candidate.id)} type="button">{profileLabel(candidate.id)}{candidate.reviewState === "needs-review" ? <span>Needs review</span> : candidate.enabled ? <span>Active</span> : <span>Off</span>}</Button>
               ))}
             </div>
             <div className="alert-editor-page__canvas-tools">
-              <button aria-label="Undo" className="button button--secondary button--compact" disabled={editor.past.length === 0} onClick={undo} type="button">Undo</button>
-              <button aria-label="Redo" className="button button--secondary button--compact" disabled={editor.future.length === 0} onClick={redo} type="button">Redo</button>
-              <button aria-label="Toggle safe area and center guides" aria-pressed={showSafeArea} className="button button--secondary button--compact" onClick={() => setShowSafeArea((current) => !current)} type="button">Guides</button>
-              <button aria-label="Toggle canvas grid" aria-pressed={showGrid} className="button button--secondary button--compact" onClick={() => setShowGrid((current) => !current)} type="button">Grid</button>
-              <label className="alert-editor-page__snap-control"><input checked={snapToGrid} onChange={event => setSnapToGrid(event.currentTarget.checked)} type="checkbox" />Snap to grid</label>
-              <label className="alert-editor-page__snap-control"><input checked={snapToAlignment} onChange={event => setSnapToAlignment(event.currentTarget.checked)} type="checkbox" />Snap to alignment</label>
-              <label className="alert-editor-page__canvas-background"><span>Canvas background</span><select aria-label="Canvas background" onChange={(event) => { const mode = event.currentTarget.value as CanvasBackground["mode"]; setCanvasBackground((current) => ({ ...current, mode })); }} value={canvasBackground.mode}><option value="checkerboard">Checkerboard</option><option value="neutral">Neutral</option><option value="test">Test color</option></select></label>
+              <Button variant="default" aria-label="Undo" disabled={editor.past.length === 0} onClick={undo} type="button">Undo</Button>
+              <Button variant="default" aria-label="Redo" disabled={editor.future.length === 0} onClick={redo} type="button">Redo</Button>
+              <Button variant="default" aria-label="Toggle safe area and center guides" aria-pressed={showSafeArea} onClick={() => setShowSafeArea((current) => !current)} type="button">Guides</Button>
+              <Button variant="default" aria-label="Toggle canvas grid" aria-pressed={showGrid} onClick={() => setShowGrid((current) => !current)} type="button">Grid</Button>
+              <Checkbox label="Snap to grid" className="alert-editor-page__snap-control" checked={snapToGrid} onChange={event => setSnapToGrid(event.currentTarget.checked)} />
+              <Checkbox label="Snap to alignment" className="alert-editor-page__snap-control" checked={snapToAlignment} onChange={event => setSnapToAlignment(event.currentTarget.checked)} />
+              <NativeSelect label="Canvas background" className="alert-editor-page__canvas-background" aria-label="Canvas background" onChange={(event) => { const mode = event.currentTarget.value as CanvasBackground["mode"]; setCanvasBackground((current) => ({ ...current, mode })); }} value={canvasBackground.mode}><option value="checkerboard">Checkerboard</option><option value="neutral">Neutral</option><option value="test">Test color</option></NativeSelect>
               {canvasBackground.mode === "test" ? <label className="alert-editor-page__test-background"><span>Test background color</span><input aria-label="Test background color" onChange={(event) => setCanvasBackground({ mode: "test", color: event.currentTarget.value })} type="color" value={canvasBackground.color} /></label> : null}
-              <button aria-label="Zoom out" className="button button--secondary button--compact" disabled={canvasView.zoom <= 25} onClick={() => updateCurrentCanvasView({ ...canvasView, zoom: Math.max(25, canvasView.zoom - 25) })} type="button">-</button>
+              <Button variant="default" aria-label="Zoom out" disabled={canvasView.zoom <= 25} onClick={() => updateCurrentCanvasView({ ...canvasView, zoom: Math.max(25, canvasView.zoom - 25) })} type="button">-</Button>
               <output aria-label="Canvas zoom">{canvasView.zoom}%</output>
-              <button aria-label="Zoom in" className="button button--secondary button--compact" disabled={canvasView.zoom >= 150} onClick={() => updateCurrentCanvasView({ ...canvasView, zoom: Math.min(150, canvasView.zoom + 25) })} type="button">+</button>
-              <button className="button button--secondary button--compact" onClick={() => setFitRequestId((current) => current + 1)} type="button">Fit</button>
-              <button className="button button--secondary button--compact" onClick={() => updateCurrentCanvasView({ zoom: 100, scrollLeft: 0, scrollTop: 0 })} type="button">100%</button>
+              <Button variant="default" aria-label="Zoom in" disabled={canvasView.zoom >= 150} onClick={() => updateCurrentCanvasView({ ...canvasView, zoom: Math.min(150, canvasView.zoom + 25) })} type="button">+</Button>
+              <Button variant="default" onClick={() => setFitRequestId((current) => current + 1)} type="button">Fit</Button>
+              <Button variant="default" onClick={() => updateCurrentCanvasView({ zoom: 100, scrollLeft: 0, scrollTop: 0 })} type="button">100%</Button>
             </div>
           </div>
           {profile.reviewState === "needs-review" ? (
             <div className="alert-editor-page__profile-warning" role="status">
               <strong>Needs review</strong>
               <span>This generated layout is editable but cannot be sent live until you review and enable it.</span>
-              <button className="button button--secondary button--compact" id={`profile-review-${profileId}`} onClick={() => updateDocument((current) => updateProfile(current, profileId, { enabled: true, reviewState: "ready" }))} type="button">Review and enable</button>
+              <Button variant="default" id={`profile-review-${profileId}`} onClick={() => updateDocument((current) => updateProfile(current, profileId, { enabled: true, reviewState: "ready" }))} type="button">Review and enable</Button>
             </div>
           ) : null}
           <AlertCanvas
@@ -1103,30 +1088,12 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         </main>
 
         <aside className="alert-editor-page__inspector" aria-label="Alert inspector">
-          <div className="alert-editor-page__tabs" role="tablist" aria-label="Inspector sections">
-            {(["layers", "alert", "event"] as const).map((value) => (
-              <button
-                aria-controls={`alert-editor-panel-${value}`}
-                aria-selected={tab === value}
-                id={`alert-editor-tab-${value}`}
-                key={value}
-                onClick={() => setTab(value)}
-                onKeyDown={(event) => handleInspectorTabKeyDown(event, value)}
-                ref={(element) => { tabRefs.current[value] = element; }}
-                role="tab"
-                tabIndex={tab === value ? 0 : -1}
-                type="button"
-              >
-                {capitalize(value)}
-              </button>
-            ))}
-          </div>
-          <div
-            aria-labelledby={`alert-editor-tab-${tab}`}
-            id={`alert-editor-panel-${tab}`}
-            role="tabpanel"
-            tabIndex={0}
-          >
+          <Tabs value={tab} onChange={(value) => { if (value === "layers" || value === "alert" || value === "event") setTab(value); }} keepMounted={false}>
+            <Tabs.List grow aria-label="Inspector sections">
+              {(["layers", "alert", "event"] as const).map((value) => <Tabs.Tab key={value} value={value} onFocus={() => setTab(value)}>{capitalize(value)}</Tabs.Tab>)}
+            </Tabs.List>
+            {(["layers", "alert", "event"] as const).map((value) => <Tabs.Panel key={value} value={value} tabIndex={0}>
+            {value !== tab ? null : <>
             {tab === "layers" ? (
               <LayerInspector
                 activeTtsProvider={activeTtsProvider}
@@ -1149,15 +1116,21 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
               />
             ) : tab === "alert" ? (
               <><AlertInspector assets={assets} document={document} onChange={updateDocument} onRepairDuration={async (assetId) => {
-                const repaired = await props.managementApi.repairAssetDuration?.(assetId);
-                if (repaired !== undefined) setAssets((current) => current.map((asset) => asset.id === assetId ? repaired : asset));
+                try {
+                  const repaired = await props.managementApi.repairAssetDuration?.(assetId);
+                  if (repaired !== undefined) setAssets((current) => current.map((asset) => asset.id === assetId ? repaired : asset));
+                } catch (cause) {
+                  showActionError(actionableError("Media duration could not be refreshed", cause, "Review the source asset in Assets, then retry duration."));
+                }
               }} onCopyDesign={() => {
                 setCopyDesignSourceId(filteredAlerts.find((alert) => alert.id !== document.id)?.id ?? "");
+                setError(null);
+                setDialogError(null);
                 setCopyDesignOpen(true);
               }} onCopyProfileLayout={requestProfileCopy} profileId={profileId} />
               <AlertAudioOutputs value={document.outputs} status={audioStatus.status} loading={audioStatus.loading} error={audioStatus.error} onChange={(outputs) => updateDocument((current) => ({ ...current, outputs }))} /></>
             ) : (
-              <><div className="alert-editor-inspector"><fieldset><legend>Test destinations</legend><label className="alert-editor-inspector__check"><input checked={sendDeviceOnly} onChange={(event) => setSendDeviceOnly(event.currentTarget.checked)} type="checkbox" />Test draft without a browser source (selected device outputs only)</label>
+              <><div className="alert-editor-inspector"><fieldset><legend>Test destinations</legend><Checkbox label="Test draft without a browser source (selected device outputs only)" checked={sendDeviceOnly} onChange={(event) => setSendDeviceOnly(event.currentTarget.checked)} />
               <p>Test draft uses this draft and the selected audio outputs. Unavailable browser profiles are omitted; available device audio can still play. Preview stays local. TTS follows its existing provider.</p></fieldset></div>
               <AlertEventInspector
                 document={document}
@@ -1199,16 +1172,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                 variationEvaluation={variationEvaluation}
               /></>
             )}
-          </div>
-          {(["layers", "alert", "event"] as const).filter((value) => value !== tab).map((value) => (
-            <div
-              aria-labelledby={`alert-editor-tab-${value}`}
-              hidden
-              id={`alert-editor-panel-${value}`}
-              key={value}
-              role="tabpanel"
-            />
-          ))}
+            </>}
+            </Tabs.Panel>)}
+          </Tabs>
         </aside>
       </div>
 
@@ -1221,17 +1187,19 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         open={picker !== null}
         selectedAssetId={picker?.layerId === null || picker?.layerId === undefined ? null : assetIdForLayer(document, picker.layerId)}
       />
-      <ModalSurface labelledBy="copy-alert-design-title" onCancel={() => setCopyDesignOpen(false)} open={copyDesignOpen}>
+      <ModalSurface restoreFocusFallbackRef={editorHeadingRef} labelledBy="copy-alert-design-title" pending={busy} onCancel={() => { setDialogError(null); setCopyDesignOpen(false); }} open={copyDesignOpen}>
         <div className="alert-editor-page__save-warning">
-          <div><h2 id="copy-alert-design-title">Copy design from another alert?</h2><p>Layers, assets, animation, and both profile layouts will replace the current design. Matching, enablement, identity, and sample data stay unchanged.</p></div>
-          <label><span>Source alert</span><select autoFocus onChange={(event) => setCopyDesignSourceId(event.currentTarget.value)} value={copyDesignSourceId}><option value="">Choose an alert</option>{(setDetail?.inventory ?? []).filter((alert) => alert.id !== document.id).map((alert) => <option key={alert.id} value={alert.id}>{alert.name} ({formatEventType(alert.eventType)})</option>)}</select></label>
-          <div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={() => setCopyDesignOpen(false)} type="button">Cancel</button><button className="button button--primary" disabled={busy || copyDesignSourceId === ""} onClick={() => void applyCopiedDesign()} type="button">Copy design</button></div>
+          {dialogError === null ? null : <ManagementErrorToast error={dialogError} onDismiss={() => setDialogError(null)} />}
+          <div><ManagementModalTitle>Copy design from another alert?</ManagementModalTitle><p>Layers, assets, animation, and both profile layouts will replace the current design. Matching, enablement, identity, and sample data stay unchanged.</p></div>
+          <NativeSelect disabled={busy} label="Source alert" autoFocus onChange={(event) => setCopyDesignSourceId(event.currentTarget.value)} value={copyDesignSourceId}><option value="">Choose an alert</option>{(setDetail?.inventory ?? []).filter((alert) => alert.id !== document.id).map((alert) => <option key={alert.id} value={alert.id}>{alert.name} ({formatEventType(alert.eventType)})</option>)}</NativeSelect>
+          <div className="management-modal__actions"><Button variant="default" disabled={busy} onClick={() => { setDialogError(null); setCopyDesignOpen(false); }} type="button">Cancel</Button><Button disabled={busy || copyDesignSourceId === ""} onClick={() => void applyCopiedDesign()} type="button">Copy design</Button></div>
         </div>
       </ModalSurface>
-      <ModalSurface labelledBy="active-alert-save-warning-title" onCancel={cancelSaveWarning} open={saveWarning !== null}>
+      <ModalSurface restoreFocusFallbackRef={editorHeadingRef} labelledBy="active-alert-save-warning-title" pending={busy} onCancel={cancelSaveWarning} open={saveWarning !== null}>
         <div className="alert-editor-page__save-warning">
           <div>
-            <h2 id="active-alert-save-warning-title">Save changes to active alert?</h2>
+            {dialogError === null ? null : <ManagementErrorToast error={dialogError} onDismiss={() => setDialogError(null)} />}
+            <ManagementModalTitle>Save changes to active alert?</ManagementModalTitle>
             <p>This alert belongs to the active set. Saving can change live output immediately.</p>
             {saveWarning?.serverMessage ? <p>{saveWarning.serverMessage}</p> : null}
           </div>
@@ -1244,15 +1212,15 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             ]))].join(", ") || "None (explicit audio is silent)"}. Changes apply to future playback starts.</dd></div> : null}
           </dl>
           <div className="management-modal__actions">
-            <button className="button button--secondary" disabled={busy} onClick={cancelSaveWarning} type="button">Cancel</button>
-            <button className="button button--primary" disabled={busy} onClick={() => void confirmSaveWarning()} type="button">Save changes</button>
+            <Button variant="default" disabled={busy} onClick={cancelSaveWarning} type="button">Cancel</Button>
+            <Button disabled={busy} onClick={() => void confirmSaveWarning()} type="button">Save changes</Button>
           </div>
         </div>
       </ModalSurface>
-      <ModalSurface labelledBy="profile-copy-warning-title" onCancel={() => setProfileCopy(null)} open={profileCopy !== null}>
+      <ModalSurface restoreFocusFallbackRef={editorHeadingRef} labelledBy="profile-copy-warning-title" onCancel={() => setProfileCopy(null)} open={profileCopy !== null}>
         <div className="alert-editor-page__save-warning">
-          <div><h2 id="profile-copy-warning-title">Replace edited {profileCopy === null ? "target" : profileLabel(profileCopy.targetId)} layout?</h2><p>Your unsaved target-profile layout changes will be replaced by a scaled copy. The copied profile will be disabled and marked Needs review.</p></div>
-          <div className="management-modal__actions"><button className="button button--secondary" onClick={() => setProfileCopy(null)} type="button">Cancel</button><button className="button button--primary" onClick={() => applyProfileCopy()} type="button">Replace layout</button></div>
+          <div><ManagementModalTitle>Replace edited {profileCopy === null ? "target" : profileLabel(profileCopy.targetId)} layout?</ManagementModalTitle><p>Your unsaved target-profile layout changes will be replaced by a scaled copy. The copied profile will be disabled and marked Needs review.</p></div>
+          <div className="management-modal__actions"><Button variant="default" onClick={() => setProfileCopy(null)} type="button">Cancel</Button><Button onClick={() => applyProfileCopy()} type="button">Replace layout</Button></div>
         </div>
       </ModalSurface>
     </div>
@@ -1488,28 +1456,22 @@ function LayerInspector({
       <section>
         <div className="alert-editor-inspector__heading"><h3>Layers</h3><span>{document.layers.length}</span></div>
         <div className="alert-editor-inspector__add-row" aria-label="Add layer">
-          <button id="alert-editor-add-text" onClick={() => onAddSimple("text")} type="button">Text</button>
-          <button onClick={() => onAddAsset("image")} type="button">Image</button>
-          <button onClick={() => onAddAsset("video")} type="button">Video/GIF</button>
-          <button onClick={() => onAddAsset("audio")} type="button">Audio</button>
-          <button onClick={() => onAddSimple("tts")} type="button">TTS</button>
-          <button onClick={onAddShape} type="button">Shape</button>
+          <Button variant="default" id="alert-editor-add-text" onClick={() => onAddSimple("text")} type="button">Text</Button>
+          <Button variant="default" onClick={() => onAddAsset("image")} type="button">Image</Button>
+          <Button variant="default" onClick={() => onAddAsset("video")} type="button">Video/GIF</Button>
+          <Button variant="default" onClick={() => onAddAsset("audio")} type="button">Audio</Button>
+          <Button variant="default" onClick={() => onAddSimple("tts")} type="button">TTS</Button>
+          <Button variant="default" onClick={onAddShape} type="button">Shape</Button>
         </div>
         <div className="alert-editor-inspector__layer-list">
           {document.layers.map((layer) => (
             <div className={selectedLayer?.id === layer.id ? "is-selected" : undefined} key={layer.id}>
-              <button onClick={() => onSelect(layer.id)} type="button"><span>{layer.name}</span><small>{layerTypeLabel(layer.type)}</small></button>
+              <UnstyledButton onClick={() => onSelect(layer.id)} type="button"><span>{layer.name}</span><small>{layerTypeLabel(layer.type)}</small></UnstyledButton>
               {layer.type === "tts" ? (
-                <button
-                  aria-label={`${layer.enabled ? "Disable" : "Enable"} ${layer.name}${!layer.enabled && activeTtsProvider === null ? " (active TTS provider required)" : ""}`}
-                  disabled={!layer.enabled && activeTtsProvider === null}
-                  onClick={() => onChange((current) => updateLayer(current, layer.id, (candidate) => candidate.type === "tts"
+                <Button variant="default" aria-label={`${layer.enabled ? "Disable" : "Enable"} ${layer.name}${!layer.enabled && activeTtsProvider === null ? " (active TTS provider required)" : ""}`} disabled={!layer.enabled && activeTtsProvider === null} onClick={() => onChange((current) => updateLayer(current, layer.id, (candidate) => candidate.type === "tts"
                     ? { ...candidate, enabled: !candidate.enabled, ...(!candidate.enabled && activeTtsProvider !== null ? { providerId: activeTtsProvider.kind } : {}) }
-                    : candidate))}
-                  title={!layer.enabled && activeTtsProvider === null ? "Set up an active TTS provider to enable this layer." : undefined}
-                  type="button"
-                >{layer.enabled ? "On" : "Off"}</button>
-              ) : <button aria-label={`${layer.visible ? "Hide" : "Show"} ${layer.name}`} onClick={() => onChange((current) => toggleLayerVisible(current, layer.id))} type="button">{layer.visible ? "On" : "Off"}</button>}
+                    : candidate))} title={!layer.enabled && activeTtsProvider === null ? "Set up an active TTS provider to enable this layer." : undefined} type="button">{layer.enabled ? "On" : "Off"}</Button>
+              ) : <Button variant="default" aria-label={`${layer.visible ? "Hide" : "Show"} ${layer.name}`} onClick={() => onChange((current) => toggleLayerVisible(current, layer.id))} type="button">{layer.visible ? "On" : "Off"}</Button>}
             </div>
           ))}
         </div>
@@ -1517,7 +1479,7 @@ function LayerInspector({
       {selectedLayer === null ? <p className="alert-editor-page__empty">Select a layer to edit it.</p> : (
         <section className="alert-editor-inspector__controls">
           <h3>{selectedLayer.name}</h3>
-          <label><span>Layer name</span><input onChange={(event) => { const value = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, name: value }))); }} value={selectedLayer.name} /></label>
+          <TextInput label="Layer name" onChange={(event) => { const value = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, name: value }))); }} value={selectedLayer.name} />
           {selectedLayer.type === "tts" ? (
             <details className="alert-editor-inspector__disclosure">
               <summary>Live TTS</summary>
@@ -1538,31 +1500,22 @@ function LayerInspector({
                     <a href="/manage/tts-providers">Set up a TTS provider</a>
                   </div>
                 )}
-                <label className="alert-editor-inspector__check">
-                  <span>Use TTS for this alert</span>
-                  <input
-                    aria-label="Enable TTS for this alert"
-                    checked={selectedLayer.enabled}
-                    disabled={!selectedLayer.enabled && activeTtsProvider === null}
-                    onChange={(event) => {
+                <Checkbox label="Use TTS for this alert" aria-label="Enable TTS for this alert" checked={selectedLayer.enabled} disabled={!selectedLayer.enabled && activeTtsProvider === null} onChange={(event) => {
                       const enabled = event.currentTarget.checked;
                       if (enabled && activeTtsProvider === null) return;
                       onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "tts"
                         ? { ...layer, enabled, ...(enabled ? { providerId: activeTtsProvider!.kind } : {}) }
                         : layer));
-                    }}
-                    type="checkbox"
-                  />
-                </label>
+                    }} />
               </fieldset>
             </details>
           ) : null}
           {(selectedLayer.type === "text" || selectedLayer.type === "tts") ? (
             <>
-              <label><span>{selectedLayer.type === "text" ? "Message template" : "TTS template"}</span><textarea aria-label={selectedLayer.type === "text" ? "Message template" : "TTS template"} onChange={(event) => { const value = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === selectedLayer.type ? { ...layer, template: value } : layer)); }} value={selectedLayer.template} /></label>
+              <Textarea label={<>{selectedLayer.type === "text" ? "Message template" : "TTS template"}</>} aria-label={selectedLayer.type === "text" ? "Message template" : "TTS template"} onChange={(event) => { const value = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === selectedLayer.type ? { ...layer, template: value } : layer)); }} value={selectedLayer.template} />
               <div aria-label="Template variables" className="alert-editor-inspector__variables">
                 <span>Insert variable</span>
-                <div>{(document.templateVariables ?? []).map((variable) => <button aria-label={`Insert {${variable.key}}`} className="button button--secondary button--compact" key={variable.key} onClick={() => onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === selectedLayer.type ? { ...layer, template: `${layer.template}{${variable.key}}` } : layer))} title={variable.description} type="button">{variable.label}</button>)}</div>
+                <div>{(document.templateVariables ?? []).map((variable) => <Button variant="default" aria-label={`Insert {${variable.key}}`} key={variable.key} onClick={() => onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === selectedLayer.type ? { ...layer, template: `${layer.template}{${variable.key}}` } : layer))} title={variable.description} type="button">{variable.label}</Button>)}</div>
               </div>
             </>
           ) : null}
@@ -1590,7 +1543,7 @@ function LayerInspector({
             />
           ) : null}
           {(selectedLayer.type === "image" || selectedLayer.type === "video" || selectedLayer.type === "audio") ? (
-            <div className="alert-editor-inspector__asset"><span>Asset</span><code>{selectedLayer.assetId}</code><button className="button button--secondary button--compact" onClick={() => onChooseAsset(selectedLayer)} type="button">Choose asset</button></div>
+            <div className="alert-editor-inspector__asset"><span>Asset</span><code>{selectedLayer.assetId}</code><Button variant="default" onClick={() => onChooseAsset(selectedLayer)} type="button">Choose asset</Button></div>
           ) : null}
           {selectedLayer.type === "audio" ? (
             <><MediaVolumeControl label="Volume" value={selectedLayer.volume} onChange={(value) => onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "audio" ? { ...layer, volume: value } : layer))} />
@@ -1601,11 +1554,7 @@ function LayerInspector({
             hasSeparateAudio={document.layers.some(layer => layer.type === "audio" && layer.visible)}
             onChange={(settings) => onChange(current => updateLayer(current, selectedLayer.id, layer => layer.type === "video" ? { ...layer, ...settings } : layer))}
           /> : null}
-          {selectedLayer.type === "video" && selectedAssetMediaType !== "gif" ? <label className="alert-editor-inspector__check"><input
-            checked={selectedLayer.loop ?? false}
-            onChange={(event) => { const loop = event.currentTarget.checked; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "video" ? { ...layer, loop } : layer)); }}
-            type="checkbox"
-          /><span>Loop video</span></label> : null}
+          {selectedLayer.type === "video" && selectedAssetMediaType !== "gif" ? <Checkbox label="Loop video" checked={selectedLayer.loop ?? false} onChange={(event) => { const loop = event.currentTarget.checked; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "video" ? { ...layer, loop } : layer)); }} /> : null}
           {selectedLayer.type === "video" && selectedAssetMediaType === "gif" ? <p>GIF repetition follows the animation stored in the file.</p> : null}
           {selectedLayer.type === "video" && selectedLayer.playEmbeddedAudio ? <AudioFadeControls
             fadeInMs={selectedLayer.audioFadeInMs}
@@ -1617,7 +1566,7 @@ function LayerInspector({
               <summary>Position and size</summary>
               <fieldset aria-label="Position and size" className="alert-editor-inspector__geometry">
                 {(["x", "y", "width", "height"] as const).map((field) => (
-                  <label key={field}><span>{field.toUpperCase()}</span><input min="0" onChange={(event) => { const value = Number(event.currentTarget.value); onChange((current) => updateLayerGeometry(current, profileId, selectedLayer.id, { [field]: value })); }} type="number" value={layout[field]} /></label>
+                  <TextInput label={geometryLabels[field]} key={field} min="0" onChange={(event) => { const value = Number(event.currentTarget.value); onChange((current) => updateLayerGeometry(current, profileId, selectedLayer.id, { [field]: value })); }} type="number" value={layout[field]} />
                 ))}
               </fieldset>
             </details>
@@ -1625,18 +1574,18 @@ function LayerInspector({
           <details className="alert-editor-inspector__disclosure">
             <summary>Animation preset</summary>
             <fieldset aria-label="Animation preset" className="alert-editor-inspector__animation">
-            <label><span>Entrance</span><select onChange={(event) => { const entrance = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, entrance } }))); }} value={selectedLayer.animation.entrance}><option value="none">None</option><option value="fade">Fade</option><option value="scale">Scale</option><option value="slide-up">Slide up</option></select></label>
-            <label><span>Exit</span><select onChange={(event) => { const exit = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, exit } }))); }} value={selectedLayer.animation.exit}><option value="none">None</option><option value="fade">Fade</option><option value="scale">Scale</option><option value="slide-down">Slide down</option></select></label>
-            <label><span>Animation duration (milliseconds)</span><input aria-label="Animation duration (milliseconds)" min="0" onChange={(event) => { const durationMs = Number(event.currentTarget.value); onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, durationMs } }))); }} type="number" value={selectedLayer.animation.durationMs} /></label>
-            <label><span>Animation delay (milliseconds)</span><input aria-label="Animation delay (milliseconds)" min="0" onChange={(event) => { const delayMs = Number(event.currentTarget.value); onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, delayMs } }))); }} type="number" value={selectedLayer.animation.delayMs} /></label>
-            <label><span>Animation easing</span><select aria-label="Animation easing" onChange={(event) => { const easing = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, easing } }))); }} value={selectedLayer.animation.easing}><option value="linear">Linear</option><option value="ease">Ease</option><option value="ease-in">Ease in</option><option value="ease-out">Ease out</option><option value="ease-in-out">Ease in out</option></select></label>
+            <NativeSelect label="Entrance" onChange={(event) => { const entrance = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, entrance } }))); }} value={selectedLayer.animation.entrance}><option value="none">None</option><option value="fade">Fade</option><option value="scale">Scale</option><option value="slide-up">Slide up</option></NativeSelect>
+            <NativeSelect label="Exit" onChange={(event) => { const exit = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, exit } }))); }} value={selectedLayer.animation.exit}><option value="none">None</option><option value="fade">Fade</option><option value="scale">Scale</option><option value="slide-down">Slide down</option></NativeSelect>
+            <TextInput label="Animation duration (milliseconds)" aria-label="Animation duration (milliseconds)" min="0" onChange={(event) => { const durationMs = Number(event.currentTarget.value); onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, durationMs } }))); }} type="number" value={selectedLayer.animation.durationMs} />
+            <TextInput label="Animation delay (milliseconds)" aria-label="Animation delay (milliseconds)" min="0" onChange={(event) => { const delayMs = Number(event.currentTarget.value); onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, delayMs } }))); }} type="number" value={selectedLayer.animation.delayMs} />
+            <NativeSelect label="Animation easing" aria-label="Animation easing" onChange={(event) => { const easing = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, easing } }))); }} value={selectedLayer.animation.easing}><option value="linear">Linear</option><option value="ease">Ease</option><option value="ease-in">Ease in</option><option value="ease-out">Ease out</option><option value="ease-in-out">Ease in out</option></NativeSelect>
             </fieldset>
           </details>
           <div className="alert-editor-inspector__actions">
-            <button className="button button--secondary button--compact" disabled={selectedLayer.order === 0} onClick={() => onChange((current) => reorderLayer(current, selectedLayer.id, selectedLayer.order - 1))} type="button">Move up</button>
-            <button className="button button--secondary button--compact" disabled={selectedLayer.order === document.layers.length - 1} onClick={() => onChange((current) => reorderLayer(current, selectedLayer.id, selectedLayer.order + 1))} type="button">Move down</button>
-            <button className="button button--secondary button--compact" onClick={() => onChange((current) => duplicateLayer(current, selectedLayer.id, nextLayerId(current, selectedLayer.type)))} type="button">Duplicate</button>
-            <button className="button button--danger-quiet button--compact" onClick={() => onChange((current) => deleteLayer(current, selectedLayer.id))} type="button">Delete</button>
+            <Button variant="default" disabled={selectedLayer.order === 0} onClick={() => onChange((current) => reorderLayer(current, selectedLayer.id, selectedLayer.order - 1))} type="button">Move up</Button>
+            <Button variant="default" disabled={selectedLayer.order === document.layers.length - 1} onClick={() => onChange((current) => reorderLayer(current, selectedLayer.id, selectedLayer.order + 1))} type="button">Move down</Button>
+            <Button variant="default" onClick={() => onChange((current) => duplicateLayer(current, selectedLayer.id, nextLayerId(current, selectedLayer.type)))} type="button">Duplicate</Button>
+            <Button color="red" variant="light" onClick={() => onChange((current) => deleteLayer(current, selectedLayer.id))} type="button">Delete</Button>
           </div>
         </section>
       )}
@@ -1663,19 +1612,10 @@ function TextStyleControls({ layer, onChange, assetApi, assets, onAssetsChanged,
         <summary>Typography</summary>
         <fieldset aria-label="Typography" className="alert-editor-inspector__style">
         <AdvancedTypographyControls value={layer.textStyle} onChange={(textStyle) => onChange({ ...layer, textStyle })} assetApi={assetApi} assets={assets} onAssetsChanged={onAssetsChanged} editingWarp={editingWarp} onEditWarp={onEditWarp} />
-        <label>
-          <span>Font preset</span>
-          <select
-            aria-label="Font preset"
-            onChange={(event) => onChange({
+        <NativeSelect label="Font preset" aria-label="Font preset" onChange={(event) => onChange({
               ...layer,
               textStyle: { ...layer.textStyle, fontPreset: event.currentTarget.value as TextLayer["textStyle"]["fontPreset"] }
-            })}
-            value={layer.textStyle.fontPreset}
-          >
-            {alertFontPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
-          </select>
-        </label>
+            })} value={layer.textStyle.fontPreset}>{alertFontPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}</NativeSelect>
         <StyleNumberInput
           error={boundedStyleError("Font size", layer.textStyle.fontSizePx, alertTextStyleLimits.fontSizePx, true)}
           id="text-font-size"
@@ -1684,22 +1624,13 @@ function TextStyleControls({ layer, onChange, assetApi, assets, onAssetsChanged,
           onChange={(fontSizePx) => onChange({ ...layer, textStyle: { ...layer.textStyle, fontSizePx } })}
           value={layer.textStyle.fontSizePx}
         />
-        <label>
-          <span>Font weight</span>
-          <select
-            aria-label="Font weight"
-            onChange={(event) => onChange({
+        <NativeSelect label="Font weight" aria-label="Font weight" onChange={(event) => onChange({
               ...layer,
               textStyle: {
                 ...layer.textStyle,
                 fontWeight: Number(event.currentTarget.value) as TextLayer["textStyle"]["fontWeight"]
               }
-            })}
-            value={layer.textStyle.fontWeight}
-          >
-            {alertFontWeights.map((weight) => <option key={weight} value={weight}>{weight}</option>)}
-          </select>
-        </label>
+            })} value={layer.textStyle.fontWeight}>{alertFontWeights.map((weight) => <option key={weight} value={weight}>{weight}</option>)}</NativeSelect>
         <StyleNumberInput
           error={boundedStyleError("Line height", layer.textStyle.lineHeight, alertTextStyleLimits.lineHeight, false)}
           id="text-line-height"
@@ -1709,52 +1640,26 @@ function TextStyleControls({ layer, onChange, assetApi, assets, onAssetsChanged,
           step={0.05}
           value={layer.textStyle.lineHeight}
         />
-        <label>
-          <span>Horizontal alignment</span>
-          <select
-            aria-label="Horizontal alignment"
-            onChange={(event) => onChange({
+        <NativeSelect label="Horizontal alignment" aria-label="Horizontal alignment" onChange={(event) => onChange({
               ...layer,
               textStyle: {
                 ...layer.textStyle,
                 horizontalAlign: event.currentTarget.value as TextLayer["textStyle"]["horizontalAlign"]
               }
-            })}
-            value={layer.textStyle.horizontalAlign}
-          >
-            <option value="left">Left</option>
-            <option value="center">Center</option>
-            <option value="right">Right</option>
-          </select>
-        </label>
-        <label>
-          <span>Vertical alignment</span>
-          <select
-            aria-label="Vertical alignment"
-            onChange={(event) => onChange({
+            })} value={layer.textStyle.horizontalAlign}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></NativeSelect>
+        <NativeSelect label="Vertical alignment" aria-label="Vertical alignment" onChange={(event) => onChange({
               ...layer,
               textStyle: {
                 ...layer.textStyle,
                 verticalAlign: event.currentTarget.value as TextLayer["textStyle"]["verticalAlign"]
               }
-            })}
-            value={layer.textStyle.verticalAlign}
-          >
-            <option value="top">Top</option>
-            <option value="center">Center</option>
-            <option value="bottom">Bottom</option>
-          </select>
-        </label>
+            })} value={layer.textStyle.verticalAlign}><option value="top">Top</option><option value="center">Center</option><option value="bottom">Bottom</option></NativeSelect>
         <RgbaColorControl
           label="Text color"
           onChange={(color) => onChange({ ...layer, textStyle: { ...layer.textStyle, color } })}
           value={layer.textStyle.color}
         />
-        <label className="alert-editor-inspector__check">
-          <input
-            aria-label="Text shadow"
-            checked={textShadow !== null}
-            onChange={(event) => onChange({
+        <Checkbox label="Text shadow" aria-label="Text shadow" checked={textShadow !== null} onChange={(event) => onChange({
               ...layer,
               textStyle: {
                 ...layer.textStyle,
@@ -1762,11 +1667,7 @@ function TextStyleControls({ layer, onChange, assetApi, assets, onAssetsChanged,
                   ? structuredClone(compatibilityAlertTextStyle.shadow)
                   : null
               }
-            })}
-            type="checkbox"
-          />
-          <span>Text shadow</span>
-        </label>
+            })} />
         {textShadow === null ? null : (
           <ShadowControls
             id="text-shadow"
@@ -1806,21 +1707,13 @@ function TextStyleControls({ layer, onChange, assetApi, assets, onAssetsChanged,
           onChange={(cornerRadiusPx) => onChange({ ...layer, boxStyle: { ...layer.boxStyle, cornerRadiusPx } })}
           value={layer.boxStyle.cornerRadiusPx}
         />
-        <label className="alert-editor-inspector__check">
-          <input
-            aria-label="Box shadow"
-            checked={boxShadow !== null}
-            onChange={(event) => onChange({
+        <Checkbox label="Box shadow" aria-label="Box shadow" checked={boxShadow !== null} onChange={(event) => onChange({
               ...layer,
               boxStyle: {
                 ...layer.boxStyle,
                 shadow: event.currentTarget.checked ? structuredClone(defaultOptionalAlertShadow) : null
               }
-            })}
-            type="checkbox"
-          />
-          <span>Box shadow</span>
-        </label>
+            })} />
         {boxShadow === null ? null : (
           <ShadowControls
             id="box-shadow"
@@ -1912,9 +1805,9 @@ function StyleNumberInput({
   return (
     <div className="alert-editor-inspector__style-field">
       <label htmlFor={id}><span>{label}</span></label>
-      <input
-        aria-describedby={error === null ? undefined : errorId}
-        aria-invalid={error !== null}
+      <TextInput
+        attributes={{ input: { "aria-describedby": error === null ? undefined : errorId } }}
+        error={error !== null} aria-invalid={error !== null}
         aria-label={label}
         id={id}
         max={limits.max}
@@ -1956,7 +1849,7 @@ function AlertInspector({ assets, document, onChange, onCopyDesign, onCopyProfil
   return (
     <div className="alert-editor-inspector alert-editor-inspector__controls">
       <h3>Alert settings</h3>
-      <label><span>Alert name</span><input onChange={(event) => { const name = event.currentTarget.value; onChange((current) => ({ ...current, name })); }} value={document.name} /></label>
+      <TextInput label="Alert name" onChange={(event) => { const name = event.currentTarget.value; onChange((current) => ({ ...current, name })); }} value={document.name} />
       <MediaDurationControls
         assetIds={document.layers.flatMap((layer) => layer.visible && (layer.type === "audio" || layer.type === "video") ? [layer.assetId] : [])}
         assets={assets}
@@ -1966,13 +1859,13 @@ function AlertInspector({ assets, document, onChange, onCopyDesign, onCopyProfil
         onChange={({ mode, durationMs }) => onChange((current) => ({ ...current, durationMode: mode, durationMs }))}
         onRepair={onRepairDuration}
       />
-      <label className="alert-editor-inspector__check"><input checked={document.enabled} id="alert-enabled-control" onChange={(event) => { const enabled = event.currentTarget.checked; onChange((current) => ({ ...current, enabled })); }} type="checkbox" /><span>Alert enabled</span></label>
-      <button className="button button--secondary" onClick={onCopyDesign} type="button">Copy design from...</button>
-      <button className="button button--secondary" onClick={onCopyProfileLayout} type="button">Copy layout from {profileId === "landscape" ? "Vertical" : "Landscape"}</button>
+      <Checkbox label="Alert enabled" checked={document.enabled} id="alert-enabled-control" onChange={(event) => { const enabled = event.currentTarget.checked; onChange((current) => ({ ...current, enabled })); }} />
+      <Button variant="default" onClick={onCopyDesign} type="button">Copy design from...</Button>
+      <Button variant="default" onClick={onCopyProfileLayout} type="button">Copy layout from {profileId === "landscape" ? "Vertical" : "Landscape"}</Button>
       <section className="alert-editor-inspector__profile-state">
         <div><strong>{profileLabel(profileId)} profile</strong><StatusBadge label={profile.reviewState === "ready" ? "Reviewed" : "Needs review"} tone={profile.reviewState === "ready" ? "positive" : "warning"} /></div>
-        {profile.reviewState === "needs-review" ? <button className="button button--secondary" onClick={() => onChange((current) => updateProfile(current, profileId, { enabled: true, reviewState: "ready" }))} type="button">Review and enable profile</button> : null}
-        <label className="alert-editor-inspector__check"><input checked={profile.enabled} disabled={profile.reviewState !== "ready"} id={`profile-enabled-${profileId}`} onChange={(event) => { const enabled = event.currentTarget.checked; onChange((current) => updateProfile(current, profileId, { enabled })); }} type="checkbox" /><span>Use this profile for live alerts</span></label>
+        {profile.reviewState === "needs-review" ? <Button variant="default" onClick={() => onChange((current) => updateProfile(current, profileId, { enabled: true, reviewState: "ready" }))} type="button">Review and enable profile</Button> : null}
+        <Checkbox label="Use this profile for live alerts" checked={profile.enabled} disabled={profile.reviewState !== "ready"} id={`profile-enabled-${profileId}`} onChange={(event) => { const enabled = event.currentTarget.checked; onChange((current) => updateProfile(current, profileId, { enabled })); }} />
       </section>
       <dl className="alert-editor-inspector__facts"><div><dt>Provider type</dt><dd>{document.providerKind}</dd></div><div><dt>Event</dt><dd>{formatEventType(document.eventType)}</dd></div><div><dt>Conditions</dt><dd>{document.conditions.length}</dd></div></dl>
     </div>
@@ -2147,15 +2040,7 @@ function AlertNavigationButton({ alert, currentAlertId, onOpen, parentName }: {
   readonly parentName?: string;
 }) {
   return (
-    <button
-      aria-current={alert.id === currentAlertId ? "page" : undefined}
-      className={alert.kind === "variation" ? "alert-editor-page__variation-link" : undefined}
-      onClick={onOpen}
-      type="button"
-    >
-      <span>{alert.name}</span>
-      <small>{parentName === undefined ? (alert.enabled ? "Enabled" : "Disabled") : `Variation of ${parentName}`}</small>
-    </button>
+    <UnstyledButton className={alert.kind === "variation" ? "alert-editor-page__variation-link" : undefined} aria-current={alert.id === currentAlertId ? "page" : undefined} onClick={onOpen} type="button"><span>{alert.name}</span><small>{parentName === undefined ? (alert.enabled ? "Enabled" : "Disabled") : `Variation of ${parentName}`}</small></UnstyledButton>
   );
 }
 
@@ -2205,12 +2090,12 @@ function missingActiveTtsProviderError(): ReportableActionError {
 
 function actionableError(summary: string, cause: unknown, nextStep: string): ReportableActionError {
   const message = cause instanceof Error ? cause.message : "The request failed for an unknown reason.";
-  const referenceId = /\b(?:ref|err)[_-][A-Za-z0-9_-]+\b/u.exec(message)?.[0]
+  const referenceId = (cause instanceof ManagementHttpError ? cause.referenceId : null) ?? /\b(?:ref|err)[_-][A-Za-z0-9_-]+\b/u.exec(message)?.[0]
     ?? `ui_${globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36)}`;
   return {
     summary,
     cause: message,
-    nextStep,
+    nextStep: cause instanceof ManagementHttpError && cause.nextStep !== null ? cause.nextStep : nextStep,
     severity: "error",
     occurredAt: new Date().toISOString(),
     referenceId,

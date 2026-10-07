@@ -19,6 +19,7 @@ const exampleError: ActionableManagementError = {
 const meta = {
   title: "Management/Foundation",
   component: ManagementErrorBanner,
+  tags: ["mantine-foundation"],
   args: { error: exampleError }
 } satisfies Meta<typeof ManagementErrorBanner>;
 

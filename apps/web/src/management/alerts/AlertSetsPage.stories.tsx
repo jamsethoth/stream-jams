@@ -10,6 +10,7 @@ const inactiveSet = overview("set-seasonal", "Seasonal", false);
 const meta = {
   title: "Management/Alerts/Alert sets",
   component: AlertSetsPage,
+  tags: ["mantine-module-proof", "mantine-alerts-stage4"],
   args: { onEditAlert: fn() },
   parameters: { layout: "fullscreen" }
 } satisfies Meta<typeof AlertSetsPage>;
@@ -18,11 +19,14 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const ActiveSet: Story = {
+  tags: ["mantine-final-layout"],
   args: { managementApi: api([activeSet], detail(activeSet)) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const browserSources = await canvas.findByRole("region", { name: "Browser sources" });
     await expect(browserSources).toHaveClass("browser-sources-panel");
+    const controls = canvas.getByLabelText("Module controls");
+    await expect(controls.compareDocumentPosition(browserSources) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     await expect(within(browserSources).getByRole("button", { name: "Expand browser sources" })).toHaveAttribute("aria-expanded", "false");
     const alertSets = canvas.getByRole("region", { name: "Alert sets" });
     const selectedSet = canvas.getByRole("region", { name: "Default alert set" });
@@ -123,7 +127,7 @@ export const NarrowRtlExpandedCopy: Story = {
 export const InitialLoadFailure: Story = {
   beforeEach: () => {
     const reportError = console.error;
-    console.error = fn();
+    console.error = (...args: unknown[]) => { if (String(args[0]).replace(/^\[[A-Za-z0-9_-]+\] /u, "") !== "Alert sets could not be loaded") reportError(...args); };
     return () => { console.error = reportError; };
   },
   args: {
@@ -158,7 +162,7 @@ export const ActivationBlocked: Story = {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Expand Seasonal" }));
     await userEvent.click(canvas.getByRole("button", { name: "Make Seasonal active" }));
-    const dialog = await canvas.findByRole("dialog", { name: "Activate Seasonal?" });
+    const dialog = await within(document.body).findByRole("dialog", { name: "Activate Seasonal?" });
     await expect(within(dialog).getByRole("button", { name: "Activate" })).toBeDisabled();
   }
 };
@@ -173,7 +177,7 @@ export const ActivationWarning: Story = {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Expand Seasonal" }));
     await userEvent.click(canvas.getByRole("button", { name: "Make Seasonal active" }));
-    await canvas.findByRole("button", { name: "Activate with warnings" });
+    await within(document.body).findByRole("button", { name: "Activate with warnings" });
   }
 };
 
@@ -197,7 +201,7 @@ export const CreateAlert: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Add alert" }));
-    const dialog = await canvas.findByRole("dialog", { name: "Add alert" });
+    const dialog = await within(document.body).findByRole("dialog", { name: "Add alert" });
     await userEvent.selectOptions(within(dialog).getByLabelText("Event type"), "cheer");
     await expect(within(dialog).getByLabelText("Alert name")).toHaveValue("New cheer");
     await expect(within(dialog).queryByRole("radio", { name: "Clean Signal" })).not.toBeInTheDocument();
@@ -216,7 +220,7 @@ export const CreateAlertWithoutThemeChooser: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Add alert" }));
-    const dialog = within(await canvas.findByRole("dialog", { name: "Add alert" }));
+    const dialog = within(await within(document.body).findByRole("dialog", { name: "Add alert" }));
     await userEvent.selectOptions(dialog.getByLabelText("Event type"), "raid");
     await expect(dialog.queryByRole("radio", { name: "Neon Terminal" })).not.toBeInTheDocument();
     await expect(dialog.queryByText("Choose a starting look")).not.toBeInTheDocument();
@@ -247,7 +251,7 @@ export const CreateSharedRewardAlert: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Add alert" }));
-    const dialog = within(await canvas.findByRole("dialog", { name: "Add alert" }));
+    const dialog = within(await within(document.body).findByRole("dialog", { name: "Add alert" }));
     await userEvent.selectOptions(dialog.getByLabelText("Event type"), "channel_point_redemption");
     await dialog.findByText("3 custom rewards loaded.");
     await userEvent.click(dialog.getByRole("radio", { name: "Selected rewards" }));
@@ -272,7 +276,7 @@ export const CreateRewardAlertWithEmptyCatalog: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Add alert" }));
-    const dialog = within(await canvas.findByRole("dialog", { name: "Add alert" }));
+    const dialog = within(await within(document.body).findByRole("dialog", { name: "Add alert" }));
     await userEvent.selectOptions(dialog.getByLabelText("Event type"), "channel_point_redemption");
 
     await expect(await dialog.findByText("No custom rewards are available for this channel.")).toBeVisible();
@@ -284,7 +288,7 @@ export const CreateRewardAlertWithEmptyCatalog: Story = {
 export const CreateAlertFailure: Story = {
   beforeEach: () => {
     const reportError = console.error;
-    console.error = fn();
+    console.error = (...args: unknown[]) => { if (String(args[0]).replace(/^\[[A-Za-z0-9_-]+\] /u, "") !== "The alert was not created") reportError(...args); };
     return () => { console.error = reportError; };
   },
   args: {
@@ -296,7 +300,7 @@ export const CreateAlertFailure: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Add alert" }));
-    const dialog = within(await canvas.findByRole("dialog", { name: "Add alert" }));
+    const dialog = within(await within(document.body).findByRole("dialog", { name: "Add alert" }));
     await userEvent.selectOptions(dialog.getByLabelText("Event type"), "cheer");
     await userEvent.click(dialog.getByRole("button", { name: "Create alert" }));
 
@@ -318,7 +322,7 @@ export const GroupedEventPicker: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Add alert" }));
-    const dialog = await canvas.findByRole("dialog", { name: "Add alert" });
+    const dialog = await within(document.body).findByRole("dialog", { name: "Add alert" });
     for (const group of ["Core", "Subscriptions", "Hype Train", "Polls", "Predictions", "Stream"]) {
       await expect(dialog.querySelector(`optgroup[label="${group}"]`)).not.toBeNull();
     }
@@ -383,7 +387,7 @@ export const DestructiveVariationConfirmation: Story = {
     const page = within(canvasElement.ownerDocument.body);
     await userEvent.click(await canvas.findByRole("button", { name: "More actions for Large raid" }));
     await userEvent.click(page.getByRole("menuitem", { name: "Delete Large raid" }));
-    const dialog = within(await canvas.findByRole("dialog", { name: "Delete Large raid?" }));
+    const dialog = within(await within(document.body).findByRole("dialog", { name: "Delete Large raid?" }));
     await expect(dialog.getByText("This permanently deletes only this variation. Shared assets remain available.")).toBeVisible();
   }
 };
@@ -392,7 +396,7 @@ export const CopyFailure: Story = {
   args: { managementApi: api([activeSet], detail(activeSet)) },
   play: async ({ canvasElement }) => {
     const reportError = console.error;
-    console.error = fn();
+    console.error = (...args: unknown[]) => { if (String(args[0]).replace(/^\[[A-Za-z0-9_-]+\] /u, "") !== "The browser-source URL was not copied") reportError(...args); };
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: { writeText: fn(async () => Promise.reject(new Error("Clipboard permission denied."))) }
@@ -414,8 +418,8 @@ export const RegenerationConfirmation: Story = {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Expand browser sources" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Regenerate Landscape URL" }));
-    const dialog = await canvas.findByRole("dialog", { name: "Regenerate Landscape URL?" });
-    await userEvent.type(within(dialog).getByLabelText("Type REGENERATE to continue"), "REGENERATE");
+    const dialog = await within(document.body).findByRole("dialog", { name: "Regenerate Landscape URL?" });
+    await userEvent.type(within(dialog).getByLabelText("Type REGENERATE to confirm"), "REGENERATE");
     await waitFor(() => expect(within(dialog).getByRole("button", { name: "Regenerate URL" })).toBeEnabled());
   }
 };
@@ -424,7 +428,7 @@ export const StatusRefreshFailure: Story = {
   args: { managementApi: statusRefreshFailureApi() },
   play: async ({ canvasElement }) => {
     const reportError = console.error;
-    console.error = fn();
+    console.error = (...args: unknown[]) => { if (String(args[0]).replace(/^\[[A-Za-z0-9_-]+\] /u, "") !== "Unable to refresh browser-source status") reportError(...args); };
     try {
       const canvas = within(canvasElement);
       await userEvent.click(await canvas.findByRole("button", { name: "Expand browser sources" }));

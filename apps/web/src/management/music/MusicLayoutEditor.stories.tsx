@@ -19,7 +19,7 @@ function Example({ customCss = false }: { readonly customCss?: boolean }) {
   return <div style={{ maxWidth: 780 }}><MusicLayoutEditor appearance={appearance} onChange={setAppearance} projection={projection} resolveAsset={resolver} /></div>;
 }
 
-const meta = { title: "Management/Music component layout", component: MusicLayoutEditor, tags: ["music-editor-refinement"],
+const meta = { title: "Management/Music component layout", component: MusicLayoutEditor, tags: ["mantine-stage6d", "mantine-stage6d-closure", "music-editor-refinement"],
   args: { projection: null, appearance: createDefaultMusicModuleConfig().profiles.landscape.views.full, resolveAsset: resolver, onChange: fn() },
   parameters: { layout: "padded" }
 } satisfies Meta<typeof MusicLayoutEditor>;

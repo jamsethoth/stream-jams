@@ -1,12 +1,41 @@
+import { renderManagement as render } from "../../test-support/render-management.js";
 import { createTestMediaPreviewApi } from "../../test-support/media-preview-fixture.js";
 import type { AssetChangeImpact, AssetLibraryItem, AssetMetadataUpdateInput } from "@stream-jams/core";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AssetManager, type AssetLibraryManagementApi } from "./AssetManager.js";
 import type { AssetApi, AssetRecord } from "./asset-api.js";
+import { DirtyNavigationProvider, useManagementNavigation } from "../navigation/dirty-navigation.js";
 
 describe("AssetManager", () => {
+  it.each(["selection", "navigation"])("keeps a failed %s metadata save in its active guard with one reference and explicit retry", async mode => {
+    const user = userEvent.setup();
+    const diagnostic = vi.spyOn(console, "error").mockImplementation(() => {});
+    const updateAssetMetadata = vi.fn<AssetLibraryManagementApi["updateAssetMetadata"]>()
+      .mockRejectedValueOnce(Object.assign(new Error("Metadata store unavailable"), { referenceId: "ref-metadata-save", nextStep: "Restore local storage, then retry." }))
+      .mockResolvedValueOnce({ ...imageItem, displayName: "Follower burst draft" });
+    const fixture = createFixture({ updateAssetMetadata });
+    window.history.replaceState(null, "", "/manage/assets");
+    render(<DirtyNavigationProvider><AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} /><AssetNavigationProbe /></DirtyNavigationProvider>);
+    await screen.findByRole("button", { name: "Follower burst" });
+    await user.type(screen.getByLabelText("Display name"), " draft");
+    await user.click(screen.getByRole("button", { name: mode === "selection" ? "Raid chime" : "Go home" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /Save and/ }));
+    const alert = await within(dialog).findByRole("alert");
+    expect(alert).toHaveTextContent("ref-metadata-save");
+    expect(alert).toHaveTextContent("Restore local storage, then retry.");
+    expect(screen.getAllByRole("alert", { hidden: true })).toHaveLength(1);
+    expect(diagnostic).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText("Display name")).toHaveValue("Follower burst draft");
+    expect(window.location.pathname).toBe("/manage/assets");
+    await user.click(within(dialog).getByRole("button", { name: /Save and/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(updateAssetMetadata).toHaveBeenCalledTimes(2);
+    if (mode === "selection") expect(screen.getByRole("region", { name: "Raid chime details" })).toBeVisible();
+    else expect(window.location.pathname).toBe("/manage");
+  });
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
@@ -156,6 +185,29 @@ describe("AssetManager", () => {
     await waitFor(() => expect(fixture.metadataUpdates).toEqual([{ displayName: "Winter follower", tags: ["winter", "follow"] }]));
   });
 
+  it("adopts server-normalized metadata after saving so the draft is clean", async () => {
+    const fixture = createFixture();
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/manage/assets");
+    render(<DirtyNavigationProvider><AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} /><AssetNavigationProbe /></DirtyNavigationProvider>);
+    await screen.findByRole("button", { name: "Follower burst" });
+
+    const name = screen.getByLabelText("Display name");
+    await waitFor(() => expect(name).toHaveValue("Follower burst"));
+    await user.clear(name);
+    await user.type(name, "Winter follower ");
+    const tags = screen.getByLabelText("Tags");
+    await user.clear(tags);
+    await user.type(tags, " Winter, FOLLOW ");
+    await user.click(screen.getByRole("button", { name: "Save asset details" }));
+
+    await waitFor(() => expect(name).toHaveValue("Winter follower"));
+    expect(tags).toHaveValue("winter, follow");
+    await user.click(screen.getByRole("button", { name: "Go home" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe("/manage");
+  });
+
   it("requires an explicit choice before discarding metadata to select another asset", async () => {
     const fixture = createFixture();
     const user = userEvent.setup();
@@ -215,6 +267,76 @@ describe("AssetManager", () => {
     await waitFor(() => expect(fixture.replacements).toEqual([{ assetId: "asset-image", file, confirmed: true }]));
   });
 
+  it("preserves unsaved metadata when replacement refreshes the same stable asset", async () => {
+    const listAssetLibraryItems = vi.fn().mockResolvedValueOnce([imageItem, audioItem])
+      .mockResolvedValue([{ ...imageItem, updatedAt: "2026-10-06T00:00:00.000Z" }, audioItem]);
+    const fixture = createFixture({ listAssetLibraryItems });
+    render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
+    await screen.findByRole("button", { name: "Follower burst" });
+    await userEvent.type(screen.getByLabelText("Display name"), " draft");
+    await userEvent.click(screen.getByRole("button", { name: "Replace file" }));
+    await userEvent.upload(screen.getByLabelText("Replacement file"), new File([pngBytes], "replacement.png", { type: "image/png" }));
+    await userEvent.click(screen.getByRole("button", { name: "Review replacement" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Replace everywhere" }));
+    await waitFor(() => expect(listAssetLibraryItems).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByLabelText("Display name")).toHaveValue("Follower burst draft");
+    await userEvent.click(screen.getByRole("button", { name: "Raid chime" }));
+    expect(screen.getByRole("dialog", { name: "Switch assets with unsaved changes?" })).toBeVisible();
+  });
+
+  it.each([false, true])("locks replacement owner navigation until a failed request settles (dirty=%s)", async dirty => {
+    const replacement = deferred<AssetRecord>();
+    const replaceAsset = vi.fn(() => replacement.promise);
+    const navigate = vi.fn();
+    const fixture = createFixture({ getAssetChangeImpact: async () => ({ ...impactFor(imageItem), owners: [{ moduleId: "timers", ownerId: "timer-fixture", ownerName: "Timer icon", variantId: null, usageRole: "icon" }] }) });
+    render(<div onClickCapture={event => { if ((event.target as Element).closest("a")) { event.preventDefault(); navigate(); } }}><AssetManager assetApi={{ ...fixture.assetApi, replaceAsset }} managementApi={fixture.managementApi} /></div>);
+    await screen.findByRole("button", { name: "Follower burst" });
+    if (dirty) await userEvent.type(screen.getByLabelText("Display name"), " draft");
+    await userEvent.click(screen.getByRole("button", { name: "Replace file" }));
+    await userEvent.upload(screen.getByLabelText("Replacement file"), new File([pngBytes], "replacement.png", { type: "image/png" }));
+    await userEvent.click(screen.getByRole("button", { name: "Review replacement" }));
+    const dialog = screen.getByRole("dialog", { name: "Replace Follower burst?" });
+    const scope = within(dialog);
+    expect(scope.getByRole("link", { name: "New follower" })).toHaveAttribute("href", "/manage/modules/alerts/editor/alert-follow?set=set-default&event=follow&profile=landscape");
+    expect(scope.getByRole("link", { name: "Timer icon" })).toHaveAttribute("href", "/manage/modules/timers?ownerId=timer-fixture");
+    await userEvent.dblClick(scope.getByRole("button", { name: "Replace everywhere" }));
+    expect(replaceAsset).toHaveBeenCalledOnce();
+    expect(scope.queryByRole("link")).toBeNull();
+    await userEvent.click(scope.getByText("New follower"));
+    await userEvent.click(scope.getByText("Timer icon"));
+    expect(navigate).not.toHaveBeenCalled();
+    await userEvent.keyboard("{Escape}");
+    expect(dialog).toBeVisible();
+    expect(scope.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await act(async () => replacement.reject(new Error("Fixture replacement unavailable")));
+    expect(await scope.findByText("Asset file was not replaced")).toBeVisible();
+    expect(scope.getByRole("button", { name: "Replace everywhere" })).toBeEnabled();
+    await userEvent.click(scope.getByRole("link", { name: "Timer icon" }));
+    expect(navigate).toHaveBeenCalledOnce();
+    expect(scope.getByRole("link", { name: "New follower" })).toHaveAttribute("href", "/manage/modules/alerts/editor/alert-follow?set=set-default&event=follow&profile=landscape");
+  });
+
+  it("removes a confirmed deletion locally while a failed refresh marks retained details stale until retry", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const listAssetLibraryItems = vi.fn().mockResolvedValueOnce([imageItem, audioItem])
+      .mockRejectedValueOnce(new Error("Refresh unavailable")).mockResolvedValue([imageItem]);
+    const fixture = createFixture({ listAssetLibraryItems });
+    render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Raid chime" }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete asset" }));
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete asset" }));
+    expect(await screen.findByText("Showing last loaded asset details. Refresh before making another change.")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Raid chime" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Follower burst" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Replace file" })).toBeDisabled();
+    act(() => screen.getByRole("button", { name: "Save asset details" }).closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    expect(fixture.metadataUpdates).toEqual([]);
+    await userEvent.click(screen.getByRole("button", { name: "Retry loading assets" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Replace file" })).toBeEnabled());
+    expect(listAssetLibraryItems).toHaveBeenCalledTimes(3);
+  });
+
   it("confirms manual deletion for unused assets and blocks in-use deletion", async () => {
     const fixture = createFixture();
     render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
@@ -231,7 +353,55 @@ describe("AssetManager", () => {
 
     await waitFor(() => expect(fixture.deleted).toEqual(["asset-audio"]));
   });
+
+  it("keeps deferred deletion locked, scopes its failure and permits explicit same-target retry", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const first = deferred<void>();
+    const deleteAsset = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue(undefined);
+    const fixture = createFixture({ deleteAsset, listAssetLibraryItems: async () => deleteAsset.mock.calls.length >= 2 ? [imageItem] : [imageItem, audioItem] });
+    render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Raid chime" }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete asset" }));
+    const dialog = screen.getByRole("dialog", { name: "Delete Raid chime?" });
+    const confirm = within(dialog).getByRole("button", { name: "Delete asset" });
+    act(() => { confirm.click(); confirm.click(); });
+    expect(deleteAsset).toHaveBeenCalledExactlyOnceWith("asset-audio");
+    expect(confirm).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await userEvent.keyboard("{Escape}");
+    expect(dialog).toBeVisible();
+    await act(async () => first.reject(Object.assign(new Error("Usage changed"), { referenceId: "fixture-delete-failure" })));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("fixture-delete-failure");
+    expect(confirm).toBeEnabled();
+    await userEvent.click(confirm);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(deleteAsset).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Asset library" })).toHaveFocus());
+  });
+
+  it("locks dirty selection save and preserves its intended destination until the save completes", async () => {
+    const save = deferred<AssetLibraryItem>();
+    const updateAssetMetadata = vi.fn(() => save.promise);
+    const fixture = createFixture({ updateAssetMetadata });
+    render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
+    await screen.findByRole("button", { name: "Follower burst" });
+    await userEvent.type(screen.getByLabelText("Display name"), " draft");
+    await userEvent.click(screen.getByRole("button", { name: "Raid chime" }));
+    const dialog = screen.getByRole("dialog", { name: "Switch assets with unsaved changes?" });
+    await userEvent.dblClick(within(dialog).getByRole("button", { name: "Save and continue" }));
+    expect(updateAssetMetadata).toHaveBeenCalledOnce();
+    expect(within(dialog).getByRole("button", { name: "Discard" })).toBeDisabled();
+    await userEvent.keyboard("{Escape}");
+    expect(dialog).toBeVisible();
+    await act(async () => save.resolve({ ...imageItem, displayName: "Follower burst draft" }));
+    expect(screen.getByRole("region", { name: "Raid chime details" })).toBeVisible();
+  });
 });
+
+function AssetNavigationProbe() {
+  const navigation = useManagementNavigation();
+  return <><button onClick={() => navigation.requestNavigation({ id: "home" })}>Go home</button>{navigation.guard}</>;
+}
 
 function createFixture(overrides: Partial<AssetLibraryManagementApi> = {}) {
   let items: readonly AssetLibraryItem[] = [imageItem, audioItem];

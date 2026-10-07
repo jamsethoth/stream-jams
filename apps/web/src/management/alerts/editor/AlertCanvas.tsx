@@ -264,7 +264,7 @@ export function AlertCanvas(props: AlertCanvasProps) {
         </div>
       </div>
       <footer>
-        <span>{dimensions.width} x {dimensions.height}</span>
+        <bdi dir="ltr">{dimensions.width} x {dimensions.height}</bdi>
         <span>{props.showSafeArea === false ? "Guides hidden" : "Safe area and center guides"}</span>
       </footer>
     </div>

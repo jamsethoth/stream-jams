@@ -1,8 +1,11 @@
-import { projectTimerStack, timerProfileDimensions, type OverlayTargetProfileId, type TimerDefinition, type TimerRunState, type TimersOverlayModuleConfig } from "@stream-jams/core";
+import { NativeSelect, SegmentedControl, TextInput } from "@mantine/core";
+import { projectTimerStack, timerProfileDimensions, timerStackRegionSchema, type OverlayTargetProfileId, type TimerDefinition, type TimerRunState, type TimersOverlayModuleConfig } from "@stream-jams/core";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { TimerStack } from "../../overlay/components/TimerStack.js";
 import type { MediaPreviewApi } from "../assets/media-preview-api.js";
 import { useMediaPreviewGroup } from "../assets/use-media-preview-group.js";
+
+const geometryLabels = { x: "X", y: "Y", width: "Width", height: "Height" } as const;
 
 export function TimerStackEditor({ assetApi, definitions, value, onChange }: {
   readonly assetApi: MediaPreviewApi;
@@ -29,12 +32,15 @@ export function TimerStackEditor({ assetApi, definitions, value, onChange }: {
   const region = value.profiles[profile]; const bounds = timerProfileDimensions[profile];
   const previewScale = Math.min(1, availableWidth / bounds.width, 620 / bounds.height);
   const gesture = useRef<{ mode: "move" | "resize"; clientX: number; clientY: number; layout: typeof region.layout } | null>(null);
-  const stack = useMemo(() => projectTimerStack({
-    nowEpochMs: 0,
-    targetProfileId: profile,
-    region,
-    runs: sampleRuns(definitions ?? [], region.maxVisible)
-  }), [definitions, profile, region]);
+  const stack = useMemo(() => {
+    const parsed = timerStackRegionSchema.safeParse(region);
+    return parsed.success ? projectTimerStack({
+      nowEpochMs: 0,
+      targetProfileId: profile,
+      region: parsed.data,
+      runs: sampleRuns(definitions ?? [], parsed.data.maxVisible)
+    }) : null;
+  }, [definitions, profile, region]);
   useEffect(() => {
     const shell = previewShell.current;
     if (shell === null || typeof ResizeObserver === "undefined") return;
@@ -68,20 +74,20 @@ export function TimerStackEditor({ assetApi, definitions, value, onChange }: {
     else update({ layout: { ...region.layout, width: Math.max(1, Math.min(bounds.width - region.layout.x, region.layout.width + change[0])), height: Math.max(1, Math.min(bounds.height - region.layout.y, region.layout.height + change[1])) } });
   };
   return <section className="timer-layout" aria-labelledby="timer-layout-heading">
-    <div className="timer-section-heading"><div><p className="management-eyebrow">Overlay layout</p><h3 id="timer-layout-heading">Timer stack</h3></div>
-      <div aria-label="Timer profile" role="tablist">{(["landscape", "vertical"] as const).map(id => <button aria-selected={profile === id} key={id} onClick={() => setProfile(id)} role="tab" type="button">{id === "landscape" ? "Landscape" : "Vertical"}</button>)}</div></div>
+    <div className="timer-section-heading"><div><h3 id="timer-layout-heading">Timer stack</h3></div>
+      <SegmentedControl aria-label="Timer profile" value={profile} onChange={(value) => { if (value === "landscape" || value === "vertical") setProfile(value); }} data={[{ value: "landscape", label: "Landscape" }, { value: "vertical", label: "Vertical" }]} /></div>
     <div className="timer-layout__controls">
-      <label>Orientation<select value={region.orientation} onChange={event => update({ orientation: event.currentTarget.value as typeof region.orientation })}><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option></select></label>
-      <label>Maximum shown<input min="1" max="12" type="number" value={region.maxVisible} onChange={event => update({ maxVisible: Number(event.currentTarget.value) })} /></label>
-      {(["x", "y", "width", "height"] as const).map(field => <label key={field}>{field.toUpperCase()}<input min={field === "width" || field === "height" ? 1 : 0} max={field === "x" || field === "width" ? bounds.width : bounds.height} type="number" value={region.layout[field]} onChange={event => updateLayout(field, Number(event.currentTarget.value))} /></label>)}
+      <NativeSelect label="Orientation" value={region.orientation} onChange={event => update({ orientation: event.currentTarget.value as typeof region.orientation })}><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option></NativeSelect>
+      <TextInput label="Maximum shown" min="1" max="12" type="number" value={region.maxVisible} onChange={event => update({ maxVisible: Number(event.currentTarget.value) })} />
+      {(["x", "y", "width", "height"] as const).map(field => <TextInput key={field} label={geometryLabels[field]} min={field === "width" || field === "height" ? 1 : 0} max={field === "x" || field === "width" ? bounds.width : bounds.height} type="number" value={region.layout[field]} onChange={event => updateLayout(field, Number(event.currentTarget.value))} />)}
     </div>
     {slotWidth < 180 || slotHeight < 56 ? <p className="timer-layout__warning" role="status">Timer cards may be difficult to read at this size.</p> : null}
     <div className="timer-layout__preview-shell" ref={previewShell}>
-      <div aria-label={`${profile} timer preview`} className="timer-layout__preview" style={{ width: bounds.width * previewScale, height: bounds.height * previewScale }}>
+      {stack === null ? <p role="status">Correct the layout values to preview the timer stack.</p> : <div aria-label={`${profile} timer preview`} className="timer-layout__preview" style={{ width: bounds.width * previewScale, height: bounds.height * previewScale }}>
         <div style={{ transform: `scale(${previewScale})`, transformOrigin: "top left", width: bounds.width, height: bounds.height }}><TimerStack stack={stack} resolveAssetUrl={resolvePreviewAssetUrl} now={() => 0} /></div>
         <button aria-label="Move timer region" className="timer-layout__region-handle" onKeyDown={event => keyAdjust("move", event)} onPointerDown={event => beginGesture("move", event)} onPointerMove={moveGesture} onPointerUp={() => { gesture.current = null; }} style={{ left: region.layout.x * previewScale, top: region.layout.y * previewScale, width: region.layout.width * previewScale, height: region.layout.height * previewScale }} type="button" />
-        <button aria-label="Resize timer region" className="timer-layout__resize-handle" onKeyDown={event => keyAdjust("resize", event)} onPointerDown={event => beginGesture("resize", event)} onPointerMove={moveGesture} onPointerUp={() => { gesture.current = null; }} style={{ left: (region.layout.x + region.layout.width) * previewScale - 16, top: (region.layout.y + region.layout.height) * previewScale - 16 }} type="button" />
-      </div>
+        <button aria-label="Resize timer region" className="timer-layout__resize-handle" onKeyDown={event => keyAdjust("resize", event)} onPointerDown={event => beginGesture("resize", event)} onPointerMove={moveGesture} onPointerUp={() => { gesture.current = null; }} style={{ left: (region.layout.x + region.layout.width) * previewScale - 24, top: (region.layout.y + region.layout.height) * previewScale - 24 }} type="button" />
+      </div>}
     </div>
   </section>;
 }

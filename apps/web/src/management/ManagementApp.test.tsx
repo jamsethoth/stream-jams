@@ -1,7 +1,8 @@
+import { renderManagement as render } from "../test-support/render-management.js";
 import { createTestMediaPreviewApi } from "../test-support/media-preview-fixture.js";
 import { createStoryEffectSets } from "../stories/screen-effect-set-fixtures.js";
 import type { AssetRecord } from "./assets/asset-api.js";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createDefaultMusicModuleConfig, type AssetLibraryItem, type DiagnosticsWorkspaceView } from "@stream-jams/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -51,7 +52,7 @@ describe("ManagementApp", () => {
     expect(window.location.pathname).toBe("/manage/modules/alerts");
     expect(screen.getByRole("link", { name: "Alerts" })).toHaveAttribute("aria-current", "page");
     expect(screen.getAllByRole("link").filter((link) => link.getAttribute("aria-current") === "page")).toHaveLength(1);
-    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("ModulesAlerts");
+    expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getAllByRole("listitem").map(item => item.textContent)).toEqual(["Modules", "Alerts"]);
   });
 
   it("opens Screen Effects from Modules and enters its focused editor", async () => {
@@ -80,7 +81,7 @@ describe("ManagementApp", () => {
 
     expect(await screen.findByRole("group", { name: "Rendered text" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Safety" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("ModulesAlertsSafety");
+    expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getAllByRole("listitem").map(item => item.textContent)).toEqual(["Modules", "Alerts", "Safety"]);
     await user.click(screen.getByRole("link", { name: "Review TTS provider settings" }));
     expect(window.location.pathname).toBe("/manage/tts-providers");
   });
@@ -426,7 +427,7 @@ describe("ManagementApp", () => {
     await user.click(screen.getByRole("link", { name: "Event sources" }));
     const twitchPanel = screen.getByRole("region", { name: "Event sources content" });
     await user.click(await within(twitchPanel).findByRole("button", { name: "Activate Studio Streamer.bot" }));
-    const dialog = await within(twitchPanel).findByRole("dialog", { name: "Activate Studio Streamer.bot?" });
+    const dialog = await screen.findByRole("dialog", { name: "Activate Studio Streamer.bot?" });
     await user.click(within(dialog).getByRole("button", { name: "Activate event source" }));
 
     expect(managementApi.activateProvider).toHaveBeenCalledWith("provider-streamerbot", true);

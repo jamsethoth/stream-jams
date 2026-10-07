@@ -25,7 +25,10 @@ const config: TestRunnerConfig = {
     }
 
     const includeSelector = a11yParameters?.context ?? "#storybook-root";
-    const results = await new AxeBuilder({ page }).include(includeSelector).disableRules(["region"]).analyze();
+    const axe = new AxeBuilder({ page }).include(includeSelector);
+    // Include management body portals without changing Operator/overlay coverage.
+    if (storyContext.title.startsWith("Management/")) axe.include("[data-portal]");
+    const results = await axe.disableRules(["region"]).analyze();
 
     if (results.violations.length > 0) {
       throw new Error(formatViolations(context.id, results.violations));

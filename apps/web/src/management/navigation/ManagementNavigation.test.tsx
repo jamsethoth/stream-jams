@@ -1,4 +1,5 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { renderManagement as render } from "../../test-support/render-management.js";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ManagementNavigation } from "./ManagementNavigation.js";
@@ -6,6 +7,16 @@ import { ManagementNavigation } from "./ManagementNavigation.js";
 afterEach(cleanup);
 
 describe("ManagementNavigation", () => {
+  it("retains native hrefs and modified navigation clicks", () => {
+    const onNavigate = vi.fn();
+    render(<ManagementNavigation activeRoute={{ id: "home" }} onNavigate={onNavigate} />);
+    const link = screen.getByRole("link", { name: "Assets" });
+    expect(link).toHaveAttribute("href", "/manage/assets");
+    expect(fireEvent.click(link, { ctrlKey: true })).toBe(true);
+    expect(fireEvent.click(link, { metaKey: true })).toBe(true);
+    expect(fireEvent.click(link, { button: 1 })).toBe(true);
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
   it("keeps surface switching out of primary navigation", () => {
     render(<ManagementNavigation activeRoute={{ id: "home" }} onNavigate={vi.fn()} />);
 

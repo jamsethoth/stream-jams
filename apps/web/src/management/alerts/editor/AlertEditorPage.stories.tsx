@@ -2,6 +2,7 @@ import {
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
   type AlertEditorDocument,
+  type AlertEditorErrorReportInput,
   type AlertSetDetail,
   type AlertVariationAuthoringContext,
   type RegisteredProviderView,
@@ -22,7 +23,7 @@ const managementApi = createStoryManagementApi({
   getAlertSet: async () => alertSetDetail()
 });
 
-const meta = { tags: ["stream-local-media"],
+const meta = { tags: ["stream-local-media", "mantine-feedback-tabs", "mantine-stage6c"],
   title: "Management/Alerts/Focused editor",
   component: AlertEditorPage,
   decorators: [(Story, context) => {
@@ -53,6 +54,25 @@ const meta = { tags: ["stream-local-media"],
 
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+export const AutomaticInspectorTabs: Story = {
+  tags: ["mantine-final-layout"],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const layers = await canvas.findByRole("tab", { name: "Layers" });
+    await userEvent.click(layers);
+    await userEvent.keyboard("{End}");
+    const event = canvas.getByRole("tab", { name: "Event" });
+    await expect(event).toHaveFocus();
+    await expect(event).toHaveAttribute("aria-selected", "true");
+    await expect(canvas.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", event.id);
+    await expect(canvas.getAllByRole("tabpanel")).toHaveLength(1);
+    await userEvent.keyboard("{Home}");
+    await expect(layers).toHaveFocus();
+    await expect(layers).toHaveAttribute("aria-selected", "true");
+    await expect(canvas.queryByRole("group", { name: "Test destinations" })).not.toBeInTheDocument();
+  }
+};
 
 function videoAudioStoryDocument(playEmbeddedAudio: boolean, separateAudio = false, silentOutputs = false): AlertEditorDocument {
   const base = editorDocument();
@@ -91,6 +111,7 @@ export const VideoSoundtrackWithSeparateSound: Story = {
 };
 
 export const VideoSoundtrackDraftUndo: Story = {
+  tags: ["mantine-stage6c-closure"],
   args: { managementApi: videoAudioStoryApi(false) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -328,10 +349,11 @@ export const ReducedMotionStyleAuthoring: Story = {
 };
 
 export const ReadyLandscape: Story = {
+  tags: ["mantine-stage6c-closure"],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(await canvas.findByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(
-      "AlertsEveryday alertsNew follower"
+      "Alerts/Everyday alerts/New follower"
     );
     await waitFor(() => expect(canvas.getByRole("status", { name: "Canvas zoom" })).not.toHaveTextContent("100%"));
   }
@@ -510,6 +532,7 @@ export const SafeLocalPreviewFailure: Story = {
 };
 
 export const TabletWorkspace: Story = {
+  tags: ["mantine-stage6c-closure"],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(await canvas.findByRole("region", { name: "Landscape alert canvas" })).toBeVisible();
@@ -592,6 +615,7 @@ export const UnsavedEdit: Story = {
 };
 
 export const ActiveSetSaveWarning: Story = {
+  tags: ["mantine-stage6c-closure"],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const template = await canvas.findByRole("textbox", { name: "Message template" });
@@ -603,6 +627,37 @@ export const ActiveSetSaveWarning: Story = {
     );
     await expect(dialog.getByText("Follow events")).toBeVisible();
     await expect(dialog.getByText("Landscape")).toBeVisible();
+  }
+};
+
+export const GeneratedReviewDiagnostic: Story = {
+  tags: ["mantine-stage6c-fix"],
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => document,
+      getAlertSet: async () => alertSetDetail(),
+      saveAlertEditorDocument: async () => { throw new Error("Disposable storage failed."); },
+      reportAlertEditorError: fn(async (_alertId: string, input: AlertEditorErrorReportInput) => ({ referenceId: input.error.referenceId! }))
+    })
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    const template = await canvas.findByRole("textbox", { name: "Message template" });
+    await userEvent.click(template);
+    await userEvent.clear(template);
+    await userEvent.paste("Retained diagnostic draft");
+    await userEvent.click(canvas.getByRole("button", { name: "Save" }));
+    const body = within(canvasElement.ownerDocument.body);
+    const review = within(await body.findByRole("dialog", { name: "Save changes to active alert?" }));
+    await expect(args.managementApi.reportAlertEditorError).not.toHaveBeenCalled();
+    await userEvent.click(review.getByRole("button", { name: "Save changes" }));
+    const failure = await review.findByRole("alert");
+    const displayedReference = failure.textContent?.match(/ui_[A-Za-z0-9_-]+/u)?.[0];
+    await expect(displayedReference).toBeTruthy();
+    await expect(args.managementApi.reportAlertEditorError).toHaveBeenCalledTimes(1);
+    await expect(args.managementApi.reportAlertEditorError).toHaveBeenCalledWith(document.id, expect.objectContaining({ error: expect.objectContaining({ referenceId: displayedReference }) }));
+    await expect(body.getAllByRole("alert")).toHaveLength(1);
+    await expect(template).toHaveValue("Retained diagnostic draft");
   }
 };
 
@@ -784,7 +839,7 @@ export const ActiveSpeakerBotTts: Story = {
     await userEvent.click(liveTtsSummary);
     await expect(liveTtsSummary.closest("details")).toHaveAttribute("open");
     await expect(enabled).toBeVisible();
-    await expect(enabled.closest("label")).toHaveClass("alert-editor-inspector__check");
+    await expect(enabled).toHaveAccessibleName("Enable TTS for this alert");
     await expect(enabled).toBeChecked();
     await expect(canvas.getByText("Studio Speaker.bot")).toBeVisible();
     await expect(canvas.getByText("Speaker.bot is used for live TTS.")).toBeVisible();
@@ -875,6 +930,7 @@ export const DefaultInWeightedPool: Story = {
 };
 
 export const InvalidConditionInput: Story = {
+  tags: ["mantine-stage6c-closure"],
   args: {
     alertId: "variant-large-raid",
     managementApi: variationStoryApi({
@@ -986,6 +1042,7 @@ export const InvalidRange: Story = {
 };
 
 export const InvalidRelativeChance: Story = {
+  tags: ["mantine-stage6c-closure"],
   args: {
     alertId: "variant-invalid-relative-chance",
     managementApi: variationStoryApi(selectionVariation({
@@ -1047,6 +1104,7 @@ export const ExpandedConditionCatalog: Story = {
 };
 
 export const PrioritySaveFailure: Story = {
+  tags: ["mantine-stage6c-closure"],
   args: {
     alertId: "variant-priority-failure",
     managementApi: variationStoryApi(
@@ -1068,7 +1126,8 @@ export const PrioritySaveFailure: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "Save" }));
     const dialog = within(await within(globalThis.document.body).findByRole("dialog", { name: "Save changes to active alert?" }));
     await userEvent.click(dialog.getByRole("button", { name: "Save changes" }));
-    await expect(await canvas.findByText("The alert was not saved")).toBeVisible();
+    await expect(await dialog.findByText("The alert was not saved")).toBeVisible();
+    await expect(dialog.getByRole("alert")).toHaveTextContent("err_story_priority_save");
     await expect(within(groups).getByRole("group", { name: "Priority group 1" })).toHaveTextContent("Lower priority raid");
     await expect(canvas.getByRole("button", { name: "Save" })).toBeEnabled();
   }

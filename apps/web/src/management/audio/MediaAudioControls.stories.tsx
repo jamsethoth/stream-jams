@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, within } from "storybook/test";
 import { MediaAudioControls } from "./MediaAudioControls.js";
 
-const meta = {
+const meta = { tags: ["mantine-stage6c"],
   title: "Management/Alerts/Video audio",
   component: MediaAudioControls,
   args: { value: { playEmbeddedAudio: true, audioVolume: 1 }, hasSeparateAudio: false, onChange: fn() },

@@ -1,4 +1,5 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { renderManagement as render } from "../../test-support/render-management.js";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   configurationBackupLimits,
@@ -8,6 +9,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AudioApi } from "../audio/audio-api.js";
 import type { ManagementApi } from "../management-api.js";
+import { ManagementHttpError } from "../management-http-client.js";
 import { DirtyNavigationProvider, useManagementNavigation } from "../navigation/dirty-navigation.js";
 import { SettingsPanel } from "./SettingsPanel.js";
 import type { SurfaceSettingsApi } from "./overlay-surfaces-api.js";
@@ -51,6 +53,29 @@ describe("SettingsPanel", () => {
     await user.click(serverSummary);
     await user.click(serverSummary);
     expect(screen.getByLabelText("Port")).toHaveValue(40123);
+  });
+
+  it("shows Save server settings only after an edit and returns focus to the port after saving", async () => {
+    const user = userEvent.setup();
+    const managementApi = createManagementApi();
+    render(<SettingsPanel audioApi={createAudioApi()} managementApi={managementApi} />);
+    await user.click((await screen.findByText("Server settings")).closest("summary")!);
+    expect(screen.queryByRole("button", { name: "Save server settings" })).not.toBeInTheDocument();
+    const port = screen.getByLabelText("Port");
+    await user.clear(port);
+    await user.type(port, "40123");
+    const save = screen.getByRole("button", { name: "Save server settings" });
+    save.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Save server settings" })).not.toBeInTheDocument());
+    expect(managementApi.updateServerConfig).toHaveBeenCalledWith({ host: "127.0.0.1", port: 40123 });
+    expect(screen.getByLabelText("Port")).toHaveFocus();
+  });
+
+  it("gives the embedded Audio outputs and Overlay surfaces sections their heading in the summary", async () => {
+    render(<SettingsPanel audioApi={createAudioApi()} managementApi={createManagementApi()} />);
+    expect(await screen.findByRole("heading", { name: /^Audio outputs · / })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /^Overlay surfaces · / })).toBeVisible();
   });
 
   it("opens backup restore from its hash and gates confirmation controls on valid preflight", async () => {
@@ -145,7 +170,8 @@ describe("SettingsPanel", () => {
     expect(screen.queryByText("No backup selected.")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Retry loading settings" }));
-    expect(await screen.findByRole("button", { name: "Save server settings" })).toBeInTheDocument();
+    // Save appears once there is an unsaved change, so the reloaded form is checked through its field.
+    expect(await screen.findByLabelText("Port")).toHaveValue(39187);
     expect(getServerConfig).toHaveBeenCalledTimes(2);
   });
 
@@ -226,7 +252,8 @@ describe("SettingsPanel", () => {
     render(<SettingsPanel audioApi={createAudioApi()} managementApi={createManagementApi()} />);
 
     expect(await screen.findByText("Headphones")).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Audio outputs" })).toBeVisible();
+    // The Settings disclosure summary carries the title; the embedded panel no longer repeats it.
+    expect(screen.getByRole("region", { name: "Audio outputs" })).toBeVisible();
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" }));
   });
 
@@ -268,6 +295,90 @@ describe("SettingsPanel", () => {
 
     await waitFor(() => expect(window.location.pathname).toBe("/manage"));
     expect(audioApi.createRoute).not.toHaveBeenCalled();
+  });
+
+  it("keeps an Audio save failure reference and correction inside the active navigation dialog", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/manage/settings");
+    const audioApi = createAudioApi();
+    audioApi.updateRoute = vi.fn(async () => { throw new ManagementHttpError("Device settings could not be written", "AUDIO_SAVE_FAILED", "ref-disposable-audio", "Reconnect the selected endpoint, then retry."); });
+    render(<DirtyNavigationProvider><SettingsNavigationHarness audioApi={audioApi} managementApi={createManagementApi()} /></DirtyNavigationProvider>);
+    await openDisclosure(user, /^Audio outputs ·/);
+    const name = await screen.findByLabelText("Output name");
+    await user.clear(name); await user.type(name, "Retained failed draft");
+    await user.click(screen.getByRole("button", { name: "Go home" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Leave with unsaved changes?" }));
+    await user.click(dialog.getByRole("button", { name: "Save and leave" }));
+    expect(await dialog.findByRole("alert")).toHaveTextContent("ref-disposable-audio");
+    expect(dialog.getByRole("alert")).toHaveTextContent("Reconnect the selected endpoint, then retry.");
+    expect(dialog.getByRole("link", { name: "Review audio outputs" })).toHaveAttribute("href", "/manage/settings#audio-outputs");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(audioApi.updateRoute).toHaveBeenCalledOnce();
+    await user.click(dialog.getByRole("button", { name: "Cancel" }));
+    expect(name).toHaveValue("Retained failed draft");
+    expect(window.location.pathname).toBe("/manage/settings");
+  });
+
+  it("keeps navigation rebind confirmation under one announcement owner until explicit review", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/manage/settings");
+    const audioApi = createAudioApi();
+    const status = await audioApi.getStatus();
+    audioApi.getStatus = vi.fn(async () => ({ ...status, capability: { ...status.capability, devices: [...status.capability.devices, { deviceId: "endpoint-b", label: "Stream speakers" }] } }));
+    audioApi.updateRoute = vi.fn()
+      .mockRejectedValueOnce(new ManagementHttpError("Changing this binding affects saved items", "AUDIO_ROUTE_CONFIRMATION_REQUIRED", "ref-disposable-rebind", "Review the affected items, then confirm the binding change.", [], [{ moduleId: "alerts", ownerId: "alert-a", ownerName: "New follower", variantId: null }]))
+      .mockRejectedValueOnce(new ManagementHttpError("Changing this binding affects saved items", "AUDIO_ROUTE_CONFIRMATION_REQUIRED", "ref-disposable-rebind-retry", "Review the affected items, then confirm the binding change.", [], [{ moduleId: "alerts", ownerId: "alert-a", ownerName: "New follower", variantId: null }]))
+      .mockResolvedValueOnce({ id: "route-a", name: "Retained rebind draft", deviceId: "endpoint-b", deviceLabel: "Stream speakers", autoFollowDeviceName: false });
+    render(<DirtyNavigationProvider><SettingsNavigationHarness audioApi={audioApi} managementApi={createManagementApi()} /></DirtyNavigationProvider>);
+    await openDisclosure(user, /^Audio outputs ·/);
+    const name = await screen.findByLabelText("Output name");
+    await user.clear(name); await user.type(name, "Retained rebind draft");
+    const device = screen.getByLabelText("Output device");
+    await user.selectOptions(device, "endpoint-b");
+    await user.click(screen.getByRole("button", { name: "Go home" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Leave with unsaved changes?" }));
+    await user.click(dialog.getByRole("button", { name: "Save and leave" }));
+    expect(await dialog.findByRole("alert")).toHaveTextContent("ref-disposable-rebind");
+    expect(dialog.getByRole("alert")).toHaveTextContent("Review the affected items, then confirm the binding change.");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(audioApi.updateRoute).toHaveBeenCalledExactlyOnceWith("route-a", { name: "Retained rebind draft", deviceId: "endpoint-b", confirmLiveImpact: false });
+    await user.click(dialog.getByRole("button", { name: "Cancel" }));
+    expect(name).toHaveValue("Retained rebind draft");
+    expect(device).toHaveValue("endpoint-b");
+    expect(screen.getByText("Confirm affected items before rebinding")).toBeVisible();
+    expect(screen.getByText("Alerts: New follower")).toBeVisible();
+    expect(audioApi.updateRoute).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "Save output" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Confirm affected items before rebinding");
+    expect(audioApi.updateRoute).toHaveBeenCalledTimes(2);
+    expect(audioApi.updateRoute).toHaveBeenLastCalledWith("route-a", { name: "Retained rebind draft", deviceId: "endpoint-b", confirmLiveImpact: false });
+    await user.click(screen.getByRole("button", { name: "Confirm binding change" }));
+    expect(audioApi.updateRoute).toHaveBeenLastCalledWith("route-a", { name: "Retained rebind draft", deviceId: "endpoint-b", confirmLiveImpact: true });
+    expect(await screen.findByText("Retained rebind draft saved.")).toBeVisible();
+    expect(window.location.pathname).toBe("/manage/settings");
+  });
+
+  it("keeps an Overlay save failure reference and retained draft inside the active navigation dialog", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/manage/settings");
+    const surfaceApi: SurfaceSettingsApi = {
+      load: async () => ({ surfaces: [{ id: "unified-browser:default", kind: "unified-browser", overlayId: "default", layers: [{ moduleId: "alerts", visible: true }] }], desktop: { available: false, displays: [], state: "unavailable", message: null }, desktopBindingState: "not-needed" }),
+      save: vi.fn(async () => { throw new ManagementHttpError("Surface settings could not be written", "SURFACE_SAVE_FAILED", "ref-disposable-surface", "Check the saved surface, then retry."); }), retry: vi.fn()
+    };
+    render(<DirtyNavigationProvider><SettingsNavigationHarness audioApi={createAudioApi()} surfaceApi={surfaceApi} managementApi={createManagementApi()} /></DirtyNavigationProvider>);
+    await openDisclosure(user, /^Overlay surfaces ·/);
+    const visible = await screen.findByRole("checkbox", { name: "Show Alerts on Unified browser: default" });
+    await user.click(visible);
+    await user.click(screen.getByRole("button", { name: "Go home" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Leave with unsaved changes?" }));
+    await user.click(dialog.getByRole("button", { name: "Save and leave" }));
+    expect(await dialog.findByRole("alert")).toHaveTextContent("ref-disposable-surface");
+    expect(dialog.getByRole("link", { name: "Review overlay surfaces" })).toHaveAttribute("href", "/manage/settings#overlay-surfaces");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(surfaceApi.save).toHaveBeenCalledOnce();
+    await user.click(dialog.getByRole("button", { name: "Cancel" }));
+    expect(visible).not.toBeChecked();
+    expect(window.location.pathname).toBe("/manage/settings");
   });
 
   it("keeps an unnamed device draft and blocks Save and leave with an inline error", async () => {

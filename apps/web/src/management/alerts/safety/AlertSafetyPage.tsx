@@ -1,3 +1,5 @@
+import { Button, Checkbox, Fieldset, TextInput, Textarea } from "@mantine/core";
+import { SectionHeading } from "../../foundation/ModulePageLayout.js";
 import type { ActionableManagementError } from "@stream-jams/core";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ManagementErrorBanner } from "../../foundation/ManagementErrorBanner.js";
@@ -77,8 +79,9 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
   const candidate = useMemo(() => draft === null ? null : toCandidate(draft), [draft]);
   const dirty = saved !== null && candidate !== null && !samePolicy(saved, candidate);
 
-  const save = useCallback(async (): Promise<DirtyNavigationSaveResult> => {
-    if (draft === null) return false;
+  const savePending = useRef(false);
+  const save = useCallback(async (navigation = false): Promise<DirtyNavigationSaveResult> => {
+    if (draft === null || savePending.current) return false;
     invalidatePreview();
     const validation = validateDraft(draft);
     setErrors(validation.errors);
@@ -86,6 +89,7 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
       return { saved: false, error: formatValidationFailure(validation.errors) };
     }
 
+    savePending.current = true;
     setBusy("save");
     setActionError(null);
     setNotice(null);
@@ -101,12 +105,14 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
         cause,
         "Try saving again. If the problem continues, open Diagnostics."
       );
-      setActionError(error);
-      return { saved: false, error: formatSaveFailure(error) };
+      if (!navigation) setActionError(error);
+      return { saved: false, error };
     } finally {
       setBusy(null);
+      savePending.current = false;
     }
   }, [draft, invalidatePreview, managementApi]);
+  const saveBeforeNavigation = useCallback(() => save(true), [save]);
 
   const revert = useCallback(() => {
     if (saved === null) return;
@@ -121,7 +127,7 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
     id: "alert-safety",
     dirty,
     summary: "Alert safety settings have unsaved changes.",
-    save,
+    save: saveBeforeNavigation,
     discard: revert
   });
 
@@ -165,7 +171,7 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
     return (
       <section aria-label="Alert safety" className="alert-safety-page">
         {initialLoadError === null ? null : <ManagementErrorBanner error={initialLoadError} />}
-        <button className="button button--secondary" onClick={() => void load()} type="button">Retry loading safety settings</button>
+        <Button variant="default" onClick={() => void load()} type="button">Retry loading safety settings</Button>
       </section>
     );
   }
@@ -176,7 +182,7 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
       {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
 
       <section aria-labelledby="impact-heading" className="alert-safety-page__section">
-        <h3 id="impact-heading">Shared alert policy</h3>
+        <SectionHeading id="impact-heading" level={3} title="Shared alert policy" />
         <p>Saved changes apply immediately to local Preview, Test draft, live rendered alerts, browser speech, and provider TTS.</p>
         <p>Provider connection, voice, rate, volume, and provider registration safety remain on <a href="/manage/tts-providers">Review TTS provider settings</a>.</p>
       </section>
@@ -205,20 +211,18 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
           target="ttsText"
         />
         <div className="alert-safety-page__actions">
-          <button disabled={busy !== null || !dirty} type="submit">{busy === "save" ? "Saving..." : "Save safety settings"}</button>
-          <button className="button button--secondary" disabled={busy !== null || !dirty} onClick={revert} type="button">Revert changes</button>
+          <Button disabled={busy !== null || !dirty} type="submit">{busy === "save" ? "Saving..." : "Save safety settings"}</Button>
+          <Button variant="default" disabled={busy !== null || !dirty} onClick={revert} type="button">Revert changes</Button>
         </div>
       </form>
 
       <section aria-labelledby="example-heading" className="alert-safety-page__section alert-safety-page__example">
-        <div className="alert-safety-page__section-heading">
-          <div><h3 id="example-heading">Try an example</h3><p>This sample is kept only for this browser session and is never saved with the policy.</p></div>
-          <button disabled={busy !== null} onClick={() => void preview()} type="button">{busy === "preview" ? "Previewing..." : "Preview example"}</button>
-        </div>
-        <label><span>Moderation example</span><textarea onChange={(event) => {
+        <SectionHeading id="example-heading" level={3} title="Try an example" description="This sample is kept only for this browser session and is never saved with the policy."
+          actions={<Button disabled={busy !== null} onClick={() => void preview()} type="button">{busy === "preview" ? "Previewing..." : "Preview example"}</Button>} />
+        <Textarea label="Moderation example" onChange={(event) => {
           invalidatePreview();
           setExample(event.currentTarget.value);
-        }} rows={4} value={example} /></label>
+        }} rows={4} value={example} />
         {previews === null ? null : (
           <div className="alert-safety-page__previews">
             <PreviewResult label="Rendered text" result={previews[0]} />
@@ -238,16 +242,10 @@ function TargetFieldset({ disabled, draft, error, label, onChange, target }: {
   readonly onChange: (next: TargetDraft) => void;
   readonly target: TargetKey;
 }) {
-  const errorId = `${target}-max-length-error`;
   return (
-    <fieldset className="alert-safety-page__fieldset" disabled={disabled}>
-      <legend>{label}</legend>
+    <Fieldset className="alert-safety-page__fieldset" disabled={disabled} legend={label}>
       <p>Sanitize this output independently before it reaches an alert surface.</p>
-      <label>
-        <span>{label} maximum length</span>
-        <input
-          aria-describedby={error === undefined ? undefined : errorId}
-          aria-invalid={error === undefined ? undefined : true}
+      <TextInput label={`${label} maximum length`} id={`${target}-max-length`} error={error}
           max={10_000}
           min={1}
           onChange={(event) => onChange({ ...draft, maxLength: event.currentTarget.value })}
@@ -255,22 +253,14 @@ function TargetFieldset({ disabled, draft, error, label, onChange, target }: {
           type="number"
           value={draft.maxLength}
         />
-      </label>
-      {error === undefined ? null : <p className="alert-safety-page__field-error" id={errorId}>{error}</p>}
-      <label>
-        <span>{label} blocked terms</span>
-        <textarea
+      <Textarea label={`${label} blocked terms`}
           onChange={(event) => onChange({ ...draft, blockedTerms: event.currentTarget.value })}
           placeholder="One term per line"
           rows={6}
           value={draft.blockedTerms}
         />
-      </label>
-      <label className="alert-safety-page__checkbox">
-        <input checked={draft.stripUrls} onChange={(event) => onChange({ ...draft, stripUrls: event.currentTarget.checked })} type="checkbox" />
-        {label} strip web links
-      </label>
-    </fieldset>
+      <Checkbox label={`${label} strip web links`} checked={draft.stripUrls} onChange={(event) => onChange({ ...draft, stripUrls: event.currentTarget.checked })} />
+    </Fieldset>
   );
 }
 
@@ -347,11 +337,6 @@ function formatValidationFailure(errors: FieldErrors): string {
   return `Safety settings were not saved. ${details.join(" ")} Correct the values or cancel to continue editing.`;
 }
 
-function formatSaveFailure(error: ActionableManagementError): string {
-  const reference = error.referenceId === null ? "" : ` Reference ID: ${error.referenceId}.`;
-  return `${error.summary}. ${error.nextStep}${reference}`;
-}
-
 function samePolicy(left: ModerationSettingsView, right: ModerationSettingsView): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -361,7 +346,7 @@ function actionable(summary: string, cause: unknown, nextStep: string): Actionab
   return {
     summary,
     cause: cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "The operation did not complete.",
-    nextStep,
+    nextStep: typeof cause === "object" && cause !== null && "nextStep" in cause && typeof cause.nextStep === "string" && cause.nextStep.trim() !== "" ? cause.nextStep : nextStep,
     severity: "error",
     occurredAt: new Date().toISOString(),
     referenceId,

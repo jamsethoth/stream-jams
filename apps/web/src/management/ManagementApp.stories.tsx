@@ -6,6 +6,7 @@ import { createStoryAssetApi, createStoryManagementApi } from "../stories/mock-a
 import { createStoryAudioApi } from "../stories/audio-fixtures.js";
 
 const meta = {
+  tags: ["mantine-foundation", "mantine-stage6a"],
   title: "Management/ManagementApp",
   component: ManagementApp,
   args: { audioApi: createStoryAudioApi() },

@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { renderManagement as render } from "../../test-support/render-management.js";
+import { fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 import { AudioFadeControls } from "./AudioFadeControls.js";
@@ -8,7 +9,6 @@ it("enables each fade independently with a 500 millisecond default", async () =>
   const onChange = vi.fn();
   render(<AudioFadeControls onChange={onChange} />);
   const toggle = screen.getByRole("checkbox", { name: "Fade in" });
-  expect(toggle.closest("label")).toHaveClass("media-control-toggle");
   expect(screen.queryByRole("spinbutton", { name: "Fade in duration (milliseconds)" })).not.toBeInTheDocument();
   await user.click(toggle);
   expect(onChange).toHaveBeenLastCalledWith({ fadeInMs: 500, fadeOutMs: 0 });

@@ -13,6 +13,9 @@ test("module Browser Sources share Alerts presentation and keyboard disclosure",
         await expect(panel).toBeVisible();
         const toggle = panel.getByRole("button", { name: "Expand browser sources" });
         await expect(toggle).toHaveAttribute("aria-expanded", "false");
+        const detailsId = await toggle.getAttribute("aria-controls");
+        expect(detailsId).toBeTruthy();
+        const details = panel.locator(`[id="${detailsId}"]`);
         const presentation = await panel.evaluate(element => {
           const style = getComputedStyle(element);
           const button = getComputedStyle(element.querySelector("button")!);
@@ -24,9 +27,10 @@ test("module Browser Sources share Alerts presentation and keyboard disclosure",
         else expect(presentation).toEqual(reference);
         await toggle.focus(); await toggle.press("Enter");
         await expect(panel.getByRole("button", { name: "Collapse browser sources" })).toHaveAttribute("aria-expanded", "true");
-        await expect(panel.locator(".browser-sources-panel__details")).toBeVisible();
+        await expect(details).toBeVisible();
+        await expect(details.getByRole("article")).toHaveCount(2);
         await panel.getByRole("button", { name: "Collapse browser sources" }).press("Space");
-        await expect(panel.locator(".browser-sources-panel__details")).toHaveCount(0);
+        await expect(details).toHaveCount(0);
         expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
       }
     }
