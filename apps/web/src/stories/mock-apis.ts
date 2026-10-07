@@ -44,9 +44,10 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async listRegisteredProviders() {
       return [];
     },
-    async beginMusicPairing() { return { attemptId: "pair_story", status: "pending" as const, expiresAt: "2026-07-16T18:00:00.000Z" }; },
-    async getMusicPairing() { return { attemptId: "pair_story", status: "approved" as const, expiresAt: "2026-07-16T18:00:00.000Z" }; },
+    async beginMusicPairing() { return { attemptId: "pair_story", status: "pending" as const, expiresAt: "2026-07-16T18:00:00.000Z", configuration: { baseUrl: "http://127.0.0.1:26538", transport: "auto" as const }, certificate: null }; },
+    async getMusicPairing() { return { attemptId: "pair_story", status: "approved" as const, expiresAt: "2026-07-16T18:00:00.000Z", configuration: { baseUrl: "http://127.0.0.1:26538", transport: "auto" as const }, certificate: null }; },
     async cancelMusicPairing() {},
+    async acceptMusicPairingCertificate() { throw new Error("No certificate review in this fixture"); },
     async getMusicConfig() { return { enabled: false, config: createDefaultMusicModuleConfig() }; },
     async saveMusicConfig(enabled, config) { return { enabled, config }; },
     async listMusicOutputs() { return []; },

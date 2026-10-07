@@ -1,7 +1,8 @@
 import { renderManagement as render } from "../../test-support/render-management.js";
-import { act, cleanup, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { MusicPairingAttemptView } from "@stream-jams/core";
 import type { MusicSourcesApi } from "./MusicSourcesPage.js";
 import { MusicSourcesPage } from "./MusicSourcesPage.js";
 
@@ -18,9 +19,10 @@ function createApi(overrides: Partial<MusicSourcesApi> = {}): MusicSourcesApi {
     registerProvider: vi.fn(async () => ({ status: "registered" as const, provider: { provider, configuration: {}, availableVoices: [], ttsSafety: null }, validation })),
     activateProvider: vi.fn(async () => ({ provider, replacedProviderId: null, impact: { matchedAlertCount: 0, unmatchedAlertCount: 0, blockers: [], warnings: [] } })),
     getMusicStatus: vi.fn(async () => status),
-    beginMusicPairing: vi.fn(async () => ({ attemptId: "pair_123", status: "approved" as const, expiresAt: "2026-10-04T12:00:00.000Z" })),
-    getMusicPairing: vi.fn(async () => ({ attemptId: "pair_123", status: "approved" as const, expiresAt: "2026-10-04T12:00:00.000Z" })),
+    beginMusicPairing: vi.fn(async () => ({ attemptId: "pair_123", status: "approved" as const, expiresAt: "2026-10-04T12:00:00.000Z", configuration: { baseUrl: "http://127.0.0.1:26538", transport: "auto" as const }, certificate: null })),
+    getMusicPairing: vi.fn(async () => ({ attemptId: "pair_123", status: "approved" as const, expiresAt: "2026-10-04T12:00:00.000Z", configuration: { baseUrl: "http://127.0.0.1:26538", transport: "auto" as const }, certificate: null })),
     cancelMusicPairing: vi.fn(async () => undefined),
+    acceptMusicPairingCertificate: vi.fn(async () => { throw new Error("No certificate review in this fixture"); }),
     reconnectMusicSource: vi.fn(async () => status),
     replaceMusicCredential: vi.fn(async () => ({ validation, runtimeReconcilePending: false, credentialRetirementPending: false })),
     setOverlayModuleEnabled: vi.fn(async () => true),
@@ -56,8 +58,8 @@ describe("MusicSourcesPage", () => {
   });
 
   it("ignores a late pairing result after unmount and cancels the approved attempt", async () => {
-    let resolvePair!: (value: { attemptId: string; status: "approved"; expiresAt: string }) => void;
-    const pending = new Promise<{ attemptId: string; status: "approved"; expiresAt: string }>(resolve => { resolvePair = resolve; });
+    let resolvePair!: (value: MusicPairingAttemptView) => void;
+    const pending = new Promise<MusicPairingAttemptView>(resolve => { resolvePair = resolve; });
     const api = createApi({ beginMusicPairing: vi.fn(() => pending) });
     const user = userEvent.setup();
     const mounted = render(<MusicSourcesPage api={api} />);
@@ -65,13 +67,13 @@ describe("MusicSourcesPage", () => {
     await user.click(screen.getByRole("button", { name: "Add Pear Desktop" }));
     await user.click(screen.getByRole("button", { name: "Pair Pear Desktop" }));
     mounted.unmount();
-    resolvePair({ attemptId: "pair_late", status: "approved", expiresAt: "2026-10-04T12:00:00.000Z" });
+    resolvePair({ attemptId: "pair_late", status: "approved", expiresAt: "2026-10-04T12:00:00.000Z", configuration: { baseUrl: "http://127.0.0.1:26538", transport: "auto" as const }, certificate: null });
     await waitFor(() => expect(api.cancelMusicPairing).toHaveBeenCalledWith("pair_late"));
   });
 
   it("keeps controls usable when selection changes during a slow pairing request", async () => {
-    let resolvePair!: (value: { attemptId: string; status: "approved"; expiresAt: string }) => void;
-    const pending = new Promise<{ attemptId: string; status: "approved"; expiresAt: string }>(resolve => { resolvePair = resolve; });
+    let resolvePair!: (value: MusicPairingAttemptView) => void;
+    const pending = new Promise<MusicPairingAttemptView>(resolve => { resolvePair = resolve; });
     const api = createApi({ listRegisteredProviders: vi.fn(async () => [provider]), beginMusicPairing: vi.fn(() => pending) });
     const user = userEvent.setup();
     render(<MusicSourcesPage api={api} />);
@@ -79,14 +81,72 @@ describe("MusicSourcesPage", () => {
     await user.click(screen.getByRole("button", { name: "Add Pear Desktop" }));
     await user.click(screen.getByRole("button", { name: "Pair Pear Desktop" }));
     await user.click(screen.getByRole("button", { name: "Pear Studio" }));
-    resolvePair({ attemptId: "pair_late", status: "approved", expiresAt: "2026-10-04T12:00:00.000Z" });
+    resolvePair({ attemptId: "pair_late", status: "approved", expiresAt: "2026-10-04T12:00:00.000Z", configuration: { baseUrl: "http://127.0.0.1:26538", transport: "auto" as const }, certificate: null });
     await waitFor(() => expect(api.cancelMusicPairing).toHaveBeenCalledWith("pair_late"));
     expect(screen.getByRole("button", { name: "Pair Pear Desktop" })).toBeEnabled();
     expect(screen.queryByText("Pear approval: approved")).not.toBeInTheDocument();
   });
 
+  describe("self-signed Pear certificate", () => {
+    const sha256 = Array.from({ length: 32 }, () => "AB").join(":");
+    const httpsConfig = { baseUrl: "https://127.0.0.1:26538", transport: "auto" as const };
+    const pinned = { ...httpsConfig, trustedCertificate: { sha256, pem: "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n" } };
+    const review: MusicPairingAttemptView = {
+      attemptId: "pair_cert", status: "certificate-review", expiresAt: "2026-10-04T12:00:00.000Z", configuration: httpsConfig,
+      certificate: { sha256, subject: "CN=localhost", issuer: "CN=localhost", validFrom: "Oct  4 23:22:12 2026 GMT", validTo: "Oct  4 23:22:12 2027 GMT", replacesTrusted: false }
+    };
+    const accepted: MusicPairingAttemptView = { ...review, status: "pending", configuration: pinned, certificate: null };
+
+    async function startPairing(api: MusicSourcesApi) {
+      const user = userEvent.setup();
+      render(<MusicSourcesPage api={api} />);
+      await screen.findByText("No Music sources registered.");
+      await user.click(screen.getByRole("button", { name: "Add Pear Desktop" }));
+      await user.clear(screen.getByLabelText("Pear address"));
+      await user.type(screen.getByLabelText("Pear address"), httpsConfig.baseUrl);
+      await user.click(screen.getByRole("button", { name: "Pair Pear Desktop" }));
+      return user;
+    }
+
+    it("requires the user to accept the certificate before Pear approval and saves the accepted certificate", async () => {
+      const api = createApi({
+        beginMusicPairing: vi.fn(async () => review),
+        acceptMusicPairingCertificate: vi.fn(async () => accepted),
+        getMusicPairing: vi.fn(async () => ({ ...accepted, status: "approved" as const }))
+      });
+      const user = await startPairing(api);
+      const dialog = await screen.findByRole("dialog", { name: "Trust Pear Desktop's certificate?" });
+      expect(dialog).toHaveTextContent(sha256);
+      expect(dialog).toHaveTextContent("self-signed certificate");
+      expect(screen.getByText("Pear approval: Review Pear Desktop's certificate to continue")).toBeInTheDocument();
+      expect(api.acceptMusicPairingCertificate).not.toHaveBeenCalled();
+      await user.click(screen.getByRole("button", { name: "Trust certificate and pair" }));
+      await waitFor(() => expect(api.acceptMusicPairingCertificate).toHaveBeenCalledWith("pair_cert", sha256));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(await screen.findByText("Pear approval: approved", {}, { timeout: 3_000 })).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Test connection" }));
+      await waitFor(() => expect(api.validateProvider).toHaveBeenCalledWith({ kind: "pear-desktop", name: "Pear Desktop", configuration: pinned, pairingAttemptId: "pair_cert" }));
+    });
+
+    it("cancels pairing when the user declines the certificate", async () => {
+      const api = createApi({ beginMusicPairing: vi.fn(async () => review), acceptMusicPairingCertificate: vi.fn(async () => accepted) });
+      const user = await startPairing(api);
+      const dialog = await screen.findByRole("dialog", { name: "Trust Pear Desktop's certificate?" });
+      await user.click(within(dialog).getByRole("button", { name: "Cancel pairing" }));
+      await waitFor(() => expect(api.cancelMusicPairing).toHaveBeenCalledWith("pair_cert"));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(api.acceptMusicPairingCertificate).not.toHaveBeenCalled();
+    });
+
+    it("explains when a previously accepted certificate changed", async () => {
+      const api = createApi({ beginMusicPairing: vi.fn(async () => ({ ...review, certificate: { ...review.certificate!, replacesTrusted: true } })) });
+      await startPairing(api);
+      expect(await screen.findByRole("dialog", { name: "Pear Desktop's certificate changed" })).toHaveTextContent("different self-signed certificate");
+    });
+  });
+
   it.each(["denied", "expired"] as const)("keeps %s pairing incomplete and offers a retry", async outcome => {
-    const api = createApi({ beginMusicPairing: vi.fn(async () => ({ attemptId: "pair_123", status: outcome, expiresAt: "2026-10-04T12:00:00.000Z" })) });
+    const api = createApi({ beginMusicPairing: vi.fn(async () => ({ attemptId: "pair_123", status: outcome, expiresAt: "2026-10-04T12:00:00.000Z", configuration: { baseUrl: "http://127.0.0.1:26538", transport: "auto" as const }, certificate: null })) });
     const user = userEvent.setup();
     render(<MusicSourcesPage api={api} />);
     await screen.findByText("No Music sources registered.");

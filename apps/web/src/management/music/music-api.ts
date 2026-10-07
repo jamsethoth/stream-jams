@@ -3,6 +3,7 @@ import {
   musicCredentialReplacementResultSchema,
   musicManagementStatusSchema,
   musicPairingAttemptViewSchema,
+  musicPairingCertificateAcceptanceSchema,
   musicModuleConfigSchema,
   pearConfigurationSchema,
   type MusicCredentialReplacementInput,
@@ -22,6 +23,7 @@ export interface MusicApi {
   beginMusicPairing(config: PearConfiguration): Promise<MusicPairingAttemptView>;
   getMusicPairing(attemptId: string): Promise<MusicPairingAttemptView>;
   cancelMusicPairing(attemptId: string): Promise<void>;
+  acceptMusicPairingCertificate(attemptId: string, sha256: string): Promise<MusicPairingAttemptView>;
   getMusicStatus(): Promise<MusicManagementStatus>;
   reconnectMusicSource(providerId: string): Promise<MusicManagementStatus>;
   replaceMusicCredential(providerId: string, input: MusicCredentialReplacementInput): Promise<MusicCredentialReplacementResult>;
@@ -51,6 +53,9 @@ export function createMusicApi(client: ManagementHttpClient): MusicApi {
     },
     cancelMusicPairing(attemptId) {
       return client.deleteRequest(`/management/music/pairing/${encodeURIComponent(attemptId)}`, "Unable to cancel Pear pairing.");
+    },
+    async acceptMusicPairingCertificate(attemptId, sha256) {
+      return musicPairingAttemptViewSchema.parse(await client.postJson<unknown>(`/management/music/pairing/${encodeURIComponent(attemptId)}/certificate`, musicPairingCertificateAcceptanceSchema.parse({ sha256 }), "Unable to trust the Pear certificate."));
     },
     async getMusicStatus() {
       return musicManagementStatusSchema.parse(await client.getJson<unknown>("/management/music/status", "Unable to load Music status."));

@@ -182,4 +182,76 @@ describe("PearPairingService", () => {
     await expect(service.begin(config)).resolves.toMatchObject({ status: "pending" });
     await service.dispose();
   });
+
+  describe("self-signed certificates", () => {
+    const httpsConfig = { baseUrl: "https://127.0.0.1:26538", transport: "auto" } as const;
+    const pem = "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n";
+    const sha256 = Array.from({ length: 32 }, () => "AB").join(":");
+    const otherSha256 = Array.from({ length: 32 }, () => "CD").join(":");
+    const presented = { pem, sha256, subject: "CN=localhost", issuer: "CN=localhost", validFrom: "Oct  4 23:22:12 2026 GMT", validTo: "Oct  4 23:22:12 2027 GMT", authorized: false };
+
+    function certificateService(certificate: typeof presented) {
+      const approvals: { config: unknown }[] = [];
+      const service = new PearPairingService({
+        identityStore: { getSecret: async () => "stable-client", setSecret: async () => undefined },
+        inspectCertificate: async () => certificate,
+        requestApproval: async (_url, _signal, approvalConfig) => { approvals.push({ config: approvalConfig }); return { status: 200, body: { accessToken: "pear-token" } }; }
+      });
+      return { service, approvals };
+    }
+
+    it("holds Pear approval until the user accepts the exact reviewed certificate", async () => {
+      const { service, approvals } = certificateService(presented);
+      try {
+        const review = await service.begin(httpsConfig);
+        expect(review).toMatchObject({ status: "certificate-review", configuration: httpsConfig, certificate: { sha256, subject: "CN=localhost", replacesTrusted: false } });
+        expect(approvals).toHaveLength(0);
+        expect(() => service.reserve(review.attemptId, httpsConfig)).toThrow("unavailable");
+        expect(() => service.acceptCertificate(review.attemptId, otherSha256)).toThrow("does not match");
+        expect(approvals).toHaveLength(0);
+        const accepted = service.acceptCertificate(review.attemptId, sha256);
+        const pinned = { ...httpsConfig, trustedCertificate: { sha256, pem } };
+        expect(accepted).toMatchObject({ status: "pending", configuration: pinned, certificate: null });
+        expect(approvals).toEqual([{ config: pinned }]);
+        await vi.waitFor(() => expect(service.get(review.attemptId).status).toBe("approved"));
+        expect(() => service.reserve(review.attemptId, httpsConfig)).toThrow("does not match");
+        expect(service.reserve(review.attemptId, pinned).token).toBe("pear-token");
+        expect(() => service.acceptCertificate(review.attemptId, sha256)).toThrow("unavailable");
+      } finally { await service.dispose(); }
+    });
+
+    it("reuses a matching accepted certificate and asks again when it changes", async () => {
+      const { service, approvals } = certificateService(presented);
+      try {
+        const same = await service.begin({ ...httpsConfig, trustedCertificate: { sha256, pem } });
+        expect(same).toMatchObject({ status: "pending", certificate: null });
+        expect(approvals).toHaveLength(1);
+        const changed = await service.begin({ ...httpsConfig, trustedCertificate: { sha256: otherSha256, pem } });
+        expect(changed).toMatchObject({ status: "certificate-review", certificate: { sha256, replacesTrusted: true } });
+        expect(approvals).toHaveLength(1);
+      } finally { await service.dispose(); }
+    });
+
+    it("drops a stale pin when the certificate is already trusted by the system", async () => {
+      const { service, approvals } = certificateService({ ...presented, authorized: true });
+      try {
+        await expect(service.begin({ ...httpsConfig, trustedCertificate: { sha256: otherSha256, pem } })).resolves.toMatchObject({ status: "pending", configuration: httpsConfig });
+        expect(approvals).toEqual([{ config: httpsConfig }]);
+      } finally { await service.dispose(); }
+    });
+
+    it("expires an unanswered certificate review", async () => {
+      let now = 1_000;
+      const service = new PearPairingService({
+        identityStore: { getSecret: async () => "stable-client", setSecret: async () => undefined },
+        inspectCertificate: async () => presented, requestApproval: async () => new Promise(() => {}), now: () => now
+      });
+      try {
+        const review = await service.begin(httpsConfig);
+        now += 60_000;
+        expect(service.get(review.attemptId)).toMatchObject({ status: "expired", certificate: null });
+        expect(() => service.acceptCertificate(review.attemptId, sha256)).toThrow("unavailable");
+      } finally { await service.dispose(); }
+    });
+  });
 });

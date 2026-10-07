@@ -38,10 +38,34 @@ describe("Music pairing management routes", () => {
     await app.close();
   });
 
+  it("accepts a reviewed Pear certificate only with management auth and the exact fingerprint", async () => {
+    const sessions = new LocalManagementSessionService({ generateId: () => "session-cert", sessionTtlMs: 60_000 });
+    const session = await sessions.createSession();
+    const sha256 = Array.from({ length: 32 }, () => "AB").join(":");
+    const pairing = new PearPairingService({
+      identityStore: { getSecret: async () => "stable-client", setSecret: async () => undefined },
+      inspectCertificate: async () => ({ pem: "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n", sha256, subject: "CN=localhost", issuer: "CN=localhost", validFrom: "a", validTo: "b", authorized: false }),
+      requestApproval: async () => new Promise(() => {}),
+      generateId: () => "pair_certificate_123456"
+    });
+    const app = createApp({ metadata: { appName: "stream-jams", version: "0.0.0" }, pairing, preHandlers: [createTestManagementSecurity(sessions)] });
+    const created = await app.inject({ method: "POST", url: "/management/music/pairing", headers: managementTestHeaders(session, "POST"), payload: { baseUrl: "https://127.0.0.1:26538", transport: "auto" } });
+    expect(created.json()).toMatchObject({ status: "certificate-review", certificate: { sha256 } });
+    const url = "/management/music/pairing/pair_certificate_123456/certificate";
+    expect((await app.inject({ method: "POST", url, payload: { sha256 } })).statusCode).toBe(401);
+    const mismatched = await app.inject({ method: "POST", url, headers: managementTestHeaders(session, "POST"), payload: { sha256: sha256.replaceAll("AB", "CD") } });
+    expect(mismatched.statusCode).toBe(409);
+    const accepted = await app.inject({ method: "POST", url, headers: managementTestHeaders(session, "POST"), payload: { sha256 } });
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.json()).toMatchObject({ status: "pending", certificate: null, configuration: { trustedCertificate: { sha256 } } });
+    await pairing.dispose();
+    await app.close();
+  });
+
   it("keeps status, reconnect and credential replacement behind management authorization", async () => {
     const sessions = new LocalManagementSessionService({ generateId: () => "session-music", sessionTtlMs: 60_000 });
     const session = await sessions.createSession();
-    const pairing = { begin: vi.fn(), get: vi.fn(), cancel: vi.fn() };
+    const pairing = { begin: vi.fn(), get: vi.fn(), cancel: vi.fn(), acceptCertificate: vi.fn() };
     const status = musicManagementStatusSchema.parse({ enabled: true, selectedProviderId: "provider-1", status: { state: "auth-required", stale: false, diagnosticReference: "ref_1" }, missingAssetIds: { landscape: ["brand"], vertical: [] } });
     const replacement = musicCredentialReplacementResultSchema.parse({ validation: { valid: true, connectionState: "connected", intakeState: null, validatedAt: "2026-07-15T12:00:00.000Z", availableVoices: [], error: null }, runtimeReconcilePending: false, credentialRetirementPending: false });
     const management = { getStatus: vi.fn(async () => status), reconnect: vi.fn(async () => status) };

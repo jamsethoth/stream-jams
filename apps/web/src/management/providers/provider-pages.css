@@ -462,6 +462,7 @@
 
 .music-sources__inventory { display: grid; gap: 12px; list-style: none; padding: 0; margin: 0; }
 .music-sources__inventory li { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; min-width: 0; }
+.pear-certificate-dialog__details code { overflow-wrap: anywhere; }
 .music-sources__inventory li > .mantine-Button-root:first-child { max-width: 100%; }
 .provider-page__form > p, .provider-page__form > [role="status"], .provider-page__form > [role="alert"] { grid-column: 1 / -1; }
 /* Standalone action links in tables meet the 24px minimum target size. */

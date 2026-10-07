@@ -39,7 +39,7 @@ export const MissingAssets: Story = {
 };
 
 export const PairApproved: Story = {
-  args: { api: createStoryManagementApi({ beginMusicPairing: async () => ({ attemptId: "pair_story", status: "approved", expiresAt: "2026-10-04T12:00:00.000Z" }) }) },
+  args: { api: createStoryManagementApi({ beginMusicPairing: async () => ({ attemptId: "pair_story", status: "approved", expiresAt: "2026-10-04T12:00:00.000Z", configuration: { baseUrl: "http://127.0.0.1:26538", transport: "auto" as const }, certificate: null }) }) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Add Pear Desktop" }));
@@ -49,12 +49,26 @@ export const PairApproved: Story = {
 };
 
 export const PairDenied: Story = {
-  args: { api: createStoryManagementApi({ beginMusicPairing: async () => ({ attemptId: "pair_denied", status: "denied", expiresAt: "2026-10-04T12:00:00.000Z" }) }) },
+  args: { api: createStoryManagementApi({ beginMusicPairing: async () => ({ attemptId: "pair_denied", status: "denied", expiresAt: "2026-10-04T12:00:00.000Z", configuration: { baseUrl: "http://127.0.0.1:26538", transport: "auto" as const }, certificate: null }) }) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Add Pear Desktop" }));
     await userEvent.click(canvas.getByRole("button", { name: "Pair Pear Desktop" }));
     await expect(await canvas.findByText("Pear approval: denied")).toBeVisible();
+  }
+};
+
+export const PairCertificateReview: Story = {
+  args: { api: createStoryManagementApi({ beginMusicPairing: async () => ({
+    attemptId: "pair_certificate", status: "certificate-review", expiresAt: "2026-10-04T12:00:00.000Z", configuration: { baseUrl: "https://127.0.0.1:26538", transport: "auto" as const },
+    certificate: { sha256: Array.from({ length: 32 }, (_, index) => index.toString(16).toUpperCase().padStart(2, "0")).join(":"), subject: "CN=localhost", issuer: "CN=localhost", validFrom: "Oct  4 23:22:12 2026 GMT", validTo: "Oct  4 23:22:12 2027 GMT", replacesTrusted: false }
+  }) }) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Add Pear Desktop" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Pair Pear Desktop" }));
+    const dialog = await within(canvasElement.ownerDocument.body).findByRole("dialog", { name: "Trust Pear Desktop's certificate?" });
+    await expect(within(dialog).getByRole("button", { name: "Trust certificate and pair" })).toBeVisible();
   }
 };
 

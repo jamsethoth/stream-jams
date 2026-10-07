@@ -368,7 +368,7 @@ export * from "./timers/event-rules.js";
 export type * from "./music/types.js";
 export * from "./music/schemas.js";
 export * from "./music/component-layout.js";
-export { pearConfigurationSchema, type PearConfiguration } from "./music/pear-configuration.js";
+export { pearCertificateFingerprintSchema, pearConfigurationSchema, pearTrustedCertificateSchema, type PearConfiguration, type PearTrustedCertificate } from "./music/pear-configuration.js";
 export * from "./music/management.js";
 export * from "./music/module-definition.js";
 export * from "./music/projection.js";

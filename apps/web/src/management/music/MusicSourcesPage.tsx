@@ -6,11 +6,12 @@ import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import type { ManagementApi } from "../management-api.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
+import { PearCertificateDialog } from "./PearCertificateDialog.js";
 import "../providers/provider-pages.css";
 
 export type MusicSourcesApi = Pick<ManagementApi,
   "listRegisteredProviders" | "getProvider" | "validateProvider" | "registerProvider" | "activateProvider" |
-  "getMusicStatus" | "beginMusicPairing" | "getMusicPairing" | "cancelMusicPairing" |
+  "getMusicStatus" | "beginMusicPairing" | "getMusicPairing" | "cancelMusicPairing" | "acceptMusicPairingCertificate" |
   "reconnectMusicSource" | "replaceMusicCredential" | "setOverlayModuleEnabled">;
 
 const defaultConfig: PearConfiguration = { baseUrl: "http://127.0.0.1:26538", transport: "auto" };
@@ -147,12 +148,26 @@ export function MusicSourcesPage({ api, initialProviderId }: { readonly api: Mus
     finally { if (request === generation.current) setBusy(false); }
   }
 
+  async function acceptCertificate(sha256: string) {
+    const attemptId = pairing?.attemptId;
+    if (attemptId === undefined || pairing?.status !== "certificate-review") return;
+    const request = generation.current;
+    setBusy(true); setError(null);
+    try {
+      const next = await api.acceptMusicPairingCertificate(attemptId, sha256);
+      if (request === generation.current && pairRef.current === attemptId) setPairing(next);
+    } catch (cause) {
+      if (request === generation.current) { cancelPairing(); setError(actionError(cause, "Unable to trust the Pear certificate", "Start a new pairing request.")); }
+    }
+    finally { if (request === generation.current) setBusy(false); }
+  }
+
   async function testConnection() {
     if (pairing?.status !== "approved") return;
     const request = generation.current;
     setBusy(true); setError(null);
     try {
-      const result = await api.validateProvider({ kind: "pear-desktop", name, configuration: config, pairingAttemptId: pairing.attemptId });
+      const result = await api.validateProvider({ kind: "pear-desktop", name, configuration: pairing.configuration, pairingAttemptId: pairing.attemptId });
       if (request === generation.current) setValidation(result);
     } catch (cause) { if (request === generation.current) setError(actionError(cause, "Unable to test Pear connection", "Check Pear Desktop and retry pairing.")); }
     finally { if (request === generation.current) setBusy(false); }
@@ -165,13 +180,13 @@ export function MusicSourcesPage({ api, initialProviderId }: { readonly api: Mus
     setBusy(true); setError(null);
     try {
       if (adding || selected === null) {
-        const result = await api.registerProvider({ kind: "pear-desktop", name: name.trim(), configuration: config, pairingAttemptId: pairing.attemptId });
+        const result = await api.registerProvider({ kind: "pear-desktop", name: name.trim(), configuration: pairing.configuration, pairingAttemptId: pairing.attemptId });
         if (request !== generation.current) return;
         setValidation(result.validation);
         if (result.status !== "registered") return;
         setSelectedId(result.provider.provider.id); setAdding(false);
       } else {
-        const result = await api.replaceMusicCredential(selected.id, { pairingAttemptId: pairing.attemptId, configuration: config });
+        const result = await api.replaceMusicCredential(selected.id, { pairingAttemptId: pairing.attemptId, configuration: pairing.configuration });
         if (request !== generation.current) return;
         setValidation(result.validation);
         if (!result.validation.valid) return;
@@ -236,14 +251,21 @@ export function MusicSourcesPage({ api, initialProviderId }: { readonly api: Mus
         <Button disabled={busy || pairing?.status !== "approved"} onClick={() => void testConnection()} type="button">Test connection</Button>
         <Button disabled={busy || pairing?.status !== "approved" || validation?.valid !== true} onClick={() => void save()} type="button">{adding ? "Save source" : "Replace authorization"}</Button>
       </div>
-      {pairing !== null ? <p role="status">Pear approval: {pairing.status === "pending" ? "Waiting for approval in Pear Desktop" : pairing.status}</p> : null}
+      {pairing !== null ? <p role="status">Pear approval: {pairingStatusLabel(pairing.status)}</p> : null}
       {validation?.valid === true ? <p role="status">Connection test passed. Save to use this source.</p> : null}
       {validation?.error ? <ManagementErrorBanner error={validation.error} /> : null}
       {pairing?.status === "denied" || pairing?.status === "expired" ? <p role="alert">Pairing did not complete. Start a new pairing request and approve it in Pear Desktop.</p> : null}
       {error === null ? null : <ManagementErrorBanner error={error} />}
     </div></ModuleSection> : null}
     {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
+    <PearCertificateDialog baseUrl={pairing?.configuration.baseUrl ?? config.baseUrl} certificate={pairing?.status === "certificate-review" ? pairing.certificate : null} pending={busy} onAccept={sha256 => void acceptCertificate(sha256)} onCancel={cancelPairing} />
   </div>;
+}
+
+function pairingStatusLabel(status: MusicPairingAttemptView["status"]): string {
+  if (status === "certificate-review") return "Review Pear Desktop's certificate to continue";
+  if (status === "pending") return "Waiting for approval in Pear Desktop";
+  return status;
 }
 
 function actionError(cause: unknown, summary: string, nextStep: string): ActionableManagementError {
