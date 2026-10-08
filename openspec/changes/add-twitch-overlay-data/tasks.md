@@ -1,12 +1,16 @@
 ## 1. Preparation
 
+Implementation checkpoint: follower backend `0d3e2e5f`, source UI `2acc1704`. The user authorized all four slices in dependency order on one branch based on fetched `origin/main` at `55d29f2b`; slice 1 is locally committed, not merged. Documentation-derived synthetic fixtures are labeled as such. The [scenario trace](../../../docs/verification/data-overlays-scenarios.md) distinguishes helper coverage from production integration.
+
+Task 3.1 is partially complete: authoritative polling, decreases, epochs, backoff, rate-reset handling and the ten-second hint throttle are tested. Production follow-event wiring awaits the central event bus. Tasks 3.2–3.3 have tested pure list/buffer/binding helpers but no production subscription/consumer or persisted binding flow. Task 4.1 includes follower selection/status/read-only controls and optional-scope reconnect guidance; native goal controls remain blocked. Real-account acceptance is unperformed.
+
 - [ ] 1.1 Confirm slice 1 has merged, fetch remote state, and branch from `origin/main`.
 - [ ] 1.2 Record sanitized fixtures for Get Channel Followers, Get Creator Goals, and the goal begin, progress and end events.
-- [ ] 1.3 Write a requirement-to-test trace for this change.
+- [x] 1.3 Write a requirement-to-test trace for this change.
 
 ## 2. Scopes
 
-- [ ] 2.1 Split `defaultTwitchOAuthScopes` into required and optional capability scopes, and gate the goal source on `channel:read:goals`. Add a regression test showing an account without the goal scope keeps alert intake.
+- [x] 2.1 Split `defaultTwitchOAuthScopes` into required and optional capability scopes, and gate the goal source on `channel:read:goals`. Add a regression test showing an account without the goal scope keeps alert intake.
 
 ## 3. Sources
 

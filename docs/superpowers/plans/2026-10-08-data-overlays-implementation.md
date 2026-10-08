@@ -43,10 +43,10 @@ Applicable UX: Product Surfaces, Information Architecture, Visual Foundation, Cr
 
 **Interfaces:** Export `DataValue`, `DataGoal`, `DataResetGroup`, `DataCanvas`, `DataCanvasElement`, `DataOverlayState`, `DataOverlayProjection`, strict input/document schemas, `dataOverlayLimits`, `projectDataGoal(goal,value)`, and a pure canvas projection/formatting API. Pin the exact DTO field names in a short `contract.md` in the execution workspace before handing off. State has independent aggregate and per-value revisions. Provider source status is an optional typed projection input; no provider adapters in this unit.
 
-- [ ] Write and run failing tests for strict integer/text values, UTF-8 limit, fixed kinds, limits, bindings and geometry; names are validated by service later.
-- [ ] Define goals with fixed positive target or safe baseline plus positive additional amount; test restart math, decreases, raw values, remaining/clamped fill and intermediate overflow.
-- [ ] Implement deterministic formatting/projection with plain text, compatible bindings, missing assets, stale boundary/ended/manual policy and output assignment filtering. Assets resolve through injected IDs, never paths.
-- [ ] Run `corepack.cmd pnpm exec vitest run packages/core/src/data-overlays --maxWorkers=1` and `corepack.cmd pnpm --filter @stream-jams/core build`; commit unit after focused checks.
+- [x] Write and run failing tests for strict integer/text values, UTF-8 limit, fixed kinds, limits, bindings and geometry; names are validated by service later.
+- [x] Define goals with fixed positive target or safe baseline plus positive additional amount; test restart math, decreases, raw values, remaining/clamped fill and intermediate overflow.
+- [x] Implement deterministic formatting/projection with plain text, compatible bindings, missing assets, stale boundary/ended/manual policy and output assignment filtering. Assets resolve through injected IDs, never paths.
+- [x] Run `corepack.cmd pnpm exec vitest run packages/core/src/data-overlays --maxWorkers=1` and `corepack.cmd pnpm --filter @stream-jams/core build`; commit unit after focused checks.
 
 ## Unit 2: Durable domain service and APIs (slice 1)
 
@@ -54,11 +54,11 @@ Applicable UX: Product Surfaces, Information Architecture, Visual Foundation, Cr
 
 **Interfaces:** `DataOverlayRepository` provides synchronous typed state reads and atomic transactional mutations. `DataOverlayService` exposes catalog reads; value/goal/group/canvas definition CRUD; pin settings; `commandValue(id, command)`; `resetGroup(id)`; `restartGoal(id)`; and `setCanvasVisibility(id,enabled)`. Successful mutations return committed state and publish once after commit. Define concrete route/client contracts in `contract.md`: Management `/data-overlays` definitions, Operator `/operator/data-overlays` state/commands using existing session+CSRF middleware. No credential/input API.
 
-- [ ] Write failing repository/service tests for reopening persisted state, trim/lowercase name collisions, fixed kind, pin/reference-safe deletion, stale set and serialized delta updates.
-- [ ] Implement FK-backed value/goal/group/canvas/binding references (styling can be schema-validated JSON), per-value and aggregate revisions, and synchronous transaction boundaries. Never await in SQLite transaction callbacks.
-- [ ] Test and implement all-or-nothing group reset, baseline restart after resetting members, one revision/publication, safe arithmetic and canvas deletion retaining data.
-- [ ] Add thin CRUD and Operator route handlers with authorization, CSRF, maintenance, typed errors and conflict current state. Test overlay-key rejection, invalid binding/type and missing resources.
-- [ ] Run focused core/server data-overlay tests and affected typecheck/build, document DTOs and commit.
+- [x] Write failing repository/service tests for reopening persisted state, trim/lowercase name collisions, fixed kind, pin/reference-safe deletion, stale set and serialized delta updates.
+- [x] Implement FK-backed value/goal/group/canvas/binding references (styling can be schema-validated JSON), per-value and aggregate revisions, and synchronous transaction boundaries. Never await in SQLite transaction callbacks.
+- [x] Test and implement all-or-nothing group reset, baseline restart after resetting members, one revision/publication, safe arithmetic and canvas deletion retaining data.
+- [x] Add thin CRUD and Operator route handlers with authorization, CSRF, maintenance, typed errors and conflict current state. Test overlay-key rejection, invalid binding/type and missing resources.
+- [x] Run focused core/server data-overlay tests and affected typecheck/build, document DTOs and commit.
 
 ## Unit 3: Runtime, outputs, assets and backup (slice 1)
 
@@ -66,11 +66,11 @@ Applicable UX: Product Surfaces, Information Architecture, Visual Foundation, Cr
 
 **Interfaces:** Data runtime joins the existing module-runtime map and outputs the unit1 projection. Subscribe after service construction; publish committed snapshots on mutation and stale expiry. Initial WebSocket composition is delivered after client registration with revision guards. Use existing output auth, media grants and surface layer reconciliation.
 
-- [ ] Add disabled module registration and hidden bottom surface row; test existing enabled modules/order survive.
-- [ ] Wire service/routes/runtime, module/browser/unified/private desktop presentations and registered image asset resolution with snapshot consistency.
-- [ ] Test initial HTTP/WS race, late asset completion, reconnect, output privacy, missing images, visibility/global suppression and unrelated video identity continuity.
-- [ ] Add backup contracts/capture/restore/rollback ordering, legacy defaults, full reference/name validation and disabled restored canvases. Test roundtrip and injected restore failure leaves prior enablement/content unchanged.
-- [ ] Run affected runtime/composition/gateway/desktop/asset/backup tests, build/typecheck and commit.
+- [x] Add disabled module registration and hidden bottom surface row; test existing enabled modules/order survive.
+- [x] Wire service/routes/runtime, module/browser/unified/private desktop presentations and registered image asset resolution with snapshot consistency.
+- [x] Test initial HTTP/WS race, late asset completion, reconnect, output privacy, missing images, visibility/global suppression and unrelated video identity continuity.
+- [x] Add backup contracts/capture/restore/rollback ordering, legacy defaults, full reference/name validation and disabled restored canvases. Test roundtrip and injected restore failure leaves prior enablement/content unchanged.
+- [x] Run affected runtime/composition/gateway/desktop/asset/backup tests, build/typecheck and commit.
 
 ## Unit 4: Management, Operator and live renderer (slice 1)
 
@@ -78,12 +78,12 @@ Applicable UX: Product Surfaces, Information Architecture, Visual Foundation, Cr
 
 **Interfaces:** Consume contract.md DTOs and unit1 formatter/projection; use existing authenticated HTTP client. Rendering is pure and uses stable canvas/element IDs. Operator loads independently of other modules and does not clear failed drafts on polling refresh. Templates/source additions come later.
 
-- [ ] Build definition management for values/goals/groups/pins and read-only current values, with reference errors; add module enablement/output links/canvas CRUD.
-- [ ] Build Operator controls (+1/-1/set/reset, group reset confirmation, show/hide) and test cancelled reset, failed/conflicting set retention, current-content refresh and 540x960 no horizontal scrolling.
-- [ ] Build layer editor with pointer/keyboard/numeric geometry, styling, compatible binding picker, image picker, order/hide/duplicate and explicit save/dirty navigation. Test 101st-element rejection and geometry parity.
-- [ ] Add isolated sample store/simulations and production renderers; test markup literal rendering, missing binding/image, stale expiry, outputs and preview separation.
-- [ ] Add proportional stories and disposable-service `tests/e2e/data-overlays.spec.ts` for two canvases sharing a counter, Operator/group resets, persistence, scoped browser/private output and preview isolation.
-- [ ] Run focused web tests/build (including bundle boundary gate), Storybook build/interactions, disposable live acceptance; commit slice1 candidate.
+- [x] Build definition management for values/goals/groups/pins and read-only current values, with reference errors; add module enablement/output links/canvas CRUD.
+- [x] Build Operator controls (+1/-1/set/reset, group reset confirmation, show/hide) and test cancelled reset, failed/conflicting set retention, current-content refresh and 540x960 no horizontal scrolling.
+- [x] Build layer editor with pointer/keyboard/numeric geometry, styling, compatible binding picker, image picker, order/hide/duplicate and explicit save/dirty navigation. Test 101st-element rejection and geometry parity.
+- [x] Add isolated sample store/simulations and production renderers; test markup literal rendering, missing binding/image, stale expiry, outputs and preview separation.
+- [x] Add proportional stories and disposable-service `tests/e2e/data-overlays.spec.ts` for two canvases sharing a counter, Operator/group resets, persistence, scoped browser/private output and preview isolation.
+- [x] Run focused web tests/build (including bundle boundary gate), Storybook build/interactions, disposable live acceptance; commit slice1 candidate.
 
 ## Unit 5: Event rules and Streamer.bot state (slice 2; dependency gate)
 
@@ -91,7 +91,7 @@ Applicable UX: Product Surfaces, Information Architecture, Visual Foundation, Cr
 
 **Interfaces:** Consume the actual central bus's `BusEvent`, shared selector, transactional checkpoint and no-expiry state consumer contracts only after prerequisite implementation. No local substitute dispatch, custom intake or separate receipt store. Globals use the existing authenticated provider client and fixture-verified response types.
 
-- [ ] Verify bus code/consumer/shared-selector availability and predecessor baseline; record missing dependency precisely if absent.
+- [x] Verify bus code/consumer/shared-selector availability and predecessor baseline; record missing dependency precisely if absent.
 - [ ] Capture real sanitized globals response/event fixtures with explicitly safe read-only provider access; if unavailable leave real-provider work blocked, not guessed.
 - [ ] Test/implement versioned flat schemas, limits, typed payload filters/actions, integer multipliers, ordering and atomic effects; starters avoid gift recipient/batch overlap and exclude resubs.
 - [ ] Wire checkpoint+value transaction, poisoned-event cursor advance, moderation, opt-in stream-online group reset, persisted Operator pause that advances/skips; test crash before/after commit and long replay.
@@ -104,8 +104,8 @@ Applicable UX: Product Surfaces, Information Architecture, Visual Foundation, Cr
 
 **Interfaces:** Required scopes remain today's required list; goal read scope is optional. Helix client returns validated totals/goals and status/rate-reset metadata. Follower/goal runtime updates provider-owned values/goals through internal service methods that reject manual/rule writes. Event-triggered paths require the actual bus contract.
 
-- [ ] Add sanitized documented fixtures (label synthetic versus live recordings honestly) and optional-scope regression; avoid touching actual accounts automatically.
-- [ ] Implement 60-second follower refresh, ten-second early-refresh throttle, epoch protection, failure status, exponential backoff and server rate-reset compliance. Rate-reset deadline takes precedence if later than five-minute nominal cap; record ruling.
+- [x] Add sanitized documented fixtures (label synthetic versus live recordings honestly) and optional-scope regression; avoid touching actual accounts automatically.
+- [x] Implement 60-second follower refresh, ten-second early-refresh throttle, epoch protection, failure status, exponential backoff and server rate-reset compliance. Rate-reset deadline takes precedence if later than five-minute nominal cap; record ruling. The throttle hook is tested; production event wiring remains blocked below.
 - [ ] Implement goal list/snapshot-after-subscription, 100-event bound/resnapshot, latest-by-type and pinned binding, units and broadcaster invalidation; test progress race and replacement.
 - [ ] Add Management source/binding/readiness controls, stories and disposable-provider acceptance; integrate event paths only when bus dependency is present.
 - [ ] Complete source tests/build and record real-account acceptance separately; commit verified scope, retain unchecked blockers.
@@ -134,5 +134,4 @@ Applicable UX: Product Surfaces, Information Architecture, Visual Foundation, Cr
 - The user's explicit plan-then-execute request supersedes the optional workflow's second plan approval prompt. Link the concrete plan and proceed with the selected model/effort.
 - One final independent review follows repository policy rather than per-task review agents. Implementers still self-check each unit and report tests.
 - User authority for all four slices permits sequential development on this isolated branch with slice commits; it does not claim prerequisite merges occurred.
-- Shared files/interfaces are changed in dependency order; do not assign overlapping files. After unit1 fixes the core contract, unit4's isolated renderer, geometry and preview helpers can proceed alongside unit2. Management/API integration still waits for units2 and3. Serialize commits or commit only explicitly owned paths.
-
+- Shared files/interfaces are changed in dependency order; do not assign overlapping files. After unit1 fixes the core contract, unit4's isolated renderer, geometry and preview helpers can proceed alongside unit2. Once unit2 pins routes and DTOs, Management components can implement against that contract while runtime wiring proceeds. Full live integration waits for units2 and3. Serialize commits or commit only explicitly owned paths.

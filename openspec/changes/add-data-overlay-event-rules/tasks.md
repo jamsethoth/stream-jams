@@ -1,8 +1,10 @@
 ## 1. Preparation
 
+[blocked] The central event bus change is proposal-only at fetched `origin/main` `55d29f2b`. Its journal, shared selector, transactional consumer checkpoint and subscription contracts are absent. Data rules, automatic resets, pause/replay and their acceptance cannot be implemented against an invented substitute. Streamer.bot globals additionally require real sanitized response/event fixtures; none were available or fabricated. The user authorized all four data-overlay slices, while inclusion of the separate central bus implementation remains unresolved. See the [scenario trace](../../../docs/verification/data-overlays-scenarios.md).
+
 - [ ] 1.1 Confirm slice 1 and the central event bus change have merged, fetch remote state, and branch from `origin/main`.
 - [ ] 1.2 Capture sanitized fixtures from a real Streamer.bot for `GetGlobal`, `GetGlobals` and the global-variable created, updated and deleted events. If the payloads prove unusable, defer global-variable values and record why.
-- [ ] 1.3 Write a requirement-to-test trace for this change.
+- [x] 1.3 Write a requirement-to-test trace for this change.
 
 ## 2. Core
 
