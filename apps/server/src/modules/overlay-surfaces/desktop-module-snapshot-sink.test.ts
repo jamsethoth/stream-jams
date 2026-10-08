@@ -85,3 +85,36 @@ it("refreshes unchanged paused timer access beyond one hour and removes the refr
     await sink.close(); expect(vi.getTimerCount()).toBe(0);
   } finally { await sink.close(); vi.useRealTimers(); }
 });
+
+it("keeps a newer Data image owner when an older clear acknowledgement finishes late", async () => {
+  const dataPresentation: Extract<OverlayModulePresentation, { kind: "data-overlays" }> = {
+    kind: "data-overlays", projection: { runtimeId: "runtime", revision: 1, canvases: [] }
+  };
+  let visible = true;
+  let finishClear!: () => void;
+  const syncModule = vi.fn(async (command: DesktopModuleSync) => {
+    if (command.moduleId === "data-overlays" && command.revision === 2 && command.presentation === null) {
+      await new Promise<void>(resolve => { finishClear = resolve; });
+    }
+  });
+  const releaseDataOwner = vi.fn(async (_owner: string) => { void _owner; });
+  const resolveDataModule = vi.fn()
+    .mockResolvedValueOnce({ presentation: dataPresentation, assets: [], ownerId: "owner-1" })
+    .mockResolvedValueOnce({ presentation: dataPresentation, assets: [], ownerId: "owner-2" });
+  const sink = new DesktopModuleSnapshotSink({ transport: { syncModule },
+    surfaces: { list: async () => [{ id: "desktop:primary", kind: "desktop", enabled: true, displayId: "one", displayLabel: "Main", autoFollowDisplayName: false, opacity: 1, layers: [{ moduleId: "data-overlays", visible }] }] },
+    runtime: { getModuleSnapshot: async () => ({ moduleId: "timers", enabled: false, instructions: [] }) }, assets: { resolveTimerModule: vi.fn() },
+    data: { runtime: { generation: 0, getModuleSnapshot: async () => ({ moduleId: "data-overlays", enabled: true, instructions: [], presentation: dataPresentation }) }, assets: { resolveDataModule, releaseDataOwner } }
+  });
+  try {
+    await sink.syncData();
+    visible = false; const oldClear = sink.syncData();
+    await vi.waitFor(() => expect(syncModule).toHaveBeenCalledWith(expect.objectContaining({ moduleId: "data-overlays", revision: 2, presentation: null })));
+    visible = true; await sink.syncData();
+    expect(releaseDataOwner.mock.calls).toEqual([["owner-1"]]);
+    finishClear(); await oldClear;
+    expect(releaseDataOwner.mock.calls).toEqual([["owner-1"]]);
+    expect(syncModule.mock.calls.at(-1)?.[0]).toMatchObject({ moduleId: "data-overlays", revision: 3, presentation: dataPresentation });
+  } finally { await sink.close(); }
+  expect(releaseDataOwner.mock.calls).toEqual([["owner-1"], ["owner-2"]]);
+});

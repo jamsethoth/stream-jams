@@ -200,8 +200,11 @@ export class DesktopModuleSnapshotSink {
     const visible = async () => (await this.dependencies.surfaces.list()).some(surface => surface.kind === "desktop" && surface.enabled && surface.displayId !== null && surface.layers.some(layer => layer.moduleId === "data-overlays" && layer.visible));
     const clear = async () => {
       if (obsolete()) return;
+      const previous = this.#dataOwner;
       await this.dependencies.transport.syncModule({ moduleId: "data-overlays", revision, presentation: null, assets: [] });
-      const previous = this.#dataOwner; this.#dataOwner = null;
+      // A newer visible frame or close owns cleanup after a superseded acknowledgement.
+      if (obsolete() || this.#dataOwner !== previous) return;
+      this.#dataOwner = null;
       if (previous !== null) await data.assets.releaseDataOwner(previous);
     };
     if (!await visible()) { await clear(); return; }
