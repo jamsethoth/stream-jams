@@ -22,6 +22,7 @@ import {
   type SecretRef
 } from "@stream-jams/core";
 import { RuntimeMaintenanceUnavailableError } from "./runtime-maintenance-gate.js";
+import { upgradeLegacyEffectBindingRows, upgradeLegacyTimerEventRules } from "../events/legacy-trigger-selectors.js";
 
 type BackupConfiguration = ConfigurationBackupArchive["configuration"];
 type SnapshotConfiguration = Omit<BackupConfiguration, "appConfig">;
@@ -699,7 +700,8 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   if (currentSchemaVersion === 32) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 31;
   // Schemas 33 and 34 add only runtime event bus tables, which backups never contain. Schema 35 only
   // relaxes the active event-source index, which every older archive already satisfies.
-  if (currentSchemaVersion === 35) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 34;
+  // Schema 36 converts Screen Effect bindings and timer rules to trigger selectors; older rows are upgraded.
+  if (currentSchemaVersion === 36) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 35;
   if (currentSchemaVersion === 28) return [19, 20, 21, 22, 23, 24, 25, 26, 27].includes(archiveSchemaVersion);
   return false;
 }
@@ -738,6 +740,15 @@ function upgradeLegacyConfiguration(
   }
   if (schemaVersion < 30) {
     tables = { ...tables, timer_definitions: (tables.timer_definitions ?? []).map(row => ({ ...row, event_rules_json: "[]" })) };
+  }
+  if (schemaVersion < 36) {
+    tables = {
+      ...tables,
+      ...(tables.screen_effect_bindings === undefined ? {} : { screen_effect_bindings: [...upgradeLegacyEffectBindingRows(tables.screen_effect_bindings)] }),
+      ...(tables.timer_definitions === undefined ? {} : {
+        timer_definitions: tables.timer_definitions.map(row => ({ ...row, event_rules_json: upgradeLegacyTimerEventRules(row.event_rules_json) }))
+      })
+    };
   }
   return tables === configuration.tables ? configuration : { ...configuration, tables };
 }

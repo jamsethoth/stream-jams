@@ -407,10 +407,11 @@ describe("ScreenEffectEditor", () => {
       ...enabledEffect(false),
       bindings: [{
         id: "binding-missing",
-        kind: "streamerbot-event",
-        providerId: "provider-streamerbot",
-        sourceKey: "OBS",
-        eventType: "MissingEvent"
+        selector: {
+          match: { kind: "external", providerKind: "streamerbot", sourceKey: "OBS", eventType: "MissingEvent" },
+          sources: "any",
+          conditions: []
+        }
       }]
     });
     const streamerBotProvider: RegisteredProviderView = {

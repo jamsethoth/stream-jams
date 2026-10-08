@@ -139,7 +139,7 @@ export class SqliteEffectRepository implements ScreenEffectRepository {
           binding.id,
           document.id,
           position,
-          binding.kind,
+          binding.selector.match.kind,
           effectBindingIdentity(binding),
           JSON.stringify(binding)
         );

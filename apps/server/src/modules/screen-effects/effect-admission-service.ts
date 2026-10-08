@@ -1,10 +1,10 @@
 import {
-  effectTriggerSchema,
-  matchesEffectBinding,
+  matchEffectBinding,
   resolveEffectContent,
   collectEffectDurationAssetIds,
   resolveMediaDuration,
   type AssetRecord,
+  type BusEvent,
   type EffectContentSnapshot,
   type EffectOccurrence,
   type EffectQueue,
@@ -126,12 +126,9 @@ export class EffectAdmissionService {
     this.#assetDurationCatalog = options.assetDurationCatalog ?? null;
   }
 
-  async handleTriggers(candidateTriggers: readonly EffectTrigger[]): Promise<EffectAdmissionResult> {
-    const triggers = effectTriggerSchema.array().min(1).parse(candidateTriggers);
-    const eventId = triggers[0]!.eventId;
-    if (triggers.some((trigger) => trigger.eventId !== eventId)) {
-      throw new TypeError("Screen Effects trigger batches must describe one upstream event");
-    }
+  /** Admits every enabled effect with a binding whose selector matches the journal-validated bus event. */
+  async handleEvent(event: BusEvent): Promise<EffectAdmissionResult> {
+    const { eventId } = event;
     if (!await this.#isModuleEnabled()) {
       return this.#report({ status: "module-disabled", eventId, outcomes: [] });
     }
@@ -145,7 +142,7 @@ export class EffectAdmissionService {
       this.#getModuleCooldownSeconds()
     ]);
     validateCooldown(moduleCooldownSeconds);
-    const matches = matchEffects(documents, triggers);
+    const matches = matchEffects(documents, event);
     if (!await this.#isModuleEnabled()) {
       return this.#report({ status: "module-disabled", eventId, outcomes: [] });
     }
@@ -348,14 +345,14 @@ export class EffectAdmissionService {
 
 function matchEffects(
   documents: readonly ScreenEffectDocument[],
-  triggers: readonly EffectTrigger[]
+  event: BusEvent
 ): readonly MatchedEffect[] {
   const matches: MatchedEffect[] = [];
   for (const document of documents) {
     if (!document.enabled) continue;
     const trigger = document.bindings
-      .map((binding) => triggers.find((candidate) => matchesEffectBinding(binding, candidate)))
-      .find((candidate): candidate is EffectTrigger => candidate !== undefined);
+      .map((binding) => matchEffectBinding(binding, event))
+      .find((candidate): candidate is EffectTrigger => candidate !== null);
     if (trigger !== undefined) matches.push({ document, trigger });
   }
   return matches.sort((left, right) => {

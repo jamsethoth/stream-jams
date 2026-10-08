@@ -1,10 +1,10 @@
-import { matchesTimerEventRule, timerEventAdjustmentMs, type NormalizedStreamEvent, type TimerDefinitionRepository } from "@stream-jams/core";
+import { matchesTimerEventRule, timerEventAdjustmentMs, type BusEvent, type TimerDefinitionRepository } from "@stream-jams/core";
 import type { TimerRuntimeCoordinator } from "./timer-runtime-coordinator.js";
 
 export class TimerEventService {
   constructor(private readonly definitions: Pick<TimerDefinitionRepository, "list">,
     private readonly runtime: Pick<TimerRuntimeCoordinator, "start" | "stop" | "restart" | "adjust">) {}
-  async handleEvent(event: NormalizedStreamEvent): Promise<void> {
+  async handleEvent(event: BusEvent): Promise<void> {
     for (const definition of this.definitions.list()) {
       for (const rule of definition.eventRules ?? []) {
         if (!matchesTimerEventRule(rule, event)) continue;

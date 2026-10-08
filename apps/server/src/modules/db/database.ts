@@ -37,6 +37,7 @@ import { automationGrantsMigration } from "./migrations/031-automation-grants.js
 import { eventBusJournalMigration } from "./migrations/034-event-bus-journal.js";
 import { eventBusCorrelationMigration } from "./migrations/035-event-bus-correlation.js";
 import { eventSourceActivePerKindMigration } from "./migrations/036-event-source-active-per-kind.js";
+import { eventTriggerSelectorsMigration } from "./migrations/037-event-trigger-selectors.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -84,7 +85,8 @@ const migrations = [
   musicSourceProvidersMigration,
   eventBusJournalMigration,
   eventBusCorrelationMigration,
-  eventSourceActivePerKindMigration
+  eventSourceActivePerKindMigration,
+  eventTriggerSelectorsMigration
 ] satisfies readonly StreamJamsMigration[];
 
 export const currentSchemaVersion = migrations.length;

@@ -855,28 +855,28 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const eventPipeline = new EventPipeline({
     timerEventSink: new TimerEventService(timerDefinitionRepository, timerRuntimeCoordinator),
     onTimerError: (error, event) => runtimeLogger.error("Timer event handling failed", {
-      module: "timers", source: "timers.event-admission", correlationId: `event:${event.providerId}:${event.id}`,
-      processingId: null, metadata: { eventType: event.type }
+      module: "timers", source: "timers.event-admission", correlationId: `event:${event.sourceKind}:${event.eventId}`,
+      processingId: null, metadata: { eventType: event.kind === "canonical" ? event.event.type : "external" }
     }, error),
     playbackCoordinator,
-    effectTriggerSink: {
-      async handleTriggers(triggers) {
-        const result = await effectAdmissionService.handleTriggers(triggers);
+    effectEventSink: {
+      async handleEvent(event) {
+        const result = await effectAdmissionService.handleEvent(event);
         await effectPlaybackCoordinator.startNext();
         return result;
       }
     },
     diagnosticsLogRepository,
     generateId: generateEventPipelineId,
-    onEffectError: (error, triggers) => runtimeLogger.error("Screen Effects trigger handling failed", {
+    onEffectError: (error, event) => runtimeLogger.error("Screen Effects trigger handling failed", {
       module: "screen-effects",
       source: "screen-effects.event-admission",
-      correlationId: triggers[0] === undefined ? "event:screen-effects:unknown" : `event:${triggers[0].eventId}`,
+      correlationId: `event:${event.eventId}`,
       processingId: null,
       metadata: {
         errorName: error.name,
-        eventIds: Array.from(new Set(triggers.map((trigger) => trigger.eventId))),
-        triggerKinds: triggers.map((trigger) => trigger.kind)
+        eventIds: [event.eventId],
+        triggerKinds: event.kind === "canonical" ? ["canonical-event", ...event.effectTriggers.map((trigger) => trigger.kind)] : event.effectTriggers.map((trigger) => trigger.kind)
       }
     })
   });
@@ -1616,14 +1616,16 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         return false;
       }
     },
-    async isStreamerBotSelectionConfigured(providerId, sourceKey, eventType) {
+    async isStreamerBotSelectionConfigured(sourceKey, eventType) {
       try {
-        const providers = await providerManagementService.listProviders("event-source");
-        if (!providers.some((provider) => provider.id === providerId && provider.kind === "streamerbot")) {
-          return false;
+        const providers = (await providerManagementService.listProviders("event-source"))
+          .filter((provider) => provider.kind === "streamerbot")
+          .sort((left, right) => Number(right.active) - Number(left.active));
+        for (const provider of providers) {
+          const catalog = await providerManagementService.getStreamerBotSubscriptions(provider.id);
+          if (isStreamerBotSubscriptionAvailable(catalog, sourceKey, eventType)) return true;
         }
-        const catalog = await providerManagementService.getStreamerBotSubscriptions(providerId);
-        return isStreamerBotSubscriptionAvailable(catalog, sourceKey, eventType);
+        return false;
       // error-provenance: allow expected -- provider selection probes intentionally collapse unavailable catalogs to false
       }
       // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary

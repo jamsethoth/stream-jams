@@ -718,14 +718,14 @@ function AddTriggerControls({ add, context, generateId }: {
     <NativeSelect label="Twitch reward" aria-label="Twitch reward" onChange={(event) => setRewardId(event.currentTarget.value)} value={rewardId}><option value="">Choose a configured reward</option>{context.rewards.map((reward) => <option key={reward.id} value={reward.id}>{reward.title}</option>)}</NativeSelect>
     <Button variant="default" disabled={rewardId === "" || context.twitch?.connected !== true} onClick={() => {
       if (context.twitch?.connected !== true || rewardId === "") return;
-      add({ id: generateId("binding"), kind: "twitch-reward", broadcasterId: context.twitch.account.accountId, rewardId });
+      add({ id: generateId("binding"), selector: { match: { kind: "twitch-reward", broadcasterId: context.twitch.account.accountId, rewardId }, sources: "any", conditions: [] } });
       setRewardId("");
     }} type="button">Add reward trigger</Button>
     <NativeSelect label="Streamer.bot event" aria-label="Streamer.bot event" onChange={(event) => setStreamerSelection(event.currentTarget.value)} value={streamerSelection}><option value="">Choose a configured subscription</option>{streamerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</NativeSelect>
     <Button variant="default" disabled={streamerSelection === "" || context.streamerBot === null} onClick={() => {
       const option = streamerOptions.find((candidate) => candidate.value === streamerSelection);
       if (option === undefined || context.streamerBot === null) return;
-      add({ id: generateId("binding"), kind: "streamerbot-event", providerId: context.streamerBot.providerId, sourceKey: option.sourceKey, eventType: option.eventType });
+      add({ id: generateId("binding"), selector: { match: { kind: "external", providerKind: "streamerbot", sourceKey: option.sourceKey, eventType: option.eventType }, sources: "any", conditions: [] } });
       setStreamerSelection("");
     }} type="button">Add Streamer.bot trigger</Button>
   </div>;
@@ -841,19 +841,26 @@ async function loadStreamerBotContext(managementApi: ManagementApi): Promise<Str
 }
 
 function bindingLabel(binding: EffectBinding): string {
-  return binding.kind === "twitch-reward"
-    ? `Twitch reward ${binding.rewardId}`
-    : `Streamer.bot ${binding.sourceKey} / ${binding.eventType}`;
+  const { match } = binding.selector;
+  switch (match.kind) {
+    case "canonical": return `Event ${match.type.replaceAll("_", " ")}`;
+    case "twitch-reward": return `Twitch reward ${match.rewardId}`;
+    case "external": return `Streamer.bot ${match.sourceKey} / ${match.eventType}`;
+  }
 }
 
 function bindingAvailable(binding: EffectBinding, context: EditorContext): boolean {
-  if (binding.kind === "twitch-reward") {
-    return context.twitch?.connected === true
-      && context.twitch.account.accountId === binding.broadcasterId
-      && context.rewards.some((reward) => reward.id === binding.rewardId);
+  const { match } = binding.selector;
+  switch (match.kind) {
+    case "canonical": return true;
+    case "twitch-reward":
+      return context.twitch?.connected === true
+        && context.twitch.account.accountId === match.broadcasterId
+        && context.rewards.some((reward) => reward.id === match.rewardId);
+    case "external":
+      return context.streamerBot !== null
+        && isStreamerBotSubscriptionAvailable(context.streamerBot, match.sourceKey, match.eventType);
   }
-  return context.streamerBot?.providerId === binding.providerId
-    && isStreamerBotSubscriptionAvailable(context.streamerBot, binding.sourceKey, binding.eventType);
 }
 
 function effectDestinationNames(variant: EffectVariant, routeNames: ReadonlyMap<string, string>): string[] {

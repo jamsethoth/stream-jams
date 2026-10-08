@@ -31,7 +31,7 @@ Current intake (checked against `main` at 6f3a69c):
 
 ### 1. Bus event envelope
 
-Slice 1 ships the envelope with `effectTriggers` (derived at intake, as today) and an `external` kind without a payload. Slice 4 replaces `effectTriggers` with selectors and slice 5 adds the external payload.
+Slice 1 ships the envelope with `effectTriggers` (derived at intake, as today) and an `external` kind without a payload. Slice 4 matches consumers through selectors: a canonical selector reads the event and its conditions, while reward and external selectors match the identities in `effectTriggers`, which intake keeps deriving. Slice 5 adds the external payload.
 
 ```ts
 type BusEvent = {

@@ -738,7 +738,7 @@ function validateScreenEffects(tables: BackupConfiguration["tables"]): readonly 
     parsedBindings.set(String(row.id), parsed.data);
     if (
       parsed.data.id !== row.id ||
-      parsed.data.kind !== row.kind ||
+      parsed.data.selector.match.kind !== row.kind ||
       effectBindingIdentity(parsed.data) !== row.canonical_identity
     ) {
       errors.push(`screen_effect_bindings[${index}] does not match its document JSON.`);
