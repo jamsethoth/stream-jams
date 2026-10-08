@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import {
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
@@ -936,6 +937,26 @@ describe("runtime app composition smoke", () => {
         ruleId: communityGiftAlertId
       })
     ]));
+
+    const journal = new DatabaseSync(join(testRoot, "data", "stream-jams.sqlite"), { readOnly: true });
+    try {
+      const journaled = journal.prepare("SELECT event_id, source_kind FROM event_bus_journal").all()
+        .map((row) => [String(row.event_id), String(row.source_kind)]);
+      expect(journaled).toEqual(expect.arrayContaining([
+        ["twitch-stream-online", "twitch"],
+        ["streamerbot:twitch:StreamOnline:streamerbot-stream-online", "streamerbot"],
+        ["twitch-community-gift", "twitch"],
+        ["streamerbot:twitch:GiftBomb:gift-bomb-after-malformed", "streamerbot"]
+      ]));
+      const head = Number(journal.prepare("SELECT MAX(sequence) AS head FROM event_bus_journal").get()?.head);
+      expect(journal.prepare("SELECT consumer_id, last_sequence FROM event_bus_consumer_cursors ORDER BY consumer_id").all()).toEqual([
+        { consumer_id: "alerts", last_sequence: head },
+        { consumer_id: "screen-effects", last_sequence: head },
+        { consumer_id: "timers", last_sequence: head }
+      ]);
+    } finally {
+      journal.close();
+    }
   });
 
   it("exposes synchronized Twitch and Streamer.bot event-source runtimes", async () => {

@@ -14,6 +14,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./event-bus": {
+      "types": "./dist/event-bus/schemas.d.ts",
+      "default": "./dist/event-bus/schemas.js"
+    },
     "./music-style-policy": {
       "types": "./dist/music/style-policy.d.ts",
       "default": "./dist/music/style-policy.js"

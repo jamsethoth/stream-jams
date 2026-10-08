@@ -45,9 +45,12 @@ export interface EventIngestionDiagnostic {
   readonly exception?: unknown;
 }
 
+/** A sink may report that it already holds the event, for example after a restart. */
+export type EventSinkOutcome = { readonly status: "accepted" | "duplicate" };
+
 export interface EventSink {
-  handleEvent(event: NormalizedStreamEvent, triggers: readonly EffectTrigger[]): void | Promise<void>;
-  handleTriggers?(triggers: readonly EffectTrigger[]): void | Promise<void>;
+  handleEvent(event: NormalizedStreamEvent, triggers: readonly EffectTrigger[]): void | EventSinkOutcome | Promise<void | EventSinkOutcome>;
+  handleTriggers?(triggers: readonly EffectTrigger[]): void | EventSinkOutcome | Promise<void | EventSinkOutcome>;
 }
 
 export interface EventIngestionServiceOptions {
@@ -124,8 +127,9 @@ export class EventIngestionService {
       if (this.#sink.handleTriggers === undefined) {
         throw new Error("Screen Effects trigger sink is unavailable");
       }
-      await this.#sink.handleTriggers(parsed.data);
+      const outcome = await this.#sink.handleTriggers(parsed.data);
       this.#rememberMessageId(eventId);
+      if (outcome?.status === "duplicate") return this.#markDuplicate(eventId, "Duplicate Streamer.bot event ignored");
       this.#markAccepted();
       return { status: "accepted", eventId };
     } catch (error) {
@@ -211,8 +215,9 @@ export class EventIngestionService {
 
     this.#inFlightMessageIds.add(normalizedEvent.id);
     try {
-      await this.#sink.handleEvent(normalizedEvent, parsedTriggers.data);
+      const outcome = await this.#sink.handleEvent(normalizedEvent, parsedTriggers.data);
       this.#rememberMessageId(normalizedEvent.id);
+      if (outcome?.status === "duplicate") return this.#markDuplicate(normalizedEvent.id, messages.duplicateMessage);
       this.#markAccepted();
       return { status: "accepted", event: normalizedEvent };
     } catch (error) {
@@ -225,6 +230,16 @@ export class EventIngestionService {
     } finally {
       this.#inFlightMessageIds.delete(normalizedEvent.id);
     }
+  }
+
+  #markDuplicate(messageId: string, message: string): { readonly status: "duplicate"; readonly messageId: string } {
+    this.#status = {
+      ...this.#status,
+      state: this.#status.state === "idle" ? "ready" : this.#status.state,
+      duplicateCount: this.#status.duplicateCount + 1,
+      message
+    };
+    return { status: "duplicate", messageId };
   }
 
   #markAccepted(): void {

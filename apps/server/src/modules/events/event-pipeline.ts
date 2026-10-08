@@ -1,5 +1,6 @@
 import type {
   AlertMatchLogRecord,
+  BusEvent,
   DiagnosticsLogRepository,
   EffectTrigger,
   EventLogRecord,
@@ -9,7 +10,7 @@ import type {
   PlaybackQueueSnapshot,
   ProcessingId
 } from "@stream-jams/core";
-import type { EventSink } from "./event-ingestion-service.js";
+import type { EventBusConsumer } from "./event-bus.js";
 import type { PlaybackCoordinator, PlaybackEnqueueResult } from "../playback/playback-coordinator.js";
 import type { EffectTriggerSink } from "../screen-effects/effect-trigger-adapter.js";
 
@@ -31,7 +32,8 @@ export interface EventPipelineOptions {
   readonly now?: (() => Date) | undefined;
 }
 
-export class EventPipeline implements EventSink {
+/** Builds the Alerts, Screen Effects and Timers consumers of the central event bus. */
+export class EventPipeline {
   readonly #timerEventSink: EventPipelineOptions["timerEventSink"];
   readonly #onTimerError: EventPipelineOptions["onTimerError"];
   readonly #playbackCoordinator: Pick<PlaybackCoordinator, "enqueueEvent">;
@@ -55,22 +57,29 @@ export class EventPipeline implements EventSink {
     this.#now = options.now ?? (() => new Date());
   }
 
-  async handleEvent(event: NormalizedStreamEvent, triggers: readonly EffectTrigger[] = []): Promise<void> {
+  consumers(): readonly EventBusConsumer[] {
+    return [
+      // Playback dedupe accepts the event before a failure, so a retry could only report a duplicate.
+      { id: "alerts", maxAttempts: 1, handle: (event) => this.#deliverAlerts(event) },
+      // Failures are diagnosed inside the consumer and never reach the bus.
+      { id: "screen-effects", maxAttempts: 1, handle: (event) => this.#deliverEffects(event.effectTriggers) },
+      // Timer adjustments are not idempotent, so a partial failure must not be retried.
+      { id: "timers", maxAttempts: 1, handle: (event) => this.#deliverTimers(event) }
+    ];
+  }
+
+  async #deliverAlerts(busEvent: BusEvent): Promise<void> {
+    if (busEvent.kind !== "canonical") return;
+    const { event } = busEvent;
     const processingId = this.#generateId("processing") as ProcessingId;
     const correlationId = createCorrelationId(event);
     await this.#appendEventLog(event, "received", correlationId, processingId, null);
-    const effectDelivery = this.#deliverEffects(triggers);
-    const timerDelivery = this.#deliverTimers(event);
 
     try {
       const result = await this.#playbackCoordinator.enqueueEvent(event);
       await this.#appendPlaybackRecords(event, result, correlationId, processingId);
-      await effectDelivery;
-      await timerDelivery;
       await this.#appendEventLog(event, "processed", correlationId, processingId, null);
     } catch (error) {
-      await effectDelivery;
-      await timerDelivery;
       await this.#appendEventLog(
         event,
         "failed",
@@ -82,15 +91,12 @@ export class EventPipeline implements EventSink {
     }
   }
 
-  async handleTriggers(triggers: readonly EffectTrigger[]): Promise<void> {
-    await this.#deliverEffects(triggers);
-  }
-
-  async #deliverTimers(event: NormalizedStreamEvent): Promise<void> {
-    try { await this.#timerEventSink?.handleEvent(event); }
+  async #deliverTimers(busEvent: BusEvent): Promise<void> {
+    if (busEvent.kind !== "canonical") return;
+    try { await this.#timerEventSink?.handleEvent(busEvent.event); }
     catch (error) {
       // error-provenance: allow expected -- timer failures are diagnosed independently of alert intake
-      await this.#onTimerError?.(error, event);
+      await this.#onTimerError?.(error, busEvent.event);
     }
   }
 

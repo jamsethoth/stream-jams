@@ -31,6 +31,8 @@ Current intake (checked against `main` at 6f3a69c):
 
 ### 1. Bus event envelope
 
+Slice 1 ships the envelope with `effectTriggers` (derived at intake, as today) and an `external` kind without a payload. Slice 4 replaces `effectTriggers` with selectors and slice 5 adds the external payload.
+
 ```ts
 type BusEvent = {
   busId: string;                 // journal-assigned, monotonic sequence + random suffix
@@ -49,12 +51,12 @@ type BusEvent = {
 ### 2. Journal and per-consumer cursors
 
 - SQLite tables `event_bus_journal` (sequence, bus ID, source, kind, event JSON, correlation key, received/occurred time) and `event_bus_consumer_cursors` (consumer ID, last delivered sequence, updated time), plus `event_bus_delivery_failures` for poisoned deliveries.
-- Publishing validates, dedupes, and appends in one narrow transaction. Ingestion reports `accepted` once the row is committed, not once consumers finish.
+- Publishing validates, dedupes, and appends in one narrow transaction. Publishing then waits for each consumer's delivery attempt so intake keeps its existing back-pressure, but a consumer failure never turns into an ingestion failure: ingestion reports `accepted` once the row is committed.
 - Each registered consumer runs one worker that reads the journal after its cursor in small batches (default 25) and advances its cursor after its handler returns an admission result. Publishing only wakes workers; there is no unbounded in-memory buffer.
 - Delivery is at-least-once. Consumers stay idempotent by bus ID (Alerts and Screen Effects already dedupe by event ID; their dedupe moves to the bus ID).
 - A consumer may instead take **transactional checkpoints**: its handler receives a checkpoint callback that writes its cursor inside the consumer's own SQLite transaction (same connection), so its state change and cursor commit together and each event applies exactly once. Custom data overlays (BL-061) use this.
 - Replay age (decision 7) is set per consumer. Playback consumers use the short default; state consumers such as data overlays may opt out of expiry.
-- A handler error is logged with the consumer, bus ID and reference ID, retried up to three times with backoff, then recorded in `event_bus_delivery_failures` and skipped so one bad event cannot block the consumer.
+- A handler error is logged with the consumer, bus ID and reference ID, retried up to three times with backoff, then recorded in `event_bus_delivery_failures` and skipped so one bad event cannot block the consumer. A consumer can lower its attempt count: Timers use one attempt because adjustments are not idempotent, and Alerts and Screen Effects use one because their dedupe already accepts the event before a failure, so a retry could only report a duplicate.
 - Order is FIFO per consumer. There is no ordering guarantee across consumers.
 - Retention: the journal keeps the newer of 7 days or 10,000 rows, pruned at startup and hourly, never pruning rows still ahead of any consumer cursor younger than the replay age.
 - The journal is runtime data. It is excluded from configuration backup; a restore marks undelivered rows expired so restored configuration is not fed old events. WAL companion handling follows existing SQLite rules.
