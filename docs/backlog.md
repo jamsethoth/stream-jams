@@ -71,7 +71,7 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 | ID | Outcome | Status | Priority | Dependency or trigger | Detail |
 | --- | --- | --- | --- | --- | --- |
 | BL-052 | Main-branch changelog and validation | Planned | P2 | Existing proposal; 0/22 implementation tasks at the September 23 audit | [OpenSpec change](../openspec/changes/add-main-branch-changelog/proposal.md) |
-| BL-053 | Manual Streamer.bot video shoutout overlay module | Planned | P2 | Merged in #157; superseded by BL-057, which retires the module. Remove when `add-video-request-queue` is archived | [OpenSpec change](../openspec/changes/add-video-shoutout-overlay-module/proposal.md); [setup](video-shoutout.md); separate from Screen Effects |
+| BL-053 | Manual Streamer.bot video shoutout overlay module | Planned | P2 | Merged in #157; superseded by BL-057, which retires the module. Remove when `add-video-request-queue` is archived | [OpenSpec change](../openspec/changes/add-video-shoutout-overlay-module/proposal.md); Setup is replaced by [Videos](videos.md); separate from Screen Effects |
 | BL-057 | Video request queue: Videos module with management page, operator tools, persisted queue, providers and REST, Streamer.bot and reward intake | Planned | P1 | Replaces the video shoutout module and its missing management page; remove on archive | [OpenSpec change](../openspec/changes/add-video-request-queue/proposal.md) |
 | BL-060 | Audit modules for output parity (desktop overlay and browser source), management and operator tools, and persisted queues | Planned | P1 | Project rule from 2026-10-08 | Covers Alerts, Screen Effects, Timers and Music; findings become per-module changes |
 

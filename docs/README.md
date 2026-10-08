@@ -10,7 +10,7 @@ Use this map to distinguish current behavior, pending work, and historical evide
 | How do I configure Timers or Stream Deck HTTP actions? | [Timers](timers.md); [implementation verification and remaining manual acceptance](verification/timers.md) |
 | How do I configure Music and brand its widget? | [Music provider setup](music-providers.md), [styling surface](music-styling.md), and [dated verification/acceptance](verification/music-widget-module.md) |
 | What Music behavior is required? | [Canonical Music source](../openspec/specs/music-source-providers/spec.md) and [widget/output](../openspec/specs/music-widget-overlay/spec.md) capabilities; [scenario trace](verification/music-widget-scenarios.md) records automated and physical evidence |
-| How do I send Streamer.bot video shoutouts? | [Video shoutouts](video-shoutout.md) |
+| How do I queue and play requested videos (Twitch, YouTube, Streamer.bot, rewards, REST)? | [Videos](videos.md); [mirror feasibility check](verification/video-mirror-feasibility.md) |
 | How do native integrations pair and control timers/queues? | [Local automation API v1](automation-api.md) |
 
 | What product boundaries are intentional? | [Product plan](product-plan.md); its MVP sections describe the first delivery boundary, and later sections describe approved additions |
