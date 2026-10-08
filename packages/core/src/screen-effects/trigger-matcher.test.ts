@@ -1,74 +1,72 @@
 import { describe, expect, it } from "vitest";
-import { effectTriggerSchema } from "./schemas.js";
-import { matchesEffectBinding } from "./trigger-matcher.js";
+import type { BusEvent } from "../event-bus/types.js";
+import type { NormalizedStreamEvent } from "../events/types.js";
+import { matchEffectBinding } from "./trigger-matcher.js";
+import type { EffectBinding, EffectTrigger } from "./types.js";
 
-describe("matchesEffectBinding", () => {
-  it("matches broadcaster and reward IDs rather than a renamed display summary", () => {
-    const binding = {
-      id: "binding-reward",
-      kind: "twitch-reward" as const,
-      broadcasterId: "100",
-      rewardId: "reward-1"
-    };
-    const trigger = effectTriggerSchema.parse({
-      kind: "twitch-reward",
-      eventId: "event-1",
-      occurredAt: "2026-09-08T12:00:00.000Z",
-      broadcasterId: "100",
-      rewardId: "reward-1",
-      summary: "Renamed reward"
-    });
-    expect(trigger.kind).toBe("twitch-reward");
-    if (trigger.kind !== "twitch-reward") {
-      throw new Error("Expected a Twitch reward trigger");
-    }
+const rewardTrigger: EffectTrigger = {
+  kind: "twitch-reward",
+  eventId: "event-1",
+  occurredAt: "2026-09-08T12:00:00.000Z",
+  broadcasterId: "100",
+  rewardId: "reward-1",
+  summary: "Renamed reward"
+};
 
-    expect(matchesEffectBinding(binding, trigger)).toBe(true);
-    expect(matchesEffectBinding(binding, { ...trigger, summary: "Another title" })).toBe(true);
-    expect(matchesEffectBinding(binding, { ...trigger, broadcasterId: "200" })).toBe(false);
-    expect(matchesEffectBinding(binding, { ...trigger, rewardId: "reward-2" })).toBe(false);
+function busEvent(triggers: readonly EffectTrigger[], event?: NormalizedStreamEvent): BusEvent {
+  const base = {
+    sequence: 1,
+    busId: "bus-1",
+    eventId: event?.id ?? triggers[0]!.eventId,
+    sourceKind: "twitch" as const,
+    sourceRegistrationId: null,
+    receivedAt: "2026-09-08T12:00:00.000Z",
+    correlationKey: null,
+    effectTriggers: triggers
+  };
+  return event === undefined ? { ...base, kind: "external" } : { ...base, kind: "canonical", event };
+}
+
+function binding(selector: EffectBinding["selector"]): EffectBinding {
+  return { id: "binding", selector };
+}
+
+describe("matchEffectBinding", () => {
+  it("records the matching reward trigger regardless of its display summary", () => {
+    const reward = binding({ match: { kind: "twitch-reward", broadcasterId: "100", rewardId: "reward-1" }, sources: "any", conditions: [] });
+    expect(matchEffectBinding(reward, busEvent([rewardTrigger]))).toEqual(rewardTrigger);
+    expect(matchEffectBinding(reward, busEvent([{ ...rewardTrigger, summary: "Another title" }]))?.summary).toBe("Another title");
+    expect(matchEffectBinding(reward, busEvent([{ ...rewardTrigger, rewardId: "reward-2" }]))).toBeNull();
   });
 
-  it("matches Streamer.bot provider, source, and event type exactly", () => {
-    const binding = {
-      id: "binding-streamerbot",
-      kind: "streamerbot-event" as const,
-      providerId: "provider-1",
-      sourceKey: "OBS",
-      eventType: "SceneChanged"
-    };
-    const trigger = effectTriggerSchema.parse({
-      kind: "streamerbot-event",
-      eventId: "event-2",
-      occurredAt: "2026-09-08T12:00:00.000Z",
-      providerId: "provider-1",
-      sourceKey: "OBS",
-      eventType: "SceneChanged",
-      summary: "Scene changed"
-    });
-    expect(trigger.kind).toBe("streamerbot-event");
-    if (trigger.kind !== "streamerbot-event") {
-      throw new Error("Expected a Streamer.bot trigger");
-    }
-
-    expect(matchesEffectBinding(binding, trigger)).toBe(true);
-    expect(matchesEffectBinding(binding, { ...trigger, providerId: "provider-2" })).toBe(false);
-    expect(matchesEffectBinding(binding, { ...trigger, sourceKey: "obs" })).toBe(false);
-    expect(matchesEffectBinding(binding, { ...trigger, eventType: "scenechanged" })).toBe(false);
+  it("records the external trigger for an exact Streamer.bot identity", () => {
+    const trigger: EffectTrigger = { kind: "streamerbot-event", eventId: "event-2", occurredAt: rewardTrigger.occurredAt, providerId: "provider-1", sourceKey: "OBS", eventType: "SceneChanged", summary: "Scene changed" };
+    const scene = binding({ match: { kind: "external", providerKind: "streamerbot", sourceKey: "OBS", eventType: "SceneChanged" }, sources: "any", conditions: [] });
+    expect(matchEffectBinding(scene, busEvent([rewardTrigger, trigger]))).toEqual(trigger);
+    expect(matchEffectBinding(scene, busEvent([rewardTrigger]))).toBeNull();
   });
 
-  it("does not match trigger kinds across binding types", () => {
-    expect(matchesEffectBinding(
-      { id: "binding", kind: "twitch-reward", broadcasterId: "100", rewardId: "reward-1" },
-      effectTriggerSchema.parse({
-        kind: "streamerbot-event",
-        eventId: "event-2",
-        occurredAt: "2026-09-08T12:00:00.000Z",
-        providerId: "provider-1",
-        sourceKey: "Twitch",
-        eventType: "RewardRedemption",
-        summary: "Reward"
-      })
-    )).toBe(false);
+  it("builds a canonical trigger with a bounded viewer summary", () => {
+    const raid: NormalizedStreamEvent = {
+      id: "raid-1",
+      providerId: "twitch",
+      sourcePlatform: "twitch",
+      ingestProvider: "twitch",
+      occurredAt: "2026-09-08T12:00:00.000Z",
+      actor: { id: "raider", displayName: "Raider\u0007" },
+      message: null,
+      metadata: {},
+      type: "raid",
+      amount: 25
+    };
+    const bigRaid = binding({ match: { kind: "canonical", type: "raid" }, sources: "any", conditions: [{ field: "raidViewers", operator: "min", value: 10 }] });
+    expect(matchEffectBinding(bigRaid, busEvent([], raid))).toEqual({
+      kind: "canonical-event",
+      eventId: "raid-1",
+      occurredAt: raid.occurredAt,
+      eventType: "raid",
+      summary: "Raid from Raider"
+    });
+    expect(matchEffectBinding(bigRaid, busEvent([], { ...raid, amount: 3 }))).toBeNull();
   });
 });

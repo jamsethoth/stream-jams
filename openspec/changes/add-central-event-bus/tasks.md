@@ -29,10 +29,10 @@ Each numbered section is one independently reviewable slice and PR, in order. Ev
 
 ## 4. Shared Trigger Selector
 
-- [ ] 4.1 Add `EventTriggerSelector` and `matchSelector` in core with tests for canonical, reward, external, source restriction, and ignored external payload content.
-- [ ] 4.2 Migrate `screen_effect_bindings` and timer rules to selectors; tests prove each saved binding and rule matches the same events before and after.
+- [x] 4.1 Add `EventTriggerSelector` and `matchSelector` in core with tests for canonical, reward, external, source restriction, and ignored external payload content.
+- [x] 4.2 Migrate `screen_effect_bindings` and timer rules to selectors; tests prove each saved binding and rule matches the same events before and after.
 - [ ] 4.3 Screen Effects editor: choose canonical events with typed conditions alongside reward and external triggers; Storybook and Playwright.
-- [ ] 4.4 Timer rule editor uses the selector; existing behavior preserved.
+- [x] 4.4 Timer rule editor uses the selector; existing behavior preserved.
 - [ ] 4.5 Alerts: external-event rules, allowlisted variables, moderation, unsubscribed-identity warning; Storybook and Playwright.
 
 ## 5. Module Intake Onto The Bus

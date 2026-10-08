@@ -21,9 +21,7 @@ function document(id = "effect-one", enabled = false): ScreenEffectDocument {
     enabled,
     bindings: [{
       id: `${id}-binding`,
-      kind: "twitch-reward",
-      broadcasterId: "broadcaster-one",
-      rewardId: "reward-one"
+      selector: { match: { kind: "twitch-reward", broadcasterId: "broadcaster-one", rewardId: "reward-one" }, sources: "any", conditions: [] }
     }],
     variants: [{
       ...draft.variants[0],
@@ -167,10 +165,7 @@ describe("EffectManagementService", () => {
       ...document(),
       bindings: [{
         id: "missing-binding",
-        kind: "streamerbot-event" as const,
-        providerId: "provider-one",
-        sourceKey: "OBS",
-        eventType: "SceneChanged"
+        selector: { match: { kind: "external" as const, providerKind: "streamerbot" as const, sourceKey: "OBS", eventType: "SceneChanged" }, sources: "any" as const, conditions: [] }
       }]
     };
     const { repository, service } = fixture();

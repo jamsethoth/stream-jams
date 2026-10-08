@@ -192,6 +192,8 @@ export {
 
 export type * from "./event-bus/types.js";
 export { twitchCorrelationKey } from "./event-bus/correlation.js";
+export type { EventTriggerMatch, EventTriggerSelector } from "./event-bus/selector.js";
+export { eventTriggerMatchSchema, eventTriggerSelectorIdentity, eventTriggerSelectorSchema, matchSelector } from "./event-bus/selector.js";
 
 export type * from "./overlay-modules/types.js";
 export type { OverlayModulePresentation } from "./overlay-modules/presentation.js";
@@ -356,7 +358,7 @@ export {
   screenEffectDocumentSchema
 } from "./screen-effects/schemas.js";
 export { chooseWeightedVariant, resolveEffectContent } from "./screen-effects/variant-resolver.js";
-export { matchesEffectBinding } from "./screen-effects/trigger-matcher.js";
+export { matchEffectBinding } from "./screen-effects/trigger-matcher.js";
 export * from "./screen-effects/effect-queue.js";
 export * from "./screen-effects/module-definition.js";
 export * from "./screen-effects/authoring.js";

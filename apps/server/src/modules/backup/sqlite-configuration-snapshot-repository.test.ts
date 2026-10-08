@@ -454,9 +454,7 @@ describe("SqliteConfigurationSnapshotRepository", () => {
       ...effectDraft,
       bindings: [{
         id: "binding-mapping",
-        kind: "twitch-reward",
-        broadcasterId: "broadcaster-mapping",
-        rewardId: "reward-mapping"
+        selector: { match: { kind: "twitch-reward", broadcasterId: "broadcaster-mapping", rewardId: "reward-mapping" }, sources: "any", conditions: [] }
       }],
       variants: [{
         ...effectDraft.variants[0]!,

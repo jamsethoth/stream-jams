@@ -2,7 +2,6 @@ import type {
   AlertMatchLogRecord,
   BusEvent,
   DiagnosticsLogRepository,
-  EffectTrigger,
   EventLogRecord,
   NormalizedStreamEvent,
   PlaybackLogRecord,
@@ -12,23 +11,22 @@ import type {
 } from "@stream-jams/core";
 import type { EventBusConsumer } from "./event-bus.js";
 import type { PlaybackCoordinator, PlaybackEnqueueResult } from "../playback/playback-coordinator.js";
-import type { EffectTriggerSink } from "../screen-effects/effect-trigger-adapter.js";
 
 export interface EventPipelineIdGenerator {
   (kind: "event-log" | "alert-match-log" | "playback-log" | "processing"): string;
 }
 
 export interface EventPipelineOptions {
-  readonly timerEventSink?: { handleEvent(event: NormalizedStreamEvent): Promise<void> };
-  readonly onTimerError?: (error: unknown, event: NormalizedStreamEvent) => void | Promise<void>;
+  readonly timerEventSink?: { handleEvent(event: BusEvent): Promise<void> };
+  readonly onTimerError?: (error: unknown, event: BusEvent) => void | Promise<void>;
   readonly playbackCoordinator: Pick<PlaybackCoordinator, "enqueueEvent">;
   readonly diagnosticsLogRepository: Pick<
     DiagnosticsLogRepository,
     "appendEventLog" | "appendAlertMatchLog" | "appendPlaybackLog"
   >;
   readonly generateId: EventPipelineIdGenerator;
-  readonly effectTriggerSink?: EffectTriggerSink | undefined;
-  readonly onEffectError?: ((error: Error, triggers: readonly EffectTrigger[]) => void | Promise<void>) | undefined;
+  readonly effectEventSink?: { handleEvent(event: BusEvent): Promise<unknown> } | undefined;
+  readonly onEffectError?: ((error: Error, event: BusEvent) => void | Promise<void>) | undefined;
   readonly now?: (() => Date) | undefined;
 }
 
@@ -42,8 +40,8 @@ export class EventPipeline {
     "appendEventLog" | "appendAlertMatchLog" | "appendPlaybackLog"
   >;
   readonly #generateId: EventPipelineIdGenerator;
-  readonly #effectTriggerSink: EffectTriggerSink | null;
-  readonly #onEffectError: (error: Error, triggers: readonly EffectTrigger[]) => void | Promise<void>;
+  readonly #effectEventSink: NonNullable<EventPipelineOptions["effectEventSink"]> | null;
+  readonly #onEffectError: (error: Error, event: BusEvent) => void | Promise<void>;
   readonly #now: () => Date;
 
   constructor(options: EventPipelineOptions) {
@@ -52,7 +50,7 @@ export class EventPipeline {
     this.#playbackCoordinator = options.playbackCoordinator;
     this.#diagnosticsLogRepository = options.diagnosticsLogRepository;
     this.#generateId = options.generateId;
-    this.#effectTriggerSink = options.effectTriggerSink ?? null;
+    this.#effectEventSink = options.effectEventSink ?? null;
     this.#onEffectError = options.onEffectError ?? (() => {});
     this.#now = options.now ?? (() => new Date());
   }
@@ -62,7 +60,7 @@ export class EventPipeline {
       // Playback dedupe accepts the event before a failure, so a retry could only report a duplicate.
       { id: "alerts", maxAttempts: 1, handle: (event) => this.#deliverAlerts(event) },
       // Failures are diagnosed inside the consumer and never reach the bus.
-      { id: "screen-effects", maxAttempts: 1, handle: (event) => this.#deliverEffects(event.effectTriggers) },
+      { id: "screen-effects", maxAttempts: 1, handle: (event) => this.#deliverEffects(event) },
       // Timer adjustments are not idempotent, so a partial failure must not be retried.
       { id: "timers", maxAttempts: 1, handle: (event) => this.#deliverTimers(event) }
     ];
@@ -92,23 +90,22 @@ export class EventPipeline {
   }
 
   async #deliverTimers(busEvent: BusEvent): Promise<void> {
-    if (busEvent.kind !== "canonical") return;
-    try { await this.#timerEventSink?.handleEvent(busEvent.event); }
+    try { await this.#timerEventSink?.handleEvent(busEvent); }
     catch (error) {
       // error-provenance: allow expected -- timer failures are diagnosed independently of alert intake
-      await this.#onTimerError?.(error, busEvent.event);
+      await this.#onTimerError?.(error, busEvent);
     }
   }
 
-  async #deliverEffects(triggers: readonly EffectTrigger[]): Promise<void> {
-    if (triggers.length === 0 || this.#effectTriggerSink === null) return;
+  async #deliverEffects(busEvent: BusEvent): Promise<void> {
+    if (this.#effectEventSink === null) return;
     try {
-      await this.#effectTriggerSink.handleTriggers(triggers);
+      await this.#effectEventSink.handleEvent(busEvent);
     } catch (error) {
       try {
         await this.#onEffectError(
           error instanceof Error ? error : new Error("Screen Effects trigger handling failed", { cause: error }),
-          triggers
+          busEvent
         );
       // error-provenance: allow cleanup -- the production diagnostic logger has its own emergency sink and must not fail alert intake
       }

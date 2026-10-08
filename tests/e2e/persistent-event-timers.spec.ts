@@ -38,7 +38,7 @@ test("retains a subathon paused and applies saved event rules and live manual co
     await dialog.getByRole("button", { name: "Create timer", exact: true }).click();
     await expect(dialog).not.toBeVisible();
     const definition = runtime.composition.timerManagementService.listDefinitions().find(item => item.label === "Subathon")!;
-    expect(definition.eventRules?.[0]).toMatchObject({ eventType: "cheer", inactiveBehavior: "ignore", quantityUnit: 100 });
+    expect(definition.eventRules?.[0]).toMatchObject({ selector: { match: { kind: "canonical", type: "cheer" }, sources: "any", conditions: [] }, inactiveBehavior: "ignore", quantityUnit: 100 });
     const cheer = { id: "cheer-acceptance", providerId: "twitch", sourcePlatform: "twitch", ingestProvider: "twitch", occurredAt: new Date().toISOString(), actor: { id: "viewer", displayName: "Viewer" }, message: null, metadata: {}, type: "cheer", amount: 200 };
     await runtime.composition.eventIngestionService.ingestNormalizedEvent({ ...cheer, id: "idle-cheer" });
     expect(runtime.composition.timerRuntimeCoordinator.getState(definition.id)).toBeNull();

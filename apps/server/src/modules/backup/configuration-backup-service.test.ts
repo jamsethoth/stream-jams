@@ -15,6 +15,7 @@ import { SqliteAlertRepository } from "../alerts/sqlite-alert-repository.js";
 import { SqliteAlertEditorDocumentRepository } from "../alerts/sqlite-alert-editor-document-repository.js";
 import { SqliteAudioOutputRouteRepository } from "../audio/sqlite-audio-output-route-repository.js";
 import { SqliteModerationSettingsRepository } from "../moderation/sqlite-moderation-settings-repository.js";
+import { SqliteTimerDefinitionRepository } from "../timers/sqlite-timer-definition-repository.js";
 import {
   ConfigurationBackupService,
   ConfigurationRestoreBlockedError,
@@ -129,7 +130,7 @@ describe("ConfigurationBackupService", () => {
     }
   });
 
-  it.each([19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
+  it.each([19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
     const target = createRealService();
     try {
       const archive = await target.service.exportArchive();
@@ -167,6 +168,35 @@ describe("ConfigurationBackupService", () => {
       await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
       const snapshot = target.snapshotRepository.snapshot();
       expect(JSON.parse(String(snapshot.tables.overlay_surfaces?.[0]?.configuration_json))).toMatchObject({ enabled: false, displayId: null });
+    } finally { target.database.close(); }
+  });
+
+  it("restores schema-35 timer rules as trigger selectors", async () => {
+    const target = createRealService();
+    try {
+      const timers = new SqliteTimerDefinitionRepository(target.database.connection);
+      timers.save({
+        id: "timer-legacy", label: "Legacy", durationMs: 10000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null,
+        outputs: { browserSource: false, deviceRouteIds: [] }, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z", eventRules: []
+      });
+      const archive = await target.service.exportArchive();
+      archive.manifest.schemaVersion = 35;
+      archive.configuration.tables.timer_definitions = archive.configuration.tables.timer_definitions!.map((row) => ({
+        ...row,
+        event_rules_json: JSON.stringify([{ enabled: true, ingestProvider: "twitch", eventType: "cheer", rewardId: null, tier: null, action: "increment", amountMs: 30000, quantityUnit: 100, inactiveBehavior: "ignore" }])
+      }));
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      const preflight = await target.service.preflight(archive);
+      expect(preflight.state).toBe("valid");
+      await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
+      expect(timers.findById("timer-legacy")?.eventRules).toEqual([{
+        enabled: true,
+        selector: { match: { kind: "canonical", type: "cheer" }, sources: ["twitch"], conditions: [] },
+        action: "increment",
+        amountMs: 30000,
+        quantityUnit: 100,
+        inactiveBehavior: "ignore"
+      }]);
     } finally { target.database.close(); }
   });
 

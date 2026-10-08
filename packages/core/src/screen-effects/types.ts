@@ -1,20 +1,12 @@
 import type { AlertAudioOutputs } from "../audio/types.js";
+import type { EventTriggerSelector } from "../event-bus/selector.js";
+import type { StreamEventType } from "../events/types.js";
 import type { OverlayElementLayout } from "../shared/schemas.js";
 
-export type EffectBinding =
-  | {
-      readonly id: string;
-      readonly kind: "twitch-reward";
-      readonly broadcasterId: string;
-      readonly rewardId: string;
-    }
-  | {
-      readonly id: string;
-      readonly kind: "streamerbot-event";
-      readonly providerId: string;
-      readonly sourceKey: string;
-      readonly eventType: string;
-    };
+export interface EffectBinding {
+  readonly id: string;
+  readonly selector: EventTriggerSelector;
+}
 
 export type EffectVisual =
   | {
@@ -99,5 +91,13 @@ export type EffectTrigger =
       readonly providerId: string;
       readonly sourceKey: string;
       readonly eventType: string;
+      readonly summary: string;
+    }
+  | {
+      /** Built when a canonical selector matches; intake never produces it. */
+      readonly kind: "canonical-event";
+      readonly eventId: string;
+      readonly occurredAt: string;
+      readonly eventType: StreamEventType;
       readonly summary: string;
     };

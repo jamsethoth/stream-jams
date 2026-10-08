@@ -27,16 +27,16 @@ describe("EventPipeline", () => {
     ]);
   });
 
-  it("delivers external bus events only to Screen Effects", async () => {
+  it("delivers external bus events to Screen Effects and Timers but not Alerts", async () => {
     const diagnostics = new RecordingDiagnosticsRepository();
     const playback = new RecordingPlaybackCoordinator(queueResult(createFollowEvent()));
-    const timerEvents: NormalizedStreamEvent[] = [];
-    const effectBatches: Array<readonly EffectTrigger[]> = [];
+    const timerEvents: BusEvent[] = [];
+    const effectEvents: BusEvent[] = [];
     const pipeline = new EventPipeline({
       diagnosticsLogRepository: diagnostics,
       playbackCoordinator: playback,
       timerEventSink: { async handleEvent(event) { timerEvents.push(event); } },
-      effectTriggerSink: { async handleTriggers(triggers) { effectBatches.push([...triggers]); } },
+      effectEventSink: { async handleEvent(event) { effectEvents.push(event); } },
       generateId: (kind) => `${kind}-1`
     });
     const trigger: EffectTrigger = {
@@ -55,9 +55,9 @@ describe("EventPipeline", () => {
 
     for (const consumer of pipeline.consumers()) await consumer.handle(external);
 
-    expect(effectBatches).toEqual([[trigger]]);
+    expect(effectEvents).toEqual([external]);
     expect(playback.events).toEqual([]);
-    expect(timerEvents).toEqual([]);
+    expect(timerEvents).toEqual([external]);
     expect(diagnostics.eventLogs).toEqual([]);
   });
 
@@ -66,14 +66,14 @@ describe("EventPipeline", () => {
     const diagnostics = new RecordingDiagnosticsRepository();
     const playback = new RecordingPlaybackCoordinator(queueResult(createFollowEvent()));
     const errors: unknown[] = [];
-    const received: NormalizedStreamEvent[] = [];
+    const received: BusEvent[] = [];
     const failure = new Error("Timer persistence unavailable");
     const pipeline = new EventPipeline({ playbackCoordinator: playback, diagnosticsLogRepository: diagnostics,
       generateId: kind => `${kind}-test`, timerEventSink: { async handleEvent(event) { received.push(event); throw failure; } },
       onTimerError: error => { errors.push(error); }
     });
     await deliver(pipeline, createFollowEvent());
-    expect(received).toEqual([createFollowEvent()]); expect(errors).toEqual([failure]);
+    expect(received).toEqual([busEventFor(createFollowEvent())]); expect(errors).toEqual([failure]);
     expect(playback.events).toEqual([createFollowEvent()]);
     expect(diagnostics.eventLogs.map(log => log.status)).toEqual(["received", "processed"]);
   });
@@ -202,11 +202,11 @@ describe("EventPipeline", () => {
       enqueuedAlertIds: [],
       snapshot: emptySnapshot()
     });
-    const effectBatches: Array<readonly EffectTrigger[]> = [];
+    const effectEvents: BusEvent[] = [];
     const pipeline = new EventPipeline({
       diagnosticsLogRepository: diagnostics,
       playbackCoordinator: playback,
-      effectTriggerSink: { async handleTriggers(triggers) { effectBatches.push([...triggers]); } },
+      effectEventSink: { async handleEvent(event) { effectEvents.push(event); } },
       generateId: (kind) => `${kind}-1`
     });
     const triggers: readonly EffectTrigger[] = [{
@@ -222,7 +222,7 @@ describe("EventPipeline", () => {
     await deliver(pipeline, createFollowEvent(), triggers);
 
     expect(playback.events).toEqual([createFollowEvent()]);
-    expect(effectBatches).toEqual([triggers]);
+    expect(effectEvents).toEqual([busEventFor(createFollowEvent(), triggers)]);
     expect(diagnostics.eventLogs.map((entry) => entry.status)).toEqual(["received", "processed"]);
   });
 
@@ -235,11 +235,12 @@ describe("EventPipeline", () => {
       snapshot: emptySnapshot()
     });
     const errors: Error[] = [];
+    const failedEvents: BusEvent[] = [];
     const pipeline = new EventPipeline({
       diagnosticsLogRepository: diagnostics,
       playbackCoordinator: playback,
-      effectTriggerSink: { async handleTriggers() { throw new Error("Effect queue unavailable"); } },
-      onEffectError(error) { errors.push(error); },
+      effectEventSink: { async handleEvent() { throw new Error("Effect queue unavailable"); } },
+      onEffectError(error, event) { errors.push(error); failedEvents.push(event); },
       generateId: (kind) => `${kind}-1`
     });
 
@@ -255,13 +256,21 @@ describe("EventPipeline", () => {
 
     expect(playback.events).toHaveLength(1);
     expect(errors.map((error) => error.message)).toEqual(["Effect queue unavailable"]);
+    expect(failedEvents.map((event) => event.eventId)).toEqual(["event-follow"]);
     expect(diagnostics.eventLogs.map((entry) => entry.status)).toEqual(["received", "processed"]);
   });
 });
 
 /** Delivers one canonical bus event to every consumer, isolating failures as the bus does. */
 async function deliver(pipeline: EventPipeline, event: NormalizedStreamEvent, triggers: readonly EffectTrigger[] = []): Promise<void> {
-  const busEvent: BusEvent = {
+  const busEvent = busEventFor(event, triggers);
+  const results = await Promise.allSettled(pipeline.consumers().map((consumer) => consumer.handle(busEvent)));
+  const failure = results.find((result) => result.status === "rejected");
+  if (failure !== undefined) throw failure.reason;
+}
+
+function busEventFor(event: NormalizedStreamEvent, triggers: readonly EffectTrigger[] = []): BusEvent {
+  return {
     kind: "canonical",
     event,
     sequence: 1,
@@ -273,9 +282,6 @@ async function deliver(pipeline: EventPipeline, event: NormalizedStreamEvent, tr
     correlationKey: null,
     effectTriggers: triggers
   };
-  const results = await Promise.allSettled(pipeline.consumers().map((consumer) => consumer.handle(busEvent)));
-  const failure = results.find((result) => result.status === "rejected");
-  if (failure !== undefined) throw failure.reason;
 }
 
 function createPipeline(options: {
