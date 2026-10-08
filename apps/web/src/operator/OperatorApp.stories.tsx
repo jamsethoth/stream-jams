@@ -5,13 +5,14 @@ import { ManagementHttpError } from "../management/management-http-client.js";
 import { OperatorApp } from "./OperatorApp.js";
 import { PlaybackOperationsConflictError, type PlaybackApi } from "./playback-api.js";
 import type { OperatorTimersApi } from "./timers-api.js";
+import { createStaticVideoQueueApi, playingVideo, videoQueue } from "../stories/video-queue-fixtures.js";
 
 const meta = {
   title: "Operator/Playback Console",
   component: OperatorApp,
   tags: ["operator-compact", "mantine-foundation"],
   parameters: { layout: "fullscreen" },
-  args: { timersApi: createTimersApi([]) }
+  args: { timersApi: createTimersApi([]), videosApi: createStaticVideoQueueApi(videoQueue()) }
 } satisfies Meta<typeof OperatorApp>;
 
 export default meta;
@@ -33,6 +34,17 @@ export const SimultaneousCurrentInterleavedQueues: Story = {
     await expect(nowPlaying.compareDocumentPosition(canvas.getByRole("heading", { name: "Module queues" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     await expect(canvas.getByText("Flash sweep")).toBeVisible();
     await expect(canvas.getByText("Cheer burst").closest("article")).toHaveTextContent("#2");
+  }
+};
+
+export const VideoQueuePlaying: Story = {
+  args: { api: createApi(emptySnapshot()), videosApi: createStaticVideoQueueApi(playingVideo()) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const card = within(await canvas.findByRole("article", { name: "Now playing" }));
+    await expect(card.getByText("Now playing clip")).toBeVisible();
+    await expect(card.getByRole("slider", { name: "Seek" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Play next" })).toBeEnabled();
   }
 };
 

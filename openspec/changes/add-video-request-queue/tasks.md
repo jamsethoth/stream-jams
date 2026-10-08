@@ -49,9 +49,9 @@
 
 ## 6. Management And Operator UI
 
-- [ ] 6.1 Add the Videos management page: enablement, outputs, mirror status, limits, gap, OBS audio and device targets, allowed hosts, reward mapping, Streamer.bot autoplay opt-in, and the queue.
-- [ ] 6.2 Add the Operator panel: now-playing card and queue list with all controls, keyboard operable, with confirmation for clear.
-- [ ] 6.3 Add Storybook stories and component tests for both surfaces.
+- [x] 6.1 Add the Videos management page: enablement, outputs, mirror status, limits, gap, OBS audio and device targets, allowed hosts, reward mapping, Streamer.bot autoplay opt-in, and the queue.
+- [x] 6.2 Add the Operator panel: now-playing card and queue list with all controls, keyboard operable, with confirmation for clear.
+- [x] 6.3 Add Storybook stories and component tests for both surfaces.
 
 ## 7. Docs, Backlog And Verification
 

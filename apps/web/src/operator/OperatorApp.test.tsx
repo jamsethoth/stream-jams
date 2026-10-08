@@ -6,6 +6,14 @@ import { ManagementHttpError } from "../management/management-http-client.js";
 import { OperatorApp } from "./OperatorApp.js";
 import { PlaybackOperationsConflictError, type PlaybackApi } from "./playback-api.js";
 import type { OperatorTimersApi } from "./timers-api.js";
+import { createStaticVideoQueueApi, playingVideo, videoQueue } from "../stories/video-queue-fixtures.js";
+import { createHttpVideosApi } from "../management/videos/videos-api.js";
+
+// The lazily loaded Videos panel defaults to the HTTP client; keep tests that do not exercise it on an idle in-memory queue.
+vi.mock("../management/videos/videos-api.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../management/videos/videos-api.js")>();
+  return { ...actual, createHttpVideosApi: vi.fn(() => ({ getQueue: async () => ({ purpose: "live", revision: 1, queuePaused: false, runRemaining: 0, gapEndsAtEpochMs: null, serverTimeEpochMs: Date.now(), items: [], current: null }) })) };
+});
 const idleTimersApi: OperatorTimersApi = { listStates: async () => [], adjust: async () => ({ changed: false, state: null }), command: async () => ({ changed: false, state: null }) };
 
 afterEach(() => {
@@ -224,6 +232,30 @@ describe("OperatorApp", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("Playback state may be stale");
     expect(screen.getByText("Large raid")).toBeVisible();
+  });
+
+  it("loads the Videos queue panel lazily and attributes default requests to the Operator", async () => {
+    render(<OperatorApp api={api()} timersApi={idleTimersApi} />);
+    expect(await screen.findByRole("heading", { name: "Video queue" })).toBeVisible();
+    expect(vi.mocked(createHttpVideosApi)).toHaveBeenCalledWith({ from: "operator" });
+  });
+
+  it("operates the Videos queue from the Operator Console with keyboard-reachable controls", async () => {
+    const user = userEvent.setup();
+    const command = vi.fn(async () => videoQueue());
+    const control = vi.fn(async () => playingVideo("paused"));
+    const submit = vi.fn(async () => playingVideo().items[1]!);
+    render(<OperatorApp api={api()} timersApi={idleTimersApi} videosApi={createStaticVideoQueueApi(playingVideo(), { command, control, submit })} />);
+    const card = await screen.findByRole("article", { name: "Now playing" });
+    expect(within(card).getByText("Now playing clip")).toBeVisible();
+    expect(within(card).getByRole("slider", { name: "Seek" })).toBeVisible();
+    within(card).getByRole("button", { name: "Pause video" }).focus();
+    await user.keyboard("{Enter}");
+    expect(control).toHaveBeenCalledWith("live", "pause", "now", undefined);
+    await user.click(await screen.findByRole("button", { name: "Play next" }));
+    expect(command).toHaveBeenCalledWith("live", 4, { kind: "play-next" });
+    await user.type(screen.getByLabelText("Video link"), "https://youtu.be/abc{Enter}");
+    expect(submit).toHaveBeenCalledWith("live", { link: "https://youtu.be/abc", title: "" });
   });
 
   it("shows an actionable initial error without inventing playback state", async () => {

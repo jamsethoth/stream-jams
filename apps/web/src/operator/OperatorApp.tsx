@@ -1,6 +1,6 @@
 import { ActionIcon, Button } from "@mantine/core";
 import { formatTimerRemaining, type MergedOperationsSnapshot, type OperationRow, type TimerRunState } from "@stream-jams/core";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import "../App.css";
 import { getDesktopBridge } from "../management/desktop/desktop-bridge.js";
 import { formatDateTime } from "../management/foundation/formatters.js";
@@ -15,6 +15,8 @@ import {
 } from "./playback-api.js";
 import { TimerAdjustmentControls } from "../management/timers/TimerAdjustmentControls.js";
 import { defaultOperatorTimersApi, type OperatorTimersApi } from "./timers-api.js";
+import type { VideoQueueApi } from "../management/videos/videos-api.js";
+const OperatorVideosPanel = lazy(() => import("../management/videos/VideosPage.js").then(module => ({ default: module.OperatorVideosPanel })));
 
 const normalPollDelayMs = 2_000;
 const maximumPollDelayMs = 15_000;
@@ -33,6 +35,8 @@ interface ClearRequest {
 export interface OperatorAppProps {
   readonly api?: PlaybackApi;
   readonly timersApi?: OperatorTimersApi;
+  /** Defaults to the HTTP queue client created inside the lazily loaded panel, attributed to the Operator. */
+  readonly videosApi?: VideoQueueApi;
 }
 
 // Operator shares the management presentation provider so its commands, dialogs and theme match management.
@@ -40,7 +44,7 @@ export function OperatorApp(props: OperatorAppProps) {
   return <ManagementPresentationProvider><OperatorConsole {...props} /></ManagementPresentationProvider>;
 }
 
-function OperatorConsole({ api = defaultPlaybackApi, timersApi = defaultOperatorTimersApi }: OperatorAppProps) {
+function OperatorConsole({ api = defaultPlaybackApi, timersApi = defaultOperatorTimersApi, videosApi }: OperatorAppProps) {
   useEffect(() => {
     const bridge = getDesktopBridge();
     return bridge?.onQuitRequested((requestId) => bridge.resolveQuit(requestId, true));
@@ -254,6 +258,8 @@ function OperatorConsole({ api = defaultPlaybackApi, timersApi = defaultOperator
       {snapshot.muted ? <p className="operator-boundary-note">Alerts and Effects audio are muted on browser and device outputs. Visuals and timer cues continue.</p> : null}
       {announcement === "" ? null : <p aria-live="polite" className="operator-announcement" role="status">{announcement}</p>}
       {commandError !== null ? <OperatorErrorBanner error={commandError} title="Playback command failed" /> : refreshError === null ? null : <OperatorErrorBanner error={refreshError} title="Playback state may be stale" />}
+
+      <Suspense fallback={<p role="status">Loading the video queue…</p>}><OperatorVideosPanel api={videosApi} /></Suspense>
 
       <section className="operator-section" aria-labelledby="operator-active-timers">
         <h2 id="operator-active-timers">Active timers ({timers.length})</h2>

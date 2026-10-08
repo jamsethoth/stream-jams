@@ -28,6 +28,7 @@ import { ScreenEffectsPage } from "./screen-effects/ScreenEffectsPage.js";
 import { defaultScreenEffectsApi, type ScreenEffectsApi } from "./screen-effects/screen-effects-api.js";
 const TimersPage = lazy(() => import("./timers/TimersPage.js").then(module => ({ default: module.TimersPage })));
 import { defaultTimersApi, type TimersApi } from "./timers/timers-api.js";
+const VideosPage = lazy(() => import("./videos/VideosPage.js").then(module => ({ default: module.VideosPage })));
 
 export interface ManagementAppProps {
   readonly audioApi?: AudioApi;
@@ -157,6 +158,8 @@ function RouteContent({
       return <ScreenEffectsPage api={screenEffectsApi} initialSetId={route.setId} onEdit={(effectId, create, setId, variantId) => onNavigate({ id: "screen-effect-editor", effectId, ...(setId === undefined ? {} : { setId }), ...(variantId === undefined ? {} : { variantId }), ...(create ? { create: true as const } : {}) })} />;
     case "modules-timers":
       return <Suspense fallback={<p role="status">Loading Timers…</p>}><TimersPage api={timersApi} assetApi={assetApi} audioApi={audioApi} managementApi={managementApi} ownerId={route.ownerId} /></Suspense>;
+    case "modules-videos":
+      return <Suspense fallback={<p role="status">Loading Videos…</p>}><VideosPage audioApi={audioApi} managementApi={managementApi} /></Suspense>;
     case "alert-safety":
       return <AlertSafetyPage managementApi={managementApi} />;
     case "alert-editor":
