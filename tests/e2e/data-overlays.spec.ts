@@ -44,7 +44,7 @@ async function privateRenderer(page: Page, fixture: Fixture) {
   await page.evaluate(command => (window as unknown as { fixtureCommand(value: unknown): void }).fixtureCommand(command), { protocolVersion: 1, generation: 1, requestId: crypto.randomUUID(), command: { type: "configure", config: { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "disposable-display", displayLabel: "Disposable", autoFollowDisplayName: false, opacity: 1, layers: [{ moduleId: "data-overlays", visible: true }] } } });
   let revision = 0;
   return async () => {
-    const snapshot: OverlayModuleSnapshot = await fixture.runtime.composition.dataOutputRuntime.getModuleSnapshot({ overlayId: "desktop:primary", purpose: "live", scope: "unified", targetProfileId: "landscape" });
+    const snapshot: OverlayModuleSnapshot = await fixture.runtime.composition.dataOutputRuntime.getModuleSnapshot({ overlayId: "desktop:primary", purpose: "live", scope: "unified", moduleId: "data-overlays", targetProfileId: "landscape" });
     await page.evaluate(command => (window as unknown as { fixtureCommand(value: unknown): void }).fixtureCommand(command), { protocolVersion: 1, generation: 1, requestId: crypto.randomUUID(), command: { type: "sync-module", moduleId: "data-overlays", revision: ++revision, presentation: snapshot.presentation, assets: [] } });
   };
 }

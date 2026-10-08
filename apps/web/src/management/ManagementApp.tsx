@@ -28,11 +28,15 @@ import { ScreenEffectsPage } from "./screen-effects/ScreenEffectsPage.js";
 import { defaultScreenEffectsApi, type ScreenEffectsApi } from "./screen-effects/screen-effects-api.js";
 const TimersPage = lazy(() => import("./timers/TimersPage.js").then(module => ({ default: module.TimersPage })));
 import { defaultTimersApi, type TimersApi } from "./timers/timers-api.js";
+import type { DataTemplateApi } from "./data-overlays/data-template-api.js";
+import type { TwitchDataSourcesApi } from "./data-overlays/twitch-data-sources-api.js";
 import type { DataOverlaysApi } from "./data-overlays/data-overlays-api.js";
 const DataPage = lazy(() => import("./data-overlays/DataPage.js").then(module => ({ default: module.DataPage })));
 const DataOverlaysPage = lazy(() => import("./data-overlays/DataOverlaysPage.js").then(module => ({ default: module.DataOverlaysPage })));
 
 export interface ManagementAppProps {
+  readonly dataTemplateApi?: DataTemplateApi | undefined;
+  readonly twitchSourcesApi?: TwitchDataSourcesApi | undefined;
   readonly dataOverlaysApi?: DataOverlaysApi | undefined;
   readonly audioApi?: AudioApi;
   readonly assetApi: AssetApi;
@@ -42,6 +46,8 @@ export interface ManagementAppProps {
 }
 
 interface ResolvedManagementAppProps {
+  readonly dataTemplateApi: DataTemplateApi | undefined;
+  readonly twitchSourcesApi: TwitchDataSourcesApi | undefined;
   readonly dataOverlaysApi: DataOverlaysApi | undefined;
   readonly audioApi: AudioApi;
   readonly assetApi: AssetApi;
@@ -60,13 +66,15 @@ export function ManagementApp(props: ManagementAppProps) {
         managementApi={resolvedManagementApi}
         screenEffectsApi={props.screenEffectsApi ?? defaultScreenEffectsApi}
         timersApi={props.timersApi ?? defaultTimersApi}
+        dataTemplateApi={props.dataTemplateApi}
+        twitchSourcesApi={props.twitchSourcesApi}
         dataOverlaysApi={props.dataOverlaysApi}
       />
     </DirtyNavigationProvider>
   );
 }
 
-function ManagementAppContent({ assetApi, audioApi, managementApi, screenEffectsApi, timersApi, dataOverlaysApi }: ResolvedManagementAppProps) {
+function ManagementAppContent({ assetApi, audioApi, managementApi, screenEffectsApi, timersApi, dataOverlaysApi, dataTemplateApi, twitchSourcesApi }: ResolvedManagementAppProps) {
   const navigation = useManagementNavigation();
   const definition = getManagementRouteDefinition(navigation.route);
 
@@ -129,7 +137,7 @@ function ManagementAppContent({ assetApi, audioApi, managementApi, screenEffects
           aria-label={`${definition.title} content`}
           className={isFocusedEditor(navigation.route) ? "management-route-content management-route-content--focused" : "management-route-content"}
         >
-          <RouteContent assetApi={assetApi} audioApi={audioApi} managementApi={managementApi} onNavigate={navigation.requestNavigation} route={navigation.route} screenEffectsApi={screenEffectsApi} timersApi={timersApi} dataOverlaysApi={dataOverlaysApi} />
+          <RouteContent assetApi={assetApi} audioApi={audioApi} managementApi={managementApi} onNavigate={navigation.requestNavigation} route={navigation.route} screenEffectsApi={screenEffectsApi} timersApi={timersApi} dataOverlaysApi={dataOverlaysApi} dataTemplateApi={dataTemplateApi} twitchSourcesApi={twitchSourcesApi} />
         </section>
       </main>
       {navigation.guard}
@@ -145,13 +153,15 @@ function RouteContent({
   route,
   screenEffectsApi,
   timersApi,
-  dataOverlaysApi
+  dataOverlaysApi,
+  dataTemplateApi,
+  twitchSourcesApi
 }: ResolvedManagementAppProps & { readonly onNavigate: (route: ManagementRoute) => void; readonly route: ManagementRoute }) {
   switch (route.id) {
     case "data":
-      return <Suspense fallback={<p role="status">Loading Data…</p>}><DataPage api={dataOverlaysApi} /></Suspense>;
+      return <Suspense fallback={<p role="status">Loading Data…</p>}><DataPage api={dataOverlaysApi} twitchSourcesApi={twitchSourcesApi} /></Suspense>;
     case "modules-data-overlays":
-      return <Suspense fallback={<p role="status">Loading Data Overlays…</p>}><DataOverlaysPage api={dataOverlaysApi} assetApi={assetApi} managementApi={managementApi} /></Suspense>;
+      return <Suspense fallback={<p role="status">Loading Data Overlays…</p>}><DataOverlaysPage api={dataOverlaysApi} templateApi={dataTemplateApi} twitchSourcesApi={twitchSourcesApi} assetApi={assetApi} managementApi={managementApi} /></Suspense>;
     case "home":
       return <HomePanel managementApi={managementApi} />;
     case "event-sources":

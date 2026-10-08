@@ -8,6 +8,11 @@ import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import { DataOverlayCanvases } from "../../overlay/components/DataOverlayCanvases.js";
 import { constrainDataCanvasGeometry } from "./data-canvas-editor-geometry.js";
 import { createDataPreviewStore, type DataPreviewScenario } from "./data-preview-store.js";
+import { ManagementToast } from "../foundation/ManagementToast.js";
+import type { TwitchDataSourcesApi } from "./twitch-data-sources-api.js";
+import { DataTemplatePicker } from "./DataTemplatePicker.js";
+import { SaveDataTemplateDialog } from "./SaveDataTemplateDialog.js";
+import { defaultDataTemplateApi, type DataTemplateApi } from "./data-template-api.js";
 import type { DataOverlaysApi } from "./data-overlays-api.js";
 import { message } from "./DataPage.js";
 import "./data-overlays.css";
@@ -16,12 +21,14 @@ export interface DataCanvasEditorProps {
     readonly canvas: DataCanvas;
     readonly state: DataOverlayState;
     readonly api: DataOverlaysApi;
+    readonly templateApi?: DataTemplateApi | undefined;
+    readonly twitchSourcesApi?: TwitchDataSourcesApi | undefined;
     readonly assetApi: AssetApi;
     readonly managementApi: ManagementApi;
     readonly onSaved: (state: DataOverlayState) => void;
     readonly onBack: () => void;
 }
-export function DataCanvasEditor({ canvas, state, api, assetApi, managementApi, onSaved, onBack }: DataCanvasEditorProps) {
+export function DataCanvasEditor({ canvas, state, api, templateApi = defaultDataTemplateApi, twitchSourcesApi, assetApi, managementApi, onSaved, onBack }: DataCanvasEditorProps) {
     const [draft, setDraft] = useState(() => structuredClone(canvas));
     const [saved, setSaved] = useState(() => JSON.stringify(canvas));
     const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -31,6 +38,10 @@ export function DataCanvasEditor({ canvas, state, api, assetApi, managementApi, 
     const [grid, setGrid] = useState(false);
     const [alignment, setAlignment] = useState(true);
     const [picker, setPicker] = useState(false);
+    const [templateNotice, setTemplateNotice] = useState<string | null>(null);
+    const [templateSelection, setTemplateSelection] = useState<string[]>([]);
+    const [templateAction, setTemplateAction] = useState<"insert" | "full" | "selection" | null>(null);
+    const [templateReview, setTemplateReview] = useState<"insert" | "full" | "selection" | null>(null);
     const [leaveReview, setLeaveReview] = useState(false);
     const [assets, setAssets] = useState<Record<string, string>>({});
     const [assetIds, setAssetIds] = useState<string[]>([]);
@@ -119,7 +130,7 @@ export function DataCanvasEditor({ canvas, state, api, assetApi, managementApi, 
             setError(message(cause));
         }
     }
-    function add(kind: DataCanvasElement["kind"]) {
+    function add(kind: Exclude<DataCanvasElement["kind"], "missing-image">) {
         if (draft.elements.length >= dataOverlayLimits.elementsPerCanvas) {
             setError("A canvas supports at most 100 elements. Delete an element before adding another.");
             return;
@@ -164,6 +175,8 @@ export function DataCanvasEditor({ canvas, state, api, assetApi, managementApi, 
         return preview.project({ runtimeId: "editor-preview", output: "browser", targetProfileId: draft.targetProfileId, nowEpochMs: Date.now(), moduleEnabled: true, outputPaused: false, resolveAssetId: id => assets[id] !== undefined }, { ...state, canvases: [{ ...draft, enabled: true, outputs: { browser: true, desktop: true } }] });
     }, [assets, draft, preview, sampleRevision, state]);
     const diagnostics = draft.elements.flatMap(element => {
+        if (element.kind === "missing-image")
+            return [`Missing image: ${element.sourceAssetId}. Replace it with a registered local image.`];
         if (element.kind === "image" && !assets[element.assetId])
             return [`Image ${element.id}: asset unavailable. Select an available local image.`];
         if (element.kind === "progress" && !state.goals.some(goal => goal.id === element.goalId))
@@ -176,10 +189,14 @@ export function DataCanvasEditor({ canvas, state, api, assetApi, managementApi, 
         return [];
     });
     return <Stack className="data-management" gap="md">
+    {templateNotice ? <ManagementToast notice={{ tone: "success", message: templateNotice }} onDismiss={() => setTemplateNotice(null)} /> : null}
     <Group justify="space-between">
       <h1>Canvas: {draft.name}</h1>
       <Group>
         <Button disabled={busy} onClick={() => void save()}>Save canvas</Button>
+        <Button variant="default" disabled={busy} onClick={() => { if (JSON.stringify(draft) !== saved) setTemplateReview("insert"); else setTemplateAction("insert"); }}>Insert template</Button>
+        <Button variant="default" disabled={busy || draft.elements.length === 0} onClick={() => { if (JSON.stringify(draft) !== saved) setTemplateReview("full"); else setTemplateAction("full"); }}>Save as template</Button>
+        <Button variant="default" disabled={busy || templateSelection.length === 0 && selectedId === null} onClick={() => { if (JSON.stringify(draft) !== saved) setTemplateReview("selection"); else setTemplateAction("selection"); }}>Save selection as template</Button>
         <Button disabled={busy} variant="default" onClick={() => { if (JSON.stringify(draft) !== saved)
         setLeaveReview(true);
     else
@@ -218,7 +235,7 @@ export function DataCanvasEditor({ canvas, state, api, assetApi, managementApi, 
             </div>)}</div>
         </div>
         <p>Arrow keys move; Shift moves by 10; Alt + arrows resizes. Use the resize handle or exact fields.</p>
-        <h2>Layers</h2>{[...draft.elements].sort((a, b) => b.order - a.order).map(element => <Button variant={selectedId === element.id ? "light" : "default"} key={element.id} onClick={() => setSelectedId(element.id)}>{element.kind} · {element.order}{element.visible ? "" : " · hidden"}</Button>)}
+        <h2>Layers</h2>{[...draft.elements].sort((a, b) => b.order - a.order).map(element => <Group key={element.id}><Button variant={selectedId === element.id ? "light" : "default"} onClick={() => setSelectedId(element.id)}>{element.kind} · {element.order}{element.visible ? "" : " · hidden"}</Button><Checkbox disabled={busy} label={`Include ${element.kind} ${element.order} in template`} checked={templateSelection.includes(element.id)} onChange={event => { const checked = event.currentTarget.checked; setTemplateSelection(current => checked ? [...current, element.id] : current.filter(id => id !== element.id)); }} /></Group>)}
       </div>
       <Stack>
         <h2>Element inspector</h2>{selected === undefined ? <p>Select an element to edit its geometry, style and binding.</p> : <fieldset disabled={busy}>
@@ -239,7 +256,8 @@ export function DataCanvasEditor({ canvas, state, api, assetApi, managementApi, 
               <TextInput label="Text RGBA color" value={selected.style.color} onChange={event => update({ ...selected, style: { ...selected.style, color: event.currentTarget.value } })}/>
             </> : null}
             {selected.kind === "rectangle" || selected.kind === "ellipse" ? <TextInput label="Shape RGBA color" value={selected.color} onChange={event => update({ ...selected, color: event.currentTarget.value })}/> : null}
-            {selected.kind === "image" ? <>
+            {selected.kind === "image" || selected.kind === "missing-image" ? <>
+              {selected.kind === "missing-image" ? <p role="status">Missing image: {selected.sourceAssetId}. Choose a registered local image to replace it. Live outputs hide this layer.</p> : null}
               <Button onClick={() => setPicker(true)}>Choose local image</Button>
               <NativeSelect label="Image fit" data={["contain", "cover", "fill"]} value={selected.fit} onChange={event => update({ ...selected, fit: event.currentTarget.value as "contain" | "cover" | "fill" })}/>
             </> : null}
@@ -253,7 +271,7 @@ export function DataCanvasEditor({ canvas, state, api, assetApi, managementApi, 
             setError("A canvas supports at most 100 elements.");
             return;
         } const copy = { ...structuredClone(selected), id: crypto.randomUUID(), order: Math.max(...draft.elements.map(item => item.order)) + 1 }; setDraft({ ...draft, elements: [...draft.elements, copy] }); setSelectedId(copy.id); }}>Duplicate element</Button>
-              <Button color="red" onClick={() => { setDraft({ ...draft, elements: draft.elements.filter(item => item.id !== selected.id) }); setSelectedId(null); }}>Delete element</Button>
+              <Button color="red" onClick={() => { setDraft({ ...draft, elements: draft.elements.filter(item => item.id !== selected.id) }); setSelectedId(null); setTemplateSelection(current => current.filter(id => id !== selected.id)); }}>Delete element</Button>
             </Group>
           </Stack>
         </fieldset>}
@@ -266,6 +284,13 @@ export function DataCanvasEditor({ canvas, state, api, assetApi, managementApi, 
         <NativeSelect label="Sample goal" value={sampleGoal} data={state.goals.filter(goal => goal.valueId === sampleValue).map(goal => ({ value: goal.id, label: goal.name }))} onChange={event => setSampleGoal(event.currentTarget.value)}/>{(["zero", "decrease", "completion", "over-target", "long-text", "missing-source"] as const).map(scenario => <Button key={scenario} variant="default" onClick={() => simulate(scenario)}>{scenario}</Button>)}<Button variant="default" onClick={() => { preview.reset(); setSampleRevision(value => value + 1); }}>Reset samples</Button>
       </Group>
     </section>
+    {templateAction === "insert" ? <DataTemplatePicker assetApi={assetApi} twitchSourcesApi={twitchSourcesApi} api={templateApi} state={state} canvas={draft} onCancel={() => setTemplateAction(null)} onApplied={next => { const committed = next.canvases.find(item => item.id === draft.id); if (committed) { setDraft(committed); setSaved(JSON.stringify(committed)); } onSaved(next); setTemplateAction(null); setTemplateNotice("Template inserted as independent layers."); }} /> : null}
+    {templateAction === "full" || templateAction === "selection" ? <SaveDataTemplateDialog api={templateApi} canvas={draft} elementIds={templateAction === "selection" ? templateSelection.length > 0 ? templateSelection : selectedId ? [selectedId] : undefined : undefined} onCancel={() => setTemplateAction(null)} onSaved={() => { setTemplateAction(null); setTemplateNotice("Template saved. Existing canvases remain independent."); }} /> : null}
+    <ManagementModalSurface open={templateReview !== null} labelledBy="data-template-dirty" pending={busy} onCancel={() => setTemplateReview(null)}>
+      <ManagementModalTitle>Save canvas before using templates</ManagementModalTitle>
+      <p>Templates use the saved canvas. Save your layout explicitly to continue, or cancel and keep editing. Insertion adds independent layers to the saved canvas.</p>
+      {error ? <p role="alert">{error}</p> : null}<Group><Button disabled={busy} onClick={() => { void save().then(result => { if (result === true) { setTemplateAction(templateReview); setTemplateReview(null); } }); }}>Save canvas and continue</Button><Button variant="default" disabled={busy} onClick={() => setTemplateReview(null)}>Cancel</Button></Group>
+    </ManagementModalSurface>
     <ManagementModalSurface labelledBy="data-canvas-leave" open={leaveReview} pending={busy} onCancel={() => setLeaveReview(false)}>
       <ManagementModalTitle>Unsaved canvas changes</ManagementModalTitle>
       <p>Save the layout or discard your changes before leaving.</p>{error === null ? null : <p role="alert">{error}</p>}<Group>
@@ -275,7 +300,8 @@ export function DataCanvasEditor({ canvas, state, api, assetApi, managementApi, 
         <Button disabled={busy} variant="default" onClick={() => setLeaveReview(false)}>Cancel</Button>
       </Group>
     </ManagementModalSurface>
-    <AssetPicker assetApi={assetApi} managementApi={managementApi} compatibleMediaTypes={["image"]} open={picker} selectedAssetId={selected?.kind === "image" ? selected.assetId : null} onCancel={() => setPicker(false)} onSelect={id => { if (selected?.kind === "image")
-        update({ ...selected, assetId: id }); setPicker(false); void assetApi.getAssetFile(id).then(blob => { const url = URL.createObjectURL(blob); setAssets(current => ({ ...current, [id]: url })); }, (cause: unknown) => setError(message(cause))); }}/>
+    <AssetPicker assetApi={assetApi} managementApi={managementApi} compatibleMediaTypes={["image"]} open={picker} selectedAssetId={selected?.kind === "image" ? selected.assetId : null} onCancel={() => setPicker(false)} onSelect={id => { if (selected?.kind === "image" || selected?.kind === "missing-image") {
+        const { id: elementId, order, x, y, width, height, visible, stalePolicy, fit } = selected;
+        update({ id: elementId, order, x, y, width, height, visible, stalePolicy, fit, kind: "image", assetId: id }); } setPicker(false); void assetApi.getAssetFile(id).then(blob => { const url = URL.createObjectURL(blob); setAssets(current => ({ ...current, [id]: url })); }, (cause: unknown) => setError(message(cause))); }}/>
   </Stack>;
 }

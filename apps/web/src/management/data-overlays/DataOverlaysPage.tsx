@@ -4,20 +4,26 @@ import { dataOverlayLimits, type DataOverlayState, type OverlayOutputView } from
 import type { AssetApi } from "../assets/asset-api.js";
 import type { ManagementApi } from "../management-api.js";
 import { ModuleControls, ModulePageLayout, ModuleSection } from "../foundation/ModulePageLayout.js";
+import type { TwitchDataSourcesApi } from "./twitch-data-sources-api.js";
+import { DataTemplatePicker } from "./DataTemplatePicker.js";
+import { defaultDataTemplateApi, type DataTemplateApi } from "./data-template-api.js";
 import { DataCanvasEditor } from "./DataCanvasEditor.js";
 import { defaultDataOverlaysApi, type DataOverlaysApi } from "./data-overlays-api.js";
 import { message } from "./DataPage.js";
 import { DataOutputLinks } from "./DataOutputLinks.js";
 import "./data-overlays.css";
 import { ManagementModalSurface, ManagementModalTitle } from "../foundation/ManagementModalSurface.js";
-export function DataOverlaysPage({ api = defaultDataOverlaysApi, assetApi, managementApi }: {
+export function DataOverlaysPage({ api = defaultDataOverlaysApi, templateApi = defaultDataTemplateApi, twitchSourcesApi, assetApi, managementApi }: {
     readonly api?: DataOverlaysApi | undefined;
+    readonly templateApi?: DataTemplateApi | undefined;
+    readonly twitchSourcesApi?: TwitchDataSourcesApi | undefined;
     readonly assetApi: AssetApi;
     readonly managementApi: ManagementApi;
 }) {
     const [state, setState] = useState<DataOverlayState | null>(null);
     const [enabled, setEnabled] = useState(false);
     const [enabledDraft, setEnabledDraft] = useState(false);
+    const [templatePicker, setTemplatePicker] = useState(false);
     const [editing, setEditing] = useState<string | null>(null);
     const [name, setName] = useState("");
     const [profile, setProfile] = useState<"landscape" | "vertical">("landscape");
@@ -57,7 +63,7 @@ export function DataOverlaysPage({ api = defaultDataOverlaysApi, assetApi, manag
     } }
     const canvas = state?.canvases.find(item => item.id === editing);
     if (canvas && state)
-        return <DataCanvasEditor key={canvas.id} canvas={canvas} state={state} api={api} assetApi={assetApi} managementApi={managementApi} onSaved={setState} onBack={() => setEditing(null)}/>;
+        return <DataCanvasEditor key={canvas.id} canvas={canvas} state={state} api={api} templateApi={templateApi} twitchSourcesApi={twitchSourcesApi} assetApi={assetApi} managementApi={managementApi} onSaved={setState} onBack={() => setEditing(null)}/>;
     return <ModulePageLayout className="data-management" feedback={error === null || deleting !== null ? null : <div role="alert">{error}<Button variant="default" onClick={() => void load()}>Reload Data Overlays</Button>
   </div>} controls={<ModuleControls status={<strong>{enabled ? "Enabled" : "Disabled"}</strong>} description="Enabling outputs uses saved canvases. Values persist independently of visibility.">
     <Checkbox label="Enable Data Overlays" checked={enabledDraft} disabled={busy} onChange={event => setEnabledDraft(event.currentTarget.checked)}/>
@@ -68,6 +74,8 @@ export function DataOverlaysPage({ api = defaultDataOverlaysApi, assetApi, manag
     <a href="/manage/settings">Configure outputs in Settings</a>
   </ModuleSection>}>
     <ModuleSection title="Canvases" label="Canvases" description="Up to 50 canvases. Deleting a canvas preserves its shared values and goals.">
+      <Button variant="default" disabled={busy || state === null || state.canvases.length >= dataOverlayLimits.canvases} onClick={() => setTemplatePicker(true)}>Create from template</Button>
+      {templatePicker && state ? <DataTemplatePicker assetApi={assetApi} twitchSourcesApi={twitchSourcesApi} api={templateApi} state={state} onCancel={() => setTemplatePicker(false)} onApplied={next => { setState(next); setTemplatePicker(false); const added = next.canvases.find(item => !state.canvases.some(saved => saved.id === item.id)); if (added) setEditing(added.id); }} /> : null}
       {state === null ? <p role="status">Loading canvases…</p> : <Stack>{state.canvases.length === 0 ? <p>No canvases yet. Create one and add reusable elements.</p> : [...state.canvases].sort((a, b) => a.order - b.order).map(item => <Group key={item.id}>
         <span>{item.name} · {item.targetProfileId} · {item.enabled ? "shown" : "hidden"} · {item.elements.length} elements</span>
         <Button variant="default" disabled={busy} onClick={() => setEditing(item.id)}>Edit {item.name}</Button>
