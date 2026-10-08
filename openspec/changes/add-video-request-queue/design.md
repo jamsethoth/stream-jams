@@ -23,12 +23,11 @@ It holds one in-memory clip per purpose, renders only on module browser sources,
 - One authoritative queue per purpose, persisted in SQLite, that survives restarts without replaying anything.
 - Nothing plays without an explicit operator action or an allowed `autoplay` submission.
 - The same validation boundary for every submission path.
-- Browser source and desktop overlay output that follow one server playback clock.
+- One primary player in the desktop app, mirrored to every output, so all outputs show the same frames and play controls act once.
 - Pause, resume and seek for providers that expose control. Play and stop for providers that do not.
 
 **Non-Goals (this slice)**
 - Duration lookup through YouTube APIs or a background probe (BL-058).
-- Frame-exact mirroring between outputs and fan-out of embed audio to several devices (BL-059).
 - Refunds, per-viewer limits, history and moderation beyond approve and remove.
 
 ## Decisions
@@ -66,18 +65,46 @@ One provider registry in `@stream-jams/core/videos` (subpath export, kept off th
 - Submissions are links, not embed URLs. The server builds embed URLs, so `parent` always matches the serving host (`127.0.0.1` by default). Credentials, ports other than 443, fragments and unknown hosts are rejected.
 - Durations: the submitter may supply `durationSeconds`. Streamer.bot clip payloads already do. Otherwise the duration is unknown until BL-058, so the item is `held`.
 
-### D4. Playback control without third-party scripts
-- Overlay pages carry route keys in their URL, so no provider JavaScript loads in Stream Jams origins.
-- YouTube: control uses the documented `postMessage` command protocol of `enablejsapi=1` iframes (`playVideo`, `pauseVideo`, `seekTo`, with `infoDelivery` for current time and duration) with the origin pinned to the YouTube host.
-- Direct files: control uses the `<video>` element.
-- Twitch: clip embeds expose no control API, so they support play and stop only. Twitch VOD control via the embed `postMessage` protocol is undocumented and is deferred. In this slice Twitch VODs are play and stop only.
-- The operator UI disables pause and seek with a reason for items that don't support them.
+### D4. Player control without third-party scripts in Stream Jams origins
+- Overlay and management pages carry keys in their URLs, so no provider JavaScript loads in Stream Jams origins.
+- Control happens only on the primary player inside the desktop host (D5).
+- **YouTube:** the documented `postMessage` command protocol of `enablejsapi=1` iframes (`playVideo`, `pauseVideo`, `seekTo`, with `infoDelivery` for current time and duration), with the origin pinned to the YouTube host.
+- **Direct files:** the Stream Jams `<video>` element.
+- **Twitch** has no supported control API:
+  - Proposed: the desktop host reaches the `<video>` element inside the Twitch frame through Electron's `webFrameMain` for pause, resume, seek and position.
+  - Twitch markup changes can break this, so it is feature-detected per item. On failure the item falls back to play and stop, and the operator sees why.
+  - Pending operator confirmation; if declined, Twitch is play and stop only.
 
-### D5. Synchronized outputs (interim until BL-059)
-- The server owns a playback clock per purpose: `{ itemId, state: playing|paused, positionMs, atEpochMs }`.
-- Each output computes the target position. Controllable players correct drift above 750 ms with a seek and ignore smaller drift.
-- One output owns audio per item. The default is the browser source. Operators can choose the desktop overlay, which uses existing device routes for direct files only. Every other output mutes its player.
-- `overlay.playback.started` and `overlay.playback.failed` keep their current meaning. The first started report from the audio-owning output advances the item from loading to playing.
+### D5. One primary player, mirrored
+- **Player host:**
+  - The desktop host runs a hidden, non-interactive player `BrowserWindow` per purpose that loads only the Videos player page and the validated provider frame.
+  - It is sandboxed with `contextIsolation`, no Node in renderers, and navigation and `window.open` blocked outside the item's provider origin.
+- **Capture:**
+  - The player page captures its own window with `getDisplayMedia`.
+  - The main process's `setDisplayMediaRequestHandler` grants only that window's video and the provider frame's audio (`audio: WebFrameMain`, `loopbackWithMute` where available), so the original sound never reaches the system default device.
+  - The capture runs at the configured output resolution (default 1920×1080 at 30 fps).
+- **Mirror delivery:**
+  - The player page publishes one WebRTC stream per purpose.
+  - Desktop overlay and module browser sources subscribe as receivers. Signaling (offer, answer, ICE) is relayed over the existing overlay WebSocket, authorized by each output's overlay key and scoped to `videos`. ICE uses host candidates on 127.0.0.1 only, with no STUN or TURN.
+  - Receivers render a muted `<video>` for frames.
+- **Audio:**
+  - The browser source plays the mirrored audio when "OBS audio" is enabled; that is the default.
+  - The desktop host fans the captured track out to each selected device through one `<audio>` element per device with `setSinkId`, honoring the existing module mute policy.
+  - Devices and OBS audio can be combined.
+- **Control and state:**
+  - The server is authoritative for queue and item state.
+  - Commands go to the player host over the private desktop transport; the host reports position, duration and state back. Outputs never control the player.
+- **Latency:**
+  - Every output sees the same frames, delayed by the capture-and-encode delay. Target: under 300 ms, measured in the feasibility gate.
+  - Audio and video travel in the same WebRTC stream, so the browser source stays lip-synced.
+  - Device audio skips the WebRTC hop, so it can lead the picture slightly. The gate measures this, and a per-device delay setting compensates if needed.
+- **Fallback without the desktop app:**
+  - If the desktop host is not running (CLI start), module browser sources play the item in their own sandboxed player following a server clock `{ itemId, state, positionMs, atEpochMs }`, with seeks for drift above 750 ms.
+  - Management shows "Mirroring unavailable: desktop app not running".
+- **Feasibility gate (first tasks):**
+  - On Windows, prove frame audio capture from a cross-origin YouTube and Twitch frame, OBS browser-source WebRTC playback from 127.0.0.1, and multi-device `setSinkId` fan-out.
+  - Measure the delay and CPU/GPU cost.
+  - If frame audio capture fails, fall back to window capture plus OBS-only audio and report back before continuing.
 
 ### D6. Submission paths share one intake service
 `VideoRequestIntake.submit(input, source)` validates against D3, applies max-length and autoplay policy, and returns `{ accepted, itemId, status }` or a bounded rejection reason. The callers are:
@@ -92,7 +119,7 @@ Rejections are logged with reason and field names only.
 - **Management "Videos" page** (Mantine, following the module page layout):
   - enablement
   - live and test browser-source URLs, with the desktop overlay toggle
-  - max length, gap and audio owner
+  - max length, gap, OBS audio and device audio targets
   - allowed direct-file hosts
   - reward mappings and the Streamer.bot autoplay opt-in
   - setup docs
@@ -101,7 +128,10 @@ Rejections are logged with reason and field names only.
 
 ## Risks / Trade-offs
 
-- **Independent players are not frame-exact.** Ads and buffering differ per output. This is acceptable until the BL-059 mirroring.
+- **Mirroring costs one encode per active purpose** and adds the capture-and-encode delay to every output. It is acceptable for request videos, which are not latency-critical.
+- **Electron frame audio capture is the riskiest dependency.** The feasibility gate proves it before the mirror is built on.
+- **Twitch frame control (D4) depends on Twitch markup.** It is feature-detected with a play and stop fallback.
+- **Independent fallback players are not frame-exact.** They are used only when the desktop app is not running.
 - **The YouTube `postMessage` protocol** is the stable basis of the official iframe API, but it isn't separately documented. The renderer feature-detects `infoDelivery` and falls back to play and stop.
 - **Twitch `parent` must match the serving host.** Changing the bind host requires regenerating embed URLs, and the server builds them at render time.
 - **Held unknown-length YouTube items** need a manual Play anyway until BL-058.

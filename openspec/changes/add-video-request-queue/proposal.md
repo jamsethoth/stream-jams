@@ -22,7 +22,12 @@ The video shoutout module (`add-video-shoutout-overlay-module`) plays one Stream
   - Scoped automation REST (`videos:read`, `videos:submit`, `videos:control`).
   - Streamer.bot custom WebSocket events.
   - Native channel point redemptions, where the operator maps a reward whose user input is the video link.
-- Render on module browser sources and the desktop overlay. All outputs follow one authoritative server playback clock. One output owns audio per item; the others play muted. Direct files can use existing device audio routes.
+- Play every item in **one primary player hosted by the Stream Jams desktop app**:
+  - The player is captured with its audio and mirrored to the desktop overlay and to module browser sources over local WebRTC through the 127.0.0.1 server.
+  - Its audio fans out to one or more operator-selected devices.
+  - Every output shows the same frames, so pause, resume, seek, ads and buffering stay in sync.
+  - Without the desktop app, browser sources fall back to their own player following a server clock.
+  - A Windows feasibility gate runs before the mirror is built on.
 - Add a Videos management page (enablement, browser-source URLs, limits, allowed hosts, reward mapping, queue) and Operator UI queue tools (now-playing card with pause, seek, skip and stop, plus queue list actions).
 
 ## Capabilities
@@ -39,7 +44,6 @@ The video shoutout module (`add-video-shoutout-overlay-module`) plays one Stream
 ## Out Of Scope (follow-up slices in the backlog)
 
 - Duration lookup for YouTube: an operator API key, Google device sign-in, and a muted desktop metadata probe (BL-058).
-- A single desktop-hosted primary player mirrored to every output over local WebRTC, with embed audio captured and fanned out to several devices. This needs a Windows feasibility gate first (BL-059).
 - Auditing existing modules against the output-parity and persistent-queue rules (BL-060).
 - Refunding channel points for rejected submissions, per-viewer limits and cooldowns, and played-item history.
 
@@ -49,9 +53,9 @@ The video shoutout module (`add-video-shoutout-overlay-module`) plays one Stream
   - `packages/core`: contracts, provider URL validation and module definition.
   - `apps/server`: queue service, SQLite repository and migration, intake adapters, automation routes, overlay runtime and desktop recipient.
   - `apps/web`: renderer, Videos management page, Operator panel, Storybook.
-  - `apps/desktop`: renders the module through the existing desktop surface.
+  - `apps/desktop`: primary player host, frame and audio capture, WebRTC publisher, device audio fan-out, and the desktop overlay layer.
 - Security:
   - Provider players load in sandboxed iframes with `referrerPolicy="origin"`.
   - No third-party script runs in Stream Jams origins; player control uses `postMessage`.
   - Submissions, keys and URLs with credentials are never logged raw.
-- No new runtime dependencies are expected.
+- No new runtime dependencies are expected. WebRTC, capture and `setSinkId` are Chromium and Electron platform APIs. Signaling uses the existing local WebSocket server.

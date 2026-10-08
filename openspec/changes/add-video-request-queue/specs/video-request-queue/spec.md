@@ -103,24 +103,41 @@ Management, operator, scoped automation REST, Streamer.bot custom events and map
 - **THEN** an item is queued with the redeemer as requester
 - **AND** an unsupported or empty input is rejected with a bounded diagnostic and nothing is queued
 
-### Requirement: Outputs Follow One Playback Clock
-The system SHALL keep one authoritative playback clock per purpose, and controllable players on every output SHALL converge to it.
+### Requirement: One Primary Player Is Mirrored To Every Output
+When the desktop app is running, the system SHALL play each item in one primary player hosted by the desktop app, and SHALL mirror its frames and audio to the desktop overlay and module browser sources over local WebRTC, so every output shows the same content.
 
-#### Scenario: Pause and resume
-- **WHEN** the operator pauses a YouTube or direct-file item and resumes it
-- **THEN** every output pauses and resumes at the server position
+#### Scenario: Pause and seek reach every output
+- **WHEN** the operator pauses an item, seeks to 1:20 and resumes
+- **THEN** the primary player pauses, seeks and resumes once
+- **AND** every mirrored output shows the same frames without separate seeks
 
-#### Scenario: Seek
-- **WHEN** the operator seeks to 1:20
-- **THEN** every controllable output moves to 1:20 within one second
+#### Scenario: Ad or buffering
+- **WHEN** the primary player shows an ad or buffers
+- **THEN** every mirrored output shows the same ad or buffering state at the same time
 
-#### Scenario: Uncontrollable provider
-- **WHEN** a Twitch item is playing
+#### Scenario: Mirror stays local
+- **WHEN** a browser source subscribes to the mirror
+- **THEN** signaling is authorized by its overlay key and scoped to `videos`, ICE uses only loopback host candidates, and no STUN or TURN server is contacted
+
+#### Scenario: Desktop app not running
+- **WHEN** only the local service is running
+- **THEN** browser sources play the item in their own player following the server clock
+- **AND** management shows that mirroring is unavailable
+
+#### Scenario: Provider without pause or seek
+- **WHEN** an item's player cannot be paused or sought
 - **THEN** pause and seek are unavailable with a visible reason, and skip and stop work
 
-#### Scenario: Single audio owner
-- **WHEN** an item plays on the browser source and the desktop overlay
-- **THEN** only the configured audio owner plays sound and the other output is muted
+### Requirement: Captured Audio Fans Out To Selected Destinations
+The system SHALL send each item's audio only to the destinations the operator selected, either OBS browser-source audio or one or more output devices, and SHALL keep the provider's original audio off the system default device.
+
+#### Scenario: Two devices and OBS
+- **WHEN** OBS audio and two output devices are selected
+- **THEN** the browser source plays the mirrored audio and each device receives the same audio
+
+#### Scenario: Module muted
+- **WHEN** the Videos module is muted through the existing mute policy
+- **THEN** no destination plays audio and visuals continue
 
 ### Requirement: Rendering Fails Closed And Leaks Nothing
 Overlay outputs SHALL render only validated items, SHALL load no third-party scripts in Stream Jams origins, and SHALL NOT expose route keys to providers.
@@ -141,7 +158,7 @@ Overlay outputs SHALL render only validated items, SHALL load no third-party scr
 The system SHALL provide a Videos management page and Operator UI queue tools covering the controls in this specification.
 
 #### Scenario: Configure limits
-- **WHEN** the operator sets maximum length, gap, audio owner, allowed hosts and reward mappings on the Videos page
+- **WHEN** the operator sets maximum length, gap, audio destinations, allowed hosts and reward mappings on the Videos page
 - **THEN** the settings persist and apply to later submissions and runs
 
 #### Scenario: Operate during a stream
