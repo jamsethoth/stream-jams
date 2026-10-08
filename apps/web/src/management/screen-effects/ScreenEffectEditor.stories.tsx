@@ -359,9 +359,11 @@ function effect(options: {
     enabled: options.enabled ?? false,
     bindings: options.missingTrigger ? [{
       id: "binding-missing",
-      kind: "twitch-reward",
-      broadcasterId: "broadcaster-story",
-      rewardId: "reward-missing"
+      selector: {
+        match: { kind: "twitch-reward", broadcasterId: "broadcaster-story", rewardId: "reward-missing" },
+        sources: "any",
+        conditions: []
+      }
     }] : [],
     variants: [
       baseVariant,
