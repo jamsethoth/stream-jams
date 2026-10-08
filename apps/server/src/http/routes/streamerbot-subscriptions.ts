@@ -1,4 +1,5 @@
 import {
+  streamerBotForwardingUpdateInputSchema,
   streamerBotSubscriptionCatalogSchema,
   streamerBotSubscriptionUpdateInputSchema,
   type StreamerBotSubscriptionCatalog
@@ -10,7 +11,7 @@ import { sendHttpError } from "../errors.js";
 export interface StreamerBotSubscriptionRouteDependencies {
   readonly streamerBotSubscriptionService: Pick<
     ProviderManagementService,
-    "getStreamerBotSubscriptions" | "updateStreamerBotSubscriptions"
+    "getStreamerBotSubscriptions" | "updateStreamerBotSubscriptions" | "setStreamerBotForwarding"
   >;
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
@@ -44,6 +45,22 @@ export function registerStreamerBotSubscriptionRoutes(
         providerId,
         input.data
       ));
+    } catch (error) {
+      return sendSubscriptionError(reply, error);
+    }
+  });
+
+  app.put("/providers/:providerId/streamerbot-forwarding", { preHandler }, async (request, reply) => {
+    const providerId = readProviderId(request.params);
+    const input = streamerBotForwardingUpdateInputSchema.safeParse(request.body);
+    if (providerId === null || !input.success) {
+      return sendHttpError(reply, 400, {
+        code: "STREAMERBOT_FORWARDING_REQUEST_INVALID",
+        message: "Choose whether Streamer.bot forwards Twitch events"
+      });
+    }
+    try {
+      return sendCatalog(reply, await dependencies.streamerBotSubscriptionService.setStreamerBotForwarding(providerId, input.data));
     } catch (error) {
       return sendSubscriptionError(reply, error);
     }

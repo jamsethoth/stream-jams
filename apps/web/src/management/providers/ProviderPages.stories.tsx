@@ -116,6 +116,7 @@ export const StreamerBotEffectSubscriptions: Story = {
         getTwitchStatus: async () => connectedTwitchStatus,
         getStreamerBotSubscriptions: async () => ({
           providerId: inactiveStreamerBot.id,
+          forwardTwitchEvents: true,
           available: true,
           sources: [
             { sourceKey: "Custom", eventTypes: ["Jump", "Spin"] },
@@ -142,6 +143,7 @@ export const StreamerBotUnavailableSubscription: Story = {
       {
         getStreamerBotSubscriptions: async () => ({
           providerId: inactiveStreamerBot.id,
+          forwardTwitchEvents: true,
           available: true,
           sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
           selected: [{ sourceKey: "OBS", eventTypes: ["MissingEvent"] }],
@@ -460,6 +462,61 @@ export const ActivationWithNoAffectedAlerts: Story = {
     await expect(await canvas.findByText(/No active alerts are affected/u)).toBeVisible();
     await userEvent.click(within(row).getByRole("button", { name: "Activate Studio Streamer.bot" }));
     await expect(await canvas.findByRole("dialog", { name: "Activate Studio Streamer.bot?" })).toHaveTextContent("No active alerts are affected.");
+  }
+};
+
+const activeStreamerBot: RegisteredProviderView = { ...inactiveStreamerBot, active: true, intakeState: "active", liveStatus: "healthy" };
+const overlappingTwitchWarning: ActionableManagementError = {
+  summary: "Twitch events will arrive from two sources",
+  cause: "Main Twitch and Studio Streamer.bot both deliver the same Twitch events. Duplicates are merged, so each event plays once.",
+  nextStep: "Confirm to use both, or turn off Twitch forwarding in Studio Streamer.bot so direct Twitch is the only Twitch path.",
+  severity: "warning",
+  occurredAt: "2026-07-15T05:00:00.000Z",
+  referenceId: null,
+  correction: { label: "Review Twitch forwarding", route: "/manage/event-sources?provider=provider-streamerbot" }
+};
+
+export const TwoEventSourcesInUse: Story = {
+  args: { initialProviderId: activeStreamerBot.id, managementApi: providerApi([activeTwitch, activeStreamerBot]) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+    const forwarding = await canvas.findByRole("region", { name: "Twitch forwarding" });
+    await expect(forwarding).toHaveTextContent("Direct Twitch is also in use");
+    await expect(within(forwarding).getByRole("checkbox", { name: "Forward Twitch events from Streamer.bot" })).toBeChecked();
+    await expect(canvas.getAllByText("In use", { selector: "table *" })).toHaveLength(2);
+  }
+};
+
+export const OverlappingTwitchActivation: Story = {
+  args: {
+    managementApi: providerApi([activeTwitch, inactiveStreamerBot], {
+      getProviderActivationImpact: async () => ({ matchedAlertCount: 6, unmatchedAlertCount: 0, blockers: [], warnings: [overlappingTwitchWarning] })
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+    await userEvent.click(await canvas.findByRole("button", { name: "Activate Studio Streamer.bot" }));
+    const dialog = await canvas.findByRole("dialog", { name: "Activate Studio Streamer.bot?" });
+    await expect(dialog).toHaveTextContent("Studio Streamer.bot will be used alongside Main Twitch");
+    await expect(dialog).toHaveTextContent("Twitch events will arrive from two sources");
+  }
+};
+
+export const StreamerBotForwardingOff: Story = {
+  args: {
+    initialProviderId: activeStreamerBot.id,
+    managementApi: providerApi([activeTwitch, activeStreamerBot], {
+      getProvider: async (providerId) => {
+        const found = detail([activeTwitch, activeStreamerBot].find((candidate) => candidate.id === providerId) ?? activeTwitch);
+        return found.provider.kind === "streamerbot" ? { ...found, configuration: { ...found.configuration, forwardTwitchEvents: false } } : found;
+      }
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+    const forwarding = await canvas.findByRole("region", { name: "Twitch forwarding" });
+    await expect(forwarding).toHaveTextContent("Twitch events come from direct Twitch");
+    await expect(within(forwarding).getByRole("checkbox", { name: "Forward Twitch events from Streamer.bot" })).not.toBeChecked();
   }
 };
 

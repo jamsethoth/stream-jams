@@ -133,7 +133,9 @@ const configuredStreamerBotSubscriptionsSchema = z.array(
 const streamerBotProviderConfigurationSchema = websocketProviderConfigurationSchema.extend({
   allowUnauthenticatedLocalConnection: z.boolean().default(false),
   twitchBroadcasterId: safeStreamerBotIdentitySchema.nullable().default(null),
-  externalSubscriptions: configuredStreamerBotSubscriptionsSchema.default([])
+  externalSubscriptions: configuredStreamerBotSubscriptionsSchema.default([]),
+  /** When false, Streamer.bot delivers only configured external events and direct Twitch owns Twitch events. */
+  forwardTwitchEvents: z.boolean().default(true)
 }).strict();
 
 export const providerSetupInputSchema = z.discriminatedUnion("kind", [
@@ -166,8 +168,13 @@ export const streamerBotSubscriptionUpdateInputSchema = z.object({
   externalSubscriptions: configuredStreamerBotSubscriptionsSchema
 }).strict();
 
+export const streamerBotForwardingUpdateInputSchema = z.object({
+  forwardTwitchEvents: z.boolean()
+}).strict();
+
 export const streamerBotSubscriptionCatalogSchema = z.object({
   providerId: nonEmptyStringSchema.max(120),
+  forwardTwitchEvents: z.boolean(),
   available: z.boolean(),
   sources: z.array(boundedStreamerBotSubscriptionSelectionSchema).max(100),
   selected: configuredStreamerBotSubscriptionsSchema,
@@ -1176,6 +1183,7 @@ export type ProviderCapability = z.infer<typeof providerCapabilitySchema>;
 export type ProviderKind = z.infer<typeof providerKindSchema>;
 export type ProviderSetupInput = z.input<typeof providerSetupInputSchema>;
 export type StreamerBotSubscriptionUpdateInput = z.infer<typeof streamerBotSubscriptionUpdateInputSchema>;
+export type StreamerBotForwardingUpdateInput = z.infer<typeof streamerBotForwardingUpdateInputSchema>;
 export type StreamerBotSubscriptionCatalog = z.infer<typeof streamerBotSubscriptionCatalogSchema>;
 export type ProviderValidationResult = z.infer<typeof providerValidationResultSchema>;
 export type RegisteredProviderView = z.infer<typeof registeredProviderViewSchema>;

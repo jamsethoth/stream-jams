@@ -1073,7 +1073,7 @@ describe("runtime app composition smoke", () => {
     expect(log).not.toContain((key.json() as { readonly url: string }).url.split("/").at(-1)!);
   }, 30_000);
 
-  it("switches persistent intake between Twitch and Streamer.bot without reauthorization", async () => {
+  it("runs Twitch and Streamer.bot together and resumes Twitch without reauthorization", async () => {
     const testRoot = await createTemporaryDirectory();
     const credentials = new RecordingCredentialAdapter();
     let currentTime = new Date("2026-07-17T12:00:00.000Z");
@@ -1190,39 +1190,40 @@ describe("runtime app composition smoke", () => {
       matchedAlertCount: 1,
       unmatchedAlertCount: 0,
       blockers: [],
-      warnings: []
+      warnings: [expect.objectContaining({
+        summary: "Twitch events will arrive from two sources",
+        correction: { label: "Review Twitch forwarding", route: `/manage/event-sources?provider=${streamerBotProviderId}` }
+      })]
     });
-
-    const activation = await composition.app.inject({
+    const unconfirmedActivation = await composition.app.inject({
       method: "POST",
       url: `/management/providers/${streamerBotProviderId}/activate`,
       headers: authHeaders,
       payload: { confirmWarnings: false }
     });
+    expect(unconfirmedActivation.statusCode).toBe(409);
+
+    const activation = await composition.app.inject({
+      method: "POST",
+      url: `/management/providers/${streamerBotProviderId}/activate`,
+      headers: authHeaders,
+      payload: { confirmWarnings: true }
+    });
     expect(activation.statusCode).toBe(200);
+    expect(activation.json()).toMatchObject({ replacedProviderId: null });
     await waitFor(() => streamerBotSockets.length === 2);
     await waitFor(() => composition.streamerBotRuntimeService.getStatus().state === "connected");
-    expect(composition.twitchEventSubRuntimeService.getStatus().state).toBe("idle");
+    expect(composition.twitchEventSubRuntimeService.getStatus().state).toBe("connected");
+    expect(twitchSockets).toHaveLength(2);
     const eventSources = await composition.app.inject({
       method: "GET",
       url: "/management/providers?capability=event-source",
       headers: authHeaders
     });
     expect(eventSources.json()).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: "twitch", active: false, liveStatus: "not-running" }),
+      expect.objectContaining({ kind: "twitch", active: true, liveStatus: "healthy" }),
       expect.objectContaining({ kind: "streamerbot", active: true, liveStatus: "healthy" })
     ]));
-    const inactiveTwitchAuth = await composition.app.inject({
-      method: "GET",
-      url: "/twitch/auth/status",
-      headers: authHeaders
-    });
-    expect(inactiveTwitchAuth.json()).toMatchObject({
-      connected: true,
-      account: { accountId: "141981764" }
-    });
-    expect(credentials.values.get("stream-jams:twitch:access_token:141981764")).toBe("access-token-2");
-    expect(credentials.values.get("stream-jams:twitch:refresh_token:141981764")).toBe("refresh-token-2");
 
     await streamerBotSockets[1]!.emitEvent({
       timeStamp: "2026-07-17T12:04:00.000Z",
@@ -1235,17 +1236,37 @@ describe("runtime app composition smoke", () => {
     });
     await waitFor(() => composition.eventIngestionService.getStatus().acceptedCount === 1);
 
+    const twitchDeactivation = await composition.app.inject({
+      method: "POST",
+      url: `/management/providers/${twitchProviderId}/deactivate`,
+      headers: authHeaders
+    });
+    expect(twitchDeactivation.statusCode, twitchDeactivation.body).toBe(200);
+    await waitFor(() => composition.twitchEventSubRuntimeService.getStatus().state === "idle");
+    expect(composition.streamerBotRuntimeService.getStatus().state).toBe("connected");
+    const inactiveTwitchAuth = await composition.app.inject({
+      method: "GET",
+      url: "/twitch/auth/status",
+      headers: authHeaders
+    });
+    expect(inactiveTwitchAuth.json()).toMatchObject({
+      connected: true,
+      account: { accountId: "141981764" }
+    });
+    expect(credentials.values.get("stream-jams:twitch:access_token:141981764")).toBe("access-token-2");
+    expect(credentials.values.get("stream-jams:twitch:refresh_token:141981764")).toBe("refresh-token-2");
+
     const twitchReactivation = await composition.app.inject({
       method: "POST",
       url: `/management/providers/${twitchProviderId}/activate`,
       headers: authHeaders,
-      payload: { confirmWarnings: false }
+      payload: { confirmWarnings: true }
     });
     expect(twitchReactivation.statusCode, twitchReactivation.body).toBe(200);
     await waitFor(() => twitchSockets.length === 3);
     twitchSockets[2]?.emitWelcome();
     await waitFor(() => composition.twitchEventSubRuntimeService.getStatus().state === "connected");
-    expect(composition.streamerBotRuntimeService.getStatus().state).toBe("idle");
+    expect(composition.streamerBotRuntimeService.getStatus().state).toBe("connected");
     expect(twitchApiClient.deviceStartRequests).toHaveLength(1);
     expect(twitchApiClient.devicePollRequests).toHaveLength(1);
     expect(twitchApiClient.refreshRequests).toHaveLength(1);
@@ -1256,7 +1277,7 @@ describe("runtime app composition smoke", () => {
     });
     expect(reactivatedSources.json()).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "twitch", active: true, liveStatus: "healthy" }),
-      expect.objectContaining({ kind: "streamerbot", active: false, liveStatus: "not-running" })
+      expect.objectContaining({ kind: "streamerbot", active: true, liveStatus: "healthy" })
     ]));
   });
 

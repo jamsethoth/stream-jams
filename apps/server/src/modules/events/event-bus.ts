@@ -1,5 +1,12 @@
 import { randomBytes } from "node:crypto";
-import { twitchCorrelationKey, type BusEvent, type BusEventInput, type EffectTrigger, type NormalizedStreamEvent } from "@stream-jams/core";
+import {
+  twitchCorrelationKey,
+  type BusEvent,
+  type BusEventInput,
+  type EffectTrigger,
+  type IngestProviderId,
+  type NormalizedStreamEvent
+} from "@stream-jams/core";
 import type { EventSink, EventSinkOutcome } from "./event-ingestion-service.js";
 import type { EventBusJournalRepository } from "./sqlite-event-bus-journal-repository.js";
 
@@ -25,6 +32,8 @@ export interface EventBusOptions {
   readonly consumers: readonly EventBusConsumer[];
   readonly generateReferenceId: () => string;
   readonly generateBusId?: (() => string) | undefined;
+  /** Names the registration in use for a source kind, recorded on each bus event it publishes. */
+  readonly resolveSourceRegistrationId?: ((kind: IngestProviderId) => string | null | Promise<string | null>) | undefined;
   readonly now?: (() => Date) | undefined;
   readonly sleep?: ((delayMs: number) => Promise<void>) | undefined;
   /** Delay before each retry; its length bounds nothing, `maxAttempts` does. */
@@ -55,6 +64,7 @@ export class EventBus implements EventSink {
   readonly #journal: EventBusJournalRepository;
   readonly #workers: readonly ConsumerWorker[];
   readonly #generateBusId: () => string;
+  readonly #resolveSourceRegistrationId: NonNullable<EventBusOptions["resolveSourceRegistrationId"]>;
   readonly #now: () => Date;
   readonly #duplicateWindowMs: number;
   readonly #correlationWindowMs: number;
@@ -70,6 +80,7 @@ export class EventBus implements EventSink {
     if (ids.size !== options.consumers.length) throw new Error("Event bus consumer IDs must be unique");
     this.#journal = options.journal;
     this.#generateBusId = options.generateBusId ?? generateBusId;
+    this.#resolveSourceRegistrationId = options.resolveSourceRegistrationId ?? (() => null);
     this.#now = options.now ?? (() => new Date());
     this.#duplicateWindowMs = options.duplicateWindowMs ?? defaultDuplicateWindowMs;
     this.#correlationWindowMs = options.correlationWindowMs ?? defaultCorrelationWindowMs;
@@ -114,7 +125,7 @@ export class EventBus implements EventSink {
       event,
       eventId: event.id,
       sourceKind: event.ingestProvider,
-      sourceRegistrationId: null,
+      sourceRegistrationId: await this.#resolveSourceRegistrationId(event.ingestProvider),
       receivedAt: this.#now().toISOString(),
       correlationKey: twitchCorrelationKey(event),
       effectTriggers: triggers
@@ -128,7 +139,7 @@ export class EventBus implements EventSink {
       kind: "external",
       eventId,
       sourceKind: "streamerbot",
-      sourceRegistrationId: null,
+      sourceRegistrationId: await this.#resolveSourceRegistrationId("streamerbot"),
       receivedAt: this.#now().toISOString(),
       correlationKey: null,
       effectTriggers: triggers

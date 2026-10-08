@@ -34,6 +34,7 @@ export type ProviderPageApi = Pick<
   | "getProvider"
   | "getStreamerBotSubscriptions"
   | "updateStreamerBotSubscriptions"
+  | "setStreamerBotForwarding"
   | "activateProvider"
   | "deactivateProvider"
   | "getProviderActivationImpact"
@@ -485,6 +486,11 @@ export function ProviderPage({
               )
                 ? () => setReconnectProvider(detail.provider)
                 : null}
+              onForwardingSaved={(message) => {
+                setNotice({ tone: "success", message });
+                void loadProviders(detail.provider.id);
+              }}
+              otherTwitchSourceInUse={providers.some((provider) => provider.active && provider.kind === "twitch")}
               onSafetyChange={setSafety}
               onSafetySubmit={saveSafety}
               onTestVoice={() => void testVoice()}
@@ -545,7 +551,11 @@ export function ProviderPage({
           {pendingAction?.kind === "deactivate" ? (
             <>
               <p>Live event intake will stop for {pendingAction.provider.name}. Provider settings and alert mappings will remain saved, and the provider connection can remain connected.</p>
-              <p>Activate this or another event source to resume intake.</p>
+              <p>
+                {providers.some((provider) => provider.active && provider.id !== pendingAction.provider.id)
+                  ? "Other event sources in use keep running."
+                  : "Activate this or another event source to resume intake."}
+              </p>
               <p>
                 {formatCount(pendingAction.provider.usedByAlertCount, { one: "alert uses", other: "alerts use" })} this provider type.
               </p>
@@ -553,10 +563,8 @@ export function ProviderPage({
           ) : (
             <>
               <p>
-                {capability === "event-source"
-                  ? providers.some((provider) => provider.active)
-                    ? `${providers.find((provider) => provider.active)?.name} will become inactive. Saved configuration will not be deleted.`
-                    : `${pendingAction?.provider.name ?? "This event source"} will become the active event source. Saved configuration will not be deleted.`
+                {capability === "event-source" && pendingAction !== null
+                  ? eventSourceActivationConsequence(pendingAction.provider, providers)
                   : "This provider will handle text-to-speech output. The current active provider will become inactive."}
               </p>
               <p>{formatActivationImpactSummary(pendingAction?.impact.matchedAlertCount ?? 0, pendingAction?.impact.unmatchedAlertCount ?? 0)}.</p>
@@ -592,10 +600,12 @@ function ProviderDetail({
   impact,
   managementApi,
   onActivate,
+  onForwardingSaved,
   onReconnect,
   onSafetyChange,
   onSafetySubmit,
   onTestVoice,
+  otherTwitchSourceInUse,
   safety,
   safetyDirty,
   safetyBusy
@@ -604,6 +614,8 @@ function ProviderDetail({
   readonly detail: RegisteredProviderDetail;
   readonly impact: ProviderActivationImpact | null;
   readonly managementApi: ProviderPageApi;
+  readonly onForwardingSaved: (message: string) => void;
+  readonly otherTwitchSourceInUse: boolean;
   readonly onActivate: (() => void) | null;
   readonly onReconnect: (() => void) | null;
   readonly onSafetyChange: (safety: TtsProviderSafetySettings) => void;
@@ -673,7 +685,17 @@ function ProviderDetail({
       )}
 
       {capability === "event-source" && provider.kind === "streamerbot" ? (
-        <StreamerBotSubscriptionEditor managementApi={managementApi} provider={provider} />
+        <>
+          <StreamerBotForwardingSetting
+            key={provider.id}
+            initialForwardTwitchEvents={detail.configuration.forwardTwitchEvents !== false}
+            managementApi={managementApi}
+            onSaved={onForwardingSaved}
+            provider={provider}
+            twitchInUse={otherTwitchSourceInUse}
+          />
+          <StreamerBotSubscriptionEditor managementApi={managementApi} provider={provider} />
+        </>
       ) : null}
 
       {capability === "tts" && safety !== null ? (
@@ -720,6 +742,93 @@ function ProviderDetail({
           </section>
         </>
       ) : null}
+    </section>
+  );
+}
+
+function StreamerBotForwardingSetting({
+  initialForwardTwitchEvents,
+  managementApi,
+  onSaved,
+  provider,
+  twitchInUse
+}: {
+  readonly initialForwardTwitchEvents: boolean;
+  readonly managementApi: ProviderPageApi;
+  readonly onSaved: (message: string) => void;
+  readonly provider: RegisteredProviderView;
+  readonly twitchInUse: boolean;
+}) {
+  const [forward, setForward] = useState(initialForwardTwitchEvents);
+  const [savedForward, setSavedForward] = useState(initialForwardTwitchEvents);
+  const [busy, setBusy] = useState(false);
+  const [saveError, setSaveError] = useState<ActionableManagementError | null>(null);
+  const savePending = useRef(false);
+  const dirty = forward !== savedForward;
+
+  const persist = useCallback(async (navigation = false): Promise<DirtyNavigationSaveResult> => {
+    if (savePending.current) return false;
+    if (!dirty) return true;
+    savePending.current = true;
+    setBusy(true);
+    setSaveError(null);
+    try {
+      const updated = await managementApi.setStreamerBotForwarding(provider.id, { forwardTwitchEvents: forward });
+      setForward(updated.forwardTwitchEvents);
+      setSavedForward(updated.forwardTwitchEvents);
+      onSaved(updated.forwardTwitchEvents
+        ? `${provider.name} forwards Twitch events.`
+        : `${provider.name} no longer forwards Twitch events.`);
+      return true;
+    } catch (cause) {
+      const failure = actionableError(cause, "Unable to update Twitch forwarding", "Retry saving. If it keeps failing, open Diagnostics with the reference ID.");
+      if (!navigation) setSaveError(failure);
+      return { saved: false, error: failure };
+    } finally {
+      setBusy(false);
+      savePending.current = false;
+    }
+  }, [dirty, forward, managementApi, onSaved, provider.id, provider.name]);
+  const saveBeforeNavigation = useCallback(() => persist(true), [persist]);
+  const discard = useCallback(() => {
+    setForward(savedForward);
+    setSaveError(null);
+  }, [savedForward]);
+
+  useDirtyNavigationSource({
+    id: `streamerbot-forwarding-${provider.id}`,
+    dirty,
+    summary: "Streamer.bot Twitch forwarding has unsaved changes.",
+    save: saveBeforeNavigation,
+    discard
+  });
+
+  return (
+    <section aria-labelledby="streamerbot-forwarding-title" className="provider-page__subsection">
+      <h4 id="streamerbot-forwarding-title">Twitch forwarding</h4>
+      <p>
+        {savedForward
+          ? "Streamer.bot sends Twitch follows, subs, cheers and other Twitch events to Stream Jams."
+          : "Streamer.bot sends only the event subscriptions selected below. Twitch events come from direct Twitch."}
+      </p>
+      {savedForward && provider.active && twitchInUse ? (
+        <p>Direct Twitch is also in use, so the same Twitch events arrive twice. Duplicates are merged and each event plays once. Turn forwarding off to use direct Twitch only.</p>
+      ) : null}
+      {saveError === null ? null : <ManagementErrorBanner error={saveError} />}
+      <form className="provider-page__form" onSubmit={(event) => { event.preventDefault(); void persist(); }}>
+        <fieldset className="provider-page__subscription-fields" disabled={busy}>
+          <Checkbox
+            checked={forward}
+            description={provider.active ? "Saving reconnects Streamer.bot with the new subscriptions." : "Applies when this event source is in use."}
+            label="Forward Twitch events from Streamer.bot"
+            onChange={(event) => setForward(event.currentTarget.checked)}
+          />
+          <div className="provider-page__actions">
+            <Button variant="default" disabled={!dirty || busy} onClick={discard} type="button">Discard</Button>
+            <Button disabled={!dirty || busy} type="submit">{busy ? "Saving..." : "Save forwarding"}</Button>
+          </div>
+        </fieldset>
+      </form>
     </section>
   );
 }
@@ -1318,6 +1427,18 @@ function ProviderSetupWizard({
 
 function formatTwitchAccount(status: Extract<TwitchConnectionStatusView, { readonly connected: true }>): string {
   return `${status.account.displayName} (@${status.account.login})`;
+}
+
+function eventSourceActivationConsequence(target: RegisteredProviderView, providers: readonly RegisteredProviderView[]): string {
+  const sameKind = providers.find((provider) => provider.active && provider.kind === target.kind && provider.id !== target.id);
+  if (sameKind !== undefined) {
+    return `${sameKind.name} will stop being used and ${target.name} will take its place. Saved configuration will not be deleted.`;
+  }
+  const others = providers.filter((provider) => provider.active && provider.id !== target.id);
+  if (others.length > 0) {
+    return `${target.name} will be used alongside ${others.map((provider) => provider.name).join(" and ")}. Saved configuration will not be deleted.`;
+  }
+  return `${target.name} will become the event source in use. Saved configuration will not be deleted.`;
 }
 
 function formatActivationImpactSummary(matchedAlertCount: number, unmatchedAlertCount: number): string {

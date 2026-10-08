@@ -444,7 +444,8 @@ describe("management UI contract routes", () => {
         ...setup.configuration,
         allowUnauthenticatedLocalConnection: false,
         externalSubscriptions: [],
-        twitchBroadcasterId: null
+        twitchBroadcasterId: null,
+        forwardTwitchEvents: true
       }
     }]);
   });
