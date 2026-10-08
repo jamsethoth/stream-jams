@@ -120,7 +120,7 @@ Module behaviors SHALL select events through one shared selector that matches a 
 - **THEN** the selector matches only on its exact source and type identity and ignores the payload
 
 ### Requirement: Restart Resumes Admission Within A Replay Age
-After restart each consumer SHALL resume after its cursor. Events older than that consumer's replay age (default 2 minutes, configurable from 0 to 30 minutes, or no expiry for consumers that declare it) SHALL be skipped for that consumer and recorded as expired. Global pause, mute and do-not-disturb SHALL apply to replayed events as to live ones.
+After restart each consumer SHALL resume after its cursor; a new consumer SHALL start at the journal head. Replay SHALL begin shortly after startup so outputs can reconnect first. A pre-restart event older than the replay age when delivered SHALL be recorded as expired for that consumer instead, unless the consumer declares no expiry. Live events SHALL never expire. Global pause, mute and do-not-disturb SHALL apply to replayed events.
 
 #### Scenario: Event accepted just before shutdown
 - **WHEN** an event is journaled and the app stops before Alerts admits it, then restarts within the replay age
@@ -130,9 +130,32 @@ After restart each consumer SHALL resume after its cursor. Events older than tha
 - **WHEN** the app restarts after the replay age has passed
 - **THEN** pending events are recorded as expired and no alert or effect plays for them
 
+#### Scenario: Replay under global pause
+- **WHEN** a pending event is replayed while playback is globally paused
+- **THEN** its alert waits in the queue and does not play until playback resumes
+
+### Requirement: Replay Age Is A User Setting
+The replay age SHALL default to 2 minutes and SHALL be configurable in Settings from Off (0) to 30 minutes. It SHALL be part of configuration backup, and restoring a backup without it SHALL restore the default.
+
+#### Scenario: Replay turned off
+- **WHEN** the user sets the replay age to Off in Settings and the app restarts with pending events
+- **THEN** every pending event is recorded as expired
+
+#### Scenario: Out-of-range replay age
+- **WHEN** a replay age above 30 minutes is saved or restored from a backup
+- **THEN** it is rejected and the current value is kept
+
 ### Requirement: Diagnostics Explain Bus Outcomes
 Diagnostics SHALL list recent bus events with source, kind, type, intake outcome (`accepted`, `duplicate`, `merged`, `rejected`) and per-consumer outcome (`admitted`, `no match`, `failed`, `expired`), without raw external payloads, route keys or secrets.
 
 #### Scenario: User checks why an alert did not play
 - **WHEN** a user opens a bus event in Diagnostics
 - **THEN** they see whether it was merged, whether Alerts matched it, and any failure reference ID
+
+#### Scenario: Redelivery is listed as a duplicate
+- **WHEN** a source delivers the same event again
+- **THEN** Diagnostics lists the redelivery as `duplicate` with no module outcomes
+
+#### Scenario: Failure reference opens the bus event
+- **WHEN** a user opens Diagnostics with the reference ID of a consumer failure
+- **THEN** the bus view opens with that event selected

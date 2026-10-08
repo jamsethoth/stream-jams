@@ -8,7 +8,7 @@ import {
   type ConfigurationRestorePreflight,
   type ConfigurationRestoreResult
 } from "@stream-jams/core";
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { AudioOutputsPanel, type AudioOutputsPanelHandle } from "../audio/AudioOutputsPanel.js";
 import { defaultAudioApi, type AudioApi } from "../audio/audio-api.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
@@ -22,6 +22,7 @@ import { OverlaySurfacesPanel, type OverlaySurfacesPanelHandle } from "./Overlay
 import type { SurfaceSettingsApi } from "./overlay-surfaces-api.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import { AutomationSettingsPanel } from "./AutomationSettingsPanel.js";
+import { EventReplaySettings, type EventReplaySettingsApi } from "./EventReplaySettings.js";
 import type { AutomationSettingsApi } from "./automation-api.js";
 import { SectionHeading } from "../foundation/ModulePageLayout.js";
 import { FocusFallback } from "../foundation/FocusFallback.js";
@@ -29,7 +30,7 @@ import "./settings-panel.css";
 
 type SettingsApi = Pick<
   ManagementApi,
-  "getDesktopConfig" | "updateDesktopConfig" | "getServerConfig" | "updateServerConfig" | "getConfigurationBackupSummary" | "exportConfigurationBackup" | "preflightConfigurationRestore" | "restoreConfiguration" | "openDataFolder" | "clearOldLogs"
+  "getDesktopConfig" | "updateDesktopConfig" | "getServerConfig" | "updateServerConfig" | "getConfigurationBackupSummary" | "exportConfigurationBackup" | "preflightConfigurationRestore" | "restoreConfiguration" | "openDataFolder" | "clearOldLogs" | "getEventBusSettings" | "saveEventBusSettings"
 >;
 
 export interface SettingsPanelProps {
@@ -64,10 +65,17 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
   const [serverOpen, setServerOpen] = useState(false);
   const [audioOpen, setAudioOpen] = useState(window.location.hash === "#audio-outputs");
   const [surfacesOpen, setSurfacesOpen] = useState(window.location.hash === "#overlay-surfaces");
+  const [eventReplayOpen, setEventReplayOpen] = useState(window.location.hash === "#event-replay");
   const [dataOpen, setDataOpen] = useState(window.location.hash === "#backup-restore");
   const [audioSummary, setAudioSummary] = useState<{ readonly count: number; readonly state: "loading" | "ready" | "attention" }>({ count: 0, state: "loading" });
   const [surfaceSummary, setSurfaceSummary] = useState<{ readonly count: number; readonly state: "loading" | "ready" | "attention" }>({ count: 0, state: "loading" });
   const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
+  const eventReplayApi = useMemo<EventReplaySettingsApi | null>(() => {
+    const { getEventBusSettings, saveEventBusSettings } = managementApi;
+    return getEventBusSettings === undefined || saveEventBusSettings === undefined
+      ? null
+      : { getEventBusSettings: () => getEventBusSettings.call(managementApi), saveEventBusSettings: (settings) => saveEventBusSettings.call(managementApi, settings) };
+  }, [managementApi]);
   const [error, setError] = useState<ActionableManagementError | null>(null);
 
   const loadSettings = useCallback(async () => {
@@ -360,6 +368,13 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
         <summary><span className="settings-page__summary-content"><strong>Automation</strong><small>Local client pairing and permissions</small></span></summary>
         {automationOpen ? <AutomationSettingsPanel api={automationApi} /> : null}
       </details>
+
+      {eventReplayApi === null ? null : (
+        <details className="settings-page__disclosure" id="event-replay" onToggle={event => setEventReplayOpen(event.currentTarget.open)} open={eventReplayOpen}>
+          <summary><span className="settings-page__summary-content"><strong>Event replay</strong><small>Events missed during a restart</small></span></summary>
+          {eventReplayOpen && eventReplayApi !== null ? <EventReplaySettings api={eventReplayApi} /> : null}
+        </details>
+      )}
 
       <details className="settings-page__disclosure" id="backup-restore" onToggle={(event) => setDataOpen(event.currentTarget.open)} open={dataOpen}>
         <summary><span className="settings-page__summary-content"><strong>Data and backup{dataNeedsAttention ? " · Needs attention" : ""}</strong><small>{summary === null ? "Loading storage details" : `${formatCount(summary.configurationRecordCount, { one: "configuration record", other: "configuration records" })} · ${formatCount(summary.assetCount, { one: "asset", other: "assets" })}`}</small></span></summary>

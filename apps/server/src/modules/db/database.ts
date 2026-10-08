@@ -39,6 +39,7 @@ import { eventBusCorrelationMigration } from "./migrations/035-event-bus-correla
 import { eventSourceActivePerKindMigration } from "./migrations/036-event-source-active-per-kind.js";
 import { eventTriggerSelectorsMigration } from "./migrations/037-event-trigger-selectors.js";
 import { externalAlertIdentityMigration } from "./migrations/038-external-alert-identity.js";
+import { eventBusOutcomesMigration } from "./migrations/039-event-bus-outcomes.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -88,7 +89,8 @@ const migrations = [
   eventBusCorrelationMigration,
   eventSourceActivePerKindMigration,
   eventTriggerSelectorsMigration,
-  externalAlertIdentityMigration
+  externalAlertIdentityMigration,
+  eventBusOutcomesMigration
 ] satisfies readonly StreamJamsMigration[];
 
 export const currentSchemaVersion = migrations.length;

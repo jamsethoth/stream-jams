@@ -36,8 +36,8 @@ describe("EventPipeline", () => {
     const pipeline = new EventPipeline({
       diagnosticsLogRepository: diagnostics,
       playbackCoordinator: playback,
-      timerEventSink: { async handleEvent(event) { timerEvents.push(event); } },
-      effectEventSink: { async handleEvent(event) { effectEvents.push(event); } },
+      timerEventSink: { async handleEvent(event) { timerEvents.push(event); return true; } },
+      effectEventSink: { async handleEvent(event) { effectEvents.push(event); return { status: "no-matches", eventId: event.eventId, outcomes: [] }; } },
       generateId: (kind) => `${kind}-1`
     });
     const trigger: EffectTrigger = {
@@ -221,7 +221,7 @@ describe("EventPipeline", () => {
     const pipeline = new EventPipeline({
       diagnosticsLogRepository: diagnostics,
       playbackCoordinator: playback,
-      effectEventSink: { async handleEvent(event) { effectEvents.push(event); } },
+      effectEventSink: { async handleEvent(event) { effectEvents.push(event); return { status: "no-matches", eventId: event.eventId, outcomes: [] }; } },
       generateId: (kind) => `${kind}-1`
     });
     const triggers: readonly EffectTrigger[] = [{

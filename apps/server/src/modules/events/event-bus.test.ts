@@ -218,31 +218,111 @@ describe("EventBus", () => {
     expect(consumer.events).toEqual([]);
   });
 
-  it("skips and reports events a consumer had not received before restart", async () => {
+  it("replays events pending before restart within the replay age and expires older ones", async () => {
     using database = createInMemoryStreamJamsDatabase();
     const journal = new SqliteEventBusJournalRepository(database.connection);
-    journal.setCursor("alerts", 0, "2026-10-08T12:00:00.000Z");
-    journal.setCursor("retired-module", 0, "2026-10-08T12:00:00.000Z");
-    for (const id of ["follow-1", "follow-2"]) {
-      journal.append({
-        kind: "canonical", event: follow(id), eventId: id, sourceKind: "twitch", sourceRegistrationId: null,
-        receivedAt: "2026-10-08T12:00:00.000Z", correlationKey: null, effectTriggers: []
-      }, `bus-${id}`, { duplicateSinceMs: 0, correlationSinceMs: 0 });
-    }
-    const skipped: Array<[string, number]> = [];
+    journal.setCursor("alerts", 0, "2026-10-08T11:00:00.000Z");
+    journal.setCursor("audit", 0, "2026-10-08T11:00:00.000Z");
+    journal.setCursor("retired-module", 0, "2026-10-08T11:00:00.000Z");
+    appendFollow(journal, "follow-old", "2026-10-08T11:50:00.000Z");
+    appendFollow(journal, "follow-recent", "2026-10-08T11:59:30.000Z");
+    const expired: Array<[string, number]> = [];
     const alerts = recordingConsumer("alerts");
+    const audit = { ...recordingConsumer("audit"), expiresAfterReplayAge: false };
     const timers = recordingConsumer("timers");
-    const bus = createBus(database, [alerts, timers], { onReplaySkipped: (consumerId, count) => { skipped.push([consumerId, count]); } });
+    const bus = createBus(database, [alerts, audit, timers], {
+      getReplayAgeMs: () => 120_000,
+      onExpired: (consumerId, count) => { expired.push([consumerId, count]); }
+    });
 
     await bus.start();
-    await bus.drain();
-
-    expect(skipped).toEqual([["alerts", 2]]);
     expect(alerts.events).toEqual([]);
+    await bus.resume();
+
+    expect(expired).toEqual([["alerts", 1]]);
+    expect(alerts.events.map(eventIdOf)).toEqual(["follow-recent"]);
+    expect(audit.events.map(eventIdOf)).toEqual(["follow-old", "follow-recent"]);
+    // A consumer registered for the first time starts at the head.
     expect(timers.events).toEqual([]);
     expect(journal.getCursor("alerts")).toBe(2);
     expect(journal.getCursor("timers")).toBe(2);
     expect(journal.getCursor("retired-module")).toBeNull();
+    expect(storedOutcomes(database)).toEqual([
+      [1, "alerts", "expired"], [1, "audit", "admitted"], [2, "alerts", "admitted"], [2, "audit", "admitted"]
+    ]);
+  });
+
+  it("never expires live events, however old their receipt time", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const alerts = recordingConsumer("alerts");
+    const bus = createBus(database, [alerts], { getReplayAgeMs: () => 0, now: () => new Date("2026-10-08T12:00:00.000Z") });
+    await bus.start();
+
+    await bus.publish({
+      kind: "canonical", event: follow("follow-late"), eventId: "follow-late", sourceKind: "twitch", sourceRegistrationId: null,
+      receivedAt: "2026-10-08T11:00:00.000Z", correlationKey: null, effectTriggers: []
+    });
+
+    expect(alerts.events.map(eventIdOf)).toEqual(["follow-late"]);
+  });
+
+  it("replays nothing when the replay age is zero", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const journal = new SqliteEventBusJournalRepository(database.connection);
+    journal.setCursor("alerts", 0, "2026-10-08T11:00:00.000Z");
+    appendFollow(journal, "follow-1", "2026-10-08T11:59:59.000Z");
+    const alerts = recordingConsumer("alerts");
+    const bus = createBus(database, [alerts], { getReplayAgeMs: () => 0 });
+
+    await bus.resume();
+
+    expect(alerts.events).toEqual([]);
+    expect(storedOutcomes(database)).toEqual([[1, "alerts", "expired"]]);
+  });
+
+  it("expires every pending event on request, for example after a configuration restore", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const journal = new SqliteEventBusJournalRepository(database.connection);
+    journal.setCursor("alerts", 0, "2026-10-08T11:00:00.000Z");
+    appendFollow(journal, "follow-1", "2026-10-08T11:59:59.000Z");
+    appendFollow(journal, "follow-2", "2026-10-08T11:59:59.000Z");
+    const expired: Array<[string, number]> = [];
+    const alerts = recordingConsumer("alerts");
+    const bus = createBus(database, [alerts], { onExpired: (consumerId, count) => { expired.push([consumerId, count]); } });
+
+    await bus.expirePending();
+    await bus.resume();
+
+    expect(alerts.events).toEqual([]);
+    expect(expired).toEqual([["alerts", 2]]);
+    expect(journal.getCursor("alerts")).toBe(2);
+  });
+
+  it("records intake outcomes and per-consumer results for Diagnostics", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const journal = new SqliteEventBusJournalRepository(database.connection);
+    const failing: EventBusConsumer = { id: "effects", maxAttempts: 1, async handle() { throw new Error("boom"); } };
+    const timers: EventBusConsumer = { id: "timers", async handle() { return "no-match"; } };
+    const bus = createBus(database, [recordingConsumer("alerts"), failing, timers]);
+
+    await bus.handleEvent(follow("follow-1"), []);
+    await bus.handleEvent(follow("follow-1"), []);
+    bus.recordRejected("streamerbot", "ref-rejected");
+    bus.recordDuplicate({ sourceKind: "streamerbot", kind: "external", eventType: "OBS · SceneChanged" });
+
+    expect(journal.recentActivity(10)).toEqual([
+      { id: expect.any(Number), receivedAt: "2026-10-08T12:00:00.000Z", sourceKind: "streamerbot", kind: "external", eventType: "OBS · SceneChanged", outcome: "duplicate", sequence: null, referenceId: null, consumers: [] },
+      { id: expect.any(Number), receivedAt: "2026-10-08T12:00:00.000Z", sourceKind: "streamerbot", kind: null, eventType: null, outcome: "rejected", sequence: null, referenceId: "ref-rejected", consumers: [] },
+      { id: expect.any(Number), receivedAt: "2026-10-08T12:00:00.000Z", sourceKind: "twitch", kind: "canonical", eventType: "follow", outcome: "duplicate", sequence: null, referenceId: null, consumers: [] },
+      {
+        id: expect.any(Number), receivedAt: "2026-10-08T12:00:00.000Z", sourceKind: "twitch", kind: "canonical", eventType: "follow", outcome: "accepted", sequence: 1, referenceId: null,
+        consumers: [
+          { consumerId: "alerts", outcome: "admitted", referenceId: null },
+          { consumerId: "effects", outcome: "failed", referenceId: "ref-1" },
+          { consumerId: "timers", outcome: "no-match", referenceId: null }
+        ]
+      }
+    ]);
   });
 
   it("records an unreadable journal row as failed and keeps the consumer moving", async () => {
@@ -458,6 +538,18 @@ function recordingConsumer(id: string, onEvent: (event: BusEvent) => void = () =
 
 function eventIdOf(event: BusEvent): string {
   return event.eventId;
+}
+
+function appendFollow(journal: SqliteEventBusJournalRepository, id: string, receivedAt: string): void {
+  journal.append({
+    kind: "canonical", event: follow(id), eventId: id, sourceKind: "twitch", sourceRegistrationId: null,
+    receivedAt, correlationKey: null, effectTriggers: []
+  }, `bus-${id}`, { duplicateSinceMs: 0, correlationSinceMs: 0 });
+}
+
+function storedOutcomes(database: StreamJamsDatabase): Array<[number, string, string]> {
+  return database.connection.prepare("SELECT sequence, consumer_id, outcome FROM event_bus_consumer_outcomes ORDER BY sequence, consumer_id").all()
+    .map((row) => [Number(row.sequence), String(row.consumer_id), String(row.outcome)]);
 }
 
 function storedEventIds(database: StreamJamsDatabase): string[] {

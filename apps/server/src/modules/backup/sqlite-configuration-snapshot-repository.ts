@@ -1,6 +1,8 @@
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import {
   alertCollectionSchema,
+  eventBusReplayAgeDefaultSeconds,
+  eventBusSettingsSchema,
   parseStoredAlertEditorDocument,
   audioOutputRouteSchema,
   surfaceConfigurationSchema,
@@ -81,6 +83,7 @@ const tableDefinitions = [
   table("screen_effect_bindings", ["id", "effect_id", "position", "kind", "canonical_identity", "document_json"], ["effect_id", "position", "id"], ["document_json"]),
   table("screen_effect_audio_routes", ["variant_id", "route_id", "position"], ["variant_id", "position", "route_id"]),
   table("module_playback_settings", ["module_id", "paused", "cooldown_seconds", "updated_at"], ["module_id"]),
+  table("event_bus_settings", ["id", "replay_age_seconds", "updated_at"], ["id"]),
   table("alert_editor_documents", ["alert_id", "document_json", "updated_at"], ["alert_id"], ["document_json"]),
   table(
     "alert_moderation_settings",
@@ -201,7 +204,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
     for (const definition of tableDefinitions) {
       const rows = configuration.tables[definition.name];
       if (rows === undefined) {
-        if (definition.name === "overlay_surfaces" || screenEffectTableNames.has(definition.name) || definition.name === "screen_effect_sets" || definition.name === "screen_effect_set_memberships") continue;
+        if (definition.name === "overlay_surfaces" || screenEffectTableNames.has(definition.name) || definition.name === "screen_effect_sets" || definition.name === "screen_effect_set_memberships" || definition.name === "event_bus_settings") continue;
         errors.push(`Required backup table "${definition.name}" is missing.`);
         continue;
       }
@@ -301,6 +304,12 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
               settings.ttsText.stripUrls ? 1 : 0
             );
           }
+          continue;
+        }
+        if (definition.name === "event_bus_settings") {
+          // Backups from before the setting existed restore the default replay age.
+          insertCapturedRows(this.connection, definition.name, input.tables.event_bus_settings
+            ?? [{ id: 1, replay_age_seconds: eventBusReplayAgeDefaultSeconds, updated_at: new Date().toISOString() }]);
           continue;
         }
         if (definition.name === "module_playback_settings") {
@@ -456,6 +465,11 @@ function visitJson(value: unknown, path: readonly string[]): string | null {
 
 function validateDomainRows(tables: BackupConfiguration["tables"]): readonly string[] {
   const errors: string[] = [];
+  const busSettings = tables.event_bus_settings;
+  if (busSettings !== undefined && (busSettings.length !== 1 || busSettings[0]?.id !== 1
+    || !eventBusSettingsSchema.safeParse({ replayAgeSeconds: busSettings[0]?.replay_age_seconds }).success)) {
+    errors.push("event_bus_settings must contain exactly one row with a replay age from 0 to 1800 seconds.");
+  }
   for (const [index, row] of (tables.overlay_surfaces ?? []).entries()) {
     const parsed = surfaceConfigurationSchema.safeParse(parseJsonValue(row.configuration_json));
     if (!parsed.success || parsed.data.id !== row.id || parsed.data.kind !== row.kind) {

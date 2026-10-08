@@ -46,6 +46,19 @@ export type BusEventInput =
   | Omit<CanonicalBusEvent, "sequence" | "busId">
   | Omit<ExternalBusEvent, "sequence" | "busId">;
 
+/** What a consumer did with one event; recorded for Diagnostics. */
+export type EventBusConsumerOutcome = "admitted" | "no-match" | "failed" | "expired";
+
+/** What a consumer's handler reports; `expired` is decided by the bus before delivery. */
+export type EventBusHandleOutcome = Exclude<EventBusConsumerOutcome, "expired">;
+
+/** What intake did with one event a source delivered; recorded for Diagnostics. */
+export type EventBusIntakeOutcome = "accepted" | "duplicate" | "merged" | "rejected";
+
+/** Default and bounds of how old a pending event may be and still be delivered after a restart. */
+export const eventBusReplayAgeDefaultSeconds = 120;
+export const eventBusReplayAgeMaxSeconds = 1_800;
+
 /** Passed with each delivery. */
 export interface EventBusDeliveryContext {
   /**
@@ -71,8 +84,14 @@ export interface EventBusConsumerRegistration {
    */
   readonly externalPayloads?: readonly ExternalEventIdentity[] | undefined;
   /**
-   * Handles one event. Without a checkpoint it must be idempotent by `busId`, because delivery is at least once.
-   * A thrown error is retried, then recorded and skipped.
+   * When true (the default), events older than the configured replay age are skipped and recorded as expired,
+   * for example after a restart. State consumers that must see every event set it to false.
    */
-  handle(event: BusEvent, context: EventBusDeliveryContext): Promise<void>;
+  readonly expiresAfterReplayAge?: boolean | undefined;
+  /**
+   * Handles one event. Without a checkpoint it must be idempotent by `busId`, because delivery is at least once.
+   * A thrown error is retried, then recorded and skipped. Returns whether the event was admitted or matched
+   * nothing; a consumer that handled its own error returns `failed`. No result counts as admitted.
+   */
+  handle(event: BusEvent, context: EventBusDeliveryContext): Promise<EventBusHandleOutcome | void>;
 }

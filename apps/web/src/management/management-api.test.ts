@@ -21,6 +21,25 @@ describe("createHttpManagementApi", () => {
     await expect(api.setOverlayModuleEnabled("alerts", false)).resolves.toBe(false);
   });
 
+  it("loads bus activity and loads and saves the replay age", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (url === "/management/diagnostics/event-bus") return jsonResponse({ events: [] });
+      expect(url).toBe("/management/settings/event-bus");
+      if (init?.method === "PUT") {
+        expect(init.body).toBe(JSON.stringify({ replayAgeSeconds: 300 }));
+        return jsonResponse({ replayAgeSeconds: 300 });
+      }
+      return jsonResponse({ replayAgeSeconds: 120 });
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.getEventBusActivity!()).resolves.toEqual({ events: [] });
+    await expect(api.getEventBusSettings!()).resolves.toEqual({ replayAgeSeconds: 120 });
+    await expect(api.saveEventBusSettings!({ replayAgeSeconds: 300 })).resolves.toEqual({ replayAgeSeconds: 300 });
+  });
+
   it("reports management client exceptions through the protected diagnostics endpoint", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === "/auth/management/sessions") {

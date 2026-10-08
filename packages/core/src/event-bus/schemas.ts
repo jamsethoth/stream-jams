@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ingestProviderIdSchema, normalizedStreamEventSchema } from "../events/schemas.js";
 import { effectTriggerSchema } from "../screen-effects/schemas.js";
 import { isoDateTimeSchema } from "../shared/schemas.js";
-import type { BusEvent } from "./types.js";
+import { eventBusReplayAgeMaxSeconds, type BusEvent } from "./types.js";
 
 const busIdentitySchema = z.string().trim().min(1).max(512);
 
@@ -45,3 +45,32 @@ export const busEventSchema = z.discriminatedUnion("kind", [
     context.addIssue({ code: "custom", path: ["eventId"], message: "eventId must match the canonical event ID" });
   }
 }) satisfies z.ZodType<BusEvent>;
+
+/** Management settings for the bus. Replay age is how old a pending event may be and still be delivered. */
+export const eventBusSettingsSchema = z.object({
+  replayAgeSeconds: z.number().int().min(0).max(eventBusReplayAgeMaxSeconds)
+}).strict();
+
+export type EventBusSettings = z.infer<typeof eventBusSettingsSchema>;
+
+const outcomeReferenceSchema = z.string().trim().min(1).max(200).nullable();
+
+/** Recent intake and per-consumer outcomes for Diagnostics. Never carries payloads, route keys or secrets. */
+export const eventBusActivityViewSchema = z.object({
+  events: z.array(z.object({
+    id: z.number().int().positive(),
+    receivedAt: isoDateTimeSchema,
+    sourceKind: ingestProviderIdSchema,
+    kind: z.enum(["canonical", "external"]).nullable(),
+    eventType: z.string().max(250).nullable(),
+    outcome: z.enum(["accepted", "duplicate", "merged", "rejected"]),
+    referenceId: outcomeReferenceSchema,
+    consumers: z.array(z.object({
+      consumerId: z.string().trim().min(1).max(120),
+      outcome: z.enum(["admitted", "no-match", "failed", "expired", "pending"]),
+      referenceId: outcomeReferenceSchema
+    }).strict())
+  }).strict()).max(200)
+}).strict();
+
+export type EventBusActivityView = z.infer<typeof eventBusActivityViewSchema>;

@@ -123,6 +123,7 @@ describe("SqliteConfigurationSnapshotRepository", () => {
       "screen_effect_bindings",
       "screen_effect_audio_routes",
       "module_playback_settings",
+      "event_bus_settings",
       "alert_editor_documents",
       "alert_moderation_settings"
     ]);

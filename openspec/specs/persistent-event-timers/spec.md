@@ -18,7 +18,7 @@ The system SHALL save active run recovery state on transitions, checkpoint runni
 - **THEN** reopening restores the checkpoint remainder paused without subtracting downtime
 
 ### Requirement: Configurable timer event rules
-Each timer SHALL support ordered enabled rules selecting ingestion source, normalized event type, optional reward ID and subscription tier, and start/stop/increment/decrement/restart action. Adjustments SHALL accept fixed durations or durations per quantity unit. Inactive adjustment behavior SHALL default to ignore, with start-from-definition and create-paused-from-definition alternatives. Active adjustments SHALL preserve running/paused status. Subscriptions and resubscriptions SHALL count as one occurrence; cheers and gift batches SHALL use event quantity. Current ingestion duplicate protection SHALL remain unchanged.
+Each timer SHALL support ordered enabled rules that select events through the shared event trigger selector (canonical event type, Twitch reward, or exact external identity, with optional source-kind restriction and canonical conditions such as subscription tier) and a start/stop/increment/decrement/restart action. Adjustments SHALL accept fixed durations or durations per quantity unit. Inactive adjustment behavior SHALL default to ignore, with start-from-definition and create-paused-from-definition alternatives. Active adjustments SHALL preserve running/paused status. Subscriptions and resubscriptions SHALL count as one occurrence; cheers and gift batches SHALL use event quantity. Timers SHALL receive events as a central event bus consumer and SHALL rely on bus duplicate and cross-source merge protection.
 
 #### Scenario: Specific redemption starts a challenge
 - **WHEN** a selected reward redemption matches a start rule
@@ -27,6 +27,14 @@ Each timer SHALL support ordered enabled rules selecting ingestion source, norma
 #### Scenario: Cheer extends a paused subathon
 - **WHEN** a 200-bit cheer matches a rule adding 30 seconds per 100 bits
 - **THEN** sixty seconds are added and the timer remains paused
+
+#### Scenario: Cheer from both sources extends once
+- **WHEN** the same 200-bit cheer arrives from direct Twitch and Streamer.bot
+- **THEN** sixty seconds are added once
+
+#### Scenario: Existing rules migrate
+- **WHEN** the app upgrades with saved rules that select an ingestion source
+- **THEN** each becomes a selector restricted to that source kind with the same event type, reward and tier
 
 #### Scenario: Inactive adjustment defaults to ignore
 - **WHEN** an increment rule targets an inactive timer with default behavior

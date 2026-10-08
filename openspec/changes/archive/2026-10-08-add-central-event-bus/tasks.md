@@ -43,7 +43,7 @@ Each numbered section is one independently reviewable slice and PR, in order. Ev
 
 ## 6. Restart Replay And Diagnostics
 
-- [ ] 6.1 Add replay age setting (default 2 minutes, 0 to 30) and expired handling per consumer; restore marks pending rows expired.
-- [ ] 6.2 Tests: shutdown before admission then restart within age (admitted once), after age (expired, nothing plays), global safety applies to replay.
-- [ ] 6.3 Diagnostics bus view with intake and per-consumer outcomes, no raw payloads or secrets; Storybook and Playwright.
-- [ ] 6.4 Reconcile requirements against code and tests, sync specs, remove BL-025 from the backlog.
+- [x] 6.1 Add replay age setting (default 2 minutes, 0 to 30) and expired handling per consumer; restore marks pending rows expired.
+- [x] 6.2 Tests: shutdown before admission then restart within age (admitted once), after age (expired, nothing plays), global safety applies to replay.
+- [x] 6.3 Diagnostics bus view with intake and per-consumer outcomes, no raw payloads or secrets; Storybook and Playwright.
+- [x] 6.4 Reconcile requirements against code and tests, sync specs, remove BL-025 from the backlog.

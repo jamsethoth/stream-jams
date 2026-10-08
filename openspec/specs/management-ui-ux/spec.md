@@ -2,7 +2,9 @@
 
 ## Purpose
 Define the local management navigation, setup, authoring, and accessible configuration workflows.
+
 ## Requirements
+
 ### Requirement: Management Is A Configuration Surface
 
 The system SHALL present management as an offline setup and configuration surface and SHALL keep live operator controls outside the MVP management experience.
@@ -81,7 +83,7 @@ The system SHALL present actionable problems and incomplete setup before routine
 
 ### Requirement: Provider Setup Separates Registration Validation And Activation
 
-The system SHALL group providers by capability, use one wizard per setup flow, validate before registration, allow multiple registrations, and enforce at most one active provider per capability in MVP.
+The system SHALL group providers by capability, use one wizard per setup flow, validate before registration, and allow multiple registrations. Event sources SHALL allow at most one active registration per provider kind, so different event-source kinds can be active together. Other capabilities SHALL allow at most one active provider.
 
 #### Scenario: Invalid provider is not registered
 
@@ -98,8 +100,8 @@ The system SHALL group providers by capability, use one wizard per setup flow, v
 #### Scenario: Event-source list separates usage from live health
 
 - **WHEN** a user reviews registered event sources
-- **THEN** each row shows whether the source is `In use` or `Not in use`
-- **AND** the source in use shows transient live status as `Starting`, `Healthy`, `Reconnecting`, or `Error`
+- **THEN** each row shows whether the source is `In use` or `Not in use`, and more than one row can be `In use`
+- **AND** each source in use shows its own transient live status as `Starting`, `Healthy`, `Reconnecting`, or `Error`
 - **AND** an inactive source shows `Not running`
 - **AND** saved validation details remain in the selected-provider detail instead of appearing as a redundant setup column
 
@@ -122,6 +124,12 @@ The system SHALL group providers by capability, use one wizard per setup flow, v
 - **WHEN** a user requests activation of a provider whose kind is not used by all relevant active alerts
 - **THEN** the system reports matched and unmatched impact before activation
 - **AND** blockers prevent activation while warnings require confirmation
+
+#### Scenario: Activation warns about overlapping Twitch sources
+
+- **WHEN** a user activates direct Twitch while a Streamer.bot registration with Twitch forwarding is active, or the reverse
+- **THEN** the confirmation explains that the same Twitch events arrive from both sources and duplicates are merged
+- **AND** it links to the Streamer.bot setting that turns Twitch forwarding off
 
 ### Requirement: Management Interactions Are Explicit Accessible And Traceable
 
