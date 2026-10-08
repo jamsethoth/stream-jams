@@ -105,6 +105,9 @@ describe("SqliteEffectRepository", () => {
     using database = createInMemoryStreamJamsDatabase();
     await seedReferences(database.connection);
     database.connection.exec(`DROP TRIGGER screen_effect_assign_set;
+      DROP TABLE data_templates; DROP TABLE data_element_refs; DROP TABLE data_pins; DROP TABLE data_goals;
+      DROP TABLE data_values; DROP TABLE data_reset_groups; DROP TABLE data_canvases; DROP TABLE data_overlay_meta;
+      DELETE FROM schema_migrations WHERE id IN ('033-custom-data-overlays', '034-data-overlay-templates');
       DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements;
       DROP TABLE screen_effect_set_memberships; DROP TABLE screen_effect_sets;
       DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; DROP TABLE timer_run_recovery; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;

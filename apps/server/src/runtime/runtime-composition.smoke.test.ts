@@ -1418,6 +1418,14 @@ describe("runtime app composition smoke", () => {
         renderer: expect.objectContaining({
           supportedOutputs: ["module"]
         })
+      }),
+      expect.objectContaining({
+        id: "data-overlays",
+        displayName: "Data Overlays",
+        defaultEnabled: false,
+        renderer: expect.objectContaining({
+          supportedOutputs: ["module", "unified"]
+        })
       })
     ]);
     expect(overlayModuleConfig.statusCode).toBe(200);
@@ -2002,6 +2010,7 @@ describe("runtime app composition smoke", () => {
     expect(start.json()).toMatchObject({
       scopes: [
         "bits:read",
+        "channel:read:goals",
         "channel:read:hype_train",
         "channel:read:polls",
         "channel:read:predictions",
