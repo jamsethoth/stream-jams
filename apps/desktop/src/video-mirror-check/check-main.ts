@@ -5,7 +5,7 @@ import { release } from "node:os";
 import { join } from "node:path";
 import { app, BrowserWindow, session, type WebFrameMain } from "electron";
 import { parseVideoLink } from "@stream-jams/core/videos";
-import { controlPage, playerPage, receiverPage, type CheckSource } from "./check-pages.js";
+import { controlPage, playerPage, providerUrl, receiverPage, type CheckSource } from "./check-pages.js";
 import { SignalMailbox } from "./signal-mailbox.js";
 
 /*
@@ -42,9 +42,14 @@ export async function runVideoMirrorCheck(): Promise<void> {
     if (kind === "youtube-message") { pushBounded(results.youtubeMessages as unknown[], data); return; }
     if (kind === "error") { pushBounded(results.errors as unknown[], data); return; }
     if (kind === "manual") { results.manual = { ...(results.manual as object | undefined), ...(data as object) }; return; }
-    if (kind === "receiver-stats") { results.receivers = { ...(results.receivers as object | undefined), [(data as { receiver: string }).receiver]: data }; return; }
+    // Per-source results, so one run can compare the test pattern, YouTube and Twitch.
+    const bySource = (results.bySource ??= {}) as Record<string, Record<string, unknown>>;
+    const current = (bySource[sourceKind] ??= {});
+    if (kind === "receiver-stats") { current.receivers = { ...(current.receivers as object | undefined), [(data as { receiver: string }).receiver]: data }; return; }
+    if (kind === "publisher-stats" || kind === "fan-out" || kind === "player-loaded" || kind.startsWith("twitch-")) { current[kind] = data; return; }
     results[kind] = data;
   };
+  let sourceKind = "none";
 
   const partition = session.fromPartition("video-mirror-check");
   let audioMode: AudioMode = "frame";
@@ -62,7 +67,15 @@ export async function runVideoMirrorCheck(): Promise<void> {
   });
 
   let player: BrowserWindow | null = null;
+  let playerSettings: { readonly host: string; readonly audioMode: AudioMode; readonly show: boolean } | null = null;
+  let capturing = false;
   let origin = "";
+  async function startCapture(): Promise<void> {
+    if (player === null || player.isDestroyed()) throw new CheckInputError("Load the player first.");
+    // getDisplayMedia needs a user gesture; the main process supplies one.
+    await player.webContents.executeJavaScript("window.__startCapture()", true);
+    capturing = true;
+  }
   const metrics = { samples: 0, peakCpuPercent: 0, totalCpuPercent: 0, peakMemoryMb: 0 };
   setInterval(() => {
     const processes = app.getAppMetrics();
@@ -84,21 +97,34 @@ export async function runVideoMirrorCheck(): Promise<void> {
       if (source === null) throw new CheckInputError("That link or ID was not recognized.");
       audioMode = body.audio === "loopback" || body.audio === "loopbackWithMute" ? body.audio : "frame";
       const host = body.host === "localhost" ? "localhost" : "127.0.0.1";
+      const show = body.show === true;
+      const playerOrigin = origin.replace("127.0.0.1", host);
+      sourceKind = source.kind;
+      if (player !== null && !player.isDestroyed() && playerSettings?.host === host && playerSettings.audioMode === audioMode && playerSettings.show === show) {
+        // Same window: swap the source inside it so the capture and every mirror connection carry on.
+        record("player", { source: source.kind, host, audioMode, visible: show, reused: true });
+        const url = source.kind === "pattern" ? "" : providerUrl(source, playerOrigin, host);
+        await player.webContents.executeJavaScript(`window.__setSource(${JSON.stringify(source)}, ${JSON.stringify(url)})`, true);
+        return;
+      }
+      const wasCapturing = capturing;
+      capturing = false;
       player?.destroy();
+      // A new player page reads the publisher mailbox from the start, so old signaling must not replay.
       mailbox.clear();
+      playerSettings = { host, audioMode, show };
       player = new BrowserWindow({
         width: 1280, height: 720, useContentSize: true, show: body.show === true, title: "Video mirror check player",
         webPreferences: { partition: "video-mirror-check", sandbox: true, contextIsolation: true, backgroundThrottling: false }
       });
       lockNavigation(player);
-      const playerOrigin = origin.replace("127.0.0.1", host);
-      record("player", { source: source.kind, host, audioMode, visible: body.show === true });
+      record("player", { source: source.kind, host, audioMode, visible: show, reused: false });
       await player.loadURL(`${playerOrigin}/player?${new URLSearchParams({ t: token, source: JSON.stringify(source), host })}`);
+      // A new window means a new capture; mirrors reconnect on their own once it is ready.
+      if (wasCapturing) await startCapture();
     },
     async "start-capture"() {
-      if (player === null) throw new CheckInputError("Load the player first.");
-      // getDisplayMedia needs a user gesture; the main process supplies one.
-      await player.webContents.executeJavaScript("window.__startCapture()", true);
+      await startCapture();
     },
     async "open-desktop-receiver"() {
       const receiver = new BrowserWindow({
@@ -109,7 +135,7 @@ export async function runVideoMirrorCheck(): Promise<void> {
       await receiver.loadURL(`${origin}/receiver?${new URLSearchParams({ t: token, label: "desktop" })}`);
     },
     async twitch(body: Record<string, unknown>) {
-      if (player === null) throw new CheckInputError("Load a Twitch source first.");
+      if (player === null || player.isDestroyed()) throw new CheckInputError("Load a Twitch source first.");
       const frames = player.webContents.mainFrame.framesInSubtree.filter(isTwitchFrame);
       const op = body.op === "pause" || body.op === "play" || body.op === "seek" ? body.op : "probe";
       const outcomes: unknown[] = [];

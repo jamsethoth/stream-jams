@@ -57,14 +57,13 @@ ${script}
 </script></body></html>`;
 
 export function playerPage(source: CheckSource, origin: string, parentHost: string): string {
-  const frame = source.kind === "pattern" ? `<canvas id="pattern" width="1280" height="720"></canvas>` :
-    `<iframe id="provider" allow="autoplay; fullscreen" referrerpolicy="origin" src="${escapeAttribute(providerUrl(source, origin, parentHost))}"></iframe>`;
+  // One long-lived player page: sources are swapped inside it, so the capture and every mirror connection survive.
   return page("Video mirror check player", `
     html, body { margin: 0; width: 1280px; height: 720px; overflow: hidden; background: #000; }
-    iframe, canvas#pattern { position: absolute; inset: 0; width: 1280px; height: 720px; border: 0; }
+    #stage > * { position: absolute; inset: 0; width: 1280px; height: 720px; border: 0; }
     #barcode { position: absolute; left: 16px; top: 16px; display: flex; z-index: 2; outline: 4px solid #fff; }
     #barcode div { width: ${barcodeCellPx}px; height: ${barcodeCellPx}px; }
-  `, `${frame}<div id="barcode"></div><div id="sinks" hidden></div>`, `
+  `, `<div id="stage"></div><div id="barcode"></div><div id="sinks" hidden></div>`, `
 ${encodeTimestampBits.toString()}
 const cells = [];
 const barcode = document.getElementById("barcode");
@@ -76,33 +75,61 @@ function paint() {
 setInterval(paint, 16);
 paint();
 
-const source = ${JSON.stringify(source)};
+const youtubeOrigin = "https://www.youtube-nocookie.com";
+let source = null;
+let patternTimer = null;
 let audioContext = null;
-if (source.kind === "pattern") {
-  const canvas = document.getElementById("pattern");
-  const context = canvas.getContext("2d");
-  setInterval(() => {
-    const t = Date.now() / 1000;
-    context.fillStyle = "hsl(" + Math.floor(t * 40 % 360) + ", 60%, 35%)";
-    context.fillRect(0, 0, 1280, 720);
-    context.fillStyle = "#fff";
-    context.font = "bold 96px sans-serif";
-    context.fillText("Stream Jams test pattern", 120, 360 + Math.sin(t * 2) * 120);
-  }, 33);
+let toneGain = null;
+
+function startTone() {
+  if (audioContext === null) {
+    audioContext = new AudioContext();
+    const oscillator = audioContext.createOscillator();
+    toneGain = audioContext.createGain();
+    oscillator.frequency.value = 440;
+    oscillator.connect(toneGain).connect(audioContext.destination);
+    oscillator.start();
+  }
+  toneGain.gain.value = 0.2;
+  void audioContext.resume();
 }
-window.__startPatternTone = () => {
-  if (source.kind !== "pattern" || audioContext !== null) return;
-  audioContext = new AudioContext();
-  const oscillator = audioContext.createOscillator();
-  const gain = audioContext.createGain();
-  gain.gain.value = 0.05;
-  oscillator.frequency.value = 440;
-  oscillator.connect(gain).connect(audioContext.destination);
-  oscillator.start();
+function stopTone() { if (toneGain !== null) toneGain.gain.value = 0; }
+
+window.__setSource = (next, url) => {
+  source = next;
+  const stage = document.getElementById("stage");
+  clearInterval(patternTimer);
+  stopTone();
+  if (next.kind === "pattern") {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1280; canvas.height = 720;
+    stage.replaceChildren(canvas);
+    const context = canvas.getContext("2d");
+    patternTimer = setInterval(() => {
+      const t = Date.now() / 1000;
+      context.fillStyle = "hsl(" + Math.floor(t * 40 % 360) + ", 60%, 35%)";
+      context.fillRect(0, 0, 1280, 720);
+      context.fillStyle = "#fff";
+      context.font = "bold 96px sans-serif";
+      context.fillText("Stream Jams test pattern", 120, 360 + Math.sin(t * 2) * 120);
+    }, 33);
+    if (captured !== null) startTone();
+    report("player-loaded", { kind: "pattern" });
+    return;
+  }
+  const frame = document.createElement("iframe");
+  frame.id = "provider";
+  frame.allow = "autoplay; fullscreen";
+  frame.referrerPolicy = "origin";
+  frame.src = url;
+  frame.addEventListener("load", () => {
+    report("player-loaded", { kind: next.kind });
+    if (next.kind === "youtube") frame.contentWindow.postMessage(JSON.stringify({ event: "listening", id: 1, channel: "widget" }), youtubeOrigin);
+  });
+  stage.replaceChildren(frame);
 };
 
 // YouTube iframe API: record the first message shapes and accept test commands.
-const youtubeOrigin = "https://www.youtube-nocookie.com";
 const seenShapes = new Set();
 window.addEventListener("message", event => {
   const provider = document.getElementById("provider");
@@ -114,18 +141,13 @@ window.addEventListener("message", event => {
 });
 function youtubeCommand(func, args) {
   const provider = document.getElementById("provider");
-  provider.contentWindow.postMessage(JSON.stringify({ event: "command", func, args: args || [], id: 1, channel: "widget" }), youtubeOrigin);
+  provider?.contentWindow.postMessage(JSON.stringify({ event: "command", func, args: args || [], id: 1, channel: "widget" }), youtubeOrigin);
 }
-document.getElementById("provider")?.addEventListener("load", () => {
-  report("player-loaded", { kind: source.kind });
-  if (source.kind === "youtube") document.getElementById("provider").contentWindow.postMessage(JSON.stringify({ event: "listening", id: 1, channel: "widget" }), youtubeOrigin);
-});
-if (source.kind === "pattern") report("player-loaded", { kind: "pattern" });
 
 let captured = null;
 const connections = new Map();
 window.__startCapture = async () => {
-  window.__startPatternTone();
+  if (captured !== null && captured.getTracks().every(track => track.readyState === "live")) return;
   const started = performance.now();
   try {
     captured = await navigator.mediaDevices.getDisplayMedia({
@@ -135,6 +157,7 @@ window.__startCapture = async () => {
     });
     const video = captured.getVideoTracks()[0];
     const audio = captured.getAudioTracks()[0];
+    if (source !== null && source.kind === "pattern") startTone();
     report("capture", { ok: true, ms: Math.round(performance.now() - started), video: video ? video.getSettings() : null, audio: audio ? { label: "captured", settings: audio.getSettings() } : null });
     send("control", { type: "capture-ready" });
   } catch (error) {
@@ -190,6 +213,8 @@ setInterval(async () => {
   }
   if (summary.length > 0) report("publisher-stats", summary);
 }, 2000);
+
+window.__setSource(${JSON.stringify(source)}, ${JSON.stringify(source.kind === "pattern" ? "" : providerUrl(source, origin, parentHost))});
 `);
 }
 
@@ -218,9 +243,15 @@ listen("receiver:" + id, async body => {
     pc?.close();
     pc = new RTCPeerConnection({ iceServers: [] });
     pc.ontrack = event => {
-      stream = event.streams[0];
-      video.srcObject = stream;
-      video.play().catch(() => { audioBlocked = true; video.muted = true; return video.play(); });
+      // ontrack fires once per track; setting srcObject again would abort the first play() and look like blocked audio.
+      if (stream !== event.streams[0]) {
+        stream = event.streams[0];
+        video.srcObject = stream;
+        video.play().catch(error => {
+          if (error && error.name === "NotAllowedError") { audioBlocked = true; video.muted = true; return video.play(); }
+          return undefined;
+        });
+      }
       if (event.track.kind === "audio" && analyser === null) {
         const context = new AudioContext();
         analyser = context.createAnalyser();
@@ -228,7 +259,14 @@ listen("receiver:" + id, async body => {
       }
     };
     pc.onicecandidate = event => { if (event.candidate) send("publisher", { type: "ice", id, candidate: event.candidate.toJSON() }); };
-    pc.onconnectionstatechange = () => { status.textContent = "Mirror " + pc.connectionState; report("receiver-connection", { receiver: id, state: pc.connectionState }); };
+    const connection = pc;
+    connection.onconnectionstatechange = () => {
+      status.textContent = "Mirror " + connection.connectionState;
+      report("receiver-connection", { receiver: id, state: connection.connectionState });
+      // The product mirror must recover on its own, so the check does too: drop the stale picture and ask again.
+      if (connection === pc && (connection.connectionState === "failed" || connection.connectionState === "closed")) reconnect();
+      if (connection === pc && connection.connectionState === "disconnected") setTimeout(() => { if (connection === pc && connection.connectionState === "disconnected") reconnect(); }, 3000);
+    };
     await pc.setRemoteDescription({ type: "offer", sdp: body.sdp });
     await pc.setLocalDescription(await pc.createAnswer());
     await send("publisher", { type: "answer", id, sdp: pc.localDescription.sdp });
@@ -236,6 +274,19 @@ listen("receiver:" + id, async body => {
     await pc?.addIceCandidate(body.candidate).catch(error => report("error", { role: "receiver", message: "ICE: " + error.message }));
   }
 });
+let reconnects = 0;
+function reconnect() {
+  reconnects += 1;
+  pc?.close();
+  pc = null;
+  stream = null;
+  analyser = null;
+  delays.length = 0;
+  peakLevel = 0;
+  video.srcObject = null;
+  status.textContent = "Reconnecting";
+  setTimeout(() => send("publisher", { type: "hello", id }), 1000);
+}
 send("publisher", { type: "hello", id });
 
 const canvas = document.createElement("canvas");
@@ -276,7 +327,7 @@ setInterval(async () => {
     receiver: id, userAgent: navigator.userAgent.includes("OBS") ? "obs" : navigator.userAgent.includes("Electron") ? "electron" : "browser",
     state: pc.connectionState, pair: await pairSummary(pc), fps: inbound && inbound.framesPerSecond,
     width: video.videoWidth, height: video.videoHeight, delayMedianMs: median, delayMaxMs: sorted.at(-1) ?? null,
-    readableFrames: delays.length, audioPeak: Math.round(peakLevel * 1000) / 1000, audioBlocked
+    readableFrames: delays.length, audioPeak: Math.round(peakLevel * 1000) / 1000, audioBlocked, reconnects
   });
 }, 2000);
 `);
@@ -368,7 +419,7 @@ document.getElementById("copy").onclick = async () => {
 `);
 }
 
-function providerUrl(source: Exclude<CheckSource, { kind: "pattern" }>, origin: string, parentHost: string): string {
+export function providerUrl(source: Exclude<CheckSource, { kind: "pattern" }>, origin: string, parentHost: string): string {
   switch (source.kind) {
     case "youtube":
       return `https://www.youtube-nocookie.com/embed/${source.videoId}?${new URLSearchParams({ enablejsapi: "1", autoplay: "1", playsinline: "1", rel: "0", origin }).toString()}`;
@@ -379,6 +430,3 @@ function providerUrl(source: Exclude<CheckSource, { kind: "pattern" }>, origin: 
   }
 }
 
-function escapeAttribute(value: string): string {
-  return value.replace(/&/gu, "&amp;").replace(/"/gu, "&quot;").replace(/</gu, "&lt;");
-}
