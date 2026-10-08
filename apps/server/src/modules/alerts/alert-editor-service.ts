@@ -30,7 +30,7 @@ import {
   type AlertVariationAuthoringContext,
   type AlertVariationPriorityAssignment,
   type AssetRecord,
-  type NormalizedStreamEvent,
+  type AlertSourceEvent,
   type OverlayElementLayout,
   type ResolvedAlert,
   type ResolvedAlertAudio,
@@ -54,7 +54,7 @@ export interface AlertEditorDocumentRepository {
 
 export interface AlertEditorTestPlayback {
   readonly replayDocuments?: readonly AlertEditorDocument[];
-  readonly sourceEvent: NormalizedStreamEvent;
+  readonly sourceEvent: AlertSourceEvent;
   readonly alerts: readonly ResolvedAlert[];
   readonly audio: readonly ResolvedAlertAudio[];
 }
@@ -190,6 +190,9 @@ export class AlertEditorService {
     const resolved = await this.#resolveEditorItem(alertId);
     if (document.eventType !== resolved.rule.eventType) {
       throw new AlertEditorValidationError(["The alert event type does not match the selected alert."]);
+    }
+    if (JSON.stringify(document.externalIdentity ?? null) !== JSON.stringify(resolved.rule.externalIdentity ?? null)) {
+      throw new AlertEditorValidationError(["The external event identity does not match the selected alert."]);
     }
     const metadata = await this.#options.metadata.findRule(resolved.rule.id);
     const stored = await this.#options.documents.find(alertId);
@@ -330,7 +333,8 @@ export class AlertEditorService {
       ingestProvider: request.document.providerKind === "streamerbot" ? "streamerbot" : "twitch",
       payload: request.samplePayload,
       id: referenceId,
-      occurredAt: this.#now().toISOString()
+      occurredAt: this.#now().toISOString(),
+      externalIdentity: request.document.externalIdentity
     });
     const assets = await this.#resolveAssets(request.document);
     const document = this.#resolveTestDuration(request.document, assets);
@@ -420,7 +424,7 @@ export class AlertEditorService {
   #createTestAlerts(
     request: AlertEditorTestRequest,
     profile: AlertTargetProfileDocument,
-    sourceEvent: NormalizedStreamEvent,
+    sourceEvent: AlertSourceEvent,
     visualAssetMediaTypes: Readonly<Record<string, "image" | "gif" | "video">>,
     assetDurations: Readonly<Record<string, number | null>>
   ): readonly ResolvedAlert[] {
@@ -661,6 +665,7 @@ function createCompatibilityDocumentFromRule(
     setId: rule.collectionIds[0],
     providerKind: metadata?.providerKind ?? "twitch",
     eventType: rule.eventType,
+    externalIdentity: rule.externalIdentity,
     kind: resolved.kind,
     parentAlertId: resolved.kind === "variation" ? rule.id : null,
     name: resolved.kind === "default" ? rule.name : variant.name,
@@ -778,6 +783,7 @@ function hydrateDocument(
     setId,
     providerKind: metadata?.providerKind ?? stored.providerKind,
     eventType: resolved.rule.eventType,
+    externalIdentity: resolved.rule.externalIdentity,
     kind: resolved.kind,
     parentAlertId: resolved.kind === "variation" ? resolved.rule.id : null,
     name: resolved.kind === "default" ? resolved.rule.name : resolved.variant.name,
@@ -1193,6 +1199,11 @@ function createBuiltInSamples(eventType: AlertEditorDocument["eventType"]) {
     );
     case "stream_online": return builtInSamples({ ...common, streamId: "sample-stream", streamType: "live" }, { ...edge, streamId: "sample-stream-edge", streamType: "watch_party" });
     case "stream_offline": return builtInSamples({ ...common, streamId: "sample-stream", streamType: "live" }, { ...edge, streamId: "sample-stream-edge", streamType: "watch_party" });
+    // External samples carry only the allowlisted variables.
+    case "external_event": return builtInSamples(
+      { summary: "Custom event from StreamerFan", userName: "StreamerFan", eventType: "Custom" },
+      { summary: "A".repeat(256), userName: "A-Very-Long-Display-Name-For-Layout-Review", eventType: "Custom" }
+    );
   }
 }
 

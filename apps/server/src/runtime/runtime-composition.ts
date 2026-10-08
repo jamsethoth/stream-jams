@@ -1165,6 +1165,23 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     },
     now
   });
+  async function isStreamerBotSelectionConfigured(sourceKey: string, eventType: string): Promise<boolean> {
+    try {
+      const providers = (await providerManagementService.listProviders("event-source"))
+        .filter((provider) => provider.kind === "streamerbot")
+        .sort((left, right) => Number(right.active) - Number(left.active));
+      for (const provider of providers) {
+        const catalog = await providerManagementService.getStreamerBotSubscriptions(provider.id);
+        if (isStreamerBotSubscriptionAvailable(catalog, sourceKey, eventType)) return true;
+      }
+      return false;
+    // error-provenance: allow expected -- provider selection probes intentionally collapse unavailable catalogs to false
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
+      return false;
+    }
+  }
   const alertSetManagementService = new AlertSetManagementService({
     alertService,
     metadataRepository: alertSetMetadataRepository,
@@ -1174,7 +1191,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     mutationStore: alertAggregateMutationStore,
     listBrowserSources: () => outputReadinessService.listAlertBrowserSources(
       `http://${initialConfig.server.host}:${initialConfig.server.port}`
-    )
+    ),
+    isExternalIdentitySubscribed: (identity) => isStreamerBotSelectionConfigured(identity.sourceKey, identity.eventType)
   });
   const diagnosticsService = new DiagnosticsService({
     repository: diagnosticsLogRepository,
@@ -1616,23 +1634,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         return false;
       }
     },
-    async isStreamerBotSelectionConfigured(sourceKey, eventType) {
-      try {
-        const providers = (await providerManagementService.listProviders("event-source"))
-          .filter((provider) => provider.kind === "streamerbot")
-          .sort((left, right) => Number(right.active) - Number(left.active));
-        for (const provider of providers) {
-          const catalog = await providerManagementService.getStreamerBotSubscriptions(provider.id);
-          if (isStreamerBotSubscriptionAvailable(catalog, sourceKey, eventType)) return true;
-        }
-        return false;
-      // error-provenance: allow expected -- provider selection probes intentionally collapse unavailable catalogs to false
-      }
-      // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
-      catch {
-        return false;
-      }
-    }
+    isStreamerBotSelectionConfigured
   });
   const refreshCommittedMusicConfig = async (enabled: boolean): Promise<void> => {
     // Persistence has committed. Report runtime failures without turning a durable save into a failed request.

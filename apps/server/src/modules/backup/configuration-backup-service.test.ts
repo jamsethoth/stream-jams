@@ -130,7 +130,7 @@ describe("ConfigurationBackupService", () => {
     }
   });
 
-  it.each([19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
+  it.each([19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
     const target = createRealService();
     try {
       const archive = await target.service.exportArchive();
@@ -153,6 +153,13 @@ describe("ConfigurationBackupService", () => {
         archive.manifest.configurationRecordCount -= archive.configuration.tables.overlay_surfaces?.length ?? 0;
         delete archive.configuration.tables.overlay_surfaces;
       }
+      if (schemaVersion < 37) {
+        archive.configuration.tables.alert_rules = (archive.configuration.tables.alert_rules ?? []).map((row) => {
+          const legacy = { ...row };
+          delete legacy.external_identity_json;
+          return legacy;
+        });
+      }
       if (schemaVersion < 27) {
         archive.configuration.tables.alert_set_metadata = (archive.configuration.tables.alert_set_metadata ?? []).map((row) => ({
           ...row,
@@ -168,6 +175,31 @@ describe("ConfigurationBackupService", () => {
       await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
       const snapshot = target.snapshotRepository.snapshot();
       expect(JSON.parse(String(snapshot.tables.overlay_surfaces?.[0]?.configuration_json))).toMatchObject({ enabled: false, displayId: null });
+    } finally { target.database.close(); }
+  });
+
+  it("round-trips external alert identities and rejects an identity on a canonical rule", async () => {
+    const target = createRealService();
+    try {
+      const rules = new SqliteAlertRepository(target.database.connection);
+      const identity = { providerKind: "streamerbot" as const, sourceKey: "General", eventType: "Custom" };
+      await rules.saveRule({
+        id: "alert-external", name: "Custom", eventType: "external_event", externalIdentity: identity, enabled: true,
+        collectionIds: ["set-default"], conditions: [], cooldownSeconds: 0, priority: 0,
+        variants: [{ id: "variant-external", name: "Default", enabled: true, weight: 1, visualAssetId: null, audioAssetId: null,
+          textTemplate: "{summary}", ttsConfig: null, durationMs: 1000, layout: { x: 0, y: 0, width: 10, height: 10, zIndex: 1 } }]
+      });
+      const archive = await target.service.exportArchive();
+      expect(archive.configuration.tables.alert_rules).toEqual([expect.objectContaining({ external_identity_json: JSON.stringify(identity) })]);
+      const preflight = await target.service.preflight(archive);
+      expect(preflight.state).toBe("valid");
+      await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
+      await expect(rules.findRuleById("alert-external")).resolves.toMatchObject({ eventType: "external_event", externalIdentity: identity });
+
+      const invalid = await target.service.exportArchive();
+      invalid.configuration.tables.alert_rules = invalid.configuration.tables.alert_rules!.map((row) => ({ ...row, event_type: "follow" }));
+      invalid.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(invalid.configuration);
+      expect((await target.service.preflight(invalid)).state).not.toBe("valid");
     } finally { target.database.close(); }
   });
 

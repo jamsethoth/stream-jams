@@ -1,9 +1,10 @@
 import type {
   AlertMatchLogRecord,
+  AlertSourceEvent,
   BusEvent,
+  ExternalAlertEvent,
   DiagnosticsLogRepository,
   EventLogRecord,
-  NormalizedStreamEvent,
   PlaybackLogRecord,
   PlaybackQueueItem,
   PlaybackQueueSnapshot,
@@ -67,8 +68,23 @@ export class EventPipeline {
   }
 
   async #deliverAlerts(busEvent: BusEvent): Promise<void> {
-    if (busEvent.kind !== "canonical") return;
-    const { event } = busEvent;
+    const events: AlertSourceEvent[] = [
+      ...(busEvent.kind === "canonical" ? [busEvent.event] : []),
+      ...createExternalAlertEvents(busEvent)
+    ];
+    let failure: { readonly error: unknown } | null = null;
+    for (const event of events) {
+      try {
+        await this.#deliverAlertEvent(event);
+      } catch (error) {
+        // error-provenance: allow expected -- each admitted event is attempted before the first failure is reported
+        failure ??= { error };
+      }
+    }
+    if (failure !== null) throw failure.error;
+  }
+
+  async #deliverAlertEvent(event: AlertSourceEvent): Promise<void> {
     const processingId = this.#generateId("processing") as ProcessingId;
     const correlationId = createCorrelationId(event);
     await this.#appendEventLog(event, "received", correlationId, processingId, null);
@@ -117,7 +133,7 @@ export class EventPipeline {
   }
 
   async #appendPlaybackRecords(
-    event: NormalizedStreamEvent,
+    event: AlertSourceEvent,
     result: PlaybackEnqueueResult,
     correlationId: string,
     processingId: ProcessingId
@@ -164,7 +180,7 @@ export class EventPipeline {
   }
 
   async #appendEventLog(
-    event: NormalizedStreamEvent,
+    event: AlertSourceEvent,
     status: EventLogRecord["status"],
     correlationId: string,
     processingId: ProcessingId,
@@ -191,6 +207,31 @@ function findQueueItemForEvent(snapshot: PlaybackQueueSnapshot, eventId: string)
   return candidates.find((item) => item.sourceEvent.id === eventId) ?? null;
 }
 
-function createCorrelationId(event: NormalizedStreamEvent): string {
+function createCorrelationId(event: AlertSourceEvent): string {
   return `event:${event.providerId}:${event.id}`;
+}
+
+/**
+ * Each exact Streamer.bot identity on the bus event becomes an alert-only event carrying only the
+ * sanitized summary and user name, so payload fields never reach alert matching or templates.
+ */
+function createExternalAlertEvents(busEvent: BusEvent): readonly ExternalAlertEvent[] {
+  return busEvent.effectTriggers.flatMap((trigger) => {
+    if (trigger.kind !== "streamerbot-event") return [];
+    const userName = trigger.userName ?? "";
+    return [{
+      id: `external:${trigger.eventId}`,
+      type: "external_event" as const,
+      providerId: "streamerbot" as const,
+      ingestProvider: "streamerbot" as const,
+      occurredAt: trigger.occurredAt,
+      actor: { id: null, displayName: userName === "" ? "Streamer.bot" : userName },
+      message: null,
+      metadata: {},
+      amount: null,
+      identity: { providerKind: "streamerbot" as const, sourceKey: trigger.sourceKey, eventType: trigger.eventType },
+      summary: trigger.summary,
+      userName
+    }];
+  });
 }

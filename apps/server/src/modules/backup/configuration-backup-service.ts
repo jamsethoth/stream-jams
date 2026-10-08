@@ -701,7 +701,8 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   // Schemas 33 and 34 add only runtime event bus tables, which backups never contain. Schema 35 only
   // relaxes the active event-source index, which every older archive already satisfies.
   // Schema 36 converts Screen Effect bindings and timer rules to trigger selectors; older rows are upgraded.
-  if (currentSchemaVersion === 36) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 35;
+  // Schema 37 adds the external alert identity column; older alert rules are all canonical.
+  if (currentSchemaVersion === 37) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 36;
   if (currentSchemaVersion === 28) return [19, 20, 21, 22, 23, 24, 25, 26, 27].includes(archiveSchemaVersion);
   return false;
 }
@@ -749,6 +750,9 @@ function upgradeLegacyConfiguration(
         timer_definitions: tables.timer_definitions.map(row => ({ ...row, event_rules_json: upgradeLegacyTimerEventRules(row.event_rules_json) }))
       })
     };
+  }
+  if (schemaVersion < 37 && tables.alert_rules !== undefined) {
+    tables = { ...tables, alert_rules: tables.alert_rules.map(row => ({ ...row, external_identity_json: null })) };
   }
   return tables === configuration.tables ? configuration : { ...configuration, tables };
 }

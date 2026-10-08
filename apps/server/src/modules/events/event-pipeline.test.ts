@@ -5,6 +5,7 @@ import {
   DefaultPlaybackDedupeService,
   DefaultPlaybackQueue,
   type AlertMatchLogRecord,
+  type AlertSourceEvent,
   type AlertRule,
   type AlertVariant,
   type BusEvent,
@@ -27,7 +28,7 @@ describe("EventPipeline", () => {
     ]);
   });
 
-  it("delivers external bus events to Screen Effects and Timers but not Alerts", async () => {
+  it("delivers external bus events to Alerts as allowlisted external alert events, Screen Effects and Timers", async () => {
     const diagnostics = new RecordingDiagnosticsRepository();
     const playback = new RecordingPlaybackCoordinator(queueResult(createFollowEvent()));
     const timerEvents: BusEvent[] = [];
@@ -46,7 +47,8 @@ describe("EventPipeline", () => {
       providerId: "provider-streamerbot",
       sourceKey: "General",
       eventType: "Custom",
-      summary: "Custom"
+      summary: "Custom",
+      userName: "Viewer"
     };
     const external: BusEvent = {
       kind: "external", sequence: 1, busId: "bus-1", eventId: trigger.eventId, sourceKind: "streamerbot",
@@ -56,9 +58,22 @@ describe("EventPipeline", () => {
     for (const consumer of pipeline.consumers()) await consumer.handle(external);
 
     expect(effectEvents).toEqual([external]);
-    expect(playback.events).toEqual([]);
+    expect(playback.events).toEqual([{
+      id: "external:streamerbot:custom-1",
+      type: "external_event",
+      providerId: "streamerbot",
+      ingestProvider: "streamerbot",
+      occurredAt: "2026-05-30T12:00:00.000Z",
+      actor: { id: null, displayName: "Viewer" },
+      message: null,
+      metadata: {},
+      amount: null,
+      identity: { providerKind: "streamerbot", sourceKey: "General", eventType: "Custom" },
+      summary: "Custom",
+      userName: "Viewer"
+    }]);
     expect(timerEvents).toEqual([external]);
-    expect(diagnostics.eventLogs).toEqual([]);
+    expect(diagnostics.eventLogs.map((log) => log.status)).toEqual(["received", "processed"]);
   });
 
 
@@ -221,9 +236,13 @@ describe("EventPipeline", () => {
 
     await deliver(pipeline, createFollowEvent(), triggers);
 
-    expect(playback.events).toEqual([createFollowEvent()]);
+    // An explicitly subscribed Streamer.bot identity on a canonical event also reaches external alert rules.
+    expect(playback.events.map((event) => [event.type, event.id])).toEqual([
+      ["follow", "event-follow"],
+      ["external_event", "external:event-follow"]
+    ]);
     expect(effectEvents).toEqual([busEventFor(createFollowEvent(), triggers)]);
-    expect(diagnostics.eventLogs.map((entry) => entry.status)).toEqual(["received", "processed"]);
+    expect(diagnostics.eventLogs.map((entry) => entry.status)).toEqual(["received", "processed", "received", "processed"]);
   });
 
   it("keeps Alert processing successful when Screen Effects rejects a batch", async () => {
@@ -254,10 +273,10 @@ describe("EventPipeline", () => {
       summary: "Follow mirror"
     }])).resolves.toBeUndefined();
 
-    expect(playback.events).toHaveLength(1);
+    expect(playback.events).toHaveLength(2);
     expect(errors.map((error) => error.message)).toEqual(["Effect queue unavailable"]);
     expect(failedEvents.map((event) => event.eventId)).toEqual(["event-follow"]);
-    expect(diagnostics.eventLogs.map((entry) => entry.status)).toEqual(["received", "processed"]);
+    expect(diagnostics.eventLogs.map((entry) => entry.status)).toEqual(["received", "processed", "received", "processed"]);
   });
 });
 
@@ -350,11 +369,11 @@ class RecordingAlertService {
 }
 
 class RecordingPlaybackCoordinator {
-  readonly events: NormalizedStreamEvent[] = [];
+  readonly events: AlertSourceEvent[] = [];
 
   constructor(readonly result: PlaybackEnqueueResult) {}
 
-  async enqueueEvent(event: NormalizedStreamEvent): Promise<PlaybackEnqueueResult> {
+  async enqueueEvent(event: AlertSourceEvent): Promise<PlaybackEnqueueResult> {
     this.events.push(event);
     return this.result;
   }

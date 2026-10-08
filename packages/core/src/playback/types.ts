@@ -1,4 +1,4 @@
-import type { NormalizedStreamEvent } from "../events/types.js";
+import type { AlertSourceEvent } from "../events/types.js";
 import type { ResolvedAlertAudio } from "../audio/types.js";
 import type { OverlayInstruction } from "../overlays/types.js";
 
@@ -14,7 +14,7 @@ export interface ResolvedAlert {
 
 export interface PlaybackQueueItem {
   readonly id: string;
-  readonly sourceEvent: NormalizedStreamEvent;
+  readonly sourceEvent: AlertSourceEvent;
   readonly alerts: readonly ResolvedAlert[];
   readonly audio: readonly ResolvedAlertAudio[];
   readonly priority: number;

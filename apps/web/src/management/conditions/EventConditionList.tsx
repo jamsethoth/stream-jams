@@ -6,7 +6,7 @@ import {
   type AlertConditionFieldDefinition,
   type AlertEditorDocument,
   type ScalarAlertConditionOperator,
-  type StreamEventType
+  type AlertEventType
 } from "@stream-jams/core";
 import { useEffect, useRef, useState } from "react";
 import "./event-condition-list.css";
@@ -21,7 +21,7 @@ const noHiddenConditionFields: readonly string[] = [];
 /** Edits typed canonical-event conditions; range drafts that fail validation are reported through onDraftError. */
 export function EventConditionList({ conditions, eventType, heading, hiddenFields = noHiddenConditionFields, onChange, onDraftError }: {
   readonly conditions: readonly EditorCondition[];
-  readonly eventType: StreamEventType;
+  readonly eventType: AlertEventType;
   readonly heading: string;
   readonly hiddenFields?: readonly string[] | undefined;
   readonly onChange: (conditions: readonly EditorCondition[]) => void;

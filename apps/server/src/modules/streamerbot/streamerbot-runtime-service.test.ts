@@ -192,7 +192,8 @@ describe("StreamerBotRuntimeService", () => {
       providerId: "provider-streamerbot",
       sourceKey: "OBS",
       eventType: "SceneChanged",
-      summary: "Live"
+      summary: "Live",
+      userName: ""
     }]]);
     expect(JSON.stringify(batches)).not.toContain("not-trusted");
     expect(diagnostics).toContainEqual(expect.objectContaining({

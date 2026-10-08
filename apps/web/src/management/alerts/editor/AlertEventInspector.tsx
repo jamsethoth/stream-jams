@@ -112,14 +112,21 @@ export function AlertEventInspector(props: AlertEventInspectorProps) {
             {...(props.sampleRewardId === undefined ? {} : { sampleRewardId: props.sampleRewardId })}
           />
         )}
-        <EventConditionList
-          conditions={props.document.conditions}
-          eventType={props.document.eventType}
-          heading="Rule conditions"
-          hiddenFields={rewardSelection === null ? noHiddenConditionFields : channelPointRewardField}
-          onChange={(conditions) => props.onChange((document) => ({ ...document, conditions: [...conditions] }))}
-          onDraftError={setRuleDraftError}
-        />
+        {props.document.externalIdentity === undefined ? (
+          <EventConditionList
+            conditions={props.document.conditions}
+            eventType={props.document.eventType}
+            heading="Rule conditions"
+            hiddenFields={rewardSelection === null ? noHiddenConditionFields : channelPointRewardField}
+            onChange={(conditions) => props.onChange((document) => ({ ...document, conditions: [...conditions] }))}
+            onDraftError={setRuleDraftError}
+          />
+        ) : (
+          <div className="alert-editor-inspector__external-identity">
+            <strong>Streamer.bot {props.document.externalIdentity.sourceKey} · {props.document.externalIdentity.eventType}</strong>
+            <p>This alert plays for that exact event. External events have no conditions, and only {"{summary}"}, {"{userName}"} and {"{eventType}"} reach the alert text.</p>
+          </div>
+        )}
         <TextInput label="Cooldown (seconds)" min="0" onChange={(event) => { const cooldownSeconds = Number(event.currentTarget.value); props.onChange((document) => ({ ...document, cooldownSeconds })); }} type="number" value={props.document.cooldownSeconds} />
         <TextInput label="Rule priority" onChange={(event) => { const rulePriority = Number(event.currentTarget.value); props.onChange((document) => ({ ...document, rulePriority })); }} type="number" value={props.document.rulePriority} />
       </fieldset>
@@ -137,14 +144,16 @@ export function AlertEventInspector(props: AlertEventInspectorProps) {
       ) : (
         <fieldset className="alert-editor-inspector__impact">
           <legend>Affects this variation only</legend>
-          <EventConditionList
-            conditions={props.document.variantConditions}
-            eventType={props.document.eventType}
-            heading="Variation conditions"
-            hiddenFields={noHiddenConditionFields}
-            onChange={(variantConditions) => props.onChange((document) => ({ ...document, variantConditions: [...variantConditions] }))}
-            onDraftError={setVariationDraftError}
-          />
+          {props.document.externalIdentity === undefined ? (
+            <EventConditionList
+              conditions={props.document.variantConditions}
+              eventType={props.document.eventType}
+              heading="Variation conditions"
+              hiddenFields={noHiddenConditionFields}
+              onChange={(variantConditions) => props.onChange((document) => ({ ...document, variantConditions: [...variantConditions] }))}
+              onDraftError={setVariationDraftError}
+            />
+          ) : null}
           {relativeChanceControl}
         </fieldset>
       )}

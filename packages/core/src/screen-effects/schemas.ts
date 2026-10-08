@@ -53,7 +53,9 @@ export const effectTriggerSchema = z.discriminatedUnion("kind", [
     providerId: storageSafeIdSchema,
     sourceKey: boundedIdentityTextSchema,
     eventType: boundedIdentityTextSchema,
-    summary: triggerSummarySchema
+    summary: triggerSummarySchema,
+    /** Sanitized payload user name, empty when absent; journaled triggers from before it existed omit it. */
+    userName: z.string().max(100).optional()
   }).strict(),
   z.object({
     kind: z.literal("canonical-event"),

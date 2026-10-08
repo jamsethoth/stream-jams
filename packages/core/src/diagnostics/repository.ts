@@ -1,4 +1,4 @@
-import type { NormalizedStreamEvent } from "../events/types.js";
+import type { AlertSourceEvent } from "../events/types.js";
 import type { ProcessingId } from "./logging.js";
 
 export type EventLogStatus = "received" | "processed" | "failed";
@@ -6,7 +6,7 @@ export type PlaybackLogStatus = "queued" | "playing" | "completed" | "skipped" |
 
 export interface EventLogRecord {
   readonly id: string;
-  readonly event: NormalizedStreamEvent;
+  readonly event: AlertSourceEvent;
   readonly receivedAt: string;
   readonly status: EventLogStatus;
   readonly correlationId: string;

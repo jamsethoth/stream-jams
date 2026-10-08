@@ -1,9 +1,9 @@
-import type { NormalizedStreamEvent } from "../events/types.js";
+import type { AlertSourceEvent } from "../events/types.js";
 import type { ResolvedAlertAudio } from "../audio/types.js";
 import type { PlaybackQueueItem, PlaybackQueueSnapshot, PlaybackSafetyState, ResolvedAlert } from "./types.js";
 
 export interface EnqueuePlaybackItemInput {
-  readonly sourceEvent: NormalizedStreamEvent;
+  readonly sourceEvent: AlertSourceEvent;
   readonly alerts: readonly ResolvedAlert[];
   readonly audio?: readonly ResolvedAlertAudio[];
   readonly priority?: number;
