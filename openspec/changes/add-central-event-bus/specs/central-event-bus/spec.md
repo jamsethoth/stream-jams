@@ -57,6 +57,26 @@ A consumer SHALL be able to commit its cursor inside its own SQLite transaction 
 - **THEN** neither its state change nor its cursor advance is persisted
 - **AND** the event is delivered again after restart and applied once
 
+### Requirement: External Payloads Are Kept Only For Declaring Consumers
+The bus SHALL journal an external event's payload only when a registered consumer declared that event's exact identity, and only when the payload is a JSON object within 16 KiB. Declaring an identity SHALL subscribe the Streamer.bot source to it while Streamer.bot advertises it. The declaring consumer SHALL validate the payload with its own schema, and payloads SHALL NOT appear in diagnostics or logs.
+
+#### Scenario: Video shoutout broadcast
+- **WHEN** a Streamer.bot General/Custom broadcast carries the video shoutout marker
+- **THEN** it is published as an external bus event with its payload
+- **AND** the Video shoutout consumer validates and applies it
+- **AND** Screen Effects and alerts that select General/Custom also receive it
+
+#### Scenario: Undeclared identity
+- **WHEN** an external event arrives whose identity no consumer declared
+- **THEN** it is published without its payload
+
+### Requirement: Operator Queue Shows The Delivering Source
+Each Operator queue item SHALL name the source kind that delivered its event (Twitch or Streamer.bot). Manual tests SHALL show no source, and a replayed item SHALL keep its original source.
+
+#### Scenario: Effect triggered through Streamer.bot
+- **WHEN** a Streamer.bot event admits a Screen Effect
+- **THEN** its Operator queue item says it came via Streamer.bot
+
 ### Requirement: Same-Source Redelivery Is A Duplicate
 The system SHALL reject an event with the same source kind and event ID as one accepted in the last 10 minutes, including across restart.
 

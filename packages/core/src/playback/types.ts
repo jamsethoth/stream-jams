@@ -1,4 +1,4 @@
-import type { AlertSourceEvent } from "../events/types.js";
+import type { AlertSourceEvent, IngestProviderId } from "../events/types.js";
 import type { ResolvedAlertAudio } from "../audio/types.js";
 import type { OverlayInstruction } from "../overlays/types.js";
 
@@ -18,6 +18,8 @@ export interface PlaybackQueueItem {
   readonly alerts: readonly ResolvedAlert[];
   readonly audio: readonly ResolvedAlertAudio[];
   readonly priority: number;
+  /** Source kind that delivered the live event; null for editor tests. */
+  readonly deliveredBy: IngestProviderId | null;
   readonly sequence: number;
   readonly status: "queued" | "playing" | "completed" | "skipped";
   readonly enqueuedAt: string;

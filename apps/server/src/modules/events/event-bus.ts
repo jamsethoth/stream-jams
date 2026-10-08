@@ -1,9 +1,12 @@
 import { randomBytes } from "node:crypto";
 import {
+  externalEventPayloadSchema,
   twitchCorrelationKey,
   type BusEvent,
   type BusEventInput,
   type EffectTrigger,
+  type EventBusConsumerRegistration,
+  type ExternalEventIdentity,
   type IngestProviderId,
   type NormalizedStreamEvent
 } from "@stream-jams/core";
@@ -11,11 +14,17 @@ import type { EventSink, EventSinkOutcome } from "./event-ingestion-service.js";
 import type { EventBusJournalRepository } from "./sqlite-event-bus-journal-repository.js";
 
 /** A module that receives every bus event in journal order through its own persisted cursor. */
-export interface EventBusConsumer {
-  readonly id: string;
-  /** Total delivery attempts before the event is recorded as failed and skipped. Defaults to 3. */
-  readonly maxAttempts?: number | undefined;
-  handle(event: BusEvent): Promise<void>;
+export type EventBusConsumer = EventBusConsumerRegistration;
+
+/**
+ * True when an external trigger has the identity. Source keys compare case-insensitively, as Streamer.bot
+ * source names did before the bus; event types compare exactly.
+ */
+export function externalIdentityMatchesTrigger(identity: ExternalEventIdentity, trigger: EffectTrigger): boolean {
+  return trigger.kind === "streamerbot-event"
+    && identity.providerKind === "streamerbot"
+    && trigger.sourceKey.toLowerCase() === identity.sourceKey.toLowerCase()
+    && trigger.eventType === identity.eventType;
 }
 
 export interface EventBusDeliveryFailureReport {
@@ -72,6 +81,7 @@ export class EventBus implements EventSink {
   readonly #retentionRows: number;
   readonly #onReplaySkipped: EventBusOptions["onReplaySkipped"];
   readonly #onWorkerError: EventBusOptions["onWorkerError"];
+  readonly #externalPayloads: readonly ExternalEventIdentity[];
   #started = false;
   #lastPrunedAtMs = Number.NEGATIVE_INFINITY;
 
@@ -88,6 +98,7 @@ export class EventBus implements EventSink {
     this.#retentionRows = options.retentionRows ?? defaultRetentionRows;
     this.#onReplaySkipped = options.onReplaySkipped;
     this.#onWorkerError = options.onWorkerError;
+    this.#externalPayloads = uniqueIdentities(options.consumers.flatMap((consumer) => consumer.externalPayloads ?? []));
     const shared: WorkerDependencies = {
       journal: options.journal,
       now: this.#now,
@@ -132,10 +143,18 @@ export class EventBus implements EventSink {
     });
   }
 
-  async handleTriggers(triggers: readonly EffectTrigger[]): Promise<EventSinkOutcome> {
+  /** External identities whose payloads registered consumers need; sources subscribe to them. */
+  externalPayloadIdentities(): readonly ExternalEventIdentity[] {
+    return this.#externalPayloads;
+  }
+
+  async handleTriggers(triggers: readonly EffectTrigger[], payload?: unknown): Promise<EventSinkOutcome> {
     const eventId = triggers[0]?.eventId;
     if (eventId === undefined) throw new Error("External bus events require at least one trigger");
+    const wanted = this.#externalPayloads.some((identity) => triggers.some((trigger) => externalIdentityMatchesTrigger(identity, trigger)));
+    const parsedPayload = wanted && payload !== undefined ? externalEventPayloadSchema.safeParse(payload) : null;
     return this.publish({
+      ...(parsedPayload?.success === true ? { payload: parsedPayload.data } : {}),
       kind: "external",
       eventId,
       sourceKind: "streamerbot",
@@ -242,11 +261,16 @@ class ConsumerWorker {
       await this.#fail(sequence, null, 1, new Error("Journaled event failed validation"));
       return;
     }
+    const context = {
+      checkpoint: () => this.#dependencies.journal.setCursor(this.#consumer.id, sequence, this.#dependencies.now().toISOString())
+    };
     for (let attempt = 1; ; attempt += 1) {
       try {
-        await this.#consumer.handle(event);
+        await this.#consumer.handle(event, context);
         return;
       } catch (error) {
+        // A committed checkpoint means the consumer already applied this event; never apply it twice.
+        if ((this.#dependencies.journal.getCursor(this.#consumer.id) ?? 0) >= sequence) return;
         if (attempt >= this.#maxAttempts) {
           await this.#fail(sequence, event, attempt, error);
           return;
@@ -275,6 +299,14 @@ class ConsumerWorker {
       // The cursor still advances past the failed event.
     }
   }
+}
+
+function uniqueIdentities(identities: readonly ExternalEventIdentity[]): readonly ExternalEventIdentity[] {
+  const seen = new Map<string, ExternalEventIdentity>();
+  for (const identity of identities) {
+    seen.set(JSON.stringify([identity.providerKind, identity.sourceKey.toLowerCase(), identity.eventType]), identity);
+  }
+  return [...seen.values()];
 }
 
 function generateBusId(): string {

@@ -1857,6 +1857,7 @@ function createSequentialPlaybackQueue(itemCount: number): PlaybackQueue {
       ? {
           id: `queue-item-${index}`,
           sourceEvent: event,
+          deliveredBy: event.ingestProvider,
           alerts: [createResolvedAlert(event.id, `resolved-${index}`, `instruction-${index}`)],
           audio: [],
           priority: 0,

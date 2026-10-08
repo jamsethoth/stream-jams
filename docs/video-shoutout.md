@@ -10,7 +10,9 @@ A management page for these outputs is not built yet (BL-057 in the [backlog](ba
 
 ## Streamer.bot event
 
-Stream Jams subscribes to Streamer.bot's `General` / `Custom` WebSocket event when the active Streamer.bot connection advertises it. Send a shoutout with `CPH.WebsocketBroadcastJson` and the marker `"source": "StreamJams", "type": "VideoShoutout"`. Other custom broadcasts are ignored, and follows, raids, subscriptions, cheers, and reward redemptions never start a shoutout.
+Stream Jams subscribes to Streamer.bot's `General` / `Custom` WebSocket event when the active Streamer.bot connection advertises it. Send a shoutout with `CPH.WebsocketBroadcastJson` and the marker `"source": "StreamJams", "type": "VideoShoutout"`. Other custom broadcasts never start a shoutout, and neither do follows, raids, subscriptions, cheers, or reward redemptions.
+
+`General` / `Custom` broadcasts, shoutouts included, reach the central event bus like any other Streamer.bot event. A Screen Effect or Streamer.bot event alert that selects `General` / `Custom` therefore also plays for shoutout broadcasts.
 
 | Field | Required | Rule |
 | --- | --- | --- |

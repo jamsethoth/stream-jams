@@ -36,19 +36,29 @@ test("authors a Streamer.bot event alert that plays only allowlisted, moderated 
     await page.getByRole("button", { name: "Add alert", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Add alert" });
     await dialog.getByLabel("Event type").selectOption("external_event");
-    await dialog.getByLabel("Streamer.bot source").fill("General");
-    await dialog.getByLabel("Streamer.bot event type").fill("Custom");
-    await dialog.getByLabel("Alert name").fill("Custom event");
+    await dialog.getByLabel("Streamer.bot source").fill("OBS");
+    await dialog.getByLabel("Streamer.bot event type").fill("SceneChanged");
+    await dialog.getByLabel("Alert name").fill("Scene change");
     await dialog.getByRole("button", { name: "Create alert" }).click();
-    const row = page.getByRole("row", { name: /Custom event/u });
-    await expect(row.getByText("Streamer.bot General · Custom")).toBeVisible();
+    const row = page.getByRole("row", { name: /Scene change/u });
+    await expect(row.getByText("Streamer.bot OBS · SceneChanged")).toBeVisible();
     // No Streamer.bot source subscribes to the identity, so management names the missing setup.
     await expect(row.getByRole("link", { name: "Open Event sources" })).toHaveAttribute("href", "/manage/event-sources");
+    // Video shoutouts register General/Custom with the bus, so an alert for it needs no setup.
+    await page.getByRole("button", { name: "Add alert", exact: true }).click();
+    await dialog.getByLabel("Event type").selectOption("external_event");
+    await dialog.getByLabel("Streamer.bot source").fill("General");
+    await dialog.getByLabel("Streamer.bot event type").fill("Custom");
+    await dialog.getByLabel("Alert name").fill("Custom broadcast");
+    await dialog.getByRole("button", { name: "Create alert" }).click();
+    const customRow = page.getByRole("row", { name: /Custom broadcast/u });
+    await expect(customRow.getByText("Streamer.bot General · Custom")).toBeVisible();
+    await expect(customRow.getByRole("link", { name: "Open Event sources" })).toHaveCount(0);
 
     const sets = await management("/management/alert-sets", undefined, "GET") as { id: string; active: boolean }[];
     const set = await management(`/management/alert-sets/${sets[0]!.id}`, undefined, "GET") as { overview: { id: string }; inventory: { id: string; eventType: string; externalIdentity?: unknown }[] };
-    const alert = set.inventory.find(candidate => candidate.eventType === "external_event")!;
-    expect(alert.externalIdentity).toEqual({ providerKind: "streamerbot", sourceKey: "General", eventType: "Custom" });
+    const alert = set.inventory.find(candidate => (candidate.externalIdentity as { sourceKey?: string } | undefined)?.sourceKey === "OBS")!;
+    expect(alert.externalIdentity).toEqual({ providerKind: "streamerbot", sourceKey: "OBS", eventType: "SceneChanged" });
     const document = await management(`/management/alerts/${alert.id}/editor`, undefined, "GET") as Record<string, unknown> & { targetProfiles: { id: string }[]; layers: unknown[] };
     const animation = { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" };
     await management(`/management/alerts/${alert.id}/editor`, {
@@ -73,16 +83,16 @@ test("authors a Streamer.bot event alert that plays only allowlisted, moderated 
     await expect(overlay.getByTestId("overlay-root")).toBeVisible();
     await registered;
 
-    const trigger = { kind: "streamerbot-event", occurredAt: new Date().toISOString(), providerId: "provider-streamerbot", sourceKey: "General", summary: "badword hello", userName: "Viewer" };
-    expect((await runtime.composition.eventIngestionService.ingestEffectTriggers("sb-other", [{ ...trigger, eventId: "sb-other", eventType: "Other" }])).status).toBe("accepted");
-    expect((await runtime.composition.eventIngestionService.ingestEffectTriggers("sb-custom", [{ ...trigger, eventId: "sb-custom", eventType: "Custom" }])).status).toBe("accepted");
+    const trigger = { kind: "streamerbot-event", occurredAt: new Date().toISOString(), providerId: "provider-streamerbot", sourceKey: "OBS", summary: "badword hello", userName: "Viewer" };
+    expect((await runtime.composition.eventIngestionService.ingestEffectTriggers("sb-other", [{ ...trigger, eventId: "sb-other", eventType: "StreamingStarted" }])).status).toBe("accepted");
+    expect((await runtime.composition.eventIngestionService.ingestEffectTriggers("sb-scene", [{ ...trigger, eventId: "sb-scene", eventType: "SceneChanged" }])).status).toBe("accepted");
 
     await expect(overlay.getByText("Viewer: [moderated] hello []")).toBeVisible();
     const snapshot = runtime.composition.playbackCoordinator.getSnapshot();
     const items = [...(snapshot.current === null ? [] : [snapshot.current]), ...snapshot.queued, ...snapshot.recent];
     expect(items.map(item => item.sourceEvent)).toEqual([expect.objectContaining({
       type: "external_event",
-      identity: { providerKind: "streamerbot", sourceKey: "General", eventType: "Custom" },
+      identity: { providerKind: "streamerbot", sourceKey: "OBS", eventType: "SceneChanged" },
       summary: "badword hello",
       userName: "Viewer"
     })]);

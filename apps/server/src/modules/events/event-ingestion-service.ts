@@ -53,7 +53,8 @@ export type EventSinkOutcome = { readonly status: "accepted" | "duplicate" | "me
 
 export interface EventSink {
   handleEvent(event: NormalizedStreamEvent, triggers: readonly EffectTrigger[]): void | EventSinkOutcome | Promise<void | EventSinkOutcome>;
-  handleTriggers?(triggers: readonly EffectTrigger[]): void | EventSinkOutcome | Promise<void | EventSinkOutcome>;
+  /** `payload` is the untrusted external payload; the sink keeps it only for identities a consumer declared. */
+  handleTriggers?(triggers: readonly EffectTrigger[], payload?: unknown): void | EventSinkOutcome | Promise<void | EventSinkOutcome>;
 }
 
 export interface EventIngestionServiceOptions {
@@ -105,7 +106,7 @@ export class EventIngestionService {
     }, effectTriggers);
   }
 
-  async ingestEffectTriggers(eventId: string, triggers: unknown): Promise<EffectTriggerIngestionResult> {
+  async ingestEffectTriggers(eventId: string, triggers: unknown, payload?: unknown): Promise<EffectTriggerIngestionResult> {
     const parsed = effectTriggerSchema.array().min(1).safeParse(triggers);
     if (!parsed.success || eventId.trim().length === 0 || parsed.data.some((trigger) => trigger.eventId !== eventId)) {
       return this.#reject({
@@ -130,7 +131,7 @@ export class EventIngestionService {
       if (this.#sink.handleTriggers === undefined) {
         throw new Error("Screen Effects trigger sink is unavailable");
       }
-      const outcome = await this.#sink.handleTriggers(parsed.data);
+      const outcome = await this.#sink.handleTriggers(parsed.data, payload);
       this.#rememberMessageId(eventId);
       if (outcome?.status === "duplicate" || outcome?.status === "merged") {
         return this.#markDuplicate(eventId, "Duplicate Streamer.bot event ignored");

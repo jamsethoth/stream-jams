@@ -129,7 +129,7 @@ import { saveValidatedMusicConfig } from "../modules/music/music-config-save.js"
 import { MusicArtworkService, type MusicArtworkServiceOptions } from "../modules/music/music-artwork-service.js";
 import { MusicOutputRuntime } from "../modules/music/music-output-runtime.js";
 import { VideoShoutoutService } from "../modules/video-shoutout/video-shoutout-service.js";
-import { createStreamerBotVideoShoutoutIntake } from "../modules/video-shoutout/streamerbot-video-shoutout-intake.js";
+import { createVideoShoutoutBusConsumer } from "../modules/video-shoutout/video-shoutout-bus-consumer.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
 import { evaluateProviderActivationImpact, findOverlappingTwitchSources } from "../modules/providers/provider-activation-impact.js";
 import { SqliteProviderRegistrationRepository } from "../modules/providers/sqlite-provider-registration-repository.js";
@@ -883,7 +883,17 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const generateEventSourceReferenceId = generateRuntimeReferenceId;
   const eventBus = new EventBus({
     journal: new SqliteEventBusJournalRepository(database.connection),
-    consumers: eventPipeline.consumers(),
+    consumers: [
+      ...eventPipeline.consumers(),
+      createVideoShoutoutBusConsumer({
+        service: videoShoutoutService,
+        isModuleEnabled: async () => (await overlayModuleConfigService.getModuleConfig("video-shoutout")).enabled,
+        onDiagnostic: async (entry) => {
+          const context = { module: "video-shoutout", source: "video-shoutout.streamerbot", correlationId: generateRuntimeReferenceId(), processingId: null, metadata: { ...entry.metadata } };
+          await (entry.level === "warn" ? runtimeLogger.warn(entry.message, context) : runtimeLogger.info(entry.message, context));
+        }
+      })
+    ],
     generateReferenceId: generateEventSourceReferenceId,
     resolveSourceRegistrationId: async (kind) => (await providerRegistrationRepository.findActiveByKind(kind))?.provider.id ?? null,
     now,
@@ -932,18 +942,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     ingestionService: {
       ingestNormalizedEvent: (event, effectTriggers) =>
         maintenanceGate.runIntake(() => eventIngestionService.ingestNormalizedEvent(event, effectTriggers)),
-      ingestEffectTriggers: (eventId, triggers) =>
-        maintenanceGate.runIntake(() => eventIngestionService.ingestEffectTriggers(eventId, triggers))
+      ingestEffectTriggers: (eventId, triggers, payload) =>
+        maintenanceGate.runIntake(() => eventIngestionService.ingestEffectTriggers(eventId, triggers, payload))
     },
     generateReferenceId: generateEventSourceReferenceId,
-    customEventHandler: createStreamerBotVideoShoutoutIntake({
-      service: videoShoutoutService,
-      isModuleEnabled: async () => (await overlayModuleConfigService.getModuleConfig("video-shoutout")).enabled,
-      onDiagnostic: async (entry) => {
-        const context = { module: "video-shoutout", source: "video-shoutout.streamerbot", correlationId: generateEventSourceReferenceId(), processingId: null, metadata: { ...entry.metadata } };
-        await (entry.level === "warn" ? runtimeLogger.warn(entry.message, context) : runtimeLogger.info(entry.message, context));
-      }
-    }),
+    consumerExternalEvents: eventBus.externalPayloadIdentities(),
     onDiagnostic: (entry) => writeStreamerBotRuntimeDiagnostic(runtimeLogger, entry),
     now
   });
@@ -1166,6 +1169,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     now
   });
   async function isStreamerBotSelectionConfigured(sourceKey: string, eventType: string): Promise<boolean> {
+    // Identities a bus consumer registered for are subscribed whenever Streamer.bot advertises them.
+    if (eventBus.externalPayloadIdentities().some((identity) =>
+      identity.sourceKey.toLowerCase() === sourceKey.toLowerCase() && identity.eventType === eventType)) return true;
     try {
       const providers = (await providerManagementService.listProviders("event-source"))
         .filter((provider) => provider.kind === "streamerbot")

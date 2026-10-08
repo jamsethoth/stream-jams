@@ -12,6 +12,7 @@ Use this map to distinguish current behavior, pending work, and historical evide
 | What Music behavior is required? | [Canonical Music source](../openspec/specs/music-source-providers/spec.md) and [widget/output](../openspec/specs/music-widget-overlay/spec.md) capabilities; [scenario trace](verification/music-widget-scenarios.md) records automated and physical evidence |
 | How do I send Streamer.bot video shoutouts? | [Video shoutouts](video-shoutout.md) |
 | How do native integrations pair and control timers/queues? | [Local automation API v1](automation-api.md) |
+| How does a module consume stream events? | [Event bus consumers](engineering/event-bus-consumers.md) |
 
 | What product boundaries are intentional? | [Product plan](product-plan.md); its MVP sections describe the first delivery boundary, and later sections describe approved additions |
 | What is still pending? | [Canonical backlog](backlog.md), including links to planned OpenSpec changes |

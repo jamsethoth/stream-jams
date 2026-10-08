@@ -1,6 +1,6 @@
-import type { BusEvent, EffectTrigger, NormalizedStreamEvent } from "@stream-jams/core";
+import { externalEventPayloadMaxBytes, type BusEvent, type EffectTrigger, type NormalizedStreamEvent } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
-import { createInMemoryStreamJamsDatabase, type StreamJamsDatabase } from "../db/database.js";
+import { createInMemoryStreamJamsDatabase, runInTransaction, type StreamJamsDatabase } from "../db/database.js";
 import { EventBus, type EventBusConsumer, type EventBusDeliveryFailureReport, type EventBusOptions } from "./event-bus.js";
 import { EventIngestionService } from "./event-ingestion-service.js";
 import { SqliteEventBusJournalRepository } from "./sqlite-event-bus-journal-repository.js";
@@ -49,6 +49,58 @@ describe("EventBus", () => {
     expect(effects.events).toEqual([expect.objectContaining({
       kind: "external", eventId: "streamerbot:custom-1", sourceKind: "streamerbot", effectTriggers: [customTrigger("streamerbot:custom-1")]
     })]);
+  });
+
+  it("journals an external payload only for identities a consumer registered, within the size limit", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const video = { ...recordingConsumer("video"), externalPayloads: [{ providerKind: "streamerbot", sourceKey: "general", eventType: "Custom" }] as const };
+    const bus = createBus(database, [video]);
+    const payload = { source: "StreamJams", nested: { value: 1 } };
+
+    await bus.handleTriggers([customTrigger("wanted")], payload);
+    await bus.handleTriggers([{ ...customTrigger("other-type"), eventType: "Other" }], payload);
+    await bus.handleTriggers([customTrigger("not-object")], ["array"]);
+    await bus.handleTriggers([customTrigger("oversized")], { text: "x".repeat(externalEventPayloadMaxBytes) });
+    await bus.handleTriggers([customTrigger("absent")]);
+
+    expect(bus.externalPayloadIdentities()).toEqual(video.externalPayloads);
+    expect(video.events.map((event) => [event.eventId, event.kind === "external" ? event.payload : "canonical"])).toEqual([
+      ["wanted", payload], ["other-type", undefined], ["not-object", undefined], ["oversized", undefined], ["absent", undefined]
+    ]);
+    // The payload survives the journal round trip that later deliveries read.
+    const [stored] = new SqliteEventBusJournalRepository(database.connection).readAfter(0, 1);
+    expect(stored?.event).toMatchObject({ eventId: "wanted", payload });
+    expect(database.connection.prepare("SELECT payload_json FROM event_bus_journal WHERE event_id = 'other-type'").get())
+      .toEqual({ payload_json: JSON.stringify({ effectTriggers: [{ ...customTrigger("other-type"), eventType: "Other" }] }) });
+  });
+
+  it("lets a consumer checkpoint inside its own transaction so each event applies exactly once", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    database.connection.exec("CREATE TEMP TABLE applied (event_id TEXT NOT NULL)");
+    const failures: EventBusDeliveryFailureReport[] = [];
+    let call = 0;
+    const consumer: EventBusConsumer = {
+      id: "data",
+      async handle(event, { checkpoint }) {
+        call += 1;
+        runInTransaction(database.connection, () => {
+          database.connection.prepare("INSERT INTO applied VALUES (?)").run(event.eventId);
+          checkpoint();
+          // First call: fail inside the transaction, so the state change and the checkpoint roll back together.
+          if (call === 1) throw new Error("Interrupted before commit");
+        });
+        // Second call: the transaction committed, then the handler failed; the event must not be applied again.
+        if (call === 2) throw new Error("Failed after commit");
+      }
+    };
+    const bus = createBus(database, [consumer], { onDeliveryFailure: (failure) => { failures.push(failure); }, sleep: async () => {} });
+
+    await bus.handleEvent(follow("follow-1"), []);
+
+    expect(call).toBe(2);
+    expect(database.connection.prepare("SELECT event_id FROM applied").all()).toEqual([{ event_id: "follow-1" }]);
+    expect(new SqliteEventBusJournalRepository(database.connection).getCursor("data")).toBe(1);
+    expect(failures).toEqual([]);
   });
 
   it("keeps delivering to other consumers when one consumer fails", async () => {
@@ -441,7 +493,7 @@ function follow(id: string, ingestProvider: "twitch" | "streamerbot" = "twitch")
   };
 }
 
-function customTrigger(eventId: string): EffectTrigger {
+function customTrigger(eventId: string): Extract<EffectTrigger, { readonly kind: "streamerbot-event" }> {
   return {
     kind: "streamerbot-event",
     eventId,
