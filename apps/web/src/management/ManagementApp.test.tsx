@@ -569,6 +569,7 @@ function createManagementApi(): ManagementApi {
     }),
     getStreamerBotSubscriptions: vi.fn(async (providerId) => ({
       providerId,
+      forwardTwitchEvents: true,
       available: false,
       sources: [],
       selected: [],
@@ -577,11 +578,21 @@ function createManagementApi(): ManagementApi {
     })),
     updateStreamerBotSubscriptions: vi.fn(async (providerId, input) => ({
       providerId,
+      forwardTwitchEvents: true,
       available: true,
       sources: input.externalSubscriptions,
       selected: input.externalSubscriptions,
       unavailableSelections: [],
       twitchBroadcasterId: input.twitchBroadcasterId
+    })),
+    setStreamerBotForwarding: vi.fn(async (providerId, input) => ({
+      providerId,
+      forwardTwitchEvents: input.forwardTwitchEvents,
+      available: false,
+      sources: [],
+      selected: [],
+      unavailableSelections: [],
+      twitchBroadcasterId: null
     })),
     activateProvider: vi.fn(async (providerId) => ({
       provider: { ...(eventProviders.find((provider) => provider.id === providerId) ?? eventProviders[0]!), active: true },

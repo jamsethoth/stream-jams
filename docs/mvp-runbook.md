@@ -180,6 +180,12 @@ Credential store is unavailable. Configure Windows Credential Manager, macOS Key
 
 On Linux, install and unlock a Secret Service-compatible keyring such as GNOME Keyring or KWallet through the desktop session before connecting Twitch. There is no plaintext fallback for real runtime tokens; in-memory or fake secret stores are only for automated tests.
 
+## Using Twitch and Streamer.bot together
+
+`Event sources` can keep one source of each kind in use, so direct Twitch and Streamer.bot can run together. Activating a source of the same kind replaces the one in use; other kinds keep running. When both deliver the same Twitch event, Stream Jams merges the copies so the event plays once.
+
+Streamer.bot forwards Twitch events by default. To keep direct Twitch as the only Twitch path and use Streamer.bot only for its configured external events, open the Streamer.bot source, clear `Forward Twitch events from Streamer.bot`, and select `Save forwarding`.
+
 ## Channel point reward alerts
 
 When adding a Channel point redemption alert or opening its Event inspector, Stream Jams loads the custom rewards from the linked Twitch broadcaster account. Use `Refresh rewards` to fetch the current titles, costs, and availability; loading is read-only and does not create, edit, or redeem Twitch rewards. Connection, permission, eligibility, and provider errors remain visible without clearing saved selections.

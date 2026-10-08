@@ -206,7 +206,7 @@ OBS can become readiness only if OBS WebSocket integration is added later.
 Provider activation:
 
 - Any number of providers may be registered per capability.
-- At most one provider per capability can be active in MVP.
+- At most one TTS provider and one Music source can be active in MVP. Event sources allow one active registration per provider kind (for example direct Twitch alongside Streamer.bot); activating a source of the same kind replaces the one in use.
 - If no active provider exists, successful setup sets new provider active.
 - If active provider already exists, new provider is registered inactive and user can choose `Set active`.
 - `Save provider` stores settings.

@@ -503,6 +503,7 @@ describe("createHttpManagementApi", () => {
   it("loads and updates validated Streamer.bot subscription catalogs", async () => {
     const catalog = {
       providerId: "provider-streamerbot",
+      forwardTwitchEvents: true,
       available: true,
       sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
       selected: [],
@@ -516,6 +517,11 @@ describe("createHttpManagementApi", () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (url === "/providers/provider-streamerbot/streamerbot-forwarding") {
+        expect(init?.method).toBe("PUT");
+        expect(init?.body).toBe(JSON.stringify({ forwardTwitchEvents: false }));
+        return jsonResponse({ ...catalog, forwardTwitchEvents: false });
+      }
       expect(url).toBe("/providers/provider-streamerbot/streamerbot-subscriptions");
       if (init?.method === "PUT") {
         expect(init.body).toBe(JSON.stringify(update));
@@ -530,6 +536,8 @@ describe("createHttpManagementApi", () => {
       selected: update.externalSubscriptions,
       twitchBroadcasterId: "broadcaster-1"
     });
+    await expect(api.setStreamerBotForwarding("provider-streamerbot", { forwardTwitchEvents: false }))
+      .resolves.toMatchObject({ forwardTwitchEvents: false });
   });
 
   it("loads Twitch status and runtime-validates Device Code start and poll responses", async () => {

@@ -69,6 +69,7 @@ import {
   type RegisteredProviderDetail,
   type RegisteredProviderView,
   type StreamerBotSubscriptionCatalog,
+  type StreamerBotForwardingUpdateInput,
   type StreamerBotSubscriptionUpdateInput,
   type TtsProviderSafetySettings,
   type TwitchCustomRewardCatalog
@@ -275,6 +276,10 @@ export interface ManagementApi extends MusicApi {
     providerId: string,
     input: StreamerBotSubscriptionUpdateInput
   ): Promise<StreamerBotSubscriptionCatalog>;
+  setStreamerBotForwarding(
+    providerId: string,
+    input: StreamerBotForwardingUpdateInput
+  ): Promise<StreamerBotSubscriptionCatalog>;
   activateProvider(providerId: string, confirmWarnings?: boolean): Promise<ProviderActivationResult>;
   deactivateProvider(providerId: string): Promise<RegisteredProviderView>;
   getProviderActivationImpact(providerId: string): Promise<ProviderActivationImpact>;
@@ -471,6 +476,16 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
           `/providers/${encodeURIComponent(providerId)}/streamerbot-subscriptions`,
           input,
           "Unable to update Streamer.bot subscriptions."
+        )
+      );
+    },
+
+    async setStreamerBotForwarding(providerId, input) {
+      return streamerBotSubscriptionCatalogSchema.parse(
+        await client.putJson<unknown>(
+          `/providers/${encodeURIComponent(providerId)}/streamerbot-forwarding`,
+          input,
+          "Unable to update Streamer.bot Twitch forwarding."
         )
       );
     },

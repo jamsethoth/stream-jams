@@ -176,7 +176,7 @@ It is not the final implementation spec. Update it as decisions change, then pro
   - `Event sources`: Twitch, Streamer.bot events, future event providers.
   - `TTS providers`: Speaker.bot and future TTS providers.
 - Any number of providers can be registered per capability.
-- At most one provider per capability can be active in the MVP; event sources may intentionally have none active.
+- At most one TTS provider and one Music source can be active. Event sources allow one active registration per provider kind, so direct Twitch and Streamer.bot can be in use together; event sources may intentionally have none active.
 - `Save provider` stores settings; `Activate` and `Deactivate` change runtime behavior after explicit impact confirmation.
 - Deactivating an event source stops routing its events and live runtime but preserves its registration, setup, and last validation result.
 - `Test connection` validates a provider without activating it.

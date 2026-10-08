@@ -24,6 +24,21 @@ describe("EventBus", () => {
     expect(journal.getCursor("timers")).toBe(1);
   });
 
+  it("records the registration in use for each source kind", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const alerts = recordingConsumer("alerts");
+    const registrations = { twitch: "provider-twitch", streamerbot: "provider-streamerbot" } as const;
+    const bus = createBus(database, [alerts], { resolveSourceRegistrationId: async (kind) => registrations[kind] });
+
+    await bus.handleEvent(follow("eventsub-1"), []);
+    await bus.handleEvent({ ...follow("streamerbot-1", "streamerbot"), actor: { id: "viewer-2", displayName: "Other" } }, []);
+    await bus.handleTriggers([customTrigger("streamerbot:custom-1")]);
+
+    expect(alerts.events.map((event) => [event.sourceKind, event.sourceRegistrationId])).toEqual([
+      ["twitch", "provider-twitch"], ["streamerbot", "provider-streamerbot"], ["streamerbot", "provider-streamerbot"]
+    ]);
+  });
+
   it("publishes Streamer.bot trigger-only events as external bus events", async () => {
     using database = createInMemoryStreamJamsDatabase();
     const effects = recordingConsumer("screen-effects");

@@ -34,5 +34,5 @@ test("Streamer.bot setup requires authentication choice and rejects unsafe conne
   await page.getByLabel("Endpoint", { exact: true }).fill("/");
   await testConnection.click();
   await expect(page.getByRole("heading", { name: "Review event source" })).toBeVisible();
-  expect(requests).toEqual([{ name: "Streamer.bot", kind: "streamerbot", credential: null, configuration: { protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/", allowUnauthenticatedLocalConnection: true, twitchBroadcasterId: null, externalSubscriptions: [] } }]);
+  expect(requests).toEqual([{ name: "Streamer.bot", kind: "streamerbot", credential: null, configuration: { protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/", allowUnauthenticatedLocalConnection: true, twitchBroadcasterId: null, externalSubscriptions: [], forwardTwitchEvents: true } }]);
 });

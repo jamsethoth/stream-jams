@@ -131,7 +131,7 @@ import { MusicOutputRuntime } from "../modules/music/music-output-runtime.js";
 import { VideoShoutoutService } from "../modules/video-shoutout/video-shoutout-service.js";
 import { createStreamerBotVideoShoutoutIntake } from "../modules/video-shoutout/streamerbot-video-shoutout-intake.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
-import { evaluateProviderActivationImpact } from "../modules/providers/provider-activation-impact.js";
+import { evaluateProviderActivationImpact, findOverlappingTwitchSources } from "../modules/providers/provider-activation-impact.js";
 import { SqliteProviderRegistrationRepository } from "../modules/providers/sqlite-provider-registration-repository.js";
 import type { OsCredentialAdapter } from "../modules/security/os-secret-store.js";
 import { createRedactor } from "../modules/security/redactor.js";
@@ -249,7 +249,7 @@ export interface RuntimeAppComposition {
   readonly streamerBotRuntimeService: StreamerBotRuntimeService;
   readonly eventIngestionService: EventIngestionService;
   recordDesktopDiagnostic(report: RuntimeDesktopDiagnostic): Promise<void>;
-  syncEventSourceRuntime(): Promise<void>;
+  syncEventSourceRuntime(kinds?: readonly ProviderKind[]): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -885,6 +885,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     journal: new SqliteEventBusJournalRepository(database.connection),
     consumers: eventPipeline.consumers(),
     generateReferenceId: generateEventSourceReferenceId,
+    resolveSourceRegistrationId: async (kind) => (await providerRegistrationRepository.findActiveByKind(kind))?.provider.id ?? null,
     now,
     onDeliveryFailure: (failure) => runtimeLogger.error("Event bus consumer failed", {
       module: "events",
@@ -951,8 +952,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     apiClient: options.twitchEventSubApiClient ?? new DefaultTwitchEventSubApiClient(),
     socketFactory: options.twitchEventSubSocketFactory ?? createNodeWebSocket,
     onNotification: async (message) => {
-      const activeEventSource = await providerRegistrationRepository.findActive("event-source");
-      if (activeEventSource?.provider.kind !== "twitch") {
+      if (await providerRegistrationRepository.findActiveByKind("twitch") === null) {
         return;
       }
       await maintenanceGate.runIntake(() => eventIngestionService.ingestTwitchEventSubNotification(message));
@@ -981,17 +981,18 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       await authService.validateConnectedAccount({ notifyConnectionChanged: false });
     }
   });
-  const syncEventSourceRuntime = () => trackRuntimeWork(() => syncEventSourceRuntimes({
+  const syncEventSourceRuntime = (kinds?: readonly ProviderKind[]) => trackRuntimeWork(() => syncEventSourceRuntimes({
     repository: providerRegistrationRepository,
     twitchRuntime: twitchEventSubRuntimeService,
-    streamerBotRuntime: streamerBotRuntimeService
+    streamerBotRuntime: streamerBotRuntimeService,
+    kinds
   }));
   const twitchAuthService = new TwitchOAuthService({
     apiClient: twitchApiClient,
     clientId: twitchClientId,
     generateAuthorizationId: randomUUID,
     now,
-    onConnectionChanged: syncEventSourceRuntime,
+    onConnectionChanged: () => syncEventSourceRuntime(["twitch"]),
     repository: twitchAccountRepository,
     secretStore,
     assertSecretStoreAvailable: runtimeSecretStore.assertAvailable
@@ -1096,7 +1097,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
           : target.provider.capability === "tts"
             ? activeRules.filter((rule) => rule.variants.some((variant) => variant.enabled && variant.ttsConfig !== null)).length
             : 0;
-      const current = await providerRegistrationRepository.findActive(target.provider.capability);
+      const current = target.provider.capability === "event-source"
+        ? await providerRegistrationRepository.findActiveByKind(target.provider.kind)
+        : await providerRegistrationRepository.findActive(target.provider.capability);
       const changesProviderKind =
         current !== null && current.provider.id !== target.provider.id && current.provider.kind !== target.provider.kind;
       return evaluateProviderActivationImpact({
@@ -1105,7 +1108,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         changesProviderKind,
         currentProviderName: current?.provider.name ?? "the current provider",
         targetProviderName: target.provider.name,
-        occurredAt: now().toISOString()
+        occurredAt: now().toISOString(),
+        overlappingTwitchSources: await findOverlappingTwitchSources(providerRegistrationRepository, target)
       });
     },
     async getUsedByAlertCount(kind: ProviderKind) {
@@ -1121,7 +1125,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     streamerBotSubscriptions: streamerBotRuntimeService,
     getVerifiedTwitchBroadcasterId: async () =>
       (await twitchAccountRepository.findConnectedAccount())?.accountId ?? null,
-    onEventSourceChanged: syncEventSourceRuntime,
+    onEventSourceChanged: (kind) => syncEventSourceRuntime([kind]),
     onMusicSourceChanged: () => musicRuntimeCoordinator.reconcile(),
     runMusicMutation: work => maintenanceGate.runIntake(work),
     now

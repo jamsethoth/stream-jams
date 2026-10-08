@@ -1,4 +1,5 @@
 import type {
+  StreamerBotForwardingUpdateInput,
   StreamerBotSubscriptionCatalog,
   StreamerBotSubscriptionUpdateInput
 } from "@stream-jams/core";
@@ -11,6 +12,7 @@ import { createTestManagementSecurity, managementTestHeaders } from "../test-sup
 
 const catalog: StreamerBotSubscriptionCatalog = {
   providerId: "provider-streamerbot",
+  forwardTwitchEvents: true,
   available: true,
   sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
   selected: [],
@@ -42,6 +44,29 @@ describe("Streamer.bot subscription routes", () => {
     expect(listed.json()).toEqual(catalog);
     expect(updated.statusCode).toBe(200);
     expect(service.updates).toEqual([{ providerId: "provider-streamerbot", input }]);
+  });
+
+  it("turns Twitch forwarding off and rejects malformed forwarding input", async () => {
+    const { app, headers, service } = await fixture();
+    const jsonHeaders = { ...headers, "content-type": "application/json" };
+
+    const updated = await app.inject({
+      method: "PUT", url: "/providers/provider-streamerbot/streamerbot-forwarding", headers: jsonHeaders, payload: { forwardTwitchEvents: false }
+    });
+    const invalid = await app.inject({
+      method: "PUT", url: "/providers/provider-streamerbot/streamerbot-forwarding", headers: jsonHeaders, payload: { forwardTwitchEvents: "off" }
+    });
+    const unauthorized = await app.inject({
+      method: "PUT", url: "/providers/provider-streamerbot/streamerbot-forwarding",
+      headers: { "content-type": "application/json" }, payload: { forwardTwitchEvents: false }
+    });
+
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toMatchObject({ forwardTwitchEvents: false });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json()).toMatchObject({ error: { code: "STREAMERBOT_FORWARDING_REQUEST_INVALID" } });
+    expect(unauthorized.statusCode).toBe(401);
+    expect(service.forwardingUpdates).toEqual([{ providerId: "provider-streamerbot", input: { forwardTwitchEvents: false } }]);
   });
 
   it("rejects missing management authorization before service work", async () => {
@@ -110,6 +135,7 @@ async function fixture(options: { readonly error?: Error } = {}) {
 class RecordingSubscriptionService {
   listCount = 0;
   readonly updates: Array<{ providerId: string; input: StreamerBotSubscriptionUpdateInput }> = [];
+  readonly forwardingUpdates: Array<{ providerId: string; input: StreamerBotForwardingUpdateInput }> = [];
 
   constructor(readonly error: Error | undefined) {}
 
@@ -126,5 +152,11 @@ class RecordingSubscriptionService {
     if (this.error !== undefined) throw this.error;
     this.updates.push({ providerId, input });
     return { ...catalog, selected: input.externalSubscriptions, twitchBroadcasterId: input.twitchBroadcasterId };
+  }
+
+  async setStreamerBotForwarding(providerId: string, input: StreamerBotForwardingUpdateInput): Promise<StreamerBotSubscriptionCatalog> {
+    if (this.error !== undefined) throw this.error;
+    this.forwardingUpdates.push({ providerId, input });
+    return { ...catalog, forwardTwitchEvents: input.forwardTwitchEvents };
   }
 }

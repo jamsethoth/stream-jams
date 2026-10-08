@@ -20,12 +20,12 @@ Each numbered section is one independently reviewable slice and PR, in order. Ev
 
 ## 3. Multiple Active Event Sources
 
-- [ ] 3.1 Migration: replace the `event-source` part of `provider_registrations_one_active_capability` with one active per provider kind; keep music and TTS at one per capability; preflight fails closed.
-- [ ] 3.2 Update provider activation so same-kind activation replaces and other kinds are untouched; update activation impact with the overlap warning.
-- [ ] 3.3 Rewrite `syncEventSourceRuntimes` to sync each runtime from its own registration; remove the cross-runtime disconnects.
-- [ ] 3.4 Add `forwardTwitchEvents` to Streamer.bot configuration (default on) and honor it in subscriptions and publishing.
-- [ ] 3.5 Event sources page: multiple `In use` rows with per-source live status, forwarding toggle, overlap warning; Storybook states; Playwright for activating both sources.
-- [ ] 3.6 Update provider-related docs and `docs/design/ui-refactor-decisions.md` wording on one active event source.
+- [x] 3.1 Migration: replace the `event-source` part of `provider_registrations_one_active_capability` with one active per provider kind; keep music and TTS at one per capability; preflight fails closed.
+- [x] 3.2 Update provider activation so same-kind activation replaces and other kinds are untouched; update activation impact with the overlap warning.
+- [x] 3.3 Rewrite `syncEventSourceRuntimes` to sync each runtime from its own registration; remove the cross-runtime disconnects.
+- [x] 3.4 Add `forwardTwitchEvents` to Streamer.bot configuration (default on) and honor it in subscriptions and publishing.
+- [x] 3.5 Event sources page: multiple `In use` rows with per-source live status, forwarding toggle, overlap warning; Storybook states; Playwright for activating both sources.
+- [x] 3.6 Update provider-related docs and `docs/design/ui-refactor-decisions.md` wording on one active event source.
 
 ## 4. Shared Trigger Selector
 

@@ -69,6 +69,25 @@ describe("ManagementOverviewService", () => {
     expect(getEventSourceRuntimeView).toHaveBeenCalledWith(active);
   });
 
+  it("reports the source needing attention when two event sources are in use", async () => {
+    const twitch = provider("twitch-main", "twitch", "event-source", true, "connected", "active", null);
+    const streamerBot = provider("streamerbot-main", "streamerbot", "event-source", true, "connected", "active", null);
+    const service = createService([twitch, streamerBot], null, (candidate) => ({
+      liveStatus: candidate.kind === "streamerbot" ? "error" as const : "healthy" as const,
+      error: null
+    }));
+
+    await expect(service.listRegisteredProviders("event-source")).resolves.toEqual([
+      expect.objectContaining({ id: "twitch-main", active: true, liveStatus: "healthy" }),
+      expect.objectContaining({ id: "streamerbot-main", active: true, liveStatus: "error" })
+    ]);
+    await expect(service.getHomeSetupSummary()).resolves.toMatchObject({
+      readiness: expect.arrayContaining([expect.objectContaining({
+        id: "event-source", state: "blocked", actionRoute: "/manage/event-sources?provider=streamerbot-main"
+      })])
+    });
+  });
+
   it.each([
     { liveStatus: "starting" as const, state: "action-required", actionLabel: "Starting event source" },
     { liveStatus: "reconnecting" as const, state: "action-required", actionLabel: "Reconnect in progress" },

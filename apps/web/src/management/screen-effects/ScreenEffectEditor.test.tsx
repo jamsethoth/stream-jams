@@ -430,6 +430,7 @@ describe("ScreenEffectEditor", () => {
       listRegisteredProviders: vi.fn(async () => [streamerBotProvider]),
       getStreamerBotSubscriptions: vi.fn(async () => ({
         providerId: "provider-streamerbot",
+        forwardTwitchEvents: true,
         available: true,
         sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
         selected: [{ sourceKey: "OBS", eventTypes: ["MissingEvent"] }],

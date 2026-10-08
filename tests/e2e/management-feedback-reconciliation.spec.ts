@@ -158,7 +158,7 @@ test("rebuilt Streamer.bot guard requires consent before issuing a subscription 
     await page.route("**/management/providers?capability=event-source", route => route.fulfill({ json: [provider] }));
     await page.route(`**/management/providers/${provider.id}`, route => route.fulfill({ json: { provider, configuration: {}, availableVoices: [], ttsSafety: null } }));
     await page.route(`**/management/providers/${provider.id}/activation-impact`, route => route.fulfill({ json: { matchedAlertCount: 0, unmatchedAlertCount: 0, blockers: [], warnings: [] } }));
-    const catalog = { providerId: provider.id, available: true, sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }], selected: [], unavailableSelections: [], twitchBroadcasterId: null };
+    const catalog = { providerId: provider.id, available: true, sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }], selected: [], unavailableSelections: [], twitchBroadcasterId: null, forwardTwitchEvents: true };
     await page.route(`**/providers/${provider.id}/streamerbot-subscriptions`, route => route.fulfill({ json: catalog }));
     const attempts = await failFirstSave(page, `/providers/${provider.id}/streamerbot-subscriptions`, "PUT", 2);
     await page.goto(`${fixture.runtime.url}/manage/event-sources`);

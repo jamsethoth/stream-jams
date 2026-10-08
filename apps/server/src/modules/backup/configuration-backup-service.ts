@@ -697,8 +697,9 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   if (currentSchemaVersion === 31) return [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 30) return [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 32) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 31;
-  // Schemas 33 and 34 add only runtime event bus tables, which backups never contain.
-  if (currentSchemaVersion === 34) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 33;
+  // Schemas 33 and 34 add only runtime event bus tables, which backups never contain. Schema 35 only
+  // relaxes the active event-source index, which every older archive already satisfies.
+  if (currentSchemaVersion === 35) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 34;
   if (currentSchemaVersion === 28) return [19, 20, 21, 22, 23, 24, 25, 26, 27].includes(archiveSchemaVersion);
   return false;
 }

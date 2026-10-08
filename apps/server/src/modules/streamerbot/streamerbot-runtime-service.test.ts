@@ -499,6 +499,64 @@ describe("StreamerBotRuntimeService", () => {
     });
   });
 
+  it("subscribes only configured external events and publishes no Twitch events when forwarding is off", async () => {
+    const client = new FakeClient({ Twitch: supportedEvents, OBS: ["SceneChanged"], General: ["Custom"] });
+    const ingested: NormalizedStreamEvent[] = [];
+    const triggers: EffectTrigger[][] = [];
+    const service = runtime({
+      client,
+      active: registration({
+        forwardTwitchEvents: false,
+        externalSubscriptions: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }, { sourceKey: "Twitch", eventTypes: ["RewardRedemption"] }]
+      }),
+      customEventHandler: () => false,
+      async ingestNormalizedEvent(event) { ingested.push(event); return { status: "accepted", event }; },
+      async ingestEffectTriggers(eventId, batch) { triggers.push([...batch]); return { status: "accepted", eventId }; }
+    });
+
+    await service.syncActiveRegistration();
+    await client.emit(validRaidEnvelope());
+    await client.emit({
+      timeStamp: "2026-07-17T12:05:00.000Z",
+      event: { source: "Twitch", type: "RewardRedemption" },
+      data: { user: { id: "viewer-1", name: "Viewer" }, redemptionId: "redemption-1", rewardId: "reward-1", rewardName: "Hydrate" }
+    });
+
+    expect(client.subscriptionBatches).toEqual([[
+      { sourceKey: "General", eventTypes: ["Custom"] },
+      { sourceKey: "OBS", eventTypes: ["SceneChanged"] },
+      { sourceKey: "Twitch", eventTypes: ["RewardRedemption"] }
+    ]]);
+    expect(service.getStatus()).toMatchObject({ state: "connected", subscribedEventTypes: [], missingEventTypes: [] });
+    expect(ingested).toEqual([]);
+    expect(triggers).toEqual([[expect.objectContaining({ kind: "streamerbot-event", sourceKey: "Twitch", eventType: "RewardRedemption" })]]);
+  });
+
+  it("connects without a Twitch category when forwarding is off", async () => {
+    const client = new FakeClient({ OBS: ["SceneChanged"] });
+    const service = runtime({ client, active: registration({ forwardTwitchEvents: false, externalSubscriptions: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }] }) });
+
+    await service.syncActiveRegistration();
+
+    expect(service.getStatus()).toMatchObject({ state: "connected", referenceId: null });
+  });
+
+  it("reconnects with the new subscriptions when forwarding changes", async () => {
+    const client = new FakeClient({ Twitch: supportedEvents });
+    const service = runtime({ client, active: registration() });
+    await service.syncActiveRegistration();
+    await service.syncActiveRegistration();
+    expect(client.connectInputs).toHaveLength(1);
+
+    service.setActive(registration({ forwardTwitchEvents: false }));
+    await service.syncActiveRegistration();
+
+    expect(client.disconnectCount).toBe(1);
+    expect(client.connectInputs).toHaveLength(2);
+    expect(client.subscriptionBatches.at(-1)).toEqual([]);
+    expect(service.getStatus()).toMatchObject({ state: "connected", subscribedEventTypes: [] });
+  });
+
   it("disconnects when Streamer.bot is not the active event source", async () => {
     const client = new FakeClient({ Twitch: ["Raid"] });
     const service = runtime({ client, active: registration() });
@@ -606,7 +664,7 @@ function runtime(options: {
   let active = options.active;
   let reference = 0;
   const service = new StreamerBotRuntimeService({
-    repository: { findActive: async () => active },
+    repository: { findActiveByKind: async (kind) => active?.provider.kind === kind ? active : null },
     secretStore: { getSecret: options.getSecret ?? (async () => null) },
     createClient(onEvent) {
       options.client.setEventHandler(onEvent);
@@ -636,6 +694,7 @@ function registration(options: {
   readonly secretRef?: SecretRef | null;
   readonly twitchBroadcasterId?: string | null;
   readonly externalSubscriptions?: readonly StreamerBotSubscriptionSelection[];
+  readonly forwardTwitchEvents?: boolean;
 } = {}): ProviderRegistrationRecord {
   const kind = options.kind ?? "streamerbot";
   return {
@@ -659,7 +718,8 @@ function registration(options: {
           endpoint: "/",
           allowUnauthenticatedLocalConnection: true,
           twitchBroadcasterId: options.twitchBroadcasterId ?? null,
-          externalSubscriptions: options.externalSubscriptions ?? []
+          externalSubscriptions: options.externalSubscriptions ?? [],
+          ...(options.forwardTwitchEvents === undefined ? {} : { forwardTwitchEvents: options.forwardTwitchEvents })
         }
       : {},
     availableVoices: [],

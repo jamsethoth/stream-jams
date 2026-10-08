@@ -7,6 +7,7 @@ import {
   ttsProviderSafetySettingsSchema,
   ttsVoiceSchema,
   type ProviderCapability,
+  type ProviderKind,
   type RegisteredProviderView,
   type SecretRef,
   type TtsProviderSafetySettings,
@@ -124,11 +125,26 @@ export class SqliteProviderRegistrationRepository {
       .map((row) => mapProviderRegistrationRow(row as unknown as ProviderRegistrationRow));
   }
 
-  async findActive(capability: ProviderCapability): Promise<ProviderRegistrationRecord | null> {
+  /** The one active provider of a capability. Event sources can have one active per kind; use `findActiveByKind`. */
+  async findActive(capability: Exclude<ProviderCapability, "event-source">): Promise<ProviderRegistrationRecord | null> {
     const row = this.#connection
       .prepare(`SELECT ${providerColumns} FROM provider_registrations WHERE capability = ? AND active = 1`)
       .get(capability);
     return row === undefined ? null : mapProviderRegistrationRow(row as unknown as ProviderRegistrationRow);
+  }
+
+  async findActiveByKind(kind: ProviderKind): Promise<ProviderRegistrationRecord | null> {
+    const row = this.#connection
+      .prepare(`SELECT ${providerColumns} FROM provider_registrations WHERE kind = ? AND active = 1`)
+      .get(kind);
+    return row === undefined ? null : mapProviderRegistrationRow(row as unknown as ProviderRegistrationRow);
+  }
+
+  async listActive(capability: ProviderCapability): Promise<readonly ProviderRegistrationRecord[]> {
+    return this.#connection
+      .prepare(`SELECT ${providerColumns} FROM provider_registrations WHERE capability = ? AND active = 1 ORDER BY name, id`)
+      .all(capability)
+      .map((row) => mapProviderRegistrationRow(row as unknown as ProviderRegistrationRow));
   }
 
   async activate(providerId: string): Promise<ProviderActivationRecordResult> {
@@ -138,14 +154,18 @@ export class SqliteProviderRegistrationRepository {
         throw new Error(`Provider registration "${providerId}" was not found`);
       }
 
+      // Event sources replace only the active registration of the same kind; other capabilities replace any.
+      const scope = target.provider.capability === "event-source"
+        ? { column: "kind", value: target.provider.kind }
+        : { column: "capability", value: target.provider.capability };
       const currentRow = this.#connection
-        .prepare("SELECT id FROM provider_registrations WHERE capability = ? AND active = 1")
-        .get(target.provider.capability);
+        .prepare(`SELECT id FROM provider_registrations WHERE ${scope.column} = ? AND active = 1`)
+        .get(scope.value);
       const currentId = currentRow === undefined ? null : String(currentRow.id);
       const updatedAt = this.#now().toISOString();
       this.#connection
-        .prepare("UPDATE provider_registrations SET active = 0, updated_at = ? WHERE capability = ? AND active = 1")
-        .run(updatedAt, target.provider.capability);
+        .prepare(`UPDATE provider_registrations SET active = 0, updated_at = ? WHERE ${scope.column} = ? AND active = 1`)
+        .run(updatedAt, scope.value);
       this.#connection
         .prepare("UPDATE provider_registrations SET active = 1, updated_at = ? WHERE id = ?")
         .run(updatedAt, providerId);
