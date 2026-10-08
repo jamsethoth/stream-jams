@@ -7,6 +7,7 @@ import {
   type AlertMatchLogRecord,
   type AlertRule,
   type AlertVariant,
+  type BusEvent,
   type EventLogRecord,
   type EffectTrigger,
   type NormalizedStreamEvent,
@@ -19,6 +20,48 @@ import { EventPipeline } from "./event-pipeline.js";
 import { PlaybackCoordinator, type PlaybackEnqueueResult } from "../playback/playback-coordinator.js";
 
 describe("EventPipeline", () => {
+  it("registers Alerts, Screen Effects, and Timers as single-attempt bus consumers", () => {
+    const pipeline = createPipeline({ diagnostics: new RecordingDiagnosticsRepository(), playback: new RecordingPlaybackCoordinator(queueResult(createFollowEvent())) });
+    expect(pipeline.consumers().map((consumer) => [consumer.id, consumer.maxAttempts])).toEqual([
+      ["alerts", 1], ["screen-effects", 1], ["timers", 1]
+    ]);
+  });
+
+  it("delivers external bus events only to Screen Effects", async () => {
+    const diagnostics = new RecordingDiagnosticsRepository();
+    const playback = new RecordingPlaybackCoordinator(queueResult(createFollowEvent()));
+    const timerEvents: NormalizedStreamEvent[] = [];
+    const effectBatches: Array<readonly EffectTrigger[]> = [];
+    const pipeline = new EventPipeline({
+      diagnosticsLogRepository: diagnostics,
+      playbackCoordinator: playback,
+      timerEventSink: { async handleEvent(event) { timerEvents.push(event); } },
+      effectTriggerSink: { async handleTriggers(triggers) { effectBatches.push([...triggers]); } },
+      generateId: (kind) => `${kind}-1`
+    });
+    const trigger: EffectTrigger = {
+      kind: "streamerbot-event",
+      eventId: "streamerbot:custom-1",
+      occurredAt: "2026-05-30T12:00:00.000Z",
+      providerId: "provider-streamerbot",
+      sourceKey: "General",
+      eventType: "Custom",
+      summary: "Custom"
+    };
+    const external: BusEvent = {
+      kind: "external", sequence: 1, busId: "bus-1", eventId: trigger.eventId, sourceKind: "streamerbot",
+      sourceRegistrationId: null, receivedAt: "2026-05-30T12:00:00.000Z", effectTriggers: [trigger]
+    };
+
+    for (const consumer of pipeline.consumers()) await consumer.handle(external);
+
+    expect(effectBatches).toEqual([[trigger]]);
+    expect(playback.events).toEqual([]);
+    expect(timerEvents).toEqual([]);
+    expect(diagnostics.eventLogs).toEqual([]);
+  });
+
+
   it("delivers events to timers and diagnoses timer failures without blocking alert admission", async () => {
     const diagnostics = new RecordingDiagnosticsRepository();
     const playback = new RecordingPlaybackCoordinator(queueResult(createFollowEvent()));
@@ -29,7 +72,7 @@ describe("EventPipeline", () => {
       generateId: kind => `${kind}-test`, timerEventSink: { async handleEvent(event) { received.push(event); throw failure; } },
       onTimerError: error => { errors.push(error); }
     });
-    await pipeline.handleEvent(createFollowEvent());
+    await deliver(pipeline, createFollowEvent());
     expect(received).toEqual([createFollowEvent()]); expect(errors).toEqual([failure]);
     expect(playback.events).toEqual([createFollowEvent()]);
     expect(diagnostics.eventLogs.map(log => log.status)).toEqual(["received", "processed"]);
@@ -39,7 +82,7 @@ describe("EventPipeline", () => {
     const playback = new RecordingPlaybackCoordinator(queueResult(createFollowEvent()));
     const pipeline = createPipeline({ diagnostics, playback });
 
-    await pipeline.handleEvent(createFollowEvent());
+    await deliver(pipeline, createFollowEvent());
 
     expect(playback.events).toEqual([createFollowEvent()]);
     expect(diagnostics.eventLogs.map((log) => log.status)).toEqual(["received", "processed"]);
@@ -69,7 +112,7 @@ describe("EventPipeline", () => {
     });
     const pipeline = createPipeline({ diagnostics, playback });
 
-    await pipeline.handleEvent(createFollowEvent());
+    await deliver(pipeline, createFollowEvent());
 
     expect(deliveredInstructions.map((instruction) => instruction.scope)).toEqual(["module", "unified"]);
     expect(deliveredInstructions.map((instruction) => instruction.text?.text)).toEqual([
@@ -106,7 +149,7 @@ describe("EventPipeline", () => {
       createCommunityGiftEvent("twitch", "twitch-community-gift"),
       createCommunityGiftEvent("streamerbot", "streamerbot-community-gift")
     ]) {
-      await pipeline.handleEvent(event);
+      await deliver(pipeline, event);
     }
 
     expect(diagnostics.alertMatchLogs.map((log) => [log.sourceEventId, log.ruleId])).toEqual([
@@ -127,14 +170,14 @@ describe("EventPipeline", () => {
     });
     const pipeline = createPipeline({ diagnostics, playback });
 
-    await pipeline.handleEvent(createFollowEvent());
+    await deliver(pipeline, createFollowEvent());
 
     expect(diagnostics.eventLogs.map((log) => log.status)).toEqual(["received", "processed"]);
     expect(diagnostics.alertMatchLogs).toEqual([]);
     expect(diagnostics.playbackLogs).toEqual([]);
   });
 
-  it("records failed event logs and rethrows playback failures", async () => {
+  it("records failed event logs and reports playback failures to the bus", async () => {
     const diagnostics = new RecordingDiagnosticsRepository();
     const playback = {
       async enqueueEvent() {
@@ -143,7 +186,7 @@ describe("EventPipeline", () => {
     };
     const pipeline = createPipeline({ diagnostics, playback });
 
-    await expect(pipeline.handleEvent(createFollowEvent())).rejects.toThrow("Playback unavailable");
+    await expect(deliver(pipeline, createFollowEvent())).rejects.toThrow("Playback unavailable");
 
     expect(diagnostics.eventLogs.map((log) => log.status)).toEqual(["received", "failed"]);
     expect(diagnostics.eventLogs.at(-1)).toMatchObject({
@@ -176,7 +219,7 @@ describe("EventPipeline", () => {
       summary: "Follow mirror"
     }];
 
-    await pipeline.handleEvent(createFollowEvent(), triggers);
+    await deliver(pipeline, createFollowEvent(), triggers);
 
     expect(playback.events).toEqual([createFollowEvent()]);
     expect(effectBatches).toEqual([triggers]);
@@ -200,7 +243,7 @@ describe("EventPipeline", () => {
       generateId: (kind) => `${kind}-1`
     });
 
-    await expect(pipeline.handleEvent(createFollowEvent(), [{
+    await expect(deliver(pipeline, createFollowEvent(), [{
       kind: "streamerbot-event",
       eventId: "event-follow",
       occurredAt: "2026-05-30T12:00:00.000Z",
@@ -215,6 +258,24 @@ describe("EventPipeline", () => {
     expect(diagnostics.eventLogs.map((entry) => entry.status)).toEqual(["received", "processed"]);
   });
 });
+
+/** Delivers one canonical bus event to every consumer, isolating failures as the bus does. */
+async function deliver(pipeline: EventPipeline, event: NormalizedStreamEvent, triggers: readonly EffectTrigger[] = []): Promise<void> {
+  const busEvent: BusEvent = {
+    kind: "canonical",
+    event,
+    sequence: 1,
+    busId: `bus-${event.id}`,
+    eventId: event.id,
+    sourceKind: event.ingestProvider,
+    sourceRegistrationId: null,
+    receivedAt: "2026-05-30T12:00:00.000Z",
+    effectTriggers: triggers
+  };
+  const results = await Promise.allSettled(pipeline.consumers().map((consumer) => consumer.handle(busEvent)));
+  const failure = results.find((result) => result.status === "rejected");
+  if (failure !== undefined) throw failure.reason;
+}
 
 function createPipeline(options: {
   readonly diagnostics: RecordingDiagnosticsRepository;

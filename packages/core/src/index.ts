@@ -190,6 +190,8 @@ export {
   subscriptionTierSchema
 } from "./events/schemas.js";
 
+export type * from "./event-bus/types.js";
+
 export type * from "./overlay-modules/types.js";
 export type { OverlayModulePresentation } from "./overlay-modules/presentation.js";
 export type * from "./timers/types.js";

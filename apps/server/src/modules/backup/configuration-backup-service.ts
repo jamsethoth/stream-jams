@@ -697,6 +697,8 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   if (currentSchemaVersion === 31) return [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 30) return [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 32) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 31;
+  // Schema 33 adds only the runtime event bus journal, which backups never contain.
+  if (currentSchemaVersion === 33) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 32;
   if (currentSchemaVersion === 28) return [19, 20, 21, 22, 23, 24, 25, 26, 27].includes(archiveSchemaVersion);
   return false;
 }

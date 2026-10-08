@@ -2,13 +2,14 @@ Each numbered section is one independently reviewable slice and PR, in order. Ev
 
 ## 1. Bus Core And Journal (no behavior change)
 
-- [ ] 1.1 Fetch `origin/main`, confirm `EventPipeline`, `EventIngestionService`, and the single-active index still match the design's context section.
-- [ ] 1.2 Add `BusEvent`, `EventBusConsumer`, and schemas in `packages/core/src/event-bus` with unit tests for valid, invalid, and secret-free envelopes.
-- [ ] 1.3 Add migration and typed repository for `event_bus_journal`, `event_bus_consumer_cursors`, and `event_bus_delivery_failures`; test foreign keys, narrow transactions, retention bounds, and WAL backup exclusion.
-- [ ] 1.4 Implement publisher (validate, exact dedupe against journal, commit, wake workers) and per-consumer workers (batch read, cursor advance, three retries with backoff, failure record, no unbounded buffer).
-- [ ] 1.5 Register Alerts, Screen Effects, and Timers as consumers; reduce `EventPipeline` to a publisher; keep effect triggers derived inside the Screen Effects consumer.
-- [ ] 1.6 Tests: consumer isolation (one throws, others admit), FIFO per consumer, idempotent redelivery, poisoned event skip, ingestion accepted only after commit, journal write failure.
-- [ ] 1.7 Verify existing alert, effect, and timer suites pass unchanged.
+- [x] 1.1 Fetch `origin/main`, confirm `EventPipeline`, `EventIngestionService`, and the single-active index still match the design's context section.
+- [x] 1.2 Add `BusEvent`, `EventBusConsumer`, and schemas in `packages/core/src/event-bus` with unit tests for valid, invalid, and secret-free envelopes.
+- [x] 1.3 Add migration and typed repository for `event_bus_journal`, `event_bus_consumer_cursors`, and `event_bus_delivery_failures`; test foreign keys, narrow transactions, retention bounds, and WAL backup exclusion.
+- [x] 1.4 Implement publisher (validate, exact dedupe against journal, commit, wake workers) and per-consumer workers (batch read, cursor advance, three retries with backoff, failure record, no unbounded buffer).
+- [x] 1.5 Register Alerts, Screen Effects, and Timers as consumers; `EventPipeline` now only builds consumers. Effect triggers are still derived at intake and carried on the bus event until slice 4 replaces them with selectors.
+- [x] 1.6 Tests: consumer isolation (one throws, others admit), FIFO per consumer, idempotent redelivery, poisoned event skip, ingestion accepted only after commit, journal write failure.
+- [x] 1.7 Verify existing alert, effect, and timer suites pass unchanged.
+- [x] 1.8 Until slice 6, `start()` skips events a consumer missed before restart and logs the count instead of replaying them.
 
 ## 2. Cross-Source Correlation
 

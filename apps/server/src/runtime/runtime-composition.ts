@@ -103,7 +103,9 @@ import {
   EventIngestionService,
   type EventIngestionDiagnostic
 } from "../modules/events/event-ingestion-service.js";
+import { EventBus } from "../modules/events/event-bus.js";
 import { EventPipeline } from "../modules/events/event-pipeline.js";
+import { SqliteEventBusJournalRepository } from "../modules/events/sqlite-event-bus-journal-repository.js";
 import { SqliteTimerRunRepository } from "../modules/timers/sqlite-timer-run-repository.js";
 import { TimerEventService } from "../modules/timers/timer-event-service.js";
 import { SqliteOverlayModuleConfigRepository } from "../modules/overlay-modules/sqlite-module-config-repository.js";
@@ -879,8 +881,38 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     })
   });
   const generateEventSourceReferenceId = generateRuntimeReferenceId;
+  const eventBus = new EventBus({
+    journal: new SqliteEventBusJournalRepository(database.connection),
+    consumers: eventPipeline.consumers(),
+    generateReferenceId: generateEventSourceReferenceId,
+    now,
+    onDeliveryFailure: (failure) => runtimeLogger.error("Event bus consumer failed", {
+      module: "events",
+      source: "events.bus-consumer",
+      correlationId: failure.event?.kind === "canonical"
+        ? `event:${failure.event.event.providerId}:${failure.event.event.id}`
+        : `event:${failure.event?.eventId ?? "unknown"}`,
+      processingId: null,
+      metadata: { consumerId: failure.consumerId, sequence: failure.sequence, attempts: failure.attempts, referenceId: failure.referenceId }
+    }, failure.error),
+    onReplaySkipped: (consumerId, skippedCount) => runtimeLogger.warn("Event bus skipped events journaled before restart", {
+      module: "events",
+      source: "events.bus-replay",
+      correlationId: `event-bus:${consumerId}`,
+      processingId: null,
+      metadata: { consumerId, skippedCount }
+    }),
+    onWorkerError: (consumerId, error) => runtimeLogger.error("Event bus delivery stopped before the cursor advanced", {
+      module: "events",
+      source: "events.bus-worker",
+      correlationId: `event-bus:${consumerId}`,
+      processingId: null,
+      metadata: { consumerId }
+    }, error)
+  });
+  await eventBus.start();
   const eventIngestionService = new EventIngestionService({
-    sink: eventPipeline,
+    sink: eventBus,
     generateReferenceId: generateEventSourceReferenceId,
     onDiagnostic: (entry) => writeEventSourceFailureDiagnostic(runtimeLogger, "events", "event-intake", entry)
   });
