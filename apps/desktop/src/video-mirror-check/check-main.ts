@@ -69,6 +69,7 @@ export async function runVideoMirrorCheck(): Promise<void> {
   let player: BrowserWindow | null = null;
   let playerSettings: { readonly host: string; readonly audioMode: AudioMode; readonly show: boolean } | null = null;
   let capturing = false;
+  let deviceOutput: BrowserWindow | null = null;
   let origin = "";
   async function startCapture(): Promise<void> {
     if (player === null || player.isDestroyed()) throw new CheckInputError("Load the player first.");
@@ -142,6 +143,18 @@ export async function runVideoMirrorCheck(): Promise<void> {
       });
       lockNavigation(receiver);
       await receiver.loadURL(`${origin}/receiver?${new URLSearchParams({ t: token, label: "desktop" })}`);
+    },
+    async "open-device-output"(body: Record<string, unknown>) {
+      const deviceIds = Array.isArray(body.deviceIds) ? body.deviceIds.filter((id): id is string => typeof id === "string" && /^[\w=+/-]{1,128}$/u.test(id)).slice(0, 8) : [];
+      if (deviceIds.length === 0) throw new CheckInputError("Tick at least one audio device.");
+      deviceOutput?.destroy();
+      // A hidden receiver of its own: its sound goes only to the ticked devices and is never captured.
+      deviceOutput = new BrowserWindow({
+        show: false, title: "Video mirror check device output",
+        webPreferences: { partition: "video-mirror-check", sandbox: true, contextIsolation: true, backgroundThrottling: false }
+      });
+      lockNavigation(deviceOutput);
+      await deviceOutput.loadURL(`${origin}/receiver?${new URLSearchParams({ t: token, label: "devices", devices: deviceIds.join(",") })}`);
     },
     async twitch(body: Record<string, unknown>) {
       if (player === null || player.isDestroyed()) throw new CheckInputError("Load a Twitch source first.");

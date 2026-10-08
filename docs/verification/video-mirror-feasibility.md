@@ -94,3 +94,11 @@ Same PC and settings, one OBS browser source and the desktop receiver.
 **Audio was not right.** Jams reported the sound was broken in this run, and the device check was left unticked. The likely cause: the capture left the hidden player's own sound playing on the default device, so the same sound also came from the desktop receiver, the device fan-out and any OBS monitoring, each at a different delay. The check now asks for `suppressLocalAudioPlayback` (confirmed honored in a Linux run), mutes the desktop receiver so its sound only goes to the chosen devices, and offers muting the player window as a second test. The gate stays open until a run confirms clean sound.
 
 **Direction, pending the audio fix:** the desktop mirror is feasible on Windows. Build it as one long-lived hidden player page per purpose, with providers swapped inside it, frame capture with voice processing off, loopback-only WebRTC to each output, and automatic receiver reconnects.
+
+### 2026-10-08: Windows 11 with OBS, fourth run
+
+With the player's own sound suppressed, OBS played the sound once and nothing played elsewhere, as intended. Pressing the device button played nothing on the ticked device and added a second copy in OBS.
+
+Cause: the device `<audio>` elements lived inside the captured player page. Frame capture records every sound the page makes, so the device copy was captured back into the mirror (the second copy in OBS), and suppressing the page's local playback also silenced the device copy. In the earlier runs, before suppression, the same loop fed the device copy back into the capture, which explains the doubling.
+
+Change: device output now runs in its own hidden window that receives the mirror like any other output and sends its sound only to the ticked devices. **The product must keep device output out of the captured player page.** A Linux run confirmed the new window connects and accepts its device.

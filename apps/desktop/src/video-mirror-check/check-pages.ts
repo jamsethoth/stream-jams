@@ -102,7 +102,6 @@ window.__setSource = (next, url) => {
   stopTone();
   if (next.kind === "none") {
     stage.replaceChildren();
-    stopFanOut();
     report("player-stopped", {});
     return;
   }
@@ -187,33 +186,10 @@ listen("publisher", async body => {
     await connections.get(body.id)?.setRemoteDescription({ type: "answer", sdp: body.sdp });
   } else if (body.type === "ice") {
     await connections.get(body.id)?.addIceCandidate(body.candidate).catch(error => report("error", { role: "publisher", message: "ICE: " + error.message }));
-  } else if (body.type === "sinks") {
-    await fanOut(body.deviceIds);
   } else if (body.type === "youtube") {
     youtubeCommand(body.func, body.args);
   }
 });
-
-function stopFanOut() {
-  const host = document.getElementById("sinks");
-  for (const element of host.querySelectorAll("audio")) { element.pause(); element.srcObject = null; }
-  host.replaceChildren();
-}
-async function fanOut(deviceIds) {
-  stopFanOut();
-  const host = document.getElementById("sinks");
-  const audioTrack = captured && captured.getAudioTracks()[0];
-  if (!audioTrack) { report("fan-out", { ok: false, message: "No captured audio track." }); return; }
-  const results = [];
-  for (const deviceId of deviceIds) {
-    const element = document.createElement("audio");
-    element.srcObject = new MediaStream([audioTrack]);
-    host.append(element);
-    try { await element.setSinkId(deviceId); await element.play(); results.push({ device: deviceId.slice(0, 8), ok: true }); }
-    catch (error) { results.push({ device: deviceId.slice(0, 8), ok: false, message: String(error && error.message || error) }); }
-  }
-  report("fan-out", { ok: results.every(result => result.ok), devices: results });
-}
 
 setInterval(async () => {
   const summary = [];
@@ -259,13 +235,14 @@ listen("receiver:" + id, async body => {
       if (stream !== event.streams[0]) {
         stream = event.streams[0];
         video.srcObject = stream;
-        // The desktop overlay shows the picture only; sound goes to the chosen devices.
-        if (params.get("label") === "desktop") video.muted = true;
+        // The desktop overlay and the device output window never play through the default device.
+        if (params.get("label") === "desktop" || params.get("label") === "devices") video.muted = true;
         video.play().catch(error => {
           if (error && error.name === "NotAllowedError") { audioBlocked = true; video.muted = true; return video.play(); }
           return undefined;
         });
       }
+      if (event.track.kind === "audio" && params.get("label") === "devices") void fanOut(event.streams[0]);
       if (event.track.kind === "audio" && analyser === null) {
         const context = new AudioContext();
         analyser = context.createAnalyser();
@@ -288,6 +265,27 @@ listen("receiver:" + id, async body => {
     await pc?.addIceCandidate(body.candidate).catch(error => report("error", { role: "receiver", message: "ICE: " + error.message }));
   }
 });
+// Device fan-out lives in its own window, outside the captured player, so its sound is
+// never captured back into the mirror.
+const sinks = document.createElement("div");
+sinks.hidden = true;
+document.body.append(sinks);
+async function fanOut(source) {
+  for (const element of sinks.querySelectorAll("audio")) { element.pause(); element.srcObject = null; }
+  sinks.replaceChildren();
+  const audioTrack = source.getAudioTracks()[0];
+  if (!audioTrack) { report("fan-out", { ok: false, message: "No audio track yet." }); return; }
+  const results = [];
+  for (const deviceId of (params.get("devices") || "").split(",").filter(Boolean)) {
+    const element = document.createElement("audio");
+    element.srcObject = new MediaStream([audioTrack]);
+    sinks.append(element);
+    try { await element.setSinkId(deviceId); await element.play(); results.push({ device: deviceId.slice(0, 8), ok: true, sinkId: element.sinkId === deviceId }); }
+    catch (error) { results.push({ device: deviceId.slice(0, 8), ok: false, message: String(error && error.message || error) }); }
+  }
+  report("fan-out", { ok: results.length > 0 && results.every(result => result.ok), devices: results });
+}
+
 let reconnects = 0;
 function reconnect() {
   reconnects += 1;
@@ -414,7 +412,7 @@ document.getElementById("mutePlayer").onchange = event => command({ action: "mut
 document.getElementById("desktopReceiver").onclick = () => command({ action: "open-desktop-receiver" });
 for (const button of document.querySelectorAll("[data-twitch]")) button.onclick = () => command({ action: "twitch", op: button.dataset.twitch });
 for (const button of document.querySelectorAll("[data-youtube]")) button.onclick = () => send("publisher", { type: "youtube", func: button.dataset.youtube, args: button.dataset.youtube === "seekTo" ? [30, true] : [] });
-document.getElementById("fanout").onclick = () => send("publisher", { type: "sinks", deviceIds: [...document.querySelectorAll("#devices input:checked")].map(input => input.value) });
+document.getElementById("fanout").onclick = () => command({ action: "open-device-output", deviceIds: [...document.querySelectorAll("#devices input:checked")].map(input => input.value) });
 for (const input of document.querySelectorAll("[data-manual]")) input.onchange = () => report("manual", { [input.dataset.manual]: input.checked });
 document.getElementById("notes").onchange = event => report("manual", { notes: event.target.value.slice(0, 500) });
 navigator.mediaDevices.enumerateDevices().then(devices => {
