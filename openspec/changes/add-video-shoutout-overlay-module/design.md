@@ -65,6 +65,15 @@ This change adds a second built-in module, `video-shoutout`, for manual Twitch c
 
 No data migration is expected. Adding the module registry entry should make `overlay-output-management` list create-required live/test outputs for `video-shoutout`; existing overlay keys and alert behavior remain unchanged.
 
-## Open Questions
+## Resolved Questions
 
-- What Streamer.bot source/type name should be the documented default for the manual video shoutout event? Suggested default: source `StreamJams`, type `VideoShoutout`.
+- Streamer.bot event default: Streamer.bot delivers `CPH.WebsocketBroadcastJson` payloads to WebSocket clients as `General` / `Custom` events, so that is the subscribed event. The payload marker `"source": "StreamJams", "type": "VideoShoutout"` selects video shoutouts from other custom broadcasts. Stream Jams subscribes to `General` / `Custom` only when Streamer.bot advertises it and routes marked payloads before stream-event ingestion, so they never become normalized events or effect triggers. Field rules and a Streamer.bot example are in `docs/video-shoutout.md`.
+
+## Implementation Notes
+
+- Optional `action` (`play` default, `no-clip`, `clear`) and `purpose` (`live` default, `test`) fields let Streamer.bot drive the explicit no-clip/clear triggers and the test browser source without a new HTTP control endpoint.
+- Server state is `idle`, `loading`, `playing`, or `error` per purpose. `loading` becomes `playing` when a browser source reports the Twitch iframe loaded (the existing `overlay.playback.started` report, keyed by the activation id), then the duration timer returns it to idle. No load within 15 seconds returns to idle; a browser that cannot load the player within 12 seconds reports `overlay.playback.failed`, which shows the bounded error state for five seconds.
+- Rejected payloads leave the current state unchanged and log only the reason and field names.
+- The module renderer supports `module` output only. Unified compositions and surface layering now include only modules whose renderer supports `unified`, and desktop module sync rejects the video shoutout presentation.
+- The overlay renders the iframe with `sandbox="allow-scripts allow-same-origin"`, `referrerPolicy="origin"` (the overlay page itself sends no referrer, and Twitch validates the embedding origin, never the keyed path), and re-validates the projection in the browser before rendering.
+- The strict clip contract (Twitch field formats, embed/avatar URL allowlist, projection schema) is published as the `@stream-jams/core/video-shoutout` subpath rather than the root barrel, matching the `music-style-policy` pattern. The shared presentation union keeps only a shape guard, so the management bundle stays within its gzip budget while the overlay renderer and server intake still validate the full contract.

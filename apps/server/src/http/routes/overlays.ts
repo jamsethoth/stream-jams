@@ -1,5 +1,6 @@
 import fastifyWebsocket from "@fastify/websocket";
 import {
+  listUnifiedOverlayModuleIds,
   overlayCompositionSchema,
   type OverlayAccessService,
   type OverlayCompositionService,
@@ -78,7 +79,7 @@ export function registerOverlayRoutes(app: FastifyInstance, dependencies: Overla
       const composition = await dependencies.overlayCompositionService.resolveUnifiedOutput({
         overlayId: defaultOverlayId,
         purpose: params.purpose,
-        enabledModuleIds: dependencies.overlayModuleRegistry.listModules().map((moduleDefinition) => moduleDefinition.id)
+        enabledModuleIds: listUnifiedOverlayModuleIds(dependencies.overlayModuleRegistry)
       });
 
       return overlayCompositionSchema.parse(composition);

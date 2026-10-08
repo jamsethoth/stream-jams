@@ -56,6 +56,15 @@ describe("overlay module routes", () => {
           entryPoint: "overlay/modules/music",
           supportedOutputs: ["module", "unified"]
         }
+      }),
+      expect.objectContaining({
+        id: "video-shoutout",
+        displayName: "Video shoutout",
+        defaultEnabled: true,
+        renderer: {
+          entryPoint: "overlay/modules/video-shoutout",
+          supportedOutputs: ["module"]
+        }
       })
     ]);
     expect(response.json()).toEqual(

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { alertsOverlayModuleDefinition } from "./module-definition.js";
 import { screenEffectsOverlayModuleDefinition } from "../screen-effects/module-definition.js";
-import { StaticOverlayModuleRegistry, createDefaultOverlayModuleRegistry } from "./module-registry.js";
+import { StaticOverlayModuleRegistry, createDefaultOverlayModuleRegistry, listUnifiedOverlayModuleIds } from "./module-registry.js";
 import type { OverlayModuleDefinition } from "./types.js";
 
 const customModule: OverlayModuleDefinition = {
@@ -34,14 +34,15 @@ const customModule: OverlayModuleDefinition = {
 };
 
 describe("overlay module registry", () => {
-  it("registers Alerts, disabled Screen Effects, Timers and Music in stable built-in order", () => {
+  it("registers Alerts, disabled Screen Effects, Timers, Music and Video shoutout in stable built-in order", () => {
     const registry = createDefaultOverlayModuleRegistry();
 
     expect(registry.listModules()).toEqual([
       alertsOverlayModuleDefinition,
       screenEffectsOverlayModuleDefinition,
       registry.getModule("timers"),
-      registry.getModule("music")
+      registry.getModule("music"),
+      registry.getModule("video-shoutout")
     ]);
     expect(registry.getModule("alerts")).toEqual(alertsOverlayModuleDefinition);
     expect(registry.getModule("screen-effects")).toEqual(screenEffectsOverlayModuleDefinition);
@@ -55,6 +56,16 @@ describe("overlay module registry", () => {
       defaultEnabled: false,
       renderer: { supportedOutputs: ["module", "unified"] }
     });
+  });
+
+  it("registers Video shoutout for module-specific outputs only", () => {
+    const registry = createDefaultOverlayModuleRegistry();
+
+    expect(registry.getModule("video-shoutout")).toMatchObject({
+      id: "video-shoutout",
+      renderer: { supportedOutputs: ["module"] }
+    });
+    expect(listUnifiedOverlayModuleIds(registry)).toEqual(["alerts", "screen-effects", "timers", "music"]);
   });
 
   it("returns null for unknown module ids", () => {

@@ -962,6 +962,92 @@ describe("runtime app composition smoke", () => {
     });
   }, 30_000);
 
+  it("routes Streamer.bot manual video shoutouts to the module browser source without event ingestion", async () => {
+    const testRoot = await createTemporaryDirectory();
+    const streamerBotSockets: ControlledStreamerBotSocket[] = [];
+    const composition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot)),
+      environment: { TWITCH_CLIENT_ID: "test-client" },
+      secretStore: new InMemorySecretStore(),
+      // Any Twitch API or EventSub use fails these doubles: Streamer.bot owns clip lookup.
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket,
+      streamerBotSocketFactory: () => {
+        const socket = new ControlledStreamerBotSocket();
+        streamerBotSockets.push(socket);
+        return socket;
+      },
+      now: () => new Date("2026-10-07T12:00:00.000Z")
+    });
+    runtimeCompositions.push(composition);
+    const session = await composition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const authHeaders = managementAuthHeaders(session);
+    const registration = await composition.app.inject({
+      method: "POST",
+      url: "/management/providers",
+      headers: authHeaders,
+      payload: {
+        name: "Streamer.bot",
+        kind: "streamerbot",
+        configuration: { protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/", allowUnauthenticatedLocalConnection: true }
+      }
+    });
+    const providerId = (registration.json() as { readonly provider: { readonly provider: { readonly id: string } } }).provider.provider.id;
+    expect((await composition.app.inject({
+      method: "POST", url: `/management/providers/${providerId}/activate`, headers: authHeaders, payload: { confirmWarnings: false }
+    })).statusCode).toBe(200);
+    await waitFor(() => streamerBotSockets.length === 2);
+    await waitFor(() => composition.streamerBotRuntimeService.getStatus().state === "connected");
+
+    const outputs = await composition.app.inject({ method: "GET", url: "/management/overlay-outputs", headers: authHeaders });
+    expect((outputs.json() as readonly { readonly moduleId: string | null; readonly purpose: string }[])
+      .filter(output => output.moduleId === "video-shoutout").map(output => output.purpose)).toEqual(["live", "test"]);
+    const key = await composition.app.inject({
+      method: "POST",
+      url: "/management/overlay-outputs/keys",
+      headers: authHeaders,
+      payload: { overlayId: "default", scope: "module", moduleId: "video-shoutout", purpose: "live", targetProfileId: null }
+    });
+    expect(key.statusCode, key.body).toBe(200);
+    const compositionPath = `${new URL((key.json() as { readonly url: string }).url).pathname}/composition`;
+    expect(compositionPath).toMatch(/^\/overlay\/modules\/video-shoutout\/live\/[^/]+\/composition$/u);
+    const readShoutout = async () => ((await composition.app.inject({ url: compositionPath })).json() as {
+      readonly modules: readonly { readonly presentation?: { readonly shoutout: { readonly status: string; readonly clip?: { readonly clipId: string } } } }[];
+    }).modules[0]?.presentation?.shoutout;
+    expect(await readShoutout()).toEqual({ status: "idle" });
+
+    const clip = {
+      source: "StreamJams", type: "VideoShoutout", login: "friendly_streamer", displayName: "Friendly Streamer", clipId: "ClipOne",
+      embedUrl: "https://clips.twitch.tv/embed?clip=ClipOne&parent=127.0.0.1", title: "The big play", duration: 12
+    };
+    // Ordinary stream events never select clips, even when they carry clip-shaped data.
+    await streamerBotSockets[1]!.emitEvent({
+      timeStamp: "2026-10-07T12:00:01.000Z", event: { source: "Twitch", type: "Raid" },
+      data: { ...clip, user: { id: "user-raid", login: "raider", name: "Raider" }, viewers: 3 }
+    });
+    expect(await readShoutout()).toEqual({ status: "idle" });
+
+    await streamerBotSockets[1]!.emitEvent({ timeStamp: "2026-10-07T12:00:02.000Z", event: { source: "General", type: "Custom" }, data: { ...clip, embedUrl: "https://evil.example/embed?clip=ClipOne&parent=x" } });
+    expect(await readShoutout()).toEqual({ status: "idle" });
+
+    await streamerBotSockets[1]!.emitEvent({ timeStamp: "2026-10-07T12:00:03.000Z", event: { source: "General", type: "Custom" }, data: clip });
+    await waitFor(async () => (await readShoutout())?.status === "loading");
+    expect(await readShoutout()).toMatchObject({ status: "loading", clip: { clipId: "ClipOne", durationMs: 12_000 } });
+
+    await streamerBotSockets[1]!.emitEvent({ timeStamp: "2026-10-07T12:00:04.000Z", event: { source: "General", type: "Custom" }, data: { source: "StreamJams", type: "VideoShoutout", action: "clear" } });
+    await waitFor(async () => (await readShoutout())?.status === "idle");
+
+    const logDirectory = join(testRoot, "data", "logs");
+    const log = (await Promise.all((await readdir(logDirectory)).map(file => readFile(join(logDirectory, file), "utf8")))).join("\n");
+    expect(log).toContain("Streamer.bot video shoutout was rejected and not shown.");
+    expect(log).toContain("Streamer.bot video shoutout was accepted.");
+    expect(log).not.toContain("evil.example");
+    expect(log).not.toContain((key.json() as { readonly url: string }).url.split("/").at(-1)!);
+  }, 30_000);
+
   it("switches persistent intake between Twitch and Streamer.bot without reauthorization", async () => {
     const testRoot = await createTemporaryDirectory();
     const credentials = new RecordingCredentialAdapter();
@@ -1323,6 +1409,14 @@ describe("runtime app composition smoke", () => {
         defaultEnabled: false,
         renderer: expect.objectContaining({
           supportedOutputs: ["module", "unified"]
+        })
+      }),
+      expect.objectContaining({
+        id: "video-shoutout",
+        displayName: "Video shoutout",
+        defaultEnabled: true,
+        renderer: expect.objectContaining({
+          supportedOutputs: ["module"]
         })
       })
     ]);
@@ -2307,7 +2401,8 @@ class ControlledStreamerBotSocket implements StreamerBotSocket {
               "PollCreated", "PollUpdated", "PollCompleted", "PollArchived", "PollTerminated",
               "PredictionCreated", "PredictionUpdated", "PredictionLocked", "PredictionCompleted", "PredictionCanceled",
               "StreamOnline", "StreamOffline"
-            ]
+            ],
+            General: ["Custom"]
           }
         }
       : { id: request.id, request: request.request, status: "ok" };

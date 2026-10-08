@@ -70,7 +70,8 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 | ID | Outcome | Status | Priority | Dependency or trigger | Detail |
 | --- | --- | --- | --- | --- | --- |
 | BL-052 | Main-branch changelog and validation | Planned | P2 | Existing proposal; 0/22 implementation tasks at the September 23 audit | [OpenSpec change](../openspec/changes/add-main-branch-changelog/proposal.md) |
-| BL-053 | Manual Streamer.bot video shoutout overlay module | Planned | P2 | Verify the proposal's output/intake prerequisites before implementation; 0/23 tasks at the September 23 audit | [OpenSpec change](../openspec/changes/add-video-shoutout-overlay-module/proposal.md); separate from Screen Effects |
+| BL-053 | Manual Streamer.bot video shoutout overlay module | Planned | P2 | Implementation in review; remove after merge, spec sync, and live Twitch embed acceptance | [OpenSpec change](../openspec/changes/add-video-shoutout-overlay-module/proposal.md); [setup](video-shoutout.md); separate from Screen Effects |
+| BL-057 | Video shoutout management page (enablement, browser-source URLs, test trigger) | Deferred | P2 | BL-053; outputs are API-only until then | [Video shoutouts](video-shoutout.md) |
 
 ## Known Issues
 

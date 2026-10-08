@@ -94,7 +94,9 @@ const moduleSync = <T extends z.ZodType<{ assetId: string }>, A extends z.ZodTyp
   artwork: artworkSchema.nullable().optional()
 }).strict().superRefine((sync, context) => {
   const fail = (message: string) => context.addIssue({ code: "custom", message });
-  if (sync.presentation !== null) {
+  if (sync.presentation?.kind === "video-shoutout") {
+    fail("Video shoutout presentation is browser-source only");
+  } else if (sync.presentation !== null) {
     if (sync.presentation.kind === "timer-stack" && sync.moduleId !== "timers") fail("Timer presentation requires the Timers module");
     if (sync.presentation.kind === "music-widget" && sync.moduleId !== "music") fail("Music presentation requires the Music module");
     const targetProfileId = sync.presentation.kind === "timer-stack" ? sync.presentation.stack.targetProfileId : sync.presentation.widget.targetProfileId;

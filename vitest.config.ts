@@ -5,6 +5,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@stream-jams/core/music-style-policy": fileURLToPath(new URL("./packages/core/src/music/style-policy.ts", import.meta.url)),
+      "@stream-jams/core/video-shoutout": fileURLToPath(new URL("./packages/core/src/video-shoutout/contract.ts", import.meta.url)),
       "@stream-jams/core": fileURLToPath(new URL("./packages/core/src/index.ts", import.meta.url))
     }
   },

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { createDefaultOverlayModuleRegistry } from "@stream-jams/core";
+import { createDefaultOverlayModuleRegistry, listUnifiedOverlayModuleIds } from "@stream-jams/core";
 import { createSurfaceSettingsRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { SurfaceSettingsService } from "../../modules/overlay-surfaces/surface-settings-service.js";
 import { SqliteSurfaceRepository } from "../../modules/overlay-surfaces/sqlite-surface-repository.js";
@@ -16,7 +16,7 @@ async function fixture(maxRequests = 100) {
   const surfaces = new SqliteSurfaceRepository(db.connection, registry);
   const host = { configure: vi.fn(async () => {}), retry: vi.fn(async () => {}), getStatus: vi.fn(async () => ({ available: true,
     displays: [{ id: "one", label: "Display", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }], state: "disabled" as const, message: null })) };
-  const service = new SurfaceSettingsService({ surfaces, host, moduleIds: () => registry.listModules().map(module => module.id), changed: async () => {}, runMutation: async work => work() });
+  const service = new SurfaceSettingsService({ surfaces, host, moduleIds: () => listUnifiedOverlayModuleIds(registry), changed: async () => {}, runMutation: async work => work() });
   const sessions = new LocalManagementSessionService();
   const app = createServerApp({ metadata: { appName: "stream-jams", version: "0.0.0" }, surfaceSettingsService: service,
     managementSessionService: sessions, serverErrorLogger: () => {},

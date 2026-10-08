@@ -2,6 +2,7 @@ import { alertsOverlayModuleDefinition } from "./module-definition.js";
 import { screenEffectsOverlayModuleDefinition } from "../screen-effects/module-definition.js";
 import { timersOverlayModuleDefinition } from "../timers/module-definition.js";
 import { musicModuleDefinition } from "../music/module-definition.js";
+import { videoShoutoutModuleDefinition } from "../video-shoutout/module-definition.js";
 import { overlayModuleDefinitionSchema } from "./schemas.js";
 import type { OverlayModuleDefinition } from "./types.js";
 
@@ -44,6 +45,14 @@ export function createDefaultOverlayModuleRegistry(): OverlayModuleRegistry {
     alertsOverlayModuleDefinition,
     screenEffectsOverlayModuleDefinition,
     timersOverlayModuleDefinition,
-    musicModuleDefinition
+    musicModuleDefinition,
+    videoShoutoutModuleDefinition
   ]);
+}
+
+/** Module ids that participate in unified browser sources and surface layering, in registry order. */
+export function listUnifiedOverlayModuleIds(registry: Pick<OverlayModuleRegistry, "listModules">): string[] {
+  return registry.listModules()
+    .filter(moduleDefinition => moduleDefinition.renderer.supportedOutputs.includes("unified"))
+    .map(moduleDefinition => moduleDefinition.id);
 }

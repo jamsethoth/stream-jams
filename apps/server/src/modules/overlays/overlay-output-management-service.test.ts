@@ -20,6 +20,19 @@ describe("OverlayOutputManagementService", () => {
       [null, "live"], [null, "test"], ["landscape", "live"], ["landscape", "test"], ["vertical", "live"], ["vertical", "test"]
     ]);
   });
+  it("lists create-required Video shoutout live and test module outputs without unified membership", async () => {
+    const { service } = createService([]);
+    const outputs = await service.listOutputs("http://127.0.0.1:39187");
+    expect(outputs.filter(output => output.moduleId === "video-shoutout")).toEqual([
+      expect.objectContaining({ id: "module:video-shoutout:live", scope: "module", targetProfileId: null, purpose: "live", enabled: true, url: null, copyableUrlStatus: "create-required" }),
+      expect.objectContaining({ id: "module:video-shoutout:test", scope: "module", targetProfileId: null, purpose: "test", enabled: true, url: null, copyableUrlStatus: "create-required" })
+    ]);
+  });
+  it("creates a Video shoutout URL on the existing module route family", async () => {
+    const { service } = createService(["ovl_videoShoutoutLive"]);
+    const created = await service.createKey({ overlayId: "default", scope: "module", moduleId: "video-shoutout", purpose: "live", targetProfileId: null }, "http://127.0.0.1:39187");
+    expect(created.url).toBe("http://127.0.0.1:39187/overlay/modules/video-shoutout/live/ovl_videoShoutoutLive");
+  });
   it("lists independent Alerts outputs for both target profiles and purposes", async () => {
     const { service } = createService([]);
 

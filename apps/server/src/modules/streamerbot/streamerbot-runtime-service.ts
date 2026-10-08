@@ -84,6 +84,11 @@ export interface StreamerBotRuntimeServiceOptions {
     >;
   };
   readonly generateReferenceId: () => string;
+  /**
+   * Receives Streamer.bot General/Custom broadcasts before stream-event ingestion.
+   * Returning true marks the event handled. When set, General/Custom is subscribed if advertised.
+   */
+  readonly customEventHandler?: ((envelope: StreamerBotEventEnvelope) => boolean | Promise<boolean>) | undefined;
   readonly onDiagnostic?: ((entry: StreamerBotRuntimeDiagnostic) => void | Promise<void>) | undefined;
   readonly now?: (() => Date) | undefined;
   readonly sleep?: ((delayMs: number) => Promise<void>) | undefined;
@@ -113,6 +118,7 @@ export class StreamerBotRuntimeService {
   readonly #client: StreamerBotRuntimeClient;
   readonly #ingestionService: StreamerBotRuntimeServiceOptions["ingestionService"];
   readonly #generateReferenceId: () => string;
+  readonly #customEventHandler: StreamerBotRuntimeServiceOptions["customEventHandler"];
   readonly #onDiagnostic: NonNullable<StreamerBotRuntimeServiceOptions["onDiagnostic"]>;
   readonly #now: () => Date;
   readonly #sleep: (delayMs: number) => Promise<void>;
@@ -132,6 +138,7 @@ export class StreamerBotRuntimeService {
     this.#secretStore = options.secretStore;
     this.#ingestionService = options.ingestionService;
     this.#generateReferenceId = options.generateReferenceId;
+    this.#customEventHandler = options.customEventHandler;
     this.#onDiagnostic = options.onDiagnostic ?? (() => {});
     this.#now = options.now ?? (() => new Date());
     this.#sleep = options.sleep ?? ((delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)));
@@ -363,6 +370,10 @@ export class StreamerBotRuntimeService {
     }
 
     this.#requiredSubscriptions = [{ sourceKey, eventTypes: subscribed }];
+    const generalSourceKey = Object.keys(available).find((key) => key.toLowerCase() === "general");
+    if (this.#customEventHandler !== undefined && generalSourceKey !== undefined && available[generalSourceKey]?.includes("Custom")) {
+      this.#requiredSubscriptions = [...this.#requiredSubscriptions, { sourceKey: generalSourceKey, eventTypes: ["Custom"] }];
+    }
     const configured = this.#externalSubscriptions.filter((selection) => {
         const advertised = available[selection.sourceKey];
         return advertised !== undefined && selection.eventTypes.every((eventType) => advertised.includes(eventType));
@@ -383,6 +394,14 @@ export class StreamerBotRuntimeService {
 
   async #handleEvent(envelope: StreamerBotEventEnvelope): Promise<void> {
     try {
+      if (
+        this.#customEventHandler !== undefined &&
+        envelope.event.source.toLowerCase() === "general" &&
+        envelope.event.type === "Custom" &&
+        await this.#customEventHandler(envelope)
+      ) {
+        return;
+      }
       const result = normalizeStreamerBotEvent(envelope);
       const normalizedEvent = result.status === "normalized" ? result.event : null;
       const effectTriggers = createStreamerBotEffectTriggers(envelope, normalizedEvent, {
