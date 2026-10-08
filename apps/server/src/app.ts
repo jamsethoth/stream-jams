@@ -1,3 +1,4 @@
+import { registerDataOverlayRoutes, type DataOverlayRouteDependencies } from "./http/routes/data-overlays.js";
 import { registerAutomationPairingRoutes, type AutomationPairingRouteDependencies } from "./http/routes/automation-pairing.js";
 import { registerAutomationControlRoutes, type AutomationControlRouteDependencies } from "./http/routes/automation-controls.js";
 import { randomUUID } from "node:crypto";
@@ -73,6 +74,7 @@ export interface BaseServerAppOptions {
 }
 
 export type ProductionServerAppDependencies = BaseServerAppOptions
+  & Partial<Pick<DataOverlayRouteDependencies, "dataOverlayService">>
   & ServerConfigRouteDependencies
   & DesktopConfigRouteDependencies
   & AudioOutputRouteDependencies
@@ -140,6 +142,7 @@ export function createServerApp(dependencies: ProductionServerAppDependencies): 
   registerPlaybackOperationsRoutes(app, dependencies);
   registerScreenEffectRoutes(app, dependencies);
   registerTimerRoutes(app, dependencies);
+  if (dependencies.dataOverlayService !== undefined) registerDataOverlayRoutes(app, { ...dependencies, dataOverlayService: dependencies.dataOverlayService });
   registerTimerAutomationRoutes(app, dependencies);
   registerAutomationPairingRoutes(app, dependencies);
   registerAutomationControlRoutes(app, dependencies);

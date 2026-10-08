@@ -41,7 +41,8 @@ const expectedMigrations = [
   "029-asset-retirements",
   "030-persistent-event-timers",
   "031-automation-grants",
-  "032-music-source-providers"
+  "032-music-source-providers",
+  "033-custom-data-overlays"
 
 ] as const;
 
@@ -61,6 +62,13 @@ const expectedTables = [
   "asset_retirements",
   "audio_output_routes",
   "automation_grants",
+  "data_canvases",
+  "data_element_refs",
+  "data_goals",
+  "data_overlay_meta",
+  "data_pins",
+  "data_reset_groups",
+  "data_values",
   "event_logs",
   "module_playback_settings",
   "overlay_keys",
@@ -85,6 +93,7 @@ const expectedTables = [
 describe("Stream Jams SQLite database", () => {
   it("upgrades the exact pre-merge Music preview history without rebuilding provider rows", () => {
     using database = createInMemoryStreamJamsDatabase();
+    removeDataOverlaySchema(database.connection);
     database.connection.exec("DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; UPDATE schema_migrations SET id = '031-music-source-providers' WHERE id = '032-music-source-providers';");
     database.connection.exec("INSERT INTO provider_registrations (id,name,kind,capability,non_secret_config_json,active,connection_state,available_voices_json,created_at,updated_at) VALUES ('pear-preview','Pear','pear-desktop','music-source','{}',1,'connected','[]','now','now')");
     database.runMigrations();
@@ -166,6 +175,7 @@ describe("Stream Jams SQLite database", () => {
   it("removes stored Screen Effect animations when upgrading schema 24", () => {
     using database = createInMemoryStreamJamsDatabase();
     const db = database.connection;
+    removeDataOverlaySchema(db);
     db.exec("DELETE FROM schema_migrations WHERE id = '032-music-source-providers'; DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements; DELETE FROM schema_migrations WHERE id = '029-asset-retirements'; DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; DROP TABLE timer_run_recovery; DELETE FROM schema_migrations WHERE id = '030-persistent-event-timers'; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;");
 
     db.prepare("DELETE FROM schema_migrations WHERE id IN (?, ?, ?, ?)").run(
@@ -306,6 +316,7 @@ describe("Stream Jams SQLite database", () => {
   it("defaults existing audio routes to automatic following disabled when migrating schema 25", () => {
     using database = createInMemoryStreamJamsDatabase();
     const db = database.connection;
+    removeDataOverlaySchema(db);
     db.exec("DELETE FROM schema_migrations WHERE id = '032-music-source-providers'; DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements; DELETE FROM schema_migrations WHERE id = '029-asset-retirements'; DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; DROP TABLE timer_run_recovery; DELETE FROM schema_migrations WHERE id = '030-persistent-event-timers'; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;");
 
     db.prepare("DELETE FROM schema_migrations WHERE id IN (?, ?, ?)").run(
@@ -589,6 +600,8 @@ describe("Stream Jams SQLite database", () => {
     `);
     database.connection.exec(alertTextStyleDefaultsMigration.sql);
     database.connection.exec(`
+      DROP TABLE data_element_refs; DROP TABLE data_pins; DROP TABLE data_goals; DROP TABLE data_values; DROP TABLE data_reset_groups; DROP TABLE data_canvases; DROP TABLE data_overlay_meta;
+      DELETE FROM schema_migrations WHERE id = '033-custom-data-overlays';
       DELETE FROM schema_migrations WHERE id = '032-music-source-providers';
       DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset;
       DROP TABLE asset_retirements;
@@ -891,4 +904,10 @@ function listAppliedMigrations(connection: { prepare(sql: string): { all(): Reco
     .prepare("SELECT id FROM schema_migrations ORDER BY rowid")
     .all()
     .map((row) => String(row.id));
+}
+
+function removeDataOverlaySchema(connection: DatabaseSync): void {
+  connection.exec(`DROP TABLE data_element_refs; DROP TABLE data_pins; DROP TABLE data_goals;
+    DROP TABLE data_values; DROP TABLE data_reset_groups; DROP TABLE data_canvases; DROP TABLE data_overlay_meta;
+    DELETE FROM schema_migrations WHERE id = '033-custom-data-overlays';`);
 }

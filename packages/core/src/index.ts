@@ -388,3 +388,5 @@ export * from "./data-overlays/goals.js";
 export * from "./data-overlays/formatting.js";
 export * from "./data-overlays/projection.js";
 export * from "./data-overlays/module-definition.js";
+export * from "./data-overlays/repository.js";
+export * from "./data-overlays/value-service.js";
