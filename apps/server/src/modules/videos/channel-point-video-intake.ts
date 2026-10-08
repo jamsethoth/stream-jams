@@ -4,7 +4,7 @@ import type { VideoIntakeDiagnostic } from "./streamerbot-video-intake.js";
 
 export interface ChannelPointVideoIntakeOptions {
   readonly intake: Pick<VideoRequestIntake, "submit">;
-  readonly getConfig: () => VideosModuleConfig;
+  readonly getConfig: () => Promise<VideosModuleConfig> | VideosModuleConfig;
   readonly onDiagnostic?: ((entry: VideoIntakeDiagnostic) => void | Promise<void>) | undefined;
 }
 
@@ -17,10 +17,10 @@ export function createChannelPointVideoIntake(options: ChannelPointVideoIntakeOp
   return {
     async handleEvent(event: NormalizedStreamEvent): Promise<void> {
       if (event.type !== "channel_point_redemption") return;
-      const mapping = options.getConfig().rewardMappings.find(candidate => candidate.rewardId === event.rewardId);
+      const mapping = (await options.getConfig()).rewardMappings.find(candidate => candidate.rewardId === event.rewardId);
       if (mapping === undefined) return;
       const link = event.userInput?.trim() ?? "";
-      const result = options.intake.submit(mapping.purpose, {
+      const result = await options.intake.submit(mapping.purpose, {
         link: link === "" ? undefined : link,
         requester: event.actor.displayName.slice(0, 64)
       }, { via: "channel-points", mayAutoplay: false });

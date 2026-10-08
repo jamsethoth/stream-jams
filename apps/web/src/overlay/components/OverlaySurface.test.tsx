@@ -365,7 +365,7 @@ describe("OverlaySurface", () => {
     } };
     const { rerender } = render(<OverlaySurface composition={composition(value)} muted={false} resolveAssetUrl={(id) => `/assets/${id}`} />);
     expect(screen.getByTestId("overlay-video-instruction-1")).toHaveProperty("muted", true);
-    rerender(<OverlaySurface composition={composition({ ...value, moduleId: "video-shoutout" })} muted={false} resolveAssetUrl={(id) => `/assets/${id}`} />);
+    rerender(<OverlaySurface composition={composition({ ...value, moduleId: "videos" })} muted={false} resolveAssetUrl={(id) => `/assets/${id}`} />);
     expect(screen.getByTestId("overlay-video-instruction-1")).toHaveProperty("muted", false);
   });
 

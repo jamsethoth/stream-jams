@@ -94,8 +94,9 @@ const moduleSync = <T extends z.ZodType<{ assetId: string }>, A extends z.ZodTyp
   artwork: artworkSchema.nullable().optional()
 }).strict().superRefine((sync, context) => {
   const fail = (message: string) => context.addIssue({ code: "custom", message });
-  if (sync.presentation?.kind === "video-shoutout") {
-    fail("Video shoutout presentation is browser-source only");
+  if (sync.presentation?.kind === "videos") {
+    // The desktop overlay shows the primary player directly, never a second player.
+    fail("Videos presentation is browser-source only");
   } else if (sync.presentation !== null) {
     if (sync.presentation.kind === "timer-stack" && sync.moduleId !== "timers") fail("Timer presentation requires the Timers module");
     if (sync.presentation.kind === "music-widget" && sync.moduleId !== "music") fail("Music presentation requires the Music module");

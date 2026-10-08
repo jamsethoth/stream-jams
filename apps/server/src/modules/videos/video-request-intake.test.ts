@@ -27,35 +27,35 @@ function setup(overrides: Partial<VideosModuleConfig> = {}, options: { enabled?:
 const youtube = "https://youtu.be/dQw4w9WgXcQ?t=1m5s";
 
 describe("VideoRequestIntake", () => {
-  it("normalizes a link and queues it without autoplay by default", () => {
+  it("normalizes a link and queues it without autoplay by default", async () => {
     const { intake, submissions } = setup();
-    const result = intake.submit("live", { link: youtube, title: "Song", requester: "Viewer", durationSeconds: 12.2 }, { via: "management", mayAutoplay: true });
+    const result = await intake.submit("live", { link: youtube, title: "Song", requester: "Viewer", durationSeconds: 12.2 }, { via: "management", mayAutoplay: true });
     expect(result).toMatchObject({ status: "accepted", item: { status: "queued", autoplay: false } });
     expect(submissions[0]).toMatchObject({ source: { provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 65_000 }, durationMs: 12_200, via: "management" });
   });
 
-  it("honors autoplay only when the caller and channel allow it", () => {
-    const autoplay = (via: VideoSubmission["via"], mayAutoplay: boolean, overrides: Partial<VideosModuleConfig> = {}) => {
+  it("honors autoplay only when the caller and channel allow it", async () => {
+    const autoplay = async (via: VideoSubmission["via"], mayAutoplay: boolean, overrides: Partial<VideosModuleConfig> = {}) => {
       const { intake } = setup(overrides);
-      const result = intake.submit("live", { link: youtube, autoplay: true }, { via, mayAutoplay });
+      const result = await intake.submit("live", { link: youtube, autoplay: true }, { via, mayAutoplay });
       return result.status === "accepted" && result.item.autoplay;
     };
-    expect(autoplay("automation", true)).toBe(true);
-    expect(autoplay("automation", false)).toBe(false);
-    expect(autoplay("channel-points", true)).toBe(false);
-    expect(autoplay("streamerbot", true)).toBe(true);
-    expect(autoplay("streamerbot", true, { streamerBotAutoplay: false })).toBe(false);
+    expect(await autoplay("automation", true)).toBe(true);
+    expect(await autoplay("automation", false)).toBe(false);
+    expect(await autoplay("channel-points", true)).toBe(false);
+    expect(await autoplay("streamerbot", true)).toBe(true);
+    expect(await autoplay("streamerbot", true, { streamerBotAutoplay: false })).toBe(false);
   });
 
-  it("rejects bad input with field names only, never the submitted values", () => {
+  it("rejects bad input with field names only, never the submitted values", async () => {
     const { intake, submissions } = setup();
     const secret = "https://evil.example/secret-token.mp4";
     const results = [
-      intake.submit("live", { link: youtube, extra: secret }, { via: "automation", mayAutoplay: false }),
-      intake.submit("live", { title: "x" }, { via: "automation", mayAutoplay: false }),
-      intake.submit("live", { link: "not a link" }, { via: "automation", mayAutoplay: false }),
-      intake.submit("live", { link: "http://youtu.be/dQw4w9WgXcQ" }, { via: "automation", mayAutoplay: false }),
-      intake.submit("live", { link: secret }, { via: "automation", mayAutoplay: false })
+      await intake.submit("live", { link: youtube, extra: secret }, { via: "automation", mayAutoplay: false }),
+      await intake.submit("live", { title: "x" }, { via: "automation", mayAutoplay: false }),
+      await intake.submit("live", { link: "not a link" }, { via: "automation", mayAutoplay: false }),
+      await intake.submit("live", { link: "http://youtu.be/dQw4w9WgXcQ" }, { via: "automation", mayAutoplay: false }),
+      await intake.submit("live", { link: secret }, { via: "automation", mayAutoplay: false })
     ];
     expect(results).toEqual([
       { status: "rejected", reason: "invalid-request", fields: ["request"] },
@@ -68,15 +68,15 @@ describe("VideoRequestIntake", () => {
     expect(submissions).toHaveLength(0);
   });
 
-  it("accepts direct files only from allowed hosts", () => {
+  it("accepts direct files only from allowed hosts", async () => {
     const { intake } = setup({ allowedDirectHosts: ["cdn.example.com"] });
-    expect(intake.submit("live", { link: "https://cdn.example.com/a.mp4" }, { via: "operator", mayAutoplay: true }).status).toBe("accepted");
-    expect(intake.submit("live", { link: "https://cdn.example.com/a.mov" }, { via: "operator", mayAutoplay: true })).toMatchObject({ reason: "unsupported-source" });
+    expect((await intake.submit("live", { link: "https://cdn.example.com/a.mp4" }, { via: "operator", mayAutoplay: true })).status).toBe("accepted");
+    expect(await intake.submit("live", { link: "https://cdn.example.com/a.mov" }, { via: "operator", mayAutoplay: true })).toMatchObject({ reason: "unsupported-source" });
   });
 
-  it("rejects requests while the module is off or the queue is full", () => {
-    expect(setup({}, { enabled: false }).intake.submit("live", { link: youtube }, { via: "management", mayAutoplay: true })).toMatchObject({ reason: "module-disabled" });
-    expect(setup({}, { full: true }).intake.submit("live", { link: youtube }, { via: "management", mayAutoplay: true })).toMatchObject({ reason: "queue-full" });
+  it("rejects requests while the module is off or the queue is full", async () => {
+    expect(await setup({}, { enabled: false }).intake.submit("live", { link: youtube }, { via: "management", mayAutoplay: true })).toMatchObject({ reason: "module-disabled" });
+    expect(await setup({}, { full: true }).intake.submit("live", { link: youtube }, { via: "management", mayAutoplay: true })).toMatchObject({ reason: "queue-full" });
   });
 });
 

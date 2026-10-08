@@ -17,7 +17,7 @@ import { useMediaVolumeEnvelope } from "../../media/use-media-volume-envelope.js
 import { AlertTextContent } from "./AlertTextContent.js";
 import { TimerStack } from "./TimerStack.js";
 import { MusicWidget } from "./MusicWidget.js";
-import { VideoShoutout } from "./VideoShoutout.js";
+import { VideosOverlay } from "./VideosOverlay.js";
 
 export type OverlayPlaybackEvent =
   | { readonly instructionId: string; readonly status: "ready" }
@@ -159,7 +159,7 @@ function ModulePresentation({
   readonly resolveMusicAsset?: MusicAssetResolver | undefined;
 }) {
   if (presentation?.kind === "music-widget") return resolveMusicAsset === undefined ? null : <MusicWidget projection={presentation.widget} resolveAsset={resolveMusicAsset} />;
-  if (presentation?.kind === "video-shoutout") return <VideoShoutout onPlaybackEvent={onPlaybackEvent} projection={presentation.shoutout} />;
+  if (presentation?.kind === "videos") return <VideosOverlay onPlaybackEvent={onPlaybackEvent} projection={presentation.videos} />;
   if (presentation?.kind !== "timer-stack") return null;
   const stack = timerStackProjectionSchema.safeParse(presentation.stack);
   return stack.success ? <TimerStack stack={stack.data} resolveAssetUrl={resolveAssetUrl} /> : null;

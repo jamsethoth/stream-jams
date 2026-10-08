@@ -25,6 +25,17 @@ export function normalizeDirectVideoHost(value: string): string | null {
   return hostnamePattern.test(host) ? host : null;
 }
 
+/**
+ * Host-independent checks for a direct-file URL: HTTPS, a plain hostname, no login, port or
+ * fragment, and an .mp4 or .webm path. Overlays apply this; the server also checks the host allowlist.
+ */
+export function isSafeDirectVideoUrl(value: string): boolean {
+  if (value.length > videoMaximumLinkLength || !URL.canParse(value)) return false;
+  const url = new URL(value);
+  return url.href === value && url.protocol === "https:" && url.username === "" && url.password === "" && url.port === "" && url.hash === "" &&
+    hostnamePattern.test(url.hostname) && directExtensionPattern.test(url.pathname);
+}
+
 export interface ParseVideoLinkOptions {
   readonly allowedDirectHosts: readonly string[];
 }
@@ -69,6 +80,8 @@ export interface VideoPlayerUrlOptions {
   readonly parentHost: string;
   /** Origin of the player page, given to YouTube so its postMessage events target it. */
   readonly playerOrigin: string;
+  /** Starts the provider player muted, for outputs that must not carry sound. */
+  readonly muted?: boolean | undefined;
 }
 
 /** Builds the provider player URL for a validated source. Direct files return their own URL. */
@@ -78,15 +91,15 @@ export function buildVideoPlayerUrl(source: VideoSource, options: VideoPlayerUrl
       const url = new URL(`https://www.youtube-nocookie.com/embed/${source.videoId}`);
       url.search = new URLSearchParams({
         enablejsapi: "1", playsinline: "1", autoplay: "1", rel: "0",
-        start: String(Math.floor(source.startAtMs / 1000)), origin: options.playerOrigin
+        start: String(Math.floor(source.startAtMs / 1000)), origin: options.playerOrigin, mute: options.muted === true ? "1" : "0"
       }).toString();
       return url.href;
     }
     case "twitch-clip":
-      return `https://clips.twitch.tv/embed?${new URLSearchParams({ clip: source.clipSlug, parent: options.parentHost, autoplay: "true", muted: "false" }).toString()}`;
+      return `https://clips.twitch.tv/embed?${new URLSearchParams({ clip: source.clipSlug, parent: options.parentHost, autoplay: "true", muted: String(options.muted === true) }).toString()}`;
     case "twitch-vod":
       return `https://player.twitch.tv/?${new URLSearchParams({
-        video: `v${source.videoId}`, parent: options.parentHost, autoplay: "true", muted: "false", time: formatTwitchTime(source.startAtMs)
+        video: `v${source.videoId}`, parent: options.parentHost, autoplay: "true", muted: String(options.muted === true), time: formatTwitchTime(source.startAtMs)
       }).toString()}`;
     case "direct":
       return source.url;

@@ -104,7 +104,8 @@ describe("SqliteEffectRepository", () => {
   it("upgrades populated pre-set data without changing document identities or flags", async () => {
     using database = createInMemoryStreamJamsDatabase();
     await seedReferences(database.connection);
-    database.connection.exec(`DROP TRIGGER screen_effect_assign_set;
+    database.connection.exec(`DROP TABLE video_requests; DROP TABLE video_queue_state; DELETE FROM schema_migrations WHERE id = '033-video-request-queue';
+      DROP TRIGGER screen_effect_assign_set;
       DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements;
       DROP TABLE screen_effect_set_memberships; DROP TABLE screen_effect_sets;
       DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; DROP TABLE timer_run_recovery; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;

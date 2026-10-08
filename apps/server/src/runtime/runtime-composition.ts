@@ -27,6 +27,8 @@ import {
   pearConfigurationSchema,
   musicModuleConfigSchema,
   type ActionableManagementError,
+  type OverlayPurpose,
+  type VideosModuleConfig,
   type AlertEditorErrorReportInput,
   type AudioDeviceHost,
   type AudioPlaybackSink,
@@ -126,8 +128,12 @@ import { MusicManagementService } from "../modules/music/music-management-servic
 import { saveValidatedMusicConfig } from "../modules/music/music-config-save.js";
 import { MusicArtworkService, type MusicArtworkServiceOptions } from "../modules/music/music-artwork-service.js";
 import { MusicOutputRuntime } from "../modules/music/music-output-runtime.js";
-import { VideoShoutoutService } from "../modules/video-shoutout/video-shoutout-service.js";
-import { createStreamerBotVideoShoutoutIntake } from "../modules/video-shoutout/streamerbot-video-shoutout-intake.js";
+import { SqliteVideoQueueRepository } from "../modules/videos/video-queue-repository.js";
+import { VideoQueueService } from "../modules/videos/video-queue-service.js";
+import { VideoRequestIntake } from "../modules/videos/video-request-intake.js";
+import { VideosRuntime } from "../modules/videos/videos-runtime.js";
+import { createStreamerBotVideoIntake, type VideoIntakeDiagnostic } from "../modules/videos/streamerbot-video-intake.js";
+import { createChannelPointVideoIntake } from "../modules/videos/channel-point-video-intake.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
 import { evaluateProviderActivationImpact } from "../modules/providers/provider-activation-impact.js";
 import { SqliteProviderRegistrationRepository } from "../modules/providers/sqlite-provider-registration-repository.js";
@@ -461,22 +467,24 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const twitchApiClient = options.twitchApiClient ?? defaultTwitchApiClient;
   const twitchRewardApiClient = options.twitchRewardApiClient ?? defaultTwitchApiClient;
   let currentModuleMutes = initialConfig.playback.moduleMutes ?? { alerts: false, "screen-effects": false };
-  const videoShoutoutService = new VideoShoutoutService({
-    clock: { now: () => now().getTime() },
-    scheduler: {
-      schedule(delayMs, callback) {
-        const handle = setTimeout(callback, delayMs);
-        return { cancel: () => clearTimeout(handle) };
-      }
-    },
-    generateActivationId: randomUUID,
-    onTransition(transition) {
-      void runtimeLogger.info("Video shoutout state changed.", {
-        module: "video-shoutout", source: "video-shoutout.state", correlationId: transition.activationId ?? "video-shoutout", processingId: null,
-        metadata: { purpose: transition.purpose, from: transition.from, to: transition.to, cause: transition.cause }
-      });
-    }
+  const readVideosConfig = async () => (await overlayModuleConfigService.getModuleConfig("videos")).config as VideosModuleConfig;
+  // The queue reads limits synchronously; saves through the runtime config service refresh this copy.
+  let videosConfig = await readVideosConfig();
+  const videoQueueService = new VideoQueueService({
+    repository: new SqliteVideoQueueRepository(database.connection),
+    getConfig: () => videosConfig,
+    now: () => now().getTime()
   });
+  const videoRequestIntake = new VideoRequestIntake({
+    queue: videoQueueService,
+    getConfig: () => videosConfig,
+    isModuleEnabled: async () => (await overlayModuleConfigService.getModuleConfig("videos")).enabled
+  });
+  const videosRuntime = new VideosRuntime({ queue: videoQueueService, intake: videoRequestIntake, getConfig: async () => videosConfig, now: () => now().getTime() });
+  const writeVideoIntakeDiagnostic = async (source: string, entry: VideoIntakeDiagnostic) => {
+    const context = { module: "videos", source, correlationId: generateEventSourceReferenceId(), processingId: null, metadata: { ...entry.metadata } };
+    await (entry.level === "warn" ? runtimeLogger.warn(entry.message, context) : runtimeLogger.info(entry.message, context));
+  };
   const overlayGateway = new OverlayGateway({
     overlayAccessService,
     generateClientId: options.generateOverlayClientId ?? generateOverlayClientId,
@@ -523,8 +531,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
           report.exception
         );
       }
-      // Video shoutout players report against their activation id through the same path.
-      if (videoShoutoutService.reportPlayback(report.instructionId, report.status)) return;
+      // Video players report as `video:<itemId>` through the same path.
+      if (videosRuntime.reportPlayback(report.instructionId, report.status)) return;
       if (report.status === "completed" || report.status === "failed") {
         playbackCoordinator.reportInstructionFinished(report.clientId, report.instructionId);
         effectPlaybackCoordinator.reportInstructionFinished(
@@ -852,6 +860,15 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const automationControlService = new AutomationControlService({ timers: timerRuntimeCoordinator, definitions: timerManagementService, playback: playbackOperationsService, now: () => now().getTime(), runCommand: work => maintenanceGate.runIntake(work) });
   const eventPipeline = new EventPipeline({
     timerEventSink: new TimerEventService(timerDefinitionRepository, timerRuntimeCoordinator),
+    videoEventSink: createChannelPointVideoIntake({
+      intake: videoRequestIntake,
+      getConfig: () => videosConfig,
+      onDiagnostic: entry => writeVideoIntakeDiagnostic("videos.channel-points", entry)
+    }),
+    onVideoError: (error, event) => runtimeLogger.error("Video request handling failed", {
+      module: "videos", source: "videos.event-admission", correlationId: `event:${event.providerId}:${event.id}`,
+      processingId: null, metadata: { eventType: event.type }
+    }, error),
     onTimerError: (error, event) => runtimeLogger.error("Timer event handling failed", {
       module: "timers", source: "timers.event-admission", correlationId: `event:${event.providerId}:${event.id}`,
       processingId: null, metadata: { eventType: event.type }
@@ -903,13 +920,10 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         maintenanceGate.runIntake(() => eventIngestionService.ingestEffectTriggers(eventId, triggers))
     },
     generateReferenceId: generateEventSourceReferenceId,
-    customEventHandler: createStreamerBotVideoShoutoutIntake({
-      service: videoShoutoutService,
-      isModuleEnabled: async () => (await overlayModuleConfigService.getModuleConfig("video-shoutout")).enabled,
-      onDiagnostic: async (entry) => {
-        const context = { module: "video-shoutout", source: "video-shoutout.streamerbot", correlationId: generateEventSourceReferenceId(), processingId: null, metadata: { ...entry.metadata } };
-        await (entry.level === "warn" ? runtimeLogger.warn(entry.message, context) : runtimeLogger.info(entry.message, context));
-      }
+    customEventHandler: createStreamerBotVideoIntake({
+      intake: videoRequestIntake,
+      queue: videoQueueService,
+      onDiagnostic: entry => writeVideoIntakeDiagnostic("videos.streamerbot", entry)
     }),
     onDiagnostic: (entry) => writeStreamerBotRuntimeDiagnostic(runtimeLogger, entry),
     now
@@ -1405,7 +1419,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     ["screen-effects", effectPlaybackCoordinator],
     ["timers", timerRuntimeCoordinator],
     ["music", musicOutputRuntime],
-    ["video-shoutout", videoShoutoutService]
+    ["videos", videosRuntime]
   ]);
   const overlayCompositionService = new DefaultOverlayCompositionService({
     surfaceRepository,
@@ -1504,27 +1518,29 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     return pendingMusicOutputSync.promise;
   };
   const unsubscribeMusicOutputs = musicRuntimeCoordinator.subscribe(() => { void queueMusicOutputSync(); });
-  const syncVideoShoutoutOutputs = async (purpose: "live" | "test") => {
+  const syncVideoOutputs = async (purpose: OverlayPurpose) => {
+    const moduleIds = listUnifiedOverlayModuleIds(overlayModuleRegistry);
     await Promise.all(overlayGateway.clients
-      .filter(client => client.scope === "module" && client.moduleId === "video-shoutout" && client.purpose === purpose)
+      .filter(client => client.purpose === purpose && (client.scope === "unified" || client.moduleId === "videos"))
       .map(async client => {
-        overlayGateway.deliverComposition(client.id, await overlayCompositionService.resolveModuleOutput({
-          moduleId: "video-shoutout", overlayId: client.overlayId, purpose: client.purpose,
-          ...(client.targetProfileId == null ? {} : { targetProfileId: client.targetProfileId })
-        }));
+        overlayGateway.deliverComposition(client.id, client.scope === "module"
+          ? await overlayCompositionService.resolveModuleOutput({
+            moduleId: "videos", overlayId: client.overlayId, purpose: client.purpose,
+            ...(client.targetProfileId == null ? {} : { targetProfileId: client.targetProfileId })
+          })
+          : await overlayCompositionService.resolveUnifiedOutput({ overlayId: client.overlayId, purpose: client.purpose, enabledModuleIds: moduleIds }));
       }));
   };
-  let videoShoutoutOutputSyncTail = Promise.resolve();
-  const unsubscribeVideoShoutoutOutputs = videoShoutoutService.subscribe(purpose => {
-    void trackRuntimeWork(() => {
-      const pending = videoShoutoutOutputSyncTail.then(() => syncVideoShoutoutOutputs(purpose));
-      videoShoutoutOutputSyncTail = pending.catch(
-        // error-provenance: allow expected -- pending preserves the rejection for tracked diagnostics; the tail only keeps later syncs ordered
-        () => undefined
-      );
-      return pending;
-    });
-  });
+  let videoOutputSyncTail = Promise.resolve();
+  const queueVideoOutputSync = (purpose: OverlayPurpose) => {
+    const pending = videoOutputSyncTail.then(() => syncVideoOutputs(purpose));
+    videoOutputSyncTail = pending.catch(
+      // error-provenance: allow expected -- pending preserves the rejection for tracked diagnostics; the tail only keeps later syncs ordered
+      () => undefined
+    );
+    return pending;
+  };
+  const unsubscribeVideoOutputs = videoQueueService.subscribe(purpose => { void trackRuntimeWork(() => queueVideoOutputSync(purpose)); });
   for (const surface of await surfaceRepository.list()) {
     if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
   }
@@ -1601,6 +1617,18 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     await Promise.allSettled([trackRuntimeWork(() => enabled ? musicRuntimeCoordinator.refreshConfig() : musicRuntimeCoordinator.reconcile())]);
     await Promise.allSettled([queueMusicOutputSync(true)]);
   };
+  const refreshCommittedVideosConfig = async (enabled: boolean): Promise<void> => {
+    videosConfig = await readVideosConfig();
+    videoQueueService.reevaluateLimits();
+    // Turning the module off ends playback; queued requests stay for later.
+    if (!enabled) {
+      for (const purpose of ["live", "test"] as const) {
+        const view = videoQueueService.view(purpose);
+        if (view.current !== null || view.gapEndsAtEpochMs !== null) videoQueueService.command(purpose, view.revision, { kind: "stop" });
+      }
+    }
+    await Promise.allSettled([queueVideoOutputSync("live"), queueVideoOutputSync("test")]);
+  };
   const runtimeOverlayModuleConfigService: OverlayModuleConfigService = {
     getModuleConfig: (moduleId) => overlayModuleConfigService.getModuleConfig(moduleId),
     async saveModuleConfig(input) {
@@ -1617,6 +1645,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       }
       if (config.moduleId === "timers") await queueTimerOutputSync();
       if (config.moduleId === "music") await refreshCommittedMusicConfig(config.enabled);
+      if (config.moduleId === "videos") await refreshCommittedVideosConfig(config.enabled);
       return config;
     },
     async setModuleEnabled(moduleId, enabled) {
@@ -1628,6 +1657,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       }
       if (config.moduleId === "timers") await queueTimerOutputSync();
       if (config.moduleId === "music") await refreshCommittedMusicConfig(config.enabled);
+      if (config.moduleId === "videos") await refreshCommittedVideosConfig(config.enabled);
       return config;
     }
   };
@@ -1698,6 +1728,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     automationMachinePreHandler,
     automationAuthPreHandler,
     automationControlService,
+    videos: videosRuntime,
     effectSets: effectManagementService,
     managementAuthPreHandler: createManagementSecurityPreHandler({
       sessionService: managementSessionService,
@@ -1754,9 +1785,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   cleanups.push(async () => {
     unsubscribeTimerOutputs();
     unsubscribeMusicOutputs();
-    unsubscribeVideoShoutoutOutputs();
-    videoShoutoutService.dispose();
-    await videoShoutoutOutputSyncTail;
+    unsubscribeVideoOutputs();
+    videoQueueService.dispose();
+    await videoOutputSyncTail;
     await timerOutputSyncTail;
     await desktopModuleSnapshotSink?.close();
   });

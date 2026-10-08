@@ -8,10 +8,10 @@ export const videosMaximumDirectHosts = 32;
 export const videosMaximumRewardMappings = 16;
 export const videosMaximumAudioDevices = 8;
 
-const directHostSchema = z.string().trim().toLowerCase()
+const directHostSchema = /* @__PURE__ */ z.string().trim().toLowerCase()
   .regex(/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u);
 
-export const videosModuleConfigSchema = z.object({
+export const videosModuleConfigSchema = /* @__PURE__ */ z.object({
   maxLengthSeconds: z.number().int().min(5).max(videosMaximumLengthSecondsLimit),
   gapSeconds: z.number().int().min(0).max(videosMaximumGapSeconds),
   allowedDirectHosts: z.array(directHostSchema).max(videosMaximumDirectHosts)

@@ -697,6 +697,7 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   if (currentSchemaVersion === 31) return [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 30) return [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 32) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 31;
+  if (currentSchemaVersion === 33) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 32;
   if (currentSchemaVersion === 28) return [19, 20, 21, 22, 23, 24, 25, 26, 27].includes(archiveSchemaVersion);
   return false;
 }
@@ -735,6 +736,13 @@ function upgradeLegacyConfiguration(
   }
   if (schemaVersion < 30) {
     tables = { ...tables, timer_definitions: (tables.timer_definitions ?? []).map(row => ({ ...row, event_rules_json: "[]" })) };
+  }
+  if (schemaVersion < 33) {
+    // Videos replaced the retired Video shoutout module; its settings and outputs have nothing to restore into.
+    const retired = (moduleId: unknown) => moduleId === "video-shoutout";
+    tables = { ...tables, ...(tables.overlay_module_config === undefined ? {} : { overlay_module_config: tables.overlay_module_config.filter(row => !retired(row.module_id)) }) };
+    const overlayOutputs = configuration.overlayOutputs.filter(output => !retired(output.moduleId));
+    return { ...configuration, tables, overlayOutputs };
   }
   return tables === configuration.tables ? configuration : { ...configuration, tables };
 }

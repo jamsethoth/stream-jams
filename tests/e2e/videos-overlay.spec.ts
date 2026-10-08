@@ -1,22 +1,22 @@
 import { expect, test, type Page } from "@playwright/test";
 import { installOverlayWebSocketMock } from "./e2e-helpers.js";
 
-const clip = {
-  login: "friendly_streamer",
-  displayName: "Friendly Streamer",
-  clipId: "ClipOne",
-  embedUrl: "https://clips.twitch.tv/embed?clip=ClipOne&parent=127.0.0.1",
-  title: "The big play",
-  durationMs: 20_000,
-  avatarUrl: null
-};
+const clipSource = { provider: "twitch-clip", clipSlug: "ClipOne" } as const;
 
-function composition(shoutout: unknown) {
+function composition(videos: unknown) {
   return {
     overlayId: "default",
     purpose: "live",
     scope: "module",
-    modules: [{ moduleId: "video-shoutout", enabled: true, instructions: [], presentation: { kind: "video-shoutout", shoutout } }]
+    modules: [{ moduleId: "videos", enabled: true, instructions: [], presentation: { kind: "videos", videos } }]
+  };
+}
+
+function active(itemId: string, source: unknown, overrides: Record<string, unknown> = {}) {
+  return {
+    status: "active", itemId, title: "The big play", requester: "Friendly Streamer",
+    delivery: { mode: "player", source, clock: { state: "playing", positionMs: 0, atEpochMs: Date.now() }, obsAudio: true },
+    ...overrides
   };
 }
 
@@ -33,7 +33,7 @@ async function socketMessages(page: Page): Promise<unknown[]> {
   return page.evaluate(() => (window as Window & { __overlaySocketMessages?: unknown[] }).__overlaySocketMessages ?? []);
 }
 
-test("renders a Streamer.bot clip on the video shoutout browser source and returns to idle", async ({ page }) => {
+test("plays a queued Twitch clip on the Videos browser source, shows a notice, and returns to idle", async ({ page }) => {
   const browserErrors: string[] = [];
   page.on("console", (message) => { if (message.type() === "error") browserErrors.push(message.text()); });
   page.on("pageerror", (error) => browserErrors.push(error.message));
@@ -44,47 +44,46 @@ test("renders a Streamer.bot clip on the video shoutout browser source and retur
     await route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Clip</title><p>clip player</p>" });
   });
   await installOverlayWebSocketMock(page);
-  await page.route("**/overlay/modules/video-shoutout/live/ovl_shoutout/composition", route =>
+  await page.route("**/overlay/modules/videos/live/ovl_videos/composition", route =>
     route.fulfill({ contentType: "application/json", json: composition({ status: "idle" }) }));
 
-  await page.goto("/overlay/modules/video-shoutout/live/ovl_shoutout");
+  await page.goto("/overlay/modules/videos/live/ovl_videos");
   await expect(page.getByTestId("overlay-root")).toBeVisible();
-  await expect(page.getByTestId("video-shoutout")).toHaveCount(0);
+  await expect(page.getByTestId("video-overlay")).toHaveCount(0);
   expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
 
-  await pushComposition(page, composition({ status: "loading", activationId: "video-shoutout:one", clip }));
-  const player = page.getByTitle("Twitch clip: The big play");
-  await expect(player).toHaveAttribute("src", clip.embedUrl);
-  await expect(page.getByTestId("video-shoutout")).toHaveAttribute("data-state", "playing");
-  await expect(page.frameLocator("iframe[title='Twitch clip: The big play']").getByText("clip player")).toBeVisible();
-  await expect(page.getByText("Friendly Streamer")).toBeVisible();
+  await pushComposition(page, composition(active("one", clipSource)));
+  const player = page.getByTitle("Video player");
+  await expect(player).toHaveAttribute("src", /^https:\/\/clips\.twitch\.tv\/embed\?clip=ClipOne&parent=127\.0\.0\.1&autoplay=true&muted=false$/u);
+  await expect(page.frameLocator("iframe[title='Video player']").getByText("clip player")).toBeVisible();
   await expect(page.getByText("The big play")).toBeVisible();
-  await expect.poll(() => socketMessages(page)).toContainEqual({ type: "overlay.playback.started", instructionId: "video-shoutout:one" });
-  expect(twitchRequests).toEqual([clip.embedUrl]);
-  expect(await page.locator("body").innerText()).not.toContain("ovl_shoutout");
+  await expect(page.getByText("Requested by Friendly Streamer")).toBeVisible();
+  await expect.poll(() => socketMessages(page)).toContainEqual({ type: "overlay.playback.started", instructionId: "video:one" });
+  expect(twitchRequests).toHaveLength(1);
+  expect(await page.locator("body").innerText()).not.toContain("ovl_videos");
 
-  await pushComposition(page, composition({ status: "error", activationId: "video-shoutout:two", reason: "no-clip", displayName: "Quiet Friend" }));
+  await pushComposition(page, composition({ status: "notice", noticeId: "notice-1", notice: "no-clip", displayName: "Quiet Friend" }));
   await expect(page.getByRole("status")).toHaveText("Quiet FriendNo clip to show right now");
   await expect(page.locator("iframe")).toHaveCount(0);
 
   await pushComposition(page, composition({ status: "idle" }));
-  await expect(page.getByTestId("video-shoutout")).toHaveCount(0);
+  await expect(page.getByTestId("video-overlay")).toHaveCount(0);
   expect(browserErrors).toEqual([]);
 });
 
-test("refuses an unsafe embed URL on the live browser source", async ({ page }) => {
+test("refuses a source outside the allowlist on the live browser source", async ({ page }) => {
   await installOverlayWebSocketMock(page);
-  await page.route("**/overlay/modules/video-shoutout/live/ovl_shoutout/composition", route =>
+  await page.route("**/overlay/modules/videos/live/ovl_videos/composition", route =>
     route.fulfill({ contentType: "application/json", json: composition({ status: "idle" }) }));
   const outbound: string[] = [];
   page.on("request", request => { if (!request.url().startsWith("http://127.0.0.1")) outbound.push(request.url()); });
 
-  await page.goto("/overlay/modules/video-shoutout/live/ovl_shoutout");
+  await page.goto("/overlay/modules/videos/live/ovl_videos");
   await expect(page.getByTestId("overlay-root")).toBeVisible();
-  await pushComposition(page, composition({ status: "loading", activationId: "video-shoutout:bad",
-    clip: { ...clip, embedUrl: "https://evil.example/embed?clip=ClipOne&parent=127.0.0.1" } }));
+  await pushComposition(page, composition(active("bad", { provider: "direct", url: "http://evil.example/video.mp4" })));
+  await pushComposition(page, composition(active("bad-2", { provider: "youtube", videoId: "../../evil", startAtMs: 0 })));
   await page.waitForTimeout(250);
-  await expect(page.locator("iframe")).toHaveCount(0);
-  await expect(page.getByTestId("video-shoutout")).toHaveCount(0);
-  expect(outbound.filter(url => url.includes("evil.example"))).toEqual([]);
+  await expect(page.locator("iframe, video")).toHaveCount(0);
+  await expect(page.getByTestId("video-overlay")).toHaveCount(0);
+  expect(outbound.filter(url => url.includes("evil"))).toEqual([]);
 });

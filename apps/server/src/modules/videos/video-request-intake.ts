@@ -24,8 +24,8 @@ export type VideoRequestResult =
 
 export interface VideoRequestIntakeOptions {
   readonly queue: Pick<VideoQueueService, "submit">;
-  readonly getConfig: () => VideosModuleConfig;
-  readonly isModuleEnabled: () => boolean;
+  readonly getConfig: () => Promise<VideosModuleConfig> | VideosModuleConfig;
+  readonly isModuleEnabled: () => Promise<boolean> | boolean;
 }
 
 export interface VideoRequestContext {
@@ -41,13 +41,13 @@ export interface VideoRequestContext {
 export class VideoRequestIntake {
   constructor(private readonly options: VideoRequestIntakeOptions) {}
 
-  submit(purpose: OverlayPurpose, input: unknown, context: VideoRequestContext): VideoRequestResult {
-    if (!this.options.isModuleEnabled()) return { status: "rejected", reason: "module-disabled", fields: [] };
+  async submit(purpose: OverlayPurpose, input: unknown, context: VideoRequestContext): Promise<VideoRequestResult> {
+    if (!(await this.options.isModuleEnabled())) return { status: "rejected", reason: "module-disabled", fields: [] };
     const parsed = videoRequestInputSchema.safeParse(input);
     if (!parsed.success) {
       return { status: "rejected", reason: "invalid-request", fields: [...new Set(parsed.error.issues.map(issue => String(issue.path[0] ?? "request")))] };
     }
-    const config = this.options.getConfig();
+    const config = await this.options.getConfig();
     const link = parseVideoLink(parsed.data.link, { allowedDirectHosts: config.allowedDirectHosts });
     if (link.status === "rejected") return { status: "rejected", reason: link.reason, fields: ["link"] };
     // Channel point viewers never start playback; bots only when the operator allows it.

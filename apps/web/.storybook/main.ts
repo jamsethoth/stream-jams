@@ -19,14 +19,13 @@ const config: StorybookConfig = {
     const coreEntry = resolve(repoRoot, "packages/core/src/index.ts");
     const musicStylePolicyEntry = resolve(repoRoot, "packages/core/src/music/style-policy.ts");
     const videosEntry = resolve(repoRoot, "packages/core/src/videos/contract.ts");
-    const videoShoutoutEmbedEntry = resolve(repoRoot, "packages/core/src/video-shoutout/contract.ts");
     const existingAlias = viteConfig.resolve?.alias ?? {};
 
     viteConfig.resolve = {
       ...viteConfig.resolve,
       alias: Array.isArray(existingAlias)
-        ? [...existingAlias, { find: "@stream-jams/core/music-style-policy", replacement: musicStylePolicyEntry }, { find: "@stream-jams/core/video-shoutout", replacement: videoShoutoutEmbedEntry }, { find: "@stream-jams/core/videos", replacement: videosEntry }, { find: "@stream-jams/core", replacement: coreEntry }]
-        : { ...existingAlias, "@stream-jams/core/music-style-policy": musicStylePolicyEntry, "@stream-jams/core/video-shoutout": videoShoutoutEmbedEntry, "@stream-jams/core/videos": videosEntry, "@stream-jams/core": coreEntry }
+        ? [...existingAlias, { find: "@stream-jams/core/music-style-policy", replacement: musicStylePolicyEntry }, { find: "@stream-jams/core/videos", replacement: videosEntry }, { find: "@stream-jams/core", replacement: coreEntry }]
+        : { ...existingAlias, "@stream-jams/core/music-style-policy": musicStylePolicyEntry, "@stream-jams/core/videos": videosEntry, "@stream-jams/core": coreEntry }
     };
 
     return viteConfig;

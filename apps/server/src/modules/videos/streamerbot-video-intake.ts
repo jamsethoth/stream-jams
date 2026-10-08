@@ -60,7 +60,7 @@ export function createStreamerBotVideoIntake(options: StreamerBotVideoIntakeOpti
     }
 
     const request = marker === "request" ? requestFields(data) : legacyRequestFields(data);
-    const result = options.intake.submit(purpose, request, { via: "streamerbot", mayAutoplay: true });
+    const result = await options.intake.submit(purpose, request, { via: "streamerbot", mayAutoplay: true });
     if (result.status === "rejected") {
       await report({ level: "warn", message: "Streamer.bot video request was rejected and not queued.", metadata: { reason: result.reason, fields: result.fields, purpose } });
       return true;

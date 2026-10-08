@@ -111,8 +111,8 @@ it("retains two timer versions of one asset and rejects missing versions in the 
   expect(desktopModuleSyncSchema.safeParse({ ...sync, assets: [first, first] }).success).toBe(false);
 });
 
-it("rejects browser-source-only video shoutout presentations in desktop sync", () => {
+it("rejects browser-source-only Videos presentations in desktop sync", () => {
   expect(desktopModuleSyncSchema.safeParse({
-    moduleId: "video-shoutout", revision: 1, presentation: { kind: "video-shoutout", shoutout: { status: "idle" } }, assets: []
+    moduleId: "videos", revision: 1, presentation: { kind: "videos", videos: { status: "idle" } }, assets: []
   }).success).toBe(false);
 });

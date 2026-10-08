@@ -129,7 +129,7 @@ describe("ConfigurationBackupService", () => {
     }
   });
 
-  it.each([19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
+  it.each([19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
     const target = createRealService();
     try {
       const archive = await target.service.exportArchive();
@@ -167,6 +167,25 @@ describe("ConfigurationBackupService", () => {
       await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
       const snapshot = target.snapshotRepository.snapshot();
       expect(JSON.parse(String(snapshot.tables.overlay_surfaces?.[0]?.configuration_json))).toMatchObject({ enabled: false, displayId: null });
+    } finally { target.database.close(); }
+  });
+
+  it("drops retired Video shoutout settings and outputs from schema-32 backups", async () => {
+    const target = createRealService();
+    try {
+      const archive = await target.service.exportArchive();
+      archive.manifest.schemaVersion = 32;
+      const moduleConfig = archive.configuration.tables.overlay_module_config ?? [];
+      archive.configuration.tables.overlay_module_config = [...moduleConfig, { module_id: "video-shoutout", enabled: 1, config_json: "{}", updated_at: new Date(0).toISOString() }];
+      archive.configuration.overlayOutputs = [...archive.configuration.overlayOutputs, { overlayId: "shoutout", scope: "module", moduleId: "video-shoutout", purpose: "live", targetProfileId: null }];
+      archive.manifest.configurationRecordCount += 1;
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      const preflight = await target.service.preflight(archive);
+      expect(preflight.state).toBe("valid");
+      await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
+      const snapshot = target.snapshotRepository.snapshot();
+      expect(snapshot.tables.overlay_module_config?.map(row => row.module_id)).not.toContain("video-shoutout");
+      expect(snapshot.overlayOutputs.map(output => output.moduleId)).not.toContain("video-shoutout");
     } finally { target.database.close(); }
   });
 

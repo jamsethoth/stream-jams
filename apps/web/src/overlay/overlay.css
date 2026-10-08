@@ -169,7 +169,7 @@ body.overlay-shell {
   to { opacity: 0; transform: translateY(24px); }
 }
 
-.video-shoutout {
+.video-overlay {
   bottom: 6vh;
   display: grid;
   gap: 12px;
@@ -179,7 +179,7 @@ body.overlay-shell {
   width: min(72vw, calc((100vh - 12vh - 96px) * 16 / 9));
 }
 
-.video-shoutout__frame {
+.video-overlay__frame {
   aspect-ratio: 16 / 9;
   background: rgba(10, 12, 16, 0.92);
   border-radius: 12px;
@@ -188,19 +188,20 @@ body.overlay-shell {
   position: relative;
 }
 
-.video-shoutout__player {
+.video-overlay__player {
   border: 0;
   height: 100%;
+  object-fit: contain;
   opacity: 0;
   transition: opacity 200ms ease-out;
   width: 100%;
 }
 
-.video-shoutout__player[data-loaded="true"] {
+.video-overlay__frame[data-state="playing"] .video-overlay__player {
   opacity: 1;
 }
 
-.video-shoutout__loading {
+.video-overlay__loading {
   align-items: center;
   color: #ffffff;
   display: flex;
@@ -212,40 +213,24 @@ body.overlay-shell {
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.72);
 }
 
-.video-shoutout__context,
-.video-shoutout__notice {
-  align-items: center;
+.video-overlay__context,
+.video-overlay__notice {
   background: rgba(10, 12, 16, 0.86);
   border-radius: 12px;
   color: #ffffff;
-  display: flex;
-  gap: 16px;
+  display: grid;
+  gap: 4px;
   min-width: 0;
   padding: 12px 16px;
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.72);
 }
 
-.video-shoutout__notice {
-  flex-direction: column;
-  gap: 4px;
+.video-overlay__notice {
   justify-self: center;
 }
 
-.video-shoutout__avatar {
-  border-radius: 50%;
-  flex: none;
-  height: 56px;
-  object-fit: cover;
-  width: 56px;
-}
-
-.video-shoutout__text {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.video-shoutout__name {
+.video-overlay__name,
+.video-overlay__title {
   font-size: 28px;
   font-weight: 700;
   overflow: hidden;
@@ -253,14 +238,8 @@ body.overlay-shell {
   white-space: nowrap;
 }
 
-.video-shoutout__login {
-  font-size: 20px;
-  font-weight: 500;
-  opacity: 0.8;
-}
-
-.video-shoutout__title,
-.video-shoutout__notice-text {
+.video-overlay__requester,
+.video-overlay__notice-text {
   font-size: 20px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -268,7 +247,7 @@ body.overlay-shell {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .video-shoutout__player {
+  .video-overlay__player {
     transition: none;
   }
 }

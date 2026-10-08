@@ -16,7 +16,7 @@ function setup(options: { submitResult?: VideoRequestResult; commandError?: Erro
   const calls: { kind: string; args: unknown[] }[] = [];
   const service: VideoRouteService = {
     response: purpose => { calls.push({ kind: "response", args: [purpose] }); return { ...emptyResponse, purpose }; },
-    submit: (purpose, input, context: VideoRequestContext) => {
+    submit: async (purpose, input, context: VideoRequestContext) => {
       calls.push({ kind: "submit", args: [purpose, input, context] });
       return options.submitResult ?? { status: "accepted", item: { id: "item-1" } as never };
     },

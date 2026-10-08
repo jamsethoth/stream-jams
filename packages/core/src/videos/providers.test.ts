@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildVideoPlayerUrl, canonicalVideoLink, isAllowedVideoSource, normalizeDirectVideoHost, parseOffsetMs, parseVideoLink } from "./providers.js";
+import { buildVideoPlayerUrl, canonicalVideoLink, isAllowedVideoSource, isSafeDirectVideoUrl, normalizeDirectVideoHost, parseOffsetMs, parseVideoLink } from "./providers.js";
+import { videoSourceSchema } from "./contract.js";
 
 const options = { allowedDirectHosts: ["media.example.com"] };
 const player = { parentHost: "127.0.0.1", playerOrigin: "http://127.0.0.1:4580" };
@@ -52,6 +53,12 @@ describe("player URLs", () => {
     expect(new URL(buildVideoPlayerUrl({ provider: "twitch-vod", videoId: "42", startAtMs: 3_723_000 }, player)).searchParams.get("time")).toBe("1h2m3s");
   });
 
+  it("starts provider players muted when asked", () => {
+    expect(new URL(buildVideoPlayerUrl({ provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 0 }, { ...player, muted: true })).searchParams.get("mute")).toBe("1");
+    expect(new URL(buildVideoPlayerUrl({ provider: "twitch-clip", clipSlug: "Clip" }, { ...player, muted: true })).searchParams.get("muted")).toBe("true");
+    expect(new URL(buildVideoPlayerUrl({ provider: "twitch-vod", videoId: "42", startAtMs: 0 }, { ...player, muted: true })).searchParams.get("muted")).toBe("true");
+  });
+
   it("re-validates stored sources against the current allowlist", () => {
     const direct = { provider: "direct", url: "https://media.example.com/a.webm" } as const;
     expect(isAllowedVideoSource(direct, options)).toBe(true);
@@ -73,5 +80,23 @@ describe("helpers", () => {
     expect(normalizeDirectVideoHost(" Media.Example.COM ")).toBe("media.example.com");
     expect(normalizeDirectVideoHost("localhost")).toBeNull();
     expect(normalizeDirectVideoHost("https://media.example.com")).toBeNull();
+  });
+});
+
+describe("isSafeDirectVideoUrl", () => {
+  it.each([
+    ["https://media.example.com/a.mp4", true],
+    ["https://media.example.com/clips/b.WEBM?v=2", true],
+    ["http://media.example.com/a.mp4", false],
+    ["https://user:pw@media.example.com/a.mp4", false],
+    ["https://media.example.com:8443/a.mp4", false],
+    ["https://media.example.com/a.mp4#t=5", false],
+    ["https://127.0.0.1/a.mp4", false],
+    ["https://media.example.com/a.mov", false],
+    ["javascript:alert(1)//a.mp4", false],
+    ["https://MEDIA.example.com/a.mp4", false]
+  ])("checks %s", (url, expected) => {
+    expect(isSafeDirectVideoUrl(url)).toBe(expected);
+    expect(videoSourceSchema.safeParse({ provider: "direct", url }).success).toBe(expected);
   });
 });

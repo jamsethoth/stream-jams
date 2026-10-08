@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { nonNegativeIntegerSchema } from "../shared/schemas.js";
 import type { VideoSource, VideosProjection } from "./types.js";
+import { isSafeDirectVideoUrl } from "./providers.js";
 
 export * from "./providers.js";
 
@@ -17,7 +18,7 @@ export const videoSourceSchema = z.discriminatedUnion("provider", [
   z.object({ provider: z.literal("youtube"), videoId: z.string().regex(/^[A-Za-z0-9_-]{11}$/u), startAtMs: offsetSchema }).strict(),
   z.object({ provider: z.literal("twitch-clip"), clipSlug: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/u) }).strict(),
   z.object({ provider: z.literal("twitch-vod"), videoId: z.string().regex(/^\d{1,20}$/u), startAtMs: offsetSchema }).strict(),
-  z.object({ provider: z.literal("direct"), url: z.string().max(2048) }).strict()
+  z.object({ provider: z.literal("direct"), url: z.string().max(2048).refine(isSafeDirectVideoUrl) }).strict()
 ]) satisfies z.ZodType<VideoSource>;
 
 export const videoTitleSchema = z.string().trim().min(1).max(200);
@@ -44,6 +45,9 @@ export const videosProjectionSchema = z.discriminatedUnion("status", [
   }).strict(),
   z.object({ status: z.literal("notice"), noticeId: itemIdSchema, notice: z.literal("no-clip"), displayName: videoRequesterSchema.nullable() }).strict()
 ]) satisfies z.ZodType<VideosProjection>;
+
+/** Overlay players report video playback as `video:<itemId>` so it never reaches alert or effect coordinators. */
+export const videoInstructionPrefix = "video:";
 
 /** Target media position for a clock at `nowEpochMs`. */
 export function videoClockPositionMs(clock: { readonly state: "playing" | "paused"; readonly positionMs: number; readonly atEpochMs: number }, nowEpochMs: number): number {

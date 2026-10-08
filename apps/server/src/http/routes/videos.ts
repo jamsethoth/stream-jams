@@ -9,7 +9,7 @@ import type { VideoRequestContext, VideoRequestResult } from "../../modules/vide
 
 export interface VideoRouteService {
   response(purpose: OverlayPurpose): VideoQueueResponse;
-  submit(purpose: OverlayPurpose, input: unknown, context: VideoRequestContext): VideoRequestResult;
+  submit(purpose: OverlayPurpose, input: unknown, context: VideoRequestContext): Promise<VideoRequestResult>;
   command(purpose: OverlayPurpose, expectedRevision: number, command: VideoQueueCommand): VideoQueueResponse;
   control(purpose: OverlayPurpose, expectedItemId: string, command: VideoItemCommand): VideoQueueResponse;
 }
@@ -49,9 +49,9 @@ export function registerVideoRoutes(app: FastifyInstance, dependencies: VideoRou
   const { videos } = dependencies;
 
   app.get("/videos/:purpose", management, async (request, reply) => handle(reply, () => videos.response(readPurpose(request))));
-  app.post("/videos/:purpose/requests", management, async (request, reply) => handle(reply, () => {
+  app.post("/videos/:purpose/requests", management, async (request, reply) => handle(reply, async () => {
     const via = submitterSchema.catch("management").parse((request.query as { readonly from?: unknown } | undefined)?.from);
-    return submitted(reply, videos.submit(readPurpose(request), request.body, { via, mayAutoplay: true }));
+    return submitted(reply, await videos.submit(readPurpose(request), request.body, { via, mayAutoplay: true }));
   }));
   app.post("/videos/:purpose/commands", management, async (request, reply) => handle(reply, () => {
     const body = commandBodySchema.parse(request.body);
@@ -64,10 +64,10 @@ export function registerVideoRoutes(app: FastifyInstance, dependencies: VideoRou
     reply.header("cache-control", "no-store");
     return videos.response(readPurpose(request));
   }));
-  app.post("/automation/v1/videos/:purpose/requests", automation, async (request, reply) => handle(reply, () => {
+  app.post("/automation/v1/videos/:purpose/requests", automation, async (request, reply) => handle(reply, async () => {
     requireScope(request, "videos:submit");
     const mayAutoplay = getAutomationGrant(request).scopes.includes("videos:control");
-    return submitted(reply, videos.submit(readPurpose(request), request.body, { via: "automation", mayAutoplay }));
+    return submitted(reply, await videos.submit(readPurpose(request), request.body, { via: "automation", mayAutoplay }));
   }));
   app.post("/automation/v1/videos/:purpose/commands", automation, async (request, reply) => handle(reply, () => {
     requireScope(request, "videos:control");

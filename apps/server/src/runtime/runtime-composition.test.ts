@@ -453,7 +453,8 @@ it.each([false, true])("configures desktop visuals without playback, preserving 
         { moduleId: "alerts", visible: false },
         { moduleId: "screen-effects", visible: false },
         { moduleId: "timers", visible: false },
-        { moduleId: "music", visible: false }
+        { moduleId: "music", visible: false },
+        { moduleId: "videos", visible: false }
       ]
     });
     expect(transport.prepare).not.toHaveBeenCalled();
