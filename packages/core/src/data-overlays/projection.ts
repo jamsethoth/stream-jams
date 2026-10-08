@@ -12,7 +12,7 @@ export function projectDataOverlays(state: DataOverlayState, options: DataProjec
   const goals = new Map(state.goals.map(goal => [goal.id, goal]));
   function usable(value: DataValue | undefined, element: DataCanvasElement): value is DataValue {
     if (!value || !dataValueSchema.safeParse(value).success) return false;
-    const status = options.sourceStatuses?.[value.id];
+    const status = options.sourceStatuses !== undefined && Object.hasOwn(options.sourceStatuses, value.id) ? options.sourceStatuses[value.id] : undefined;
     if (!status) return true;
     if (!dataSourceStatusSchema.safeParse(status).success) return false;
     if (status.state === "current") return true;
@@ -24,7 +24,9 @@ export function projectDataOverlays(state: DataOverlayState, options: DataProjec
     const goal = goals.get(id);
     const value = goal ? values.get(goal.valueId) : undefined;
     if (!goal || !usable(value, element)) return null;
-    try { return projectDataGoal(goal, value); } catch { return null; }
+    try { return projectDataGoal(goal, value); }
+    // error-provenance: allow expected -- invalid goal arithmetic suppresses only its bound element transparently
+    catch { return null; }
   }
   function projectElement(element: DataCanvasElement): DataProjectedElement | null {
     if (!element.visible || !dataCanvasElementSchema.safeParse(element).success) return null;

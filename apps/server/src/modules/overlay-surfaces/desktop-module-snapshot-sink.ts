@@ -14,6 +14,10 @@ export interface DesktopModuleSnapshotSinkDependencies {
     readonly assets: Pick<DesktopVisualAssetResolver, "resolveMusicModule" | "releaseMusicOwner">;
     readonly artwork: Pick<MusicArtworkService, "resolve" | "issueGrant" | "revokeRecipient">;
   };
+  readonly data?: {
+    readonly runtime: OverlayModuleRuntime & { readonly generation: number };
+    readonly assets: Pick<DesktopVisualAssetResolver, "resolveDataModule" | "releaseDataOwner">;
+  };
   readonly logger?: Pick<Logger, "warn">;
   readonly generateReferenceId?: () => string;
 }
@@ -28,8 +32,10 @@ export class DesktopModuleSnapshotSink {
   #musicArtwork: { identity: string; value: NonNullable<DesktopModuleSync["artwork"]> } | null = null;
   #pendingArtwork: { identity: string; controller: AbortController } | null = null;
   #closed = false;
+  #dataRequest = 0;
+  #dataOwner: string | null = null;
   constructor(private readonly dependencies: DesktopModuleSnapshotSinkDependencies) {
-    this.#refresh = setInterval(() => { void Promise.all([this.sync(), this.syncMusic()]).catch((error: unknown) => this.dependencies.logger?.warn("Desktop module media refresh failed.", {
+    this.#refresh = setInterval(() => { void Promise.all([this.sync(), this.syncMusic(), this.syncData()]).catch((error: unknown) => this.dependencies.logger?.warn("Desktop module media refresh failed.", {
       module: "overlay", source: "desktop-overlay.modules.refresh-failed", correlationId: this.dependencies.generateReferenceId?.() ?? "module-refresh", processingId: null,
       metadata: { errorName: error instanceof Error ? error.name : "UnknownError" }
     })); }, 60000);
@@ -177,9 +183,42 @@ export class DesktopModuleSnapshotSink {
     this.#musicFrame = null;
     this.#musicArtwork = null;
     clearInterval(this.#refresh);
+    if (this.#dataOwner !== null) { await this.dependencies.data?.assets.releaseDataOwner(this.#dataOwner); this.#dataOwner = null; }
     this.dependencies.music?.artwork.revokeRecipient("desktop-music:desktop:primary");
     if (this.#musicOwner !== null) { await this.dependencies.music?.assets.releaseMusicOwner(this.#musicOwner); this.#musicOwner = null; }
     await this.dependencies.transport.syncModule({ moduleId: "timers", revision: ++this.#revision, presentation: null, assets: [] });
     if (this.dependencies.music !== undefined) await this.dependencies.transport.syncModule({ moduleId: "music", revision: ++this.#musicRevision, presentation: null, assets: [], artwork: null });
+    if (this.dependencies.data !== undefined) await this.dependencies.transport.syncModule({ moduleId: "data-overlays", revision: ++this.#dataRequest, presentation: null, assets: [] });
+  }
+
+  async syncData(): Promise<void> {
+    const data = this.dependencies.data;
+    if (this.#closed || data === undefined) return;
+    const revision = ++this.#dataRequest;
+    const generation = data.runtime.generation;
+    const obsolete = () => this.#closed || revision !== this.#dataRequest || generation !== data.runtime.generation;
+    const visible = async () => (await this.dependencies.surfaces.list()).some(surface => surface.kind === "desktop" && surface.enabled && surface.displayId !== null && surface.layers.some(layer => layer.moduleId === "data-overlays" && layer.visible));
+    const clear = async () => {
+      if (obsolete()) return;
+      await this.dependencies.transport.syncModule({ moduleId: "data-overlays", revision, presentation: null, assets: [] });
+      const previous = this.#dataOwner; this.#dataOwner = null;
+      if (previous !== null) await data.assets.releaseDataOwner(previous);
+    };
+    if (!await visible()) { await clear(); return; }
+    const snapshot = await data.runtime.getModuleSnapshot({ moduleId: "data-overlays", overlayId: "desktop:primary", purpose: "live", scope: "unified", targetProfileId: "landscape" });
+    if (obsolete()) return;
+    if (!snapshot.enabled || snapshot.presentation?.kind !== "data-overlays") { await clear(); return; }
+    const resolved = await data.assets.resolveDataModule(snapshot.presentation);
+    if (obsolete() || !await visible()) {
+      if (resolved.ownerId !== null) await data.assets.releaseDataOwner(resolved.ownerId);
+      if (!obsolete()) await clear();
+      return;
+    }
+    if (obsolete()) { if (resolved.ownerId !== null) await data.assets.releaseDataOwner(resolved.ownerId); return; }
+    try { await this.dependencies.transport.syncModule({ moduleId: "data-overlays", revision, presentation: resolved.presentation, assets: [...resolved.assets] }); }
+    catch (error) { if (resolved.ownerId !== null) await data.assets.releaseDataOwner(resolved.ownerId); throw error; }
+    if (obsolete()) { if (resolved.ownerId !== null) await data.assets.releaseDataOwner(resolved.ownerId); return; }
+    const previous = this.#dataOwner; this.#dataOwner = resolved.ownerId;
+    if (previous !== null) await data.assets.releaseDataOwner(previous);
   }
 }

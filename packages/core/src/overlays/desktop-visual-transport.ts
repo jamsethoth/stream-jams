@@ -87,24 +87,35 @@ export type PrivateDesktopVisualBatch = z.infer<typeof privateDesktopVisualBatch
 export type DesktopVisualBatch = z.infer<typeof desktopVisualBatchSchema>;
 export type DesktopVisualAsset = z.infer<typeof desktopVisualAssetSchema>;
 const moduleSync = <T extends z.ZodType<{ assetId: string }>, A extends z.ZodType<{ ref: string }>>(assetSchema: T, artworkSchema: A, mime: (asset: z.infer<T>) => string, version: (asset: z.infer<T>) => string, snapshot: (asset: z.infer<T>) => MediaVersionSnapshot) => z.object({
-  moduleId: z.enum(["timers", "music"]),
+  moduleId: z.enum(["timers", "music", "data-overlays"]),
   revision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   presentation: overlayModulePresentationSchema.nullable(),
-  assets: z.array(assetSchema).max(64),
+  assets: z.array(assetSchema).max(5000),
   artwork: artworkSchema.nullable().optional()
 }).strict().superRefine((sync, context) => {
   const fail = (message: string) => context.addIssue({ code: "custom", message });
+  if (sync.moduleId !== "data-overlays" && sync.assets.length > 64) fail("Module assets exceed the existing limit");
   if (sync.presentation?.kind === "video-shoutout") {
     fail("Video shoutout presentation is browser-source only");
   } else if (sync.presentation !== null) {
     if (sync.presentation.kind === "timer-stack" && sync.moduleId !== "timers") fail("Timer presentation requires the Timers module");
     if (sync.presentation.kind === "music-widget" && sync.moduleId !== "music") fail("Music presentation requires the Music module");
-    const targetProfileId = sync.presentation.kind === "timer-stack" ? sync.presentation.stack.targetProfileId : sync.presentation.widget.targetProfileId;
-    if (targetProfileId !== "landscape") fail("Desktop module presentation must target landscape");
+    if (sync.presentation.kind === "data-overlays" && sync.moduleId !== "data-overlays") fail("Data presentation requires the Data Overlays module");
+    const profiles = sync.presentation.kind === "data-overlays" ? sync.presentation.projection.canvases.map(canvas => canvas.targetProfileId)
+      : [sync.presentation.kind === "timer-stack" ? sync.presentation.stack.targetProfileId : sync.presentation.widget.targetProfileId];
+    if (profiles.some(profile => profile !== "landscape")) fail("Desktop module presentation must target landscape");
   }
   const referenced = new Set<string>();
   const assets = new Map(sync.assets.map(asset => [JSON.stringify([asset.assetId, version(asset)]), asset]));
   if (assets.size !== sync.assets.length) fail("Asset versions must be unique");
+  if (sync.presentation?.kind === "data-overlays") {
+    for (const canvas of sync.presentation.projection.canvases) for (const element of canvas.elements) {
+      if (element.kind !== "image") continue;
+      const asset = sync.assets.find(asset => asset.assetId === element.assetId);
+      if (asset === undefined || !mime(asset).startsWith("image/") || mime(asset) === "image/gif") fail("Data image grant is missing or incompatible");
+      else referenced.add(JSON.stringify([asset.assetId, version(asset)]));
+    }
+  }
   for (const card of sync.presentation?.kind === "timer-stack" ? sync.presentation.stack.cards : []) {
     if (card.iconAssetId === null) continue;
     const asset = card.iconVersion === undefined ? sync.assets.find(asset => asset.assetId === card.iconAssetId) : assets.get(JSON.stringify([card.iconAssetId, card.iconVersion]));
@@ -132,7 +143,7 @@ export const desktopModuleSyncSchema = moduleSync(trustedVisualMediaAssetSchema,
 export const privateDesktopModuleSyncSchema = moduleSync(privateVisualMediaAssetSchema, privateDesktopMusicArtworkSchema, asset => asset.reference.snapshot.mimeType, asset => asset.reference.snapshot.version, asset => asset.reference.snapshot);
 export type PrivateDesktopModuleSync = z.infer<typeof privateDesktopModuleSyncSchema>;
 export interface DesktopModuleSync {
-  readonly moduleId: "timers" | "music";
+  readonly moduleId: "timers" | "music" | "data-overlays";
   readonly revision: number;
   readonly presentation: OverlayModulePresentation | null;
   readonly assets: readonly DesktopVisualAsset[];

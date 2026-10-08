@@ -116,3 +116,16 @@ it("rejects browser-source-only video shoutout presentations in desktop sync", (
     moduleId: "video-shoutout", revision: 1, presentation: { kind: "video-shoutout", shoutout: { status: "idle" } }, assets: []
   }).success).toBe(false);
 });
+
+it("requires exact Data module/profile/reference grants and rejects catalog fields in private presentation", () => {
+  const image = { id: "image", order: 0, kind: "image", x: 0, y: 0, width: 100, height: 40, assetId: "asset", fit: "contain" };
+  const projection = { runtimeId: "runtime", revision: 1, canvases: [{ id: "canvas", order: 0, targetProfileId: "landscape", elements: [image] }] };
+  const sync = { moduleId: "data-overlays", revision: 1, presentation: { kind: "data-overlays", projection }, assets: [asset("asset", "image/png")] };
+  expect(desktopModuleSyncSchema.safeParse(sync).success).toBe(true);
+  expect(desktopModuleSyncSchema.safeParse({ ...sync, assets: [] }).success).toBe(false);
+  expect(desktopModuleSyncSchema.safeParse({ ...sync, moduleId: "music" }).success).toBe(false);
+  expect(desktopModuleSyncSchema.safeParse({ ...sync, assets: [asset("asset", "video/webm")] }).success).toBe(false);
+  expect(desktopModuleSyncSchema.safeParse({ ...sync, assets: [...sync.assets, asset("unreferenced", "image/png")] }).success).toBe(false);
+  expect(desktopModuleSyncSchema.safeParse({ ...sync, presentation: { kind: "data-overlays", projection: { ...projection, values: [] } } }).success).toBe(false);
+  expect(desktopModuleSyncSchema.safeParse({ ...sync, presentation: { kind: "data-overlays", projection: { ...projection, canvases: [{ ...projection.canvases[0], targetProfileId: "vertical" }] } } }).success).toBe(false);
+});

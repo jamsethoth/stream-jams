@@ -86,12 +86,4 @@ export const dataSourceStatusSchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("stale"), staleSinceEpochMs: z.number().finite().nonnegative() }).strict(),
   z.object({ state: z.enum(["ended", "invalid"]) }).strict()
 ]);
-const projectedGeometry = { id: dataIdSchema, order: dataIntegerSchema, x: z.number().finite().nonnegative(), y: z.number().finite().nonnegative(), width: z.number().finite().positive(), height: z.number().finite().positive() };
-export const dataProjectedElementSchema = z.discriminatedUnion("kind", [
-  z.object({ ...projectedGeometry, kind: z.literal("text"), text: z.string().refine(value => new TextEncoder().encode(value).byteLength <= dataOverlayLimits.textBytes * 3 + 128, "Formatted text exceeds bounded content"), overflow: z.enum(["wrap", "ellipsis"]), style: dataTextStyleSchema }).strict(),
-  z.object({ ...projectedGeometry, kind: z.literal("image"), assetId: dataIdSchema, fit: z.enum(["contain", "cover", "fill"]) }).strict(),
-  z.object({ ...projectedGeometry, kind: z.enum(["rectangle", "ellipse"]), color: rgbaColorSchema }).strict(),
-  z.object({ ...projectedGeometry, kind: z.literal("progress"), fill: z.number().finite().min(0).max(1), orientation: z.enum(["horizontal", "vertical"]), direction: z.enum(["forward", "reverse"]), fillColor: rgbaColorSchema, backgroundColor: rgbaColorSchema, borderColor: rgbaColorSchema, borderWidthPx: z.number().finite().min(0).max(dataOverlayLimits.borderWidthPx) }).strict()
-]);
-export const dataCanvasProjectionSchema = z.object({ id: dataIdSchema, order: dataIntegerSchema, targetProfileId: overlayTargetProfileIdSchema, elements: z.array(dataProjectedElementSchema).max(dataOverlayLimits.elementsPerCanvas) }).strict();
-export const dataOverlayProjectionSchema = z.object({ runtimeId: dataIdSchema, revision, canvases: z.array(dataCanvasProjectionSchema).max(dataOverlayLimits.canvases) }).strict();
+export { dataProjectedElementSchema, dataCanvasProjectionSchema, dataOverlayProjectionSchema } from "./projection-schemas.js";

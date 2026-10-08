@@ -35,6 +35,7 @@ export interface AssetRouteDependencies {
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
   readonly overlayAccessService?: Pick<OverlayAccessService, "verifyRouteAccess">;
+  readonly authorizeDataOverlayAsset?: (access: OverlayRouteAccessRequest, assetId: string) => Promise<boolean | null>;
 }
 
 const importContentType = "application/octet-stream";
@@ -220,6 +221,7 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
       assetRepository: dependencies.assetRepository,
       assetStore: dependencies.assetStore,
       ...(dependencies.localMediaService === undefined ? {} : { localMediaService: dependencies.localMediaService }),
+      ...(dependencies.authorizeDataOverlayAsset === undefined ? {} : { authorizeDataOverlayAsset: dependencies.authorizeDataOverlayAsset }),
       overlayAccessService: dependencies.overlayAccessService
     });
   }
@@ -227,7 +229,7 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
 
 function registerOverlayAssetRoutes(
   app: FastifyInstance,
-  dependencies: Pick<AssetRouteDependencies, "assetRepository" | "assetStore" | "localMediaService"> & {
+  dependencies: Pick<AssetRouteDependencies, "assetRepository" | "assetStore" | "localMediaService" | "authorizeDataOverlayAsset"> & {
     readonly overlayAccessService: Pick<OverlayAccessService, "verifyRouteAccess">;
   }
 ): void {
@@ -251,9 +253,17 @@ function registerOverlayAssetRoutes(
 async function sendOverlayAsset(
   request: FastifyRequest,
   reply: FastifyReply,
-  dependencies: Pick<AssetRouteDependencies, "assetRepository" | "assetStore" | "localMediaService">
+  dependencies: Pick<AssetRouteDependencies, "assetRepository" | "assetStore" | "localMediaService" | "authorizeDataOverlayAsset">
 ) {
   const assetId = readAssetId(request.params);
+  const moduleId = (request.params as { moduleId?: string }).moduleId;
+  if (moduleId === "data-overlays") {
+    const access = resolveModuleOverlayAccessRequest(request);
+    if (access === null || dependencies.authorizeDataOverlayAsset === undefined || await dependencies.authorizeDataOverlayAsset(access, assetId) !== true) return sendOverlayAssetNotFound(reply);
+  } else if (moduleId === undefined && dependencies.authorizeDataOverlayAsset !== undefined) {
+    const access = resolveUnifiedOverlayAccessRequest(request);
+    if (access !== null && await dependencies.authorizeDataOverlayAsset(access, assetId) === false) return sendOverlayAssetNotFound(reply);
+  }
   const version = (request.query as { version?: unknown }).version;
   if (version !== undefined && dependencies.localMediaService !== undefined) {
     try {

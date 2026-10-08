@@ -22,7 +22,9 @@ export class DataOverlayService {
     const state = this.options.runMutation ? this.options.runMutation(commit) : commit();
     try { this.options.publish?.(structuredClone(state)); } catch (error) {
       // The committed command must never invite a retry after notification failure.
-      try { this.options.onPublishError?.(error); } catch { /* Diagnostics cannot undo a commit. */ }
+      try { this.options.onPublishError?.(error); }
+      // error-provenance: allow expected -- diagnostic callback failures cannot turn committed deltas into retryable failures
+      catch { /* Diagnostics cannot undo a commit. */ }
     }
     return state;
   }

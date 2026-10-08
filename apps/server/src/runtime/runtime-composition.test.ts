@@ -453,7 +453,8 @@ it.each([false, true])("configures desktop visuals without playback, preserving 
         { moduleId: "alerts", visible: false },
         { moduleId: "screen-effects", visible: false },
         { moduleId: "timers", visible: false },
-        { moduleId: "music", visible: false }
+        { moduleId: "music", visible: false },
+        { moduleId: "data-overlays", visible: false }
       ]
     });
     expect(transport.prepare).not.toHaveBeenCalled();
@@ -898,4 +899,48 @@ it("notifies the desktop and advances Effects after persisted policy delivery fa
     await composition?.close();
     await rm(testRoot, { recursive: true, force: true });
   }
+});
+
+it("constructs durable Data output with scoped image access, initial WS snapshot and committed live refresh", async () => {
+  const root = await mkdtemp(join(tmpdir(), "stream-jams-data-runtime-"));
+  let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
+  let socket: Awaited<ReturnType<Awaited<ReturnType<typeof createRuntimeAppComposition>>["app"]["injectWS"]>> | undefined;
+  try {
+    composition = await createRuntimeAppComposition({ homeDirectory: root, webBuildDirectory: await createWebBuildFixture(root),
+      configStore: new StaticConfigStore(createConfig(root)), environment: {}, secretStore: new TestSecretStore(), scheduleRecurring: () => ({}), cancelRecurring: () => {} });
+    const app = composition.app;
+    const headers = managementAuthHeaders(await app.inject({ method: "POST", url: "/auth/management/sessions" }));
+    const value = composition.dataOverlayService.createValue({ name: "Private count", kind: "integer", resetDefault: 1, resetGroupId: null }).values[0]!;
+    await mkdir(join(root, "assets"), { recursive: true });
+    await writeFile(join(root, "assets", "data.png"), "png");
+    const assets = new SqliteAssetRepository(composition.database.connection);
+    const asset = { id: "data-image", originalFileName: "image.png", mediaType: "image" as const, mimeType: "image/png", sizeBytes: 3,
+      checksum: `sha256:${createHash("sha256").update("png").digest("hex")}`, storagePath: "data.png", durationMs: null };
+    await assets.save(asset); await assets.save({ ...asset, id: "unrelated-image" });
+    composition.dataOverlayService.createCanvas({ name: "Private canvas", enabled: true, order: 0, targetProfileId: "landscape", outputs: { browser: true, desktop: true }, elements: [
+      { id: "label", kind: "text", order: 0, x: 0, y: 0, width: 100, height: 40, visible: true, stalePolicy: "retain-last", binding: { kind: "value", valueId: value.id }, literalText: "", format: { prefix: "", suffix: "", thousandsSeparator: false, overflow: "wrap" }, style: { color: "#FFFFFFFF", fontSizePx: 24, fontWeight: 400, align: "left" } },
+      { id: "picture", kind: "image", order: 1, x: 100, y: 0, width: 40, height: 40, visible: true, stalePolicy: "retain-last", assetId: asset.id, fit: "contain" }
+    ] });
+    const key = await composition.overlayAccessService.createKey({ overlayId: "default", moduleId: "data-overlays", purpose: "live", scope: "module", targetProfileId: "landscape" });
+    const url = `/overlay/modules/data-overlays/live/${key.rawKey}`;
+    expect((await app.inject({ url: `${url}/composition?profile=landscape` })).json()).toMatchObject({ modules: [] });
+    expect((await app.inject({ method: "PATCH", url: "/overlay-modules/data-overlays/enabled", headers, payload: { enabled: true } })).statusCode).toBe(200);
+    const initial = (await app.inject({ url: `${url}/composition?profile=landscape` })).json();
+    expect(initial.modules[0].presentation.projection.canvases[0].elements[0].text).toBe("1");
+    expect(JSON.stringify(initial)).not.toContain("Private count");
+    expect((await app.inject({ url: `${url}/assets/data-image?profile=landscape` })).statusCode).toBe(200);
+    expect((await app.inject({ url: `${url}/assets/unrelated-image?profile=landscape` })).statusCode).toBe(404);
+    expect((await app.inject({ url: `${url}/assets/data-image?profile=vertical` })).statusCode).toBe(401);
+    const messages: Array<{ type: string; composition?: typeof initial }> = [];
+    socket = await app.injectWS(`/overlay/ws/modules/data-overlays/live/${key.rawKey}?profile=landscape`, {}, { onInit: ws => ws.on("message", bytes => messages.push(JSON.parse(bytes.toString()))) });
+    await vi.waitFor(() => expect(messages.some(message => message.type === "overlay.composition")).toBe(true));
+    const before = messages.filter(message => message.type === "overlay.composition").length;
+    composition.dataOverlayService.commandValue(value.id, { action: "add", amount: 2 });
+    await vi.waitFor(() => expect(messages.filter(message => message.type === "overlay.composition").length).toBeGreaterThan(before));
+    const latest = messages.filter(message => message.type === "overlay.composition").at(-1)!.composition;
+    expect(latest.modules[0].presentation.projection.canvases[0].elements[0].text).toBe("3");
+    await composition.playbackOperationsService.setSafety({ paused: true });
+    await vi.waitFor(() => expect(messages.filter(message => message.type === "overlay.composition").at(-1)!.composition.modules[0].presentation.projection.canvases).toEqual([]));
+    expect(composition.dataOverlayService.getState().values[0]?.content).toBe(3);
+  } finally { socket?.terminate(); await composition?.close(); await rm(root, { recursive: true, force: true }); }
 });

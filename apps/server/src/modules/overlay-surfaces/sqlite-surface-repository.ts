@@ -48,10 +48,11 @@ export class SqliteSurfaceRepository implements SurfaceRepository {
       const id = `unified-browser:${overlayId}`;
       if (surfaces.some(surface => surface.id === id)) continue;
       // Existing unified composition paints registry order bottom-first.
-      const layers = modules.map(module => {
+      const layers = modules.filter(module => module.id !== "data-overlays").map(module => {
         const config = this.connection.prepare("SELECT enabled FROM overlay_module_config WHERE module_id = ?").get(module.id);
         return { moduleId: module.id, visible: config === undefined ? module.defaultEnabled : config.enabled === 1 };
       }).reverse();
+      if (ids.includes("data-overlays")) layers.push({ moduleId: "data-overlays", visible: false });
       const surface: SurfaceConfiguration = { id, kind: "unified-browser", overlayId, layers };
       this.write(surface);
       surfaces.push(surface);

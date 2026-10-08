@@ -285,3 +285,11 @@ class FailAfterWriteSecretStore extends InMemorySecretStore {
     }
   }
 }
+
+it("lists disabled Data Overlays outputs for exact Landscape/Vertical keys and preserves scoped URLs", async () => {
+  const { service } = createService(["ovl_data"]);
+  const outputs = (await service.listOutputs("http://127.0.0.1:39187")).filter(output => output.moduleId === "data-overlays");
+  expect(outputs.map(output => [output.targetProfileId, output.purpose, output.enabled])).toEqual([[null, "live", false], [null, "test", false], ["landscape", "live", false], ["landscape", "test", false], ["vertical", "live", false], ["vertical", "test", false]]);
+  const key = await service.createKey({ overlayId: "default", scope: "module", moduleId: "data-overlays", purpose: "live", targetProfileId: "vertical" }, "http://127.0.0.1:39187");
+  expect(key.url).toBe("http://127.0.0.1:39187/overlay/modules/data-overlays/live/ovl_data?profile=vertical");
+});

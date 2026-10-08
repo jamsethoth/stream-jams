@@ -104,3 +104,18 @@ it("pins current Music brand and font versions for the private desktop only", as
   await resolver.releaseMusicOwner(result.ownerId!);
   expect(media.release).toHaveBeenCalledWith(result.ownerId);
 });
+
+it("grants only rendered Data still images and omits missing images while keeping shapes", async () => {
+  const { resolver, media, records } = harness();
+  records.set("second", { ...records.get("asset")!, id: "second" });
+  const shape = { id: "shape", kind: "rectangle" as const, order: 0, x: 0, y: 0, width: 40, height: 40, color: "#FFFFFFFF" };
+  const candidate = { kind: "data-overlays" as const, projection: { runtimeId: "runtime", revision: 1, canvases: [{ id: "canvas", order: 0, targetProfileId: "landscape" as const, elements: [shape,
+    ...["asset", "second", "missing"].map((assetId, order) => ({ id: assetId, kind: "image" as const, order, x: 0, y: 0, width: 40, height: 40, assetId, fit: "contain" as const }))
+  ] }] } };
+  const result = await resolver.resolveDataModule(candidate);
+  expect(media.acquire).toHaveBeenCalledTimes(1);
+  expect(result.assets.map(asset => asset.assetId)).toEqual(["asset", "second"]);
+  expect(result.presentation.projection.canvases[0]?.elements.map(element => element.id)).toEqual(["shape", "asset", "second"]);
+  expect(JSON.stringify(result)).not.toContain("image/asset");
+  expect(result.ownerId).not.toBeNull(); await resolver.releaseDataOwner(result.ownerId!); expect(media.release).toHaveBeenCalledWith(result.ownerId);
+});

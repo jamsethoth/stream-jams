@@ -42,7 +42,8 @@ describe("overlay module registry", () => {
       screenEffectsOverlayModuleDefinition,
       registry.getModule("timers"),
       registry.getModule("music"),
-      registry.getModule("video-shoutout")
+      registry.getModule("video-shoutout"),
+      registry.getModule("data-overlays")
     ]);
     expect(registry.getModule("alerts")).toEqual(alertsOverlayModuleDefinition);
     expect(registry.getModule("screen-effects")).toEqual(screenEffectsOverlayModuleDefinition);
@@ -65,7 +66,7 @@ describe("overlay module registry", () => {
       id: "video-shoutout",
       renderer: { supportedOutputs: ["module"] }
     });
-    expect(listUnifiedOverlayModuleIds(registry)).toEqual(["alerts", "screen-effects", "timers", "music"]);
+    expect(listUnifiedOverlayModuleIds(registry)).toEqual(["alerts", "screen-effects", "timers", "music", "data-overlays"]);
   });
 
   it("returns null for unknown module ids", () => {

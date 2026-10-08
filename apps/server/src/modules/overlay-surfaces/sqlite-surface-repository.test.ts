@@ -75,3 +75,13 @@ it("rejects incomplete saves and rolls back discovery when persistence fails", a
   await expect(new SqliteSurfaceRepository(db.connection, expanded).list()).rejects.toThrow("test failure");
   expect(db.connection.prepare("SELECT * FROM overlay_surfaces ORDER BY id").all()).toEqual(beforeRows);
 });
+
+it("adds Data Overlays hidden at the bottom of both new and existing unified surfaces", async () => {
+  using db = createInMemoryStreamJamsDatabase();
+  const { createDefaultOverlayModuleRegistry } = await import("@stream-jams/core");
+  db.connection.exec(`INSERT INTO overlay_keys (id, overlay_id, module_id, scope, purpose, key_hash, created_at, revoked_at) VALUES ('data-key', 'data-output', NULL, 'unified', 'live', 'hash', '2026-10-08T00:00:00Z', NULL)`);
+  const repository = new SqliteSurfaceRepository(db.connection, createDefaultOverlayModuleRegistry());
+  const surfaces = await repository.list();
+  expect(surfaces.find(surface => surface.kind === "unified-browser")?.layers.at(-1)).toEqual({ moduleId: "data-overlays", visible: false });
+  expect(surfaces.find(surface => surface.kind === "desktop")?.layers.at(-1)).toEqual({ moduleId: "data-overlays", visible: false });
+});
