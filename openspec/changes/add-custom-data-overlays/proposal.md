@@ -1,34 +1,49 @@
 ## Why
 
-Streamers display goals, session counts, latest-supporter labels, and custom challenge information using dedicated widgets, bot variables, text files, or coded browser overlays. Stream Jams should make these behaviors easy to create visually, with persistent shared data supplied by local API calls or received events and rendered on user-designed canvases.
+Streamers show counters, goals, latest-supporter labels and challenge text with dedicated widgets, bot variables, text files or hand-coded browser overlays. Stream Jams should let them build these visually, keep the data across restarts, control it live from Operator, and show the same result on the OBS browser source and the desktop overlay.
+
+This change is the first of four reviewable slices of BL-055. It delivers a usable feature on its own: values that the operator changes by hand, goals over those values, and canvases that display them. Later slices add automatic updates, Twitch data and templates.
+
+| Slice | Change | Adds |
+| --- | --- | --- |
+| 1 | `add-custom-data-overlays` (this change) | Values, goals, reset groups, canvases, outputs, Operator controls, backup |
+| 2 | [`add-data-overlay-event-rules`](../add-data-overlay-event-rules/proposal.md) | Rules over normalized events, Streamer.bot custom broadcasts and Streamer.bot globals |
+| 3 | [`add-twitch-overlay-data`](../add-twitch-overlay-data/proposal.md) | Twitch follower total and Creator Goals |
+| 4 | [`add-data-overlay-templates`](../add-data-overlay-templates/proposal.md) | Bundled and saved canvas templates |
+
+Slices 2, 3 and 4 depend on this change and are independent of each other.
 
 ## What Changes
 
-- Add a disabled-by-default Data Overlays module with multiple saved freeform canvases, text, images, solid shapes, progress bars, layer ordering, positioning, styling, and keyboard-accessible editing.
-- Add canvas-independent named number, text, and money values, plus goals referencing values. Multiple elements and canvases can share a value; canvas deletion never deletes data.
-- Persist data across restarts, default to manual resets, and expose deliberate set/add/subtract/reset controls. Support fixed targets and saved-baseline progress as proposed goal modes.
-- Add visual rules that map normalized provider events or explicitly configured custom event schemas to typed updates. Support constants, selected event fields, bounded filters, and fixed multipliers without executable expressions.
-- Add direct Twitch follower-total and active Creator Goals data sources using initial API snapshots, goal lifecycle events, bounded reconciliation, and capability-specific authorization readiness.
-- Extend proof-bound local automation grants with explicit data-read, data-write, and custom-event-submit consent. Provide guarded HTTP updates and an authenticated WebSocket input using the same update/event contracts.
-- Add editable whole-canvas templates and insertable element groups, with explicit value mapping and isolated sample previews. Templates instantiate copies rather than modifying live canvases later.
-- Deliver server-authoritative snapshots and ordered output updates, durable bounded duplicate receipts, recovery diagnostics, and reference-safe backup/restore.
-- Keep donation-provider adapters under BL-020; generic typed money updates/custom events work without introducing payment processing. Automatic reset scheduling, arbitrary remote WebSocket subscriptions, custom code, and general-purpose design-tool composition remain deferred.
+- Add a disabled-by-default Data Overlays module with several saved canvases. Canvases hold text, registered local images, solid rectangles and ellipses, and horizontal or vertical progress bars, with positioning, layer order, styling and keyboard-accessible editing.
+- Add shared named values that live outside any canvas. V1 supports two kinds: integer and text. Several elements and canvases can show the same value, and deleting a canvas never deletes data.
+- Add goals over integer values, with a fixed target or a saved baseline ("50 more followers from here").
+- Add reset groups, such as "Session", so one action resets several values together.
+- Add Operator controls for live use: +1, −1, set and reset for pinned values, reset for a whole group, and show/hide for each canvas. Management keeps definitions and layout.
+- Render the same projection on module-specific and unified browser sources and on the private desktop overlay.
+- Keep values across restarts. Nothing resets on its own in this slice.
+- Include values, goals, groups and canvases in backup and restore.
+
+## Out of scope
+
+- Automatic updates from events (slice 2), Twitch data (slice 3) and templates (slice 4).
+- Money and decimal values. These wait for a real money source; see BL-020.
+- An inbound HTTP or WebSocket API for external producers. Stream Jams listens to tools it already connects to (slice 2). A paired native input API stays in the backlog as BL-064.
+- Value-change animation, such as count-up numbers or animated bar fill, and completed-goal styling. These are tracked as BL-065.
+- Custom HTML or JavaScript, arbitrary expressions, masks, nested groups, freehand drawing, and a new queue or audio channel. NP-001 and NP-006 still apply.
 
 ## Capabilities
 
 ### New Capabilities
-- `shared-overlay-values`: Persistent typed values, goals, lifecycle, manual correction, reference integrity, and source freshness.
-- `overlay-value-inputs`: Visual event rules, custom event schemas, guarded direct updates, WebSocket ingress, and transactional duplicate protection.
-- `data-overlay-canvases`: Multiple bounded freeform layouts, value bindings, visual editing, authorized browser/unified/desktop output, and isolated previews.
-- `data-overlay-templates`: Bundled canvas/group starters and saved user templates with independent copies and explicit data mapping.
-- `twitch-overlay-data`: Authoritative follower totals and active Twitch goal state, source lifecycle, and scope/readiness handling.
+- `shared-overlay-values`: persistent integer and text values, goals, reset groups, reference-safe lifecycle.
+- `data-overlay-canvases`: canvas authoring, formatting, preview, output projections, and visibility rules.
+- `data-overlay-operator-controls`: live value, group and canvas controls in Operator.
 
 ### Modified Capabilities
-- `scoped-automation`: Add explicit consent and discovery for local data/event inputs without extending existing grants or legacy credentials.
-- `configuration-backup-restore`: Include data definitions/state, rules, canvases, and templates while invalidating external-input authority and preserving reference integrity.
+- `configuration-backup-restore`: include data overlay definitions and current values.
 
 ## Impact
 
-Core owns schemas, typed formatting, goal projection, matching, and deterministic mutations. Server owns typed SQLite repositories/migrations, atomic receipts, event fan-out, automation ingress, snapshots, maintenance guards, and diagnostics. Web owns Data/Canvas authoring, template selection, preview, and overlay rendering; desktop integrates the existing private shared surface rather than adding a new window or scheduler. Existing alert/timer event behavior remains authoritative and unchanged.
+Core owns value and goal schemas, formatting and goal projection. Server owns typed SQLite repositories and migrations, management and Operator APIs, snapshots and backup. Web owns Data and Canvas management, the Operator section and overlay rendering. Desktop uses the existing private shared surface with no new window.
 
-Frontend work follows `docs/ai/frontend-agent-guide.md` and the existing UX/design-token rules. Implementation includes focused domain/API tests, Storybook states, disposable-service Playwright acceptance, and bounded OBS/desktop acceptance. No new dependency is assumed; evaluate editor needs before choosing a library. Track this outcome as BL-055. This proposal does not authorize implementation or publishing.
+Frontend work follows `docs/ai/frontend-agent-guide.md`. No new dependency is assumed; the editor fit assessment decides whether one is needed. Tracked as BL-055.

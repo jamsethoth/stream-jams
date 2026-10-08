@@ -39,13 +39,16 @@ Installers, signing, automatic updates, non-Windows desktop delivery, LAN mode, 
 
 The October 5, 2026 UTC reconciliation archived 21 completed changes under [the change archive](../openspec/changes/archive), using the `2026-10-05-` prefix. Before archival, canonical requirements were synchronized for automatic local-output rebinding, persistent event timers, repository error provenance, and the compact Operator panel. Other completed changes were already synchronized; newer timing, streaming, variant-removal and menu requirements were preserved rather than overwritten by older deltas. Historical acceptance limits remain with their archived records.
 
-Three changes remain active:
+Six changes remain active:
 
 | Change | Remaining work |
 | --- | --- |
 | [add-main-branch-changelog](../openspec/changes/add-main-branch-changelog/tasks.md) | Unimplemented proposal, 22 unchecked tasks; no root changelog or enforcing workflow |
 | [add-video-shoutout-overlay-module](../openspec/changes/add-video-shoutout-overlay-module/tasks.md) | Unimplemented proposal, 23 unchecked tasks; no registered video-shoutout module |
-| [add-custom-data-overlays](../openspec/changes/add-custom-data-overlays/proposal.md) | Proposal for shared values, visual rules, API/WebSocket inputs, Twitch state and canvas templates; 38 unchecked tasks, awaiting design review |
+| [add-custom-data-overlays](../openspec/changes/add-custom-data-overlays/proposal.md) | Slice 1 of 4 for data overlays: values, goals, reset groups, canvases, outputs and Operator controls; 21 unchecked tasks, awaiting approval |
+| [add-data-overlay-event-rules](../openspec/changes/add-data-overlay-event-rules/proposal.md) | Slice 2: rules from normalized events and Streamer.bot; 20 unchecked tasks; depends on slice 1 |
+| [add-twitch-overlay-data](../openspec/changes/add-twitch-overlay-data/proposal.md) | Slice 3: Twitch follower total and Creator Goals; 11 unchecked tasks; depends on slice 1 |
+| [add-data-overlay-templates](../openspec/changes/add-data-overlay-templates/proposal.md) | Slice 4: canvas templates and starters; 10 unchecked tasks; depends on slice 1 |
 
 Persistent event timer recovery and correction requirements are now in [the canonical capability](../openspec/specs/persistent-event-timers/spec.md). The base Timer change is now [archived](../openspec/changes/archive/2026-10-05-add-timer-overlay-module/tasks.md) after the [focused packaged output/cue matrix](verification/timers.md#focused-packaged-timer-output-acceptance-2026-10-05) passed. Its base capabilities are synchronized into [Timer overlay](../openspec/specs/timer-overlay-module/spec.md) and [Timer automation](../openspec/specs/timer-automation-api/spec.md) specifications; the original idle-on-restart wording was reconciled with implemented paused recovery. Physical HTTP-button testing was user-confirmed, and Stream Deck plugin/profile certification remains outside Stream Jams scope.
 

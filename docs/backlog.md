@@ -31,12 +31,13 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 | BL-018 | Constrained per-layer timeline and keyframe editor | Long-term | P3 | Preset animations prove insufficient; the implemented text-style contract and BL-013 are stable | Must remain schema-validated and exclude arbitrary code. |
 | BL-019 | Full provider-event simulation and persisted custom sample library | Deferred | P3 | Stable normalized catalogs and Diagnostics simulation boundary | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
 | BL-040 | Shape border and drop-shadow appearance controls | Deferred | P2 | Implemented solid-fill shape layers | Add bounded border color/width and an optional drop shadow; gradients, rounded corners, additional primitives, masks, SVG, and general composition remain out of scope. |
+| BL-065 | Data overlay value-change animation and completed-goal styling | Deferred | P3 | Implemented BL-055 canvases | Count-up numbers, animated bar fill, and a completed-goal style; reduced-motion aware. |
 
 ## Events, Providers, And Integrations
 
 | ID | Feature | Status | Priority | Dependency or trigger | Detail |
 | --- | --- | --- | --- | --- | --- |
-| BL-020 | Third-party donations, Twitch charity, creator goals, and related monetary alerts | Deferred | P2 | Currency-safe normalized values and explicit integration identities | [Future-feature notes](future-features.md#third-party-and-charity-donation-events) |
+| BL-020 | Third-party donations, Twitch charity, and related monetary alerts and money data-overlay values | Deferred | P2 | Currency-safe normalized values and explicit integration identities | [Future-feature notes](future-features.md#third-party-and-charity-donation-events); Creator Goals moved to BL-062; money and decimal data values wait for a real money source |
 | BL-021 | Additional event providers | Deferred | P3 | A named provider and canonical event mapping | [Product plan](product-plan.md) |
 | BL-022 | Additional TTS providers | Deferred | P3 | A named provider and capability-mapping need | [Product plan](product-plan.md) |
 | BL-023 | Non-local Streamer.bot connections | Deferred | P3 | Authentication, transport security, warnings, and updated threat model | [Future-feature notes](future-features.md#streamerbot-non-local-connections) |
@@ -64,6 +65,7 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 | BL-049 | Exclusive-full-screen desktop overlay compatibility evaluation | Evidence-dependent | P3 | Demonstrated need beyond windowed/borderless; explicit backend and anti-cheat/support-risk decision | Control DX11's Fullscreen setting failed video acceptance on 2026-10-02; actual exclusive presentation remains unverified. [Test evidence](verification/desktop-overlay-topmost.md). No graphics injection or automatic game-setting changes are authorized by the shared desktop surface or Screen Effects. [Shared-surface requirements](../openspec/specs/shared-overlay-surfaces/spec.md) |
 | BL-050 | Optional cloud service deployment with a local desktop bridge | Deferred candidate | P3 | Explicit deployment need, local-device ownership boundary and separately approved authentication/transport model | Current app remains local-first; this does not reopen marketplace or general cloud sync. [Product plan](product-plan.md) |
 | BL-051 | Automatic desktop display reconnection after display ID changes | Deferred | P2 | Implemented shared desktop surface; validated Windows hardware-identity matching and an approved persistence/recovery design | Save reliable physical-monitor identity and automatically rebind only when exactly one current monitor matches. Missing or ambiguous identity requires explicit selection; never fall back to the primary display or match solely by name/position. Recovery applies to future effects only, with no interrupted-content replay. Observed during the September 10 test; the user reported a driver update/display refresh, but causality is unconfirmed. [Test evidence](verification/shared-desktop-overlay.md#integrated-representative-video-attempt--september-10); [Windows monitor identity](https://learn.microsoft.com/en-us/windows/win32/wmicoreprov/wmimonitorid). |
+| BL-064 | Paired native data input API for external producers | Deferred | P3 | A named producer that cannot use Streamer.bot custom broadcasts | Superseded by listening to Streamer.bot (2026-10-08 decision). If revived: `requestId` optional, revision guard only on `set`, no runtime guard on events, receipts kept 24 to 48 hours with eviction rather than rejection, and bearer auth on the WebSocket upgrade instead of tickets. [Review notes](design/2026-10-08-custom-data-overlays-review.md) |
 
 ## Planned Changes And Maintenance Candidates
 
@@ -71,7 +73,10 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 | --- | --- | --- | --- | --- | --- |
 | BL-052 | Main-branch changelog and validation | Planned | P2 | Existing proposal; 0/22 implementation tasks at the September 23 audit | [OpenSpec change](../openspec/changes/add-main-branch-changelog/proposal.md) |
 | BL-053 | Manual Streamer.bot video shoutout overlay module | Planned | P2 | Implementation in review; remove after merge, spec sync, and live Twitch embed acceptance | [OpenSpec change](../openspec/changes/add-video-shoutout-overlay-module/proposal.md); [setup](video-shoutout.md); separate from Screen Effects |
-| BL-055 | Custom data overlays with shared counters, visual rules and editable canvas templates | Planned | P2 | Proposal review before implementation; scoped local inputs, durable counting and existing shared output/editor boundaries | [OpenSpec change](../openspec/changes/add-custom-data-overlays/proposal.md); native donation adapters remain BL-020 |
+| BL-055 | Custom data overlays: shared values, goals, reset groups, canvases, outputs and Operator controls | Planned | P2 | Proposal review before implementation; slice 1 of 4 | [OpenSpec change](../openspec/changes/add-custom-data-overlays/proposal.md); [review](design/2026-10-08-custom-data-overlays-review.md) |
+| BL-061 | Data overlay event rules from normalized events, Streamer.bot custom broadcasts and Streamer.bot globals | Planned | P2 | BL-055 | [OpenSpec change](../openspec/changes/add-data-overlay-event-rules/proposal.md) |
+| BL-062 | Twitch follower total and Creator Goals data sources | Planned | P2 | BL-055 | [OpenSpec change](../openspec/changes/add-twitch-overlay-data/proposal.md); follows the active goal of a type by default |
+| BL-063 | Data overlay canvas templates and starters | Planned | P2 | BL-055 | [OpenSpec change](../openspec/changes/add-data-overlay-templates/proposal.md) |
 | BL-057 | Video shoutout management page (enablement, browser-source URLs, test trigger) | Deferred | P2 | BL-053; outputs are API-only until then | [Video shoutouts](video-shoutout.md) |
 
 ## Known Issues
