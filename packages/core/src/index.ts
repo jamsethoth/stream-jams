@@ -376,6 +376,9 @@ export * from "./music/asset-references.js";
 export type * from "./video-shoutout/types.js";
 export * from "./video-shoutout/schemas.js";
 export { videoShoutoutModuleDefinition } from "./video-shoutout/module-definition.js";
+export type * from "./videos/types.js";
+export * from "./videos/schemas.js";
+export { videosModuleDefinition } from "./videos/module-definition.js";
 
 export * from "./management/local-websocket-connection.js";
 export { moduleMuteStateSchema } from "./playback/schemas.js";

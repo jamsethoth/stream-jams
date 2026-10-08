@@ -21,6 +21,10 @@
     "./video-shoutout": {
       "types": "./dist/video-shoutout/contract.d.ts",
       "default": "./dist/video-shoutout/contract.js"
+    },
+    "./videos": {
+      "types": "./dist/videos/contract.d.ts",
+      "default": "./dist/videos/contract.js"
     }
   },
   "scripts": {
