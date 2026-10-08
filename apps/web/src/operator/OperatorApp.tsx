@@ -259,8 +259,6 @@ function OperatorConsole({ api = defaultPlaybackApi, timersApi = defaultOperator
       {announcement === "" ? null : <p aria-live="polite" className="operator-announcement" role="status">{announcement}</p>}
       {commandError !== null ? <OperatorErrorBanner error={commandError} title="Playback command failed" /> : refreshError === null ? null : <OperatorErrorBanner error={refreshError} title="Playback state may be stale" />}
 
-      <Suspense fallback={<p role="status">Loading the video queue…</p>}><OperatorVideosPanel api={videosApi} /></Suspense>
-
       <section className="operator-section" aria-labelledby="operator-active-timers">
         <h2 id="operator-active-timers">Active timers ({timers.length})</h2>
         {timerRefreshError === null ? null : <OperatorErrorBanner error={timerRefreshError} title="Timer state may be stale"><p>Showing the last known timers. Check the local service; timer refresh will retry automatically.</p></OperatorErrorBanner>}
@@ -349,6 +347,8 @@ function OperatorConsole({ api = defaultPlaybackApi, timersApi = defaultOperator
           event.currentTarget
         )}>Replay</Button>
       )} />
+
+      <Suspense fallback={<p role="status">Loading the video queue…</p>}><OperatorVideosPanel api={videosApi} /></Suspense>
     </main>
   );
 }
