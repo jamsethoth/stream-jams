@@ -447,6 +447,41 @@ describe("ScreenEffectEditor", () => {
     expect(screen.queryByRole("option", { name: "OBS / MissingEvent" })).not.toBeInTheDocument();
   });
 
+  it("adds a stream event trigger with typed conditions and a source restriction, once", async () => {
+    const user = userEvent.setup();
+    const saved = enabledEffect(false);
+    const api = effectApi(saved);
+    renderEditor({ api, create: false, document: saved });
+
+    await user.click(await screen.findByRole("tab", { name: "Triggers" }));
+    await user.selectOptions(screen.getByLabelText("Event type"), "raid");
+    await user.selectOptions(screen.getByLabelText("Event source"), "twitch");
+    await user.click(screen.getByRole("button", { name: "Add condition" }));
+    await user.selectOptions(screen.getByLabelText("Event conditions Raid viewers operator"), "min");
+    const value = screen.getByLabelText("Event conditions Raid viewers value");
+    await user.clear(value);
+    expect(screen.getByRole("button", { name: "Add event trigger" })).toBeDisabled();
+    await user.type(value, "10");
+    await user.click(screen.getByRole("button", { name: "Add event trigger" }));
+
+    expect(screen.getByText("Raid · Raid viewers is at least 10 · Twitch only")).toBeVisible();
+    expect(screen.getByText("No conditions. Every matching raid event is eligible.")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Add condition" }));
+    await user.selectOptions(screen.getByLabelText("Event conditions Raid viewers operator"), "min");
+    await user.clear(screen.getByLabelText("Event conditions Raid viewers value"));
+    await user.type(screen.getByLabelText("Event conditions Raid viewers value"), "10");
+    await user.click(screen.getByRole("button", { name: "Add event trigger" }));
+    expect(screen.getByRole("status", { name: "" })).toHaveTextContent("This effect already has that trigger.");
+    expect(screen.getAllByText("Raid · Raid viewers is at least 10 · Twitch only")).toHaveLength(1);
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(api.update).toHaveBeenCalledWith("effect-one", expect.objectContaining({
+      bindings: [expect.objectContaining({
+        selector: { match: { kind: "canonical", type: "raid" }, sources: ["twitch"], conditions: [{ field: "raidViewers", operator: "min", value: 10 }] }
+      })]
+    }), false);
+  });
+
   it("shows one weighted model and simulates its local selection distribution", async () => {
     const user = userEvent.setup();
     const base = enabledEffect();
