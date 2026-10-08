@@ -125,7 +125,8 @@ describe("EventBus", () => {
     await restarted.start();
     currentTime = new Date("2026-10-08T12:09:59.000Z");
     await expect(restarted.handleEvent(follow("follow-1"), [])).resolves.toEqual({ status: "duplicate" });
-    await expect(restarted.handleEvent(follow("follow-1", "streamerbot"), [])).resolves.toEqual({ status: "accepted" });
+    const otherViewer = { ...follow("follow-1", "streamerbot"), actor: { id: "viewer-2", displayName: "Other" } };
+    await expect(restarted.handleEvent(otherViewer, [])).resolves.toEqual({ status: "accepted" });
     currentTime = new Date("2026-10-08T12:10:01.000Z");
     await expect(restarted.handleEvent(follow("follow-1"), [])).resolves.toEqual({ status: "accepted" });
 
@@ -158,8 +159,8 @@ describe("EventBus", () => {
     for (const id of ["follow-1", "follow-2"]) {
       journal.append({
         kind: "canonical", event: follow(id), eventId: id, sourceKind: "twitch", sourceRegistrationId: null,
-        receivedAt: "2026-10-08T12:00:00.000Z", effectTriggers: []
-      }, `bus-${id}`, 0);
+        receivedAt: "2026-10-08T12:00:00.000Z", correlationKey: null, effectTriggers: []
+      }, `bus-${id}`, { duplicateSinceMs: 0, correlationSinceMs: 0 });
     }
     const skipped: Array<[string, number]> = [];
     const alerts = recordingConsumer("alerts");
@@ -239,6 +240,133 @@ describe("EventBus", () => {
   });
 });
 
+describe("EventBus cross-source correlation", () => {
+  it("merges the same follow from a second source into the first event", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const clock = testClock("2026-10-08T12:00:00.000Z");
+    const alerts = recordingConsumer("alerts");
+    const bus = createBus(database, [alerts], { now: clock.now });
+
+    await expect(bus.handleEvent(follow("eventsub-1"), [])).resolves.toEqual({ status: "accepted" });
+    clock.advance(3_000);
+    await expect(bus.handleEvent(follow("streamerbot:twitch:Follow:1", "streamerbot"), [])).resolves.toEqual({ status: "merged" });
+
+    expect(alerts.events.map(eventIdOf)).toEqual(["eventsub-1"]);
+    expect(alerts.events[0]).toMatchObject({ correlationKey: "twitch:follow:viewer-1" });
+    expect(storedEventIds(database)).toEqual(["eventsub-1"]);
+    expect(storedMerges(database)).toEqual([
+      { sequence: 1, source_kind: "streamerbot", merged_event_id: "streamerbot:twitch:Follow:1", merged_at: "2026-10-08T12:00:03.000Z" }
+    ]);
+  });
+
+  it("keeps the first arrival when Streamer.bot is faster than direct Twitch", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const alerts = recordingConsumer("alerts");
+    const bus = createBus(database, [alerts]);
+
+    await bus.handleEvent(follow("streamerbot:twitch:Follow:1", "streamerbot"), []);
+    await expect(bus.handleEvent(follow("eventsub-1"), [])).resolves.toEqual({ status: "merged" });
+
+    expect(alerts.events).toEqual([expect.objectContaining({ eventId: "streamerbot:twitch:Follow:1", sourceKind: "streamerbot" })]);
+  });
+
+  it.each([
+    ["both copies of each cheer together", ["eventsub-1", "streamerbot-1", "eventsub-2", "streamerbot-2"]],
+    ["both direct copies first", ["eventsub-1", "eventsub-2", "streamerbot-1", "streamerbot-2"]]
+  ])("publishes two identical cheers once each with %s", async (_label, order) => {
+    using database = createInMemoryStreamJamsDatabase();
+    const alerts = recordingConsumer("alerts");
+    const bus = createBus(database, [alerts]);
+
+    const outcomes = [];
+    for (const id of order) outcomes.push((await bus.handleEvent(cheer(id, id.startsWith("eventsub") ? "twitch" : "streamerbot"), [])).status);
+
+    expect(outcomes.filter((status) => status === "accepted")).toHaveLength(2);
+    expect(outcomes.filter((status) => status === "merged")).toHaveLength(2);
+    expect(alerts.events).toHaveLength(2);
+    expect(storedMerges(database).map((merge) => merge.sequence)).toEqual([1, 2]);
+  });
+
+  it.each(["twitch", "streamerbot"] as const)("never merges distinct %s events with equal keys from the same source", async (source) => {
+    using database = createInMemoryStreamJamsDatabase();
+    const alerts = recordingConsumer("alerts");
+    const bus = createBus(database, [alerts]);
+
+    await bus.handleEvent(cheer("cheer-1", source), []);
+    await bus.handleEvent(cheer("cheer-2", source), []);
+
+    expect(alerts.events.map(eventIdOf)).toEqual(["cheer-1", "cheer-2"]);
+    expect(storedMerges(database)).toEqual([]);
+  });
+
+  it("publishes a copy that arrives after the correlation window as a separate event", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const clock = testClock("2026-10-08T12:00:00.000Z");
+    const alerts = recordingConsumer("alerts");
+    const bus = createBus(database, [alerts], { now: clock.now });
+
+    await bus.handleEvent(follow("eventsub-1"), []);
+    clock.advance(30_000);
+    await expect(bus.handleEvent(follow("streamerbot-1", "streamerbot"), [])).resolves.toEqual({ status: "merged" });
+    await bus.handleEvent(follow("eventsub-2"), []);
+    clock.advance(30_001);
+    await expect(bus.handleEvent(follow("streamerbot-2", "streamerbot"), [])).resolves.toEqual({ status: "accepted" });
+
+    expect(alerts.events.map(eventIdOf)).toEqual(["eventsub-1", "eventsub-2", "streamerbot-2"]);
+  });
+
+  it("treats a redelivered merged copy as a duplicate after restart", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const clock = testClock("2026-10-08T12:00:00.000Z");
+    const alerts = recordingConsumer("alerts");
+    const first = createBus(database, [alerts], { now: clock.now });
+    await first.handleEvent(follow("eventsub-1"), []);
+    await first.handleEvent(follow("streamerbot-1", "streamerbot"), []);
+
+    clock.advance(60_000);
+    const afterRestart = createBus(database, [alerts], { now: clock.now });
+    await expect(afterRestart.handleEvent(follow("streamerbot-1", "streamerbot"), [])).resolves.toEqual({ status: "duplicate" });
+    await expect(afterRestart.handleEvent(follow("eventsub-1"), [])).resolves.toEqual({ status: "duplicate" });
+
+    expect(alerts.events.map(eventIdOf)).toEqual(["eventsub-1"]);
+    expect(storedMerges(database)).toHaveLength(1);
+  });
+
+  it("never merges external events", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const effects = recordingConsumer("screen-effects");
+    const bus = createBus(database, [effects]);
+
+    await bus.handleEvent(follow("eventsub-1"), []);
+    await bus.handleTriggers([customTrigger("streamerbot:custom-1")]);
+
+    expect(effects.events.map((event) => [event.kind, event.correlationKey])).toEqual([
+      ["canonical", "twitch:follow:viewer-1"],
+      ["external", null]
+    ]);
+  });
+
+  it("lets ingestion report a merged copy as a duplicate", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const ingestion = new EventIngestionService({ sink: createBus(database, [recordingConsumer("alerts")]) });
+
+    await ingestion.ingestNormalizedEvent(follow("eventsub-1"));
+    await expect(ingestion.ingestNormalizedEvent(follow("streamerbot-1", "streamerbot")))
+      .resolves.toEqual({ status: "duplicate", messageId: "streamerbot-1" });
+    expect(ingestion.getStatus()).toMatchObject({ acceptedCount: 1, duplicateCount: 1, message: "Event already received from another source; merged" });
+  });
+
+  it("removes merge records with the journal rows they belong to", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const bus = createBus(database, [recordingConsumer("alerts")], { retentionRows: 0 });
+    await bus.handleEvent(follow("eventsub-1"), []);
+    await bus.handleEvent(follow("streamerbot-1", "streamerbot"), []);
+
+    expect(bus.prune()).toBe(1);
+    expect(storedMerges(database)).toEqual([]);
+  });
+});
+
 function createBus(
   database: StreamJamsDatabase,
   consumers: readonly EventBusConsumer[],
@@ -267,6 +395,20 @@ function eventIdOf(event: BusEvent): string {
 
 function storedEventIds(database: StreamJamsDatabase): string[] {
   return database.connection.prepare("SELECT event_id FROM event_bus_journal ORDER BY sequence").all().map((row) => String(row.event_id));
+}
+
+function storedMerges(database: StreamJamsDatabase): Array<Record<string, unknown>> {
+  return database.connection.prepare("SELECT sequence, source_kind, merged_event_id, merged_at FROM event_bus_correlation_merges ORDER BY sequence, source_kind")
+    .all().map((row) => ({ ...row }));
+}
+
+function testClock(start: string): { readonly now: () => Date; advance(ms: number): void } {
+  let current = Date.parse(start);
+  return { now: () => new Date(current), advance: (ms) => { current += ms; } };
+}
+
+function cheer(id: string, ingestProvider: "twitch" | "streamerbot"): NormalizedStreamEvent {
+  return { ...follow(id, ingestProvider), type: "cheer", amount: 100, message: "Cheer100 nice" };
 }
 
 function follow(id: string, ingestProvider: "twitch" | "streamerbot" = "twitch"): NormalizedStreamEvent {

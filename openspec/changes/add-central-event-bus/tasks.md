@@ -13,10 +13,10 @@ Each numbered section is one independently reviewable slice and PR, in order. Ev
 
 ## 2. Cross-Source Correlation
 
-- [ ] 2.1 Add correlation-key derivation for every Twitch-origin canonical type, per design decision 3.
-- [ ] 2.2 Record paired fixtures from the direct Twitch and Streamer.bot normalizers for every Twitch-origin type and assert equal keys.
-- [ ] 2.3 Implement merge with the correlation window, one-to-one pairing per other source, and `merged` outcome recording.
-- [ ] 2.4 Tests: same follow both sources (merged), two identical cheers both sources (two events), same-source distinct IDs (never merged), copy after window (separate), restart within dedupe window (still duplicate).
+- [x] 2.1 Add correlation-key derivation for every Twitch-origin canonical type, per design decision 3.
+- [x] 2.2 Record paired fixtures from the direct Twitch and Streamer.bot normalizers for every Twitch-origin type and assert equal keys.
+- [x] 2.3 Implement merge with the correlation window, one-to-one pairing per other source, and `merged` outcome recording.
+- [x] 2.4 Tests: same follow both sources (merged), two identical cheers both sources (two events), same-source distinct IDs (never merged), copy after window (separate), restart within dedupe window (still duplicate).
 
 ## 3. Multiple Active Event Sources
 

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { BusEvent, BusEventInput, EffectTrigger, NormalizedStreamEvent } from "@stream-jams/core";
+import { twitchCorrelationKey, type BusEvent, type BusEventInput, type EffectTrigger, type NormalizedStreamEvent } from "@stream-jams/core";
 import type { EventSink, EventSinkOutcome } from "./event-ingestion-service.js";
 import type { EventBusJournalRepository } from "./sqlite-event-bus-journal-repository.js";
 
@@ -30,6 +30,7 @@ export interface EventBusOptions {
   /** Delay before each retry; its length bounds nothing, `maxAttempts` does. */
   readonly retryDelaysMs?: readonly number[] | undefined;
   readonly duplicateWindowMs?: number | undefined;
+  readonly correlationWindowMs?: number | undefined;
   readonly batchSize?: number | undefined;
   readonly retentionMs?: number | undefined;
   readonly retentionRows?: number | undefined;
@@ -40,6 +41,7 @@ export interface EventBusOptions {
 
 const defaultRetryDelaysMs = [50, 200] as const;
 const defaultDuplicateWindowMs = 10 * 60_000;
+const defaultCorrelationWindowMs = 30_000;
 const defaultBatchSize = 25;
 const defaultRetentionMs = 7 * 24 * 60 * 60_000;
 const defaultRetentionRows = 10_000;
@@ -55,6 +57,7 @@ export class EventBus implements EventSink {
   readonly #generateBusId: () => string;
   readonly #now: () => Date;
   readonly #duplicateWindowMs: number;
+  readonly #correlationWindowMs: number;
   readonly #retentionMs: number;
   readonly #retentionRows: number;
   readonly #onReplaySkipped: EventBusOptions["onReplaySkipped"];
@@ -69,6 +72,7 @@ export class EventBus implements EventSink {
     this.#generateBusId = options.generateBusId ?? generateBusId;
     this.#now = options.now ?? (() => new Date());
     this.#duplicateWindowMs = options.duplicateWindowMs ?? defaultDuplicateWindowMs;
+    this.#correlationWindowMs = options.correlationWindowMs ?? defaultCorrelationWindowMs;
     this.#retentionMs = options.retentionMs ?? defaultRetentionMs;
     this.#retentionRows = options.retentionRows ?? defaultRetentionRows;
     this.#onReplaySkipped = options.onReplaySkipped;
@@ -112,6 +116,7 @@ export class EventBus implements EventSink {
       sourceKind: event.ingestProvider,
       sourceRegistrationId: null,
       receivedAt: this.#now().toISOString(),
+      correlationKey: twitchCorrelationKey(event),
       effectTriggers: triggers
     });
   }
@@ -125,16 +130,23 @@ export class EventBus implements EventSink {
       sourceKind: "streamerbot",
       sourceRegistrationId: null,
       receivedAt: this.#now().toISOString(),
+      correlationKey: null,
       effectTriggers: triggers
     });
   }
 
-  /** Journals the event, then waits for every consumer's delivery attempt. Consumer failures do not reject. */
+  /**
+   * Journals the event, then waits for every consumer's delivery attempt. Consumer failures do not reject.
+   * A copy another source already delivered is merged into that event and not delivered again.
+   */
   async publish(input: BusEventInput): Promise<EventSinkOutcome> {
     await this.start();
-    const duplicateSinceMs = Date.parse(input.receivedAt) - this.#duplicateWindowMs;
-    const appended = this.#journal.append(input, this.#generateBusId(), duplicateSinceMs);
-    if (appended.status === "duplicate") return { status: "duplicate" };
+    const receivedAtMs = Date.parse(input.receivedAt);
+    const appended = this.#journal.append(input, this.#generateBusId(), {
+      duplicateSinceMs: receivedAtMs - this.#duplicateWindowMs,
+      correlationSinceMs: receivedAtMs - this.#correlationWindowMs
+    });
+    if (appended.status !== "appended") return { status: appended.status };
     await this.drain();
     this.#pruneHourly();
     return { status: "accepted" };
