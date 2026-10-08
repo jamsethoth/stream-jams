@@ -186,6 +186,15 @@ On Linux, install and unlock a Secret Service-compatible keyring such as GNOME K
 
 Streamer.bot forwards Twitch events by default. To keep direct Twitch as the only Twitch path and use Streamer.bot only for its configured external events, open the Streamer.bot source, clear `Forward Twitch events from Streamer.bot`, and select `Save forwarding`.
 
+## Streamer.bot event alerts
+
+An alert can play for one exact Streamer.bot event that is not a canonical Twitch event. In the alert set, choose `Add alert`, pick `Streamer.bot event`, and enter the exact `Streamer.bot source` and `Streamer.bot event type` (matching is case-sensitive). Only events from that source and type play the alert.
+
+- Templates can use only `{summary}`, `{userName}`, and `{eventType}`. Other placeholders render empty; raw Streamer.bot payload fields never reach the overlay.
+- These alerts have no conditions. Rendered-text moderation still applies to the summary and user name.
+- Queueing, dedupe, cooldown, and playback outputs work as for other alerts.
+- Saving the alert does not change event subscriptions. When no in-use Streamer.bot source subscribes to the selected event, the alert row shows a warning with `Open Event sources`; subscribe the event there.
+
 ## Channel point reward alerts
 
 When adding a Channel point redemption alert or opening its Event inspector, Stream Jams loads the custom rewards from the linked Twitch broadcaster account. Use `Refresh rewards` to fetch the current titles, costs, and availability; loading is read-only and does not create, edit, or redeem Twitch rewards. Connection, permission, eligibility, and provider errors remain visible without clearing saved selections.

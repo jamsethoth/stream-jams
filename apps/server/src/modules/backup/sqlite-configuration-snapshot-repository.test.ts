@@ -850,7 +850,7 @@ function seed(database: StreamJamsDatabase): void {
   const db = database.connection;
   db.prepare("INSERT INTO overlay_module_config VALUES (?, ?, ?, ?)").run("alerts", 1, "{}", "2026-07-15T04:00:00.000Z");
   db.prepare("INSERT INTO alert_collections VALUES (?, ?, ?)").run("set-default", "Everyday", 1);
-  db.prepare("INSERT INTO alert_rules VALUES (?, ?, ?, ?, ?, ?)").run("alert-follow", "Follow", "follow", 1, 0, 0);
+  db.prepare("INSERT INTO alert_rules (id, name, event_type, enabled, cooldown_seconds, priority) VALUES (?, ?, ?, ?, ?, ?)").run("alert-follow", "Follow", "follow", 1, 0, 0);
   db.prepare("INSERT INTO alert_rule_collections VALUES (?, ?)").run("alert-follow", "set-default");
   db.prepare("INSERT INTO alert_rule_conditions VALUES (?, ?, ?, ?, ?)").run("alert-follow", 0, "actor.id", "equals", '"actor-1"');
   db.prepare("INSERT INTO asset_metadata VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run("asset-follow", "follow.png", "image", "image/png", 8, `sha256:${"a".repeat(64)}`, "image/asset-follow.png", null);

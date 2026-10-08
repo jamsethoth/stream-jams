@@ -30,6 +30,33 @@ describe("SqliteAlertRepository", () => {
     await expect(repository.findCollectionById("collection-1")).resolves.toBeNull();
   });
 
+  it("round-trips external identities, filters them by event type, and enforces the identity column", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const repository = new SqliteAlertRepository(database.connection);
+    seedRuleAssets(database.connection);
+    await repository.saveCollection(createCollection("collection-1", "Main Alerts"));
+    const base = createRule("rule-external", ["collection-1"]);
+    const external: AlertRule = {
+      ...base,
+      variants: base.variants.map((variant) => ({ ...variant, id: "variant-external" })),
+      eventType: "external_event",
+      externalIdentity: { providerKind: "streamerbot", sourceKey: "General", eventType: "Custom" },
+      conditions: []
+    };
+    await repository.saveRule(external);
+    await repository.saveRule(createRule("rule-canonical", ["collection-1"]));
+
+    await expect(repository.findRuleById("rule-external")).resolves.toEqual(external);
+    expect((await repository.listActiveRules({ eventType: "external_event" })).map((rule) => rule.id)).toEqual(["rule-external"]);
+    expect((await repository.findRuleById("rule-canonical"))?.externalIdentity).toBeUndefined();
+    expect(() => database.connection.prepare(
+      "UPDATE alert_rules SET external_identity_json = ? WHERE id = 'rule-canonical'"
+    ).run(JSON.stringify(external.externalIdentity))).toThrow(/CHECK constraint/u);
+    expect(() => database.connection.prepare(
+      "UPDATE alert_rules SET external_identity_json = NULL WHERE id = 'rule-external'"
+    ).run()).toThrow(/CHECK constraint/u);
+  });
+
   it("round-trips variant conditions and priority", async () => {
     using database = createInMemoryStreamJamsDatabase();
     const repository = new SqliteAlertRepository(database.connection);

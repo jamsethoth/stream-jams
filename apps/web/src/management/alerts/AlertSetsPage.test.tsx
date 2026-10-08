@@ -362,6 +362,49 @@ describe("AlertSetsPage", () => {
     expect(onEditAlert).not.toHaveBeenCalled();
   });
 
+  it("creates a Streamer.bot event alert with its exact identity and shows missing subscription setup", async () => {
+    const source = detail();
+    const identity = { providerKind: "streamerbot" as const, sourceKey: "General", eventType: "Custom" };
+    const created = {
+      ...source.inventory[0]!,
+      id: "alert-external",
+      providerKind: "streamerbot" as const,
+      eventType: "external_event",
+      name: "Custom event",
+      conditions: [],
+      previewText: "{summary}",
+      externalIdentity: identity,
+      externalIdentitySubscribed: false
+    };
+    const createAlert = vi.fn(async () => created);
+    const getAlertSet = vi.fn<AlertSetsApi["getAlertSet"]>()
+      .mockResolvedValueOnce(source)
+      .mockResolvedValue({ ...source, inventory: [...source.inventory, created] });
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({ createAlert, getAlertSet })} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Add alert" }));
+    const dialog = screen.getByRole("dialog", { name: "Add alert" });
+    await user.selectOptions(within(dialog).getByLabelText("Event type"), "external_event");
+    expect(within(dialog).getByRole("button", { name: "Create alert" })).toBeDisabled();
+    await user.type(within(dialog).getByLabelText("Streamer.bot source"), " General ");
+    expect(within(dialog).getByRole("button", { name: "Create alert" })).toBeDisabled();
+    await user.type(within(dialog).getByLabelText("Streamer.bot event type"), "Custom");
+    await user.clear(within(dialog).getByLabelText("Alert name"));
+    await user.type(within(dialog).getByLabelText("Alert name"), "Custom event");
+    await user.click(within(dialog).getByRole("button", { name: "Create alert" }));
+
+    await waitFor(() => expect(createAlert).toHaveBeenCalledWith("set-default", {
+      eventType: "external_event",
+      name: "Custom event",
+      externalIdentity: identity
+    }));
+    const row = (await screen.findByRole("button", { name: "Edit Custom event" })).closest("tr")!;
+    expect(within(row).getByText("Streamer.bot General · Custom")).toBeVisible();
+    expect(within(row).getByText(/No event source subscribes to this event/u)).toBeVisible();
+    expect(within(row).getByRole("link", { name: "Open Event sources" })).toHaveAttribute("href", "/manage/event-sources");
+  });
+
   it("loads Twitch rewards when channel-point creation opens without reloading on controlled rerenders", async () => {
     const getTwitchCustomRewards = vi.fn(async () => ({ rewards: twitchRewards() }));
     const user = userEvent.setup();

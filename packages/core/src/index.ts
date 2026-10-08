@@ -135,9 +135,14 @@ export {
   alertActivationStateSchema,
   alertCollectionSchema,
   alertConditionSchema,
+  alertEventTypeSchema,
+  alertRuleExternalIdentityIssue,
   alertRuleSchema,
+  alertSourceEventSchema,
   alertTtsConfigSchema,
   alertVariantSchema,
+  externalAlertEventSchema,
+  externalAlertIdentitySchema,
   streamEventTypeSchema
 } from "./alerts/schemas.js";
 
@@ -157,7 +162,7 @@ export { DefaultMediaImportPipeline, InvalidMediaImportError } from "./assets/me
 export { assetMediaTypeSchema, assetRecordSchema, assetValidationResultSchema } from "./assets/schemas.js";
 
 export type * from "./events/types.js";
-export { streamEventTypes } from "./events/types.js";
+export { alertEventTypes, externalAlertEventType, streamEventTypes } from "./events/types.js";
 export type { SubscriptionTier } from "./events/schemas.js";
 export {
   channelPointRedemptionEventSchema,

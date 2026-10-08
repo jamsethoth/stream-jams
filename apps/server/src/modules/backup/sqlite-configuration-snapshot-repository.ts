@@ -4,6 +4,7 @@ import {
   parseStoredAlertEditorDocument,
   audioOutputRouteSchema,
   surfaceConfigurationSchema,
+  alertRuleExternalIdentityIssue,
   alertRuleSchema,
   assetMetadataUpdateInputSchema,
   effectBindingIdentity,
@@ -49,7 +50,7 @@ const tableDefinitions = [
   table("overlay_module_config", ["module_id", "enabled", "config_json", "updated_at"], ["module_id"], ["config_json"]),
   table("overlay_surfaces", ["id", "kind", "configuration_json", "updated_at"], ["id"], ["configuration_json"]),
   table("alert_collections", ["id", "name", "enabled"], ["id"]),
-  table("alert_rules", ["id", "name", "event_type", "enabled", "cooldown_seconds", "priority"], ["id"]),
+  table("alert_rules", ["id", "name", "event_type", "enabled", "cooldown_seconds", "priority", "external_identity_json"], ["id"], ["external_identity_json"]),
   table("asset_metadata", ["id", "original_file_name", "media_type", "mime_type", "size_bytes", "checksum", "duration_ms"], ["id"]),
   table(
     "provider_registrations",
@@ -98,7 +99,7 @@ const tableDefinitions = [
 ] as const satisfies readonly TableDefinition[];
 
 const definitionsByName = new Map(tableDefinitions.map((definition) => [definition.name, definition]));
-const nullableJsonColumns = new Set(["tts_config_json", "tts_safety_json"]);
+const nullableJsonColumns = new Set(["tts_config_json", "tts_safety_json", "external_identity_json"]);
 const legacyAlertSetProfileColumns = new Set([
   "landscape_enabled",
   "landscape_review_state",
@@ -549,10 +550,13 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
         durationMs: variant.duration_ms,
         layout: parseJsonValue(variant.layout_json)
       }));
-    pushSchemaError(errors, `alert_rules[${index}]`, alertRuleSchema.safeParse({
+    const rule = {
       id: row.id,
       name: row.name,
       eventType: row.event_type,
+      ...(row.external_identity_json === null || row.external_identity_json === undefined
+        ? {}
+        : { externalIdentity: parseJsonValue(row.external_identity_json) }),
       enabled: sqlBoolean(row.enabled),
       collectionIds: (tables.alert_rule_collections ?? [])
         .filter((candidate) => candidate.rule_id === row.id)
@@ -561,7 +565,11 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
       variants,
       cooldownSeconds: row.cooldown_seconds,
       priority: row.priority
-    }));
+    };
+    const parsedRule = alertRuleSchema.safeParse(rule);
+    pushSchemaError(errors, `alert_rules[${index}]`, parsedRule);
+    const identityIssue = parsedRule.success ? alertRuleExternalIdentityIssue(parsedRule.data) : null;
+    if (identityIssue !== null) errors.push(`alert_rules[${index}]: ${identityIssue}.`);
     if (ruleId.trim() === "") errors.push(`alert_rules[${index}].id must not be empty.`);
   }
 

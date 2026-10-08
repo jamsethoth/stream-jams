@@ -825,6 +825,17 @@
   margin: 0;
 }
 
+.alert-editor-inspector__external-identity {
+  display: grid;
+  gap: 4px;
+}
+
+.alert-editor-inspector__external-identity p {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  margin: 0;
+}
+
 .alert-editor-inspector__impact > .twitch-reward-picker {
   gap: 8px;
   min-width: 0;

@@ -1,4 +1,4 @@
-import type { AlertCreateRequestInput, AlertSetDetail, AlertSetOverview, AlertValidationIssue, StreamEventType, TwitchCustomReward } from "@stream-jams/core";
+import type { AlertCreateRequestInput, AlertSetDetail, AlertSetOverview, AlertValidationIssue, AlertEventType, TwitchCustomReward } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { createStoryManagementApi } from "../../stories/mock-apis.js";
@@ -344,6 +344,35 @@ export const DefaultWithVariations: Story = {
   }
 };
 
+export const StreamerBotEventAlert: Story = {
+  args: {
+    managementApi: (() => {
+      const source = detail(activeSet);
+      const external = {
+        ...alert("alert-external", "Custom event", "external_event", activeSet.id, false, "needs-review"),
+        providerKind: "streamerbot" as const,
+        previewText: "{summary}",
+        externalIdentity: { providerKind: "streamerbot" as const, sourceKey: "General", eventType: "Custom" },
+        externalIdentitySubscribed: false
+      };
+      return { ...api([activeSet], { ...source, inventory: [...source.inventory, external] }), createAlert };
+    })(),
+    onEditAlert: fn()
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.type(await canvas.findByLabelText("Search"), "Custom event");
+    const row = await canvas.findByRole("row", { name: /Custom event/u });
+    await expect(within(row).getByText("Streamer.bot General · Custom")).toBeVisible();
+    await expect(within(row).getByRole("link", { name: "Open Event sources" })).toHaveAttribute("href", "/manage/event-sources");
+    await userEvent.click(canvas.getByRole("button", { name: "Add alert" }));
+    const dialog = within(await within(document.body).findByRole("dialog", { name: "Add alert" }));
+    await userEvent.selectOptions(dialog.getByLabelText("Event type"), "external_event");
+    await expect(dialog.getByRole("group", { name: "Streamer.bot event" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Create alert" })).toBeDisabled();
+  }
+};
+
 export const GroupedInventoryStates: Story = {
   args: { managementApi: api([activeSet], detailWithGroupedInventory()) },
   play: async ({ canvasElement }) => {
@@ -600,7 +629,7 @@ function overview(id: string, name: string, active: boolean): AlertSetOverview {
 function alert(
   id: string,
   name: string,
-  eventType: StreamEventType,
+  eventType: AlertEventType,
   setId: string,
   enabled: boolean,
   reviewState: "ready" | "needs-review"

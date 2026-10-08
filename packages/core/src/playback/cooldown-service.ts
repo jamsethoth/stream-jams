@@ -1,8 +1,8 @@
-import type { StreamEventType } from "../events/types.js";
+import type { AlertEventType } from "../events/types.js";
 
 export interface PlaybackCooldownSubject {
   readonly ruleId: string;
-  readonly eventType: StreamEventType;
+  readonly eventType: AlertEventType;
   readonly cooldownSeconds: number;
 }
 

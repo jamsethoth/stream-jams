@@ -33,7 +33,7 @@ Each numbered section is one independently reviewable slice and PR, in order. Ev
 - [x] 4.2 Migrate `screen_effect_bindings` and timer rules to selectors; tests prove each saved binding and rule matches the same events before and after.
 - [x] 4.3 Screen Effects editor: choose canonical events with typed conditions alongside reward and external triggers; Storybook and Playwright.
 - [x] 4.4 Timer rule editor uses the selector; existing behavior preserved.
-- [ ] 4.5 Alerts: external-event rules, allowlisted variables, moderation, unsubscribed-identity warning; Storybook and Playwright.
+- [x] 4.5 Alerts: external-event rules, allowlisted variables, moderation, unsubscribed-identity warning; Storybook and Playwright.
 
 ## 5. Module Intake Onto The Bus
 

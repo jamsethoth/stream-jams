@@ -92,6 +92,8 @@ export type EffectTrigger =
       readonly sourceKey: string;
       readonly eventType: string;
       readonly summary: string;
+      /** Sanitized payload user name, empty when absent; journaled triggers from before it existed omit it. */
+      readonly userName?: string | undefined;
     }
   | {
       /** Built when a canonical selector matches; intake never produces it. */

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { localWebSocketConnectionSchema } from "./local-websocket-connection.js";
 import { alertAudioOutputsSchema, mediaVolumeSchema } from "../audio/schemas.js";
 import { channelPointRewardSelectionSchema } from "../alerts/channel-point-reward-selection.js";
-import { alertConditionSchema, streamEventTypeSchema } from "../alerts/schemas.js";
+import { alertConditionSchema, alertEventTypeSchema, externalAlertIdentitySchema } from "../alerts/schemas.js";
 import {
   alertTextBoxStyleSchema,
   alertTextStyleSchema,
@@ -276,7 +276,7 @@ export const alertValidationIssueSchema = z.object({
   nextStep: nonEmptyStringSchema,
   targetProfileId: targetProfileIdSchema.nullable(),
   providerKind: providerKindSchema.nullable(),
-  eventType: streamEventTypeSchema.nullable(),
+  eventType: alertEventTypeSchema.nullable(),
   alertId: nonEmptyStringSchema.nullable(),
   referenceId: nonEmptyStringSchema.nullable()
 });
@@ -323,7 +323,10 @@ export const alertInventoryRowSchema = z.object({
   priority: z.number().int().nullable().default(null),
   reviewState: z.enum(["ready", "needs-review"]),
   targetProfileIds: z.array(targetProfileIdSchema),
-  previewText: z.string()
+  previewText: z.string(),
+  externalIdentity: externalAlertIdentitySchema.optional(),
+  /** Present for external alerts; false when no configured event source subscribes to the identity. */
+  externalIdentitySubscribed: z.boolean().optional()
 });
 
 export const alertStarterThemeIdSchema = z.enum(["clean-signal", "bold-pop", "neon-terminal"]);
@@ -331,15 +334,23 @@ export const alertStarterThemeIdSchema = z.enum(["clean-signal", "bold-pop", "ne
 export const defaultAlertStarterThemeId = "clean-signal" as const satisfies AlertStarterThemeId;
 
 export const alertCreateInputSchema = z.object({
-  eventType: streamEventTypeSchema,
+  eventType: alertEventTypeSchema,
   name: z.string().trim().min(1).max(120),
-  channelPointRewardSelection: channelPointRewardSelectionSchema.optional()
+  channelPointRewardSelection: channelPointRewardSelectionSchema.optional(),
+  externalIdentity: externalAlertIdentitySchema.optional()
 }).superRefine((input, refinement) => {
   if (input.eventType !== "channel_point_redemption" && input.channelPointRewardSelection !== undefined) {
     refinement.addIssue({
       code: "custom",
       path: ["channelPointRewardSelection"],
       message: "Reward selection is available only for channel point redemption alerts"
+    });
+  }
+  if ((input.eventType === "external_event") !== (input.externalIdentity !== undefined)) {
+    refinement.addIssue({
+      code: "custom",
+      path: ["externalIdentity"],
+      message: "External event alerts require an external identity, and only they can have one"
     });
   }
 });
@@ -372,10 +383,11 @@ export const alertStarterTemplates = [
   { eventType: "prediction_lock", group: "Predictions", label: "Prediction locked", defaultName: "Prediction locked", description: "One alert when prediction entries lock.", text: "Prediction locked: {title}" },
   { eventType: "prediction_end", group: "Predictions", label: "Prediction ended", defaultName: "Prediction ended", description: "One alert when a prediction reaches a terminal status.", text: "Prediction ended: {title}" },
   { eventType: "stream_online", group: "Stream", label: "Stream online", defaultName: "Stream online", description: "One alert when the stream goes online.", text: "Stream is live." },
-  { eventType: "stream_offline", group: "Stream", label: "Stream offline", defaultName: "Stream offline", description: "One alert when the stream goes offline.", text: "Stream is offline." }
+  { eventType: "stream_offline", group: "Stream", label: "Stream offline", defaultName: "Stream offline", description: "One alert when the stream goes offline.", text: "Stream is offline." },
+  { eventType: "external_event", group: "External", label: "Streamer.bot event", defaultName: "Streamer.bot event", description: "One alert for each event with an exact Streamer.bot source and type.", text: "{summary}" }
 ] as const satisfies readonly {
-  readonly eventType: z.infer<typeof streamEventTypeSchema>;
-  readonly group: "Core" | "Subscriptions" | "Hype Train" | "Polls" | "Predictions" | "Stream";
+  readonly eventType: z.infer<typeof alertEventTypeSchema>;
+  readonly group: "Core" | "Subscriptions" | "Hype Train" | "Polls" | "Predictions" | "Stream" | "External";
   readonly label: string;
   readonly defaultName: string;
   readonly description: string;
@@ -408,7 +420,7 @@ export const alertSetActivationImpactSchema = z.object({
   replacingActiveSetName: nonEmptyStringSchema.nullable(),
   enabledAlertCount: nonNegativeIntegerSchema,
   affectedTargetProfileIds: z.array(targetProfileIdSchema),
-  affectedEventTypes: z.array(streamEventTypeSchema),
+  affectedEventTypes: z.array(alertEventTypeSchema),
   blockers: z.array(alertValidationIssueSchema),
   warnings: z.array(alertValidationIssueSchema)
 });
@@ -512,7 +524,7 @@ export const alertTemplateVariableSchema = z.object({
   description: nonEmptyStringSchema
 });
 
-type AlertSampleEventType = z.infer<typeof streamEventTypeSchema>;
+type AlertSampleEventType = z.infer<typeof alertEventTypeSchema>;
 
 const commonTemplateVariables = [
   { key: "userName", label: "User name", description: "Display name for the event actor." }
@@ -587,7 +599,13 @@ const eventTemplateVariables: Record<AlertSampleEventType, readonly z.infer<type
   prediction_lock: predictionTemplateVariables,
   prediction_end: predictionTemplateVariables,
   stream_online: [{ key: "streamType", label: "Stream type", description: "Normalized stream type when available." }],
-  stream_offline: []
+  stream_offline: [],
+  // Only allowlisted, sanitized fields; raw external payload fields are never offered.
+  external_event: [
+    { key: "summary", label: "Summary", description: "Sanitized event summary, at most 256 characters." },
+    { key: "userName", label: "User name", description: "Sanitized user name from the event, empty when absent." },
+    { key: "eventType", label: "Event type", description: "The Streamer.bot event type." }
+  ]
 };
 
 export function getAlertTemplateVariableCatalog(eventType: AlertSampleEventType) {
@@ -668,7 +686,9 @@ export const alertEditorDocumentSchema = z.object({
   id: nonEmptyStringSchema,
   setId: nonEmptyStringSchema,
   providerKind: providerKindSchema,
-  eventType: streamEventTypeSchema,
+  eventType: alertEventTypeSchema,
+  /** Mirrors the rule's exact external identity; present exactly for `external_event`. */
+  externalIdentity: externalAlertIdentitySchema.optional(),
   kind: z.enum(["default", "variation"]),
   parentAlertId: nonEmptyStringSchema.nullable(),
   name: nonEmptyStringSchema,
@@ -701,7 +721,7 @@ export const alertVariationAuthoringCandidateSchema = z.object({
 
 export const alertVariationAuthoringContextSchema = z.object({
   ruleId: nonEmptyStringSchema,
-  eventType: streamEventTypeSchema,
+  eventType: alertEventTypeSchema,
   candidates: z.array(alertVariationAuthoringCandidateSchema).min(1)
 }).superRefine((context, refinement) => {
   const defaults = context.candidates.filter(
@@ -765,7 +785,7 @@ export const alertEditorErrorReportResultSchema = z.object({
 export const assetUsageLinkSchema = z.object({
   setId: nonEmptyStringSchema.nullable(),
   setName: nonEmptyStringSchema.nullable(),
-  eventType: streamEventTypeSchema,
+  eventType: alertEventTypeSchema,
   alertId: nonEmptyStringSchema,
   alertName: nonEmptyStringSchema,
   targetProfileIds: z.array(targetProfileIdSchema)
@@ -831,7 +851,7 @@ export const diagnosticsEventViewSchema = z.object({
   id: nonEmptyStringSchema,
   providerId: nonEmptyStringSchema,
   providerKind: providerKindSchema,
-  eventType: streamEventTypeSchema,
+  eventType: alertEventTypeSchema,
   occurredAt: isoDateTimeSchema,
   outcome: z.enum(["received", "processed", "ignored", "failed"]),
   test: z.boolean(),

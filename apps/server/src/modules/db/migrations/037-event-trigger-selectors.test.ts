@@ -39,6 +39,7 @@ async function legacyDatabase() {
   });
   db.exec(`DROP TABLE screen_effect_bindings; ${legacyBindingsTable}
     CREATE INDEX screen_effect_bindings_effect_order ON screen_effect_bindings(effect_id, position);
+    ALTER TABLE alert_rules DROP COLUMN external_identity_json; DELETE FROM schema_migrations WHERE id = '038-external-alert-identity';
     DELETE FROM schema_migrations WHERE id = '037-event-trigger-selectors';`);
   const insert = db.prepare("INSERT INTO screen_effect_bindings (id, effect_id, position, kind, canonical_identity, document_json) VALUES (?, 'effect-legacy', ?, ?, ?, ?)");
   for (const binding of legacyBindings) insert.run(binding.id, binding.position, binding.kind, binding.canonical_identity, JSON.stringify(binding.document));
@@ -93,7 +94,7 @@ describe("037-event-trigger-selectors", () => {
     database.runMigrations();
     const bindings = bindingRows(database);
     const rules = database.connection.prepare("SELECT event_rules_json FROM timer_definitions").all();
-    database.connection.exec("DELETE FROM schema_migrations WHERE id = '037-event-trigger-selectors'");
+    database.connection.exec("ALTER TABLE alert_rules DROP COLUMN external_identity_json; DELETE FROM schema_migrations WHERE id IN ('037-event-trigger-selectors', '038-external-alert-identity')");
     database.runMigrations();
     expect(bindingRows(database)).toEqual(bindings);
     expect(database.connection.prepare("SELECT event_rules_json FROM timer_definitions").all()).toEqual(rules);
