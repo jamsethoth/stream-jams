@@ -49,6 +49,14 @@ Each registered module consumer SHALL receive bus events in journal order throug
 - **WHEN** a consumer receives the same bus event twice after a restart
 - **THEN** the consumer admits it at most once
 
+### Requirement: Consumers Can Checkpoint Transactionally
+A consumer SHALL be able to commit its cursor inside its own SQLite transaction together with the state change an event causes, so that each event's effect on that consumer applies exactly once across crashes and restarts.
+
+#### Scenario: Crash between state change and cursor
+- **WHEN** a transactional consumer's transaction is interrupted before commit
+- **THEN** neither its state change nor its cursor advance is persisted
+- **AND** the event is delivered again after restart and applied once
+
 ### Requirement: Same-Source Redelivery Is A Duplicate
 The system SHALL reject an event with the same source kind and event ID as one accepted in the last 10 minutes, including across restart.
 
@@ -92,7 +100,7 @@ Module behaviors SHALL select events through one shared selector that matches a 
 - **THEN** the selector matches only on its exact source and type identity and ignores the payload
 
 ### Requirement: Restart Resumes Admission Within A Replay Age
-After restart each consumer SHALL resume after its cursor. Events older than the replay age (default 2 minutes, configurable from 0 to 30 minutes) SHALL be skipped for that consumer and recorded as expired. Global pause, mute and do-not-disturb SHALL apply to replayed events as to live ones.
+After restart each consumer SHALL resume after its cursor. Events older than that consumer's replay age (default 2 minutes, configurable from 0 to 30 minutes, or no expiry for consumers that declare it) SHALL be skipped for that consumer and recorded as expired. Global pause, mute and do-not-disturb SHALL apply to replayed events as to live ones.
 
 #### Scenario: Event accepted just before shutdown
 - **WHEN** an event is journaled and the app stops before Alerts admits it, then restarts within the replay age

@@ -52,6 +52,8 @@ type BusEvent = {
 - Publishing validates, dedupes, and appends in one narrow transaction. Ingestion reports `accepted` once the row is committed, not once consumers finish.
 - Each registered consumer runs one worker that reads the journal after its cursor in small batches (default 25) and advances its cursor after its handler returns an admission result. Publishing only wakes workers; there is no unbounded in-memory buffer.
 - Delivery is at-least-once. Consumers stay idempotent by bus ID (Alerts and Screen Effects already dedupe by event ID; their dedupe moves to the bus ID).
+- A consumer may instead take **transactional checkpoints**: its handler receives a checkpoint callback that writes its cursor inside the consumer's own SQLite transaction (same connection), so its state change and cursor commit together and each event applies exactly once. Custom data overlays (BL-061) use this.
+- Replay age (decision 7) is set per consumer. Playback consumers use the short default; state consumers such as data overlays may opt out of expiry.
 - A handler error is logged with the consumer, bus ID and reference ID, retried up to three times with backoff, then recorded in `event_bus_delivery_failures` and skipped so one bad event cannot block the consumer.
 - Order is FIFO per consumer. There is no ordering guarantee across consumers.
 - Retention: the journal keeps the newer of 7 days or 10,000 rows, pruned at startup and hourly, never pruning rows still ahead of any consumer cursor younger than the replay age.
@@ -96,7 +98,7 @@ type EventTriggerSelector = {
 ```
 
 - `twitch-reward` stays a first-class match so existing reward bindings migrate without rewriting IDs, and keeps matching by stable IDs when the reward is renamed.
-- External matches use exact source/type identity only. Payload content is untrusted and cannot be used in conditions in this change; custom data overlays (BL-055) own any typed external fields.
+- External matches use exact source/type identity only. Payload content is untrusted and cannot be used in selector conditions in this change. A consumer that needs payload fields (custom data overlays, Videos) validates its own payload schema after the selector matches, as Video shoutouts do today.
 - `sources` replaces timer rules' ingestion-source selection and alert `ingestProvider` conditions keep working unchanged.
 - A core `matchSelector(selector, busEvent)` is the only matcher. Alerts keep their rule/variant/condition evaluation; the selector decides eligibility, the existing evaluator handles conditions.
 
