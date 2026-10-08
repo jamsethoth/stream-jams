@@ -101,15 +101,15 @@ Implementation evidence for the four approved slices. Evidence below records foc
 
 | Capability | Requirement | Scenario | Evidence/status |
 | --- | --- | --- | --- |
-| configuration-backup-restore | Template backup | Templates round trip | Planned |
-| data-overlay-templates | Bundled starters | Start from Goal bar | Planned |
-| data-overlay-templates | Saved user templates | Save a canvas as a template | Planned |
-| data-overlay-templates | Independent copies | Edit the template later | Planned |
-| data-overlay-templates | Compatible slot mapping | Reuse an existing goal | Planned |
-| data-overlay-templates | Compatible slot mapping | Incompatible mapping | Planned |
-| data-overlay-templates | Provider slots need a source | No Twitch connection | Planned |
-| data-overlay-templates | Missing assets | Asset deleted | Planned |
-| data-overlay-templates | Flattened group insertion | Insert a badge group | Planned |
+| configuration-backup-restore | Template backup | Templates round trip | Schema34 backup tests preserve user templates; schema33 legacy absence restores empty; rollback retains exact template state |
+| data-overlay-templates | Bundled starters | Start from Goal bar | Core template tests and disposable E2E create all four starters with new or existing compatible data |
+| data-overlay-templates | Saved user templates | Save a canvas as a template | Core sanitized-save tests and production API/browser reuse exclude content, baselines and broadcaster IDs |
+| data-overlay-templates | Independent copies | Edit the template later | Core independent-copy tests and disposable saved-template replacement workflow |
+| data-overlay-templates | Compatible slot mapping | Reuse an existing goal | Core atomic mapping and disposable Goal bar reuse preserve the existing value |
+| data-overlay-templates | Compatible slot mapping | Incompatible mapping | Strict schemas/service/HTTP tests reject wrong kinds and leave revision/catalog unchanged |
+| data-overlay-templates | Provider slots need a source | No Twitch connection | Configured follower-kind slots tested in core, production API and UI stories; native Twitch goal-kind slots remain [blocked] by the central bus/source integration |
+| data-overlay-templates | Missing assets | Asset deleted | Disposable image-metadata removal creates hidden identifiable placeholder; editor replacement and backup tests pass |
+| data-overlay-templates | Flattened group insertion | Insert a badge group | Core insertion and disposable dirty-editor workflow add ordinary independent elements with fresh IDs |
 
 ## Baseline and acceptance limits
 
@@ -127,9 +127,25 @@ Implementation evidence for the four approved slices. Evidence below records foc
 - Runtime privacy, expiry and publication: `apps/server/src/modules/data-overlays/data-overlay-output-runtime.test.ts`, `apps/server/src/runtime/runtime-composition.test.ts`, overlay gateway/route and private asset resolver tests.
 - Management geometry, drafts and preview: adjacent tests in `apps/web/src/management/data-overlays/`; production renderer tests in `apps/web/src/overlay/components/`.
 - Operator commands and browser/private freshness: `OperatorDataSection.test.tsx`, `overlay-client.test.ts`, `DesktopOverlayApp.test.tsx`, `desktop-overlay-controller.test.ts`.
-- Real disposable service/browser workflows: `tests/e2e/data-overlays.spec.ts`. Final rebuilt rerun required after all units integrate.
+- Real disposable service/browser workflows: `tests/e2e/data-overlays.spec.ts`. Final rebuilt combined run passed all five Data/template/Twitch workflows after review (20.0 seconds), including the final preview-fit correction.
 - Twitch validation, source lifecycle and future goal helpers: `apps/server/src/modules/twitch/twitch-data-api-client.test.ts`, `twitch-data-source-runtime.test.ts`, `twitch-goal-snapshot.test.ts`, OAuth tests and production composition regression.
 
 ## Final integrated gates
 
-Pending final assembled build, lint, typecheck, full tests, Storybook, Playwright, OpenSpec validation and the single independent review. Earlier focused passes are not a substitute for these gates.
+- Full repository lint and error provenance: pass after correcting one template preview catch boundary.
+- Strict workspace typecheck: pass after correcting the base private-renderer E2E request's module ID.
+- Full workspace build: pass, including desktop packages/private renderer and unchanged gzip route budgets (bootstrap72.43/100, overlay138.56/150, Operator179.64/190, Management244.01/250 KiB).
+- Combined rebuilt disposable Chromium workflows: 5/5 pass (20.0s), with real isolated server/SQLite/auth, health checks and restart. No normal profile or real provider account used.
+- Final static Storybook build and full interaction/accessibility/console gate: 425/425 scenarios across 50 files pass (269.1s).
+- Full unit/script suite: 3,422 tests across 381 files pass, followed by 120 script tests. One independent review completed; its single P2 finding is fixed and reproduced below.
+- Strict validation: all four Data changes and all 52 canonical capabilities pass, including template and partial Twitch source synchronization.
+
+The final template preview-fit correction passed its focused regression, affected rebuild and two template workflows; the reviewed full rebuild and five-workflow run include it. Canonical template provider examples use the implemented follower-total source. Native Creator Goal slots and stream events remain pending with their source dependency.
+
+## Independent review and failure diagnosis
+
+One independent GPT-6.1-sol review at low effort covered base `55d29f2b` through `1023bb4d`. It found one P2 desktop image-owner race: a delayed clear acknowledgement could revoke the owner installed by a newer visible frame. Commit `56c0252b` captures the prior owner and rechecks request/generation/ownership after the await. The deferred-clear regression passes with the affected sink/output suite (15 tests). The parent reran the reviewer's isolated built-code reproduction and observed only `owner-1` released while active `owner-2` remained retained. No second review was performed.
+
+The first full unit run recorded 3,416 passes and four failures. All four were exact fixture expectations: two module inventories omitted the newly registered Data module, the OAuth start scope list omitted optional goals, and an old-schema Screen Effects migration fixture retained migrations 033/034. Commit `5dfecc64` updates those expectations and rewinds all corresponding tables/history; 42 affected tests pass. Production code and the required OAuth scope list were unchanged by those fixture repairs. The complete rerun after these corrections and the desktop race fix passes 3,422 tests and 120 script tests.
+
+The first full Storybook run recorded 422 passes and three timeouts in unchanged Alerts/Music stories. Those three files pass unchanged in isolation (37 scenarios). A later broad run was interrupted by a concurrent build regenerating `dist-desktop-overlay/desktop-overlay.html`; the Vite server logged page reloads, and the runner lost `globalThis.__getContext`. Final verification used a completed static Storybook artifact, avoiding watched-build reloads; all 425 scenarios passed. No timeout or accessibility/console gate was weakened.

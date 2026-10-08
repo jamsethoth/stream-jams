@@ -7,7 +7,7 @@ Define persistent shared data and safe authoring or operation of user-configured
 ## Requirements
 
 ### Requirement: Operator value controls
-The Operator panel SHALL show a Data section that lists the values pinned in Management with their current content. Integer values SHALL offer +1, −1, set and reset. Text values SHALL offer set and reset. Controls SHALL use the existing Operator authorization and CSRF boundary. Management SHALL NOT offer live value controls.
+The Operator panel SHALL show a Data section that lists the values pinned in Management with their current content. Manual integer values SHALL offer +1, −1, set and reset. Manual text values SHALL offer set and reset. Provider-owned values SHALL show their current content read-only. Controls SHALL use the existing Operator authorization and CSRF boundary. Management SHALL NOT offer live value controls.
 
 #### Scenario: Increment from Operator
 - **WHEN** the operator presses +1 on a pinned counter at 4

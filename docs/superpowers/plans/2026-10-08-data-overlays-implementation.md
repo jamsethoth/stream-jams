@@ -108,7 +108,7 @@ Applicable UX: Product Surfaces, Information Architecture, Visual Foundation, Cr
 - [x] Implement 60-second follower refresh, ten-second early-refresh throttle, epoch protection, failure status, exponential backoff and server rate-reset compliance. Rate-reset deadline takes precedence if later than five-minute nominal cap; record ruling. The throttle hook is tested; production event wiring remains blocked below.
 - [ ] Implement goal list/snapshot-after-subscription, 100-event bound/resnapshot, latest-by-type and pinned binding, units and broadcaster invalidation; test progress race and replacement.
 - [ ] Add Management source/binding/readiness controls, stories and disposable-provider acceptance; integrate event paths only when bus dependency is present.
-- [ ] Complete source tests/build and record real-account acceptance separately; commit verified scope, retain unchecked blockers.
+- [x] Complete source tests/build and record real-account acceptance separately; commit verified independent scope, retain unchecked blockers.
 
 ## Unit 7: Templates (slice 4)
 
@@ -116,18 +116,18 @@ Applicable UX: Product Surfaces, Information Architecture, Visual Foundation, Cr
 
 **Interfaces:** Templates hold schema-validated document/style/asset references and typed slots only. `instantiateTemplate` atomically creates new IDs, compatible mappings and optional new custom values; `insertTemplateGroup` flattens elements. Provider slots use configured source metadata; no partial client POST loops.
 
-- [ ] Test/implement Counter badge, Goal bar, Latest supporter and Combined goals panel with sample previews; saving never captures live counts or source credentials.
-- [ ] Implement saved canvas/selection templates, atomic compatible mapping/new values, unique IDs/reference rewriting and flattened insertion; test failed mapping creates nothing and later edits do not alter copies.
-- [ ] Build picker/map/create/save flow and source-not-ready guidance, missing asset behavior, stories and Playwright for all starters and saved reuse.
-- [ ] Extend backup roundtrip with user templates only, verify live and commit slice4.
+- [x] Test/implement Counter badge, Goal bar, Latest supporter and Combined goals panel with sample previews; saving never captures live counts or source credentials.
+- [x] Implement saved canvas/selection templates, atomic compatible mapping/new values, unique IDs/reference rewriting and flattened insertion; test failed mapping creates nothing and later edits do not alter copies.
+- [x] Build picker/map/create/save flow and source-not-ready guidance, missing asset behavior, stories and Playwright for all starters and saved reuse.
+- [x] Extend backup roundtrip with user templates only, verify live and commit slice4.
 
 ## Unit 8: Integration, one independent review and handoff
 
-- [ ] Reconcile every OpenSpec scenario against tests and evidence; do not mark missing bus/provider/hardware tasks complete.
-- [ ] Run lint, typecheck, full tests/build, Storybook and relevant Playwright gates. Diagnose failures before rerun; classify environment versus regression and repair relevant failures without weakening coverage.
-- [ ] Rebuild/restart isolated services, health-check, reload and verify authored/Operator/browser/private-desktop workflow. Preserve normal profiles.
-- [ ] Run one independent review subagent (GPT-6.1-sol, low effort per repository review policy), fix verified findings and rerun affected checks.
-- [ ] Sync only implemented canonical requirements, update docs/OpenSpec tasks/backlog accurately, commit completion evidence and report exact remaining blockers. Do not merge/push without current publication authorization.
+- [x] Reconcile every OpenSpec scenario against tests and evidence; do not mark missing bus/provider/hardware tasks complete.
+- [x] Run lint, typecheck, full tests/build, Storybook and relevant Playwright gates. Diagnose failures before rerun; classify environment versus regression and repair relevant failures without weakening coverage.
+- [x] Rebuild/restart isolated services, health-check, reload and verify authored/Operator/browser/private-desktop workflow. Preserve normal profiles.
+- [x] Run one independent review subagent (GPT-6.1-sol, low effort per repository review policy), fix verified findings and rerun affected checks.
+- [x] Sync only implemented canonical requirements, update docs/OpenSpec tasks/backlog accurately, commit completion evidence and report exact remaining blockers. Do not merge/push without current publication authorization.
 
 ## Execution rulings
 

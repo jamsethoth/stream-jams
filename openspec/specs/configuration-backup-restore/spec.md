@@ -234,3 +234,10 @@ Restore SHALL validate every data overlay reference before mutation and apply al
 #### Scenario: Canvases start disabled
 - **WHEN** a valid backup with an enabled canvas is restored
 - **THEN** the canvas is present but disabled until the user enables it
+
+### Requirement: Template backup
+Versioned backups SHALL include saved user templates with their slots and asset references. Bundled starters SHALL NOT be exported.
+
+#### Scenario: Templates round trip
+- **WHEN** a profile with two saved templates is exported and restored
+- **THEN** both templates are available with their slots

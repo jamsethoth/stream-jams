@@ -20,6 +20,14 @@ Canvas editing supports pointer, keyboard and numeric positioning with shared bo
 
 Each canvas supports at most 100 elements. The catalog supports 1,000 values, 250 goals and 50 canvases. Names are unique within each catalog after trimming and case normalization. Referenced values, goals and registered canvas images cannot be deleted until their references are removed.
 
+## Templates
+
+Start a canvas from **Counter badge**, **Goal bar**, **Latest supporter** or **Combined goals panel**. Map each typed slot to a compatible existing value or goal, or create new custom data in the same step. Creation is atomic: a rejected mapping leaves no partial values, goals or canvas. New canvases start disabled for review.
+
+Save a whole canvas or a checked selection as a user template. Templates retain layout, styling and slots; they do not retain live counts, goal baselines or provider account identity. Inserting a template adds ordinary independent elements. Editing a saved template does not change existing canvases.
+
+Provider-required slots need a configured source of the matching kind; the current implemented source is Twitch follower total. Missing template images retain a flagged editor placeholder with their original asset ID and stay hidden live until replaced with a registered image. Backups include user templates, while bundled starters are supplied by the application.
+
 ## Twitch follower totals
 
 The Twitch source panel explicitly creates provider-owned follower-total values for the connected broadcaster. The server refreshes the authoritative total every 60 seconds, including decreases, and handles failures with backoff and provider rate-limit deadlines. Provider-owned values are read-only in Operator and cannot join reset groups.

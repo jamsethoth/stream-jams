@@ -4,6 +4,8 @@ Implementation checkpoint: follower backend `0d3e2e5f`, source UI `2acc1704`. Th
 
 Task 3.1 is partially complete: authoritative polling, decreases, epochs, backoff, rate-reset handling and the ten-second hint throttle are tested. Production follow-event wiring awaits the central event bus. Tasks 3.2–3.3 have tested pure list/buffer/binding helpers but no production subscription/consumer or persisted binding flow. Task 4.1 includes follower selection/status/read-only controls and optional-scope reconnect guidance; native goal controls remain blocked. Real-account acceptance is unperformed.
 
+The canonical `twitch-overlay-data` capability records only implemented follower polling, read-only ownership, optional scopes and account invalidation. It deliberately omits the pending event hint and live Creator Goal requirements. BL-062 remains partially implemented; task 5.3 is not complete.
+
 - [ ] 1.1 Confirm slice 1 has merged, fetch remote state, and branch from `origin/main`.
 - [ ] 1.2 Record sanitized fixtures for Get Channel Followers, Get Creator Goals, and the goal begin, progress and end events.
 - [x] 1.3 Write a requirement-to-test trace for this change.
@@ -24,6 +26,6 @@ Task 3.1 is partially complete: authoritative polling, decreases, epochs, backof
 
 ## 5. Verification and handoff
 
-- [ ] 5.1 Run lint, typecheck, tests, build, Storybook gates, Playwright and strict OpenSpec validation.
+- [x] 5.1 Run lint, typecheck, tests, build, Storybook gates, Playwright and strict OpenSpec validation for the implemented scope; blocked live goal/event paths remain unchecked above.
 - [ ] 5.2 Verify against a real Twitch account: follower total, creating and replacing a follower goal, and the missing-scope path. Record the result.
 - [ ] 5.3 Sync canonical specs and remove BL-062. Remove creator goals from BL-020.

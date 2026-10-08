@@ -35,7 +35,9 @@
 
 ## 7. Verification and handoff
 
+Final automated evidence is in the [scenario trace](../../../docs/verification/data-overlays-scenarios.md): full unit/script, strict type/build/lint, static Storybook and rebuilt disposable service/browser gates pass. Browser-hosted private renderer acceptance uses the actual built private bundle and real service projections. Physical OBS and Electron-window acceptance was not performed and is not inferred from these tests.
+
 - [x] 7.1 Add disposable-service Playwright acceptance for two canvases sharing a counter, Operator controls, group reset, preview isolation and reference-safe deletion.
-- [ ] 7.2 Run lint, typecheck, tests, build, Storybook interaction and accessibility, Playwright and strict OpenSpec validation.
-- [ ] 7.3 Rebuild and restart the services, wait for health, and verify the author, Operator and display workflow live. Record OBS browser-source and Windows desktop acceptance separately from the automated results.
-- [ ] 7.4 Sync canonical specs, update runbook and UX notes, and update BL-055 to reflect the remaining slices.
+- [x] 7.2 Run lint, typecheck, tests, build, Storybook interaction and accessibility, Playwright and strict OpenSpec validation.
+- [x] 7.3 Rebuild and restart the services, wait for health, and verify the author, Operator and display workflow live. Record OBS browser-source and Windows desktop acceptance separately from the automated results.
+- [x] 7.4 Sync canonical specs, update runbook and UX notes, and update BL-055 to reflect the remaining slices.

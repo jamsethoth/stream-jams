@@ -46,10 +46,10 @@ The following table preserves the October 5 reconciliation and records current d
 | --- | --- |
 | [add-main-branch-changelog](../openspec/changes/add-main-branch-changelog/tasks.md) | Unimplemented proposal, 22 unchecked tasks; no root changelog or enforcing workflow |
 | [add-video-shoutout-overlay-module](../openspec/changes/add-video-shoutout-overlay-module/tasks.md) | Unimplemented proposal, 23 unchecked tasks; no registered video-shoutout module |
-| [add-custom-data-overlays](../openspec/changes/add-custom-data-overlays/tasks.md) | Slice 1 implementation committed locally; final integrated gates and handoff tracked in tasks and scenario evidence |
+| [add-custom-data-overlays](../openspec/changes/add-custom-data-overlays/tasks.md) | Slice 1 implemented, canonical specs synchronized and automated gates passed; physical OBS/desktop acceptance unperformed |
 | [add-data-overlay-event-rules](../openspec/changes/add-data-overlay-event-rules/tasks.md) | Slice 2 blocked by the unimplemented central event bus; real Streamer.bot global fixtures also required |
 | [add-twitch-overlay-data](../openspec/changes/add-twitch-overlay-data/tasks.md) | Authoritative follower polling and optional scope/source UI implemented; production follow hints and Creator Goals blocked by the central bus; real-account acceptance pending |
-| [add-data-overlay-templates](../openspec/changes/add-data-overlay-templates/tasks.md) | Slice 4 implementation and verification in progress on the committed slice 1 dependency |
+| [add-data-overlay-templates](../openspec/changes/add-data-overlay-templates/tasks.md) | Slice 4 implemented with starters, atomic mapping, saved templates, insertion and missing-image repair; canonical specs and automated verification complete |
 
 Persistent event timer recovery and correction requirements are now in [the canonical capability](../openspec/specs/persistent-event-timers/spec.md). The base Timer change is now [archived](../openspec/changes/archive/2026-10-05-add-timer-overlay-module/tasks.md) after the [focused packaged output/cue matrix](verification/timers.md#focused-packaged-timer-output-acceptance-2026-10-05) passed. Its base capabilities are synchronized into [Timer overlay](../openspec/specs/timer-overlay-module/spec.md) and [Timer automation](../openspec/specs/timer-automation-api/spec.md) specifications; the original idle-on-restart wording was reconciled with implemented paused recovery. Physical HTTP-button testing was user-confirmed, and Stream Deck plugin/profile certification remains outside Stream Jams scope.
 

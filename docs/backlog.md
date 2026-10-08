@@ -74,10 +74,8 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 | --- | --- | --- | --- | --- | --- |
 | BL-052 | Main-branch changelog and validation | Planned | P2 | Existing proposal; 0/22 implementation tasks at the September 23 audit | [OpenSpec change](../openspec/changes/add-main-branch-changelog/proposal.md) |
 | BL-053 | Manual Streamer.bot video shoutout overlay module | Planned | P2 | Implementation in review; remove after merge, spec sync, and live Twitch embed acceptance | [OpenSpec change](../openspec/changes/add-video-shoutout-overlay-module/proposal.md); [setup](video-shoutout.md); separate from Screen Effects |
-| BL-055 | Custom data overlays: shared values, goals, reset groups, canvases, outputs and Operator controls | Planned | P2 | Proposal review before implementation; slice 1 of 4 | [OpenSpec change](../openspec/changes/add-custom-data-overlays/proposal.md); [review](design/2026-10-08-custom-data-overlays-review.md) |
-| BL-061 | Data overlay event rules as a central event bus consumer, plus Streamer.bot global values | Planned | P2 | BL-055 and `add-central-event-bus` (BL-025) | [OpenSpec change](../openspec/changes/add-data-overlay-event-rules/proposal.md) |
-| BL-062 | Twitch follower total and Creator Goals data sources | Planned | P2 | BL-055 | [OpenSpec change](../openspec/changes/add-twitch-overlay-data/proposal.md); follows the active goal of a type by default |
-| BL-063 | Data overlay canvas templates and starters | Planned | P2 | BL-055 | [OpenSpec change](../openspec/changes/add-data-overlay-templates/proposal.md) |
+| BL-061 | Data overlay event rules as a central event bus consumer, plus Streamer.bot global values | Blocked | P2 | Unimplemented `add-central-event-bus` (BL-025); real sanitized Streamer.bot globals fixtures | [Tasks](../openspec/changes/add-data-overlay-event-rules/tasks.md); [evidence](verification/data-overlays-scenarios.md) |
+| BL-062 | Twitch follower total and Creator Goals data sources | Partially implemented | P2 | Followers implemented; follow hints and live Creator Goals await BL-025; real-account acceptance pending | [Tasks](../openspec/changes/add-twitch-overlay-data/tasks.md); [evidence](verification/data-overlays-scenarios.md) |
 | BL-057 | Video shoutout management page (enablement, browser-source URLs, test trigger) | Deferred | P2 | BL-053; outputs are API-only until then | [Video shoutouts](video-shoutout.md) |
 
 ## Known Issues
