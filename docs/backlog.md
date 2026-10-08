@@ -41,7 +41,8 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 | BL-022 | Additional TTS providers | Deferred | P3 | A named provider and capability-mapping need | [Product plan](product-plan.md) |
 | BL-023 | Non-local Streamer.bot connections | Deferred | P3 | Authentication, transport security, warnings, and updated threat model | [Future-feature notes](future-features.md#streamerbot-non-local-connections) |
 | BL-024 | Manual intake controls and stream-start/stream-end automation | Deferred | P3 | A real OBS or platform lifecycle integration | [UI decisions](design/ui-refactor-decisions.md) |
-| BL-025 | Multiple active providers and provider-specific alert routing | Low evidence | P3 | Demonstrated need that canonical event matching cannot satisfy | [UI decisions](design/ui-refactor-decisions.md) |
+| BL-025 | Multiple active event sources, central event bus, and shared module triggers | Planned | P1 | Product decision, 2026-10-08 | [`add-central-event-bus`](../openspec/changes/add-central-event-bus/proposal.md) |
+| BL-058 | Durable Alert and Screen Effects playback queues across restart | Deferred | P1 | BL-025 journal and consumer cursors; project rule that module queues survive restarts (2026-10-08) | [Central event bus design](../openspec/changes/add-central-event-bus/design.md) |
 | BL-026 | Resumable provider setup drafts | Deferred | P3 | Measured abandonment or recovery need in provider setup | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
 | BL-054 | Additional Music sources: Plex and Spotify | Deferred | P2 | Implemented Music provider contract and authenticated Pear delivery; provider-specific API, authentication and session/endpoint policies | [Music provider design](../openspec/changes/archive/2026-10-05-add-music-widget-module/design.md); this proposal includes interface fit checks, not these adapters |
 
