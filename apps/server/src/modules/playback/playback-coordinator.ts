@@ -271,6 +271,7 @@ export class PlaybackCoordinator {
     );
     const snapshot = this.enqueueResolvedTest({
       sourceEvent: event,
+      deliveredBy: event.ingestProvider,
       replayDocuments: [...editorDocuments.values()],
       alerts: resolvedAlerts,
       audio,
@@ -532,7 +533,7 @@ export class PlaybackCoordinator {
         const durationMs = durations.get(value.documentId) ?? value.durationMs;
         return { ...value, durationMs, layers: value.layers.map(layer => ({ ...layer, playbackDurationMs: Math.min(records.get(layer.assetId)?.durationMs ?? durationMs, durationMs) })) };
       });
-      return this.enqueueResolvedTest({ sourceEvent: item.sourceEvent, alerts, audio, priority: item.priority, replayDocuments: authored });
+      return this.enqueueResolvedTest({ sourceEvent: item.sourceEvent, alerts, audio, priority: item.priority, deliveredBy: item.deliveredBy, replayDocuments: authored });
     });
   }
 

@@ -1,3 +1,4 @@
+import type { IngestProviderId } from "../events/types.js";
 import type { PlaybackSafetyState } from "../playback/types.js";
 import type { EffectContentSnapshot, EffectTrigger } from "./types.js";
 
@@ -8,6 +9,8 @@ export interface EffectOccurrence {
   readonly id: string;
   readonly moduleId: "screen-effects";
   readonly trigger: EffectTrigger | null;
+  /** Source kind that delivered the triggering event; null for manual tests. */
+  readonly sourceKind: IngestProviderId | null;
   readonly content: EffectContentSnapshot;
   readonly enqueuedAtMs: number;
   readonly sequence: number;

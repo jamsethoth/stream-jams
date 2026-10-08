@@ -37,9 +37,9 @@ Each numbered section is one independently reviewable slice and PR, in order. Ev
 
 ## 5. Module Intake Onto The Bus
 
-- [ ] 5.1 Move Video shoutout intake from the Streamer.bot `customEventHandler` to a bus consumer for its configured external identity, keeping its payload validation; coordinate with the Videos module work.
-- [ ] 5.2 Publish the consumer registration contract and document it for custom data overlays (BL-055).
-- [ ] 5.3 Operator queue items show the delivering source.
+- [x] 5.1 Move Video shoutout intake from the Streamer.bot `customEventHandler` to a bus consumer for its configured external identity, keeping its payload validation; coordinate with the Videos module work.
+- [x] 5.2 Publish the consumer registration contract and document it for custom data overlays (BL-055).
+- [x] 5.3 Operator queue items show the delivering source.
 
 ## 6. Restart Replay And Diagnostics
 

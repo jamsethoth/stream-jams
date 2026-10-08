@@ -82,7 +82,7 @@ export class SqliteEventBusJournalRepository implements EventBusJournalRepositor
 
       const payload = input.kind === "canonical"
         ? { event: input.event, effectTriggers: input.effectTriggers }
-        : { effectTriggers: input.effectTriggers };
+        : { effectTriggers: input.effectTriggers, ...(input.payload === undefined ? {} : { payload: input.payload }) };
       const result = this.connection.prepare(`INSERT INTO event_bus_journal
         (bus_id, event_id, source_kind, source_registration_id, kind, received_at, received_at_ms, correlation_key, payload_json)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)

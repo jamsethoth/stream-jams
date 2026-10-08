@@ -1,6 +1,7 @@
 import {
   providerSetupInputSchema,
   type EffectTrigger,
+  type ExternalEventIdentity,
   type NormalizedStreamEvent,
   type SecretStore,
   type StreamerBotSubscriptionSelection
@@ -76,7 +77,8 @@ export interface StreamerBotRuntimeServiceOptions {
     ): Promise<EventIngestionResult>;
     ingestEffectTriggers(
       eventId: string,
-      triggers: readonly EffectTrigger[]
+      triggers: readonly EffectTrigger[],
+      payload?: unknown
     ): Promise<
       | { readonly status: "accepted"; readonly eventId: string }
       | { readonly status: "duplicate"; readonly messageId: string }
@@ -85,10 +87,10 @@ export interface StreamerBotRuntimeServiceOptions {
   };
   readonly generateReferenceId: () => string;
   /**
-   * Receives Streamer.bot General/Custom broadcasts before stream-event ingestion.
-   * Returning true marks the event handled. When set, General/Custom is subscribed if advertised.
+   * External identities that bus consumers registered for. Each is subscribed when Streamer.bot advertises it
+   * (source keys match case-insensitively) and published with its payload, whatever the configured subscriptions.
    */
-  readonly customEventHandler?: ((envelope: StreamerBotEventEnvelope) => boolean | Promise<boolean>) | undefined;
+  readonly consumerExternalEvents?: readonly ExternalEventIdentity[] | undefined;
   readonly onDiagnostic?: ((entry: StreamerBotRuntimeDiagnostic) => void | Promise<void>) | undefined;
   readonly now?: (() => Date) | undefined;
   readonly sleep?: ((delayMs: number) => Promise<void>) | undefined;
@@ -118,7 +120,7 @@ export class StreamerBotRuntimeService {
   readonly #client: StreamerBotRuntimeClient;
   readonly #ingestionService: StreamerBotRuntimeServiceOptions["ingestionService"];
   readonly #generateReferenceId: () => string;
-  readonly #customEventHandler: StreamerBotRuntimeServiceOptions["customEventHandler"];
+  readonly #consumerExternalEvents: readonly ExternalEventIdentity[];
   readonly #onDiagnostic: NonNullable<StreamerBotRuntimeServiceOptions["onDiagnostic"]>;
   readonly #now: () => Date;
   readonly #sleep: (delayMs: number) => Promise<void>;
@@ -132,6 +134,7 @@ export class StreamerBotRuntimeService {
   #externalSubscriptions: readonly StreamerBotSubscriptionSelection[] = [];
   #twitchBroadcasterId: string | null = null;
   #requiredSubscriptions: readonly StreamerBotSubscriptionSelection[] = [];
+  #consumerSubscriptions: readonly StreamerBotSubscriptionSelection[] = [];
   #forwardTwitchEvents = true;
 
   constructor(options: StreamerBotRuntimeServiceOptions) {
@@ -139,7 +142,7 @@ export class StreamerBotRuntimeService {
     this.#secretStore = options.secretStore;
     this.#ingestionService = options.ingestionService;
     this.#generateReferenceId = options.generateReferenceId;
-    this.#customEventHandler = options.customEventHandler;
+    this.#consumerExternalEvents = options.consumerExternalEvents ?? [];
     this.#onDiagnostic = options.onDiagnostic ?? (() => {});
     this.#now = options.now ?? (() => new Date());
     this.#sleep = options.sleep ?? ((delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)));
@@ -175,6 +178,7 @@ export class StreamerBotRuntimeService {
     this.#externalSubscriptions = [];
     this.#twitchBroadcasterId = null;
     this.#requiredSubscriptions = [];
+    this.#consumerSubscriptions = [];
 
     const connection = await this.#connectionInput(active);
     if (connection === null) return this.getStatus();
@@ -216,6 +220,7 @@ export class StreamerBotRuntimeService {
     this.#externalSubscriptions = [];
     this.#twitchBroadcasterId = null;
     this.#requiredSubscriptions = [];
+    this.#consumerSubscriptions = [];
   }
 
   getStatus(): StreamerBotRuntimeStatus {
@@ -366,11 +371,13 @@ export class StreamerBotRuntimeService {
       ? requiredTwitchSubscriptions(available)
       : { subscribed: [], missing: [], required: [] };
 
-    this.#requiredSubscriptions = required;
-    const generalSourceKey = Object.keys(available).find((key) => key.toLowerCase() === "general");
-    if (this.#customEventHandler !== undefined && generalSourceKey !== undefined && available[generalSourceKey]?.includes("Custom")) {
-      this.#requiredSubscriptions = [...this.#requiredSubscriptions, { sourceKey: generalSourceKey, eventTypes: ["Custom"] }];
-    }
+    this.#consumerSubscriptions = this.#consumerExternalEvents.flatMap((identity) => {
+      const sourceKey = Object.keys(available).find((key) => key.toLowerCase() === identity.sourceKey.toLowerCase());
+      return sourceKey !== undefined && available[sourceKey]?.includes(identity.eventType) === true
+        ? [{ sourceKey, eventTypes: [identity.eventType] }]
+        : [];
+    });
+    this.#requiredSubscriptions = mergeSubscriptionSelections(required, this.#consumerSubscriptions);
     const configured = this.#externalSubscriptions.filter((selection) => {
         const advertised = available[selection.sourceKey];
         return advertised !== undefined && selection.eventTypes.every((eventType) => advertised.includes(eventType));
@@ -391,14 +398,6 @@ export class StreamerBotRuntimeService {
 
   async #handleEvent(envelope: StreamerBotEventEnvelope): Promise<void> {
     try {
-      if (
-        this.#customEventHandler !== undefined &&
-        envelope.event.source.toLowerCase() === "general" &&
-        envelope.event.type === "Custom" &&
-        await this.#customEventHandler(envelope)
-      ) {
-        return;
-      }
       // With forwarding off, Twitch envelopes reach the bus only through configured external subscriptions.
       const result = !this.#forwardTwitchEvents && envelope.event.source.toLowerCase() === "twitch"
         ? { status: "unsupported" as const, source: envelope.event.source, type: envelope.event.type }
@@ -407,7 +406,7 @@ export class StreamerBotRuntimeService {
       const effectTriggers = createStreamerBotEffectTriggers(envelope, normalizedEvent, {
         providerId: this.#activeProviderId ?? "streamerbot",
         twitchBroadcasterId: this.#twitchBroadcasterId,
-        externalSubscriptions: this.#externalSubscriptions
+        externalSubscriptions: mergeSubscriptionSelections(this.#consumerSubscriptions, this.#externalSubscriptions)
       });
       if (result.status === "unsupported" && effectTriggers.length === 0) {
         await this.#emitDiagnostic({
@@ -422,7 +421,7 @@ export class StreamerBotRuntimeService {
 
       const ingestion = result.status === "normalized"
         ? await this.#ingestionService.ingestNormalizedEvent(result.event, effectTriggers)
-        : await this.#ingestionService.ingestEffectTriggers(effectTriggers[0]?.eventId ?? "", effectTriggers);
+        : await this.#ingestionService.ingestEffectTriggers(effectTriggers[0]?.eventId ?? "", effectTriggers, envelope.data);
       if (ingestion.status === "rejected") {
         this.#ingestionIssue = this.#createIssue("degraded", ingestion.message, ingestion.referenceId);
       } else if (ingestion.status === "accepted") {

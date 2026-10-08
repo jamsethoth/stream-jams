@@ -44,7 +44,7 @@
     "test:storybook": "corepack pnpm --filter @stream-jams/web test-storybook",
     "test:storybook:ci": "corepack pnpm --filter @stream-jams/web test-storybook:ci",
     "check:error-provenance": "node scripts/check-error-provenance.mjs",
-    "lint": "eslint . && node scripts/check-error-provenance.mjs",
+    "lint": "node --max-old-space-size=4096 node_modules/eslint/bin/eslint.js . && node scripts/check-error-provenance.mjs",
     "typecheck": "tsc -b tsconfig.json"
   },
   "devDependencies": {

@@ -56,6 +56,13 @@ describe("OperatorApp", () => {
     await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
     expect(adjust).toHaveBeenNthCalledWith(2, "mitts", { action: "increment", amountMs: 42000 });
   });
+  it("names the source that delivered each item, and none for a manual test", async () => {
+    render(<OperatorApp timersApi={idleTimersApi} api={api()} />);
+    const summary = async (name: string) => (await screen.findByText(name)).nextElementSibling;
+    expect(await summary("Large raid")).toHaveTextContent(/^Viewer One · via Twitch$/u);
+    expect(await summary("Flash sweep")).toHaveTextContent(/^Viewer One · via Streamer\.bot$/u);
+    expect(await summary("Recent follow")).toHaveTextContent(/^Viewer One$/u);
+  });
   it("shows simultaneous current items and real per-module pending positions", async () => {
     render(<OperatorApp timersApi={idleTimersApi} api={api()} />);
 
@@ -239,6 +246,7 @@ function operation(input: Partial<OperationRow> & Pick<OperationRow, "moduleId" 
     occurrenceId: input.occurrenceId,
     name: input.name,
     summary: input.summary ?? "Viewer One",
+    source: input.source === undefined ? "twitch" : input.source,
     status: input.status ?? "queued",
     enqueuedAtMs: input.enqueuedAtMs ?? Date.parse("2026-09-13T12:00:00.000Z"),
     completedAtMs: input.completedAtMs ?? null,
@@ -253,13 +261,13 @@ function snapshot(): MergedOperationsSnapshot {
     owners: [{ moduleId: "alerts", paused: false }, { moduleId: "screen-effects", paused: false }],
     current: [
       operation({ moduleId: "alerts", occurrenceId: "occ-alert", name: "Large raid", status: "playing" }),
-      operation({ moduleId: "screen-effects", occurrenceId: "occ-effect", name: "Flash sweep", status: "playing" })
+      operation({ moduleId: "screen-effects", occurrenceId: "occ-effect", name: "Flash sweep", status: "playing", source: "streamerbot" })
     ],
     queued: [
       operation({ moduleId: "screen-effects", occurrenceId: "queued-effect", name: "Cheer burst", moduleQueuePosition: 2 }),
       operation({ moduleId: "alerts", occurrenceId: "queued-alert", name: "Follow alert", moduleQueuePosition: 1 })
     ],
-    recent: [operation({ moduleId: "alerts", occurrenceId: "recent-alert", name: "Recent follow", status: "completed", completedAtMs: Date.parse("2026-09-13T12:01:00.000Z") })],
+    recent: [operation({ moduleId: "alerts", occurrenceId: "recent-alert", name: "Recent follow", status: "completed", source: null, completedAtMs: Date.parse("2026-09-13T12:01:00.000Z") })],
     paused: false,
     muted: false,
     doNotDisturb: false

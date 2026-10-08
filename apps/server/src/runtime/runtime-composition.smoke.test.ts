@@ -956,7 +956,8 @@ describe("runtime app composition smoke", () => {
       expect(journal.prepare("SELECT consumer_id, last_sequence FROM event_bus_consumer_cursors ORDER BY consumer_id").all()).toEqual([
         { consumer_id: "alerts", last_sequence: head },
         { consumer_id: "screen-effects", last_sequence: head },
-        { consumer_id: "timers", last_sequence: head }
+        { consumer_id: "timers", last_sequence: head },
+        { consumer_id: "video-shoutout", last_sequence: head }
       ]);
     } finally {
       journal.close();

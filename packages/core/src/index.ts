@@ -197,6 +197,7 @@ export {
 
 export type * from "./event-bus/types.js";
 export { twitchCorrelationKey } from "./event-bus/correlation.js";
+export { externalEventPayloadMaxBytes, externalEventPayloadSchema } from "./event-bus/schemas.js";
 export type { EventTriggerMatch, EventTriggerSelector } from "./event-bus/selector.js";
 export { eventTriggerMatchSchema, eventTriggerSelectorIdentity, eventTriggerSelectorSchema, matchSelector } from "./event-bus/selector.js";
 

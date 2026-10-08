@@ -55,7 +55,7 @@ describe("EventPipeline", () => {
       sourceRegistrationId: null, receivedAt: "2026-05-30T12:00:00.000Z", correlationKey: null, effectTriggers: [trigger]
     };
 
-    for (const consumer of pipeline.consumers()) await consumer.handle(external);
+    for (const consumer of pipeline.consumers()) await consumer.handle(external, { checkpoint: () => {} });
 
     expect(effectEvents).toEqual([external]);
     expect(playback.events).toEqual([{
@@ -283,7 +283,7 @@ describe("EventPipeline", () => {
 /** Delivers one canonical bus event to every consumer, isolating failures as the bus does. */
 async function deliver(pipeline: EventPipeline, event: NormalizedStreamEvent, triggers: readonly EffectTrigger[] = []): Promise<void> {
   const busEvent = busEventFor(event, triggers);
-  const results = await Promise.allSettled(pipeline.consumers().map((consumer) => consumer.handle(busEvent)));
+  const results = await Promise.allSettled(pipeline.consumers().map((consumer) => consumer.handle(busEvent, { checkpoint: () => {} })));
   const failure = results.find((result) => result.status === "rejected");
   if (failure !== undefined) throw failure.reason;
 }
@@ -410,6 +410,7 @@ function queueResult(event: NormalizedStreamEvent): PlaybackEnqueueResult {
       current: {
         id: "queue-item-1",
         sourceEvent: event,
+        deliveredBy: event.ingestProvider,
         audio: [],
         alerts: [
           {

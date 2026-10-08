@@ -23,6 +23,7 @@ function occurrence(id: string, mode: "combined" | "audio" | "visual" = "combine
       rewardId: "reward",
       summary: "Neutral effect"
     },
+    sourceKind: "twitch",
     content: {
       effectId: `effect-${id}`,
       effectName: `Effect ${id}`,
