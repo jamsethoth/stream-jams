@@ -3,9 +3,24 @@ import type { DataProjectionOptions } from "@stream-jams/core";
 import { dataPreviewFixture } from "./data-preview-fixtures.js";
 import { createDataPreviewStore } from "./data-preview-store.js";
 
-const options: DataProjectionOptions = { runtimeId: "preview", output: "browser", targetProfileId: "landscape", nowEpochMs: 1000,
-  moduleEnabled: true, outputPaused: false, resolveAssetId: () => true };
+const options: DataProjectionOptions = {
+  runtimeId: "preview", output: "browser", targetProfileId: "landscape", nowEpochMs: 1000,
+  moduleEnabled: true, outputPaused: false, resolveAssetId: () => true
+};
 describe("isolated data preview", () => {
+  it("projects draft canvases with cloned sample values and retained missing-source status", () => {
+    const live = dataPreviewFixture();
+    const store = createDataPreviewStore(live);
+    const layout = structuredClone(live);
+    layout.canvases[0]!.elements[0]!.x = 80;
+    store.simulate("completion", "counter", "goal");
+    expect(store.project(options, layout).canvases[0]!.elements.find(item => item.id === "bar")).toMatchObject({ fill: 1 });
+    expect(store.project(options, layout).canvases[0]!.elements.find(item => item.id === "label-text")).toMatchObject({ x: 80 });
+    store.simulate("missing-source", "counter");
+    expect(store.project(options, layout).canvases[0]!.elements.some(item => item.id === "bar")).toBe(false);
+    expect(live.values[0]!.content).toBe(40);
+    expect(layout.values[0]!.content).toBe(40);
+  });
   it.each([["zero", 0], ["decrease", 39], ["completion", 100], ["over-target", 101]] as const)("simulates %s without touching live state", (scenario, expected) => {
     const live = dataPreviewFixture();
     const store = createDataPreviewStore(live);

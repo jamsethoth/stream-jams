@@ -28,8 +28,12 @@ import { ScreenEffectsPage } from "./screen-effects/ScreenEffectsPage.js";
 import { defaultScreenEffectsApi, type ScreenEffectsApi } from "./screen-effects/screen-effects-api.js";
 const TimersPage = lazy(() => import("./timers/TimersPage.js").then(module => ({ default: module.TimersPage })));
 import { defaultTimersApi, type TimersApi } from "./timers/timers-api.js";
+import type { DataOverlaysApi } from "./data-overlays/data-overlays-api.js";
+const DataPage = lazy(() => import("./data-overlays/DataPage.js").then(module => ({ default: module.DataPage })));
+const DataOverlaysPage = lazy(() => import("./data-overlays/DataOverlaysPage.js").then(module => ({ default: module.DataOverlaysPage })));
 
 export interface ManagementAppProps {
+  readonly dataOverlaysApi?: DataOverlaysApi | undefined;
   readonly audioApi?: AudioApi;
   readonly assetApi: AssetApi;
   readonly managementApi?: ManagementApi | undefined;
@@ -38,6 +42,7 @@ export interface ManagementAppProps {
 }
 
 interface ResolvedManagementAppProps {
+  readonly dataOverlaysApi: DataOverlaysApi | undefined;
   readonly audioApi: AudioApi;
   readonly assetApi: AssetApi;
   readonly managementApi: ManagementApi;
@@ -55,12 +60,13 @@ export function ManagementApp(props: ManagementAppProps) {
         managementApi={resolvedManagementApi}
         screenEffectsApi={props.screenEffectsApi ?? defaultScreenEffectsApi}
         timersApi={props.timersApi ?? defaultTimersApi}
+        dataOverlaysApi={props.dataOverlaysApi}
       />
     </DirtyNavigationProvider>
   );
 }
 
-function ManagementAppContent({ assetApi, audioApi, managementApi, screenEffectsApi, timersApi }: ResolvedManagementAppProps) {
+function ManagementAppContent({ assetApi, audioApi, managementApi, screenEffectsApi, timersApi, dataOverlaysApi }: ResolvedManagementAppProps) {
   const navigation = useManagementNavigation();
   const definition = getManagementRouteDefinition(navigation.route);
 
@@ -123,7 +129,7 @@ function ManagementAppContent({ assetApi, audioApi, managementApi, screenEffects
           aria-label={`${definition.title} content`}
           className={isFocusedEditor(navigation.route) ? "management-route-content management-route-content--focused" : "management-route-content"}
         >
-          <RouteContent assetApi={assetApi} audioApi={audioApi} managementApi={managementApi} onNavigate={navigation.requestNavigation} route={navigation.route} screenEffectsApi={screenEffectsApi} timersApi={timersApi} />
+          <RouteContent assetApi={assetApi} audioApi={audioApi} managementApi={managementApi} onNavigate={navigation.requestNavigation} route={navigation.route} screenEffectsApi={screenEffectsApi} timersApi={timersApi} dataOverlaysApi={dataOverlaysApi} />
         </section>
       </main>
       {navigation.guard}
@@ -138,9 +144,14 @@ function RouteContent({
   onNavigate,
   route,
   screenEffectsApi,
-  timersApi
+  timersApi,
+  dataOverlaysApi
 }: ResolvedManagementAppProps & { readonly onNavigate: (route: ManagementRoute) => void; readonly route: ManagementRoute }) {
   switch (route.id) {
+    case "data":
+      return <Suspense fallback={<p role="status">Loading Data…</p>}><DataPage api={dataOverlaysApi} /></Suspense>;
+    case "modules-data-overlays":
+      return <Suspense fallback={<p role="status">Loading Data Overlays…</p>}><DataOverlaysPage api={dataOverlaysApi} assetApi={assetApi} managementApi={managementApi} /></Suspense>;
     case "home":
       return <HomePanel managementApi={managementApi} />;
     case "event-sources":

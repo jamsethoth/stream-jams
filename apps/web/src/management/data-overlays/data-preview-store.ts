@@ -33,8 +33,8 @@ export function createDataPreviewStore(initial: DataOverlayState) {
       delete sourceStatuses[valueId];
       state.revision += 1;
     },
-    project(options: DataProjectionOptions) {
-      return projectDataOverlays(state, { ...options, sourceStatuses: { ...options.sourceStatuses, ...sourceStatuses } });
+    project(options: DataProjectionOptions, layout?: DataOverlayState) {
+      return projectDataOverlays(layout === undefined ? state : { ...state, canvases: layout.canvases }, { ...options, sourceStatuses: { ...options.sourceStatuses, ...sourceStatuses } });
     }
   };
 }

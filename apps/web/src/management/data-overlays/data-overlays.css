@@ -1,0 +1,9 @@
+.data-management { min-width: 0; }
+.data-management fieldset { border: 0; padding: 0; min-width: 0; }
+.data-current-content { max-width: 320px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.data-editor-workspace { display: grid; grid-template-columns: minmax(480px, 1fr) minmax(240px, 1fr); gap: 24px; }
+.data-editor-stage { position: relative; overflow: hidden; background: var(--color-surface-subtle); border: 1px solid var(--color-border-strong); }
+.data-editor-handle { position: absolute; touch-action: none; border: 2px solid transparent; cursor: move; }
+.data-editor-handle[data-selected="true"], .data-editor-handle:focus-visible { border-color: var(--color-focus); outline: 2px solid var(--color-focus); }
+.data-editor-resize { position: absolute; right: 0; bottom: 0; width: 24px; height: 24px; background: var(--color-focus); cursor: nwse-resize; touch-action: none; }
+@media (max-width: 900px) { .data-editor-workspace { display: flex; flex-direction: column; } }

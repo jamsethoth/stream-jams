@@ -46,7 +46,9 @@ export class ManagementHttpError extends Error {
     readonly references: readonly HttpErrorReference[] = [],
     readonly owners: readonly HttpErrorOwner[] = [],
     readonly status: number | null = null,
-    readonly conflictSnapshot: unknown = null
+    readonly conflictSnapshot: unknown = null,
+    readonly dataReferences: readonly string[] = [],
+    readonly currentValue: unknown = null
   ) {
     super(message);
     this.name = "ManagementHttpError";
@@ -65,6 +67,9 @@ async function createManagementHttpError(response: Response, fallback: string): 
     && "snapshot" in payload
     ? payload.snapshot
     : null;
+  const dataError = typeof payload === "object" && payload !== null && "error" in payload
+    && typeof payload.error === "object" && payload.error !== null ? payload.error as Record<string, unknown> : null;
+  const dataReferences = Array.isArray(dataError?.references) ? dataError.references.filter((item): item is string => typeof item === "string") : [];
   return new ManagementHttpError(
     formatHttpError(details),
     details.code,
@@ -73,7 +78,9 @@ async function createManagementHttpError(response: Response, fallback: string): 
     details.references,
     details.owners,
     response.status,
-    conflictSnapshot
+    conflictSnapshot,
+    dataReferences,
+    details.code === "DATA_REVISION_CONFLICT" ? dataError?.currentValue ?? null : null
   );
 }
 
