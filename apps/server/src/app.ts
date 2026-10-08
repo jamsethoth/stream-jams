@@ -74,7 +74,7 @@ export interface BaseServerAppOptions {
 }
 
 export type ProductionServerAppDependencies = BaseServerAppOptions
-  & Partial<Pick<DataOverlayRouteDependencies, "dataOverlayService" | "twitchDataSourceRuntime">>
+  & Partial<Pick<DataOverlayRouteDependencies, "dataOverlayService" | "twitchDataSourceRuntime" | "dataTemplateService">>
   & ServerConfigRouteDependencies
   & DesktopConfigRouteDependencies
   & AudioOutputRouteDependencies

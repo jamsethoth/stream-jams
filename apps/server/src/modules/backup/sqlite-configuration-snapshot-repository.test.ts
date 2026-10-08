@@ -3,6 +3,7 @@ import {
   compatibilityAlertTextStyle,
   createScreenEffectDocument,
   DataOverlayService,
+  bundledDataTemplates,
   dataOverlayBackupTables,
   type ConfigurationBackupArchive
 } from "@stream-jams/core";
@@ -214,6 +215,7 @@ describe("SqliteConfigurationSnapshotRepository", () => {
       "module_playback_settings",
       "alert_editor_documents",
       ...dataOverlayBackupTables,
+      "data_templates",
       "alert_moderation_settings"
     ]);
     expect(snapshot.tables.provider_registrations?.[0]).toMatchObject({
@@ -528,6 +530,8 @@ describe("SqliteConfigurationSnapshotRepository", () => {
 
   it("keeps portable table mappings aligned with migrated columns", async () => {
     seedData(database);
+    const template = { ...bundledDataTemplates[0]!, id: "saved-template", name: "Saved", origin: "user" };
+    database.connection.prepare("INSERT INTO data_templates VALUES (?,?,?)").run(template.id,"saved",JSON.stringify(template));
     database.connection.prepare("INSERT INTO audio_output_routes (id, name, device_id, device_label) VALUES (?, ?, ?, ?)")
       .run("route-a", "Private", "local-endpoint", "Local headset");
     database.connection.prepare(`INSERT INTO timer_definitions

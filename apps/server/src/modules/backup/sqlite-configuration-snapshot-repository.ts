@@ -2,6 +2,8 @@ import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import {
   dataOverlayBackupTables,
   dataOverlayStateSchema,
+  dataTemplateCatalogSchema,
+  bundledDataTemplates,
   alertCollectionSchema,
   parseStoredAlertEditorDocument,
   audioOutputRouteSchema,
@@ -90,6 +92,7 @@ const tableDefinitions = [
   table("data_canvases", ["id", "name_key", "document"], ["id"], ["document"]),
   table("data_pins", ["value_id", "position"], ["position"]),
   table("data_element_refs", ["canvas_id", "element_id", "value_id", "goal_id", "asset_id"], ["canvas_id", "element_id"]),
+  table("data_templates", ["id", "name_key", "document"], ["id"], ["document"]),
   table(
     "alert_moderation_settings",
     [
@@ -199,6 +202,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
     const tableNames = Object.keys(configuration.tables);
     errors.push(...validateEffectSets(configuration.tables));
     errors.push(...validateDataOverlayTables(configuration.tables));
+    errors.push(...validateDataTemplateTables(configuration.tables));
     const presentScreenEffectTables = [...screenEffectTableNames].filter((name) => configuration.tables[name] !== undefined);
     if (presentScreenEffectTables.length > 0 && presentScreenEffectTables.length !== screenEffectTableNames.size) {
       const missing = [...screenEffectTableNames].filter((name) => configuration.tables[name] === undefined);
@@ -211,6 +215,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
       const rows = configuration.tables[definition.name];
       if (rows === undefined) {
         if (dataOverlayBackupTables.some(name => name === definition.name)) continue;
+        if (definition.name === "data_templates") continue;
         if (definition.name === "overlay_surfaces" || screenEffectTableNames.has(definition.name) || definition.name === "screen_effect_sets" || definition.name === "screen_effect_set_memberships") continue;
         errors.push(`Required backup table "${definition.name}" is missing.`);
         continue;
@@ -469,6 +474,18 @@ function visitJson(value: unknown, path: readonly string[]): string | null {
     if (found !== null) return found;
   }
   return null;
+}
+
+function validateDataTemplateTables(tables: BackupConfiguration["tables"]): string[] {
+  const rows = tables.data_templates ?? [];
+  const parsed = dataTemplateCatalogSchema.safeParse({ templates: [...bundledDataTemplates, ...rows.map(row => parseJsonValue(row.document))] });
+  if (!parsed.success) return ["Data templates contain invalid documents, duplicate identities/names or unsupported slots."];
+  const templates = parsed.data.templates.slice(bundledDataTemplates.length); const errors: string[] = [];
+  templates.forEach((template, index) => {
+    const row = rows[index]!;
+    if (template.origin !== "user" || template.id !== row.id || template.name.trim().toLowerCase() !== row.name_key) errors.push("Data templates contain inconsistent identity/name or a bundled document.");
+  });
+  return errors;
 }
 
 function validateDataOverlayTables(tables: BackupConfiguration["tables"]): string[] {

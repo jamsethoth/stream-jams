@@ -20,6 +20,7 @@ import {
   DefaultPlaybackQueue,
   DefaultTtsService,
   DataOverlayService,
+  DataTemplateService,
   createAppVersion,
   createDefaultOverlayModuleRegistry,
   listUnifiedOverlayModuleIds,
@@ -108,6 +109,7 @@ import { EventPipeline } from "../modules/events/event-pipeline.js";
 import { SqliteTimerRunRepository } from "../modules/timers/sqlite-timer-run-repository.js";
 import { TimerEventService } from "../modules/timers/timer-event-service.js";
 import { SqliteDataOverlayRepository } from "../modules/data-overlays/sqlite-data-overlay-repository.js";
+import { SqliteDataTemplateRepository } from "../modules/data-overlays/sqlite-data-template-repository.js";
 import { DataOverlayOutputRuntime, createDataOutputRefreshQueue } from "../modules/data-overlays/data-overlay-output-runtime.js";
 import { SqliteOverlayModuleConfigRepository } from "../modules/overlay-modules/sqlite-module-config-repository.js";
 import { LocalOverlayAccessService } from "../modules/overlays/overlay-access-service.js";
@@ -240,6 +242,7 @@ export interface RuntimeAppComposition {
   readonly effectPlaybackCoordinator: EffectPlaybackCoordinator;
   readonly timerManagementService: TimerManagementService;
   readonly dataOverlayService: DataOverlayService;
+  readonly dataTemplateService: DataTemplateService;
   readonly dataOutputRuntime: DataOverlayOutputRuntime;
   readonly timerRuntimeCoordinator: TimerRuntimeCoordinator;
   readonly musicRuntimeCoordinator: MusicRuntimeCoordinator;
@@ -556,14 +559,20 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const maintenanceGate = new RuntimeMaintenanceGate();
   let refreshDataOutputs = () => {};
   let reconcileTwitchSources = () => {};
+  let isTemplateSourceReady: (value: import("@stream-jams/core").DataValue) => boolean = () => false;
   const dataOverlayService = new DataOverlayService(new SqliteDataOverlayRepository(database), {
     generateId: () => `data-${randomUUID()}`, now: () => now().toISOString(),
     runMutation: work => maintenanceGate.runConfigurationMutation(work),
     resolveImageAsset: id => database.connection.prepare("SELECT media_type FROM asset_metadata WHERE id = ?").get(id)?.media_type === "image",
+    isTemplateSourceReady: value => isTemplateSourceReady(value),
     publish: () => { reconcileTwitchSources(); refreshDataOutputs(); },
     onPublishError: error => { void runtimeLogger.error("Data overlay publication failed after its changes were saved.", {
       module: "data-overlays", source: "data-overlays.publication.failed", correlationId: generateRuntimeReferenceId(), processingId: null
     }, error instanceof Error ? error : new Error("Data overlay publication failed")); }
+  });
+  const dataTemplateService = new DataTemplateService(new SqliteDataTemplateRepository(database), dataOverlayService, {
+    generateId: () => `data-template-${randomUUID()}`,
+    runMutation: work => maintenanceGate.runConfigurationMutation(work)
   });
   let desktopAudioSink: DesktopAudioSink | undefined;
   if (options.desktopAudioTransport !== undefined) {
@@ -1442,6 +1451,10 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     onError: () => { void runtimeLogger.warn("Twitch data refresh failed; the source is unavailable or stale.", { module: "data-overlays", source: "twitch.data.refresh.failed", correlationId: generateRuntimeReferenceId(), processingId: null }); }
   });
   twitchDataSourceRef.current = twitchDataSourceRuntime;
+  isTemplateSourceReady = value => {
+    const status = twitchDataSourceRuntime.getStatus().follower;
+    return value.source !== undefined && !value.source.invalidated && (status.state === "current" || status.state === "stale") && value.source.broadcasterId === status.broadcasterId && status.valueIds.includes(value.id);
+  };
   reconcileTwitchSources = () => twitchDataSourceRuntime.reconcile();
   await twitchDataSourceRuntime.connectionChanged();
   const overlayModuleRuntimes = new Map<string, OverlayModuleRuntime>([
@@ -1706,6 +1719,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   };
   const serverDependencies = {
     dataOverlayService,
+    dataTemplateService,
     twitchDataSourceRuntime,
     authorizeDataOverlayAsset: async (access: import("@stream-jams/core").OverlayRouteAccessRequest, assetId: string) => {
       if (access.scope === "unified") {
@@ -1860,6 +1874,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   return {
     app,
     dataOverlayService,
+    dataTemplateService,
     dataOutputRuntime,
     localMediaService,
     desktopConfigService,

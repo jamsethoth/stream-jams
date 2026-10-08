@@ -163,6 +163,7 @@ describe("ConfigurationBackupService", () => {
       archive.manifest.schemaVersion = schemaVersion;
       for (const tableName of [
         ...dataOverlayBackupTables,
+        "data_templates",
         ...(schemaVersion < 23 ? ["screen_effect_sets", "screen_effect_set_memberships"] : []),
         ...(schemaVersion < 22 ? [
         "screen_effects",
@@ -195,6 +196,23 @@ describe("ConfigurationBackupService", () => {
       await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
       const snapshot = target.snapshotRepository.snapshot();
       expect(JSON.parse(String(snapshot.tables.overlay_surfaces?.[0]?.configuration_json))).toMatchObject({ enabled: false, displayId: null });
+    } finally { target.database.close(); }
+  });
+
+  it("requires templates for schema34, accepts schema33 without them and restores an empty user catalog", async () => {
+    const target = createRealService();
+    try {
+      const archive = await target.service.exportArchive();
+      expect(archive.manifest.schemaVersion).toBe(34);
+      delete archive.configuration.tables.data_templates;
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      const missing = await target.service.preflight(archive);
+      expect(missing.state).toBe("invalid");
+      expect(missing.blockers).toEqual(expect.arrayContaining([expect.objectContaining({summary:"Backup Data templates configuration is missing"})]));
+      archive.manifest.schemaVersion = 33;
+      const old = await target.service.preflight(archive); expect(old.state).toBe("valid");
+      await target.service.restore({archive,archiveId:old.archiveId!,confirmation:"RESTORE",regenerateRouteKeys:true});
+      expect(target.snapshotRepository.snapshot().tables.data_templates).toEqual([]);
     } finally { target.database.close(); }
   });
 

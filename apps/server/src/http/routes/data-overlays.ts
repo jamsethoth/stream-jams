@@ -3,9 +3,11 @@ import { z } from "zod";
 import type { FastifyInstance, FastifyReply, preHandlerHookHandler } from "fastify";
 import { RuntimeMaintenanceUnavailableError } from "../../modules/backup/runtime-maintenance-gate.js";
 import type { TwitchDataSourceRuntime } from "../../modules/twitch/twitch-data-source-runtime.js";
+import { dataTemplateSaveInputSchema, dataTemplateInstantiateInputSchema, dataTemplateInsertInputSchema, type DataTemplateService } from "@stream-jams/core";
 export interface DataOverlayRouteDependencies {
   readonly dataOverlayService: DataOverlayService;
   readonly twitchDataSourceRuntime?: TwitchDataSourceRuntime;
+  readonly dataTemplateService?: DataTemplateService;
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
 }
@@ -25,6 +27,15 @@ export function registerDataOverlayRoutes(app: FastifyInstance, dependencies: Da
   const id = (params: unknown) => paramsSchema.parse(params).id;
   app.get("/data-overlays", { preHandler }, async () => service.getState());
   app.get("/operator/data-overlays", { preHandler }, async () => service.getState());
+  if (dependencies.dataTemplateService) {
+    const templates = dependencies.dataTemplateService;
+    app.get("/data-overlays/templates", { preHandler }, async () => templates.getCatalog());
+    app.post("/data-overlays/templates/save", { preHandler }, async (request, reply) => handle(reply, () => templates.save(dataTemplateSaveInputSchema.parse(request.body)), 201));
+    app.put("/data-overlays/templates/:id", { preHandler }, async (request, reply) => handle(reply, () => templates.replace(id(request.params), dataTemplateSaveInputSchema.parse(request.body))));
+    app.delete("/data-overlays/templates/:id", { preHandler }, async (request, reply) => handle(reply, () => templates.delete(id(request.params))));
+    app.post("/data-overlays/templates/:id/instantiate", { preHandler }, async (request, reply) => handle(reply, () => templates.instantiate(id(request.params), dataTemplateInstantiateInputSchema.parse(request.body)), 201));
+    app.post("/data-overlays/templates/:id/insert", { preHandler }, async (request, reply) => handle(reply, () => templates.insert(id(request.params), dataTemplateInsertInputSchema.parse(request.body))));
+  }
   if (dependencies.twitchDataSourceRuntime) {
     const runtime = dependencies.twitchDataSourceRuntime;
     app.get("/data-overlays/sources/twitch", { preHandler }, async () => runtime.getStatus());

@@ -1,10 +1,12 @@
 import { dataCanvasInputSchema, dataGoalInputSchema, dataIdSchema, dataOverlayStateSchema, dataResetGroupInputSchema, dataValueCreateInputSchema, dataValueDeltaInputSchema, dataValueSetInputSchema, dataValueUpdateInputSchema } from "./schemas.js";
 import { restartDataGoal } from "./goals.js";
+import { dataTemplateSchema, dataTemplateInstantiateInputSchema, dataTemplateInsertInputSchema, type DataTemplate, type DataTemplateInstantiateInput, type DataTemplateInsertInput } from "./template-schemas.js";
+import { instantiateDataTemplateElements } from "./template-instantiation.js";
 import type { DataOverlayRepository } from "./repository.js";
 import type { DataCanvasInput, DataGoalInput, DataOverlayState, DataResetGroupInput, DataValue, DataValueCreateInput, DataValueUpdateInput } from "./types.js";
 export type DataValueCommand = { action: "set"; content: string | number; expectedRevision: number } | { action: "add" | "subtract"; amount: number } | { action: "reset" };
 export class DataOverlayError extends Error {
-  constructor(readonly code: "NOT_FOUND" | "NAME_CONFLICT" | "REFERENCED" | "REVISION_CONFLICT" | "SOURCE_READ_ONLY", message: string, readonly references: string[] = [], readonly currentValue: DataValue | null = null) { super(message); this.name = "DataOverlayError"; }
+  constructor(readonly code: "NOT_FOUND" | "NAME_CONFLICT" | "REFERENCED" | "REVISION_CONFLICT" | "SOURCE_READ_ONLY" | "SOURCE_NOT_READY", message: string, readonly references: string[] = [], readonly currentValue: DataValue | null = null) { super(message); this.name = "DataOverlayError"; }
 }
 export interface DataOverlayServiceOptions {
   generateId(): string;
@@ -13,6 +15,7 @@ export interface DataOverlayServiceOptions {
   onPublishError?(error: unknown): void;
   runMutation?<T>(work: () => T): T;
   resolveImageAsset?(id: string): boolean;
+  isTemplateSourceReady?(value: DataValue): boolean;
 }
 export class DataOverlayService {
   constructor(private readonly repository: DataOverlayRepository, private readonly options: DataOverlayServiceOptions) {}
@@ -103,6 +106,25 @@ export class DataOverlayService {
   updateCanvas(id: string, input: DataCanvasInput): DataOverlayState { const definition = this.canvas(input); return this.change(state => { const canvas = this.find(state.canvases, id); this.name(state.canvases, definition.name, id); Object.assign(canvas, definition); }); }
   setCanvasVisibility(id: string, enabled: boolean): DataOverlayState { if (typeof enabled !== "boolean") throw new TypeError("Invalid visibility"); return this.change(state => { this.find(state.canvases, id).enabled = enabled; }); }
   setPins(ids: string[]): DataOverlayState { return this.change(state => { state.pinnedValueIds = [...ids]; }); }
+  instantiateTemplate(inputTemplate: DataTemplate, input: DataTemplateInstantiateInput): DataOverlayState {
+    const template = dataTemplateSchema.parse(inputTemplate); const { mappings, ...definition } = dataTemplateInstantiateInputSchema.parse(input);
+    return this.change(state => {
+      this.name(state.canvases, definition.name);
+      const elements = instantiateDataTemplateElements(template, mappings, state, this.options);
+      state.canvases.push({ ...definition, id: this.id(), targetProfileId: template.targetProfileId, elements });
+    });
+  }
+  insertTemplateGroup(inputTemplate: DataTemplate, input: DataTemplateInsertInput): DataOverlayState {
+    const template = dataTemplateSchema.parse(inputTemplate); const definition = dataTemplateInsertInputSchema.parse(input);
+    return this.change(state => {
+      const canvas = this.find(state.canvases, definition.canvasId);
+      if (canvas.targetProfileId !== template.targetProfileId) throw new TypeError("Template and canvas target profiles must match");
+      const elements = instantiateDataTemplateElements(template, definition.mappings, state, this.options);
+      let order = canvas.elements.length ? Math.max(...canvas.elements.map(e => e.order)) : -1;
+      for (const element of elements.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))) { element.x += definition.x; element.y += definition.y; element.order = ++order; }
+      canvas.elements.push(...elements);
+    });
+  }
   private remove(key: "values" | "goals" | "resetGroups" | "canvases", id: string): DataOverlayState {
     return this.change(state => {
       this.find(state[key], id);

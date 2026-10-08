@@ -42,7 +42,8 @@ const expectedMigrations = [
   "030-persistent-event-timers",
   "031-automation-grants",
   "032-music-source-providers",
-  "033-custom-data-overlays"
+  "033-custom-data-overlays",
+  "034-data-overlay-templates"
 
 ] as const;
 
@@ -68,6 +69,7 @@ const expectedTables = [
   "data_overlay_meta",
   "data_pins",
   "data_reset_groups",
+  "data_templates",
   "data_values",
   "event_logs",
   "module_playback_settings",
@@ -592,6 +594,7 @@ describe("Stream Jams SQLite database", () => {
 
   it("recovers a valid schema-17 prefix without losing its text-style document changes", () => {
     using database = createInMemoryStreamJamsDatabase();
+    database.connection.exec("DROP TABLE data_templates; DELETE FROM schema_migrations WHERE id = '034-data-overlay-templates';");
     database.connection.exec(`
       INSERT INTO alert_rules (id, name, event_type, enabled, cooldown_seconds, priority)
       VALUES ('text-style', 'Text style', 'follow', 1, 0, 0);
@@ -907,7 +910,8 @@ function listAppliedMigrations(connection: { prepare(sql: string): { all(): Reco
 }
 
 function removeDataOverlaySchema(connection: DatabaseSync): void {
-  connection.exec(`DROP TABLE data_element_refs; DROP TABLE data_pins; DROP TABLE data_goals;
+  connection.exec(`DROP TABLE data_templates; DELETE FROM schema_migrations WHERE id = '034-data-overlay-templates';
+    DROP TABLE data_element_refs; DROP TABLE data_pins; DROP TABLE data_goals;
     DROP TABLE data_values; DROP TABLE data_reset_groups; DROP TABLE data_canvases; DROP TABLE data_overlay_meta;
     DELETE FROM schema_migrations WHERE id = '033-custom-data-overlays';`);
 }

@@ -61,6 +61,17 @@ it("serves explicit provider source selection and readonly commands through real
     const id = created.json().values[0].id as string;
     await vi.waitFor(() => expect(composition!.dataOverlayService.getState().values[0]?.content).toBe(990));
     expect((await composition.app.inject({ url: "/data-overlays/sources/twitch", headers })).json()).toMatchObject({ follower: { state: "current", broadcasterId: account.accountId, valueIds: [id] }, goals: { state: "reauthorization-required" } });
+    expect((await composition.app.inject({ url: "/data-overlays/templates", headers })).json().templates).toHaveLength(4);
+    const canvasInput = { name: "Follower badge", enabled: false, order: 0, outputs: { browser: true, desktop: false }, mappings: [{slotId:"count",mapping:{kind:"value",valueId:id}}] };
+    const badge = await composition.app.inject({method:"POST",url:"/data-overlays/templates/counter-badge/instantiate",headers,payload:canvasInput});
+    expect(badge.statusCode,badge.body).toBe(201);
+    const saved = await composition.app.inject({method:"POST",url:"/data-overlays/templates/save",headers,payload:{name:"Configured follower badge",canvasId:badge.json().canvases[0].id}});
+    expect(saved.statusCode,saved.body).toBe(201);
+    const providerTemplate = saved.json().templates.find((template:{origin:string})=>template.origin==="user");
+    expect(providerTemplate.slots[0].requiredSource).toEqual({provider:"twitch",kind:"follower-total"});
+    expect(JSON.stringify(providerTemplate)).not.toContain(account.accountId);expect(JSON.stringify(providerTemplate)).not.toContain(id);
+    const reused = await composition.app.inject({method:"POST",url:`/data-overlays/templates/${providerTemplate.id}/instantiate`,headers,payload:{...canvasInput,name:"Reused follower badge",mappings:[{slotId:providerTemplate.slots[0].id,mapping:{kind:"value",valueId:id}}]}});
+    expect(reused.statusCode,reused.body).toBe(201);
     const readonly = await composition.app.inject({ method: "POST", url: `/operator/data-overlays/values/${id}/reset`, headers, payload: {} });
     expect(readonly.statusCode).toBe(409); expect(readonly.json().error.code).toBe("DATA_SOURCE_READ_ONLY");
     await composition.close(); composition = undefined;
@@ -69,6 +80,7 @@ it("serves explicit provider source selection and readonly commands through real
     headers = managementAuthHeaders(await composition.app.inject({ method: "POST", url: "/auth/management/sessions" }));
     expect(composition.dataOverlayService.getState().values[0]).toMatchObject({ content: 980, source: { provider: "twitch", kind: "follower-total", broadcasterId: account.accountId } });
     expect((await composition.app.inject({ url: "/data-overlays/sources/twitch", headers })).json().follower.state).toBe("current");
+    expect(composition.dataTemplateService.getCatalog().templates.find(template=>template.id===providerTemplate.id)).toEqual(providerTemplate);
   } finally { await composition?.close(); await rm(root, { recursive: true, force: true }); }
 });
 

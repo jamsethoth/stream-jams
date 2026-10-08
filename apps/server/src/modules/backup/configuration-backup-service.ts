@@ -318,6 +318,9 @@ export class ConfigurationBackupService {
     if (!appConfigSchema.safeParse(archive.configuration.appConfig).success) {
       blockers.push(blocker("Backup preferences are invalid", "The application preferences do not match the supported schema.", "Export a new backup from the source installation."));
     }
+    if (archive.manifest.schemaVersion >= 34 && archive.configuration.tables.data_templates === undefined) {
+      blockers.push(blocker("Backup Data templates configuration is missing", "Schema 34 and later require data_templates.", "Export a complete backup from the original application."));
+    }
     if (archive.manifest.schemaVersion >= 33) {
       for (const name of dataOverlayBackupTables) {
         if (archive.configuration.tables[name] === undefined) blockers.push(blocker(
@@ -711,6 +714,7 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   if (currentSchemaVersion === 30) return [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 32) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 31;
   if (currentSchemaVersion === 33) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 32;
+  if (currentSchemaVersion === 34) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 33;
   if (currentSchemaVersion === 28) return [19, 20, 21, 22, 23, 24, 25, 26, 27].includes(archiveSchemaVersion);
   return false;
 }

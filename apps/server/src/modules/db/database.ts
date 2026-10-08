@@ -32,6 +32,7 @@ import { timerOverlayModuleMigration } from "./migrations/028-timer-overlay-modu
 import { assetRetirementsMigration } from "./migrations/029-asset-retirements.js";
 import { persistentEventTimersMigration } from "./migrations/030-persistent-event-timers.js";
 import { customDataOverlaysMigration } from "./migrations/033-custom-data-overlays.js";
+import { dataOverlayTemplatesMigration } from "./migrations/034-data-overlay-templates.js";
 import { musicSourceProvidersMigration } from "./migrations/032-music-source-providers.js";
 
 import { automationGrantsMigration } from "./migrations/031-automation-grants.js";
@@ -80,7 +81,8 @@ const migrations = [
   persistentEventTimersMigration,
   automationGrantsMigration,
   musicSourceProvidersMigration,
-  customDataOverlaysMigration
+  customDataOverlaysMigration,
+  dataOverlayTemplatesMigration
 
 ] satisfies readonly StreamJamsMigration[];
 

@@ -50,6 +50,7 @@ const elementBase = { id: dataIdSchema, order: dataIntegerSchema, x: z.number().
 export const dataCanvasElementSchema = z.discriminatedUnion("kind", [
   z.object({ ...elementBase, kind: z.literal("text"), binding: dataBindingSchema.nullable(), literalText: dataTextSchema.default(""), format: dataFormatSchema, style: dataTextStyleSchema }).strict(),
   z.object({ ...elementBase, kind: z.literal("image"), assetId: dataIdSchema, fit: z.enum(["contain", "cover", "fill"]) }).strict(),
+  z.object({ ...elementBase, kind: z.literal("missing-image"), sourceAssetId: dataIdSchema, fit: z.enum(["contain", "cover", "fill"]) }).strict(),
   z.object({ ...elementBase, kind: z.enum(["rectangle", "ellipse"]), color: rgbaColorSchema }).strict(),
   z.object({ ...elementBase, kind: z.literal("progress"), goalId: dataIdSchema, orientation: z.enum(["horizontal", "vertical"]), direction: z.enum(["forward", "reverse"]), fillColor: rgbaColorSchema, backgroundColor: rgbaColorSchema, borderColor: rgbaColorSchema, borderWidthPx: z.number().finite().min(0).max(dataOverlayLimits.borderWidthPx) }).strict()
 ]);

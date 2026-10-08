@@ -47,6 +47,7 @@ export function projectDataOverlays(state: DataOverlayState, options: DataProjec
         return { ...geometry, kind: "text", text: formatDataContent(content, element.format), overflow: element.format.overflow, style: { ...element.style } };
       }
       case "image": return options.resolveAssetId(element.assetId) ? { ...geometry, kind: "image", assetId: element.assetId, fit: element.fit } : null;
+      case "missing-image": return null;
       case "rectangle": case "ellipse": return { ...geometry, kind: element.kind, color: element.color };
       case "progress": {
         const goal = resolveGoal(element.goalId, element);

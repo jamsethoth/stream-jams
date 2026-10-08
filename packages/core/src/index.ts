@@ -390,3 +390,6 @@ export * from "./data-overlays/projection.js";
 export * from "./data-overlays/module-definition.js";
 export * from "./data-overlays/repository.js";
 export * from "./data-overlays/value-service.js";
+export * from "./data-overlays/template-schemas.js";
+export * from "./data-overlays/template-starters.js";
+export * from "./data-overlays/template-service.js";
