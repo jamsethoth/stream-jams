@@ -1,5 +1,7 @@
 import { moduleMuteStateSchema } from "@stream-jams/core";
 import { serializeException, overlayInstructionSchema, overlayCompositionSchema, surfaceLayersSchema, type SurfaceLayer } from "@stream-jams/core";
+import { videoMirrorPublisherSignalSchema, videoMirrorSignalMessageType, type VideoMirrorPublisherSignal } from "@stream-jams/core/videos";
+import type { VideoMirrorConnector } from "@stream-jams/core/videos";
 import type {
   OverlayPlaybackFailure,
   PlaybackTimingDiagnostics,
@@ -69,8 +71,13 @@ export interface OverlayClientOptions {
 
 export interface OverlayClientConnection {
   readonly reporter: OverlayPlaybackReporter;
+  /** Videos mirror signaling over this output's overlay WebSocket. */
+  readonly videoMirror: VideoMirrorConnector;
   close(): void;
 }
+
+/** Bounded fan-out for at most a few mirror receivers per page. */
+const maximumVideoMirrorListeners = 4;
 
 const websocketOpenState = 1;
 
@@ -193,6 +200,15 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
   let socket: WebSocket | null = null;
   let connectionGeneration = 0;
   let settledCompositionGeneration = 0;
+  const videoMirrorListeners = new Set<(signal: VideoMirrorPublisherSignal) => void>();
+  const videoMirror: VideoMirrorConnector = {
+    send(signal) { if (socket?.readyState === websocketOpenState) socket.send(JSON.stringify({ type: videoMirrorSignalMessageType, signal })); },
+    subscribe(listener) {
+      if (videoMirrorListeners.size >= maximumVideoMirrorListeners) return () => undefined;
+      videoMirrorListeners.add(listener);
+      return () => { videoMirrorListeners.delete(listener); };
+    }
+  };
   const reporter = createOverlayPlaybackReporter({
     get readyState() {
       return socket?.readyState ?? WebSocket.CLOSED;
@@ -231,6 +247,8 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
         });
     });
     nextSocket.addEventListener("message", (event) => {
+      const signal = parseVideoMirrorSignal(event.data);
+      if (signal !== null) { for (const listener of [...videoMirrorListeners]) listener(signal); return; }
       const message = parseOverlaySocketMessage(event.data, (instructionId, failure) => reporter.reportFailed(instructionId, failure));
       if (message?.type === "composition" && generation > 0) settledCompositionGeneration = Math.max(settledCompositionGeneration, generation);
       if (message !== null) options.onMessage(message);
@@ -268,8 +286,10 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
 
   return {
     reporter,
+    videoMirror,
     close() {
       disposed = true;
+      videoMirrorListeners.clear();
       if (reconnectTimer !== null) {
         window.clearTimeout(reconnectTimer);
         reconnectTimer = null;
@@ -278,6 +298,17 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
       socket = null;
     }
   };
+}
+
+function parseVideoMirrorSignal(data: unknown): VideoMirrorPublisherSignal | null {
+  if (typeof data !== "string" || data.length > 40_000 || !data.includes(videoMirrorSignalMessageType)) return null;
+  let parsed: unknown;
+  try { parsed = JSON.parse(data) as unknown; }
+  // error-provenance: allow expected -- malformed frames are left to the general parser, which ignores them
+  catch { return null; }
+  if (typeof parsed !== "object" || parsed === null || (parsed as { type?: unknown }).type !== videoMirrorSignalMessageType) return null;
+  const signal = videoMirrorPublisherSignalSchema.safeParse((parsed as { signal?: unknown }).signal);
+  return signal.success ? signal.data : null;
 }
 
 function parseOverlaySocketMessage(data: unknown, reportInvalid: (instructionId: string, failure: OverlayPlaybackFailure) => void): OverlayClientMessage | null {

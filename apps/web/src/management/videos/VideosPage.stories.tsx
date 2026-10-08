@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, within } from "storybook/test";
 import { createStoryAudioApi } from "../../stories/audio-fixtures.js";
-import { createStaticVideosApi, heldVideos, playingVideo } from "../../stories/video-queue-fixtures.js";
+import { createStaticVideosApi, heldVideos, playingVideo, videoQueue } from "../../stories/video-queue-fixtures.js";
 import { VideosPage } from "./VideosPage.js";
 
 const rewards = { rewards: [
@@ -26,9 +26,17 @@ export const ConfiguredWithPlayback: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(await canvas.findByLabelText("Maximum length (seconds)")).toHaveValue(120);
-    await expect(canvas.getByRole("note")).toHaveTextContent("the desktop mirror arrives with the desktop player");
+    await expect(await canvas.findByText(/the desktop app is playing videos/u)).toBeVisible();
+    await expect(canvas.getByLabelText("Stream mix delay (ms)")).toHaveValue(120);
     await expect(await canvas.findByRole("article", { name: "Now playing" })).toBeVisible();
     await expect(await within(canvas.getByRole("list", { name: "Mapped rewards" })).findByText("Play my video")).toBeVisible();
+  }
+};
+
+export const DesktopAppNotRunning: Story = {
+  args: { api: createStaticVideosApi(videoQueue({ mirror: { available: false } })) },
+  play: async ({ canvasElement }) => {
+    await expect(await within(canvasElement).findByText(/desktop app not running/u)).toBeVisible();
   }
 };
 

@@ -39,4 +39,6 @@
 .videos-settings__add, .videos-settings__catalog { align-items: end; display: flex; flex-wrap: wrap; gap: 8px; }
 .videos-settings__add > :first-child { flex: 1 1 14rem; }
 .videos-settings__save { display: flex; justify-content: flex-end; }
+.videos-settings__device { display: grid; gap: 4px; }
+.videos-settings__device .mantine-InputWrapper-root { margin-inline-start: 28px; max-width: 14rem; }
 .videos-mirror-status { color: var(--color-text-muted); font-size: var(--font-size-sm); margin: 0; }

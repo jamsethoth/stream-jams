@@ -12,7 +12,7 @@ export function videoItem(id: string, overrides: Partial<VideoQueueItem> = {}): 
 }
 
 export function videoQueue(overrides: Partial<VideoQueueResponse> = {}): VideoQueueResponse {
-  return { purpose: "live", revision: 4, queuePaused: false, runRemaining: 0, gapEndsAtEpochMs: null, serverTimeEpochMs: Date.now(), items: [], current: null, ...overrides };
+  return { purpose: "live", revision: 4, queuePaused: false, runRemaining: 0, gapEndsAtEpochMs: null, serverTimeEpochMs: Date.now(), mirror: { available: true }, items: [], current: null, ...overrides };
 }
 
 export const queuedVideos = (): VideoQueueResponse => videoQueue({ items: [
@@ -57,7 +57,7 @@ export function createStaticVideosApi(queue: VideoQueueResponse, overrides: Part
   return {
     ...createStaticVideoQueueApi(queue),
     getModuleConfig: async () => ({ enabled: true, config: { maxLengthSeconds: 120, gapSeconds: 3, allowedDirectHosts: ["videos.example.com"], obsAudio: true,
-      audioDeviceIds: ["stream"], streamerBotAutoplay: true, rewardMappings: [{ rewardId: "reward-video", purpose: "live" }] } }),
+      audioDeviceIds: ["stream"], audioDeviceDelaysMs: { stream: 120 }, streamerBotAutoplay: true, rewardMappings: [{ rewardId: "reward-video", purpose: "live" }] } }),
     saveModuleConfig: async (enabled, config) => ({ enabled, config }),
     setModuleEnabled: async enabled => enabled,
     listBrowserSources: async () => [

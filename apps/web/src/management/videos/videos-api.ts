@@ -125,7 +125,11 @@ function parseModuleState(value: unknown): VideosModuleState {
     || typeof value.config.obsAudio !== "boolean" || typeof value.config.streamerBotAutoplay !== "boolean") {
     throw new TypeError("Videos settings returned an invalid response. Reload and retry.");
   }
-  return { enabled: value.enabled, config: value.config as unknown as VideosModuleConfig };
+  const delays = value.config.audioDeviceDelaysMs;
+  if (delays !== undefined && (!isRecord(delays) || !Object.values(delays).every(delay => typeof delay === "number"))) {
+    throw new TypeError("Videos settings returned an invalid response. Reload and retry.");
+  }
+  return { enabled: value.enabled, config: { ...value.config, audioDeviceDelaysMs: delays ?? {} } as unknown as VideosModuleConfig };
 }
 
 function parseBrowserSource(value: unknown): readonly VideosBrowserSource[] {

@@ -135,6 +135,10 @@ The system SHALL send each item's audio only to the destinations the operator se
 - **WHEN** OBS audio and two output devices are selected
 - **THEN** the browser source plays the mirrored audio and each device receives the same audio
 
+#### Scenario: Per-device delay
+- **WHEN** the operator sets a delay between 0 and 500 ms on a selected device
+- **THEN** that device plays the mirrored audio later by that delay and other destinations are unchanged
+
 #### Scenario: Module muted
 - **WHEN** the Videos module is muted through the existing mute policy
 - **THEN** no destination plays audio and visuals continue

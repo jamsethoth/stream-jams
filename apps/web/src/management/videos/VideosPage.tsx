@@ -15,7 +15,7 @@ import { VideoQueuePanel } from "./VideoQueuePanel.js";
 import { createHttpVideosApi, type VideoQueueApi, type VideosApi, type VideosBrowserSource } from "./videos-api.js";
 
 // Bounds mirror the server's Videos config schema, which stays out of the management bundle; the server remains authoritative.
-const limits = { minLength: 5, maxLength: 14_400, maxGap: 30, hosts: 32, devices: 8, rewards: 16 } as const;
+const limits = { minLength: 5, maxLength: 14_400, maxGap: 30, hosts: 32, devices: 8, rewards: 16, deviceDelayMs: 500 } as const;
 const hostPattern = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u;
 
 export interface VideosPageProps {
@@ -30,11 +30,13 @@ interface Draft {
   readonly allowedDirectHosts: readonly string[];
   readonly obsAudio: boolean;
   readonly audioDeviceIds: readonly string[];
+  /** Typed delay text per selected route; empty means 0. */
+  readonly audioDeviceDelaysMs: Readonly<Record<string, string>>;
   readonly streamerBotAutoplay: boolean;
   readonly rewardMappings: VideosModuleConfig["rewardMappings"];
 }
 
-type FieldErrors = Partial<Record<"maxLengthSeconds" | "gapSeconds" | "host" | "reward", string>>;
+type FieldErrors = Partial<Record<"maxLengthSeconds" | "gapSeconds" | "host" | "reward" | `delay:${string}`, string>>;
 type RewardCatalog = { readonly status: "loading" } | { readonly status: "loaded"; readonly rewards: readonly TwitchCustomReward[] } | { readonly status: "error"; readonly message: string };
 
 let defaultApi: VideosApi | null = null;
@@ -66,6 +68,7 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
   const [regenerate, setRegenerate] = useState<VideosBrowserSource | null>(null);
   const [confirmationError, setConfirmationError] = useState<ActionableManagementError | null>(null);
   const [busy, setBusy] = useState(false);
+  const [mirrorAvailable, setMirrorAvailable] = useState<boolean | null>(null);
   const busyRef = useRef(false);
   const fallbackRef = useRef<HTMLButtonElement>(null);
 
@@ -76,6 +79,10 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
     } catch (reason) {
       setLoadError(actionableError(reason, "Videos settings could not be loaded", "Check that Stream Jams is running, then reopen Videos."));
     }
+    // The queue reports whether the desktop primary player is running.
+    try { setMirrorAvailable((await api.getQueue("live")).mirror.available); }
+    // error-provenance: allow expected -- the mirror note falls back to an unknown state; the queue panel reports load failures
+    catch { setMirrorAvailable(null); }
     try { setRoutes((await audioApi.getStatus()).routes); setRoutesError(false); }
     // error-provenance: allow expected -- audio outputs are optional here; the page explains the unavailable list inline
     catch { setRoutesError(true); }
@@ -114,10 +121,17 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
       errors.maxLengthSeconds = `Enter whole seconds from ${limits.minLength} to ${limits.maxLength}.`;
     }
     if (draft.gapSeconds.trim() === "" || !Number.isInteger(gap) || gap < 0 || gap > limits.maxGap) errors.gapSeconds = `Enter whole seconds from 0 to ${limits.maxGap}.`;
+    const audioDeviceDelaysMs: Record<string, number> = {};
+    for (const id of draft.audioDeviceIds) {
+      const text = (draft.audioDeviceDelaysMs[id] ?? "").trim();
+      const delay = text === "" ? 0 : Number(text);
+      if (!Number.isInteger(delay) || delay < 0 || delay > limits.deviceDelayMs) errors[`delay:${id}`] = `Enter whole milliseconds from 0 to ${limits.deviceDelayMs}.`;
+      else if (delay > 0) audioDeviceDelaysMs[id] = delay;
+    }
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
     const config: VideosModuleConfig = { maxLengthSeconds: maxLength, gapSeconds: gap, allowedDirectHosts: draft.allowedDirectHosts, obsAudio: draft.obsAudio,
-      audioDeviceIds: draft.audioDeviceIds, streamerBotAutoplay: draft.streamerBotAutoplay, rewardMappings: draft.rewardMappings };
+      audioDeviceIds: draft.audioDeviceIds, audioDeviceDelaysMs, streamerBotAutoplay: draft.streamerBotAutoplay, rewardMappings: draft.rewardMappings };
     void mutate(async () => {
       const saved = await api.saveModuleConfig(enabled, config);
       setEnabled(saved.enabled); setDraft(toDraft(saved.config));
@@ -173,7 +187,11 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
         <Button ref={fallbackRef} variant="default" disabled={busy || enabled === null} onClick={toggleModule}>{enabled ? "Disable Videos module" : "Enable Videos module"}</Button>
       </ModuleControls>}
       outputs={<>
-        <p className="videos-mirror-status" role="note"><strong>Mirror status:</strong> the desktop mirror arrives with the desktop player. Until then, each Browser Source plays the current video in its own player, following the queue clock.</p>
+        <p className="videos-mirror-status" role="note">{mirrorAvailable === true
+          ? <><strong>Mirror status:</strong> the desktop app is playing videos. Every output shows its picture, with sound in OBS and on the chosen audio outputs.</>
+          : mirrorAvailable === false
+            ? <><strong>Mirroring unavailable:</strong> desktop app not running. Each Browser Source plays the current video in its own player, following the queue clock.</>
+            : <><strong>Mirror status:</strong> unknown until the queue loads.</>}</p>
         <BrowserSourcesPanel id="browser-sources" detailsId="videos-sources-content" expanded={sourcesExpanded} onToggle={() => setSourcesExpanded(value => !value)}
         readyCount={sources.filter(source => source.status === "available").length} needsSetupCount={sources.filter(source => source.status !== "available").length} description="Module live and test outputs.">
         <p>Add the Videos URL as an OBS Browser Source at 1920 x 1080. To show videos on the desktop overlay, turn on Videos in <a href="/manage/settings#overlay-surfaces">Overlay surfaces</a>.</p>
@@ -199,10 +217,15 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
             <p className="module-section-description">Also send video audio to these outputs (up to {limits.devices}). Manage outputs in <a href="/manage/settings#audio-outputs">Settings</a>.</p>
             {routesError ? <p role="status">Audio outputs could not be loaded. Saved choices are kept.</p> : null}
             {routes.length === 0 && unknownDevices.length === 0 && !routesError ? <p className="management-empty">No audio outputs are set up.</p> : null}
-            {routes.map(({ route }) => { const checked = draft.audioDeviceIds.includes(route.id); return <Checkbox key={route.id} label={route.name} checked={checked}
-              disabled={!checked && draft.audioDeviceIds.length >= limits.devices}
-              onChange={() => setDraft({ ...draft, audioDeviceIds: checked ? draft.audioDeviceIds.filter(id => id !== route.id) : [...draft.audioDeviceIds, route.id] })} />; })}
-            {unknownDevices.map(id => <Checkbox key={id} label={`Unavailable output (${id})`} checked onChange={() => setDraft({ ...draft, audioDeviceIds: draft.audioDeviceIds.filter(value => value !== id) })} />)}
+            {routes.map(({ route }) => { const checked = draft.audioDeviceIds.includes(route.id); return <div className="videos-settings__device" key={route.id}>
+              <Checkbox label={route.name} checked={checked}
+                disabled={!checked && draft.audioDeviceIds.length >= limits.devices}
+                onChange={() => setDraft(checked ? withoutDevice(draft, route.id) : { ...draft, audioDeviceIds: [...draft.audioDeviceIds, route.id] })} />
+              {checked ? <TextInput label={`${route.name} delay (ms)`} description="Delays this output to line it up with OBS." type="number" min={0} max={limits.deviceDelayMs} step={10} size="xs"
+                value={draft.audioDeviceDelaysMs[route.id] ?? ""} placeholder="0" error={fieldErrors[`delay:${route.id}`]}
+                onChange={event => setDraft({ ...draft, audioDeviceDelaysMs: { ...draft.audioDeviceDelaysMs, [route.id]: event.currentTarget.value } })} /> : null}
+            </div>; })}
+            {unknownDevices.map(id => <Checkbox key={id} label={`Unavailable output (${id})`} checked onChange={() => setDraft(withoutDevice(draft, id))} />)}
           </fieldset>
         </ModuleSection>
         <ModuleSection title="Request sources" label="Request sources">
@@ -257,7 +280,13 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
 
 function toDraft(config: VideosModuleConfig): Draft {
   return { maxLengthSeconds: String(config.maxLengthSeconds), gapSeconds: String(config.gapSeconds), allowedDirectHosts: config.allowedDirectHosts, obsAudio: config.obsAudio,
-    audioDeviceIds: config.audioDeviceIds, streamerBotAutoplay: config.streamerBotAutoplay, rewardMappings: config.rewardMappings };
+    audioDeviceIds: config.audioDeviceIds, audioDeviceDelaysMs: Object.fromEntries(Object.entries(config.audioDeviceDelaysMs).map(([id, delay]) => [id, String(delay)])),
+    streamerBotAutoplay: config.streamerBotAutoplay, rewardMappings: config.rewardMappings };
+}
+
+function withoutDevice(draft: Draft, id: string): Draft {
+  return { ...draft, audioDeviceIds: draft.audioDeviceIds.filter(value => value !== id),
+    audioDeviceDelaysMs: Object.fromEntries(Object.entries(draft.audioDeviceDelaysMs).filter(([key]) => key !== id)) };
 }
 
 function withField(current: FieldErrors, field: keyof FieldErrors, error: string | null): FieldErrors {

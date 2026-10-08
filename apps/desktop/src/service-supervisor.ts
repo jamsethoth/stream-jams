@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { workerMessageSchema, type WorkerRequest } from "./desktop-ipc.js";
 import { overlayPlaybackFailureSchema, type AudioTransportCommand, type AudioTransportResult, type DesktopVisualCommand, type DesktopVisualReply, type OverlayPlaybackFailure, type SerializedException } from "@stream-jams/core";
 import type { DesktopDiagnosticInput, DesktopDiagnosticReport } from "./desktop-diagnostics.js";
+import type { DesktopVideoCommand, DesktopVideoEvent } from "@stream-jams/core/videos";
 
 export interface SupervisedOverlayHost {
   beginOwnership(): void;
@@ -15,6 +16,15 @@ export interface SupervisedAudioHost {
   refreshLease(): void;
   serviceLost(): void;
   handle(command: AudioTransportCommand): Promise<AudioTransportResult>;
+}
+
+/** The Videos primary player host: fire-and-forget commands in, reports and signals out. */
+export interface SupervisedVideoHost {
+  beginOwnership(): void;
+  refreshLease(): void;
+  serviceLost(): void;
+  handle(command: DesktopVideoCommand): void;
+  onEvent(sink: (event: DesktopVideoEvent) => void): void;
 }
 
 export interface ServiceWorker {
@@ -46,7 +56,14 @@ export class ServiceSupervisor {
   #commands = new Map<string, { resolve(): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>();
   #diagnostics = new Map<string, { report: DesktopDiagnosticReport; timer: ReturnType<typeof setTimeout> }>();
 
-  constructor(private readonly spawn: () => ServiceWorker, private readonly changed: () => void = () => {}, private readonly audio?: SupervisedAudioHost, private readonly overlay?: SupervisedOverlayHost, private readonly diagnose?: (input: DesktopDiagnosticInput) => void, private readonly diagnosticFallback?: (report: DesktopDiagnosticReport) => void) {}
+  constructor(private readonly spawn: () => ServiceWorker, private readonly changed: () => void = () => {}, private readonly audio?: SupervisedAudioHost, private readonly overlay?: SupervisedOverlayHost, private readonly diagnose?: (input: DesktopDiagnosticInput) => void, private readonly diagnosticFallback?: (report: DesktopDiagnosticReport) => void, private readonly video?: SupervisedVideoHost) {
+    video?.onEvent(event => {
+      const worker = this.#worker;
+      if (worker === null || (this.state !== "starting" && this.state !== "running")) return;
+      try { this.#send({ type: "video-event", generation: this.#generation, requestId: null, event }); }
+      catch (error) { this.#record("desktop.worker.send-failed", "A video player event could not reach the local service.", error); }
+    });
+  }
 
   start(): Promise<ServiceSnapshot> {
     if (this.state === "starting" || this.state === "running") return this.#startPromise!;
@@ -64,6 +81,7 @@ export class ServiceSupervisor {
       this.#worker = worker;
       this.audio?.beginOwnership();
       this.overlay?.beginOwnership();
+      this.video?.beginOwnership();
       worker.on("message", (message) => { if (this.#worker === worker) this.#receive(message, generation); });
       worker.on("exit", (code) => { if (this.#worker === worker) this.#exited(code); });
       this.#startTimer = setTimeout(() => this.#fail("The local service did not start within 20 seconds. Retry or quit."), 20_000);
@@ -97,6 +115,7 @@ export class ServiceSupervisor {
     if (this.#worker === null) return Promise.resolve();
     this.state = "stopping";
     this.overlay?.serviceLost();
+    this.video?.serviceLost();
     clearTimeout(this.#startTimer);
     this.#startReject?.(new Error("Startup was cancelled by shutdown."));
     this.#startReject = null;
@@ -173,6 +192,17 @@ export class ServiceSupervisor {
       });
       return;
     }
+    if (message.type === "video-lease") {
+      if (this.state === "running" || this.state === "starting") this.video?.refreshLease();
+      return;
+    }
+    if (message.type === "video-command") {
+      if (this.state === "running" || this.state === "starting" || (this.state === "stopping" && message.command.type === "stop")) {
+        try { this.video?.handle(message.command as DesktopVideoCommand); }
+        catch (error) { this.#record("desktop.video.command-failed", "The desktop video command failed.", error); }
+      }
+      return;
+    }
     if (message.type === "audio-lease") {
       if (this.state === "running" || this.state === "starting") this.audio?.refreshLease();
       return;
@@ -237,6 +267,7 @@ export class ServiceSupervisor {
 
   #fail(message: string, exception?: unknown, referenceId?: string): void {
     this.overlay?.serviceLost();
+    this.video?.serviceLost();
     this.audio?.serviceLost();
     clearTimeout(this.#startTimer);
     this.state = "failed";
@@ -252,6 +283,7 @@ export class ServiceSupervisor {
 
   #exited(code: number): void {
     this.overlay?.serviceLost();
+    this.video?.serviceLost();
     this.audio?.serviceLost();
     this.#worker = null;
     clearTimeout(this.#startTimer);

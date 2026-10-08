@@ -11,7 +11,7 @@ export function videoControlSupport(source: VideoSource, twitchControlAvailable:
   return { pause: supported, seek: supported };
 }
 
-export function toVideoQueueResponse(view: VideoQueueView, now: number, twitchControlAvailable = false): VideoQueueResponse {
+export function toVideoQueueResponse(view: VideoQueueView, now: number, twitchControlAvailable = false, mirrorAvailable = false): VideoQueueResponse {
   return {
     purpose: view.purpose,
     revision: view.revision,
@@ -19,6 +19,7 @@ export function toVideoQueueResponse(view: VideoQueueView, now: number, twitchCo
     runRemaining: view.run?.remainingIds.length ?? 0,
     gapEndsAtEpochMs: view.gapEndsAtEpochMs,
     serverTimeEpochMs: now,
+    mirror: { available: mirrorAvailable },
     items: view.items.map(item => ({ ...item, link: canonicalVideoLink(item.source) })),
     current: view.current === null ? null : {
       itemId: view.current.item.id,

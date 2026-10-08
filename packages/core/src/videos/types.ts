@@ -43,6 +43,8 @@ export interface VideosModuleConfig {
   readonly allowedDirectHosts: readonly string[];
   readonly obsAudio: boolean;
   readonly audioDeviceIds: readonly string[];
+  /** Per-device delay in ms keyed by audio route id, to line device sound up with OBS. Missing means 0. */
+  readonly audioDeviceDelaysMs: Readonly<Record<string, number>>;
   readonly streamerBotAutoplay: boolean;
   readonly rewardMappings: readonly VideoRewardMapping[];
 }
@@ -76,7 +78,7 @@ export type VideosProjection =
       readonly requester: string | null;
       /** `mirror`: show the desktop primary player's stream. `player`: desktop app absent, play locally. */
       readonly delivery:
-        | { readonly mode: "mirror"; readonly obsAudio: boolean }
+        | { readonly mode: "mirror"; readonly paused: boolean; readonly obsAudio: boolean }
         | { readonly mode: "player"; readonly source: VideoSource; readonly clock: VideoPlaybackClock; readonly obsAudio: boolean };
     }
   | { readonly status: "notice"; readonly noticeId: string; readonly notice: "no-clip"; readonly displayName: string | null };
@@ -89,6 +91,8 @@ export interface VideoQueueResponse {
   readonly runRemaining: number;
   readonly gapEndsAtEpochMs: number | null;
   readonly serverTimeEpochMs: number;
+  /** Whether the desktop primary player is running; without it browser sources play on their own. */
+  readonly mirror: { readonly available: boolean };
   readonly items: readonly (VideoRequestItem & { readonly link: string })[];
   readonly current: {
     readonly itemId: string;

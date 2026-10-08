@@ -12,7 +12,7 @@ import { createHttpVideosApi } from "../management/videos/videos-api.js";
 // The lazily loaded Videos panel defaults to the HTTP client; keep tests that do not exercise it on an idle in-memory queue.
 vi.mock("../management/videos/videos-api.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../management/videos/videos-api.js")>();
-  return { ...actual, createHttpVideosApi: vi.fn(() => ({ getQueue: async () => ({ purpose: "live", revision: 1, queuePaused: false, runRemaining: 0, gapEndsAtEpochMs: null, serverTimeEpochMs: Date.now(), items: [], current: null }) })) };
+  return { ...actual, createHttpVideosApi: vi.fn(() => ({ getQueue: async () => ({ purpose: "live", revision: 1, queuePaused: false, runRemaining: 0, gapEndsAtEpochMs: null, serverTimeEpochMs: Date.now(), mirror: { available: false }, items: [], current: null }) })) };
 });
 const idleTimersApi: OperatorTimersApi = { listStates: async () => [], adjust: async () => ({ changed: false, state: null }), command: async () => ({ changed: false, state: null }) };
 

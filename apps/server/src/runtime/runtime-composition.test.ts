@@ -900,3 +900,33 @@ it("notifies the desktop and advances Effects after persisted policy delivery fa
     await rm(testRoot, { recursive: true, force: true });
   }
 });
+
+it("switches Videos outputs to the desktop mirror while the desktop player is available", async () => {
+  const testRoot = await mkdtemp(join(tmpdir(), "stream-jams-video-mirror-runtime-"));
+  let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
+  const listeners = new Set<(event: import("@stream-jams/core/videos").DesktopVideoEvent) => void>();
+  const sent: import("@stream-jams/core/videos").DesktopVideoCommand[] = [];
+  const transport: import("@stream-jams/core/videos").DesktopVideoTransport = {
+    available: false,
+    send: command => { sent.push(command); },
+    subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }
+  };
+  try {
+    composition = await createRuntimeAppComposition({ homeDirectory: testRoot, webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot)), environment: {}, secretStore: new TestSecretStore(),
+      scheduleRecurring: () => ({ scheduled: true }), cancelRecurring: () => {}, desktopVideoTransport: transport });
+    const session = await composition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const queue = async () => (await composition!.app.inject({ method: "GET", url: "/videos/live", headers: managementAuthHeaders(session) })).json() as { mirror: { available: boolean } };
+    expect((await queue()).mirror).toEqual({ available: false });
+    expect(sent).toEqual([]);
+    for (const listener of listeners) listener({ type: "status", available: true });
+    expect((await queue()).mirror).toEqual({ available: true });
+    await vi.waitFor(() => expect(sent.filter(command => command.type === "set-output").map(command => command.purpose)).toEqual(["live", "test"]));
+    for (const listener of listeners) listener({ type: "status", available: false });
+    expect((await queue()).mirror).toEqual({ available: false });
+  } finally {
+    await composition?.close();
+    await rm(testRoot, { recursive: true, force: true });
+  }
+  expect(listeners.size).toBe(0);
+});

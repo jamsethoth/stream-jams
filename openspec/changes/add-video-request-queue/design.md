@@ -89,7 +89,7 @@ One provider registry in `@stream-jams/core/videos` (subpath export, kept off th
   - Receivers render a muted `<video>` for frames.
 - **Audio:**
   - The browser source plays the mirrored audio when "OBS audio" is enabled; that is the default.
-  - The desktop host fans the captured track out to each selected device through one `<audio>` element per device with `setSinkId`, honoring the existing module mute policy.
+  - The desktop host fans the captured track out to each selected device from a separate hidden receiver window, with one `AudioContext` per device bound by `sinkId` and an optional per-device delay, honoring the existing module mute policy. `<audio>` elements with `setSinkId` stayed silent on remote WebRTC tracks on Windows (see the feasibility record).
   - Devices and OBS audio can be combined.
 - **Control and state:**
   - The server is authoritative for queue and item state.

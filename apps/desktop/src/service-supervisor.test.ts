@@ -346,3 +346,47 @@ it("rejects malformed messages and permits explicit retry only after the owned w
   expect((await retry).muted).toBe(true);
   const stop = supervisor.stop(); second.emit("exit", 0); await stop;
 });
+
+it("routes the Videos player transport: leases, validated commands and events, and silence on service loss", async () => {
+  const worker = new Worker();
+  let sink: ((event: import("@stream-jams/core/videos").DesktopVideoEvent) => void) | undefined;
+  const video = { beginOwnership: vi.fn(), refreshLease: vi.fn(), serviceLost: vi.fn(), handle: vi.fn(), onEvent: vi.fn((value: typeof sink) => { sink = value; }) };
+  const supervisor = new ServiceSupervisor(() => worker, () => {}, undefined, undefined, undefined, undefined, video);
+  // Events before a worker exists go nowhere.
+  sink!({ type: "status", available: true });
+  expect(worker.messages).toEqual([]);
+  const ready = supervisor.start();
+  const generation = worker.messages[0]!.generation as number;
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
+  await ready;
+  expect(video.beginOwnership).toHaveBeenCalledOnce();
+  worker.emit("message", { type: "video-lease", generation, requestId: null });
+  expect(video.refreshLease).toHaveBeenCalledOnce();
+  const command = { type: "pause", purpose: "live", itemId: "a" };
+  worker.emit("message", { type: "video-command", generation, requestId: null, command });
+  expect(video.handle).toHaveBeenCalledWith(command);
+  sink!({ type: "status", available: true });
+  expect(worker.messages.at(-1)).toEqual({ type: "video-event", generation, requestId: null, event: { type: "status", available: true } });
+  const stop = supervisor.stop();
+  expect(video.serviceLost).toHaveBeenCalledOnce();
+  worker.emit("message", { type: "video-command", generation, requestId: null, command });
+  expect(video.handle).toHaveBeenCalledOnce();
+  worker.emit("message", { type: "video-command", generation, requestId: null, command: { type: "stop", purpose: "live" } });
+  expect(video.handle).toHaveBeenCalledTimes(2);
+  worker.emit("exit", 0);
+  await stop;
+});
+
+it("fails the service on a malformed video command instead of reaching the player", async () => {
+  const worker = new Worker();
+  const video = { beginOwnership: vi.fn(), refreshLease: vi.fn(), serviceLost: vi.fn(), handle: vi.fn(), onEvent: vi.fn() };
+  const supervisor = new ServiceSupervisor(() => worker, () => {}, undefined, undefined, undefined, undefined, video);
+  const ready = supervisor.start();
+  const generation = worker.messages[0]!.generation as number;
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
+  await ready;
+  worker.emit("message", { type: "video-command", generation, requestId: null, command: { type: "load", purpose: "live", itemId: "a", source: { provider: "direct", url: "http://insecure.example.com/a.mp4" }, positionMs: 0, paused: false } });
+  expect(video.handle).not.toHaveBeenCalled();
+  expect(supervisor.state).toBe("failed");
+  expect(video.serviceLost).toHaveBeenCalled();
+});

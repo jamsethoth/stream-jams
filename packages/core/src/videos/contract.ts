@@ -1,25 +1,18 @@
 import { z } from "zod";
 import { nonNegativeIntegerSchema } from "../shared/schemas.js";
-import type { VideoSource, VideosProjection } from "./types.js";
-import { isSafeDirectVideoUrl } from "./providers.js";
+import type { VideosProjection } from "./types.js";
+import { videoSourceSchema } from "./source-schema.js";
 
 export * from "./providers.js";
+export * from "./mirror.js";
+export * from "./mirror-receiver.js";
+export { videoSourceSchema } from "./source-schema.js";
 
 /*
  * Strict Videos contract, published with the provider allowlist as the
  * `@stream-jams/core/videos` subpath so it ships only with overlays, the
  * desktop player and the server, not the management bundle.
  */
-
-const maximumOffsetMs = 24 * 60 * 60 * 1000;
-const offsetSchema = nonNegativeIntegerSchema.max(maximumOffsetMs);
-
-export const videoSourceSchema = z.discriminatedUnion("provider", [
-  z.object({ provider: z.literal("youtube"), videoId: z.string().regex(/^[A-Za-z0-9_-]{11}$/u), startAtMs: offsetSchema }).strict(),
-  z.object({ provider: z.literal("twitch-clip"), clipSlug: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/u) }).strict(),
-  z.object({ provider: z.literal("twitch-vod"), videoId: z.string().regex(/^\d{1,20}$/u), startAtMs: offsetSchema }).strict(),
-  z.object({ provider: z.literal("direct"), url: z.string().max(2048).refine(isSafeDirectVideoUrl) }).strict()
-]) satisfies z.ZodType<VideoSource>;
 
 export const videoTitleSchema = z.string().trim().min(1).max(200);
 export const videoRequesterSchema = z.string().trim().min(1).max(64);
@@ -39,7 +32,7 @@ export const videosProjectionSchema = z.discriminatedUnion("status", [
     title: videoTitleSchema.nullable(),
     requester: videoRequesterSchema.nullable(),
     delivery: z.discriminatedUnion("mode", [
-      z.object({ mode: z.literal("mirror"), obsAudio: z.boolean() }).strict(),
+      z.object({ mode: z.literal("mirror"), paused: z.boolean(), obsAudio: z.boolean() }).strict(),
       z.object({ mode: z.literal("player"), source: videoSourceSchema, clock: videoPlaybackClockSchema, obsAudio: z.boolean() }).strict()
     ])
   }).strict(),

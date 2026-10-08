@@ -82,13 +82,25 @@ Map a reward to a purpose on the Videos page. A redemption's text is used as the
 
 Videos has live and test module outputs and also appears on unified browser sources. Create a key on the Videos page or in Browser sources, and add the copied URL to OBS as a browser source. Treat the URL as a secret: it carries the overlay key.
 
-With **OBS audio** on, the browser source plays the video's sound so OBS can capture it (tick **Control audio via OBS** on the source). With it off, the browser source is muted. Playing sound on other chosen audio devices arrives with the desktop mirror.
+With **OBS audio** on, the browser source plays the video's sound so OBS can capture it (tick **Control audio via OBS** on the source). With it off, the browser source is muted.
+
+While the desktop app runs, it can also play the sound on chosen audio devices. Tick the devices on the Videos page. Each device has an optional delay (0 to 500 ms) to line it up with the others. To line up OBS instead, use the source's **Sync Offset** in OBS Advanced Audio Properties.
 
 ## Playback
 
-A browser source shows nothing while idle. While a video plays, it shows the player with the title and requester underneath. Until the desktop mirror lands, each browser source runs its own player:
+A browser source shows nothing while idle. While a video plays, it shows the video with the title and requester underneath.
+
+### Desktop mirror
+
+While the desktop app runs, it plays each video once in a hidden player and mirrors the picture and sound to the desktop overlay and to every browser source over a local-only connection. All outputs show the same frame, so pause, resume and seek apply everywhere at once, including Twitch. The desktop overlay shows the picture muted; sound comes from OBS and the chosen devices. The Videos page shows whether the mirror is active. Expect about 100 to 150 ms of delay.
+
+If a browser source loses the mirror, it reconnects on its own. Stopping or skipping a video ends its sound on every output.
+
+### Without the desktop app
+
+Each browser source runs its own player:
 
 - **YouTube** and **direct files** follow the shared clock. Pause, resume and seek apply to every output, and an output more than 750 ms off the clock jumps back to it.
-- **Twitch** plays from its start until the queue ends it. Pause and seek for Twitch need the desktop player.
+- **Twitch** plays from its start until the queue ends it. Pause and seek for Twitch need the desktop app.
 
 A video whose player does not load within 15 seconds is marked failed and the run moves on. Invalid data never reaches the screen: the browser source stays transparent and the failure is logged.

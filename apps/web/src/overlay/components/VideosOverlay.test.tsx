@@ -33,7 +33,7 @@ describe("VideosOverlay", () => {
   it("renders nothing while idle or mirrored", () => {
     const { container, rerender } = render(<VideosOverlay projection={{ status: "idle" }} />);
     expect(container).toBeEmptyDOMElement();
-    rerender(<VideosOverlay projection={{ status: "active", itemId: "item-1", title: null, requester: null, delivery: { mode: "mirror", obsAudio: true } }} />);
+    rerender(<VideosOverlay projection={{ status: "active", itemId: "item-1", title: null, requester: null, delivery: { mode: "mirror", paused: false, obsAudio: true } }} />);
     expect(container).toBeEmptyDOMElement();
   });
 
@@ -65,6 +65,15 @@ describe("VideosOverlay", () => {
     fireEvent.load(frame);
     expect(events.mock.calls).toEqual([[{ instructionId: "video:item-1", status: "started" }]]);
     expect(screen.getByText("Requested by Viewer")).toBeVisible();
+  });
+
+  it("silences the fallback players under the mute policy even with OBS audio on", () => {
+    const { rerender } = render(<VideosOverlay muted projection={active(clip, { obsAudio: true })} />);
+    expect(new URL(screen.getByTitle("Video player").getAttribute("src")!).searchParams.get("muted")).toBe("true");
+    rerender(<VideosOverlay muted projection={active(direct, { obsAudio: true })} />);
+    expect(screen.getByTestId<HTMLVideoElement>("video-overlay-direct").muted).toBe(true);
+    rerender(<VideosOverlay projection={active(direct, { obsAudio: true })} />);
+    expect(screen.getByTestId<HTMLVideoElement>("video-overlay-direct").muted).toBe(false);
   });
 
   it("follows the shared clock for direct files and reports start and end", () => {

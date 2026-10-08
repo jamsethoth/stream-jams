@@ -8,7 +8,7 @@ import { VideoQueueCommandError } from "../../modules/videos/video-queue-service
 import type { VideoRequestContext, VideoRequestResult } from "../../modules/videos/video-request-intake.js";
 import { registerVideoRoutes, type VideoRouteService } from "./videos.js";
 
-const emptyResponse: VideoQueueResponse = { purpose: "live", revision: 3, queuePaused: false, runRemaining: 0, gapEndsAtEpochMs: null, serverTimeEpochMs: 0, items: [], current: null };
+const emptyResponse: VideoQueueResponse = { purpose: "live", revision: 3, queuePaused: false, runRemaining: 0, gapEndsAtEpochMs: null, serverTimeEpochMs: 0, mirror: { available: false }, items: [], current: null };
 
 type Scope = "videos:read" | "videos:submit" | "videos:control";
 

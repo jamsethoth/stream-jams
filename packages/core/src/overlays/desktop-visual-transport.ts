@@ -87,7 +87,7 @@ export type PrivateDesktopVisualBatch = z.infer<typeof privateDesktopVisualBatch
 export type DesktopVisualBatch = z.infer<typeof desktopVisualBatchSchema>;
 export type DesktopVisualAsset = z.infer<typeof desktopVisualAssetSchema>;
 const moduleSync = <T extends z.ZodType<{ assetId: string }>, A extends z.ZodType<{ ref: string }>>(assetSchema: T, artworkSchema: A, mime: (asset: z.infer<T>) => string, version: (asset: z.infer<T>) => string, snapshot: (asset: z.infer<T>) => MediaVersionSnapshot) => z.object({
-  moduleId: z.enum(["timers", "music"]),
+  moduleId: z.enum(["timers", "music", "videos"]),
   revision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   presentation: overlayModulePresentationSchema.nullable(),
   assets: z.array(assetSchema).max(64),
@@ -95,9 +95,13 @@ const moduleSync = <T extends z.ZodType<{ assetId: string }>, A extends z.ZodTyp
 }).strict().superRefine((sync, context) => {
   const fail = (message: string) => context.addIssue({ code: "custom", message });
   if (sync.presentation?.kind === "videos") {
-    // The desktop overlay shows the primary player directly, never a second player.
-    fail("Videos presentation is browser-source only");
+    // The desktop overlay only receives the desktop primary player's mirror, never a second player.
+    const videos = sync.presentation.videos;
+    if (sync.moduleId !== "videos") fail("Videos presentation requires the Videos module");
+    if (videos.status === "active" && videos.delivery.mode !== "mirror") fail("The desktop overlay shows only the Videos mirror");
+    if (sync.assets.length > 0 || sync.artwork != null) fail("Videos presentation carries no media grants");
   } else if (sync.presentation !== null) {
+    if (sync.moduleId === "videos") fail("The Videos module requires a Videos presentation");
     if (sync.presentation.kind === "timer-stack" && sync.moduleId !== "timers") fail("Timer presentation requires the Timers module");
     if (sync.presentation.kind === "music-widget" && sync.moduleId !== "music") fail("Music presentation requires the Music module");
     const targetProfileId = sync.presentation.kind === "timer-stack" ? sync.presentation.stack.targetProfileId : sync.presentation.widget.targetProfileId;
@@ -133,7 +137,7 @@ export const desktopModuleSyncSchema = moduleSync(trustedVisualMediaAssetSchema,
 export const privateDesktopModuleSyncSchema = moduleSync(privateVisualMediaAssetSchema, privateDesktopMusicArtworkSchema, asset => asset.reference.snapshot.mimeType, asset => asset.reference.snapshot.version, asset => asset.reference.snapshot);
 export type PrivateDesktopModuleSync = z.infer<typeof privateDesktopModuleSyncSchema>;
 export interface DesktopModuleSync {
-  readonly moduleId: "timers" | "music";
+  readonly moduleId: "timers" | "music" | "videos";
   readonly revision: number;
   readonly presentation: OverlayModulePresentation | null;
   readonly assets: readonly DesktopVisualAsset[];

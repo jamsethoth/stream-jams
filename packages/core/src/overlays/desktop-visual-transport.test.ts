@@ -111,8 +111,13 @@ it("retains two timer versions of one asset and rejects missing versions in the 
   expect(desktopModuleSyncSchema.safeParse({ ...sync, assets: [first, first] }).success).toBe(false);
 });
 
-it("rejects browser-source-only Videos presentations in desktop sync", () => {
-  expect(desktopModuleSyncSchema.safeParse({
-    moduleId: "videos", revision: 1, presentation: { kind: "videos", videos: { status: "idle" } }, assets: []
-  }).success).toBe(false);
+it("accepts only the Videos mirror in desktop sync, never a second player", () => {
+  const active = (delivery: unknown) => ({ moduleId: "videos", revision: 1, assets: [],
+    presentation: { kind: "videos", videos: { status: "active", itemId: "video:1", title: null, requester: null, delivery } } });
+  expect(desktopModuleSyncSchema.safeParse({ moduleId: "videos", revision: 1, presentation: { kind: "videos", videos: { status: "idle" } }, assets: [] }).success).toBe(true);
+  expect(desktopModuleSyncSchema.safeParse(active({ mode: "mirror", paused: false, obsAudio: true })).success).toBe(true);
+  expect(desktopModuleSyncSchema.safeParse(active({ mode: "player", obsAudio: true, source: { provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 0 },
+    clock: { state: "playing", positionMs: 0, atEpochMs: 1 } })).success).toBe(false);
+  expect(desktopModuleSyncSchema.safeParse({ ...active({ mode: "mirror", paused: false, obsAudio: true }), moduleId: "music" }).success).toBe(false);
+  expect(desktopModuleSyncSchema.safeParse({ moduleId: "videos", revision: 1, presentation: null, assets: [] }).success).toBe(true);
 });

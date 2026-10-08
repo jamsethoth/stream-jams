@@ -597,6 +597,7 @@ function createGateway(options: {
   readonly onPlaybackReport?: ConstructorParameters<typeof OverlayGateway>[0]["onPlaybackReport"];
   readonly clock?: () => Date;
   readonly initialPlaybackMuted?: boolean;
+  readonly onVideoMirrorSignal?: ConstructorParameters<typeof OverlayGateway>[0]["onVideoMirrorSignal"];
 }): OverlayGateway {
   let clientNumber = 0;
   return new OverlayGateway({
@@ -609,7 +610,8 @@ function createGateway(options: {
     ...(options.initialPlaybackMuted === undefined ? {} : { initialPlaybackMuted: options.initialPlaybackMuted }),
     ...(options.clock === undefined ? {} : { clock: options.clock }),
     ...(options.onClientDisconnected === undefined ? {} : { onClientDisconnected: options.onClientDisconnected }),
-    ...(options.onPlaybackReport === undefined ? {} : { onPlaybackReport: options.onPlaybackReport })
+    ...(options.onPlaybackReport === undefined ? {} : { onPlaybackReport: options.onPlaybackReport }),
+    ...(options.onVideoMirrorSignal === undefined ? {} : { onVideoMirrorSignal: options.onVideoMirrorSignal })
   });
 }
 
@@ -733,4 +735,73 @@ it("reports failed mute delivery and bootstraps replacement clients with the sav
   expect(() => gateway.setModuleMutes(moduleMutes)).toThrow("could not be delivered");
   const replacement = new RecordingSocket(); await gateway.registerClient(replacement, route);
   expect(replacement.messages.at(-1)).toEqual({ type: "overlay.playback.audio-state", muted: false, moduleMutes });
+});
+
+describe("Videos mirror signaling", () => {
+  const videosRoute = { overlayId: "default", moduleId: "videos", purpose: "live", scope: "module", rawKey: "ovl_videosLive" } as const;
+  const alertsRoute = { overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", rawKey: "ovl_alertsLive" } as const;
+  const unifiedRoute = { overlayId: "default", moduleId: null, purpose: "test", scope: "unified", rawKey: "ovl_unifiedTest" } as const;
+  const hello = (connection = 1) => JSON.stringify({ type: "videos.mirror.signal", signal: { type: "hello", connection } });
+
+  it("relays validated signals only from outputs whose overlay key covers Videos", async () => {
+    const onVideoMirrorSignal = vi.fn();
+    const gateway = createGateway({ allowed: [videosRoute, alertsRoute, unifiedRoute], onVideoMirrorSignal });
+    await gateway.registerClient(new RecordingSocket(), videosRoute);
+    await gateway.registerClient(new RecordingSocket(), alertsRoute);
+    await gateway.registerClient(new RecordingSocket(), unifiedRoute);
+    gateway.handleClientMessage("client-1", hello());
+    gateway.handleClientMessage("client-2", hello());
+    gateway.handleClientMessage("client-3", hello(4));
+    expect(onVideoMirrorSignal.mock.calls).toEqual([
+      [expect.objectContaining({ id: "client-1", moduleId: "videos", purpose: "live" }), { type: "hello", connection: 1 }],
+      [expect.objectContaining({ id: "client-3", scope: "unified", purpose: "test" }), { type: "hello", connection: 4 }]
+    ]);
+    // The overlay key never reaches the relay.
+    expect(JSON.stringify(onVideoMirrorSignal.mock.calls)).not.toContain("ovl_");
+  });
+
+  it("ignores unregistered clients, malformed, oversized and public-network signals", async () => {
+    const onVideoMirrorSignal = vi.fn();
+    const gateway = createGateway({ allowed: [videosRoute], onVideoMirrorSignal });
+    gateway.handleClientMessage("client-1", hello());
+    await gateway.registerClient(new RecordingSocket(), videosRoute);
+    for (const signal of [
+      { type: "hello" },
+      { type: "hello", connection: 0 },
+      { type: "offer", connection: 1, sdp: "v=0" },
+      { type: "answer", connection: 1, sdp: "x".repeat(40_000) },
+      { type: "ice", connection: 1, candidate: { candidate: "candidate:1 1 udp 1 203.0.113.4 5000 typ srflx" } },
+      { type: "ice", connection: 1, candidate: { candidate: "candidate:1 1 udp 1 198.51.100.7 5000 typ host" } }
+    ]) gateway.handleClientMessage("client-1", JSON.stringify({ type: "videos.mirror.signal", signal }));
+    gateway.handleClientMessage("client-1", "{not json videos.mirror.signal");
+    expect(onVideoMirrorSignal).not.toHaveBeenCalled();
+    gateway.handleClientMessage("client-1", JSON.stringify({ type: "videos.mirror.signal", signal: { type: "ice", connection: 1, candidate: { candidate: "candidate:1 1 udp 2122260223 127.0.0.1 51000 typ host generation 0", sdpMid: "0", sdpMLineIndex: 0 } } }));
+    expect(onVideoMirrorSignal).toHaveBeenCalledOnce();
+  });
+
+  it("bounds each output's signaling rate and resets the budget per window", async () => {
+    let now = 1_000_000;
+    const onVideoMirrorSignal = vi.fn();
+    const gateway = createGateway({ allowed: [videosRoute], onVideoMirrorSignal, clock: () => new Date(now) });
+    await gateway.registerClient(new RecordingSocket(), videosRoute);
+    for (let index = 0; index < 250; index += 1) gateway.handleClientMessage("client-1", hello(index + 1));
+    expect(onVideoMirrorSignal).toHaveBeenCalledTimes(200);
+    now += 10_000;
+    gateway.handleClientMessage("client-1", hello(999));
+    expect(onVideoMirrorSignal).toHaveBeenCalledTimes(201);
+  });
+
+  it("sends validated player signals only to registered Videos outputs", async () => {
+    const gateway = createGateway({ allowed: [videosRoute, alertsRoute], onVideoMirrorSignal: vi.fn() });
+    const videos = new RecordingSocket();
+    const alerts = new RecordingSocket();
+    await gateway.registerClient(videos, videosRoute);
+    await gateway.registerClient(alerts, alertsRoute);
+    expect(gateway.sendVideoMirrorSignal("client-1", { type: "offer", connection: 2, sdp: "v=0" })).toBe(true);
+    expect(videos.messages.at(-1)).toEqual({ type: "videos.mirror.signal", signal: { type: "offer", connection: 2, sdp: "v=0" } });
+    expect(gateway.sendVideoMirrorSignal("client-2", { type: "offer", connection: 2, sdp: "v=0" })).toBe(false);
+    expect(alerts.messages).not.toContainEqual(expect.objectContaining({ type: "videos.mirror.signal" }));
+    expect(gateway.sendVideoMirrorSignal("client-1", { type: "offer", connection: -1, sdp: "v=0" })).toBe(false);
+    expect(gateway.sendVideoMirrorSignal("missing", { type: "not-ready", connection: 1 })).toBe(false);
+  });
 });

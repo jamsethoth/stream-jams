@@ -2,6 +2,7 @@ import { z } from "zod";
 import { audioTransportCommandSchema, audioTransportResultSchema } from "@stream-jams/core";
 import { overlayWorkerMessageSchema, overlayWorkerResponseSchema } from "./overlay/overlay-ipc.js";
 import { desktopDiagnosticReportSchema } from "./desktop-diagnostics.js";
+import { videoWorkerEventSchema, videoWorkerMessageSchema } from "./videos/video-ipc.js";
 import { serializedExceptionSchema } from "@stream-jams/core";
 
 const envelope = { generation: z.number().int().positive(), requestId: z.uuid().nullable() };
@@ -12,6 +13,7 @@ const url = z.string().url().refine((value) => {
 });
 export const workerRequestSchema = z.discriminatedUnion("type", [
   overlayWorkerResponseSchema,
+  videoWorkerEventSchema,
   z.object({ ...envelope, requestId: z.uuid(), type: z.literal("audio-response"), result: audioTransportResultSchema.nullable() }).strict(),
   z.object({ ...envelope, requestId: z.uuid(), type: z.literal("start") }).strict(),
   z.object({ ...envelope, requestId: z.uuid(), type: z.literal("stop") }).strict(),
@@ -20,6 +22,7 @@ export const workerRequestSchema = z.discriminatedUnion("type", [
 ]);
 export const workerMessageSchema = z.discriminatedUnion("type", [
   ...overlayWorkerMessageSchema.options,
+  ...videoWorkerMessageSchema.options,
   z.object({ ...envelope, requestId: z.uuid(), type: z.literal("audio-request"), command: audioTransportCommandSchema }).strict(),
   z.object({ ...envelope, requestId: z.null(), type: z.literal("audio-lease") }).strict(),
   z.object({ ...envelope, type: z.literal("ready"), url, closeToTray: z.boolean(), muted: z.boolean() }).strict(),

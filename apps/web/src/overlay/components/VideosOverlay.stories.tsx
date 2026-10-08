@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
 import type { VideoSource, VideosProjection } from "@stream-jams/core";
+import type { VideoMirrorConnector, VideoMirrorPublisherSignal } from "@stream-jams/core/videos";
 import { VideosOverlay } from "./VideosOverlay.js";
 
 // Stories never contact providers: embedded players are swapped for a tiny local document,
@@ -71,5 +72,94 @@ export const InvalidDataStaysTransparent: Story = {
   args: { projection: active({ provider: "direct", url: "http://unsafe.example/clip.mp4" }) },
   play: async ({ canvasElement }) => {
     await expect(canvasElement.querySelector("[data-testid='video-overlay']")).toBeNull();
+  }
+};
+
+/*
+ * Desktop mirror receiver states. Stories stay offline: a local stand-in answers the
+ * signaling and its "peer" hands over a tiny canvas stream instead of a WebRTC connection.
+ */
+type MirrorBehaviour = "connecting" | "playing" | "unavailable";
+
+function storyMirror(behaviour: MirrorBehaviour): { connector: VideoMirrorConnector; createPeerConnection: (configuration: RTCConfiguration) => RTCPeerConnection } {
+  const listeners = new Set<(signal: VideoMirrorPublisherSignal) => void>();
+  const reply = (signal: VideoMirrorPublisherSignal) => window.setTimeout(() => { for (const listener of listeners) listener(signal); }, 50);
+  const connector: VideoMirrorConnector = {
+    send: signal => {
+      if (signal.type !== "hello" || behaviour === "connecting") return;
+      reply(behaviour === "playing" ? { type: "offer", connection: signal.connection, sdp: "story-offer" } : { type: "not-ready", connection: signal.connection });
+    },
+    subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }
+  };
+  const createPeerConnection = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 320; canvas.height = 180;
+    const context = canvas.getContext("2d");
+    if (context !== null) { context.fillStyle = "#1f6feb"; context.fillRect(0, 0, 320, 180); context.fillStyle = "#ffffff"; context.font = "24px sans-serif"; context.fillText("Desktop mirror", 70, 100); }
+    const stream = canvas.captureStream(5);
+    const peer = {
+      connectionState: "new" as RTCPeerConnectionState,
+      localDescription: { type: "answer", sdp: "story-answer" },
+      ontrack: null as ((event: { streams: MediaStream[] }) => void) | null,
+      onicecandidate: null,
+      onconnectionstatechange: null as (() => void) | null,
+      setRemoteDescription: async () => undefined,
+      createAnswer: async () => ({ type: "answer", sdp: "story-answer" }),
+      setLocalDescription: async () => {
+        window.setTimeout(() => {
+          peer.ontrack?.({ streams: [stream] });
+          peer.connectionState = "connected";
+          peer.onconnectionstatechange?.();
+        }, 50);
+      },
+      addIceCandidate: async () => undefined,
+      close: () => { for (const track of stream.getTracks()) track.stop(); }
+    };
+    return peer as unknown as RTCPeerConnection;
+  };
+  return { connector, createPeerConnection };
+}
+
+function mirrored(paused: boolean): VideosProjection {
+  return { status: "active", itemId: "story-mirror", title: "The comeback nobody expected", requester: "Friendly Streamer", delivery: { mode: "mirror", paused, obsAudio: true } };
+}
+
+const mirrorArgs = (behaviour: MirrorBehaviour, paused = false) => {
+  const { connector, createPeerConnection } = storyMirror(behaviour);
+  return { projection: mirrored(paused), mirror: connector, createMirrorPeerConnection: createPeerConnection, muted: true };
+};
+
+export const MirrorConnecting: Story = {
+  args: mirrorArgs("connecting"),
+  play: async ({ canvasElement }) => {
+    await expect(canvasElement.querySelector("[data-testid='video-overlay']")).toHaveAttribute("data-state", "connecting");
+    // Transparent until frames arrive: no picture and no caption.
+    await expect(canvasElement.querySelector(".video-overlay__frame")).not.toBeVisible();
+    await expect(within(canvasElement).queryByText("The comeback nobody expected")).toBeNull();
+  }
+};
+
+export const MirrorPlaying: Story = {
+  args: mirrorArgs("playing"),
+  play: async ({ canvasElement }) => {
+    await waitFor(() => expect(canvasElement.querySelector("[data-testid='video-overlay']")).toHaveAttribute("data-state", "playing"), { timeout: 4000 });
+    await expect(within(canvasElement).getByText("The comeback nobody expected")).toBeVisible();
+    await expect(canvasElement.querySelector("[data-testid='video-overlay-mirror']")).toBeVisible();
+  }
+};
+
+export const MirrorPaused: Story = {
+  args: mirrorArgs("playing", true),
+  play: async ({ canvasElement }) => {
+    await waitFor(() => expect(canvasElement.querySelector("[data-testid='video-overlay']")).toHaveAttribute("data-state", "paused"), { timeout: 4000 });
+    await expect(within(canvasElement).getByText("Requested by Friendly Streamer")).toBeVisible();
+  }
+};
+
+export const MirrorUnavailable: Story = {
+  args: mirrorArgs("unavailable"),
+  play: async ({ canvasElement }) => {
+    await waitFor(() => expect(canvasElement.querySelector("[data-testid='video-overlay']")).toHaveAttribute("data-state", "unavailable"), { timeout: 5000 });
+    await expect(canvasElement.querySelector(".video-overlay__frame")).not.toBeVisible();
   }
 };

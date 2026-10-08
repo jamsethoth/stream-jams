@@ -9,6 +9,10 @@ import type {
   OverlayTargetProfileId
 } from "@stream-jams/core";
 import { overlayPlaybackFailureSchema, type OverlayPlaybackFailure, type SerializedException } from "@stream-jams/core";
+import {
+  videoMirrorPublisherSignalSchema, videoMirrorReceiverSignalSchema, videoMirrorSignalMessageType,
+  type VideoMirrorPublisherSignal, type VideoMirrorReceiverSignal
+} from "@stream-jams/core/videos";
 
 export interface OverlayGatewaySocket {
   send(data: string): void;
@@ -83,12 +87,19 @@ export interface OverlayGatewayDependencies {
   readonly onPlaybackReport?: (report: OverlayGatewayPlaybackReport) => void;
   readonly initialPlaybackMuted?: boolean;
   readonly initialModuleMutes?: ModuleMuteState;
+  /** Mirror signaling from an output whose overlay key covers the Videos module. */
+  readonly onVideoMirrorSignal?: (client: OverlayGatewayClient, signal: VideoMirrorReceiverSignal) => void;
 }
 
 interface RegisteredOverlayGatewayClient extends OverlayGatewayClient {
   readonly socket: OverlayGatewaySocket;
   readonly sanitize: (text: string) => string;
 }
+
+/** Mirror signaling budget per output: a connection needs a handful of messages, so this only stops floods. */
+const videoSignalWindowMs = 10_000;
+const videoSignalMaximumPerWindow = 200;
+const videoSignalMaximumBytes = 40_000;
 
 type OverlayGatewayMessage =
   | { readonly type: "overlay.playback.prepare"; readonly instruction: OverlayInstruction }
@@ -121,7 +132,8 @@ type OverlayGatewayMessage =
       readonly type: "overlay.error";
       readonly code: string;
       readonly message: string;
-    };
+    }
+  | { readonly type: typeof videoMirrorSignalMessageType; readonly signal: VideoMirrorPublisherSignal };
 
 interface PlaybackPreparation {
   readonly pending: Map<string, (ready: boolean) => void>;
@@ -136,6 +148,8 @@ export class OverlayGateway {
   readonly #onClientDisconnected: (clientId: string) => void;
   readonly #onPlaybackReport: (report: OverlayGatewayPlaybackReport) => void;
   readonly #onTransportDiagnostic: (diagnostic: OverlayTransportDiagnostic) => void;
+  readonly #onVideoMirrorSignal: ((client: OverlayGatewayClient, signal: VideoMirrorReceiverSignal) => void) | undefined;
+  readonly #videoSignalBudgets = new Map<string, { windowStartedAt: number; count: number }>();
   readonly #clients = new Map<string, RegisteredOverlayGatewayClient>();
   readonly #recentClientsByOutput = new Map<string, OverlayGatewayClientState>();
   readonly #preparations = new Map<string, PlaybackPreparation>();
@@ -152,6 +166,7 @@ export class OverlayGateway {
     this.#onPlaybackReport = dependencies.onPlaybackReport ?? (() => undefined);
     this.#moduleMutes = dependencies.initialModuleMutes;
     this.#playbackMuted = dependencies.initialPlaybackMuted ?? false;
+    this.#onVideoMirrorSignal = dependencies.onVideoMirrorSignal;
   }
 
   get clients(): readonly OverlayGatewayClient[] {
@@ -243,6 +258,7 @@ export class OverlayGateway {
     if (close !== undefined) this.#onTransportDiagnostic({ clientId, operation: "close", exception: null,
       closeCode: close.code, closeReason: client.sanitize(close.reason), outcome: "disconnected" });
     this.#clients.delete(clientId);
+    this.#videoSignalBudgets.delete(clientId);
     for (const [instructionId, preparation] of this.#preparations) {
       preparation.pending.get(clientId)?.(false);
       preparation.eligible.delete(clientId);
@@ -366,6 +382,15 @@ export class OverlayGateway {
     catch (error) { this.#sendFailed(clientId, error); return false; }
   }
 
+  /** Sends a primary-player signal to one output; only outputs whose key covers Videos receive it. */
+  sendVideoMirrorSignal(clientId: string, candidate: VideoMirrorPublisherSignal): boolean {
+    const client = this.#clients.get(clientId);
+    if (client === undefined || !mayReceiveVideoMirror(client)) return false;
+    const signal = videoMirrorPublisherSignalSchema.safeParse(candidate);
+    if (!signal.success) return false;
+    return this.#send(client, { type: videoMirrorSignalMessageType, signal: signal.data });
+  }
+
   setModuleMutes(state: ModuleMuteState): void {
     this.#moduleMutes = moduleMuteStateSchema.parse(state);
     this.#playbackMuted = state.alerts && state["screen-effects"];
@@ -426,6 +451,14 @@ export class OverlayGateway {
       lastSeenAt: this.#clock().toISOString()
     });
 
+    if (rawMessage.length <= videoSignalMaximumBytes && rawMessage.includes(videoMirrorSignalMessageType)) {
+      try {
+        const candidate = JSON.parse(rawMessage) as { type?: unknown; signal?: unknown };
+        if (candidate.type === videoMirrorSignalMessageType) { this.#receiveVideoMirrorSignal(client, candidate.signal); return; }
+      }
+      // error-provenance: allow expected -- malformed input is ignored by report validation below
+      catch { /* invalid input */ }
+    }
     if (rawMessage.length <= 1000) {
       try {
         const candidate = JSON.parse(rawMessage) as { type?: unknown; instructionId?: unknown };
@@ -450,6 +483,22 @@ export class OverlayGateway {
       this.#onPlaybackReport(report);
     }
   }
+
+  #receiveVideoMirrorSignal(client: RegisteredOverlayGatewayClient, candidate: unknown): void {
+    if (this.#onVideoMirrorSignal === undefined || !mayReceiveVideoMirror(client)) return;
+    const now = this.#clock().getTime();
+    const budget = this.#videoSignalBudgets.get(client.id);
+    if (budget === undefined || now - budget.windowStartedAt >= videoSignalWindowMs) this.#videoSignalBudgets.set(client.id, { windowStartedAt: now, count: 1 });
+    else if (++budget.count > videoSignalMaximumPerWindow) return;
+    const signal = videoMirrorReceiverSignalSchema.safeParse(candidate);
+    if (!signal.success) return;
+    this.#onVideoMirrorSignal(toPublicClient(client), signal.data);
+  }
+}
+
+function mayReceiveVideoMirror(client: OverlayGatewayClient): boolean {
+  // Only keys scoped to the Videos module, or unified keys that render it, may join the mirror.
+  return client.scope === "unified" ? client.moduleId === null : client.moduleId === "videos";
 }
 
 function clientMatchesInstruction(client: OverlayGatewayClient, instruction: OverlayInstruction): boolean {

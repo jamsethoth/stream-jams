@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { serializeException, type VideoPlaybackClock, type VideoSource, type VideosProjection } from "@stream-jams/core";
-import { buildVideoPlayerUrl, videoClockPositionMs, videoInstructionPrefix, videoProviderOrigin, videosProjectionSchema } from "@stream-jams/core/videos";
+import { buildVideoPlayerUrl, parseYouTubeMessage, videoClockPositionMs, videoInstructionPrefix, videoProviderOrigin, videosProjectionSchema } from "@stream-jams/core/videos";
 import type { OverlayPlaybackEvent } from "./OverlaySurface.js";
+import { startVideoMirrorReceiver, type VideoMirrorConnector, type VideoMirrorReceiverState } from "@stream-jams/core/videos";
+
+export { parseYouTubeMessage } from "@stream-jams/core/videos";
 import "../overlay.css";
 
 export interface VideosOverlayProps {
@@ -12,6 +15,14 @@ export interface VideosOverlayProps {
   /** Iframes expose no load errors, so a player that has not loaded by then is reported failed. */
   readonly playerLoadTimeoutMs?: number | undefined;
   readonly now?: (() => number) | undefined;
+  /** Signaling to the desktop primary player; without it a mirror projection renders nothing. */
+  readonly mirror?: VideoMirrorConnector | undefined;
+  /** Global mute policy: the mirror's sound is silenced while visuals continue. */
+  readonly muted?: boolean | undefined;
+  /** The desktop overlay shows the mirror's picture only; its sound goes to devices from the desktop app. */
+  readonly mirrorAudio?: boolean | undefined;
+  /** Tests and stories substitute a local peer connection; production uses the browser's RTCPeerConnection. */
+  readonly createMirrorPeerConnection?: ((configuration: RTCConfiguration) => RTCPeerConnection) | undefined;
 }
 
 const passThrough = (playerUrl: string) => playerUrl;
@@ -21,7 +32,8 @@ const defaultPlayerLoadTimeoutMs = 12_000;
 export const videoDriftToleranceMs = 750;
 const driftCheckIntervalMs = 1_000;
 
-export function VideosOverlay({ projection, onPlaybackEvent, resolvePlayerUrl = passThrough, playerLoadTimeoutMs = defaultPlayerLoadTimeoutMs, now = Date.now }: VideosOverlayProps) {
+export function VideosOverlay({ projection, onPlaybackEvent, resolvePlayerUrl = passThrough, playerLoadTimeoutMs = defaultPlayerLoadTimeoutMs, now = Date.now,
+  mirror, muted = false, mirrorAudio = true, createMirrorPeerConnection }: VideosOverlayProps) {
   const parsed = videosProjectionSchema.safeParse(projection);
   const itemId = projection.status === "active" && typeof projection.itemId === "string" ? projection.itemId : null;
   const invalid = !parsed.success;
@@ -46,13 +58,31 @@ export function VideosOverlay({ projection, onPlaybackEvent, resolvePlayerUrl = 
       </div>
     );
   }
-  // Mirror delivery shows the desktop primary player's stream; that receiver arrives with the desktop player host.
-  if (videos.delivery.mode === "mirror") return null;
+  const context = videos.title === null && videos.requester === null ? null : (
+    <div className="video-overlay__context">
+      {videos.title === null ? null : <span className="video-overlay__title">{videos.title}</span>}
+      {videos.requester === null ? null : <span className="video-overlay__requester">Requested by {videos.requester}</span>}
+    </div>
+  );
+  // Mirror delivery shows the desktop primary player's stream; it never plays the item here.
+  if (videos.delivery.mode === "mirror") {
+    if (mirror === undefined) return null;
+    return (
+      <MirrorReceiver
+        connector={mirror}
+        context={context}
+        createPeerConnection={createMirrorPeerConnection}
+        muted={muted || !mirrorAudio || !videos.delivery.obsAudio}
+        paused={videos.delivery.paused}
+      />
+    );
+  }
   const { source, clock, obsAudio } = videos.delivery;
+  const silent = muted || !obsAudio;
   const playerUrl = source.provider === "direct" ? source.url : buildVideoPlayerUrl(source, {
     parentHost: window.location.hostname,
     playerOrigin: window.location.origin,
-    muted: !obsAudio
+    muted: silent
   });
   return (
     <div className="video-overlay" data-provider={source.provider} data-testid="video-overlay">
@@ -61,18 +91,72 @@ export function VideosOverlay({ projection, onPlaybackEvent, resolvePlayerUrl = 
         itemId={videos.itemId}
         key={videos.itemId}
         loadTimeoutMs={playerLoadTimeoutMs}
-        muted={!obsAudio}
+        muted={silent}
         now={now}
         onPlaybackEvent={onPlaybackEvent}
         playerUrl={resolvePlayerUrl(playerUrl, source)}
         source={source}
       />
-      {videos.title === null && videos.requester === null ? null : (
-        <div className="video-overlay__context">
-          {videos.title === null ? null : <span className="video-overlay__title">{videos.title}</span>}
-          {videos.requester === null ? null : <span className="video-overlay__requester">Requested by {videos.requester}</span>}
-        </div>
-      )}
+      {context}
+    </div>
+  );
+}
+
+interface MirrorReceiverProps {
+  readonly connector: VideoMirrorConnector;
+  readonly context: ReactNode;
+  readonly muted: boolean;
+  readonly paused: boolean;
+  readonly createPeerConnection: VideosOverlayProps["createMirrorPeerConnection"];
+}
+
+/**
+ * Shows the desktop primary player's stream. Stays transparent until frames arrive and
+ * whenever the mirror is unavailable; reconnects on its own and releases the connection on unmount.
+ */
+function MirrorReceiver({ connector, context, muted, paused, createPeerConnection }: MirrorReceiverProps) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [state, setState] = useState<VideoMirrorReceiverState>("connecting");
+  const mutedRef = useRef(muted);
+  useEffect(() => {
+    mutedRef.current = muted;
+    if (videoRef.current !== null) videoRef.current.muted = muted;
+  }, [muted]);
+  useEffect(() => {
+    const receiver = startVideoMirrorReceiver({
+      connector,
+      createPeerConnection,
+      onState: setState,
+      onStream: stream => {
+        const video = videoRef.current;
+        if (video === null || video.srcObject === stream) return;
+        video.srcObject = stream;
+        if (stream === null) return;
+        video.muted = mutedRef.current;
+        // A browser that refuses autoplay with sound still shows the picture.
+        void video.play().catch(
+          // error-provenance: allow expected -- autoplay with sound was refused; show the picture muted instead
+          () => {
+            video.muted = true;
+            return video.play().catch(
+              // error-provenance: allow expected -- the overlay fails closed and stays transparent if even muted playback is refused
+              () => undefined);
+          });
+      }
+    });
+    return () => {
+      receiver.stop();
+      const video = videoRef.current;
+      if (video !== null) { video.pause(); video.srcObject = null; }
+    };
+  }, [connector, createPeerConnection]);
+  const shown = state === "playing";
+  return (
+    <div className="video-overlay" data-delivery="mirror" data-state={shown && paused ? "paused" : state} data-testid="video-overlay">
+      <div className="video-overlay__frame" data-state={shown ? "playing" : "loading"} hidden={!shown}>
+        <video autoPlay className="video-overlay__player" data-testid="video-overlay-mirror" muted={muted} playsInline ref={videoRef} />
+      </div>
+      {shown ? context : null}
     </div>
   );
 }
@@ -232,23 +316,6 @@ function EmbeddedPlayer({ clock, now, playerUrl, reportRef, source }: PlayerFram
       title="Video player"
     />
   );
-}
-
-/** Reads the fields Stream Jams uses from a YouTube iframe API message; anything else is ignored. */
-export function parseYouTubeMessage(data: string): { readonly playerState: number | null; readonly currentTime: number | null } | null {
-  let parsed: unknown;
-  try { parsed = JSON.parse(data); }
-  // error-provenance: allow expected -- unrelated or malformed provider messages are ignored by design
-  catch { return null; }
-  if (typeof parsed !== "object" || parsed === null) return null;
-  const message = parsed as { readonly event?: unknown; readonly info?: unknown };
-  if (message.event === "onStateChange" && typeof message.info === "number") return { playerState: message.info, currentTime: null };
-  if (message.event !== "infoDelivery" || typeof message.info !== "object" || message.info === null) return null;
-  const info = message.info as { readonly playerState?: unknown; readonly currentTime?: unknown };
-  return {
-    playerState: typeof info.playerState === "number" ? info.playerState : null,
-    currentTime: typeof info.currentTime === "number" && Number.isFinite(info.currentTime) ? info.currentTime : null
-  };
 }
 
 function reportFailure(onPlaybackEvent: VideosOverlayProps["onPlaybackEvent"], itemId: string, message: string, cause: unknown): void {

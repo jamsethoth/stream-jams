@@ -26,7 +26,8 @@ describe("VideosPage", () => {
     expect(screen.getByRole("checkbox", { name: /Let Streamer.bot start videos automatically/u })).toBeChecked();
     expect(within(screen.getByRole("list", { name: "Allowed hosts" })).getByText("videos.example.com")).toBeVisible();
     expect(await within(screen.getByRole("list", { name: "Mapped rewards" })).findByText("Play my video")).toBeVisible();
-    expect(screen.getByRole("note")).toHaveTextContent("the desktop mirror arrives with the desktop player");
+    expect(await screen.findByText(/the desktop app is playing videos/u)).toBeVisible();
+    expect(screen.getByLabelText("Stream mix delay (ms)")).toHaveValue(120);
     expect(await screen.findByRole("article", { name: "Cat plays keyboard" })).toBeVisible();
   });
 
@@ -52,10 +53,42 @@ describe("VideosPage", () => {
     await user.click(screen.getByRole("button", { name: "Save Videos settings" }));
     expect(save).toHaveBeenCalledWith(true, {
       maxLengthSeconds: 300, gapSeconds: 3, allowedDirectHosts: ["videos.example.com", "cdn.example.org"], obsAudio: false,
-      audioDeviceIds: ["stream", "private"], streamerBotAutoplay: false,
+      audioDeviceIds: ["stream", "private"], audioDeviceDelaysMs: { stream: 120 }, streamerBotAutoplay: false,
       rewardMappings: [{ rewardId: "reward-video", purpose: "live" }, { rewardId: "reward-test", purpose: "test" }]
     });
     expect(await screen.findByText("Videos settings saved. They apply to later requests and runs.")).toBeVisible();
+  });
+
+  it("edits a per-output audio delay next to each selected output", async () => {
+    const user = userEvent.setup();
+    const api = createStaticVideosApi(queuedVideos());
+    const save = vi.spyOn(api, "saveModuleConfig");
+    renderManagement(<VideosPage api={api} audioApi={createStoryAudioApi()} managementApi={managementApi()} />);
+    const delay = await screen.findByLabelText("Stream mix delay (ms)");
+    expect(screen.queryByLabelText("Private headphones delay (ms)")).toBeNull();
+    await user.clear(delay); await user.type(delay, "501");
+    await user.click(screen.getByRole("button", { name: "Save Videos settings" }));
+    expect(delay).toHaveAccessibleDescription(expect.stringContaining("Enter whole milliseconds from 0 to 500."));
+    expect(save).not.toHaveBeenCalled();
+    await user.clear(delay); await user.type(delay, "2.5");
+    await user.click(screen.getByRole("button", { name: "Save Videos settings" }));
+    expect(save).not.toHaveBeenCalled();
+    await user.clear(delay); await user.type(delay, "250");
+    await user.click(screen.getByRole("checkbox", { name: "Private headphones" }));
+    await user.type(screen.getByLabelText("Private headphones delay (ms)"), "0");
+    await user.click(screen.getByRole("button", { name: "Save Videos settings" }));
+    expect(save).toHaveBeenLastCalledWith(true, expect.objectContaining({ audioDeviceIds: ["stream", "private"], audioDeviceDelaysMs: { stream: 250 } }));
+    // Removing an output drops its delay.
+    await user.click(screen.getByRole("checkbox", { name: "Stream mix" }));
+    expect(screen.queryByLabelText("Stream mix delay (ms)")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Save Videos settings" }));
+    expect(save).toHaveBeenLastCalledWith(true, expect.objectContaining({ audioDeviceIds: ["private"], audioDeviceDelaysMs: {} }));
+  });
+
+  it("says when the desktop app is not running so browser sources play on their own", async () => {
+    const api = createStaticVideosApi({ ...queuedVideos(), mirror: { available: false } });
+    renderManagement(<VideosPage api={api} audioApi={createStoryAudioApi()} managementApi={managementApi()} />);
+    expect(await screen.findByText(/desktop app not running/u)).toBeVisible();
   });
 
   it("rejects invalid hosts and shows a server save failure", async () => {

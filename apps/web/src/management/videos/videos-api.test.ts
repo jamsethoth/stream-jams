@@ -14,7 +14,7 @@ function createFetch(handler: (url: string, init: RequestInit | undefined) => Re
   });
 }
 
-const config = { maxLengthSeconds: 120, gapSeconds: 3, allowedDirectHosts: [], obsAudio: true, audioDeviceIds: [], streamerBotAutoplay: true, rewardMappings: [] };
+const config = { maxLengthSeconds: 120, gapSeconds: 3, allowedDirectHosts: [], obsAudio: true, audioDeviceIds: [], audioDeviceDelaysMs: {}, streamerBotAutoplay: true, rewardMappings: [] };
 
 describe("createHttpVideosApi", () => {
   it("attributes Operator submissions and sends guarded commands", async () => {

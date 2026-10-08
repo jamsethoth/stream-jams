@@ -28,6 +28,7 @@ export function OverlayApp() {
   const [moduleMutes, setModuleMutes] = useState<import("@stream-jams/core").ModuleMuteState | undefined>();
   const [muted, setMuted] = useState<boolean | null>(null);
   const connectionRef = useRef<OverlayClientConnection | null>(null);
+  const [videoMirror, setVideoMirror] = useState<OverlayClientConnection["videoMirror"] | undefined>();
   const compositionReceivedRef = useRef(false);
   const bootstrapFailedRef = useRef(false);
   const pendingMutationsRef = useRef<OverlayMutation[]>([]);
@@ -109,10 +110,12 @@ export function OverlayApp() {
       }
     });
     connectionRef.current = connection;
+    setVideoMirror(() => connection.videoMirror);
 
     return () => {
       connection.close();
       connectionRef.current = null;
+      setVideoMirror(undefined);
       compositionReceivedRef.current = false;
       bootstrapFailedRef.current = false;
       pendingMutationsRef.current = [];
@@ -163,6 +166,7 @@ export function OverlayApp() {
       onPlaybackEvent={onPlaybackEvent}
       resolveAssetUrl={resolveOverlayAssetUrl}
       resolveMusicAsset={resolveMusicAsset}
+      videoMirror={videoMirror}
     />
   );
 }

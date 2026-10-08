@@ -38,14 +38,14 @@
 
 ## 5. Primary Player, Mirror And Outputs
 
-- [ ] 5.1 Add the desktop player host: a hidden sandboxed window per purpose, a navigation lock, and a private transport for commands and state reports.
-- [ ] 5.2 Add the Videos player page with YouTube `postMessage` control, a direct-file `<video>` element and Twitch control (frame control or play and stop), all feature-detected.
-- [ ] 5.3 Add capture and a WebRTC publisher, plus signaling relay over the overlay WebSocket. Signaling is authorized by overlay key, scoped to `videos`, and uses loopback ICE only.
-- [ ] 5.4 Add mirror receivers for the desktop overlay layer and module browser sources, rendered transparent and fail-closed.
-- [ ] 5.5 Add audio fan-out: OBS audio on the browser source, plus per-device `<audio>` elements with `setSinkId`, honoring mute policy and an optional per-device delay.
+- [x] 5.1 Add the desktop player host: a hidden sandboxed window per purpose, a navigation lock, and a private transport for commands and state reports.
+- [x] 5.2 Add the Videos player page with YouTube `postMessage` control, a direct-file `<video>` element and Twitch control (frame control or play and stop), all feature-detected.
+- [x] 5.3 Add capture and a WebRTC publisher, plus signaling relay over the overlay WebSocket. Signaling is authorized by overlay key, scoped to `videos`, and uses loopback ICE only.
+- [x] 5.4 Add mirror receivers for the desktop overlay layer and module browser sources, rendered transparent and fail-closed.
+- [x] 5.5 Add audio fan-out: OBS audio on the browser source, plus per-device output through a separate receiver with one `AudioContext` `sinkId` per device (per the feasibility decision), honoring mute policy and an optional per-device delay.
 - [x] 5.6 Add the fallback player for browser sources when the desktop app is absent, with server-clock drift correction.
-- [ ] 5.7 Add Storybook stories for receiver states (connecting, playing, paused, unavailable) and fallback provider players, using tiny local assets.
-- [ ] 5.8 Add Electron and Playwright coverage for the mirror path using a local test video; a desktop test config where needed.
+- [x] 5.7 Add Storybook stories for receiver states (connecting, playing, paused, unavailable) and fallback provider players, using tiny local assets.
+- [x] 5.8 Add Electron and Playwright coverage for the mirror path using a local test video; a desktop test config where needed.
 
 ## 6. Management And Operator UI
 
