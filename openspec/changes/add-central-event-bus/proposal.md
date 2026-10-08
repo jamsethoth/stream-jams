@@ -36,7 +36,7 @@ Alert and effect admission also depends on in-memory dedupe and an in-memory han
 
 ## Non-Goals
 
-- Persisting admitted-but-unplayed Alert and Screen Effects occurrences across restart. The bus guarantees no accepted event is lost before admission; durable module playback queues are tracked separately (BL-058).
+- Persisting admitted-but-unplayed Alert and Screen Effects occurrences across restart. The bus guarantees no accepted event is lost before admission; durable module playback queues are tracked separately (BL-066).
 - New event providers (BL-021), money values (BL-020), LAN or non-local sources (BL-023).
 - Several active registrations of the same provider kind (for example two Streamer.bot instances).
 - Operator event review and replay console (BL-038).

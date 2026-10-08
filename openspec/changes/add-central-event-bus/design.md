@@ -25,7 +25,7 @@ Current intake (checked against `main` at 6f3a69c):
 
 **Non-Goals**
 
-- Durable module playback queues (BL-058), new providers, money values, LAN sources, several registrations of one provider kind, operator replay console. See the proposal.
+- Durable module playback queues (BL-066), new providers, money values, LAN sources, several registrations of one provider kind, operator replay console. See the proposal.
 
 ## Decisions
 
