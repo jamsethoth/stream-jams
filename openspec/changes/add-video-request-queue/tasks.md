@@ -7,7 +7,7 @@
   - multi-device `setSinkId` fan-out
   - measured delay and CPU/GPU cost
 - [ ] 1.2a Stop and report to the operator if frame audio capture fails, with the window-capture and OBS-audio fallback.
-- [ ] 1.2b Confirm Twitch `<video>` control via `webFrameMain` (if the operator approves D4) and the feature-detection signal.
+- [ ] 1.2b Confirm Twitch `<video>` control via `webFrameMain` (approved 2026-10-08) and the feature-detection signal.
 - [ ] 1.3 Confirm normalized `channel_point_redemption` events with `userInput` reach the event pipeline from Streamer.bot and direct Twitch sources.
 - [ ] 1.4 Confirm the YouTube `enablejsapi=1` `postMessage` commands and `infoDelivery` messages in a browser test page, and record the message shapes used.
 

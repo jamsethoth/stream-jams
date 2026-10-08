@@ -73,7 +73,7 @@ One provider registry in `@stream-jams/core/videos` (subpath export, kept off th
 - **Twitch** has no supported control API:
   - Proposed: the desktop host reaches the `<video>` element inside the Twitch frame through Electron's `webFrameMain` for pause, resume, seek and position.
   - Twitch markup changes can break this, so it is feature-detected per item. On failure the item falls back to play and stop, and the operator sees why.
-  - Pending operator confirmation; if declined, Twitch is play and stop only.
+  - Approved by the operator on 2026-10-08.
 
 ### D5. One primary player, mirrored
 - **Player host:**
