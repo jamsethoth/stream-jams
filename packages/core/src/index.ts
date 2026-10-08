@@ -380,3 +380,11 @@ export { videoShoutoutModuleDefinition } from "./video-shoutout/module-definitio
 export * from "./management/local-websocket-connection.js";
 export { moduleMuteStateSchema } from "./playback/schemas.js";
 export { defaultModuleMuteState, type ModuleMuteState, type MutablePlaybackModuleId } from "./playback/types.js";
+
+export type * from "./data-overlays/types.js";
+export * from "./data-overlays/schemas.js";
+export * from "./data-overlays/limits.js";
+export * from "./data-overlays/goals.js";
+export * from "./data-overlays/formatting.js";
+export * from "./data-overlays/projection.js";
+export * from "./data-overlays/module-definition.js";
