@@ -6,13 +6,13 @@
 
 ## 2. Core
 
-- [ ] 2.1 Add rule-action and input schemas on top of the shared trigger model, with limits. Test invalid fields, type mismatch and bounds.
+- [ ] 2.1 Add custom event type schemas and payload validation, plus rule selection, payload filter, action and input schemas on top of the shared selector, with limits. Test unknown fields, wrong types, versions, invalid references and bounds.
 - [ ] 2.2 Implement deterministic effect computation against a working copy. Test ordering, multipliers, overflow and all-or-nothing effects.
 - [ ] 2.3 Add received-subs and gift-batch starters. Test the batch-plus-recipients case, resubscriptions, Prime, and the overlap warning.
 
 ## 3. Server
 
-- [ ] 3.1 Register the data consumer on the bus, committing value changes and the cursor checkpoint in one transaction. Test crash before and after commit, invalid events advancing the cursor, and a new consumer starting at the journal head.
+- [ ] 3.1 Register the data consumer on the bus with the transactional checkpoint and no replay expiry. Test crash before and after commit, a long outage, invalid events advancing the cursor, and a new consumer starting at the journal head.
 - [ ] 3.2 Add repositories and migrations for rules, global mappings, the checkpoint and the pause flag.
 - [ ] 3.3 Apply rendered-text moderation to event-sourced text before storing it. Test blocked usernames.
 - [ ] 3.4 Implement reset on stream online as a built-in rule. Test a replayed `stream_online`.
@@ -22,12 +22,12 @@
 
 ## 4. Web
 
-- [ ] 4.1 Build the rule editor on the shared trigger editor, with action, input, enablement, visible order, reordering and simulation. Add stories with interaction and accessibility checks.
+- [ ] 4.1 Build the custom event type editor with a sample-JSON field picker and the schema-change review flow. Build the rule editor on the shared selector editor, with payload filters, action, input, enablement, visible order, reordering and simulation. Add stories with interaction and accessibility checks.
 - [ ] 4.2 Add the Operator pause toggle, the global-variable picker, and read-only display for provider-backed values.
 
 ## 5. Verification and handoff
 
-- [ ] 5.1 Write a Streamer.bot setup guide with a copy-paste `CPH.WebsocketBroadcastJson` example, using the bus's external event format.
+- [ ] 5.1 Write a Streamer.bot setup guide with a copy-paste `CPH.WebsocketBroadcastJson` example, matching the `StreamJams`/`Data` broadcast shape.
 - [ ] 5.2 Add disposable-service Playwright acceptance for a custom death counter, a subs counter from Twitch fixtures, a latest-follower label, and reset on stream online.
 - [ ] 5.3 Run lint, typecheck, tests, build, Storybook gates, Playwright and strict OpenSpec validation. Verify against a real Streamer.bot and record the result.
 - [ ] 5.4 Sync canonical specs and remove BL-061.

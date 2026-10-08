@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Data rule backup
-Versioned backups SHALL include data rules with their enablement and order, Streamer.bot global mappings, reset-on-stream-online settings and the Operator pause flag. Backups SHALL exclude the consumer checkpoint and source status. A restored data consumer SHALL start at the journal head.
+Versioned backups SHALL include data rules with their enablement and order, custom event types, Streamer.bot global mappings, reset-on-stream-online settings and the Operator pause flag. Backups SHALL exclude the consumer checkpoint and source status. A restored data consumer SHALL start at the journal head.
 
 #### Scenario: Rules round trip
 - **WHEN** a profile with ordered rules is exported and restored

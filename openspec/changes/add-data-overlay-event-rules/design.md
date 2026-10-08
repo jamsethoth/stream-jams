@@ -1,16 +1,16 @@
 ## Context
 
-This change builds on slice 1's values, goals, reset groups and Operator section, and on the central event bus change (BL-025). That bus change is being drafted separately; its feasibility notes are dated 2026-10-08.
+This change builds on slice 1's values, goals, reset groups and Operator section, and on the central event bus change `add-central-event-bus` (BL-025, draft PR #160).
 
 What the bus change owns, and this change only references:
 
-- One `StreamEvent` envelope for normalized events (`kind: "normalized"`) and external events (`kind: "external"`, such as Streamer.bot custom broadcasts).
-- Validation of external event payloads.
-- A semantic `dedupeKey` across sources.
-- A durable event journal.
-- Consumers that register a filter and own a persisted cursor or queue.
-- One shared "event type + conditions" trigger model, built from the alerts condition evaluator.
-- Moving video shoutouts and other custom-broadcast handling onto the bus.
+- One bus event for canonical events (`kind: "canonical"`) and external events (`kind: "external"`). Streamer.bot `General/Custom` broadcasts become external events, validated only against the generic external event shape.
+- A bounded SQLite journal committed before any consumer sees an event.
+- Exact deduplication on source kind plus event ID for 10 minutes, across restarts. Cross-source merging uses a `correlationKey` for Twitch-origin canonical events only; external events are never merged.
+- Consumers with a persisted cursor. A consumer can choose a transactional checkpoint, where it writes the cursor inside its own SQLite transaction. Each consumer has a replay age, and a state consumer can opt out of expiry.
+- One shared selector. It matches a canonical event type with typed conditions, or an exact external provider/source/type identity. External payload content cannot be used in selector conditions.
+
+What this change owns: validating the flat data schema of `StreamJams`/`Data` broadcasts after the selector matches, payload-based filters, value actions, and everything listed in the decisions below.
 
 Existing facts this change relies on:
 
@@ -23,11 +23,12 @@ Existing facts this change relies on:
 
 ### 1. Data overlays are a bus consumer
 
-The data consumer registers with the bus for the event types its enabled rules reference. For each event, in journal order, it:
+The data consumer registers with the bus using the transactional checkpoint option, and opts out of replay expiry because it maintains state rather than playing media. Its selectors are the canonical types its enabled rules reference, plus the external identity `StreamJams`/`Data`. For each event, in journal order, it:
 
-1. Finds the matching rules.
-2. Computes all their effects against a working copy.
-3. Commits the value changes and its cursor checkpoint in one SQLite transaction.
+1. Validates an external event's payload against the custom event type's flat schema (see decision 3).
+2. Finds the matching rules and evaluates their payload filters.
+3. Computes all their effects against a working copy.
+4. Commits the value changes and the cursor, using the bus checkpoint callback, in one SQLite transaction.
 
 If any effect is invalid, the consumer applies no effect, records a diagnostic with a reference ID, and advances the cursor past the event. One bad event cannot block later ones.
 
@@ -35,9 +36,9 @@ Because the checkpoint and the values commit together, a crash either applies th
 
 A data failure never affects other consumers, because the bus isolates consumers.
 
-### 2. Rules: shared trigger plus data action
+### 2. Rules: event selection, filters and a data action
 
-A rule is a bus trigger in the shared model plus a data action:
+A rule selects either a canonical event type, with the shared selector's typed conditions, or a custom event type defined in decision 3. It may add payload filters that the consumer evaluates: up to 8 AND filters (`equals`, `notEquals`, `>`, `>=`, `<`, `<=`) on schema fields of custom events. It then applies a data action:
 
 - a destination value,
 - an action (`set`, `add`, `subtract` or `reset`),
@@ -49,9 +50,32 @@ Rules for one event run in their persisted order, with ties broken by rule ID. B
 
 Rules apply whether or not any canvas is visible or the module is enabled. They stop only when the rule is disabled or the Operator pause is on. Editing a rule never reprocesses past events.
 
-Custom Streamer.bot events reach rules as bus external events. Their event types and field schemas are defined through the bus change, so rule field pickers read them from there. Changing an external event schema disables the data rules that use it until each is re-validated.
+### 3. Custom event types
 
-### 3. Subscription starters
+Payload validation for data broadcasts belongs to this consumer, the same way Video shoutouts validate their own payloads. Management defines each custom event type with:
+
+- a stable ID,
+- a name, matched against the payload's `event` field,
+- a schema version,
+- up to 32 flat fields, each typed `integer`, `text` or `boolean` and marked required or optional.
+
+A data broadcast looks like this:
+
+```json
+{ "source": "StreamJams", "type": "Data", "event": "game.death", "schemaVersion": 1, "fields": { "weapon": "lava" } }
+```
+
+The consumer rejects:
+
+- unknown event names,
+- unknown or missing required fields,
+- wrong field types,
+- unsupported versions,
+- text fields over 2 KiB.
+
+A rejected event changes nothing, records a sanitized diagnostic without the payload, and the cursor advances past it. Sample JSON helps pick fields but never changes a schema. Changing a schema disables the rules that use it until each is re-validated. Duplicate broadcasts are removed by the bus's exact event-ID deduplication.
+
+### 4. Subscription starters
 
 Two starter rule sets, of which the user picks at most one:
 
@@ -60,21 +84,21 @@ Two starter rule sets, of which the user picks at most one:
 
 Management warns when custom rules overlap a starter.
 
-Cross-source duplicates, where Twitch and Streamer.bot both report the same sub, are removed by the bus's semantic `dedupeKey` before rules see them.
+When Twitch and Streamer.bot both report the same sub, the bus merges the two copies through its `correlationKey` before rules see the event.
 
-### 4. Text moderation
+### 5. Text moderation
 
 Any text written from an event field passes `renderedText` moderation (`packages/core/src/moderation/moderation-service.ts`) before it is stored. Every output then shows the same cleaned value, including usernames.
 
-### 5. Reset on stream online
+### 6. Reset on stream online
 
-A reset group can opt into "reset on stream online". It is implemented as a built-in rule on the bus `stream_online` type, so it uses the same consumer checkpoint and the same exactly-once guarantee.
+A reset group can opt into "reset on stream online". It is implemented as a built-in rule with a canonical `stream_online` selector, so it uses the same consumer checkpoint and the same exactly-once guarantee.
 
-### 6. Operator pause
+### 7. Operator pause
 
 The Operator Data section gets a persisted "Pause automatic updates" toggle. While paused, the consumer still advances its cursor and logs skipped events, so events are not applied later. Manual Operator controls keep working.
 
-### 7. Streamer.bot global variables (outside the bus)
+### 8. Streamer.bot global variables (outside the bus)
 
 A global variable is current state, not an event, so it is a provider-backed value rather than a bus event. The user maps a persisted global by name to a read-only integer or text value:
 
