@@ -79,7 +79,7 @@ Problem found: the sound kept playing after it was started. The check had no way
 
 Still to check: Twitch clip and VOD with pause, play and jump (task 1.2b), and the YouTube buttons.
 
-### 2026-10-08: Windows 11 with OBS, third run (gate passed)
+### 2026-10-08: Windows 11 with OBS, third run
 
 Same PC and settings, one OBS browser source and the desktop receiver.
 
@@ -91,4 +91,6 @@ Same PC and settings, one OBS browser source and the desktop receiver.
 - All app processes averaged 5% CPU with a 14% peak, without hardware acceleration. Peak working set was about 2 GB.
 - Fan-out was tried with one device at a time; a second device at once was not tried. Each element's `setSinkId` is independent, so the product fans out one element per device.
 
-**Decision:** the desktop mirror is feasible on Windows. Build it as one long-lived hidden player page per purpose, with providers swapped inside it, frame capture with voice processing off, loopback-only WebRTC to each output, and automatic receiver reconnects.
+**Audio was not right.** Jams reported the sound was broken in this run, and the device check was left unticked. The likely cause: the capture left the hidden player's own sound playing on the default device, so the same sound also came from the desktop receiver, the device fan-out and any OBS monitoring, each at a different delay. The check now asks for `suppressLocalAudioPlayback` (confirmed honored in a Linux run), mutes the desktop receiver so its sound only goes to the chosen devices, and offers muting the player window as a second test. The gate stays open until a run confirms clean sound.
+
+**Direction, pending the audio fix:** the desktop mirror is feasible on Windows. Build it as one long-lived hidden player page per purpose, with providers swapped inside it, frame capture with voice processing off, loopback-only WebRTC to each output, and automatic receiver reconnects.

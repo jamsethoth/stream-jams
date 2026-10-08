@@ -158,8 +158,9 @@ window.__startCapture = async () => {
   try {
     captured = await navigator.mediaDevices.getDisplayMedia({
       video: { frameRate: 30, width: 1280, height: 720 },
-      // Music, not a call: no voice processing, keep stereo.
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2 }
+      // Music, not a call: no voice processing, keep stereo. The hidden player must not also play
+      // its own sound on the default device, or every output is heard twice at different delays.
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2, suppressLocalAudioPlayback: true }
     });
     const video = captured.getVideoTracks()[0];
     const audio = captured.getAudioTracks()[0];
@@ -258,6 +259,8 @@ listen("receiver:" + id, async body => {
       if (stream !== event.streams[0]) {
         stream = event.streams[0];
         video.srcObject = stream;
+        // The desktop overlay shows the picture only; sound goes to the chosen devices.
+        if (params.get("label") === "desktop") video.muted = true;
         video.play().catch(error => {
           if (error && error.name === "NotAllowedError") { audioBlocked = true; video.muted = true; return video.play(); }
           return undefined;
@@ -365,6 +368,7 @@ export function controlPage(): string {
   <label>Audio capture <select id="audio"><option value="frame">Player window only (preferred)</option><option value="loopbackWithMute">All system audio, muted locally</option><option value="loopback">All system audio</option></select></label>
   <label><input type="checkbox" id="show"> Show the player window (normally hidden)</label>
   <button id="load">Load player</button><button id="capture">Start capture</button><button id="stop">Stop playback</button>
+  <label><input type="checkbox" id="mutePlayer"> Mute the player window itself (try only if you still hear the sound twice)</label>
 </fieldset>
 <fieldset><legend>2. Outputs</legend>
   <p>OBS: add a <b>Browser Source</b> (1280×720, tick <i>Control audio via OBS</i>) with this URL:</p>
@@ -382,6 +386,7 @@ export function controlPage(): string {
   <label><input type="checkbox" data-manual="desktopVideo"> The desktop receiver window shows the video</label>
   <label><input type="checkbox" data-manual="devicesAudio"> Each ticked device plays the sound</label>
   <label><input type="checkbox" data-manual="inSync"> Sound and picture stay in sync in OBS</label>
+  <label><input type="checkbox" data-manual="singleCopy"> With OBS monitoring off, the sound plays once on each device: no echo, doubling or stutter</label>
   <label><input type="checkbox" data-manual="stopsCleanly"> Stop playback silences everything, including the ticked devices</label>
   <label><input type="checkbox" data-manual="twitchControl"> Twitch pause, play and jump worked</label>
   <label><input type="checkbox" data-manual="youtubeControl"> YouTube pause, play and jump worked</label>
@@ -405,6 +410,7 @@ async function command(body) {
 document.getElementById("load").onclick = () => command({ action: "load-player", source: source(), host: document.getElementById("host").value, audio: document.getElementById("audio").value, show: document.getElementById("show").checked });
 document.getElementById("capture").onclick = () => command({ action: "start-capture" });
 document.getElementById("stop").onclick = () => command({ action: "stop-player" });
+document.getElementById("mutePlayer").onchange = event => command({ action: "mute-player", muted: event.target.checked });
 document.getElementById("desktopReceiver").onclick = () => command({ action: "open-desktop-receiver" });
 for (const button of document.querySelectorAll("[data-twitch]")) button.onclick = () => command({ action: "twitch", op: button.dataset.twitch });
 for (const button of document.querySelectorAll("[data-youtube]")) button.onclick = () => send("publisher", { type: "youtube", func: button.dataset.youtube, args: button.dataset.youtube === "seekTo" ? [30, true] : [] });

@@ -123,6 +123,11 @@ export async function runVideoMirrorCheck(): Promise<void> {
       // A new window means a new capture; mirrors reconnect on their own once it is ready.
       if (wasCapturing) await startCapture();
     },
+    async "mute-player"(body: Record<string, unknown>) {
+      if (player === null || player.isDestroyed()) throw new CheckInputError("Load the player first.");
+      player.webContents.setAudioMuted(body.muted === true);
+      record("player-muted", { muted: player.webContents.isAudioMuted() });
+    },
     async "stop-player"() {
       if (player === null || player.isDestroyed()) return;
       await player.webContents.executeJavaScript(`window.__setSource({ "kind": "none" }, "")`, true);

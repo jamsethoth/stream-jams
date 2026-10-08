@@ -1,7 +1,7 @@
 ## 1. Dependency Gate
 
 - [x] 1.1 Fetch `origin/main`, confirm the branch starts from it, and confirm `video-shoutout` (#157) is merged.
-- [x] 1.2 Windows feasibility gate. In a throwaway Electron spike, prove each of the following and record the results in `verification/video-mirror-feasibility.md`:
+- [ ] 1.2 Windows feasibility gate. In a throwaway Electron spike, prove each of the following and record the results in `verification/video-mirror-feasibility.md`:
   - frame audio capture via `setDisplayMediaRequestHandler` from a cross-origin YouTube and Twitch frame
   - loopback-only WebRTC playback in an OBS browser source
   - multi-device `setSinkId` fan-out
