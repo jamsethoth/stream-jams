@@ -743,7 +743,7 @@ describe("runtime app composition smoke", () => {
     expect(log).not.toContain("must-not-be-logged");
   });
 
-  it("matches direct Twitch and Streamer.bot lifecycle and gift events while keeping intake running after malformed input", async () => {
+  it("merges the same lifecycle and gift events from direct Twitch and Streamer.bot while keeping intake running after malformed input", async () => {
     const testRoot = await createTemporaryDirectory();
     const streamerBotSockets: ControlledStreamerBotSocket[] = [];
     const composition = await createRuntimeAppComposition({
@@ -848,7 +848,7 @@ describe("runtime app composition smoke", () => {
           started_at: "2026-07-18T01:59:00.000Z"
         }
       }
-    })).resolves.toMatchObject({ status: "accepted", event: { type: "stream_online" } });
+    })).resolves.toEqual({ status: "duplicate", messageId: "twitch-stream-online" });
 
     await streamerBotSockets[1]!.emitEvent({
       timeStamp: "2026-07-18T02:00:00.000Z",
@@ -913,9 +913,9 @@ describe("runtime app composition smoke", () => {
           is_anonymous: false
         }
       }
-    })).resolves.toMatchObject({ status: "accepted", event: { type: "community_gift" } });
+    })).resolves.toEqual({ status: "duplicate", messageId: "twitch-community-gift" });
 
-    await waitFor(() => composition.eventIngestionService.getStatus().acceptedCount === acceptedBefore + 2);
+    await waitFor(() => composition.eventIngestionService.getStatus().acceptedCount === acceptedBefore + 1);
     const diagnostics = await composition.app.inject({
       method: "GET",
       url: "/diagnostics?limit=20",
@@ -926,28 +926,32 @@ describe("runtime app composition smoke", () => {
     }).alertMatchLogs;
 
     expect(alertMatchLogs).toEqual(expect.arrayContaining([
-      expect.objectContaining({ sourceEventId: "twitch-stream-online", ruleId: streamOnlineAlertId }),
       expect.objectContaining({
         sourceEventId: "streamerbot:twitch:StreamOnline:streamerbot-stream-online",
         ruleId: streamOnlineAlertId
       }),
-      expect.objectContaining({ sourceEventId: "twitch-community-gift", ruleId: communityGiftAlertId }),
       expect.objectContaining({
         sourceEventId: "streamerbot:twitch:GiftBomb:gift-bomb-after-malformed",
         ruleId: communityGiftAlertId
       })
     ]));
+    expect(alertMatchLogs.map((log) => log.sourceEventId)).not.toEqual(expect.arrayContaining(["twitch-stream-online"]));
+    expect(alertMatchLogs.map((log) => log.sourceEventId)).not.toEqual(expect.arrayContaining(["twitch-community-gift"]));
 
     const journal = new DatabaseSync(join(testRoot, "data", "stream-jams.sqlite"), { readOnly: true });
     try {
-      const journaled = journal.prepare("SELECT event_id, source_kind FROM event_bus_journal").all()
+      const journaled = journal.prepare("SELECT event_id, source_kind FROM event_bus_journal ORDER BY sequence").all()
         .map((row) => [String(row.event_id), String(row.source_kind)]);
-      expect(journaled).toEqual(expect.arrayContaining([
-        ["twitch-stream-online", "twitch"],
+      expect(journaled).toEqual([
         ["streamerbot:twitch:StreamOnline:streamerbot-stream-online", "streamerbot"],
-        ["twitch-community-gift", "twitch"],
         ["streamerbot:twitch:GiftBomb:gift-bomb-after-malformed", "streamerbot"]
-      ]));
+      ]);
+      expect(journal.prepare(`SELECT journal.event_id AS kept, merges.merged_event_id AS merged, merges.source_kind AS source
+        FROM event_bus_correlation_merges AS merges JOIN event_bus_journal AS journal USING (sequence) ORDER BY merges.sequence`).all()
+        .map((row) => ({ ...row }))).toEqual([
+        { kept: "streamerbot:twitch:StreamOnline:streamerbot-stream-online", merged: "twitch-stream-online", source: "twitch" },
+        { kept: "streamerbot:twitch:GiftBomb:gift-bomb-after-malformed", merged: "twitch-community-gift", source: "twitch" }
+      ]);
       const head = Number(journal.prepare("SELECT MAX(sequence) AS head FROM event_bus_journal").get()?.head);
       expect(journal.prepare("SELECT consumer_id, last_sequence FROM event_bus_consumer_cursors ORDER BY consumer_id").all()).toEqual([
         { consumer_id: "alerts", last_sequence: head },

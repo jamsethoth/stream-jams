@@ -21,6 +21,7 @@ const base = {
   sourceKind: "twitch",
   sourceRegistrationId: null,
   receivedAt: "2026-10-08T12:00:01.000Z",
+  correlationKey: null,
   effectTriggers: []
 };
 
@@ -37,6 +38,8 @@ const trigger = {
 describe("busEventSchema", () => {
   it("accepts canonical and external bus events", () => {
     expect(busEventSchema.parse({ ...base, kind: "canonical", event: follow }).kind).toBe("canonical");
+    expect(busEventSchema.parse({ ...base, kind: "canonical", event: follow, correlationKey: "twitch:follow:viewer-1" }).correlationKey)
+      .toBe("twitch:follow:viewer-1");
     expect(busEventSchema.parse({
       ...base, kind: "external", eventId: "streamerbot:custom-1", sourceKind: "streamerbot", effectTriggers: [trigger]
     }).kind).toBe("external");
@@ -46,6 +49,7 @@ describe("busEventSchema", () => {
     expect(busEventSchema.safeParse({ ...base, kind: "canonical", eventId: "other", event: follow }).success).toBe(false);
     expect(busEventSchema.safeParse({ ...base, kind: "external", effectTriggers: [trigger] }).success).toBe(false);
     expect(busEventSchema.safeParse({ ...base, kind: "external", overlayKey: "secret" }).success).toBe(false);
+    expect(busEventSchema.safeParse({ ...base, kind: "external", correlationKey: "twitch:follow:1" }).success).toBe(false);
   });
 
   it("rejects invalid sequence and source kind", () => {

@@ -13,6 +13,7 @@ const busEventBaseSchema = z.object({
   sourceKind: ingestProviderIdSchema,
   sourceRegistrationId: busIdentitySchema.nullable(),
   receivedAt: isoDateTimeSchema,
+  correlationKey: busIdentitySchema.nullable(),
   effectTriggers: z.array(effectTriggerSchema)
 });
 
@@ -22,6 +23,9 @@ export const busEventSchema = z.discriminatedUnion("kind", [
 ]).superRefine((value, context) => {
   if (value.effectTriggers.some((trigger) => trigger.eventId !== value.eventId)) {
     context.addIssue({ code: "custom", path: ["effectTriggers"], message: "effect triggers must belong to the bus event" });
+  }
+  if (value.kind === "external" && value.correlationKey !== null) {
+    context.addIssue({ code: "custom", path: ["correlationKey"], message: "external events have no correlation key" });
   }
   if (value.kind === "canonical" && value.event.id !== value.eventId) {
     context.addIssue({ code: "custom", path: ["eventId"], message: "eventId must match the canonical event ID" });

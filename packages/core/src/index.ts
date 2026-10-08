@@ -191,6 +191,7 @@ export {
 } from "./events/schemas.js";
 
 export type * from "./event-bus/types.js";
+export { twitchCorrelationKey } from "./event-bus/correlation.js";
 
 export type * from "./overlay-modules/types.js";
 export type { OverlayModulePresentation } from "./overlay-modules/presentation.js";

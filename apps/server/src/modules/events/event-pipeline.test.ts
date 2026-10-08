@@ -50,7 +50,7 @@ describe("EventPipeline", () => {
     };
     const external: BusEvent = {
       kind: "external", sequence: 1, busId: "bus-1", eventId: trigger.eventId, sourceKind: "streamerbot",
-      sourceRegistrationId: null, receivedAt: "2026-05-30T12:00:00.000Z", effectTriggers: [trigger]
+      sourceRegistrationId: null, receivedAt: "2026-05-30T12:00:00.000Z", correlationKey: null, effectTriggers: [trigger]
     };
 
     for (const consumer of pipeline.consumers()) await consumer.handle(external);
@@ -270,6 +270,7 @@ async function deliver(pipeline: EventPipeline, event: NormalizedStreamEvent, tr
     sourceKind: event.ingestProvider,
     sourceRegistrationId: null,
     receivedAt: "2026-05-30T12:00:00.000Z",
+    correlationKey: null,
     effectTriggers: triggers
   };
   const results = await Promise.allSettled(pipeline.consumers().map((consumer) => consumer.handle(busEvent)));

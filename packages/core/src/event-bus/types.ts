@@ -10,6 +10,8 @@ interface BusEventBase {
   readonly sourceKind: IngestProviderId;
   readonly sourceRegistrationId: string | null;
   readonly receivedAt: string;
+  /** Cross-source identity of a Twitch occurrence; null for external events. */
+  readonly correlationKey: string | null;
   /** Screen Effects triggers derived at intake; replaced by shared selectors in a later slice. */
   readonly effectTriggers: readonly EffectTrigger[];
 }

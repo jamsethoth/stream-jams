@@ -107,7 +107,7 @@ describe("SqliteEffectRepository", () => {
     database.connection.exec(`DROP TRIGGER screen_effect_assign_set;
       DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements;
       DROP TABLE screen_effect_set_memberships; DROP TABLE screen_effect_sets;
-      DROP TABLE event_bus_delivery_failures; DROP TABLE event_bus_consumer_cursors; DROP TABLE event_bus_journal; DELETE FROM schema_migrations WHERE id = '034-event-bus-journal'; 
+      DROP TABLE event_bus_correlation_merges; DELETE FROM schema_migrations WHERE id = '035-event-bus-correlation'; DROP TABLE event_bus_delivery_failures; DROP TABLE event_bus_consumer_cursors; DROP TABLE event_bus_journal; DELETE FROM schema_migrations WHERE id = '034-event-bus-journal'; 
       DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; DROP TABLE timer_run_recovery; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;
       ALTER TABLE asset_metadata DROP COLUMN duration_ms;
       ALTER TABLE audio_output_routes DROP COLUMN auto_follow_device_name;

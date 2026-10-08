@@ -45,8 +45,11 @@ export interface EventIngestionDiagnostic {
   readonly exception?: unknown;
 }
 
-/** A sink may report that it already holds the event, for example after a restart. */
-export type EventSinkOutcome = { readonly status: "accepted" | "duplicate" };
+/**
+ * A sink may report that it already holds the event, for example after a restart (`duplicate`), or that
+ * another source already delivered the same occurrence (`merged`). Both are reported as duplicates.
+ */
+export type EventSinkOutcome = { readonly status: "accepted" | "duplicate" | "merged" };
 
 export interface EventSink {
   handleEvent(event: NormalizedStreamEvent, triggers: readonly EffectTrigger[]): void | EventSinkOutcome | Promise<void | EventSinkOutcome>;
@@ -129,7 +132,9 @@ export class EventIngestionService {
       }
       const outcome = await this.#sink.handleTriggers(parsed.data);
       this.#rememberMessageId(eventId);
-      if (outcome?.status === "duplicate") return this.#markDuplicate(eventId, "Duplicate Streamer.bot event ignored");
+      if (outcome?.status === "duplicate" || outcome?.status === "merged") {
+        return this.#markDuplicate(eventId, "Duplicate Streamer.bot event ignored");
+      }
       this.#markAccepted();
       return { status: "accepted", eventId };
     } catch (error) {
@@ -218,6 +223,7 @@ export class EventIngestionService {
       const outcome = await this.#sink.handleEvent(normalizedEvent, parsedTriggers.data);
       this.#rememberMessageId(normalizedEvent.id);
       if (outcome?.status === "duplicate") return this.#markDuplicate(normalizedEvent.id, messages.duplicateMessage);
+      if (outcome?.status === "merged") return this.#markDuplicate(normalizedEvent.id, "Event already received from another source; merged");
       this.#markAccepted();
       return { status: "accepted", event: normalizedEvent };
     } catch (error) {

@@ -67,12 +67,16 @@ type BusEvent = {
 Two keys:
 
 - **Exact key** (`sourceKind` + event ID): a redelivery from the same source is a duplicate, as today, but now checked against the journal so it survives restart (window: 10 minutes).
-- **Correlation key** for Twitch-origin canonical events, built from Twitch-native identity:
-  - Redemptions: `twitch:redemption:<redemptionId>`.
-  - Polls, predictions, hype trains: `twitch:<type>:<pollId|predictionId|trainId>:<status or level>`.
-  - Follows, subs, resubs, gifts, cheers, raids, stream online/offline (no shared native ID): `twitch:<type>:<actorId or anon>:<amount>:<tier>:<sha256(message)>`.
+- **Correlation key** for Twitch-origin canonical events (`twitchCorrelationKey` in core), built only from fields both normalizers report the same way:
+  - Follows, subs, stream online/offline: `twitch:<type>:<actorId>`.
+  - Resubs, cheers, raids: `twitch:<type>:<actorId or anon>:<amount>`.
+  - Redemptions: `twitch:channel_point_redemption:<actorId>:<rewardId>`.
+  - Gift subs: `twitch:gift_subscription:<recipientId>:<tier>`. Community gifts: `twitch:community_gift:<actorId or anon>:<amount>:<tier>`.
+  - Hype train, poll and prediction phases: `twitch:<type>:<trainId|pollId|predictionId>`, plus level and total, vote total, or user and point totals for progress events.
 
-A new event whose correlation key matches an event accepted from a **different** source within the correlation window (default 30 seconds) is recorded as `merged` and not journaled again. Each accepted event can absorb at most one copy from each other source, so two genuine identical cheers from the same viewer arriving through both sources still produce two events. Same-source events with different IDs are never merged. First arrival wins; the merged copy's source is recorded on the journal row for Diagnostics.
+  Keys leave out message text (sources format cheermotes and emotes differently), tier on subs and resubs (EventSub reports Prime as tier 1000), and the redemption ID (not every Streamer.bot redemption carries it). One-to-one pairing keeps genuine repeats apart. Slice 2 tests the keys against paired payloads from both normalizers for every canonical type.
+
+A new event whose correlation key matches an event accepted from a **different** source within the correlation window (default 30 seconds) is recorded as `merged` in `event_bus_correlation_merges` (absorbing row, source, event ID, time) and not journaled again; ingestion reports it as a duplicate. The exact-duplicate check also covers merged copies, so a redelivered merged copy stays a duplicate across restart. Each accepted event can absorb at most one copy from each other source, so two genuine identical cheers from the same viewer arriving through both sources still produce two events. Same-source events with different IDs are never merged. First arrival wins; the merged copy's source is recorded on the journal row for Diagnostics.
 
 External events have no correlation key.
 
@@ -131,7 +135,7 @@ On startup each consumer resumes after its cursor. Rows older than the replay ag
 
 ## Risks / Trade-offs
 
-- **False merges.** Two genuinely distinct events with equal correlation keys from different sources within 30 seconds would merge. One-to-one pairing and the message hash make this rare; the `forwardTwitchEvents` switch removes it entirely.
+- **False merges.** Two genuinely distinct events with equal correlation keys from different sources within 30 seconds would merge. One-to-one pairing makes this rare, because a false merge needs an unpaired copy from the other source with the same key inside the window; the `forwardTwitchEvents` switch removes it entirely.
 - **Missed merges.** If Streamer.bot normalizes amount, tier or message differently from EventSub, both copies play. Slice 2 must test correlation keys against recorded fixtures from both normalizers for every Twitch-origin type.
 - **Journal growth and write cost.** One insert per event plus cursor updates is small at stream event rates; retention bounds disk use.
 - **Behavior change for Video shoutouts.** General/Custom events now flow through the bus. The Videos module work owns that module; this change only moves its intake and keeps the existing payload contract.

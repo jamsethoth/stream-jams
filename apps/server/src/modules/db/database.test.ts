@@ -42,7 +42,8 @@ const expectedMigrations = [
   "030-persistent-event-timers",
   "031-automation-grants",
   "032-music-source-providers",
-  "034-event-bus-journal"
+  "034-event-bus-journal",
+  "035-event-bus-correlation"
 ] as const;
 
 const expectedTables = [
@@ -62,6 +63,7 @@ const expectedTables = [
   "audio_output_routes",
   "automation_grants",
   "event_bus_consumer_cursors",
+  "event_bus_correlation_merges",
   "event_bus_delivery_failures",
   "event_bus_journal",
   "event_logs",
@@ -88,7 +90,7 @@ const expectedTables = [
 describe("Stream Jams SQLite database", () => {
   it("upgrades the exact pre-merge Music preview history without rebuilding provider rows", () => {
     using database = createInMemoryStreamJamsDatabase();
-    database.connection.exec("DROP TABLE event_bus_delivery_failures; DROP TABLE event_bus_consumer_cursors; DROP TABLE event_bus_journal; DELETE FROM schema_migrations WHERE id = '034-event-bus-journal'; DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; UPDATE schema_migrations SET id = '031-music-source-providers' WHERE id = '032-music-source-providers';");
+    database.connection.exec("DROP TABLE event_bus_correlation_merges; DELETE FROM schema_migrations WHERE id = '035-event-bus-correlation'; DROP TABLE event_bus_delivery_failures; DROP TABLE event_bus_consumer_cursors; DROP TABLE event_bus_journal; DELETE FROM schema_migrations WHERE id = '034-event-bus-journal'; DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; UPDATE schema_migrations SET id = '031-music-source-providers' WHERE id = '032-music-source-providers';");
     database.connection.exec("INSERT INTO provider_registrations (id,name,kind,capability,non_secret_config_json,active,connection_state,available_voices_json,created_at,updated_at) VALUES ('pear-preview','Pear','pear-desktop','music-source','{}',1,'connected','[]','now','now')");
     database.runMigrations();
     expect(database.connection.prepare("SELECT id FROM schema_migrations ORDER BY rowid").all().map(row => row.id)).toEqual(expectedMigrations);
@@ -169,7 +171,7 @@ describe("Stream Jams SQLite database", () => {
   it("removes stored Screen Effect animations when upgrading schema 24", () => {
     using database = createInMemoryStreamJamsDatabase();
     const db = database.connection;
-    db.exec("DROP TABLE event_bus_delivery_failures; DROP TABLE event_bus_consumer_cursors; DROP TABLE event_bus_journal; DELETE FROM schema_migrations WHERE id = '034-event-bus-journal'; DELETE FROM schema_migrations WHERE id = '032-music-source-providers'; DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements; DELETE FROM schema_migrations WHERE id = '029-asset-retirements'; DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; DROP TABLE timer_run_recovery; DELETE FROM schema_migrations WHERE id = '030-persistent-event-timers'; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;");
+    db.exec("DROP TABLE event_bus_correlation_merges; DELETE FROM schema_migrations WHERE id = '035-event-bus-correlation'; DROP TABLE event_bus_delivery_failures; DROP TABLE event_bus_consumer_cursors; DROP TABLE event_bus_journal; DELETE FROM schema_migrations WHERE id = '034-event-bus-journal'; DELETE FROM schema_migrations WHERE id = '032-music-source-providers'; DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements; DELETE FROM schema_migrations WHERE id = '029-asset-retirements'; DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; DROP TABLE timer_run_recovery; DELETE FROM schema_migrations WHERE id = '030-persistent-event-timers'; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;");
 
     db.prepare("DELETE FROM schema_migrations WHERE id IN (?, ?, ?, ?)").run(
       "025-remove-screen-effect-animations",
@@ -309,7 +311,7 @@ describe("Stream Jams SQLite database", () => {
   it("defaults existing audio routes to automatic following disabled when migrating schema 25", () => {
     using database = createInMemoryStreamJamsDatabase();
     const db = database.connection;
-    db.exec("DROP TABLE event_bus_delivery_failures; DROP TABLE event_bus_consumer_cursors; DROP TABLE event_bus_journal; DELETE FROM schema_migrations WHERE id = '034-event-bus-journal'; DELETE FROM schema_migrations WHERE id = '032-music-source-providers'; DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements; DELETE FROM schema_migrations WHERE id = '029-asset-retirements'; DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; DROP TABLE timer_run_recovery; DELETE FROM schema_migrations WHERE id = '030-persistent-event-timers'; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;");
+    db.exec("DROP TABLE event_bus_correlation_merges; DELETE FROM schema_migrations WHERE id = '035-event-bus-correlation'; DROP TABLE event_bus_delivery_failures; DROP TABLE event_bus_consumer_cursors; DROP TABLE event_bus_journal; DELETE FROM schema_migrations WHERE id = '034-event-bus-journal'; DELETE FROM schema_migrations WHERE id = '032-music-source-providers'; DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements; DELETE FROM schema_migrations WHERE id = '029-asset-retirements'; DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; DROP TABLE timer_run_recovery; DELETE FROM schema_migrations WHERE id = '030-persistent-event-timers'; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;");
 
     db.prepare("DELETE FROM schema_migrations WHERE id IN (?, ?, ?)").run(
       "026-automatic-output-rebinding",
@@ -592,7 +594,7 @@ describe("Stream Jams SQLite database", () => {
     `);
     database.connection.exec(alertTextStyleDefaultsMigration.sql);
     database.connection.exec(`
-      DROP TABLE event_bus_delivery_failures; DROP TABLE event_bus_consumer_cursors; DROP TABLE event_bus_journal; DELETE FROM schema_migrations WHERE id = '034-event-bus-journal'; 
+      DROP TABLE event_bus_correlation_merges; DELETE FROM schema_migrations WHERE id = '035-event-bus-correlation'; DROP TABLE event_bus_delivery_failures; DROP TABLE event_bus_consumer_cursors; DROP TABLE event_bus_journal; DELETE FROM schema_migrations WHERE id = '034-event-bus-journal'; 
       DELETE FROM schema_migrations WHERE id = '032-music-source-providers';
       DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset;
       DROP TABLE asset_retirements;

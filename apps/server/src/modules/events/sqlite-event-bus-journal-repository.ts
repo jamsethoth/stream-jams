@@ -5,7 +5,16 @@ import { runInTransaction } from "../db/database.js";
 
 export type EventBusAppendResult =
   | { readonly status: "appended"; readonly event: BusEvent }
-  | { readonly status: "duplicate" };
+  | { readonly status: "duplicate" }
+  /** Another source already journaled this occurrence; `sequence` is the row that absorbed it. */
+  | { readonly status: "merged"; readonly sequence: number };
+
+export interface EventBusAppendWindows {
+  /** Same-source redeliveries received at or after this time are duplicates. */
+  readonly duplicateSinceMs: number;
+  /** Rows from another source received at or after this time can absorb a matching correlation key. */
+  readonly correlationSinceMs: number;
+}
 
 export interface EventBusJournalEntry {
   readonly sequence: number;
@@ -23,8 +32,12 @@ export interface EventBusDeliveryFailure {
 }
 
 export interface EventBusJournalRepository {
-  /** Appends unless the same source delivered the same event ID at or after `duplicateSinceMs`. */
-  append(input: BusEventInput, busId: string, duplicateSinceMs: number): EventBusAppendResult;
+  /**
+   * Appends unless the same source already delivered the same event ID (journaled or merged) within the
+   * duplicate window, or an earlier row from another source with the same correlation key, not yet
+   * paired with this source, falls within the correlation window.
+   */
+  append(input: BusEventInput, busId: string, windows: EventBusAppendWindows): EventBusAppendResult;
   headSequence(): number;
   readAfter(sequence: number, limit: number): readonly EventBusJournalEntry[];
   getCursor(consumerId: string): number | null;
@@ -40,21 +53,40 @@ const maxStoredErrorLength = 500;
 export class SqliteEventBusJournalRepository implements EventBusJournalRepository {
   constructor(private readonly connection: DatabaseSync) {}
 
-  append(input: BusEventInput, busId: string, duplicateSinceMs: number): EventBusAppendResult {
+  append(input: BusEventInput, busId: string, windows: EventBusAppendWindows): EventBusAppendResult {
     return runInTransaction(this.connection, () => {
       const duplicate = this.connection.prepare(`SELECT 1 FROM event_bus_journal
-        WHERE source_kind = ? AND event_id = ? AND received_at_ms >= ? LIMIT 1`)
-        .get(input.sourceKind, input.eventId, duplicateSinceMs);
+          WHERE source_kind = ? AND event_id = ? AND received_at_ms >= ?
+        UNION ALL SELECT 1 FROM event_bus_correlation_merges
+          WHERE source_kind = ? AND merged_event_id = ? AND merged_at_ms >= ?
+        LIMIT 1`)
+        .get(input.sourceKind, input.eventId, windows.duplicateSinceMs, input.sourceKind, input.eventId, windows.duplicateSinceMs);
       if (duplicate !== undefined) return { status: "duplicate" } as const;
 
       const receivedAtMs = Date.parse(input.receivedAt);
+      if (input.correlationKey !== null) {
+        const match = this.connection.prepare(`SELECT journal.sequence FROM event_bus_journal AS journal
+          WHERE journal.correlation_key = ? AND journal.source_kind <> ? AND journal.received_at_ms >= ?
+            AND NOT EXISTS (SELECT 1 FROM event_bus_correlation_merges AS merges
+              WHERE merges.sequence = journal.sequence AND merges.source_kind = ?)
+          ORDER BY journal.sequence LIMIT 1`)
+          .get(input.correlationKey, input.sourceKind, windows.correlationSinceMs, input.sourceKind);
+        if (match !== undefined) {
+          const sequence = Number(match.sequence);
+          this.connection.prepare(`INSERT INTO event_bus_correlation_merges
+            (sequence, source_kind, merged_event_id, merged_source_registration_id, merged_at, merged_at_ms) VALUES (?, ?, ?, ?, ?, ?)`)
+            .run(sequence, input.sourceKind, input.eventId, input.sourceRegistrationId, input.receivedAt, receivedAtMs);
+          return { status: "merged", sequence } as const;
+        }
+      }
+
       const payload = input.kind === "canonical"
         ? { event: input.event, effectTriggers: input.effectTriggers }
         : { effectTriggers: input.effectTriggers };
       const result = this.connection.prepare(`INSERT INTO event_bus_journal
-        (bus_id, event_id, source_kind, source_registration_id, kind, received_at, received_at_ms, payload_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(busId, input.eventId, input.sourceKind, input.sourceRegistrationId, input.kind, input.receivedAt, receivedAtMs, JSON.stringify(payload));
+        (bus_id, event_id, source_kind, source_registration_id, kind, received_at, received_at_ms, correlation_key, payload_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(busId, input.eventId, input.sourceKind, input.sourceRegistrationId, input.kind, input.receivedAt, receivedAtMs, input.correlationKey, JSON.stringify(payload));
       const event = busEventSchema.parse({ ...input, sequence: Number(result.lastInsertRowid), busId });
       return { status: "appended", event } as const;
     });
@@ -122,7 +154,8 @@ function readEntry(row: Record<string, unknown>): EventBusJournalEntry {
       sourceKind: row.source_kind,
       sourceRegistrationId: row.source_registration_id,
       kind: row.kind,
-      receivedAt: row.received_at
+      receivedAt: row.received_at,
+      correlationKey: row.correlation_key ?? null
     });
     return { sequence, event: parsed.success ? parsed.data : null };
   }
