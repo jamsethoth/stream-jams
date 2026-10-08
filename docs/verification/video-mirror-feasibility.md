@@ -117,6 +117,7 @@ Twitch clip, with one OBS browser source, the desktop receiver and two ticked de
 - Jams heard the sound once on each of two devices and once in OBS, with no doubling, in sync, and Stop silenced everything.
 - Both device contexts reported `running` on their own device.
 - Delay medians: OBS 115 ms, desktop receiver 134 ms, device window 105 ms.
+- Jams noted the sound was slightly out of sync between outputs, but close enough to be tolerable. Each output takes its own path with its own delay, so the product gives each device an adjustable delay (task 5.5), and OBS sources can use OBS's own Sync Offset.
 - All app processes averaged 5% CPU with an 11% peak, without hardware acceleration.
 
 **Decision: the desktop mirror is feasible on Windows and the gate passes.** The product must follow what these runs proved:
