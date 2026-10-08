@@ -8,7 +8,7 @@
   - measured delay and CPU/GPU cost
 - [x] 1.2a Stop and report to the operator if frame audio capture fails, with the window-capture and OBS-audio fallback.
 - [x] 1.2b Confirm Twitch `<video>` control via `webFrameMain` (approved 2026-10-08) and the feature-detection signal.
-- [ ] 1.3 Confirm normalized `channel_point_redemption` events with `userInput` reach the event pipeline from Streamer.bot and direct Twitch sources.
+- [x] 1.3 Confirm normalized `channel_point_redemption` events with `userInput` reach the event pipeline from Streamer.bot and direct Twitch sources.
 - [x] 1.4 Confirm the YouTube `enablejsapi=1` `postMessage` commands and `infoDelivery` messages in a browser test page, and record the message shapes used.
 
 ## 2. Core Contracts

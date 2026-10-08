@@ -34,6 +34,24 @@ describe("EventPipeline", () => {
     expect(playback.events).toEqual([createFollowEvent()]);
     expect(diagnostics.eventLogs.map(log => log.status)).toEqual(["received", "processed"]);
   });
+  it("hands channel point redemptions with their text to the video intake and diagnoses its failures", async () => {
+    const diagnostics = new RecordingDiagnosticsRepository();
+    const redemption: NormalizedStreamEvent = { ...createFollowEvent(), id: "event-redemption", type: "channel_point_redemption",
+      amount: null, rewardId: "reward-video", rewardTitle: "Play a video", userInput: "https://clips.twitch.tv/ClipOne" };
+    const playback = new RecordingPlaybackCoordinator(queueResult(redemption));
+    const received: NormalizedStreamEvent[] = [];
+    const errors: unknown[] = [];
+    const failure = new Error("Video queue unavailable");
+    const pipeline = new EventPipeline({ playbackCoordinator: playback, diagnosticsLogRepository: diagnostics,
+      generateId: kind => `${kind}-test`, videoEventSink: { async handleEvent(event) { received.push(event); throw failure; } },
+      onVideoError: error => { errors.push(error); }
+    });
+    await pipeline.handleEvent(redemption);
+    expect(received).toEqual([redemption]);
+    expect(received[0]).toMatchObject({ userInput: "https://clips.twitch.tv/ClipOne" });
+    expect(errors).toEqual([failure]);
+    expect(playback.events).toEqual([redemption]);
+  });
   it("logs received events, enqueues playback, and records alert match and playback outcomes", async () => {
     const diagnostics = new RecordingDiagnosticsRepository();
     const playback = new RecordingPlaybackCoordinator(queueResult(createFollowEvent()));
