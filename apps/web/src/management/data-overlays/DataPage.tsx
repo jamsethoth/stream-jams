@@ -8,15 +8,21 @@ import { actionableError } from "../foundation/actionable-error.js";
 import { ManagementModalSurface, ManagementModalTitle } from "../foundation/ManagementModalSurface.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import { ManagementHttpError } from "../management-http-client.js";
-export function DataPage({ api = defaultDataOverlaysApi }: {
+import { TwitchDataSources } from "./TwitchDataSources.js";
+import type { TwitchDataSourcesApi } from "./twitch-data-sources-api.js";
+export function DataPage({ api = defaultDataOverlaysApi, twitchSourcesApi }: {
     readonly api?: DataOverlaysApi | undefined;
+    readonly twitchSourcesApi?: TwitchDataSourcesApi | undefined;
 }) {
     const [state, setState] = useState<DataOverlayState | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [actionError, setActionError] = useState<ActionableManagementError | null>(null);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
     const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
-    const [busy, setBusy] = useState(false);
+    const [commandBusy, setBusy] = useState(false);
+    const [sourceBusy, setSourceBusy] = useState(false);
+    const busy = commandBusy || sourceBusy;
+    const sourcePending = useRef(false);
     const pending = useRef(false);
     const [editing, setEditing] = useState<{
         type: "value" | "goal" | "group";
@@ -35,6 +41,7 @@ export function DataPage({ api = defaultDataOverlaysApi }: {
         id: string;
         name: string;
     } | null>(null);
+    const editingSource = editing?.type === "value" && state?.values.find(value => value.id === editing.id)?.source !== undefined;
     async function load() { try {
         setState(await api.getState());
         setError(null);
@@ -70,7 +77,7 @@ export function DataPage({ api = defaultDataOverlaysApi }: {
         return () => { alive = false; window.clearInterval(interval); document.removeEventListener("visibilitychange", refresh); };
     }, [api]);
     const mutate = useCallback(async (work: () => Promise<DataOverlayState>, close = true, navigation = false) => {
-        if (pending.current)
+        if (pending.current || sourcePending.current)
             return false;
         pending.current = true;
         setBusy(true);
@@ -103,7 +110,7 @@ export function DataPage({ api = defaultDataOverlaysApi }: {
         const errors: Record<string, string> = {};
         if (!name.trim())
             errors.name = "Enter a name.";
-        if (editing.type === "value" && kind === "integer" && (defaultContent.trim() === "" || !Number.isSafeInteger(Number(defaultContent))))
+        if (editing.type === "value" && !editingSource && kind === "integer" && (defaultContent.trim() === "" || !Number.isSafeInteger(Number(defaultContent))))
             errors.defaultContent = "Enter a safe integer reset default.";
         if (editing.type === "goal") {
             if (amount.trim() === "" || !Number.isSafeInteger(Number(amount)) || Number(amount) <= 0)
@@ -120,9 +127,10 @@ export function DataPage({ api = defaultDataOverlaysApi }: {
             if (editing.type === "goal")
                 return api.saveGoal(editing.id, mode === "fixed-target" ? { name, valueId, mode, target: Number(amount) } : { name, valueId, mode, baseline: Number(baseline), additionalAmount: Number(amount) });
             const resetDefault = kind === "integer" ? Number(defaultContent) : defaultContent;
+            if (editingSource && editing.id !== null) return api.updateValue(editing.id, { name });
             return editing.id === null ? api.createValue(kind === "integer" ? { name, kind, resetDefault: Number(resetDefault), resetGroupId: groupId || null } : { name, kind, resetDefault: String(resetDefault), resetGroupId: groupId || null }) : api.updateValue(editing.id, { name, resetDefault, resetGroupId: groupId || null });
         }, true, navigation);
-    }, [editing, name, kind, defaultContent, groupId, valueId, mode, amount, baseline, mutate, api]);
+    }, [editing, editingSource, name, kind, defaultContent, groupId, valueId, mode, amount, baseline, mutate, api]);
     const saveNavigation = useCallback(() => save(true), [save]);
     const discard = useCallback(() => setEditing(null), []);
     useDirtyNavigationSource({ id: "data-definitions", summary: "Unsaved Data definition", dirty: editing !== null, save: saveNavigation, discard });
@@ -164,6 +172,7 @@ export function DataPage({ api = defaultDataOverlaysApi }: {
     </div>}
     {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)}/>}
     {actionError === null || deleting !== null ? null : <ManagementErrorToast error={actionError} onDismiss={() => setActionError(null)}/>}
+    <TwitchDataSources api={twitchSourcesApi} disabled={busy || editing !== null || deleting !== null || state === null || state.values.length >= dataOverlayLimits.values} onPendingChange={value => { sourcePending.current = value; setSourceBusy(value); }} onCreated={next => setState(current => current !== null && current.revision > next.revision ? current : next)} />
     {state === null ? <p role="status">Loading Data…</p> : <>
       <ModuleSection title="Values" label="Values" description={`${state.values.length} / ${dataOverlayLimits.values} values. Integer or plain text up to ${dataOverlayLimits.textBytes} UTF-8 bytes.`} actions={<Button disabled={busy || editing !== null || state.values.length >= dataOverlayLimits.values} onClick={() => edit("value")}>Add value</Button>}>
         {state.values.length === 0 ? <p>No values yet. Add a value to share between canvases.</p> : <Table>
@@ -179,7 +188,7 @@ export function DataPage({ api = defaultDataOverlaysApi }: {
           </Table.Thead>
           <Table.Tbody>{state.values.map(value => <Table.Tr key={value.id}>
             <Table.Td>{value.name}</Table.Td>
-            <Table.Td>{value.kind}</Table.Td>
+            <Table.Td>{value.kind}{value.source === undefined ? "" : value.source.invalidated ? " · Twitch follower total (read-only, account changed; create a new source)" : " · Twitch follower total (read-only)"}</Table.Td>
             <Table.Td className="data-current-content">{String(value.content)}</Table.Td>
             <Table.Td>{definitionReferences(state, "value", value.id).join(", ") || "No references"}</Table.Td>
             <Table.Td>
@@ -214,7 +223,7 @@ export function DataPage({ api = defaultDataOverlaysApi }: {
         <Stack>
           <h2>{editing.id === null ? "Add" : "Edit"} {editing.type}</h2>
           <TextInput required label="Name" error={fieldErrors.name} value={name} onChange={event => setName(event.currentTarget.value)}/>
-          {editing.type !== "value" ? null : <>
+          {editing.type !== "value" ? null : editingSource ? <p>Twitch follower total is read-only. You can rename this value; Twitch controls its content and it cannot join a reset group.</p> : <>
             <NativeSelect label="Kind" disabled={editing.id !== null} value={kind} data={[{ value: "integer", label: "Integer" }, { value: "text", label: "Plain text" }]} onChange={event => setKind(event.currentTarget.value as typeof kind)}/>
             <TextInput required={kind === "integer"} type={kind === "integer" ? "number" : "text"} label="Reset default" error={fieldErrors.defaultContent} value={defaultContent} onChange={event => setDefaultContent(event.currentTarget.value)}/>
             <NativeSelect label="Reset group" value={groupId} data={[{ value: "", label: "No group" }, ...(state?.resetGroups.map(group => ({ value: group.id, label: group.name })) ?? [])]} onChange={event => setGroupId(event.currentTarget.value)}/>

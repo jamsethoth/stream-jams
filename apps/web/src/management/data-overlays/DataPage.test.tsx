@@ -1,3 +1,4 @@
+import { createTwitchDataFixture } from "./twitch-data-source-fixtures.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -9,10 +10,20 @@ import { dataPreviewFixture } from "./data-preview-fixtures.js";
 
 afterEach(cleanup);
 describe("Data definitions", () => {
+  it("renames source definitions without offering reset defaults or group membership", async () => {
+    const state = dataPreviewFixture(); state.values[0]!.source = { provider: "twitch", kind: "follower-total", broadcasterId: "123" };
+    const api = createDataManagementFixture(state); api.updateValue = vi.fn(api.updateValue);
+    const user = userEvent.setup(); renderManagement(<DataPage twitchSourcesApi={createTwitchDataFixture()} api={api} />);
+    await user.click(await screen.findByRole("button", { name: "Edit Community challenge" }));
+    expect(screen.queryByLabelText("Reset default")).toBeNull(); expect(screen.queryByLabelText("Reset group")).toBeNull();
+    await user.clear(screen.getByLabelText(/Name/u)); await user.type(screen.getByLabelText(/Name/u), "Followers");
+    await user.click(screen.getByRole("button", { name: "Save definition" }));
+    expect(api.updateValue).toHaveBeenCalledWith("counter", { name: "Followers" });
+  });
   it("creates a definition without live-content controls and preserves immutable kind", async () => {
     const api = createDataManagementFixture();
     const user = userEvent.setup();
-    renderManagement(<DirtyNavigationProvider><DataPage api={api} /></DirtyNavigationProvider>);
+    renderManagement(<DirtyNavigationProvider><DataPage twitchSourcesApi={createTwitchDataFixture()} api={api} /></DirtyNavigationProvider>);
     await screen.findByRole("button", { name: "Edit Community challenge" });
     expect(screen.queryByRole("button", { name: "+1" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Add value" }));
@@ -28,7 +39,7 @@ describe("Data definitions", () => {
     api.updateValue = vi.fn().mockRejectedValue(new Error("Duplicate name. Choose another name."));
     api.deleteValue = vi.fn().mockRejectedValue(new Error("Referenced by goal:goal"));
     const user = userEvent.setup();
-    renderManagement(<DataPage api={api} />);
+    renderManagement(<DataPage twitchSourcesApi={createTwitchDataFixture()} api={api} />);
     await user.click(await screen.findByRole("button", { name: "Edit Community challenge" }));
     await user.clear(screen.getByLabelText(/Name/u)); await user.type(screen.getByLabelText(/Name/u), "New draft");
     await user.click(screen.getByRole("button", { name: "Save definition" }));
@@ -46,7 +57,7 @@ describe("Data definitions", () => {
   });
   it("keeps a cleared integer default as an invalid draft", async () => {
     const api = createDataManagementFixture(); api.updateValue = vi.fn(api.updateValue);
-    const user = userEvent.setup(); renderManagement(<DataPage api={api} />);
+    const user = userEvent.setup(); renderManagement(<DataPage twitchSourcesApi={createTwitchDataFixture()} api={api} />);
     await user.click(await screen.findByRole("button", { name: "Edit Community challenge" }));
     await user.clear(screen.getByLabelText(/Reset default/u));
     await user.click(screen.getByRole("button", { name: "Save definition" }));
@@ -56,7 +67,7 @@ describe("Data definitions", () => {
   it("refreshes current content and references without replacing a definition draft", async () => {
     const state = dataPreviewFixture();
     const api = createDataManagementFixture(); api.getState = async () => structuredClone(state);
-    const user = userEvent.setup(); renderManagement(<DataPage api={api} />);
+    const user = userEvent.setup(); renderManagement(<DataPage twitchSourcesApi={createTwitchDataFixture()} api={api} />);
     await user.click(await screen.findByRole("button", { name: "Edit Community challenge" }));
     await user.clear(screen.getByLabelText(/Name/u)); await user.type(screen.getByLabelText(/Name/u), "Retained draft");
     state.values[0]!.content = 55; state.revision = 1;

@@ -19,6 +19,14 @@ function api(): OperatorDataApi {
 const meta = { title: "Operator/Data", component: OperatorDataSection, decorators: [Story => <ManagementPresentationProvider><Story /></ManagementPresentationProvider>], tags: ["data-overlays", "operator-compact", "mantine-foundation"], parameters: { layout: "padded" }, args: { api: api() } } satisfies Meta<typeof OperatorDataSection>;
 export default meta;
 type Story = StoryObj<typeof meta>;
+export const ProviderReadOnly: Story = { tags: ["twitch-data-sources"], args: { api: { ...api(), getState: async () => {
+  const state = dataPreviewFixture(); state.values[0]!.source = { provider: "twitch", kind: "follower-total", broadcasterId: "123" }; state.pinnedValueIds.push("label"); return state;
+} } }, play: async ({ canvasElement }) => {
+  const canvas = within(canvasElement); await expect(await canvas.findByText(/Twitch follower total/u)).toHaveTextContent("Read-only");
+  await expect(canvas.queryByRole("button", { name: "Add one to Community challenge" })).toBeNull();
+  await expect(canvas.queryByRole("button", { name: "Reset Community challenge" })).toBeNull();
+  await expect(canvas.getByRole("textbox", { name: "Set Label" })).toBeEnabled();
+} };
 export const LiveControls: Story = { play: async ({ canvasElement }) => {
   const canvas = within(canvasElement); await canvas.findByLabelText("Set Community challenge");
   await userEvent.click(canvas.getByRole("button", { name: "Add one to Community challenge" }));

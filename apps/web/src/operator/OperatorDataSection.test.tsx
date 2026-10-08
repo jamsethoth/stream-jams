@@ -8,6 +8,24 @@ import { OperatorDataSection } from "./OperatorDataSection.js";
 import type { OperatorDataApi } from "./data-api.js";
 import { dataOverlayStateSchema } from "@stream-jams/core";
 afterEach(() => { cleanup(); vi.useRealTimers(); });
+it("shows provider provenance without set, delta or reset while retaining manual controls", async () => {
+  const state = dataPreviewFixture();
+  state.values[0]!.source = { provider: "twitch", kind: "follower-total", broadcasterId: "123" };
+  state.pinnedValueIds.push("label");
+  harness({ getState: async () => state });
+  expect(await screen.findByText(/Twitch follower total/u)).toHaveTextContent("Read-only");
+  expect(screen.queryByLabelText("Set Community challenge")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Add one to Community challenge" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Subtract one from Community challenge" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Reset Community challenge" })).toBeNull();
+  expect(screen.getByLabelText("Set Label")).toBeEnabled();
+});
+it("marks an invalidated broadcaster binding hidden and links to source correction", async () => {
+  const state = dataPreviewFixture(); state.values[0]!.source = { provider: "twitch", kind: "follower-total", broadcasterId: "123", invalidated: true };
+  harness({ getState: async () => state });
+  expect(await screen.findByText(/Account changed/u)).toHaveTextContent("hidden from overlays");
+  expect(screen.getByRole("link", { name: "Management Data" })).toHaveAttribute("href", "/manage/data");
+});
 function harness(overrides: Partial<OperatorDataApi> = {}) {
   const state = dataPreviewFixture();
   const api: OperatorDataApi = { getState: vi.fn(async () => state), setValue: vi.fn(async () => state), delta: vi.fn(async () => state), resetValue: vi.fn(async () => state), resetGroup: vi.fn(async () => state), restartGoal: vi.fn(async () => state), setVisibility: vi.fn(async () => state), ...overrides };
