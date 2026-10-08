@@ -267,21 +267,26 @@ listen("receiver:" + id, async body => {
 });
 // Device fan-out lives in its own window, outside the captured player, so its sound is
 // never captured back into the mirror.
-const sinks = document.createElement("div");
-sinks.hidden = true;
-document.body.append(sinks);
+// Each device gets its own AudioContext bound to that device. Remote WebRTC audio played
+// through a second <audio> element stayed silent on Windows, and Web Audio needs the stream
+// to stay attached to a (muted) media element, which the <video> above provides.
+let deviceContexts = [];
 async function fanOut(source) {
-  for (const element of sinks.querySelectorAll("audio")) { element.pause(); element.srcObject = null; }
-  sinks.replaceChildren();
+  for (const context of deviceContexts) void context.close();
+  deviceContexts = [];
   const audioTrack = source.getAudioTracks()[0];
   if (!audioTrack) { report("fan-out", { ok: false, message: "No audio track yet." }); return; }
   const results = [];
   for (const deviceId of (params.get("devices") || "").split(",").filter(Boolean)) {
-    const element = document.createElement("audio");
-    element.srcObject = new MediaStream([audioTrack]);
-    sinks.append(element);
-    try { await element.setSinkId(deviceId); await element.play(); results.push({ device: deviceId.slice(0, 8), ok: true, sinkId: element.sinkId === deviceId }); }
-    catch (error) { results.push({ device: deviceId.slice(0, 8), ok: false, message: String(error && error.message || error) }); }
+    try {
+      const context = new AudioContext({ sinkId: deviceId, latencyHint: "playback" });
+      deviceContexts.push(context);
+      context.createMediaStreamSource(new MediaStream([audioTrack])).connect(context.destination);
+      await context.resume();
+      results.push({ device: deviceId.slice(0, 8), ok: context.state === "running", state: context.state, sinkId: context.sinkId === deviceId, method: "web-audio" });
+    } catch (error) {
+      results.push({ device: deviceId.slice(0, 8), ok: false, message: String(error && error.message || error) });
+    }
   }
   report("fan-out", { ok: results.length > 0 && results.every(result => result.ok), devices: results });
 }

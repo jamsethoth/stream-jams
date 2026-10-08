@@ -102,3 +102,10 @@ With the player's own sound suppressed, OBS played the sound once and nothing pl
 Cause: the device `<audio>` elements lived inside the captured player page. Frame capture records every sound the page makes, so the device copy was captured back into the mirror (the second copy in OBS), and suppressing the page's local playback also silenced the device copy. In the earlier runs, before suppression, the same loop fed the device copy back into the capture, which explains the doubling.
 
 Change: device output now runs in its own hidden window that receives the mirror like any other output and sends its sound only to the ticked devices. **The product must keep device output out of the captured player page.** A Linux run confirmed the new window connects and accepts its device.
+
+### 2026-10-08: Windows 11 with OBS, fifth run
+
+- **No more doubling.** OBS played the sound once, in sync, and Stop silenced everything. Twitch and YouTube controls worked again.
+- **Device output still silent.** The device window received the sound (audio level 0.25–0.33) and each `<audio>` element accepted its device, but nothing was heard on the ticked devices, including with two devices at once.
+
+Change: each device now gets its own `AudioContext` created with that device's `sinkId`, fed from the received track, with the stream kept on a muted `<video>` element so Chromium keeps decoding remote audio. A Linux run confirmed the context starts on its device.
