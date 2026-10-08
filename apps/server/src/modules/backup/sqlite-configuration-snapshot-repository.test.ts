@@ -60,6 +60,17 @@ describe("SqliteConfigurationSnapshotRepository", () => {
     expect(data.read()).toEqual({ revision: 0, values: [], goals: [], resetGroups: [], canvases: [], pinnedValueIds: [] });
   });
 
+  it("preserves Twitch source provenance in backups and rejects forged ownership before restore", () => {
+    const service = new DataOverlayService(new SqliteDataOverlayRepository(database), { generateId: () => "followers", now: () => "2026-10-08T00:00:00Z" });
+    service.createTwitchFollowerValue("Synthetic followers", "synthetic-broadcaster"); service.replaceTwitchFollowerTotal("synthetic-broadcaster", 990);
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection); const snapshot = repository.snapshot();
+    expect(repository.validate({ ...snapshot, appConfig: {} })).toEqual([]);
+    repository.replace({ tables: snapshot.tables, assets: [seededAsset()] });
+    expect(service.getState().values[0]).toMatchObject({ content: 990, source: { provider: "twitch", kind: "follower-total", broadcasterId: "synthetic-broadcaster" } });
+    const forged = structuredClone(snapshot); const row = forged.tables.data_values![0]!;
+    row.document = JSON.stringify({ ...JSON.parse(String(row.document)), source: { provider: "twitch", kind: "follower-total", broadcasterId: "synthetic-broadcaster", accessToken: "forged" } });
+    expect(repository.validate({ ...forged, appConfig: {} }).length).toBeGreaterThan(0);
+  });
   it("rejects malformed state, mismatched or foreign references, duplicate names and incompatible images before mutation", () => {
     const data = seedData(database);
     const repository = new SqliteConfigurationSnapshotRepository(database.connection);

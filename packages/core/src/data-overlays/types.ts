@@ -1,6 +1,8 @@
 import type { z } from "zod";
 import type * as schemas from "./schemas.js";
 export type DataValue = z.infer<typeof schemas.dataValueSchema>;
+export type TwitchDataSourceStatus = z.infer<typeof schemas.twitchDataSourceStatusSchema>;
+export type TwitchFollowerSourceInput = z.infer<typeof schemas.twitchFollowerSourceInputSchema>;
 export type DataGoal = z.infer<typeof schemas.dataGoalSchema>;
 export type DataResetGroup = z.infer<typeof schemas.dataResetGroupSchema>;
 export type DataCanvas = z.infer<typeof schemas.dataCanvasSchema>;

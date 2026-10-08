@@ -1,9 +1,11 @@
-import { DataOverlayError, dataCanvasInputSchema, dataGoalInputSchema, dataIdSchema, dataResetGroupInputSchema, dataValueCreateInputSchema, dataValueDeltaInputSchema, dataValueSetInputSchema, dataValueUpdateInputSchema, type DataOverlayService } from "@stream-jams/core";
+import { DataOverlayError, dataCanvasInputSchema, dataGoalInputSchema, dataIdSchema, dataResetGroupInputSchema, dataValueCreateInputSchema, dataValueDeltaInputSchema, dataValueSetInputSchema, dataValueUpdateInputSchema, twitchFollowerSourceInputSchema, type DataOverlayService } from "@stream-jams/core";
 import { z } from "zod";
 import type { FastifyInstance, FastifyReply, preHandlerHookHandler } from "fastify";
 import { RuntimeMaintenanceUnavailableError } from "../../modules/backup/runtime-maintenance-gate.js";
+import type { TwitchDataSourceRuntime } from "../../modules/twitch/twitch-data-source-runtime.js";
 export interface DataOverlayRouteDependencies {
   readonly dataOverlayService: DataOverlayService;
+  readonly twitchDataSourceRuntime?: TwitchDataSourceRuntime;
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
 }
@@ -12,8 +14,8 @@ const empty = z.object({}).strict();
 export function registerDataOverlayRoutes(app: FastifyInstance, dependencies: DataOverlayRouteDependencies): void {
   const service = dependencies.dataOverlayService;
   const preHandler = [dependencies.managementRateLimitPreHandler, dependencies.managementAuthPreHandler];
-  const handle = (reply: FastifyReply, work: () => unknown, status = 200) => {
-    try { return reply.status(status).send(work()); } catch (error) {
+  const handle = async (reply: FastifyReply, work: () => unknown, status = 200) => {
+    try { return reply.status(status).send(await work()); } catch (error) {
       if (error instanceof DataOverlayError) return reply.status(error.code === "NOT_FOUND" ? 404 : 409).send({ error: { code: `DATA_${error.code}`, message: error.message, references: error.references, currentValue: error.currentValue } });
       if (error instanceof RuntimeMaintenanceUnavailableError) return reply.status(409).send({ error: { code: "DATA_MAINTENANCE_ACTIVE", message: "Data changes are unavailable during maintenance or shutdown." } });
       if (error instanceof TypeError || error instanceof z.ZodError) return reply.status(400).send({ error: { code: "INVALID_DATA_REQUEST", message: "Invalid data request" } });
@@ -23,6 +25,11 @@ export function registerDataOverlayRoutes(app: FastifyInstance, dependencies: Da
   const id = (params: unknown) => paramsSchema.parse(params).id;
   app.get("/data-overlays", { preHandler }, async () => service.getState());
   app.get("/operator/data-overlays", { preHandler }, async () => service.getState());
+  if (dependencies.twitchDataSourceRuntime) {
+    const runtime = dependencies.twitchDataSourceRuntime;
+    app.get("/data-overlays/sources/twitch", { preHandler }, async () => runtime.getStatus());
+    app.post("/data-overlays/sources/twitch/followers", { preHandler }, async (request, reply) => handle(reply, () => runtime.createFollowerSource(twitchFollowerSourceInputSchema.parse(request.body).name), 201));
+  }
   app.put("/data-overlays/pins", { preHandler }, async (request,reply) => handle(reply,() => service.setPins(z.object({ valueIds: z.array(dataIdSchema) }).strict().parse(request.body).valueIds)));
   app.post("/data-overlays/values", { preHandler }, async (request,reply) => handle(reply,() => service.createValue(dataValueCreateInputSchema.parse(request.body)),201));
   app.patch("/data-overlays/values/:id", { preHandler }, async (request,reply) => handle(reply,() => service.updateValue(id(request.params),dataValueUpdateInputSchema.parse(request.body))));

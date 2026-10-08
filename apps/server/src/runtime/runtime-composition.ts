@@ -175,6 +175,8 @@ import {
   TwitchOAuthService
 } from "../modules/twitch/twitch-oauth-service.js";
 import { TwitchRewardCatalogService } from "../modules/twitch/twitch-reward-catalog-service.js";
+import { TwitchDataSourceRuntime } from "../modules/twitch/twitch-data-source-runtime.js";
+import type { TwitchDataApiClient } from "../modules/twitch/twitch-api-client.js";
 import { SqliteTwitchAccountRepository } from "../modules/twitch/sqlite-twitch-account-repository.js";
 import { NodePortAvailabilityChecker, type PortAvailabilityChecker } from "../server/port-availability.js";
 import { OverlayGateway } from "../websocket/overlay-gateway.js";
@@ -216,6 +218,7 @@ export interface RuntimeAppCompositionOptions {
   readonly musicArtworkNetwork?: Pick<MusicArtworkServiceOptions, "resolveAddresses" | "fetchBytes">;
   readonly twitchApiClient?: TwitchApiClient;
   readonly twitchRewardApiClient?: TwitchRewardApiClient;
+  readonly twitchDataApiClient?: TwitchDataApiClient;
   readonly twitchEventSubApiClient?: TwitchEventSubApiClient;
   readonly twitchEventSubSocketFactory?: (url: string) => TwitchEventSubSocket;
   readonly streamerBotSocketFactory?: (url: string) => StreamerBotSocket;
@@ -552,11 +555,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   const maintenanceGate = new RuntimeMaintenanceGate();
   let refreshDataOutputs = () => {};
+  let reconcileTwitchSources = () => {};
   const dataOverlayService = new DataOverlayService(new SqliteDataOverlayRepository(database), {
     generateId: () => `data-${randomUUID()}`, now: () => now().toISOString(),
     runMutation: work => maintenanceGate.runConfigurationMutation(work),
     resolveImageAsset: id => database.connection.prepare("SELECT media_type FROM asset_metadata WHERE id = ?").get(id)?.media_type === "image",
-    publish: () => refreshDataOutputs(),
+    publish: () => { reconcileTwitchSources(); refreshDataOutputs(); },
     onPublishError: error => { void runtimeLogger.error("Data overlay publication failed after its changes were saved.", {
       module: "data-overlays", source: "data-overlays.publication.failed", correlationId: generateRuntimeReferenceId(), processingId: null
     }, error instanceof Error ? error : new Error("Data overlay publication failed")); }
@@ -931,6 +935,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     now
   });
   const twitchAuthServiceRef: { current: TwitchOAuthService | null } = { current: null };
+  const twitchDataSourceRef: { current: TwitchDataSourceRuntime | null } = { current: null };
   const twitchEventSubClient = new TwitchEventSubClient({
     apiClient: options.twitchEventSubApiClient ?? new DefaultTwitchEventSubApiClient(),
     socketFactory: options.twitchEventSubSocketFactory ?? createNodeWebSocket,
@@ -975,7 +980,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     clientId: twitchClientId,
     generateAuthorizationId: randomUUID,
     now,
-    onConnectionChanged: syncEventSourceRuntime,
+    onConnectionChanged: async () => { await Promise.all([twitchDataSourceRef.current?.connectionChanged(), syncEventSourceRuntime()]); },
     repository: twitchAccountRepository,
     secretStore,
     assertSecretStoreAvailable: runtimeSecretStore.assertAvailable
@@ -1344,7 +1349,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       },
       deleteOldSecret: ref => secretStore.deleteSecret(ref)
     },
-    runExclusive: (work) => maintenanceGate.runMaintenance(() => localMediaService.maintenance(work))
+    runExclusive: async (work) => {
+      twitchDataSourceRef.current?.suspendForMaintenance();
+      try { return await maintenanceGate.runMaintenance(() => localMediaService.maintenance(work)); }
+      finally { await twitchDataSourceRef.current?.resumeAfterMaintenance(); }
+    }
   });
   const managementOverviewService = new ManagementOverviewService({
     providerService: providerManagementService,
@@ -1425,6 +1434,16 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     }, now: () => now().getTime()
   });
   refreshDataOutputs = () => dataOutputRuntime.refresh();
+  const twitchDataSourceRuntime = new TwitchDataSourceRuntime({
+    service: dataOverlayService, repository: twitchAccountRepository, secretStore, clientId: twitchClientId,
+    apiClient: options.twitchDataApiClient ?? defaultTwitchApiClient, now: () => now().getTime(),
+    validateAccount: async () => { await twitchAuthService.validateConnectedAccount({ notifyConnectionChanged: false }); },
+    setStatus: (id, status) => dataOutputRuntime.setSourceStatus(id, status),
+    onError: () => { void runtimeLogger.warn("Twitch data refresh failed; the source is unavailable or stale.", { module: "data-overlays", source: "twitch.data.refresh.failed", correlationId: generateRuntimeReferenceId(), processingId: null }); }
+  });
+  twitchDataSourceRef.current = twitchDataSourceRuntime;
+  reconcileTwitchSources = () => twitchDataSourceRuntime.reconcile();
+  await twitchDataSourceRuntime.connectionChanged();
   const overlayModuleRuntimes = new Map<string, OverlayModuleRuntime>([
     ["alerts", {
       async getModuleSnapshot() {
@@ -1687,6 +1706,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   };
   const serverDependencies = {
     dataOverlayService,
+    twitchDataSourceRuntime,
     authorizeDataOverlayAsset: async (access: import("@stream-jams/core").OverlayRouteAccessRequest, assetId: string) => {
       if (access.scope === "unified") {
         const referenced = dataOverlayService.getState().canvases.some(canvas => canvas.elements.some(element => element.kind === "image" && element.assetId === assetId));
@@ -1829,6 +1849,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     unsubscribeVideoShoutoutOutputs();
     unsubscribeDataOutputs();
     dataOutputRuntime.close();
+    await twitchDataSourceRuntime.close();
     videoShoutoutService.dispose();
     await videoShoutoutOutputSyncTail;
     await timerOutputSyncTail;

@@ -12,8 +12,9 @@ export function projectDataOverlays(state: DataOverlayState, options: DataProjec
   const goals = new Map(state.goals.map(goal => [goal.id, goal]));
   function usable(value: DataValue | undefined, element: DataCanvasElement): value is DataValue {
     if (!value || !dataValueSchema.safeParse(value).success) return false;
+    if (value.source?.invalidated) return false;
     const status = options.sourceStatuses !== undefined && Object.hasOwn(options.sourceStatuses, value.id) ? options.sourceStatuses[value.id] : undefined;
-    if (!status) return true;
+    if (!status) return value.source === undefined;
     if (!dataSourceStatusSchema.safeParse(status).success) return false;
     if (status.state === "current") return true;
     if (status.state !== "stale") return false;

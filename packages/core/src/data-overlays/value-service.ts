@@ -4,7 +4,7 @@ import type { DataOverlayRepository } from "./repository.js";
 import type { DataCanvasInput, DataGoalInput, DataOverlayState, DataResetGroupInput, DataValue, DataValueCreateInput, DataValueUpdateInput } from "./types.js";
 export type DataValueCommand = { action: "set"; content: string | number; expectedRevision: number } | { action: "add" | "subtract"; amount: number } | { action: "reset" };
 export class DataOverlayError extends Error {
-  constructor(readonly code: "NOT_FOUND" | "NAME_CONFLICT" | "REFERENCED" | "REVISION_CONFLICT", message: string, readonly references: string[] = [], readonly currentValue: DataValue | null = null) { super(message); this.name = "DataOverlayError"; }
+  constructor(readonly code: "NOT_FOUND" | "NAME_CONFLICT" | "REFERENCED" | "REVISION_CONFLICT" | "SOURCE_READ_ONLY", message: string, readonly references: string[] = [], readonly currentValue: DataValue | null = null) { super(message); this.name = "DataOverlayError"; }
 }
 export interface DataOverlayServiceOptions {
   generateId(): string;
@@ -44,11 +44,12 @@ export class DataOverlayService {
   }
   updateValue(id: string, input: DataValueUpdateInput): DataOverlayState {
     const definition = dataValueUpdateInputSchema.parse(input);
-    return this.change(state => { const value = this.find(state.values, id); if (definition.name !== undefined) this.name(state.values, definition.name, id); Object.assign(value, definition, { revision: value.revision + 1, updatedAt: this.options.now() }); });
+    return this.change(state => { const value = this.find(state.values, id); if (value.source && (definition.resetDefault !== undefined || definition.resetGroupId !== undefined)) throw new DataOverlayError("SOURCE_READ_ONLY", "Provider values are read-only"); if (definition.name !== undefined) this.name(state.values, definition.name, id); Object.assign(value, definition, { revision: value.revision + 1, updatedAt: this.options.now() }); });
   }
   commandValue(id: string, command: DataValueCommand): DataOverlayState {
     return this.change(state => {
       const value = this.find(state.values, id);
+      if (value.source) throw new DataOverlayError("SOURCE_READ_ONLY", "Provider values are read-only");
       let content: number | string;
       if (command.action === "set") {
         const input = dataValueSetInputSchema.parse({ content: command.content, expectedRevision: command.expectedRevision });
@@ -64,6 +65,26 @@ export class DataOverlayService {
       }
       Object.assign(value, { content, revision: value.revision + 1, updatedAt: this.options.now() });
     });
+  }
+  /** Internal producer boundary. HTTP value inputs cannot supply provenance. */
+  createTwitchFollowerValue(name: string, broadcasterId: string): DataOverlayState {
+    const definition = dataValueCreateInputSchema.parse({ name, kind: "integer", resetDefault: 0, resetGroupId: null });
+    if (definition.kind !== "integer") throw new TypeError("Follower sources require integers");
+    dataIdSchema.parse(broadcasterId);
+    return this.change(state => { this.name(state.values, definition.name); const now = this.options.now(); state.values.push({ ...definition, kind: "integer", content: 0, id: this.id(), revision: 0, createdAt: now, updatedAt: now, source: { provider: "twitch", kind: "follower-total", broadcasterId } }); });
+  }
+  /** Authoritative totals replace old totals, including decreases, in one transaction. */
+  replaceTwitchFollowerTotal(broadcasterId: string, total: number): DataOverlayState {
+    dataIdSchema.parse(broadcasterId);
+    dataValueSetInputSchema.parse({ content: total, expectedRevision: 0 });
+    if (total < 0 || !Number.isSafeInteger(total)) throw new TypeError("Invalid follower total");
+    return this.change(state => { for (const value of state.values) if (value.source?.broadcasterId === broadcasterId && value.source.kind === "follower-total" && !value.source.invalidated) Object.assign(value, { content: total, revision: value.revision + 1, updatedAt: this.options.now() }); });
+  }
+  /** Switching account invalidates old bindings durably, even if that account returns later. */
+  invalidateTwitchBindingsExcept(broadcasterId: string): DataOverlayState {
+    dataIdSchema.parse(broadcasterId);
+    if (!this.getState().values.some(value => value.source && value.source.broadcasterId !== broadcasterId && !value.source.invalidated)) return this.getState();
+    return this.change(state => { for (const value of state.values) if (value.source && value.source.broadcasterId !== broadcasterId && !value.source.invalidated) { value.source.invalidated = true; value.revision += 1; value.updatedAt = this.options.now(); } });
   }
   createGoal(input: DataGoalInput): DataOverlayState { const definition = dataGoalInputSchema.parse(input); return this.change(state => { this.name(state.goals, definition.name); state.goals.push({ ...definition, id: this.id() }); }); }
   updateGoal(id: string, input: DataGoalInput): DataOverlayState { const definition = dataGoalInputSchema.parse(input); return this.change(state => { const goal = this.find(state.goals, id); this.name(state.goals, definition.name, id); state.goals[state.goals.indexOf(goal)] = { ...definition, id }; }); }

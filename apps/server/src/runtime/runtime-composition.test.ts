@@ -33,6 +33,44 @@ import { createRuntimeAppComposition } from "./runtime-composition.js";
 import { LocalAssetStore } from "../modules/assets/local-asset-store.js";
 import { SqliteAssetRepository } from "../modules/assets/sqlite-asset-repository.js";
 import { SqliteAssetRetirementRepository } from "../modules/assets/sqlite-asset-retirement-repository.js";
+import { SqliteTwitchAccountRepository } from "../modules/twitch/sqlite-twitch-account-repository.js";
+import { createTwitchTokenSecretRef, defaultTwitchOAuthScopes, defaultTwitchClientId } from "../modules/twitch/twitch-oauth-service.js";
+
+it("serves explicit provider source selection and readonly commands through real disposable runtime then revalidates on restart", async () => {
+  const root = await mkdtemp(join(tmpdir(), "stream-jams-twitch-data-"));
+  let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
+  const secretStore = new TestSecretStore();
+  const getFollowerTotal = vi.fn(async () => ({ total: 990, rateResetEpochMs: null }));
+  const twitchApiClient: TwitchApiClient = {
+    startDeviceAuthorization: vi.fn(), pollDeviceAuthorization: vi.fn(), refreshUserToken: vi.fn(), getCurrentUser: vi.fn(),
+    validateToken: async () => ({ clientId: defaultTwitchClientId, login: "synthetic", scopes: defaultTwitchOAuthScopes, userId: "synthetic-broadcaster", expiresIn: 3600 })
+  };
+  const options = { homeDirectory: root, webBuildDirectory: await createWebBuildFixture(root), configStore: new StaticConfigStore(createConfig(root)), environment: {}, secretStore,
+    scheduleRecurring: () => ({}), cancelRecurring: () => {}, twitchApiClient, twitchDataApiClient: { getFollowerTotal, getCreatorGoals: vi.fn() } };
+  try {
+    composition = await createRuntimeAppComposition(options);
+    let headers = managementAuthHeaders(await composition.app.inject({ method: "POST", url: "/auth/management/sessions" }));
+    expect((await composition.app.inject({ url: "/data-overlays/sources/twitch", headers })).json()).toMatchObject({ follower: { state: "unconfigured", broadcasterId: null }, goals: { state: "disconnected" } });
+    const account = { accountId: "synthetic-broadcaster", login: "synthetic", displayName: "Synthetic", scopes: defaultTwitchOAuthScopes, connectedAt: "2026-10-08T00:00:00Z", updatedAt: "2026-10-08T00:00:00Z" };
+    await new SqliteTwitchAccountRepository(composition.database.connection).saveAccount(account);
+    await secretStore.setSecret(createTwitchTokenSecretRef(account.accountId, "access_token"), "synthetic-token");
+    const forged = await composition.app.inject({ method: "POST", url: "/data-overlays/values", headers, payload: { name: "Forged", kind: "integer", resetDefault: 0, resetGroupId: null, source: { provider: "twitch", kind: "follower-total", broadcasterId: "other" } } });
+    expect(forged.statusCode).toBe(400);
+    const created = await composition.app.inject({ method: "POST", url: "/data-overlays/sources/twitch/followers", headers, payload: { name: "Synthetic followers" } });
+    expect(created.statusCode, created.body).toBe(201);
+    const id = created.json().values[0].id as string;
+    await vi.waitFor(() => expect(composition!.dataOverlayService.getState().values[0]?.content).toBe(990));
+    expect((await composition.app.inject({ url: "/data-overlays/sources/twitch", headers })).json()).toMatchObject({ follower: { state: "current", broadcasterId: account.accountId, valueIds: [id] }, goals: { state: "reauthorization-required" } });
+    const readonly = await composition.app.inject({ method: "POST", url: `/operator/data-overlays/values/${id}/reset`, headers, payload: {} });
+    expect(readonly.statusCode).toBe(409); expect(readonly.json().error.code).toBe("DATA_SOURCE_READ_ONLY");
+    await composition.close(); composition = undefined;
+    getFollowerTotal.mockResolvedValue({ total: 980, rateResetEpochMs: null });
+    composition = await createRuntimeAppComposition(options);
+    headers = managementAuthHeaders(await composition.app.inject({ method: "POST", url: "/auth/management/sessions" }));
+    expect(composition.dataOverlayService.getState().values[0]).toMatchObject({ content: 980, source: { provider: "twitch", kind: "follower-total", broadcasterId: account.accountId } });
+    expect((await composition.app.inject({ url: "/data-overlays/sources/twitch", headers })).json().follower.state).toBe("current");
+  } finally { await composition?.close(); await rm(root, { recursive: true, force: true }); }
+});
 
 it.each(["EBUSY", "EACCES", "EPERM"])("starts with persisted retirement %s and retries cleanup while current media stays readable", async code => {
   const testRoot = await mkdtemp(join(tmpdir(), "stream-jams-retirement-startup-"));

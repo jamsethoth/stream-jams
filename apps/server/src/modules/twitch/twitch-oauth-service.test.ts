@@ -14,14 +14,21 @@ import type { TwitchAccount, TwitchAccountRepository, TwitchConnectionStatus } f
 import {
   createTwitchTokenSecretRef,
   defaultTwitchOAuthScopes,
+  requestedTwitchOAuthScopes,
   TwitchOAuthService
 } from "./twitch-oauth-service.js";
 
 describe("TwitchOAuthService", () => {
+  it("keeps original required scopes ready without the optional Creator Goal capability", async () => {
+    const { repository, service } = createService();
+    await repository.saveAccount({ accountId: "synthetic", login: "synthetic", displayName: "Synthetic", scopes: defaultTwitchOAuthScopes, connectedAt: "2026-10-08T00:00:00Z", updatedAt: "2026-10-08T00:00:00Z" });
+    await expect(service.getStatus()).resolves.toMatchObject({ connected: true, authorizationState: "ready", missingScopes: [] });
+  });
   it("starts device authorization with sorted default scopes and keeps deviceCode server-side", async () => {
     const { apiClient, service } = createService();
     const expectedScopes = [
       "bits:read",
+      "channel:read:goals",
       "channel:read:hype_train",
       "channel:read:polls",
       "channel:read:predictions",
@@ -107,7 +114,7 @@ describe("TwitchOAuthService", () => {
       {
         clientId: "client-id",
         deviceCode: "device-code-1",
-        scopes: [...defaultTwitchOAuthScopes].sort()
+        scopes: [...requestedTwitchOAuthScopes].sort()
       }
     ]);
   });
