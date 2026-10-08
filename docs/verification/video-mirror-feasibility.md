@@ -109,3 +109,21 @@ Change: device output now runs in its own hidden window that receives the mirror
 - **Device output still silent.** The device window received the sound (audio level 0.25–0.33) and each `<audio>` element accepted its device, but nothing was heard on the ticked devices, including with two devices at once.
 
 Change: each device now gets its own `AudioContext` created with that device's `sinkId`, fed from the received track, with the stream kept on a muted `<video>` element so Chromium keeps decoding remote audio. A Linux run confirmed the context starts on its device.
+
+### 2026-10-08: Windows 11 with OBS, sixth run (gate passed)
+
+Twitch clip, with one OBS browser source, the desktop receiver and two ticked devices.
+
+- Jams heard the sound once on each of two devices and once in OBS, with no doubling, in sync, and Stop silenced everything.
+- Both device contexts reported `running` on their own device.
+- Delay medians: OBS 115 ms, desktop receiver 134 ms, device window 105 ms.
+- All app processes averaged 5% CPU with an 11% peak, without hardware acceleration.
+
+**Decision: the desktop mirror is feasible on Windows and the gate passes.** The product must follow what these runs proved:
+1. One long-lived hidden player page per purpose, with providers swapped inside it, so the capture never restarts.
+2. Frame capture with `suppressLocalAudioPlayback: true`, and echo cancellation, noise suppression and gain control off, in stereo.
+3. No sound-making element inside the captured player page other than the provider.
+4. Loopback-only WebRTC to each output, with receivers that reconnect on their own.
+5. The desktop overlay receiver shows the picture muted.
+6. Device output runs in its own hidden receiver, with one `AudioContext` per device created with that device's `sinkId`, and the stream kept on a muted media element.
+7. Stop, Skip and app exit end the player's sound.
