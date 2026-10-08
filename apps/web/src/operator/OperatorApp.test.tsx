@@ -5,7 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ManagementHttpError } from "../management/management-http-client.js";
 import { OperatorApp } from "./OperatorApp.js";
 import { PlaybackOperationsConflictError, type PlaybackApi } from "./playback-api.js";
+import { createHttpOperatorDataApi } from "./data-api.js";
 import type { OperatorTimersApi } from "./timers-api.js";
+const idleDataApi = createHttpOperatorDataApi({ fetch: async () => new Response(JSON.stringify({ revision: 0, values: [], goals: [], resetGroups: [], pinnedValueIds: [], canvases: [] }), { headers: { "content-type": "application/json" } }) });
 const idleTimersApi: OperatorTimersApi = { listStates: async () => [], adjust: async () => ({ changed: false, state: null }), command: async () => ({ changed: false, state: null }) };
 
 afterEach(() => {
@@ -19,7 +21,7 @@ describe("OperatorApp", () => {
   it("reports timer-only refresh failure independently and clears it on recovery", async () => {
     vi.useFakeTimers();
     const timersApi: OperatorTimersApi = { listStates: vi.fn().mockRejectedValueOnce(new Error("Timer service unavailable")).mockResolvedValue([]), adjust: async () => ({ changed: false, state: null }), command: vi.fn() };
-    render(<OperatorApp api={api()} timersApi={timersApi} />);
+    render(<OperatorApp dataApi={idleDataApi} api={api()} timersApi={timersApi} />);
     await act(async () => {});
     expect(screen.getByText("Timer state may be stale")).toBeVisible();
     expect(screen.getByText("Large raid")).toBeVisible();
@@ -31,7 +33,7 @@ describe("OperatorApp", () => {
     const unsubscribe = vi.fn();
     const resolveQuit = vi.fn();
     window.streamJamsDesktop = { onQuitRequested: (listener) => { request = listener; return unsubscribe; }, resolveQuit };
-    const { unmount } = render(<OperatorApp timersApi={idleTimersApi} api={api({ getSnapshot: () => new Promise(() => {}) })} />);
+    const { unmount } = render(<OperatorApp dataApi={idleDataApi} timersApi={idleTimersApi} api={api({ getSnapshot: () => new Promise(() => {}) })} />);
     request?.("quit-1");
     expect(resolveQuit).toHaveBeenCalledWith("quit-1", true);
     unmount();
@@ -43,7 +45,7 @@ describe("OperatorApp", () => {
     const timer = { status: "paused" as const, definitionId: "mitts", generation: "g1", remainingMs: 60000,
       snapshot: { id: "mitts", label: "Wear oven mitts", durationMs: 60000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: true, deviceRouteIds: [] } } };
     const adjust = vi.fn().mockRejectedValueOnce(new Error("Check the local service and retry.")).mockResolvedValue({ changed: true, state: timer });
-    render(<OperatorApp api={api()} timersApi={{ listStates: async () => [timer], command: vi.fn(), adjust }} />);
+    render(<OperatorApp dataApi={idleDataApi} api={api()} timersApi={{ listStates: async () => [timer], command: vi.fn(), adjust }} />);
     await screen.findByText("Wear oven mitts");
     await user.click(screen.getByText("Adjust time"));
     await user.clear(screen.getByLabelText("Time (seconds)")); await user.type(screen.getByLabelText("Time (seconds)"), "42");
@@ -57,7 +59,7 @@ describe("OperatorApp", () => {
     expect(adjust).toHaveBeenNthCalledWith(2, "mitts", { action: "increment", amountMs: 42000 });
   });
   it("shows simultaneous current items and real per-module pending positions", async () => {
-    render(<OperatorApp timersApi={idleTimersApi} api={api()} />);
+    render(<OperatorApp dataApi={idleDataApi} timersApi={idleTimersApi} api={api()} />);
 
     const nowPlaying = await screen.findByRole("heading", { name: "Now playing (2)" });
     const moduleQueues = screen.getByRole("heading", { name: "Module queues" });
@@ -76,7 +78,7 @@ describe("OperatorApp", () => {
       snapshot: { id: "mitts", label: "Wear oven mitts", durationMs: 60_000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null,
         outputs: { browserSource: true, deviceRouteIds: [] } } } as const;
     const timersApi: OperatorTimersApi = { listStates: vi.fn().mockResolvedValueOnce([running]).mockResolvedValueOnce([]), adjust: async () => ({ changed: false, state: null }), command: vi.fn(async () => ({ changed: true, state: null })) };
-    render(<OperatorApp api={api()} timersApi={timersApi} />);
+    render(<OperatorApp dataApi={idleDataApi} api={api()} timersApi={timersApi} />);
     expect(await screen.findByRole("heading", { name: "Active timers (1)" })).toBeVisible(); expect(screen.getByText("Wear oven mitts")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Stop" }));
     expect(timersApi.command).toHaveBeenCalledWith("mitts", "stop"); expect(await screen.findByRole("heading", { name: "Active timers (0)" })).toBeVisible();
@@ -85,7 +87,7 @@ describe("OperatorApp", () => {
   it("sends module-qualified skip, remove and replay commands", async () => {
     const user = userEvent.setup();
     const playbackApi = api();
-    render(<OperatorApp timersApi={idleTimersApi} api={playbackApi} />);
+    render(<OperatorApp dataApi={idleDataApi} timersApi={idleTimersApi} api={playbackApi} />);
     await screen.findByText("Large raid");
 
     await user.click(screen.getByRole("button", { name: "Skip Flash sweep in Screen Effects" }));
@@ -112,7 +114,7 @@ describe("OperatorApp", () => {
         );
       })
     });
-    render(<OperatorApp timersApi={idleTimersApi} api={playbackApi} />);
+    render(<OperatorApp dataApi={idleDataApi} timersApi={idleTimersApi} api={playbackApi} />);
     await screen.findByText("Flash sweep");
 
     await user.click(screen.getByRole("button", { name: "Skip Flash sweep in Screen Effects" }));
@@ -127,7 +129,7 @@ describe("OperatorApp", () => {
   it("pauses one module and confirms a scoped clear with count and revision", async () => {
     const user = userEvent.setup();
     const playbackApi = api();
-    render(<OperatorApp timersApi={idleTimersApi} api={playbackApi} />);
+    render(<OperatorApp dataApi={idleDataApi} timersApi={idleTimersApi} api={playbackApi} />);
     await screen.findByText("Large raid");
 
     await user.click(screen.getAllByRole("button", { name: "Pause module" })[1]!);
@@ -143,7 +145,7 @@ describe("OperatorApp", () => {
   it("contains clear confirmation focus and restores its keyboard trigger on dismissal", async () => {
     const user = userEvent.setup();
     const playbackApi = api();
-    render(<OperatorApp timersApi={idleTimersApi} api={playbackApi} />);
+    render(<OperatorApp dataApi={idleDataApi} timersApi={idleTimersApi} api={playbackApi} />);
     await screen.findByText("Large raid");
     const trigger = screen.getAllByRole("button", { name: "Clear pending" })[1]!;
 
@@ -173,7 +175,7 @@ describe("OperatorApp", () => {
     vi.useFakeTimers();
     const refreshed = { ...snapshot(), revision: 8, queued: snapshot().queued.filter((item) => item.moduleId !== "screen-effects") };
     const getSnapshot = vi.fn().mockResolvedValueOnce(snapshot()).mockResolvedValue(refreshed);
-    render(<OperatorApp timersApi={idleTimersApi} api={api({ getSnapshot })} />);
+    render(<OperatorApp dataApi={idleDataApi} timersApi={idleTimersApi} api={api({ getSnapshot })} />);
     await act(async () => { await Promise.resolve(); });
     const trigger = screen.getAllByRole("button", { name: "Clear pending" })[1]!;
     trigger.focus();
@@ -190,7 +192,7 @@ describe("OperatorApp", () => {
 
   it("shows independent module mute and applies All to a mixed policy", async () => {
     const playbackApi = api({ getSnapshot: async () => ({ ...snapshot(), moduleMutes: { alerts: true, "screen-effects": false } }) });
-    render(<OperatorApp timersApi={idleTimersApi} api={playbackApi} />);
+    render(<OperatorApp dataApi={idleDataApi} timersApi={idleTimersApi} api={playbackApi} />);
     expect(await screen.findByText("Alerts muted")).toBeVisible();
     expect(screen.getByText("Effects audio on")).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "Mute Alerts and Effects" }));
@@ -202,7 +204,7 @@ describe("OperatorApp", () => {
     const user = userEvent.setup();
     const response = deferred<MergedOperationsSnapshot>();
     const playbackApi = api({ pause: () => response.promise });
-    render(<OperatorApp timersApi={idleTimersApi} api={playbackApi} />);
+    render(<OperatorApp dataApi={idleDataApi} timersApi={idleTimersApi} api={playbackApi} />);
     const button = await screen.findByRole("button", { name: "Pause all queues" });
 
     await user.click(button);
@@ -216,7 +218,7 @@ describe("OperatorApp", () => {
   it("retains last-known state and labels refresh failures as stale", async () => {
     vi.useFakeTimers();
     const getSnapshot = vi.fn().mockResolvedValueOnce(snapshot()).mockRejectedValueOnce(new Error("offline"));
-    render(<OperatorApp timersApi={idleTimersApi} api={api({ getSnapshot })} />);
+    render(<OperatorApp dataApi={idleDataApi} timersApi={idleTimersApi} api={api({ getSnapshot })} />);
     await act(async () => { await Promise.resolve(); });
     expect(screen.getByText("Large raid")).toBeVisible();
 
@@ -227,7 +229,7 @@ describe("OperatorApp", () => {
   });
 
   it("shows an actionable initial error without inventing playback state", async () => {
-    render(<OperatorApp timersApi={idleTimersApi} api={api({ getSnapshot: async () => { throw new ManagementHttpError("Session failed", "SESSION", "ref-1"); } })} />);
+    render(<OperatorApp dataApi={idleDataApi} timersApi={idleTimersApi} api={api({ getSnapshot: async () => { throw new ManagementHttpError("Session failed", "SESSION", "ref-1"); } })} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Session failed");
     expect(screen.getByRole("link", { name: "Open diagnostics" })).toHaveAttribute("href", "/manage/diagnostics?reference=ref-1");
   });

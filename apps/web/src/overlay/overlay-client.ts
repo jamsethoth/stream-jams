@@ -193,6 +193,21 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
   let socket: WebSocket | null = null;
   let connectionGeneration = 0;
   let settledCompositionGeneration = 0;
+  let latestData: Extract<NonNullable<OverlayComposition["modules"][number]["presentation"]>, { kind: "data-overlays" }> | null = null;
+  const retiredDataRuntimes = new Set<string>();
+  function acceptComposition(composition: OverlayComposition): OverlayComposition {
+    return { ...composition, modules: composition.modules.map(module => {
+      if (module.presentation?.kind !== "data-overlays") return module;
+      const next = module.presentation;
+      if (latestData !== null && (retiredDataRuntimes.has(next.projection.runtimeId) ||
+        (next.projection.runtimeId === latestData.projection.runtimeId && next.projection.revision < latestData.projection.revision))) {
+        return { ...module, presentation: latestData };
+      }
+      if (latestData !== null && next.projection.runtimeId !== latestData.projection.runtimeId) retiredDataRuntimes.add(latestData.projection.runtimeId);
+      latestData = next;
+      return module;
+    }) };
+  }
   const reporter = createOverlayPlaybackReporter({
     get readyState() {
       return socket?.readyState ?? WebSocket.CLOSED;
@@ -222,7 +237,7 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
         .then((composition) => {
           if (disposed || socket !== nextSocket || settledCompositionGeneration >= generation) return;
           settledCompositionGeneration = generation;
-          options.onMessage({ type: "composition", composition });
+          options.onMessage({ type: "composition", composition: acceptComposition(composition) });
         })
         .catch((error: unknown) => {
           if (disposed || socket !== nextSocket || settledCompositionGeneration >= generation) return;
@@ -231,9 +246,10 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
         });
     });
     nextSocket.addEventListener("message", (event) => {
+      if (disposed || socket !== nextSocket) return;
       const message = parseOverlaySocketMessage(event.data, (instructionId, failure) => reporter.reportFailed(instructionId, failure));
       if (message?.type === "composition" && generation > 0) settledCompositionGeneration = Math.max(settledCompositionGeneration, generation);
-      if (message !== null) options.onMessage(message);
+      if (message !== null) options.onMessage(message.type === "composition" ? { ...message, composition: acceptComposition(message.composition) } : message);
     });
     // Browsers expose no cause on WebSocket error; close carries the diagnostic
     // and follows a failed connection, so report that boundary once.

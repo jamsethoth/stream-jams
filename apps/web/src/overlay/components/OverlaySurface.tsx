@@ -18,6 +18,8 @@ import { AlertTextContent } from "./AlertTextContent.js";
 import { TimerStack } from "./TimerStack.js";
 import { MusicWidget } from "./MusicWidget.js";
 import { VideoShoutout } from "./VideoShoutout.js";
+import { DataOverlayCanvases } from "./DataOverlayCanvases.js";
+import { dataOverlayProjectionSchema } from "@stream-jams/core";
 
 export type OverlayPlaybackEvent =
   | { readonly instructionId: string; readonly status: "ready" }
@@ -32,6 +34,7 @@ export interface OverlaySurfaceProps {
   readonly moduleMutes?: import("@stream-jams/core").ModuleMuteState | undefined;
   readonly resolveAssetUrl: (assetId: string, version?: string) => string;
   readonly resolveMusicAsset?: MusicAssetResolver | undefined;
+  readonly resolveDataAsset?: ((assetId: string) => string | null) | undefined;
   readonly onPlaybackEvent?: ((event: OverlayPlaybackEvent) => void) | undefined;
 }
 
@@ -45,7 +48,7 @@ export const overlayRootStyle: CSSProperties = {
 
 const testAudioActivationEvent = "stream-jams:test-audio-activation";
 
-export function OverlaySurface({ composition, preparingInstructionIds, muted = false, moduleMutes, onPlaybackEvent, resolveAssetUrl, resolveMusicAsset }: OverlaySurfaceProps) {
+export function OverlaySurface({ composition, preparingInstructionIds, muted = false, moduleMutes, onPlaybackEvent, resolveAssetUrl, resolveMusicAsset, resolveDataAsset }: OverlaySurfaceProps) {
 
   const [blockedTestAudioIds, setBlockedTestAudioIds] = useState<ReadonlySet<string>>(() => new Set());
   const rootElementRef = useRef<HTMLDivElement | null>(null);
@@ -119,6 +122,7 @@ export function OverlaySurface({ composition, preparingInstructionIds, muted = f
           presentation={moduleSnapshot.presentation}
           resolveAssetUrl={resolveAssetUrl}
           resolveMusicAsset={resolveMusicAsset}
+          resolveDataAsset={resolveDataAsset}
         />
       )}
       </div>
@@ -151,13 +155,19 @@ function ModulePresentation({
   onPlaybackEvent,
   presentation,
   resolveAssetUrl,
-  resolveMusicAsset
+  resolveMusicAsset,
+  resolveDataAsset
 }: {
   readonly onPlaybackEvent?: ((event: OverlayPlaybackEvent) => void) | undefined;
   readonly presentation: OverlayComposition["modules"][number]["presentation"];
   readonly resolveAssetUrl: (assetId: string, version?: string) => string;
   readonly resolveMusicAsset?: MusicAssetResolver | undefined;
+  readonly resolveDataAsset?: ((assetId: string) => string | null) | undefined;
 }) {
+  if (presentation?.kind === "data-overlays") {
+    const projection = dataOverlayProjectionSchema.safeParse(presentation.projection);
+    return projection.success ? <DataOverlayCanvases projection={projection.data} resolveAssetUrl={resolveDataAsset ?? (id => resolveAssetUrl(id) || null)} /> : null;
+  }
   if (presentation?.kind === "music-widget") return resolveMusicAsset === undefined ? null : <MusicWidget projection={presentation.widget} resolveAsset={resolveMusicAsset} />;
   if (presentation?.kind === "video-shoutout") return <VideoShoutout onPlaybackEvent={onPlaybackEvent} projection={presentation.shoutout} />;
   if (presentation?.kind !== "timer-stack") return null;

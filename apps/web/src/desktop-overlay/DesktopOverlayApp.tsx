@@ -60,6 +60,14 @@ export function DesktopOverlayApp({ controller, subscribe }: {
       return privateDesktopMusicArtworkUrl(music.artwork);
     }
   }), [controller]);
+  const resolveDataAsset = useCallback((id: string) => {
+    const module = controller.getSnapshot().modules.find(value => value.moduleId === "data-overlays");
+    if (module === undefined) return null;
+    for (const [key, url] of module.assetUrls) {
+      if ((JSON.parse(key) as [string, string | null])[0] === id) return url;
+    }
+    return null;
+  }, [controller]);
   const onPlaybackEvent = useCallback((event: OverlayPlaybackEvent) => {
     const occurrence = controller.getSnapshot().occurrences.find(value => value.instructions.some(instruction => scopedId(value.key, instruction.id) === event.instructionId));
     if (occurrence === undefined) return;
@@ -72,5 +80,5 @@ export function DesktopOverlayApp({ controller, subscribe }: {
   }, [controller]);
   const preparingInstructionIds = useMemo(() => new Set(snapshot.occurrences.filter(occurrence => occurrence.preparing === true)
     .flatMap(occurrence => occurrence.instructions.map(instruction => scopedId(occurrence.key, instruction.id)))), [snapshot]);
-  return <OverlaySurface composition={composition} muted preparingInstructionIds={preparingInstructionIds} resolveAssetUrl={resolveAssetUrl} resolveMusicAsset={resolveMusicAsset} onPlaybackEvent={onPlaybackEvent} />;
+  return <OverlaySurface composition={composition} muted preparingInstructionIds={preparingInstructionIds} resolveAssetUrl={resolveAssetUrl} resolveDataAsset={resolveDataAsset} resolveMusicAsset={resolveMusicAsset} onPlaybackEvent={onPlaybackEvent} />;
 }

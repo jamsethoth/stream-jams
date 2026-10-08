@@ -15,6 +15,8 @@ import {
 } from "./playback-api.js";
 import { TimerAdjustmentControls } from "../management/timers/TimerAdjustmentControls.js";
 import { defaultOperatorTimersApi, type OperatorTimersApi } from "./timers-api.js";
+import { OperatorDataSection } from "./OperatorDataSection.js";
+import type { OperatorDataApi } from "./data-api.js";
 
 const normalPollDelayMs = 2_000;
 const maximumPollDelayMs = 15_000;
@@ -33,6 +35,7 @@ interface ClearRequest {
 export interface OperatorAppProps {
   readonly api?: PlaybackApi;
   readonly timersApi?: OperatorTimersApi;
+  readonly dataApi?: OperatorDataApi;
 }
 
 // Operator shares the management presentation provider so its commands, dialogs and theme match management.
@@ -40,7 +43,7 @@ export function OperatorApp(props: OperatorAppProps) {
   return <ManagementPresentationProvider><OperatorConsole {...props} /></ManagementPresentationProvider>;
 }
 
-function OperatorConsole({ api = defaultPlaybackApi, timersApi = defaultOperatorTimersApi }: OperatorAppProps) {
+function OperatorConsole({ api = defaultPlaybackApi, timersApi = defaultOperatorTimersApi, dataApi }: OperatorAppProps) {
   useEffect(() => {
     const bridge = getDesktopBridge();
     return bridge?.onQuitRequested((requestId) => bridge.resolveQuit(requestId, true));
@@ -209,6 +212,7 @@ function OperatorConsole({ api = defaultPlaybackApi, timersApi = defaultOperator
     return (
       <main className="operator-console">
         <OperatorHeader />
+        <OperatorDataSection {...(dataApi === undefined ? {} : { api: dataApi })} />
         {initialError === null ? <p aria-live="polite" role="status">Loading playback state…</p> : (
           <OperatorErrorBanner error={initialError} title="Unable to load playback state">
             <Button variant="default" onClick={retry}>Retry loading playback state</Button>
@@ -222,6 +226,7 @@ function OperatorConsole({ api = defaultPlaybackApi, timersApi = defaultOperator
   return (
     <main className="operator-console">
       <OperatorHeader />
+      <OperatorDataSection {...(dataApi === undefined ? {} : { api: dataApi })} />
       <section aria-label="Playback safety status" className="operator-status-strip">
         <StatusBadge label={snapshot.paused ? "All queues paused" : "Global playback active"} tone={snapshot.paused ? "warning" : "positive"} />
         <StatusBadge label={(snapshot.moduleMutes?.alerts ?? snapshot.muted) ? "Alerts muted" : "Alerts audio on"} tone={(snapshot.moduleMutes?.alerts ?? snapshot.muted) ? "warning" : "positive"} />

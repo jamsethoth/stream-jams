@@ -16,6 +16,31 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("overlay-client", () => {
+  it("discards lower Data revisions and retired runtimes while retaining current unrelated modules", async () => {
+    const onMessage = vi.fn(); connectClient(onMessage); await vi.advanceTimersByTimeAsync(0); onMessage.mockClear();
+    const socket = FakeWebSocket.instances[0]!;
+    const send = (runtimeId: string, revision: number) => socket.emitMessage(JSON.stringify({ type: "overlay.composition", composition: {
+      overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", modules: [
+        { moduleId: "data-overlays", enabled: true, instructions: [], presentation: { kind: "data-overlays", projection: { runtimeId, revision, canvases: [] } } },
+        { moduleId: "alerts", enabled: revision % 2 === 0, instructions: [] }
+      ]
+    } }));
+    send("first", 5); send("first", 4); send("second", 0); send("first", 10);
+    expect(onMessage.mock.calls.map(call => call[0].composition.modules[0].presentation.projection)).toEqual([
+      { runtimeId: "first", revision: 5, canvases: [] }, { runtimeId: "first", revision: 5, canvases: [] },
+      { runtimeId: "second", revision: 0, canvases: [] }, { runtimeId: "second", revision: 0, canvases: [] }
+    ]);
+    expect(onMessage.mock.calls[1]![0].composition.modules[1].enabled).toBe(true);
+  });
+  it("ignores callbacks from a disconnected socket after reconnect and close", async () => {
+    const onMessage = vi.fn(); const connection = connectClient(onMessage);
+    const old = FakeWebSocket.instances[0]!; old.emit("open"); await vi.advanceTimersByTimeAsync(0);
+    old.emitClose(1006); await vi.advanceTimersByTimeAsync(1000);
+    onMessage.mockClear(); old.emitMessage(JSON.stringify({ type: "overlay.playback.audio-state", muted: true }));
+    expect(onMessage).not.toHaveBeenCalled();
+    connection.close(); FakeWebSocket.instances[1]!.emitMessage(JSON.stringify({ type: "overlay.playback.audio-state", muted: false }));
+    expect(onMessage).not.toHaveBeenCalled();
+  });
   it("builds artwork URLs only for live Music outputs and preserves profile scope", () => {
     expect(createOverlayMusicArtworkUrl(parseOverlayRoute("/overlay/modules/music/live/ovl_music?profile=vertical")!, "art_safe"))
       .toBe("/overlay/modules/music/live/ovl_music/artwork/art_safe?profile=vertical");

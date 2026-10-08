@@ -1,10 +1,31 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { compatibilityAlertTextBoxStyle, compatibilityAlertTextStyle, createDefaultMusicModuleConfig, projectMusicWidget } from "@stream-jams/core";
+import { compatibilityAlertTextBoxStyle, compatibilityAlertTextStyle, createDefaultMusicModuleConfig, projectMusicWidget, projectDataOverlays, privateVisualMediaUrl } from "@stream-jams/core";
+import { dataPreviewFixture } from "../management/data-overlays/data-preview-fixtures.js";
 import { afterEach, expect, it, vi } from "vitest";
 import { DesktopOverlayApp } from "./DesktopOverlayApp.js";
 import { DesktopOverlayController } from "./desktop-overlay-controller.js";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+it("renders Data with only prepared private image grants and preserves image identity across an unrelated render", async () => {
+  const listeners = new Set<() => void>(); const asset = privateAsset("tiny-image", "image/png");
+  const dispose = vi.fn(); const prepared = vi.fn(async () => ({ url: privateVisualMediaUrl(asset.reference), dispose }));
+  const controller = new DesktopOverlayController({ report: vi.fn(), changed: () => { for (const listener of listeners) listener(); }, prepareAsset: prepared });
+  const receive = (command: unknown) => controller.receive({ protocolVersion: 1, generation: 1, requestId: crypto.randomUUID(), command });
+  const projection = projectDataOverlays(dataPreviewFixture(), { runtimeId: "private_fixture", output: "desktop", targetProfileId: "landscape", nowEpochMs: Date.now(), moduleEnabled: true, outputPaused: false, resolveAssetId: () => true });
+  render(<DesktopOverlayApp controller={controller} subscribe={listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }} />);
+  await act(async () => {
+    receive({ type: "configure", config: { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "monitor", opacity: 1, layers: [{ moduleId: "data-overlays", visible: true }] } });
+    receive({ type: "sync-module", moduleId: "data-overlays", revision: 1, presentation: { kind: "data-overlays", projection }, assets: [asset] });
+  });
+  expect(screen.getByText("40 / 100")).toBeVisible();
+  const image = document.querySelector<HTMLImageElement>("[data-element-id=image]"); expect(image?.src).toBe(privateVisualMediaUrl(asset.reference));
+  expect(prepared).toHaveBeenCalledOnce();
+  await act(async () => receive({ type: "configure", config: { ...controller.getSnapshot().config, opacity: 0.5 } }));
+  expect(document.querySelector("[data-element-id=image]")).toBe(image);
+  await act(async () => receive({ type: "sync-module", moduleId: "data-overlays", revision: 2, presentation: { kind: "data-overlays", projection: { ...projection, revision: 2 } }, assets: [asset] }));
+  expect(document.querySelector("[data-element-id=image]")).toBe(image); expect(dispose).not.toHaveBeenCalled(); expect(prepared).toHaveBeenCalledOnce();
+  controller.dispose();
+});
 
 it("loads each occurrence's uploaded font from its own prepared private URL", async () => {
   const originalFonts = Object.getOwnPropertyDescriptor(document, "fonts");

@@ -22,6 +22,18 @@ afterEach(() => {
 });
 
 describe("OverlaySurface", () => {
+  it("updates Data content without replacing an active alert video", () => {
+    const resolver = () => "/fixture/video.webm";
+    const make = (text: string): OverlayComposition => ({ ...composition({ ...instruction(), visual: { assetId: "video", mediaType: "video", layout: { x: 0, y: 0, width: 100, height: 100, zIndex: 0 } } }), modules: [
+      ...composition({ ...instruction(), visual: { assetId: "video", mediaType: "video", layout: { x: 0, y: 0, width: 100, height: 100, zIndex: 0 } } }).modules,
+      { moduleId: "data-overlays", enabled: true, instructions: [], presentation: { kind: "data-overlays", projection: { runtimeId: "fixture", revision: text === "one" ? 1 : 2, canvases: [{ id: "canvas", order: 0, targetProfileId: "landscape", elements: [{ id: "text", order: 0, x: 0, y: 0, width: 100, height: 100, kind: "text", text, overflow: "wrap", style: { fontSizePx: 20, color: "#ffffffff", fontWeight: 400, align: "left" } }] }] } } }
+    ] });
+    const view = render(<OverlaySurface composition={make("one")} resolveAssetUrl={resolver} />);
+    const video = view.container.querySelector("video");
+    expect(screen.getByText("one")).toBeVisible();
+    view.rerender(<OverlaySurface composition={make("two")} resolveAssetUrl={resolver} />);
+    expect(screen.getByText("two")).toBeVisible(); expect(view.container.querySelector("video")).toBe(video);
+  });
   it("keeps text-only preparation transparent and reports font failures with provenance", async () => {
     const events = vi.fn();
     const fetchFont = vi.fn().mockRejectedValue(new Error("font delivery failed"));
