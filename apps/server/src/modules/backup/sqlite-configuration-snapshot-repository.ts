@@ -1,5 +1,7 @@
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import {
+  dataOverlayBackupTables,
+  dataOverlayStateSchema,
   alertCollectionSchema,
   parseStoredAlertEditorDocument,
   audioOutputRouteSchema,
@@ -81,6 +83,13 @@ const tableDefinitions = [
   table("screen_effect_audio_routes", ["variant_id", "route_id", "position"], ["variant_id", "position", "route_id"]),
   table("module_playback_settings", ["module_id", "paused", "cooldown_seconds", "updated_at"], ["module_id"]),
   table("alert_editor_documents", ["alert_id", "document_json", "updated_at"], ["alert_id"], ["document_json"]),
+  table("data_overlay_meta", ["id", "revision"], ["id"]),
+  table("data_reset_groups", ["id", "name_key", "document"], ["id"], ["document"]),
+  table("data_values", ["id", "name_key", "reset_group_id", "document"], ["id"], ["document"]),
+  table("data_goals", ["id", "name_key", "value_id", "document"], ["id"], ["document"]),
+  table("data_canvases", ["id", "name_key", "document"], ["id"], ["document"]),
+  table("data_pins", ["value_id", "position"], ["position"]),
+  table("data_element_refs", ["canvas_id", "element_id", "value_id", "goal_id", "asset_id"], ["canvas_id", "element_id"]),
   table(
     "alert_moderation_settings",
     [
@@ -189,6 +198,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
     const errors: string[] = [];
     const tableNames = Object.keys(configuration.tables);
     errors.push(...validateEffectSets(configuration.tables));
+    errors.push(...validateDataOverlayTables(configuration.tables));
     const presentScreenEffectTables = [...screenEffectTableNames].filter((name) => configuration.tables[name] !== undefined);
     if (presentScreenEffectTables.length > 0 && presentScreenEffectTables.length !== screenEffectTableNames.size) {
       const missing = [...screenEffectTableNames].filter((name) => configuration.tables[name] === undefined);
@@ -200,6 +210,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
     for (const definition of tableDefinitions) {
       const rows = configuration.tables[definition.name];
       if (rows === undefined) {
+        if (dataOverlayBackupTables.some(name => name === definition.name)) continue;
         if (definition.name === "overlay_surfaces" || screenEffectTableNames.has(definition.name) || definition.name === "screen_effect_sets" || definition.name === "screen_effect_set_memberships") continue;
         errors.push(`Required backup table "${definition.name}" is missing.`);
         continue;
@@ -264,6 +275,10 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
         this.connection.prepare(`DELETE FROM ${definition.name}`).run();
       }
       for (const definition of tableDefinitions) {
+        if (definition.name === "data_overlay_meta" && input.tables.data_overlay_meta === undefined) {
+          insertCapturedRows(this.connection, definition.name, [{ id: 1, revision: 0 }]);
+          continue;
+        }
         if (definition.name === "screen_effect_sets" && input.tables.screen_effect_sets === undefined) {
           insertCapturedRows(this.connection, definition.name, [{ id: "screen-effects-default", name: "Default", active: 1 }]);
           continue;
@@ -320,6 +335,9 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
               return JSON.stringify(parseStoredAlertEditorDocument(parseJsonValue(row[column])));
             }
             if (definition.name === "screen_effects" && column === "enabled") return 0;
+            if (definition.name === "data_canvases" && column === "document") {
+              return JSON.stringify({ ...JSON.parse(String(row.document)), enabled: false });
+            }
             return row[column] as SQLInputValue;
           }));
         }
@@ -451,6 +469,53 @@ function visitJson(value: unknown, path: readonly string[]): string | null {
     if (found !== null) return found;
   }
   return null;
+}
+
+function validateDataOverlayTables(tables: BackupConfiguration["tables"]): string[] {
+  const present = dataOverlayBackupTables.filter(name => tables[name] !== undefined);
+  if (present.length === 0) return [];
+  if (present.length !== dataOverlayBackupTables.length) return ["Data Overlays backup tables are incomplete."];
+  const errors: string[] = [];
+  const documents = (name: string) => (tables[name] ?? []).map(row => parseJsonValue(row.document));
+  const meta = tables.data_overlay_meta!;
+  if (meta.length !== 1 || meta[0]?.id !== 1) errors.push("Data Overlays metadata must contain exactly singleton ID 1.");
+  const pins = [...tables.data_pins!].sort((a, b) => Number(a.position) - Number(b.position));
+  pins.forEach((row, index) => { if (row.position !== index) errors.push("Data Overlays pin positions must be contiguous."); });
+  const parsed = dataOverlayStateSchema.safeParse({ revision: meta[0]?.revision,
+    resetGroups: documents("data_reset_groups"), values: documents("data_values"), goals: documents("data_goals"),
+    canvases: documents("data_canvases"), pinnedValueIds: pins.map(row => row.value_id) });
+  if (!parsed.success) return [...errors, "Data Overlays saved state or nested references are invalid."];
+  for (const [name, documents] of [
+    ["data_reset_groups", parsed.data.resetGroups], ["data_values", parsed.data.values],
+    ["data_goals", parsed.data.goals], ["data_canvases", parsed.data.canvases]
+  ] as const) {
+    const names = new Set<string>();
+    documents.forEach((document, index) => {
+      const row = tables[name]![index]!;
+      const key = document.name.trim().toLowerCase();
+      if (names.has(key)) errors.push(`${name} contains duplicate normalized names.`);
+      names.add(key);
+      if (row.id !== document.id || row.name_key !== key) errors.push(`${name} has inconsistent identity or normalized name.`);
+      if ("resetGroupId" in document && row.reset_group_id !== document.resetGroupId) errors.push(`${name} has inconsistent reset group reference.`);
+      if ("valueId" in document && row.value_id !== document.valueId) errors.push(`${name} has inconsistent value reference.`);
+    });
+  }
+  const expectedRefs = parsed.data.canvases.flatMap(canvas => canvas.elements.map(element => {
+    const binding = element.kind === "text" ? element.binding : element.kind === "progress" ? { kind: "goal" as const, goalId: element.goalId } : null;
+    return { canvas_id: canvas.id, element_id: element.id,
+      value_id: binding?.kind === "value" ? binding.valueId : null,
+      goal_id: binding?.kind === "goal" ? binding.goalId : null,
+      asset_id: element.kind === "image" ? element.assetId : null };
+  }));
+  const key = (row: BackupRow) => JSON.stringify([row.canvas_id, row.element_id, row.value_id, row.goal_id, row.asset_id]);
+  if (JSON.stringify(expectedRefs.map(key).sort()) !== JSON.stringify(tables.data_element_refs!.map(key).sort())) {
+    errors.push("Data Overlays element reference rows do not match saved elements.");
+  }
+  const assets = new Map((tables.asset_metadata ?? []).map(row => [row.id, row.media_type]));
+  for (const row of expectedRefs) {
+    if (row.asset_id !== null && assets.get(row.asset_id) !== "image") errors.push("Data Overlays image references a missing or incompatible asset.");
+  }
+  return errors;
 }
 
 function validateDomainRows(tables: BackupConfiguration["tables"]): readonly string[] {

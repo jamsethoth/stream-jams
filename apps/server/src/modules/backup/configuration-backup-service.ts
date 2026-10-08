@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   appConfigSchema,
+  dataOverlayBackupTables,
   configurationBackupLimits,
   configurationBackupArchiveSchema,
   currentConfigurationBackupArchiveVersion,
@@ -317,6 +318,13 @@ export class ConfigurationBackupService {
     if (!appConfigSchema.safeParse(archive.configuration.appConfig).success) {
       blockers.push(blocker("Backup preferences are invalid", "The application preferences do not match the supported schema.", "Export a new backup from the source installation."));
     }
+    if (archive.manifest.schemaVersion >= 33) {
+      for (const name of dataOverlayBackupTables) {
+        if (archive.configuration.tables[name] === undefined) blockers.push(blocker(
+          "Backup Data Overlays configuration is missing", `Schema 33 and later require ${name}.`, "Export a new backup from the source installation."
+        ));
+      }
+    }
     if (ConfigurationBackupService.configurationChecksum(archive.configuration) !== archive.manifest.configurationChecksum) {
       blockers.push(blocker("Backup configuration checksum does not match", "The configuration content was changed or damaged after export.", "Export the backup again and do not edit its contents."));
     }
@@ -407,6 +415,11 @@ export class ConfigurationBackupService {
       ));
     }
     warnings.push(warning("Restart Stream Jams after restore", "Server and logging preferences are written to local configuration while the current process remains active.", "Restart Stream Jams after completing provider and browser-source follow-up."));
+    if ((archive.configuration.tables.data_canvases?.length ?? 0) > 0) {
+      warnings.push(warning("Data Overlay canvases will be restored disabled",
+        "Saved values, goal baselines and canvas definitions are preserved without resuming their outputs.",
+        "Review the restored canvases and enable the outputs you intend to use."));
+    }
 
     const impact = restoreImpact(archive);
     const archiveId = checksum(canonicalJson(archive));
@@ -697,6 +710,7 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   if (currentSchemaVersion === 31) return [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 30) return [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 32) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 31;
+  if (currentSchemaVersion === 33) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 32;
   if (currentSchemaVersion === 28) return [19, 20, 21, 22, 23, 24, 25, 26, 27].includes(archiveSchemaVersion);
   return false;
 }

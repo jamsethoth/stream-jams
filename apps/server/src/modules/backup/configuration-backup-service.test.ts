@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import {
   appConfigSchema,
   configurationBackupLimits,
+  dataOverlayBackupTables,
+  DataOverlayService,
   type AlertEditorDocument,
   type AlertRule,
   type AppConfig,
@@ -23,6 +25,7 @@ import {
 } from "./configuration-backup-service.js";
 import { SqliteConfigurationSnapshotRepository } from "./sqlite-configuration-snapshot-repository.js";
 import { RuntimeMaintenanceGate, RuntimeMaintenanceUnavailableError } from "./runtime-maintenance-gate.js";
+import { SqliteDataOverlayRepository } from "../data-overlays/sqlite-data-overlay-repository.js";
 
 const pngBytes = Buffer.from("89504e470d0a1a0a", "hex");
 const appConfig: AppConfig = {
@@ -44,6 +47,30 @@ const asset: AssetRecord = {
 };
 
 describe("ConfigurationBackupService", () => {
+  it("blocks schema-33 missing data tables and preserves exact enabled data after a post-replacement failure", async () => {
+    let fail = true;
+    const target = createRealService({ reloadRuntimeConfiguration: () => { if (fail) { fail = false; throw new Error("reload failed"); } } });
+    try {
+      const repository = new SqliteDataOverlayRepository(target.database);
+      const data = new DataOverlayService(repository, { generateId: () => "data-value", now: () => "2026-10-08T00:00:00.000Z" });
+      data.createValue({ name: "Score", kind: "integer", resetDefault: 5, resetGroupId: null });
+      data.commandValue("data-value", { action: "add", amount: 23 });
+      repository.mutate(state => { state.canvases.push({ id: "canvas", name: "Enabled", enabled: true, order: 0, targetProfileId: "landscape", outputs: { browser: true, desktop: true }, elements: [] }); });
+      const before = repository.read();
+      const archive = await target.service.exportArchive();
+      const incomplete = structuredClone(archive);
+      dataOverlayBackupTables.forEach(name => { incomplete.manifest.configurationRecordCount -= incomplete.configuration.tables[name]?.length ?? 0; delete incomplete.configuration.tables[name]; });
+      incomplete.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(incomplete.configuration);
+      const invalid = await target.service.preflight(incomplete);
+      expect(invalid.state).toBe("invalid");
+      expect(invalid.blockers).toEqual(expect.arrayContaining([expect.objectContaining({ summary: "Backup Data Overlays configuration is missing" })]));
+      const preflight = await target.service.preflight(archive);
+      expect(preflight.state).toBe("valid");
+      expect(preflight.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ summary: "Data Overlay canvases will be restored disabled" })]));
+      await expect(target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true })).rejects.toBeInstanceOf(ConfigurationRestoreBlockedError);
+      expect(repository.read()).toEqual(before);
+    } finally { target.database.close(); }
+  });
   it("identifies local device bindings as excluded from portable backups", async () => {
     const { service } = createService();
 
@@ -129,12 +156,13 @@ describe("ConfigurationBackupService", () => {
     }
   });
 
-  it.each([19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
+  it.each([19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
     const target = createRealService();
     try {
       const archive = await target.service.exportArchive();
       archive.manifest.schemaVersion = schemaVersion;
       for (const tableName of [
+        ...dataOverlayBackupTables,
         ...(schemaVersion < 23 ? ["screen_effect_sets", "screen_effect_set_memberships"] : []),
         ...(schemaVersion < 22 ? [
         "screen_effects",

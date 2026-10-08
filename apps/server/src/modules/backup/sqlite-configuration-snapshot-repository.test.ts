@@ -2,6 +2,8 @@ import {
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
   createScreenEffectDocument,
+  DataOverlayService,
+  dataOverlayBackupTables,
   type ConfigurationBackupArchive
 } from "@stream-jams/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -9,6 +11,27 @@ import { createInMemoryStreamJamsDatabase, type StreamJamsDatabase } from "../db
 import { SqliteEffectRepository } from "../screen-effects/sqlite-effect-repository.js";
 import { SqliteEffectSetRepository } from "../screen-effects/sqlite-effect-set-repository.js";
 import { SqliteConfigurationSnapshotRepository } from "./sqlite-configuration-snapshot-repository.js";
+import { SqliteDataOverlayRepository } from "../data-overlays/sqlite-data-overlay-repository.js";
+
+function seedData(database: StreamJamsDatabase): SqliteDataOverlayRepository {
+  const repository = new SqliteDataOverlayRepository(database);
+  let id = 0;
+  const service = new DataOverlayService(repository, { generateId: () => `data-${++id}`, now: () => "2026-10-08T00:00:00.000Z", resolveImageAsset: assetId => assetId === "asset-follow" });
+  const group = service.createResetGroup({ name: "Session" }).resetGroups[0]!;
+  const value = service.createValue({ name: "Score", kind: "integer", resetDefault: 3, resetGroupId: group.id }).values[0]!;
+  service.commandValue(value.id, { action: "add", amount: 17 });
+  service.createValue({ name: "Message", kind: "text", resetDefault: "Plain <text>", resetGroupId: null });
+  const goal = service.createGoal({ name: "Goal", valueId: value.id, mode: "saved-baseline", baseline: 7, additionalAmount: 50 }).goals[0]!;
+  service.setPins([value.id]);
+  service.createCanvas({ name: "Canvas", enabled: true, order: 2, targetProfileId: "landscape", outputs: { browser: true, desktop: true }, elements: [
+    { id: "image", kind: "image", order: 0, x: 0, y: 0, width: 100, height: 100, visible: true, stalePolicy: "retain-last", assetId: "asset-follow", fit: "contain" },
+    { id: "progress", kind: "progress", order: 1, x: 100, y: 0, width: 100, height: 10, visible: true, stalePolicy: "retain-last", goalId: goal.id, orientation: "horizontal", direction: "forward", fillColor: "#FFFFFFFF", backgroundColor: "#000000FF", borderColor: "#000000FF", borderWidthPx: 0 },
+    { id: "score", kind: "text", order: 2, x: 0, y: 100, width: 200, height: 100, visible: true, stalePolicy: "retain-last", binding: { kind: "value", valueId: value.id }, literalText: "", format: { thousandsSeparator: true, prefix: "Score: ", suffix: "", overflow: "wrap" }, style: { fontSizePx: 24, color: "#FFFFFFFF", fontWeight: 400, align: "left" } }
+  ] });
+  const canvas = repository.read().canvases[0]!;
+  service.createCanvas({ name: "Second canvas", enabled: canvas.enabled, order: canvas.order + 1, targetProfileId: canvas.targetProfileId, outputs: canvas.outputs, elements: canvas.elements.filter(element => element.kind === "progress") });
+  return repository;
+}
 
 describe("SqliteConfigurationSnapshotRepository", () => {
   let database: StreamJamsDatabase;
@@ -19,6 +42,61 @@ describe("SqliteConfigurationSnapshotRepository", () => {
   });
 
   afterEach(() => database.close());
+
+  it("round-trips every saved data table, disables imported canvases and restores exact operational state", () => {
+    const data = seedData(database);
+    const before = data.read();
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const point = repository.captureRestorePoint();
+    const snapshot = repository.snapshot();
+    expect(repository.validate({ ...snapshot, appConfig: {} })).toEqual([]);
+    repository.replace({ tables: snapshot.tables, assets: [seededAsset()] });
+    expect(data.read()).toEqual({ ...before, canvases: before.canvases.map(canvas => ({ ...canvas, enabled: false })) });
+    repository.restoreRestorePoint(point);
+    expect(data.read()).toEqual(before);
+    const legacy = structuredClone(snapshot.tables);
+    dataOverlayBackupTables.forEach(name => { delete legacy[name]; });
+    repository.replace({ tables: legacy, assets: [seededAsset()] });
+    expect(data.read()).toEqual({ revision: 0, values: [], goals: [], resetGroups: [], canvases: [], pinnedValueIds: [] });
+  });
+
+  it("rejects malformed state, mismatched or foreign references, duplicate names and incompatible images before mutation", () => {
+    const data = seedData(database);
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const snapshot = repository.snapshot();
+    const before = data.read();
+    const edits: ((tables: ConfigurationBackupArchive["configuration"]["tables"]) => void)[] = [
+      tables => { delete tables.data_pins; },
+      tables => { tables.data_values![0]!.document = "{}"; },
+      tables => { const row = tables.data_canvases![0]!; const document = JSON.parse(String(row.document));
+        document.elements.find((element: { kind: string }) => element.kind === "text").binding.valueId = "foreign"; row.document = JSON.stringify(document); },
+      tables => { tables.data_element_refs![0]!.value_id = "foreign"; },
+      tables => { tables.data_element_refs!.push({ ...tables.data_element_refs![0]! }); },
+      tables => { tables.data_pins![0]!.value_id = "foreign"; },
+      tables => { tables.data_values![0]!.reset_group_id = "foreign"; },
+      tables => { tables.asset_metadata![0]!.media_type = "audio"; },
+      tables => { const row = tables.data_values![0]!; const document = JSON.parse(String(row.document));
+        tables.data_values!.push({ ...row, id: "duplicate", document: JSON.stringify({ ...document, id: "duplicate", name: ` ${document.name.toUpperCase()} ` }) }); },
+      tables => { const row = tables.data_values![0]!; const document = JSON.parse(String(row.document));
+        row.document = JSON.stringify({ ...document, kind: "text" }); }
+    ];
+    for (const edit of edits) {
+      const tables = structuredClone(snapshot.tables); edit(tables);
+      expect(repository.validate({ ...snapshot, appConfig: {}, tables }).length).toBeGreaterThan(0);
+      expect(() => repository.replace({ tables, assets: [seededAsset()] })).toThrow("Invalid backup configuration");
+      expect(data.read()).toEqual(before);
+    }
+  });
+
+  it("rolls back an injected write failure without changing data canvas enablement, revisions or content", () => {
+    const data = seedData(database);
+    const before = data.read();
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const snapshot = repository.snapshot();
+    database.connection.exec("CREATE TRIGGER reject_data_restore BEFORE INSERT ON data_pins BEGIN SELECT RAISE(ABORT, 'restore failed'); END;");
+    expect(() => repository.replace({ tables: snapshot.tables, assets: [seededAsset()] })).toThrow("restore failed");
+    expect(data.read()).toEqual(before);
+  });
 
   it("blocks credential-bearing legacy provider exports and imports with safe errors", () => {
     const repository = new SqliteConfigurationSnapshotRepository(database.connection);
@@ -124,6 +202,7 @@ describe("SqliteConfigurationSnapshotRepository", () => {
       "screen_effect_audio_routes",
       "module_playback_settings",
       "alert_editor_documents",
+      ...dataOverlayBackupTables,
       "alert_moderation_settings"
     ]);
     expect(snapshot.tables.provider_registrations?.[0]).toMatchObject({
@@ -437,6 +516,7 @@ describe("SqliteConfigurationSnapshotRepository", () => {
   });
 
   it("keeps portable table mappings aligned with migrated columns", async () => {
+    seedData(database);
     database.connection.prepare("INSERT INTO audio_output_routes (id, name, device_id, device_label) VALUES (?, ?, ?, ?)")
       .run("route-a", "Private", "local-endpoint", "Local headset");
     database.connection.prepare(`INSERT INTO timer_definitions
