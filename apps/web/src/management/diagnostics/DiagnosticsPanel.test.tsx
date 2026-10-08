@@ -1,7 +1,7 @@
 import { renderManagement as render } from "../../test-support/render-management.js";
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { DiagnosticsWorkspaceView } from "@stream-jams/core";
+import type { DiagnosticsWorkspaceView, EventBusActivityView } from "@stream-jams/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DiagnosticsDebugExportView, DiagnosticsExportView } from "../management-api.js";
 import { DiagnosticsPanel } from "./DiagnosticsPanel.js";
@@ -13,6 +13,51 @@ afterEach(() => {
 });
 
 describe("DiagnosticsPanel", () => {
+  it("lists bus intake with per-module outcomes and filters by module failure", async () => {
+    const user = userEvent.setup();
+    const api = { ...managementApi(), getEventBusActivity: vi.fn(async () => busActivity()) };
+    render(<DiagnosticsPanel managementApi={api} />);
+    await user.click(await screen.findByRole("tab", { name: /Event intake/ }));
+    const table = screen.getByRole("table");
+    expect(within(table).getAllByRole("row").slice(1).map((row) => within(row).getAllByRole("cell").slice(1).map((cell) => cell.textContent))).toEqual([
+      ["Streamer.bot", "Rejected input", "Rejected", "None"],
+      ["Streamer.bot", "follow", "Merged", "1 admitted"],
+      ["Twitch", "cheer", "Accepted", "1 expired · 1 failed"],
+      ["Twitch", "follow", "Accepted", "1 admitted · 2 no match · 1 pending"]
+    ]);
+    const detail = screen.getByLabelText("Bus event detail");
+    expect(detail).toHaveTextContent("The source sent input that failed validation.");
+    expect(detail).toHaveTextContent("ref-bus-rejected");
+
+    await user.selectOptions(screen.getByLabelText("Outcome"), "failed");
+    expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2);
+    const outcomes = within(screen.getByLabelText("Bus event detail")).getByRole("list", { name: "Module outcomes" });
+    expect(within(outcomes).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["AlertsExpired", "Screen EffectsFailedref-bus-effects"]);
+    expect(screen.getByLabelText("Bus event detail")).not.toHaveTextContent("payload");
+  });
+
+  it("opens the bus view at a module failure reference and loads the workspace when bus activity fails", async () => {
+    const api = { ...managementApi(), getEventBusActivity: vi.fn(async () => busActivity()) };
+    render(<DiagnosticsPanel initialReferenceId="ref-bus-effects" managementApi={api} />);
+    const tab = await screen.findByRole("tab", { name: /Event intake/ });
+    await waitFor(() => expect(tab).toHaveAttribute("aria-selected", "true"));
+    expect(screen.getByLabelText("Bus event detail")).toHaveTextContent("cheer");
+    cleanup();
+
+    const failing = { ...managementApi(), getEventBusActivity: vi.fn(async () => { throw new Error("bus down"); }) };
+    const user = userEvent.setup();
+    render(<DiagnosticsPanel managementApi={failing} />);
+    await screen.findByRole("heading", { name: "Open problems" });
+    await user.click(screen.getByRole("tab", { name: /Event intake/ }));
+    expect(screen.getByText("Event intake is unavailable")).toBeInTheDocument();
+  });
+
+  it("hides the bus view when the API has no bus activity", async () => {
+    render(<DiagnosticsPanel managementApi={managementApi()} />);
+    await screen.findByRole("heading", { name: "Open problems" });
+    expect(screen.queryByRole("tab", { name: /Event intake/ })).not.toBeInTheDocument();
+  });
+
   it("automatically activates boundary tabs, links every panel and retains selected evidence without reloading", async () => {
     const user = userEvent.setup();
     const api = managementApi();
@@ -321,4 +366,25 @@ function basicExport(): DiagnosticsExportView {
 
 function debugExport(): DiagnosticsDebugExportView {
   return { ...basicExport(), debugExport: true, runtimeLogEntries: [], runtimeLogTruncated: false };
+}
+
+function busActivity(): EventBusActivityView {
+  return {
+    events: [
+      { id: 4, receivedAt: "2026-10-08T12:00:04.000Z", sourceKind: "streamerbot", kind: null, eventType: null, outcome: "rejected", referenceId: "ref-bus-rejected", consumers: [] },
+      { id: 3, receivedAt: "2026-10-08T12:00:03.000Z", sourceKind: "streamerbot", kind: "canonical", eventType: "follow", outcome: "merged", referenceId: null, consumers: [
+        { consumerId: "alerts", outcome: "admitted", referenceId: null }
+      ] },
+      { id: 2, receivedAt: "2026-10-08T12:00:02.000Z", sourceKind: "twitch", kind: "canonical", eventType: "cheer", outcome: "accepted", referenceId: null, consumers: [
+        { consumerId: "alerts", outcome: "expired", referenceId: null },
+        { consumerId: "screen-effects", outcome: "failed", referenceId: "ref-bus-effects" }
+      ] },
+      { id: 1, receivedAt: "2026-10-08T12:00:01.000Z", sourceKind: "twitch", kind: "canonical", eventType: "follow", outcome: "accepted", referenceId: null, consumers: [
+        { consumerId: "alerts", outcome: "admitted", referenceId: null },
+        { consumerId: "screen-effects", outcome: "no-match", referenceId: null },
+        { consumerId: "timers", outcome: "no-match", referenceId: null },
+        { consumerId: "video-shoutout", outcome: "pending", referenceId: null }
+      ] }
+    ]
+  };
 }

@@ -104,6 +104,7 @@ import {
   type EventIngestionDiagnostic
 } from "../modules/events/event-ingestion-service.js";
 import { EventBus } from "../modules/events/event-bus.js";
+import { EventBusSettingsService } from "../modules/events/event-bus-settings-service.js";
 import { EventPipeline } from "../modules/events/event-pipeline.js";
 import { SqliteEventBusJournalRepository } from "../modules/events/sqlite-event-bus-journal-repository.js";
 import { SqliteTimerRunRepository } from "../modules/timers/sqlite-timer-run-repository.js";
@@ -195,7 +196,12 @@ import { TimerCueService } from "../modules/timers/timer-cue-service.js";
 import { TimerAutomationCredentialService } from "../modules/timers/timer-automation-credential-service.js";
 import { createTimerAutomationSecurityPreHandler } from "../http/middleware/timer-automation-security.js";
 
+/** Browser sources retry at most every 10 seconds; give them one full retry before replaying restart events. */
+const defaultEventReplayDelayMs = 12_000;
+
 export interface RuntimeAppCompositionOptions {
+  /** Wait after the server listens before replaying events from before the restart, so outputs can reconnect. */
+  readonly eventReplayDelayMs?: number | undefined;
   readonly audioDeviceHost?: AudioDeviceHost;
   readonly audioPlaybackSink?: AudioPlaybackSink;
   readonly desktopAudioTransport?: DesktopAudioTransport;
@@ -250,6 +256,11 @@ export interface RuntimeAppComposition {
   readonly eventIngestionService: EventIngestionService;
   recordDesktopDiagnostic(report: RuntimeDesktopDiagnostic): Promise<void>;
   syncEventSourceRuntime(kinds?: readonly ProviderKind[]): Promise<void>;
+  /**
+   * Schedules delivery of events journaled before the last shutdown that are still within the replay age,
+   * after `eventReplayDelayMs` so browser sources and the desktop overlay can reconnect first.
+   */
+  scheduleEventReplay(): void;
   close(): Promise<void>;
 }
 
@@ -881,8 +892,10 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     })
   });
   const generateEventSourceReferenceId = generateRuntimeReferenceId;
+  const eventBusSettingsService = new EventBusSettingsService(database.connection, now);
+  const eventBusJournal = new SqliteEventBusJournalRepository(database.connection);
   const eventBus = new EventBus({
-    journal: new SqliteEventBusJournalRepository(database.connection),
+    journal: eventBusJournal,
     consumers: [
       ...eventPipeline.consumers(),
       createVideoShoutoutBusConsumer({
@@ -906,12 +919,13 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       processingId: null,
       metadata: { consumerId: failure.consumerId, sequence: failure.sequence, attempts: failure.attempts, referenceId: failure.referenceId }
     }, failure.error),
-    onReplaySkipped: (consumerId, skippedCount) => runtimeLogger.warn("Event bus skipped events journaled before restart", {
+    getReplayAgeMs: () => eventBusSettingsService.replayAgeMs(),
+    onExpired: (consumerId, expiredCount) => runtimeLogger.warn("Event bus expired events older than the replay age", {
       module: "events",
       source: "events.bus-replay",
       correlationId: `event-bus:${consumerId}`,
       processingId: null,
-      metadata: { consumerId, skippedCount }
+      metadata: { consumerId, expiredCount }
     }),
     onWorkerError: (consumerId, error) => runtimeLogger.error("Event bus delivery stopped before the cursor advanced", {
       module: "events",
@@ -922,6 +936,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     }, error)
   });
   await eventBus.start();
+  let eventReplayTimer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleEventReplay = () => {
+    clearTimeout(eventReplayTimer);
+    eventReplayTimer = setTimeout(() => { void trackRuntimeWork(() => eventBus.resume()); }, options.eventReplayDelayMs ?? defaultEventReplayDelayMs);
+  };
+  cleanups.push(() => clearTimeout(eventReplayTimer));
   const eventIngestionService = new EventIngestionService({
     sink: eventBus,
     generateReferenceId: generateEventSourceReferenceId,
@@ -1339,6 +1359,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     },
     reloadRuntimeConfiguration: async () => {
       moderationService.reloadSettings();
+      eventBusSettingsService.reload();
+      // Events journaled before the restore belong to the replaced configuration; never play them late.
+      await eventBus.expirePending();
       await desktopConfigService.refresh();
       const { playback } = await configStore.readConfig();
       const [alertSettings, effectSettings] = await Promise.all([
@@ -1714,6 +1737,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     getConfigurationBackupSummary: () => configurationBackupService.summary(),
     openDataFolder: () => localMaintenanceService.openDataFolder(),
     clearOldLogs: () => localMaintenanceService.clearOldLogs(),
+    getEventBusActivity: () => ({ events: eventBusJournal.recentActivity(100).map((record) => ({ id: record.id, receivedAt: record.receivedAt, sourceKind: record.sourceKind, kind: record.kind, eventType: record.eventType, outcome: record.outcome, referenceId: record.referenceId, consumers: record.consumers.map((consumer) => ({ ...consumer })) })) }),
+    getEventBusSettings: () => eventBusSettingsService.get(),
+    saveEventBusSettings: (settings) => eventBusSettingsService.save(settings),
     overlayAccessService,
     overlayCompositionService,
     overlayOutputManagementService,
@@ -1828,6 +1854,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     eventIngestionService,
     recordDesktopDiagnostic,
     syncEventSourceRuntime,
+    scheduleEventReplay,
     close
   };
   } catch (error) {

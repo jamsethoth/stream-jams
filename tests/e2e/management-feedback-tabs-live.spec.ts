@@ -213,7 +213,8 @@ test("rebuilt feedback and tabs preserve drafts, preview ownership, dialog focus
     const problems = page.getByRole("tab", { name: /Problems/ });
     await problems.focus();
     await page.keyboard.press("End");
-    await expect(page.getByRole("tab", { name: /Raw logs/ })).toHaveAttribute("aria-selected", "true");
+    // Event intake is the last Diagnostics view.
+    await expect(page.getByRole("tab", { name: /Event intake/ })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("tabpanel")).toHaveCount(1);
     await page.keyboard.press("Home");
     await expect(problems).toHaveAttribute("aria-selected", "true");

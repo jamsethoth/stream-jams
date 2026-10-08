@@ -1,4 +1,4 @@
-import type { BusEvent, VideoShoutoutCommand, VideoShoutoutProjection } from "@stream-jams/core";
+import type { BusEvent, EventBusHandleOutcome, VideoShoutoutCommand, VideoShoutoutProjection } from "@stream-jams/core";
 import { externalIdentityMatchesTrigger, type EventBusConsumer } from "../events/event-bus.js";
 import { isVideoShoutoutPayload, parseVideoShoutoutCommand, videoShoutoutStreamerBotEvent } from "./video-shoutout-command.js";
 
@@ -35,15 +35,15 @@ export function createVideoShoutoutBusConsumer(options: StreamerBotVideoShoutout
     id: "video-shoutout",
     maxAttempts: 1,
     externalPayloads: [videoShoutoutExternalIdentity],
-    handle: async (event: BusEvent): Promise<void> => {
-      if (event.sequence <= lastSequence) return;
+    handle: async (event: BusEvent): Promise<EventBusHandleOutcome> => {
+      if (event.sequence <= lastSequence) return "no-match";
       lastSequence = event.sequence;
       if (
         event.kind !== "external" ||
         !event.effectTriggers.some((trigger) => externalIdentityMatchesTrigger(videoShoutoutExternalIdentity, trigger)) ||
         !isVideoShoutoutPayload(event.payload)
       ) {
-        return;
+        return "no-match";
       }
 
       const parsed = parseVideoShoutoutCommand(event.payload);
@@ -53,7 +53,7 @@ export function createVideoShoutoutBusConsumer(options: StreamerBotVideoShoutout
           message: "Streamer.bot video shoutout was rejected and not shown.",
           metadata: { reason: parsed.reason, fields: parsed.fields }
         });
-        return;
+        return "failed";
       }
 
       const { command } = parsed;
@@ -63,7 +63,7 @@ export function createVideoShoutoutBusConsumer(options: StreamerBotVideoShoutout
           message: "Streamer.bot video shoutout was ignored because the Video shoutout module is disabled.",
           metadata: { action: command.kind, purpose: command.purpose }
         });
-        return;
+        return "no-match";
       }
 
       const projection = options.service.apply(command);
@@ -79,6 +79,7 @@ export function createVideoShoutoutBusConsumer(options: StreamerBotVideoShoutout
             : {})
         }
       });
+      return "admitted";
     }
   };
 }

@@ -16,7 +16,7 @@ import type { ManagementOverviewService } from "../../modules/providers/manageme
 import type { ProviderManagementService } from "../../modules/providers/provider-management-service.js";
 import { registerManagementAlertRoutes } from "./management-alerts.js";
 import { registerManagementAssetRoutes } from "./management-assets.js";
-import { registerManagementDiagnosticsRoutes } from "./management-diagnostics.js";
+import { registerManagementDiagnosticsRoutes, type ManagementDiagnosticsRouteDependencies } from "./management-diagnostics.js";
 import { registerManagementHomeRoutes } from "./management-home.js";
 import { registerManagementProviderRoutes } from "./management-providers.js";
 import { registerMusicManagementRoutes } from "./music-management.js";
@@ -77,6 +77,9 @@ export interface ManagementUiRouteDependencies {
   readonly openDataFolder: () => Promise<OpenDataFolderResult>;
   readonly clearOldLogs: () => Promise<ClearOldLogsResult>;
   readonly reportClientException: (input: ClientExceptionReport) => Promise<ClientExceptionReportResult>;
+  readonly getEventBusActivity?: ManagementDiagnosticsRouteDependencies["getEventBusActivity"];
+  readonly getEventBusSettings?: ManagementDiagnosticsRouteDependencies["getEventBusSettings"];
+  readonly saveEventBusSettings?: ManagementDiagnosticsRouteDependencies["saveEventBusSettings"];
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
   readonly generateServerErrorId?: (() => string) | undefined;
@@ -122,6 +125,9 @@ export function registerManagementUiRoutes(
     openDataFolder: dependencies.openDataFolder,
     clearOldLogs: dependencies.clearOldLogs,
     reportClientException: dependencies.reportClientException,
+    getEventBusActivity: dependencies.getEventBusActivity,
+    getEventBusSettings: dependencies.getEventBusSettings,
+    saveEventBusSettings: dependencies.saveEventBusSettings,
     preHandlers
   });
 }

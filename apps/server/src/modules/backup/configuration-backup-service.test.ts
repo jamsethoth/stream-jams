@@ -130,7 +130,7 @@ describe("ConfigurationBackupService", () => {
     }
   });
 
-  it.each([19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
+  it.each([19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
     const target = createRealService();
     try {
       const archive = await target.service.exportArchive();
@@ -152,6 +152,10 @@ describe("ConfigurationBackupService", () => {
       if (schemaVersion === 19) {
         archive.manifest.configurationRecordCount -= archive.configuration.tables.overlay_surfaces?.length ?? 0;
         delete archive.configuration.tables.overlay_surfaces;
+      }
+      if (schemaVersion < 38) {
+        archive.manifest.configurationRecordCount -= archive.configuration.tables.event_bus_settings?.length ?? 0;
+        delete archive.configuration.tables.event_bus_settings;
       }
       if (schemaVersion < 37) {
         archive.configuration.tables.alert_rules = (archive.configuration.tables.alert_rules ?? []).map((row) => {
@@ -175,6 +179,41 @@ describe("ConfigurationBackupService", () => {
       await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
       const snapshot = target.snapshotRepository.snapshot();
       expect(JSON.parse(String(snapshot.tables.overlay_surfaces?.[0]?.configuration_json))).toMatchObject({ enabled: false, displayId: null });
+    } finally { target.database.close(); }
+  });
+
+  it("round-trips the event bus replay age and rejects one out of range", async () => {
+    const target = createRealService();
+    try {
+      target.database.connection.prepare("UPDATE event_bus_settings SET replay_age_seconds = 600").run();
+      const archive = await target.service.exportArchive();
+      expect(archive.configuration.tables.event_bus_settings).toEqual([expect.objectContaining({ id: 1, replay_age_seconds: 600 })]);
+      target.database.connection.prepare("UPDATE event_bus_settings SET replay_age_seconds = 30").run();
+      const preflight = await target.service.preflight(archive);
+      expect(preflight.state).toBe("valid");
+      await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
+      expect(target.database.connection.prepare("SELECT replay_age_seconds FROM event_bus_settings").all()).toEqual([{ replay_age_seconds: 600 }]);
+
+      const invalid = await target.service.exportArchive();
+      invalid.configuration.tables.event_bus_settings = [{ ...invalid.configuration.tables.event_bus_settings![0]!, replay_age_seconds: 1_801 }];
+      invalid.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(invalid.configuration);
+      expect((await target.service.preflight(invalid)).state).not.toBe("valid");
+    } finally { target.database.close(); }
+  });
+
+  it("restores the default replay age from a backup made before the setting existed", async () => {
+    const target = createRealService();
+    try {
+      const archive = await target.service.exportArchive();
+      archive.manifest.schemaVersion = 37;
+      archive.manifest.configurationRecordCount -= archive.configuration.tables.event_bus_settings?.length ?? 0;
+      delete archive.configuration.tables.event_bus_settings;
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      target.database.connection.prepare("UPDATE event_bus_settings SET replay_age_seconds = 30").run();
+      const preflight = await target.service.preflight(archive);
+      expect(preflight.state).toBe("valid");
+      await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
+      expect(target.database.connection.prepare("SELECT replay_age_seconds FROM event_bus_settings").all()).toEqual([{ replay_age_seconds: 120 }]);
     } finally { target.database.close(); }
   });
 

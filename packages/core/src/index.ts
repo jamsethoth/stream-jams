@@ -196,8 +196,10 @@ export {
 } from "./events/schemas.js";
 
 export type * from "./event-bus/types.js";
+export { eventBusReplayAgeDefaultSeconds, eventBusReplayAgeMaxSeconds } from "./event-bus/types.js";
 export { twitchCorrelationKey } from "./event-bus/correlation.js";
-export { externalEventPayloadMaxBytes, externalEventPayloadSchema } from "./event-bus/schemas.js";
+export { eventBusActivityViewSchema, eventBusSettingsSchema, externalEventPayloadMaxBytes, externalEventPayloadSchema } from "./event-bus/schemas.js";
+export type { EventBusActivityView, EventBusSettings } from "./event-bus/schemas.js";
 export type { EventTriggerMatch, EventTriggerSelector } from "./event-bus/selector.js";
 export { eventTriggerMatchSchema, eventTriggerSelectorIdentity, eventTriggerSelectorSchema, matchSelector } from "./event-bus/selector.js";
 

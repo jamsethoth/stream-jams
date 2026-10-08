@@ -2,6 +2,7 @@ import type {
   AlertMatchLogRecord,
   AlertSourceEvent,
   BusEvent,
+  EventBusHandleOutcome,
   ExternalAlertEvent,
   DiagnosticsLogRepository,
   EventLogRecord,
@@ -11,6 +12,7 @@ import type {
   ProcessingId
 } from "@stream-jams/core";
 import type { EventBusConsumer } from "./event-bus.js";
+import type { EffectAdmissionResult } from "../screen-effects/effect-admission-service.js";
 import type { PlaybackCoordinator, PlaybackEnqueueResult } from "../playback/playback-coordinator.js";
 
 export interface EventPipelineIdGenerator {
@@ -18,7 +20,8 @@ export interface EventPipelineIdGenerator {
 }
 
 export interface EventPipelineOptions {
-  readonly timerEventSink?: { handleEvent(event: BusEvent): Promise<void> };
+  /** Resolves true when the event matched at least one timer rule. */
+  readonly timerEventSink?: { handleEvent(event: BusEvent): Promise<boolean> };
   readonly onTimerError?: (error: unknown, event: BusEvent) => void | Promise<void>;
   readonly playbackCoordinator: Pick<PlaybackCoordinator, "enqueueEvent">;
   readonly diagnosticsLogRepository: Pick<
@@ -26,7 +29,7 @@ export interface EventPipelineOptions {
     "appendEventLog" | "appendAlertMatchLog" | "appendPlaybackLog"
   >;
   readonly generateId: EventPipelineIdGenerator;
-  readonly effectEventSink?: { handleEvent(event: BusEvent): Promise<unknown> } | undefined;
+  readonly effectEventSink?: { handleEvent(event: BusEvent): Promise<EffectAdmissionResult> } | undefined;
   readonly onEffectError?: ((error: Error, event: BusEvent) => void | Promise<void>) | undefined;
   readonly now?: (() => Date) | undefined;
 }
@@ -67,24 +70,27 @@ export class EventPipeline {
     ];
   }
 
-  async #deliverAlerts(busEvent: BusEvent): Promise<void> {
+  async #deliverAlerts(busEvent: BusEvent): Promise<EventBusHandleOutcome> {
     const events: AlertSourceEvent[] = [
       ...(busEvent.kind === "canonical" ? [busEvent.event] : []),
       ...createExternalAlertEvents(busEvent)
     ];
     let failure: { readonly error: unknown } | null = null;
+    let admitted = false;
     for (const event of events) {
       try {
-        await this.#deliverAlertEvent(event);
+        admitted = await this.#deliverAlertEvent(event) || admitted;
       } catch (error) {
         // error-provenance: allow expected -- each admitted event is attempted before the first failure is reported
         failure ??= { error };
       }
     }
     if (failure !== null) throw failure.error;
+    return admitted ? "admitted" : "no-match";
   }
 
-  async #deliverAlertEvent(event: AlertSourceEvent): Promise<void> {
+  /** Resolves true when the event queued an alert. */
+  async #deliverAlertEvent(event: AlertSourceEvent): Promise<boolean> {
     const processingId = this.#generateId("processing") as ProcessingId;
     const correlationId = createCorrelationId(event);
     await this.#appendEventLog(event, "received", correlationId, processingId, null);
@@ -93,6 +99,7 @@ export class EventPipeline {
       const result = await this.#playbackCoordinator.enqueueEvent(event);
       await this.#appendPlaybackRecords(event, result, correlationId, processingId);
       await this.#appendEventLog(event, "processed", correlationId, processingId, null);
+      return result.status === "queued";
     } catch (error) {
       await this.#appendEventLog(
         event,
@@ -105,18 +112,20 @@ export class EventPipeline {
     }
   }
 
-  async #deliverTimers(busEvent: BusEvent): Promise<void> {
-    try { await this.#timerEventSink?.handleEvent(busEvent); }
+  async #deliverTimers(busEvent: BusEvent): Promise<EventBusHandleOutcome> {
+    try { return await this.#timerEventSink?.handleEvent(busEvent) === true ? "admitted" : "no-match"; }
     catch (error) {
       // error-provenance: allow expected -- timer failures are diagnosed independently of alert intake
       await this.#onTimerError?.(error, busEvent);
+      return "failed";
     }
   }
 
-  async #deliverEffects(busEvent: BusEvent): Promise<void> {
-    if (this.#effectEventSink === null) return;
+  async #deliverEffects(busEvent: BusEvent): Promise<EventBusHandleOutcome> {
+    if (this.#effectEventSink === null) return "no-match";
     try {
-      await this.#effectEventSink.handleEvent(busEvent);
+      const result = await this.#effectEventSink.handleEvent(busEvent);
+      return result.outcomes.some((outcome) => outcome.status === "queued") ? "admitted" : "no-match";
     } catch (error) {
       try {
         await this.#onEffectError(
@@ -129,6 +138,7 @@ export class EventPipeline {
       catch {
         // Diagnostics must not turn an isolated Screen Effects failure into an Alert failure.
       }
+      return "failed";
     }
   }
 

@@ -315,6 +315,9 @@ export class ConfigurationBackupService {
         }
       }
     }
+    if (archive.manifest.schemaVersion >= 38 && archive.configuration.tables.event_bus_settings === undefined) {
+      blockers.push(blocker("Backup event settings are missing", "Schema 38 and later require event_bus_settings.", "Export a new backup from the source installation."));
+    }
     if (!appConfigSchema.safeParse(archive.configuration.appConfig).success) {
       blockers.push(blocker("Backup preferences are invalid", "The application preferences do not match the supported schema.", "Export a new backup from the source installation."));
     }
@@ -702,7 +705,8 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   // relaxes the active event-source index, which every older archive already satisfies.
   // Schema 36 converts Screen Effect bindings and timer rules to trigger selectors; older rows are upgraded.
   // Schema 37 adds the external alert identity column; older alert rules are all canonical.
-  if (currentSchemaVersion === 37) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 36;
+  // Schema 38 adds event bus outcomes (runtime only) and the replay age setting, which restores its default when absent.
+  if (currentSchemaVersion === 38) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 37;
   if (currentSchemaVersion === 28) return [19, 20, 21, 22, 23, 24, 25, 26, 27].includes(archiveSchemaVersion);
   return false;
 }

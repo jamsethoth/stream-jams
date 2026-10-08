@@ -17,6 +17,8 @@ import {
   configurationRestorePreflightSchema,
   configurationRestoreResultSchema,
   diagnosticsWorkspaceViewSchema,
+  eventBusActivityViewSchema,
+  eventBusSettingsSchema,
   homeSetupSummarySchema,
   openDataFolderResultSchema,
   providerActivationImpactSchema,
@@ -57,6 +59,8 @@ import {
   type ConfigurationRestoreRequest,
   type ConfigurationRestoreResult,
   type DiagnosticsWorkspaceView,
+  type EventBusActivityView,
+  type EventBusSettings,
   type HomeSetupSummary,
   type OpenDataFolderResult,
   type ProviderActivationImpact,
@@ -319,6 +323,9 @@ export interface ManagementApi extends MusicApi {
   deleteAsset(assetId: string): Promise<void>;
   repairAssetDuration?(assetId: string): Promise<AssetLibraryItem>;
   getDiagnosticsWorkspace(): Promise<DiagnosticsWorkspaceView>;
+  getEventBusActivity?(): Promise<EventBusActivityView>;
+  getEventBusSettings?(): Promise<EventBusSettings>;
+  saveEventBusSettings?(settings: EventBusSettings): Promise<EventBusSettings>;
   getConfigurationBackupSummary(): Promise<ConfigurationBackupSummary>;
   exportConfigurationBackup(): Promise<ConfigurationBackupArchive>;
   preflightConfigurationRestore(archive: ConfigurationBackupArchive): Promise<ConfigurationRestorePreflight>;
@@ -757,6 +764,18 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
         diagnosticsWorkspaceViewSchema,
         "Unable to load diagnostics workspace."
       );
+    },
+
+    getEventBusActivity() {
+      return getContract("/management/diagnostics/event-bus", eventBusActivityViewSchema, "Unable to load event bus activity.");
+    },
+
+    getEventBusSettings() {
+      return getContract("/management/settings/event-bus", eventBusSettingsSchema, "Unable to load event replay settings.");
+    },
+
+    async saveEventBusSettings(settings) {
+      return eventBusSettingsSchema.parse(await client.putJson<unknown>("/management/settings/event-bus", settings, "Unable to save event replay settings."));
     },
 
     getConfigurationBackupSummary() {

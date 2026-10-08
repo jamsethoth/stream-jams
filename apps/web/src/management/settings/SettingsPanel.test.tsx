@@ -34,6 +34,20 @@ describe("SettingsPanel", () => {
     expect(await screen.findByText("No paired clients.")).toBeInTheDocument();
   });
 
+  it("shows Event replay only when the API supports it and loads it when expanded", async () => {
+    const getEventBusSettings = vi.fn(async () => ({ replayAgeSeconds: 120 }));
+    const saveEventBusSettings = vi.fn(async (settings: { replayAgeSeconds: number }) => settings);
+    const view = render(<SettingsPanel audioApi={createAudioApi()} managementApi={createManagementApi()} />);
+    await screen.findByText("Automation");
+    expect(screen.queryByText("Event replay")).not.toBeInTheDocument();
+    view.unmount();
+
+    render(<SettingsPanel audioApi={createAudioApi()} managementApi={createManagementApi({ getEventBusSettings, saveEventBusSettings })} />);
+    await userEvent.click(await screen.findByText("Event replay"));
+    expect(await screen.findByRole("combobox", { name: "Replay age" })).toHaveValue("120");
+    expect(getEventBusSettings).toHaveBeenCalledTimes(1);
+  });
+
   it("collapses advanced settings and preserves server edits across disclosure toggles", async () => {
     const user = userEvent.setup();
     render(<SettingsPanel audioApi={createAudioApi()} managementApi={createManagementApi()} />);
@@ -508,7 +522,7 @@ describe("SettingsPanel", () => {
 
 type SettingsApi = Pick<
   ManagementApi,
-  "getDesktopConfig" | "updateDesktopConfig" | "getServerConfig" | "updateServerConfig" | "getConfigurationBackupSummary" | "exportConfigurationBackup" | "preflightConfigurationRestore" | "restoreConfiguration" | "openDataFolder" | "clearOldLogs"
+  "getDesktopConfig" | "updateDesktopConfig" | "getServerConfig" | "updateServerConfig" | "getConfigurationBackupSummary" | "exportConfigurationBackup" | "preflightConfigurationRestore" | "restoreConfiguration" | "openDataFolder" | "clearOldLogs" | "getEventBusSettings" | "saveEventBusSettings"
 >;
 
 async function openDisclosure(user: ReturnType<typeof userEvent.setup>, name: string | RegExp): Promise<void> {

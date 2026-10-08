@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { DiagnosticsWorkspaceView } from "@stream-jams/core";
+import type { DiagnosticsWorkspaceView, EventBusActivityView } from "@stream-jams/core";
 import { expect, userEvent, within } from "storybook/test";
 import { createStoryManagementApi } from "../../stories/mock-apis.js";
 import { DiagnosticsPanel } from "./DiagnosticsPanel.js";
@@ -36,6 +36,36 @@ export const AutomaticKeyboardTabs: Story = {
     await expect(problems).toHaveAttribute("aria-selected", "true");
     await userEvent.keyboard("{ArrowRight}");
     await expect(canvas.getByRole("tab", { name: /Events/ })).toHaveAttribute("aria-selected", "true");
+  }
+};
+
+export const EventIntake: Story = {
+  args: { managementApi: createStoryManagementApi({ getDiagnosticsWorkspace: async () => diagnosticsWorkspace(), getEventBusActivity: async () => busActivity() }) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: /Event intake/ }));
+    await userEvent.click(canvas.getByRole("button", { name: "cheer" }));
+    const detail = canvas.getByLabelText("Bus event detail");
+    await expect(detail).toHaveTextContent("Screen Effects");
+    await expect(detail).toHaveTextContent("ref-bus-effects");
+  }
+};
+
+export const EventIntakeFromReference: Story = {
+  args: { ...EventIntake.args, initialReferenceId: "ref-bus-effects" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByLabelText("Bus event detail")).toHaveTextContent("Failed");
+    await expect(canvas.getByRole("tab", { name: /Event intake/ })).toHaveAttribute("aria-selected", "true");
+  }
+};
+
+export const EventIntakeEmpty: Story = {
+  args: { managementApi: createStoryManagementApi({ getDiagnosticsWorkspace: async () => diagnosticsWorkspace(), getEventBusActivity: async () => ({ events: [] }) }) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: /Event intake/ }));
+    await expect(canvas.getByText("No matching bus events")).toBeVisible();
   }
 };
 
@@ -196,6 +226,27 @@ function diagnosticsWorkspace(): DiagnosticsWorkspaceView {
         data: { routeKey: "[REDACTED]" },
         correction: { label: "Open browser sources", route: "/manage/modules/alerts?diagnostic=ref-runtime-2#browser-sources" }
       }
+    ]
+  };
+}
+
+function busActivity(): EventBusActivityView {
+  return {
+    events: [
+      { id: 4, receivedAt: "2026-10-08T12:00:04.000Z", sourceKind: "streamerbot", kind: null, eventType: null, outcome: "rejected", referenceId: "ref-bus-rejected", consumers: [] },
+      { id: 3, receivedAt: "2026-10-08T12:00:03.000Z", sourceKind: "streamerbot", kind: "canonical", eventType: "follow", outcome: "merged", referenceId: null, consumers: [
+        { consumerId: "alerts", outcome: "admitted", referenceId: null }
+      ] },
+      { id: 2, receivedAt: "2026-10-08T12:00:02.000Z", sourceKind: "twitch", kind: "canonical", eventType: "cheer", outcome: "accepted", referenceId: null, consumers: [
+        { consumerId: "alerts", outcome: "expired", referenceId: null },
+        { consumerId: "screen-effects", outcome: "failed", referenceId: "ref-bus-effects" }
+      ] },
+      { id: 1, receivedAt: "2026-10-08T12:00:01.000Z", sourceKind: "twitch", kind: "canonical", eventType: "follow", outcome: "accepted", referenceId: null, consumers: [
+        { consumerId: "alerts", outcome: "admitted", referenceId: null },
+        { consumerId: "screen-effects", outcome: "no-match", referenceId: null },
+        { consumerId: "timers", outcome: "no-match", referenceId: null },
+        { consumerId: "video-shoutout", outcome: "pending", referenceId: null }
+      ] }
     ]
   };
 }

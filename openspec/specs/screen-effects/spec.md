@@ -50,7 +50,7 @@ Each variant SHALL contain one optional image/GIF/video visual and one optional 
 - **AND** output expansion does not multiply device audio
 
 ### Requirement: Effect Triggers Use Existing Event Sources
-Effects SHALL match stable Twitch broadcaster/reward IDs or exact configured Streamer.bot external-event source/type identities through the existing validated event-source boundary. The existing single-active-provider model SHALL remain unchanged. Operator tests SHALL require explicit protected actions and SHALL name their target destinations.
+Effects SHALL select events through the shared event trigger selector: a canonical event type with typed conditions, stable Twitch broadcaster/reward IDs, or an exact configured Streamer.bot external-event source/type identity, optionally restricted to source kinds. Effects SHALL receive events as a central event bus consumer from every active source. Operator tests SHALL require explicit protected actions and SHALL name their target destinations.
 
 #### Scenario: Reward is renamed
 - **WHEN** the selected Twitch reward's title changes but its broadcaster/reward IDs remain the same
@@ -59,6 +59,14 @@ Effects SHALL match stable Twitch broadcaster/reward IDs or exact configured Str
 #### Scenario: Reward is missing from the catalog
 - **WHEN** a saved reward binding is no longer resolvable
 - **THEN** management shows it as unresolved rather than binding a similarly named reward
+
+#### Scenario: Effect triggers on a canonical event
+- **WHEN** an effect selects canonical `raid` with viewers at least 10 and a 25-viewer raid arrives from any active source
+- **THEN** the effect is admitted
+
+#### Scenario: Existing bindings migrate
+- **WHEN** the app upgrades with saved `twitch-reward` and `streamerbot-event` bindings
+- **THEN** each becomes an equivalent selector and matches the same events as before
 
 #### Scenario: Streamer.bot payload contains an asset path
 - **WHEN** an external event's user-controlled payload contains a URL, file path or command-like text

@@ -51,10 +51,20 @@ export interface EventIngestionDiagnostic {
  */
 export type EventSinkOutcome = { readonly status: "accepted" | "duplicate" | "merged" };
 
+export interface EventSinkDuplicate {
+  readonly sourceKind: "twitch" | "streamerbot";
+  readonly kind: "canonical" | "external" | null;
+  readonly eventType: string | null;
+}
+
 export interface EventSink {
   handleEvent(event: NormalizedStreamEvent, triggers: readonly EffectTrigger[]): void | EventSinkOutcome | Promise<void | EventSinkOutcome>;
   /** `payload` is the untrusted external payload; the sink keeps it only for identities a consumer declared. */
   handleTriggers?(triggers: readonly EffectTrigger[], payload?: unknown): void | EventSinkOutcome | Promise<void | EventSinkOutcome>;
+  /** Records input a source delivered that was rejected before it could be published. */
+  recordRejected?(sourceKind: "twitch" | "streamerbot", referenceId: string): void;
+  /** Records a redelivery this service recognized before publishing; `eventType` is a bounded label. */
+  recordDuplicate?(input: EventSinkDuplicate): void;
 }
 
 export interface EventIngestionServiceOptions {
@@ -117,6 +127,8 @@ export class EventIngestionService {
     }
 
     if (this.#seenMessageIds.has(eventId) || this.#inFlightMessageIds.has(eventId)) {
+      const trigger = parsed.data.find((candidate) => candidate.kind === "streamerbot-event");
+      this.#recordDuplicate({ sourceKind: "streamerbot", kind: "external", eventType: trigger === undefined ? null : `${trigger.sourceKey} · ${trigger.eventType}` });
       this.#status = {
         ...this.#status,
         state: this.#status.state === "idle" ? "ready" : this.#status.state,
@@ -153,6 +165,7 @@ export class EventIngestionService {
   async ingestTwitchEventSubNotification(message: unknown): Promise<EventIngestionResult> {
     const messageId = getTwitchEventSubMessageId(message);
     if (messageId !== null && this.#seenMessageIds.has(messageId)) {
+      this.#recordDuplicate({ sourceKind: "twitch", kind: "canonical", eventType: null });
       this.#status = {
         ...this.#status,
         state: this.#status.state === "idle" ? "ready" : this.#status.state,
@@ -210,6 +223,7 @@ export class EventIngestionService {
     }
     const diagnosticContext = getNormalizedEventDiagnosticContext(normalizedEvent);
     if (this.#seenMessageIds.has(normalizedEvent.id) || this.#inFlightMessageIds.has(normalizedEvent.id)) {
+      this.#recordDuplicate({ sourceKind: normalizedEvent.ingestProvider, kind: "canonical", eventType: normalizedEvent.type });
       this.#status = {
         ...this.#status,
         state: this.#status.state === "idle" ? "ready" : this.#status.state,
@@ -236,6 +250,16 @@ export class EventIngestionService {
       });
     } finally {
       this.#inFlightMessageIds.delete(normalizedEvent.id);
+    }
+  }
+
+  #recordDuplicate(input: EventSinkDuplicate): void {
+    try {
+      this.#sink.recordDuplicate?.(input);
+    }
+    // error-provenance: allow cleanup -- intake diagnostics are best effort; a recording failure must not change the duplicate result
+    catch {
+      // The duplicate is still counted in the ingestion status.
     }
   }
 
@@ -269,6 +293,15 @@ export class EventIngestionService {
   }> {
     const referenceId = this.#generateReferenceId();
     const { message } = diagnostic;
+    if (diagnostic.ingestProvider !== undefined) {
+      try {
+        this.#sink.recordRejected?.(diagnostic.ingestProvider, referenceId);
+      }
+      // error-provenance: allow cleanup -- the rejection is still reported through diagnostics below; the intake record is best effort
+      catch {
+        // The journal may be the reason intake failed.
+      }
+    }
     this.#status = {
       ...this.#status,
       state: "degraded",

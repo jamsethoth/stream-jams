@@ -41,6 +41,7 @@ import type { StreamerBotSocket } from "../modules/streamerbot/streamerbot-clien
 import type { SpeakerBotSocket } from "../modules/tts/speakerbot-client.js";
 import { SqliteAssetRepository } from "../modules/assets/sqlite-asset-repository.js";
 import { SqliteEffectRepository } from "../modules/screen-effects/sqlite-effect-repository.js";
+import { SqliteEventBusJournalRepository } from "../modules/events/sqlite-event-bus-journal-repository.js";
 import { createRuntimeAppComposition, type RuntimeAppComposition } from "./runtime-composition.js";
 
 const temporaryDirectories: string[] = [];
@@ -410,6 +411,81 @@ describe("runtime app composition smoke", () => {
       muted: false
     });
     await expect(configStore.readConfig()).resolves.toMatchObject({ playback: { muted: false } });
+  });
+
+  it("replays an event journaled before shutdown within the replay age under global pause, and expires older ones", async () => {
+    const testRoot = await createTemporaryDirectory();
+    const options = {
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot, { paused: true, muted: false, doNotDisturb: false })),
+      environment: { TWITCH_CLIENT_ID: "test-client" },
+      secretStore: new InMemorySecretStore(),
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket,
+      eventReplayDelayMs: 0
+    };
+    const first = await createRuntimeAppComposition(options);
+    const session = await first.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const authHeaders = managementAuthHeaders(session);
+    await first.app.inject({ method: "GET", url: "/management/home", headers: authHeaders });
+    const rules = (await first.app.inject({ method: "GET", url: "/alerts/rules", headers: authHeaders })).json() as AlertRule[];
+    const followRule = rules.find((rule) => rule.eventType === "follow")!;
+    const document = (await first.app.inject({ method: "GET", url: `/management/alerts/${followRule.id}/editor`, headers: authHeaders })).json() as AlertEditorDocument;
+    const layer = testTextLayer(`${followRule.id}-text`, "Thanks {actor.displayName}");
+    const saved = await first.app.inject({
+      method: "PUT",
+      url: `/management/alerts/${followRule.id}/editor`,
+      headers: authHeaders,
+      payload: {
+        confirmLiveImpact: true,
+        document: {
+          ...document,
+          enabled: true,
+          layers: [layer],
+          targetProfiles: document.targetProfiles.map((profile) => profile.id === "landscape"
+            ? { ...profile, enabled: true, reviewState: "ready", layerLayouts: [{ layerId: layer.id, x: 0, y: 0, width: 500, height: 100, zIndex: 1 }] }
+            : { ...profile, enabled: false, reviewState: "needs-review" })
+        }
+      }
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    // Journal two follows as if the app stopped after intake committed them but before any consumer ran.
+    const journal = new SqliteEventBusJournalRepository(first.database.connection);
+    const nowMs = Date.now();
+    for (const [id, ageMs] of [["follow-stale", 10 * 60_000], ["follow-pending", 5_000]] as const) {
+      const receivedAt = new Date(nowMs - ageMs).toISOString();
+      journal.append({
+        kind: "canonical", eventId: id, sourceKind: "twitch", sourceRegistrationId: null, receivedAt, correlationKey: null, effectTriggers: [],
+        event: {
+          id, providerId: "twitch", sourcePlatform: "twitch", ingestProvider: "twitch", occurredAt: receivedAt, type: "follow",
+          actor: { id: `viewer-${id}`, displayName: "Viewer" }, message: null, amount: null, metadata: {}
+        }
+      }, `bus-${id}`, { duplicateSinceMs: 0, correlationSinceMs: 0 });
+    }
+    await first.close();
+
+    const second = await createRuntimeAppComposition(options);
+    runtimeCompositions.push(second);
+    expect(second.playbackCoordinator.getSnapshot().queued).toEqual([]);
+    second.scheduleEventReplay();
+    await waitUntil(() => second.playbackCoordinator.getSnapshot().queued.length === 1);
+
+    const snapshot = second.playbackCoordinator.getSnapshot();
+    // Global pause applies to the replayed alert as to a live one: it waits in the queue.
+    expect(snapshot.paused).toBe(true);
+    expect(snapshot.current).toBeNull();
+    expect(snapshot.queued.map((item) => [item.sourceEvent.id, item.deliveredBy])).toEqual([["follow-pending", "twitch"]]);
+    const rows = second.database.connection.prepare(`SELECT j.event_id, o.consumer_id, o.outcome FROM event_bus_consumer_outcomes o
+      JOIN event_bus_journal j ON j.sequence = o.sequence WHERE o.consumer_id IN ('alerts', 'screen-effects') ORDER BY j.sequence, o.consumer_id`).all()
+      .map((row) => [row.event_id, row.consumer_id, row.outcome]);
+    expect(rows).toEqual([
+      ["follow-stale", "alerts", "expired"], ["follow-stale", "screen-effects", "expired"],
+      ["follow-pending", "alerts", "admitted"], ["follow-pending", "screen-effects", "no-match"]
+    ]);
+    const activity = await second.app.inject({ method: "GET", url: "/management/diagnostics/event-bus", headers: managementAuthHeaders(await second.app.inject({ method: "POST", url: "/auth/management/sessions" })) });
+    expect(activity.statusCode).toBe(200);
   });
 
   it("indexes server failures by the public error ID returned to the browser", async () => {
@@ -2545,6 +2621,14 @@ function createForbiddenTwitchSocket(): TwitchEventSubSocket {
 
 function secretKeyFromCredential(service: string, account: string): string {
   return `${service}:${account}`;
+}
+
+async function waitUntil(condition: () => boolean): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error("Timed out waiting for condition");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 }
 
 async function waitFor(condition: () => boolean | Promise<boolean>): Promise<void> {
