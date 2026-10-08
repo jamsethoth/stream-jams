@@ -434,3 +434,21 @@
 .screen-effect-set > .module-section-heading { flex-wrap: wrap; align-items: center; }
 .screen-effect-set > .module-section-heading > .screen-effects-list__actions { flex: 1 1 100%; }
 .screen-effects-section-header .mantine-Button-root { flex: 0 0 auto; }
+
+.screen-effect-event-trigger {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  display: grid;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 12px 16px 16px;
+}
+
+.screen-effect-event-trigger > legend {
+  font-weight: 700;
+  padding: 0 4px;
+}
+
+.screen-effect-event-trigger > .mantine-Button-root {
+  justify-self: start;
+}
