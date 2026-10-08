@@ -52,7 +52,7 @@ Applicable UX: Product Surfaces, Information Architecture, Visual Foundation, Cr
 
 **Files:** Core `data-overlays/repository.ts`, `value-service.ts` and tests; server `modules/data-overlays/sqlite-data-overlay-repository.ts`, migration `033-custom-data-overlays.ts`, `modules/db/database.ts`, `http/routes/data-overlays.ts` and tests; `app.ts` dependency declaration/route registration. Coordinate runtime construction in unit3.
 
-**Interfaces:** `DataOverlayRepository` provides synchronous typed state reads and atomic transactional mutations. `DataOverlayService` exposes catalog reads; value/goal/group/canvas definition CRUD; pin settings; `commandValue(id, command)`; `resetGroup(id)`; `restartGoal(id)`; and `setCanvasVisibility(id,enabled)`. Successful mutations return committed state and publish once after commit. Define concrete route/client contracts in `contract.md`: Management `/api/data-overlays` definitions, Operator `/api/operator/data-overlays` state/commands using existing session+CSRF middleware. No credential/input API.
+**Interfaces:** `DataOverlayRepository` provides synchronous typed state reads and atomic transactional mutations. `DataOverlayService` exposes catalog reads; value/goal/group/canvas definition CRUD; pin settings; `commandValue(id, command)`; `resetGroup(id)`; `restartGoal(id)`; and `setCanvasVisibility(id,enabled)`. Successful mutations return committed state and publish once after commit. Define concrete route/client contracts in `contract.md`: Management `/data-overlays` definitions, Operator `/operator/data-overlays` state/commands using existing session+CSRF middleware. No credential/input API.
 
 - [ ] Write failing repository/service tests for reopening persisted state, trim/lowercase name collisions, fixed kind, pin/reference-safe deletion, stale set and serialized delta updates.
 - [ ] Implement FK-backed value/goal/group/canvas/binding references (styling can be schema-validated JSON), per-value and aggregate revisions, and synchronous transaction boundaries. Never await in SQLite transaction callbacks.
@@ -134,4 +134,5 @@ Applicable UX: Product Surfaces, Information Architecture, Visual Foundation, Cr
 - The user's explicit plan-then-execute request supersedes the optional workflow's second plan approval prompt. Link the concrete plan and proceed with the selected model/effort.
 - One final independent review follows repository policy rather than per-task review agents. Implementers still self-check each unit and report tests.
 - User authority for all four slices permits sequential development on this isolated branch with slice commits; it does not claim prerequisite merges occurred.
-- Shared files/interfaces are changed in dependency order; do not run overlapping implementers. Planning investigations may run independently.
+- Shared files/interfaces are changed in dependency order; do not assign overlapping files. After unit1 fixes the core contract, unit4's isolated renderer, geometry and preview helpers can proceed alongside unit2. Management/API integration still waits for units2 and3. Serialize commits or commit only explicitly owned paths.
+

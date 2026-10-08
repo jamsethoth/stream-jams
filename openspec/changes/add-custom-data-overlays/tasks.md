@@ -1,8 +1,8 @@
 ## 1. Preparation
 
-- [ ] 1.1 Fetch remote state, confirm this slice is still unimplemented, and branch from `origin/main`. Approval of this proposal does not authorize the later slices.
-- [ ] 1.2 Read the frontend routing documents, inspect the Music layout editor, snapping, asset picker and Operator timer controls, and record an editor fit assessment before adding any dependency.
-- [ ] 1.3 Write a requirement-to-test trace covering every scenario in this change.
+- [x] 1.1 Fetch remote state, confirm this slice is still unimplemented, and branch from `origin/main`. Approval of this proposal does not authorize the later slices.
+- [x] 1.2 Read the frontend routing documents, inspect the Music layout editor, snapping, asset picker and Operator timer controls, and record an editor fit assessment before adding any dependency.
+- [x] 1.3 Write a requirement-to-test trace covering every scenario in this change.
 
 ## 2. Values, goals and groups
 
