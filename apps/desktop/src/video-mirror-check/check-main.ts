@@ -123,6 +123,10 @@ export async function runVideoMirrorCheck(): Promise<void> {
       // A new window means a new capture; mirrors reconnect on their own once it is ready.
       if (wasCapturing) await startCapture();
     },
+    async "stop-player"() {
+      if (player === null || player.isDestroyed()) return;
+      await player.webContents.executeJavaScript(`window.__setSource({ "kind": "none" }, "")`, true);
+    },
     async "start-capture"() {
       await startCapture();
     },
@@ -185,7 +189,12 @@ export async function runVideoMirrorCheck(): Promise<void> {
     webPreferences: { partition: "video-mirror-check", sandbox: true, contextIsolation: true }
   });
   lockNavigation(control);
-  control.on("closed", () => { server.close(); app.quit(); });
+  // Closing the check window ends everything, including the hidden player and its sound.
+  control.on("closed", () => {
+    server.close();
+    for (const window of BrowserWindow.getAllWindows()) window.destroy();
+    app.exit(0);
+  });
   await control.loadURL(`${origin}/control?t=${token}`);
 }
 

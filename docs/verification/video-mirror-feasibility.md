@@ -64,6 +64,17 @@ Changes for the second run: sources now swap inside one long-lived player page, 
 
 Linux smoke run after the change: the desktop receiver reconnected once after a new player window and resumed at 30 fps with a 75 ms median delay, unblocked audio and a 0.14 audio level.
 
-### Windows with OBS, second run
+### 2026-10-08: Windows 11 with OBS, second run
 
-Pending.
+Same PC and settings, one OBS browser source and the desktop receiver.
+
+- The test pattern and then a YouTube video reached OBS and the desktop receiver over the same capture, with no reconnects when the source changed.
+- Delay from the player to each output, read from the timestamp strip: test pattern median 126 ms (maximum 453 ms), YouTube median 140 ms (maximum 300 ms). This is inside the 100–300 ms estimate.
+- Sound played in OBS and the desktop receiver with nothing blocked, and Jams confirmed picture and sound stayed in sync in OBS.
+- OBS connected through a peer-reflexive candidate on its side (`prflx:hidden`), still on the same PC with no STUN or TURN. Loopback-only ICE is enough.
+- All app processes averaged 5% CPU with a 9% peak, without hardware acceleration.
+- Fan-out to a chosen device started again.
+
+Problem found: the sound kept playing after it was started. The check had no way to stop a source, and its tone was only turned down, not stopped, when the source changed. The check now has **Stop playback**, which clears the player and the device outputs, and closing the check window ends every window and sound. The product must do the same: Stop and Skip end the player's sound, and closing the app ends playback.
+
+Still to check: Twitch clip and VOD with pause, play and jump (task 1.2b), and the YouTube buttons.

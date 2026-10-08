@@ -93,13 +93,19 @@ function startTone() {
   toneGain.gain.value = 0.2;
   void audioContext.resume();
 }
-function stopTone() { if (toneGain !== null) toneGain.gain.value = 0; }
+function stopTone() { if (toneGain !== null) toneGain.gain.value = 0; if (audioContext !== null) void audioContext.suspend(); }
 
 window.__setSource = (next, url) => {
   source = next;
   const stage = document.getElementById("stage");
   clearInterval(patternTimer);
   stopTone();
+  if (next.kind === "none") {
+    stage.replaceChildren();
+    stopFanOut();
+    report("player-stopped", {});
+    return;
+  }
   if (next.kind === "pattern") {
     const canvas = document.createElement("canvas");
     canvas.width = 1280; canvas.height = 720;
@@ -187,9 +193,14 @@ listen("publisher", async body => {
   }
 });
 
-async function fanOut(deviceIds) {
+function stopFanOut() {
   const host = document.getElementById("sinks");
+  for (const element of host.querySelectorAll("audio")) { element.pause(); element.srcObject = null; }
   host.replaceChildren();
+}
+async function fanOut(deviceIds) {
+  stopFanOut();
+  const host = document.getElementById("sinks");
   const audioTrack = captured && captured.getAudioTracks()[0];
   if (!audioTrack) { report("fan-out", { ok: false, message: "No captured audio track." }); return; }
   const results = [];
@@ -353,7 +364,7 @@ export function controlPage(): string {
   <label>Player host <select id="host"><option value="127.0.0.1">127.0.0.1</option><option value="localhost">localhost</option></select> <span class="hint">(Twitch checks this as the embed parent)</span></label>
   <label>Audio capture <select id="audio"><option value="frame">Player window only (preferred)</option><option value="loopbackWithMute">All system audio, muted locally</option><option value="loopback">All system audio</option></select></label>
   <label><input type="checkbox" id="show"> Show the player window (normally hidden)</label>
-  <button id="load">Load player</button><button id="capture">Start capture</button>
+  <button id="load">Load player</button><button id="capture">Start capture</button><button id="stop">Stop playback</button>
 </fieldset>
 <fieldset><legend>2. Outputs</legend>
   <p>OBS: add a <b>Browser Source</b> (1280×720, tick <i>Control audio via OBS</i>) with this URL:</p>
@@ -371,6 +382,7 @@ export function controlPage(): string {
   <label><input type="checkbox" data-manual="desktopVideo"> The desktop receiver window shows the video</label>
   <label><input type="checkbox" data-manual="devicesAudio"> Each ticked device plays the sound</label>
   <label><input type="checkbox" data-manual="inSync"> Sound and picture stay in sync in OBS</label>
+  <label><input type="checkbox" data-manual="stopsCleanly"> Stop playback silences everything, including the ticked devices</label>
   <label><input type="checkbox" data-manual="twitchControl"> Twitch pause, play and jump worked</label>
   <label><input type="checkbox" data-manual="youtubeControl"> YouTube pause, play and jump worked</label>
   <label>Notes <input type="text" id="notes" placeholder="Anything odd"></label>
@@ -392,6 +404,7 @@ async function command(body) {
 }
 document.getElementById("load").onclick = () => command({ action: "load-player", source: source(), host: document.getElementById("host").value, audio: document.getElementById("audio").value, show: document.getElementById("show").checked });
 document.getElementById("capture").onclick = () => command({ action: "start-capture" });
+document.getElementById("stop").onclick = () => command({ action: "stop-player" });
 document.getElementById("desktopReceiver").onclick = () => command({ action: "open-desktop-receiver" });
 for (const button of document.querySelectorAll("[data-twitch]")) button.onclick = () => command({ action: "twitch", op: button.dataset.twitch });
 for (const button of document.querySelectorAll("[data-youtube]")) button.onclick = () => send("publisher", { type: "youtube", func: button.dataset.youtube, args: button.dataset.youtube === "seekTo" ? [30, true] : [] });
