@@ -9,6 +9,10 @@ External facts:
 - Goal types are `follower`, `subscription`, `subscription_count`, `new_subscription` and `new_subscription_count`. The `subscription` types count tier points, not subscribers, so a tier 2 sub adds 2 ([Creator Goals](https://dev.twitch.tv/docs/api/goals/)).
 - EventSub WebSocket has "no replay of events that are lost" after a dropped connection ([Twitch](https://dev.twitch.tv/docs/eventsub/handling-websocket-events/)).
 
+## Relationship to the central event bus
+
+The central event bus (BL-025) carries Twitch events to every module. Goal begin, progress and end events reach this source through the bus when the bus carries them; otherwise they come through a bus consumer registered for those types. The follower total and goal snapshots are polled state from Helix, not events, so they stay in this source. Follow events trigger the early follower refresh through the bus.
+
 ## Decisions
 
 ### 1. Optional capability scopes

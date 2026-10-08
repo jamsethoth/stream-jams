@@ -7,11 +7,11 @@ This change is the first of four reviewable slices of BL-055. It delivers a usab
 | Slice | Change | Adds |
 | --- | --- | --- |
 | 1 | `add-custom-data-overlays` (this change) | Values, goals, reset groups, canvases, outputs, Operator controls, backup |
-| 2 | [`add-data-overlay-event-rules`](../add-data-overlay-event-rules/proposal.md) | Rules over normalized events, Streamer.bot custom broadcasts and Streamer.bot globals |
+| 2 | [`add-data-overlay-event-rules`](../add-data-overlay-event-rules/proposal.md) | Rules that consume the central event bus (BL-025), plus Streamer.bot globals |
 | 3 | [`add-twitch-overlay-data`](../add-twitch-overlay-data/proposal.md) | Twitch follower total and Creator Goals |
 | 4 | [`add-data-overlay-templates`](../add-data-overlay-templates/proposal.md) | Bundled and saved canvas templates |
 
-Slices 2, 3 and 4 depend on this change and are independent of each other.
+Slices 2, 3 and 4 depend on this change and are independent of each other. Slice 2 also depends on the central event bus change: data overlays read events only from that bus and have no event intake of their own.
 
 ## What Changes
 
@@ -28,7 +28,7 @@ Slices 2, 3 and 4 depend on this change and are independent of each other.
 
 - Automatic updates from events (slice 2), Twitch data (slice 3) and templates (slice 4).
 - Money and decimal values. These wait for a real money source; see BL-020.
-- An inbound HTTP or WebSocket API for external producers. Stream Jams listens to tools it already connects to (slice 2). A paired native input API stays in the backlog as BL-064.
+- Any event intake. Events reach data overlays only through the central event bus (BL-025) in slice 2. A paired native input API for external producers stays in the backlog as BL-064.
 - Value-change animation, such as count-up numbers or animated bar fill, and completed-goal styling. These are tracked as BL-065.
 - Custom HTML or JavaScript, arbitrary expressions, masks, nested groups, freehand drawing, and a new queue or audio channel. NP-001 and NP-006 still apply.
 

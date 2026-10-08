@@ -46,7 +46,7 @@ Six changes remain active:
 | [add-main-branch-changelog](../openspec/changes/add-main-branch-changelog/tasks.md) | Unimplemented proposal, 22 unchecked tasks; no root changelog or enforcing workflow |
 | [add-video-shoutout-overlay-module](../openspec/changes/add-video-shoutout-overlay-module/tasks.md) | Unimplemented proposal, 23 unchecked tasks; no registered video-shoutout module |
 | [add-custom-data-overlays](../openspec/changes/add-custom-data-overlays/proposal.md) | Slice 1 of 4 for data overlays: values, goals, reset groups, canvases, outputs and Operator controls; 21 unchecked tasks, awaiting approval |
-| [add-data-overlay-event-rules](../openspec/changes/add-data-overlay-event-rules/proposal.md) | Slice 2: rules from normalized events and Streamer.bot; 20 unchecked tasks; depends on slice 1 |
+| [add-data-overlay-event-rules](../openspec/changes/add-data-overlay-event-rules/proposal.md) | Slice 2: data rules as a central event bus consumer, plus Streamer.bot globals; 19 unchecked tasks; depends on slice 1 and the bus change |
 | [add-twitch-overlay-data](../openspec/changes/add-twitch-overlay-data/proposal.md) | Slice 3: Twitch follower total and Creator Goals; 11 unchecked tasks; depends on slice 1 |
 | [add-data-overlay-templates](../openspec/changes/add-data-overlay-templates/proposal.md) | Slice 4: canvas templates and starters; 10 unchecked tasks; depends on slice 1 |
 

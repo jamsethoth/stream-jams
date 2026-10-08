@@ -3,6 +3,7 @@
 The goal is an easy visual way to build custom counters, labels and goals. In review on 2026-10-08, Jams decided:
 
 - Stream Jams listens to events from tools it already connects to, such as Streamer.bot, rather than accepting inbound connections from producers.
+- All event sources feed one central event bus (BL-025, its own change), and data overlays are one of its consumers (slice 2).
 - V1 values are integer and text only. Money and decimal come with a real money source.
 - Twitch goals are treated as a list. A binding follows the active goal of a type by default (slice 3).
 - Every module needs Operator tools, desktop overlay and browser source output, and a management UI (project convention).

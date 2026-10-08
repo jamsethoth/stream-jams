@@ -200,3 +200,4 @@ They hide behind "or" and "respectively", which makes the requirement-to-test tr
 1. **Event intake:** Stream Jams listens to events from tools like Streamer.bot; producers don't need to connect into it. Make Streamer.bot custom broadcasts (and optionally globals) the primary custom source, and drop or defer the inbound WebSocket ingress (findings 2 and 10).
 2. **Value kinds:** v1 ships integer and text only. Money and decimal arrive with a real money source (finding 11).
 3. **Twitch goals:** handled as a list with "active goal of type X" binding by default (finding 5, updated).
+4. **Central event bus:** all event sources feed one durable bus with a shared trigger model (planned under BL-025). Data overlays have no event intake of their own and consume the bus in slice 2.
