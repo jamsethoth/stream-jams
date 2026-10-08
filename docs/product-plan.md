@@ -170,7 +170,7 @@ The current Twitch scope includes:
 The canonical status and priority for deferred event work is maintained in the [Stream Jams backlog](backlog.md). Current product boundaries still defer:
 
 - [Third-party and charity donation events](future-features.md#third-party-and-charity-donation-events).
-- Creator goals.
+- Creator goals, now planned as BL-062 with data overlays.
 - Stream-driven intake automation.
 
 Each event provider should normalize platform-specific payloads into internal event objects before alert matching.
