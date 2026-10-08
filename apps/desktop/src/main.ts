@@ -12,11 +12,15 @@ import { ServiceSupervisor } from "./service-supervisor.js";
 import { createTray } from "./tray.js";
 import { ShutdownLog } from "./shutdown-log.js";
 import { collectPriorCrashDumpMetadata, createDesktopDiagnosticFallbackWriter, DesktopDiagnostics } from "./desktop-diagnostics.js";
+import { runVideoMirrorCheck, videoMirrorCheckGpuSwitch, videoMirrorCheckSwitch } from "./video-mirror-check/check-main.js";
+
+// Diagnostic mode for the Videos mirror feasibility check; it replaces the normal app for that run.
+const videoMirrorCheck = process.argv.includes(videoMirrorCheckSwitch);
 
 // Keep the management renderer off the hardware GPU process. On Windows 25H2,
 // that subprocess can remain in a terminating state after every JS quit event,
 // delaying the owned desktop process and locking its isolated profile.
-app.disableHardwareAcceleration();
+if (!videoMirrorCheck || !process.argv.includes(videoMirrorCheckGpuSwitch)) app.disableHardwareAcceleration();
 registerAudioPlayerScheme([overlayPlayerScheme]);
 
 const isolatedUserData = process.env.STREAM_JAMS_DESKTOP_USER_DATA_PATH;
@@ -151,7 +155,12 @@ function requestQuit(): void {
   })().finally(() => { quitPending = null; });
 }
 
-if (!app.requestSingleInstanceLock()) {
+if (videoMirrorCheck) {
+  void runVideoMirrorCheck().catch((error: unknown) => {
+    dialog.showErrorBox("Video mirror check failed to start", error instanceof Error ? error.message : String(error));
+    app.quit();
+  });
+} else if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   shutdownLog = new ShutdownLog(process.env.STREAM_JAMS_SHUTDOWN_LOG);
