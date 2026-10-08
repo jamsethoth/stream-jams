@@ -66,6 +66,13 @@ test("desktop primary player captures one hidden page and mirrors it to the devi
       .toMatchObject({ type: "report", itemId: "item-1", controls: { pause: true, seek: true } });
     await expect.poll(async () => Math.max(0, ...(await events(desktop)).filter(event => event.state === "progress").map(event => event.positionMs ?? 0)), { timeout: 10_000 }).toBeGreaterThan(1000);
 
+    // Pause and play reach the page. This runs early: the fixture clip is 10 s long and an ended item ignores play.
+    await command(desktop, { type: "pause", purpose: "live", itemId: "item-1" });
+    await expect.poll(async () => (await stageState(player)).paused).toBe(true);
+    await command(desktop, { type: "play", purpose: "live", itemId: "item-1", positionMs: 2000 });
+    await expect.poll(async () => (await stageState(player)).paused).toBe(false);
+    expect((await stageState(player)).time).toBeLessThan(9);
+
     // The page cannot leave or open windows.
     expect(await player.evaluate(() => window.open("https://example.com/") === null)).toBe(true);
     await player.evaluate(() => { location.href = "https://example.com/"; });
@@ -93,11 +100,7 @@ test("desktop primary player captures one hidden page and mirrors it to the devi
     // Only the player's own main frame may capture.
     expect(await devices.evaluate(() => navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }).then(() => "granted", (error: unknown) => error instanceof Error ? error.name : "refused"))).not.toBe("granted");
 
-    // Pause and play reach the page; stop removes the provider so every output falls silent.
-    await command(desktop, { type: "pause", purpose: "live", itemId: "item-1" });
-    await expect.poll(async () => (await stageState(player)).paused).toBe(true);
-    await command(desktop, { type: "play", purpose: "live", itemId: "item-1", positionMs: 2000 });
-    await expect.poll(async () => (await stageState(player)).paused).toBe(false);
+    // Stop removes the provider so every output falls silent.
     await command(desktop, { type: "stop", purpose: "live" });
     await expect.poll(async () => (await stageState(player)).children).toBe(0);
 
