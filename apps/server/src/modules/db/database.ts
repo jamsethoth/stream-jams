@@ -34,6 +34,7 @@ import { persistentEventTimersMigration } from "./migrations/030-persistent-even
 import { musicSourceProvidersMigration } from "./migrations/032-music-source-providers.js";
 
 import { automationGrantsMigration } from "./migrations/031-automation-grants.js";
+import { videoRequestQueueMigration } from "./migrations/033-video-request-queue.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -78,7 +79,8 @@ const migrations = [
   assetRetirementsMigration,
   persistentEventTimersMigration,
   automationGrantsMigration,
-  musicSourceProvidersMigration
+  musicSourceProvidersMigration,
+  videoRequestQueueMigration
 
 ] satisfies readonly StreamJamsMigration[];
 
