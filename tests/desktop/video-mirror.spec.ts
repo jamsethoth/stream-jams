@@ -71,7 +71,7 @@ test("desktop primary player captures one hidden page and mirrors it to the devi
     await player.evaluate(() => { location.href = "https://example.com/"; });
     await new Promise(resolveWait => setTimeout(resolveWait, 500));
     expect(player.url()).toBe(playerUrl);
-    expect(desktop.windows().some(page => page.url().startsWith("https://example.com"))).toBe(false);
+    expect(desktop.windows().some(page => URL.canParse(page.url()) && new URL(page.url()).hostname === "example.com")).toBe(false);
 
     // A desktop receiver gets an offer carrying the captured picture and sound.
     await desktop.evaluate(() => (globalThis as unknown as MainState).desktopReceiver.send({ type: "hello", connection: 1 }));
