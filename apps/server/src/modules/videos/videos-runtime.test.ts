@@ -41,6 +41,14 @@ describe("VideosRuntime with the desktop mirror", () => {
     expect(await snapshot()).toMatchObject({ videos: { delivery: { mode: "player", clock: { state: "paused" } } } });
   });
 
+  it("asks fallback players to start a loading item from its start position", async () => {
+    const { snapshot, queue, item } = setup();
+    expect(queue.view("live").current).toMatchObject({ phase: "loading", clock: { state: "paused", positionMs: 0 } });
+    expect(await snapshot()).toMatchObject({ videos: { delivery: { mode: "player", clock: { state: "playing", positionMs: 0, atEpochMs: 1_000_000 } } } });
+    queue.reportStarted(item.id);
+    expect(await snapshot()).toMatchObject({ videos: { delivery: { mode: "player", clock: { state: "playing", positionMs: 0 } } } });
+  });
+
   it("reports mirror availability and Twitch controls the desktop player detected", () => {
     const { runtime, mirror, item } = setup();
     expect(runtime.response("live")).toMatchObject({ mirror: { available: false }, current: { controls: { pause: false, seek: false } } });

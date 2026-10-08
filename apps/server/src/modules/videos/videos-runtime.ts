@@ -28,7 +28,9 @@ export function toVideosProjection(view: VideoQueueView, config: Pick<VideosModu
       // Without it, each browser source plays the item itself from the shared clock.
       delivery: mirrorAvailable
         ? { mode: "mirror", paused: phase === "paused", obsAudio: config.obsAudio }
-        : { mode: "player", source: item.source, clock: { ...clock }, obsAudio: config.obsAudio }
+        // A loading item waits for a player to start it, so fallback players are asked to play from its
+        // start position (as the desktop player is); a paused loading clock would keep them from ever starting.
+        : { mode: "player", source: item.source, clock: phase === "loading" ? { ...clock, state: "playing" } : { ...clock }, obsAudio: config.obsAudio }
     };
   }
   if (view.notice !== null) return { status: "notice", noticeId: view.notice.id, notice: "no-clip", displayName: view.notice.displayName };

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
-import { createStaticVideoQueueApi, heldVideos, playingVideo, queuedVideos, twitchClipPlaying, videoQueue } from "../../stories/video-queue-fixtures.js";
+import { createStaticVideoQueueApi, failedVideos, heldVideos, playingVideo, queuedVideos, twitchClipPlaying, videoQueue } from "../../stories/video-queue-fixtures.js";
 import { ManagementHttpError } from "../management-http-client.js";
 import { VideoQueuePanel } from "./VideoQueuePanel.js";
 
@@ -40,6 +40,16 @@ export const HeldOverLimit: Story = {
     const held = await canvas.findByRole("article", { name: "Full concert" });
     await expect(within(held).getByText("Over the length limit")).toBeVisible();
     await expect(within(held).getByRole("button", { name: "Play anyway: Full concert" })).toBeEnabled();
+  }
+};
+
+export const RecentFailure: Story = {
+  args: { api: createStaticVideoQueueApi(failedVideos()) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const failed = await canvas.findByRole("article", { name: "Removed upload" });
+    await expect(within(failed).getByText("Failed")).toBeVisible();
+    await expect(canvas.getByText("Failed recently (1)")).toBeVisible();
   }
 };
 

@@ -161,6 +161,22 @@ describe("VideoQueueService", () => {
     expect(service.view("live").current).toBeNull();
   });
 
+  it("keeps the newest failures for review outside the queue", () => {
+    const { service, scheduler } = setup();
+    for (let index = 1; index <= 7; index += 1) {
+      service.submit("live", clip(`Clip ${index}`));
+      service.command("live", service.view("live").revision, { kind: "play-next" });
+      scheduler.advance(videoLoadTimeoutMs);
+    }
+    service.submit("live", clip("Waiting"));
+    const view = service.view("live");
+    expect(view.items.map(item => item.title)).toEqual(["Waiting"]);
+    expect(view.recentlyFailed.map(item => [item.title, item.status])).toEqual(
+      [3, 4, 5, 6, 7].map(index => [`Clip ${index}`, "failed"])
+    );
+    expect(service.view("test").recentlyFailed).toEqual([]);
+  });
+
   it("learns a duration from the player for unknown-length items", () => {
     const { service, scheduler } = setup();
     const item = service.submit("live", clip("Unknown", null));

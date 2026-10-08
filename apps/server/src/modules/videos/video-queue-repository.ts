@@ -17,6 +17,8 @@ export interface VideoQueueSnapshot {
   readonly run: VideoQueueRun | null;
   /** Items still in the queue (queued, held, playing or paused), in play order. */
   readonly items: readonly VideoRequestItem[];
+  /** The newest failed items, oldest first, for operator review. They are not part of the queue. */
+  readonly recentlyFailed: readonly VideoRequestItem[];
 }
 
 export interface VideoQueueChange {
@@ -43,6 +45,8 @@ export interface VideoQueueRepository {
 }
 
 const activeStatuses = ["queued", "held", "playing", "paused"] as const;
+/** How many failed items a snapshot carries for review. */
+export const videoRecentFailureLimit = 5;
 const runSchema = z.object({ mode: z.enum(["next", "all"]), remainingIds: z.array(z.string().min(1).max(128)).max(1000) }).strict();
 
 const rowSchema = z.object({
@@ -70,12 +74,16 @@ export class SqliteVideoQueueRepository implements VideoQueueRepository {
     const rows = this.connection.prepare(
       `SELECT * FROM video_requests WHERE purpose = ? AND status IN (${activeStatuses.map(() => "?").join(", ")}) ORDER BY position, created_at, id`
     ).all(purpose, ...activeStatuses);
+    const failedRows = this.connection.prepare(
+      "SELECT * FROM video_requests WHERE purpose = ? AND status = 'failed' ORDER BY updated_at DESC, id DESC LIMIT ?"
+    ).all(purpose, videoRecentFailureLimit);
     return {
       purpose,
       revision: Number(state.revision),
       queuePaused: Number(state.queue_paused) === 1,
       run: state.run_json === null ? null : runSchema.parse(JSON.parse(String(state.run_json))),
-      items: rows.map(row => toItem(rowSchema.parse(row)))
+      items: rows.map(row => toItem(rowSchema.parse(row))),
+      recentlyFailed: failedRows.reverse().map(row => toItem(rowSchema.parse(row)))
     };
   }
 

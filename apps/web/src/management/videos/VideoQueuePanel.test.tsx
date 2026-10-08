@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createStaticVideoQueueApi, heldVideos, playingVideo, queuedVideos, twitchClipPlaying, videoQueue } from "../../stories/video-queue-fixtures.js";
+import { createStaticVideoQueueApi, failedVideos, heldVideos, playingVideo, queuedVideos, twitchClipPlaying, videoQueue } from "../../stories/video-queue-fixtures.js";
 import { renderManagement } from "../../test-support/render-management.js";
 import { ManagementHttpError } from "../management-http-client.js";
 import { VideoQueuePanel } from "./VideoQueuePanel.js";
@@ -56,6 +56,15 @@ describe("VideoQueuePanel", () => {
     expect(within(screen.getByRole("article", { name: "Short clip" })).queryByRole("button", { name: /Play anyway/u })).not.toBeInTheDocument();
     await user.click(within(concert).getByRole("button", { name: "Play anyway: Full concert" }));
     expect(command).toHaveBeenCalledWith("live", 4, { kind: "play-anyway", itemId: "long" });
+  });
+
+  it("lists recent failures apart from the waiting queue, without controls", async () => {
+    renderManagement(<VideoQueuePanel api={createStaticVideoQueueApi(failedVideos())} />);
+    const failed = await screen.findByRole("article", { name: "Removed upload" });
+    expect(within(failed).getByText("Failed")).toBeVisible();
+    expect(within(failed).queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.getByText("Failed recently (1)")).toBeVisible();
+    expect(screen.getByText("Waiting (1)")).toBeVisible();
   });
 
   it("reorders and removes waiting items", async () => {

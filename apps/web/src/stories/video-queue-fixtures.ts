@@ -27,6 +27,11 @@ export const heldVideos = (): VideoQueueResponse => videoQueue({ items: [
   videoItem("short", { title: "Short clip", position: 3 })
 ] });
 
+export const failedVideos = (): VideoQueueResponse => videoQueue({ items: [
+  videoItem("next", { title: "Next in line", position: 4 }),
+  videoItem("broken", { title: "Removed upload", status: "failed", position: 2 })
+] });
+
 export const playingVideo = (phase: "playing" | "paused" = "playing", seek = true): VideoQueueResponse => {
   const now = Date.now();
   return videoQueue({ serverTimeEpochMs: now, runRemaining: 1, items: [
