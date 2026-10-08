@@ -80,3 +80,22 @@ export type VideosProjection =
         | { readonly mode: "player"; readonly source: VideoSource; readonly clock: VideoPlaybackClock; readonly obsAudio: boolean };
     }
   | { readonly status: "notice"; readonly noticeId: string; readonly notice: "no-clip"; readonly displayName: string | null };
+
+/** Queue state as returned to management, operator and automation clients. */
+export interface VideoQueueResponse {
+  readonly purpose: OverlayPurpose;
+  readonly revision: number;
+  readonly queuePaused: boolean;
+  readonly runRemaining: number;
+  readonly gapEndsAtEpochMs: number | null;
+  readonly serverTimeEpochMs: number;
+  readonly items: readonly (VideoRequestItem & { readonly link: string })[];
+  readonly current: {
+    readonly itemId: string;
+    readonly phase: "loading" | "playing" | "paused";
+    readonly positionMs: number;
+    readonly atEpochMs: number;
+    readonly durationMs: number | null;
+    readonly controls: VideoControlSupport;
+  } | null;
+}

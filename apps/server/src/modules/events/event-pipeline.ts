@@ -20,6 +20,8 @@ export interface EventPipelineIdGenerator {
 export interface EventPipelineOptions {
   readonly timerEventSink?: { handleEvent(event: NormalizedStreamEvent): Promise<void> };
   readonly onTimerError?: (error: unknown, event: NormalizedStreamEvent) => void | Promise<void>;
+  readonly videoEventSink?: { handleEvent(event: NormalizedStreamEvent): void | Promise<void> };
+  readonly onVideoError?: (error: unknown, event: NormalizedStreamEvent) => void | Promise<void>;
   readonly playbackCoordinator: Pick<PlaybackCoordinator, "enqueueEvent">;
   readonly diagnosticsLogRepository: Pick<
     DiagnosticsLogRepository,
@@ -34,6 +36,8 @@ export interface EventPipelineOptions {
 export class EventPipeline implements EventSink {
   readonly #timerEventSink: EventPipelineOptions["timerEventSink"];
   readonly #onTimerError: EventPipelineOptions["onTimerError"];
+  readonly #videoEventSink: EventPipelineOptions["videoEventSink"];
+  readonly #onVideoError: EventPipelineOptions["onVideoError"];
   readonly #playbackCoordinator: Pick<PlaybackCoordinator, "enqueueEvent">;
   readonly #diagnosticsLogRepository: Pick<
     DiagnosticsLogRepository,
@@ -47,6 +51,8 @@ export class EventPipeline implements EventSink {
   constructor(options: EventPipelineOptions) {
     this.#timerEventSink = options.timerEventSink;
     this.#onTimerError = options.onTimerError;
+    this.#videoEventSink = options.videoEventSink;
+    this.#onVideoError = options.onVideoError;
     this.#playbackCoordinator = options.playbackCoordinator;
     this.#diagnosticsLogRepository = options.diagnosticsLogRepository;
     this.#generateId = options.generateId;
@@ -61,16 +67,19 @@ export class EventPipeline implements EventSink {
     await this.#appendEventLog(event, "received", correlationId, processingId, null);
     const effectDelivery = this.#deliverEffects(triggers);
     const timerDelivery = this.#deliverTimers(event);
+    const videoDelivery = this.#deliverVideos(event);
 
     try {
       const result = await this.#playbackCoordinator.enqueueEvent(event);
       await this.#appendPlaybackRecords(event, result, correlationId, processingId);
       await effectDelivery;
       await timerDelivery;
+      await videoDelivery;
       await this.#appendEventLog(event, "processed", correlationId, processingId, null);
     } catch (error) {
       await effectDelivery;
       await timerDelivery;
+      await videoDelivery;
       await this.#appendEventLog(
         event,
         "failed",
@@ -91,6 +100,14 @@ export class EventPipeline implements EventSink {
     catch (error) {
       // error-provenance: allow expected -- timer failures are diagnosed independently of alert intake
       await this.#onTimerError?.(error, event);
+    }
+  }
+
+  async #deliverVideos(event: NormalizedStreamEvent): Promise<void> {
+    try { await this.#videoEventSink?.handleEvent(event); }
+    catch (error) {
+      // error-provenance: allow expected -- video request failures are diagnosed independently of alert intake
+      await this.#onVideoError?.(error, event);
     }
   }
 
