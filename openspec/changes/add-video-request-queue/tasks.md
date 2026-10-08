@@ -1,15 +1,15 @@
 ## 1. Dependency Gate
 
 - [x] 1.1 Fetch `origin/main`, confirm the branch starts from it, and confirm `video-shoutout` (#157) is merged.
-- [ ] 1.2 Windows feasibility gate. In a throwaway Electron spike, prove each of the following and record the results in `verification/video-mirror-feasibility.md`:
+- [x] 1.2 Windows feasibility gate. In a throwaway Electron spike, prove each of the following and record the results in `verification/video-mirror-feasibility.md`:
   - frame audio capture via `setDisplayMediaRequestHandler` from a cross-origin YouTube and Twitch frame
   - loopback-only WebRTC playback in an OBS browser source
   - multi-device `setSinkId` fan-out
   - measured delay and CPU/GPU cost
 - [x] 1.2a Stop and report to the operator if frame audio capture fails, with the window-capture and OBS-audio fallback.
-- [ ] 1.2b Confirm Twitch `<video>` control via `webFrameMain` (approved 2026-10-08) and the feature-detection signal.
+- [x] 1.2b Confirm Twitch `<video>` control via `webFrameMain` (approved 2026-10-08) and the feature-detection signal.
 - [ ] 1.3 Confirm normalized `channel_point_redemption` events with `userInput` reach the event pipeline from Streamer.bot and direct Twitch sources.
-- [ ] 1.4 Confirm the YouTube `enablejsapi=1` `postMessage` commands and `infoDelivery` messages in a browser test page, and record the message shapes used.
+- [x] 1.4 Confirm the YouTube `enablejsapi=1` `postMessage` commands and `infoDelivery` messages in a browser test page, and record the message shapes used.
 
 ## 2. Core Contracts
 

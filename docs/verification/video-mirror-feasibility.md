@@ -78,3 +78,17 @@ Same PC and settings, one OBS browser source and the desktop receiver.
 Problem found: the sound kept playing after it was started. The check had no way to stop a source, and its tone was only turned down, not stopped, when the source changed. The check now has **Stop playback**, which clears the player and the device outputs, and closing the check window ends every window and sound. The product must do the same: Stop and Skip end the player's sound, and closing the app ends playback.
 
 Still to check: Twitch clip and VOD with pause, play and jump (task 1.2b), and the YouTube buttons.
+
+### 2026-10-08: Windows 11 with OBS, third run (gate passed)
+
+Same PC and settings, one OBS browser source and the desktop receiver.
+
+- **Twitch clip control from the main process works (task 1.2b).** `webFrameMain.executeJavaScript` found the clip frame's `<video>` element. Pause stopped at 2.1 s, play resumed, and a jump moved from 2.9 s to 6.8 s of a 7.2 s clip. Finding the `<video>` element (`video: true`) is the feature-detection signal; when it is missing, Twitch falls back to play and stop only. A Twitch VOD was not tried; it uses the same player page and is covered by the desktop tests in task 5.8.
+- **YouTube control by `postMessage` works (task 1.4).** Pause, play and seek were confirmed by hand. The message shapes match the earlier runs: `initialDelivery` and `onReady` first, then `infoDelivery` with `playerState` and `currentTime`.
+- Delay medians across both outputs: test pattern 82–85 ms, Twitch clip 144–155 ms, YouTube 127–151 ms. Maximums stayed under 400 ms.
+- Sound played in OBS and the desktop receiver, in sync, with no blocked audio. Stop playback silenced everything, including the device output.
+- The desktop receiver reconnected once on its own and carried on.
+- All app processes averaged 5% CPU with a 14% peak, without hardware acceleration. Peak working set was about 2 GB.
+- Fan-out was tried with one device at a time; a second device at once was not tried. Each element's `setSinkId` is independent, so the product fans out one element per device.
+
+**Decision:** the desktop mirror is feasible on Windows. Build it as one long-lived hidden player page per purpose, with providers swapped inside it, frame capture with voice processing off, loopback-only WebRTC to each output, and automatic receiver reconnects.
