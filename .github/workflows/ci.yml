@@ -252,7 +252,6 @@ jobs:
     permissions:
       actions: read
       contents: read
-      security-events: write
 
     steps:
       - name: Checkout repository
@@ -264,8 +263,24 @@ jobs:
           languages: javascript-typescript
           queries: security-extended,security-and-quality
 
+      # Code scanning is unavailable for this private repository, so results stay in the run.
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v4
+        with:
+          upload: never
+          output: codeql-results
+
+      - name: Gate CodeQL findings
+        run: node scripts/codeql-sarif-gate.mjs codeql-results
+
+      - name: Upload CodeQL results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: codeql-results
+          path: codeql-results/
+          if-no-files-found: warn
+          retention-days: 14
 
   dependency-review:
     name: dependency-review
@@ -274,13 +289,34 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      pull-requests: read
 
+    # GitHub's dependency review needs Advanced Security on private repositories, so pull
+    # requests run the same strict registry audit as the Dependency Audit workflow.
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Review dependency changes
-        uses: actions/dependency-review-action@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
         with:
-          fail-on-severity: moderate
+          node-version-file: .nvmrc
+
+      - name: Enable Corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.2.2 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit dependencies
+        run: pnpm audit:dependencies
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dependency-review-audit
+          path: pnpm-audit.json
+          if-no-files-found: warn
+          retention-days: 14
