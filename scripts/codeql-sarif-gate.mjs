@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 // Code scanning is unavailable for this private repository, so CodeQL results are gated here
 // with GitHub's default pull-request thresholds: security severity high or above, or level error.
+// Results carrying an accepted in-source suppression are listed but do not block.
 export const blockingSecuritySeverity = 7;
 
 export function evaluateSarif(report) {
@@ -22,6 +23,8 @@ export function evaluateSarif(report) {
       const securitySeverity = rawSeverity === undefined ? null : Number(rawSeverity);
       if (securitySeverity !== null && !Number.isFinite(securitySeverity)) throw new Error(`Rule ${ruleId} has an invalid security severity.`);
       const location = result.locations?.[0]?.physicalLocation;
+      // An in-source `codeql[rule-id]` comment records a reviewed exception at the flagged line.
+      const suppressed = Array.isArray(result.suppressions) && result.suppressions.length > 0 && result.suppressions.every(entry => entry?.status === undefined || entry.status === 'accepted');
       findings.push({
         ruleId,
         level,
@@ -29,7 +32,8 @@ export function evaluateSarif(report) {
         file: location?.artifactLocation?.uri ?? 'unknown',
         line: location?.region?.startLine ?? null,
         message: result.message?.text ?? '',
-        blocking: level === 'error' || (securitySeverity !== null && securitySeverity >= blockingSecuritySeverity)
+        suppressed,
+        blocking: !suppressed && (level === 'error' || (securitySeverity !== null && securitySeverity >= blockingSecuritySeverity))
       });
     }
   }
@@ -50,7 +54,7 @@ function ruleFor(result, components) {
 
 export function formatFinding(finding) {
   const severity = finding.securitySeverity === null ? finding.level : `${finding.level}, security ${finding.securitySeverity}`;
-  return `${finding.file}${finding.line === null ? '' : `:${finding.line}`} ${finding.ruleId} (${severity}): ${finding.message}`;
+  return `${finding.suppressed ? 'SUPPRESSED ' : ''}${finding.file}${finding.line === null ? '' : `:${finding.line}`} ${finding.ruleId} (${severity}): ${finding.message}`;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

@@ -24,6 +24,17 @@ test('a result level overrides the rule default and rules resolve by id without 
   assert.equal(formatFinding(summary.findings[0]), 'unknown js/a (error): m');
 });
 
+test('in-source suppressions are listed without blocking unless rejected', () => {
+  const rules = [rule('js/a', 'error'), rule('js/b', 'error'), rule('js/c', 'error')];
+  const summary = evaluateSarif(report(rules, [
+    result('js/a', 0, { suppressions: [{ kind: 'inSource' }] }),
+    result('js/b', 1, { suppressions: [{ kind: 'inSource', status: 'rejected' }] }),
+    result('js/c', 2, { suppressions: [] })
+  ]));
+  assert.deepEqual(summary.blocking.map(finding => finding.ruleId), ['js/b', 'js/c']);
+  assert.match(formatFinding(summary.findings[0]), /^SUPPRESSED /);
+});
+
 test('missing or malformed reports fail closed', () => {
   for (const value of [null, {}, { runs: [] }, { runs: [{ tool: {}, results: [] }] }, { runs: [{ tool: { driver: { rules: [] } } }] }]) assert.throws(() => evaluateSarif(value));
   assert.throws(() => evaluateSarif(report([], [{ message: { text: 'no rule' } }])), /rule identifier/);
