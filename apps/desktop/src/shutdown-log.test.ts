@@ -1,5 +1,6 @@
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ShutdownLog } from "./shutdown-log.js";
@@ -22,6 +23,15 @@ describe("shutdown phase evidence", () => {
     log.record("overlay-close-requested"); log.record("overlay-closed"); log.close();
     await expect.poll(async () => (await contents(file)).trim().split("\n").length).toBe(2);
     expect((await contents(file)).trim().split("\n").map(line => JSON.parse(line).phase)).toEqual(["overlay-close-requested", "overlay-closed"]);
+  });
+  it("has each accepted record on disk before record returns, without waiting for close", async () => {
+    const { file } = await fixture();
+    const log = new ShutdownLog(file);
+    log.record("quit-requested");
+    log.record("electron-quit");
+    // Electron can exit right after the last phase, so no queued write may be pending.
+    expect(readFileSync(file, "utf8").trim().split("\n").map(line => JSON.parse(line).phase)).toEqual(["quit-requested", "electron-quit"]);
+    log.close();
   });
   it("does not create evidence when disabled or given a relative path", async () => {
     const { root, file } = await fixture();
