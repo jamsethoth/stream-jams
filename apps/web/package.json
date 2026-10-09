@@ -16,7 +16,7 @@
     "@mantine/core": "9.7.0",
     "@mantine/hooks": "9.7.0",
     "@stream-jams/core": "workspace:*",
-    "pixi.js": "8.21.0",
+    "pixi.js": "8.22.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
