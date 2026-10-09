@@ -1,0 +1,12 @@
+[
+  {
+    "rule": "js/missing-rate-limiting",
+    "file": "apps/server/src/http/routes/twitch-auth.ts",
+    "reason": "Every Twitch auth route runs managementRateLimitPreHandler first; CodeQL does not recognize that pre-handler."
+  },
+  {
+    "rule": "js/disabling-certificate-validation",
+    "file": "apps/server/src/modules/music/pear-config.ts",
+    "reason": "Inspection-only socket that reads the Pear certificate for operator consent; no data is sent and it is destroyed on secureConnect."
+  }
+]

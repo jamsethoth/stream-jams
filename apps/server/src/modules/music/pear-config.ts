@@ -76,6 +76,7 @@ export async function inspectPearCertificate(config: PearConfiguration, signal: 
   return new Promise((resolve, reject) => {
     // Validation must be off to read a certificate that fails it. This socket never writes data and is destroyed on
     // secureConnect; the certificate is only shown for explicit consent. Data-bearing connections use pearTlsOptions.
+    // codeql[js/disabling-certificate-validation] Inspection-only socket: no data is sent and it is destroyed on secureConnect.
     const socket = tls.connect({ ...pearTlsOptions({ ...config, trustedCertificate: undefined }, url.hostname), host: destination, port: Number(url.port) || 443, rejectUnauthorized: false });
     const abort = () => { socket.destroy(); reject(combined.reason); };
     combined.addEventListener("abort", abort, { once: true });
