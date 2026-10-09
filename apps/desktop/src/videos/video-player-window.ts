@@ -4,6 +4,7 @@ import { BrowserWindow, ipcMain, session, type IpcMainEvent, type Session, type 
 import { z } from "zod";
 import type { OverlayPurpose } from "@stream-jams/core";
 import { VIDEO_PLAYER_COMMAND_CHANNEL, VIDEO_PLAYER_REPORT_CHANNEL, videoPlayerCommandSchema, type VideoPlayerCommand } from "./video-ipc.js";
+import { twitchFrameScript } from "./twitch-frame-script.js";
 import type { TwitchFrameOperation, TwitchFrameState, VideoPlayerPort, VideoPortCallbacks } from "./video-player-host.js";
 
 /*
@@ -13,7 +14,8 @@ import type { TwitchFrameOperation, TwitchFrameState, VideoPlayerPort, VideoPort
  * plain-HTTP request in place of the network: only the player page and script exist there.
  */
 
-export const VIDEO_PLAYER_PARTITION = "stream-jams-video-player";
+/** Persistent so provider player settings (Twitch volume and quality) survive restarts; the HTTP cache stays off. */
+export const VIDEO_PLAYER_PARTITION = "persist:stream-jams-video-player";
 export const videoPlayerBasePath = "/__stream-jams/video-player/";
 const contentSecurityPolicy = [
   "default-src 'none'",
@@ -46,21 +48,6 @@ const twitchStateSchema = z.object({
   positionMs: z.number().int().min(0).max(24 * 60 * 60 * 1000).optional(),
   durationMs: z.number().int().min(1).max(24 * 60 * 60 * 1000).nullable().optional()
 }).strict();
-
-/** Runs inside the Twitch frame. It only reads and steers the first `<video>`; nothing is returned but numbers and flags. */
-export function twitchFrameScript(operation: TwitchFrameOperation): string {
-  const seconds = operation.type === "seek" ? operation.positionMs / 1000 : 0;
-  return `(async () => {
-    const video = document.querySelector("video");
-    if (!(video instanceof HTMLVideoElement)) return { video: false };
-    const op = ${JSON.stringify(operation.type)};
-    if (op === "pause") video.pause();
-    if (op === "play") await video.play().catch(() => undefined);
-    if (op === "seek" && Number.isFinite(video.duration)) video.currentTime = Math.min(${seconds}, Math.max(0, video.duration - 0.5));
-    const duration = Number.isFinite(video.duration) && video.duration > 0 ? Math.round(video.duration * 1000) : null;
-    return { video: true, paused: video.paused, ended: video.ended, positionMs: Math.max(0, Math.round(video.currentTime * 1000)), durationMs: duration };
-  })()`;
-}
 
 interface SessionState {
   origin: string;
