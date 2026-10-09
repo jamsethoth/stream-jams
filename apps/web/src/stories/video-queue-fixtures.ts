@@ -23,7 +23,7 @@ export const queuedVideos = (): VideoQueueResponse => videoQueue({ items: [
 
 export const heldVideos = (): VideoQueueResponse => videoQueue({ items: [
   videoItem("long", { title: "Full concert", durationMs: 3_600_000, status: "held", holdReason: "over-limit", position: 1 }),
-  videoItem("unknown", { title: "Mystery link", durationMs: null, status: "held", holdReason: "unknown-length", position: 2 }),
+  videoItem("unknown", { title: "Mystery link", durationMs: null, position: 2 }),
   videoItem("short", { title: "Short clip", position: 3 })
 ] });
 
@@ -62,7 +62,8 @@ export function createStaticVideosApi(queue: VideoQueueResponse, overrides: Part
   return {
     ...createStaticVideoQueueApi(queue),
     getModuleConfig: async () => ({ enabled: true, config: { maxLengthSeconds: 120, gapSeconds: 3, allowedDirectHosts: ["videos.example.com"], obsAudio: true,
-      audioDeviceIds: ["stream"], audioDeviceDelaysMs: { stream: 120 }, streamerBotAutoplay: true, rewardMappings: [{ rewardId: "reward-video", purpose: "live" }] } }),
+      audioDeviceIds: ["stream"], audioDeviceDelaysMs: { stream: 120 }, streamerBotAutoplay: true, rewardMappings: [{ rewardId: "reward-video", purpose: "live" }],
+      layout: { x: 269, y: 140, width: 1382, height: 876 } } }),
     saveModuleConfig: async (enabled, config) => ({ enabled, config }),
     setModuleEnabled: async enabled => enabled,
     listBrowserSources: async () => [

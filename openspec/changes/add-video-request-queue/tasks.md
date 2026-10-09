@@ -26,6 +26,7 @@
 - [x] 3.4 Implement item playback state: pause and resume, seek, position and duration reports from the player host, load timeout leading to failed, and the server clock for the fallback path.
 - [x] 3.5 Implement restart recovery so playing and paused items return to the queue head without replay.
 - [x] 3.6 Add service and repository tests, including stale-revision conflicts and restart recovery.
+- [x] 3.7 Queue unknown-length items instead of holding them; stop and hold an unknown-length item as over-limit when the player reports a duration over the limit (unless released with Play anyway), continue the run as after a skip, and queue legacy `unknown-length` holds again at startup.
 
 ## 4. Intake Paths
 
@@ -52,10 +53,11 @@
 - [x] 6.1 Add the Videos management page: enablement, outputs, mirror status, limits, gap, OBS audio and device targets, allowed hosts, reward mapping, Streamer.bot autoplay opt-in, and the queue.
 - [x] 6.2 Add the Operator panel: now-playing card and queue list with all controls, keyboard operable, with confirmation for clear.
 - [x] 6.3 Add Storybook stories and component tests for both surfaces.
+- [x] 6.4 Add Videos placement: a persisted canvas box in the module config (default equal to the earlier look), validated on save and in the projection, applied by browser sources, the desktop overlay and the mirror, and edited on the Videos page with the shared snapping, plus stories, unit tests and Playwright coverage.
 
 ## 7. Docs, Backlog And Verification
 
 - [x] 7.1 Replace `docs/video-shoutout.md` with `docs/videos.md`, covering links, Streamer.bot, REST, rewards and OBS audio.
 - [ ] 7.2 Update `docs/backlog.md` to close BL-053 and BL-057 on archive, and keep BL-058 and BL-060.
-- [x] 7.3 Add Playwright coverage: submit, held over-limit item, Play anyway, play all snapshot, pause and seek, and unsafe link rejection, with providers stubbed.
+- [x] 7.3 Add Playwright coverage: submit, held over-limit item, Play anyway, play all snapshot, pause and seek, and unsafe link rejection, an unknown-length item queuing and playing, and a player-reported over-limit duration stopping and holding the item, with providers stubbed.
 - [ ] 7.4 Run lint, typecheck, unit, build (including bundle budgets), Storybook and Playwright gates. Verify the rebuilt live workflow.

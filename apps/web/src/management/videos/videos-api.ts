@@ -125,6 +125,11 @@ function parseModuleState(value: unknown): VideosModuleState {
     || typeof value.config.obsAudio !== "boolean" || typeof value.config.streamerBotAutoplay !== "boolean") {
     throw new TypeError("Videos settings returned an invalid response. Reload and retry.");
   }
+  const layout = value.config.layout;
+  // Placement is rendered and saved as-is, so a missing or partial box fails closed.
+  if (!isRecord(layout) || !["x", "y", "width", "height"].every(key => typeof layout[key] === "number")) {
+    throw new TypeError("Videos settings returned an invalid response. Reload and retry.");
+  }
   const delays = value.config.audioDeviceDelaysMs;
   if (delays !== undefined && (!isRecord(delays) || !Object.values(delays).every(delay => typeof delay === "number"))) {
     throw new TypeError("Videos settings returned an invalid response. Reload and retry.");

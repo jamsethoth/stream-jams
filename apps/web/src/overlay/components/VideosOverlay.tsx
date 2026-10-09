@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { serializeException, type VideoPlaybackClock, type VideoSource, type VideosProjection } from "@stream-jams/core";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { serializeException, type VideoPlaybackClock, type VideoSource, type VideosLayout, type VideosProjection } from "@stream-jams/core";
 import { buildVideoPlayerUrl, parseYouTubeMessage, videoClockPositionMs, videoInstructionPrefix, videoProviderOrigin, videosProjectionSchema } from "@stream-jams/core/videos";
 import type { OverlayPlaybackEvent } from "./OverlaySurface.js";
+import { VideoBox, VideoCaption, videoFrameStyle } from "./VideoPlacement.js";
 import { startVideoMirrorReceiver, type VideoMirrorConnector, type VideoMirrorReceiverState } from "@stream-jams/core/videos";
 
 export { parseYouTubeMessage } from "@stream-jams/core/videos";
@@ -50,20 +51,16 @@ export function VideosOverlay({ projection, onPlaybackEvent, resolvePlayerUrl = 
   if (videos.status === "idle") return null;
   if (videos.status === "notice") {
     return (
-      <div className="video-overlay" data-state="notice" data-testid="video-overlay">
+      <VideoBox data-state="notice" data-testid="video-overlay" layout={videos.layout}>
         <div className="video-overlay__notice" role="status">
           {videos.displayName === null ? null : <span className="video-overlay__name">{videos.displayName}</span>}
           <span className="video-overlay__notice-text">No clip to show right now</span>
         </div>
-      </div>
+      </VideoBox>
     );
   }
-  const context = videos.title === null && videos.requester === null ? null : (
-    <div className="video-overlay__context">
-      {videos.title === null ? null : <span className="video-overlay__title">{videos.title}</span>}
-      {videos.requester === null ? null : <span className="video-overlay__requester">Requested by {videos.requester}</span>}
-    </div>
-  );
+  const { layout } = videos;
+  const context = <VideoCaption layout={layout} requester={videos.requester} title={videos.title} />;
   // Mirror delivery shows the desktop primary player's stream; it never plays the item here.
   if (videos.delivery.mode === "mirror") {
     if (mirror === undefined) return null;
@@ -72,6 +69,7 @@ export function VideosOverlay({ projection, onPlaybackEvent, resolvePlayerUrl = 
         connector={mirror}
         context={context}
         createPeerConnection={createMirrorPeerConnection}
+        layout={layout}
         muted={muted || !mirrorAudio || !videos.delivery.obsAudio}
         paused={videos.delivery.paused}
       />
@@ -85,9 +83,10 @@ export function VideosOverlay({ projection, onPlaybackEvent, resolvePlayerUrl = 
     muted: silent
   });
   return (
-    <div className="video-overlay" data-provider={source.provider} data-testid="video-overlay">
+    <VideoBox data-provider={source.provider} data-testid="video-overlay" layout={layout}>
       <PlayerFrame
         clock={clock}
+        frameStyle={videoFrameStyle(layout)}
         itemId={videos.itemId}
         key={videos.itemId}
         loadTimeoutMs={playerLoadTimeoutMs}
@@ -98,13 +97,14 @@ export function VideosOverlay({ projection, onPlaybackEvent, resolvePlayerUrl = 
         source={source}
       />
       {context}
-    </div>
+    </VideoBox>
   );
 }
 
 interface MirrorReceiverProps {
   readonly connector: VideoMirrorConnector;
   readonly context: ReactNode;
+  readonly layout: VideosLayout;
   readonly muted: boolean;
   readonly paused: boolean;
   readonly createPeerConnection: VideosOverlayProps["createMirrorPeerConnection"];
@@ -114,7 +114,7 @@ interface MirrorReceiverProps {
  * Shows the desktop primary player's stream. Stays transparent until frames arrive and
  * whenever the mirror is unavailable; reconnects on its own and releases the connection on unmount.
  */
-function MirrorReceiver({ connector, context, muted, paused, createPeerConnection }: MirrorReceiverProps) {
+function MirrorReceiver({ connector, context, layout, muted, paused, createPeerConnection }: MirrorReceiverProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [state, setState] = useState<VideoMirrorReceiverState>("connecting");
   const mutedRef = useRef(muted);
@@ -152,12 +152,12 @@ function MirrorReceiver({ connector, context, muted, paused, createPeerConnectio
   }, [connector, createPeerConnection]);
   const shown = state === "playing";
   return (
-    <div className="video-overlay" data-delivery="mirror" data-state={shown && paused ? "paused" : state} data-testid="video-overlay">
-      <div className="video-overlay__frame" data-state={shown ? "playing" : "loading"} hidden={!shown}>
+    <VideoBox data-delivery="mirror" data-state={shown && paused ? "paused" : state} data-testid="video-overlay" layout={layout}>
+      <div className="video-overlay__frame" data-state={shown ? "playing" : "loading"} hidden={!shown} style={videoFrameStyle(layout)}>
         <video autoPlay className="video-overlay__player" data-testid="video-overlay-mirror" muted={muted} playsInline ref={videoRef} />
       </div>
       {shown ? context : null}
-    </div>
+    </VideoBox>
   );
 }
 
@@ -167,6 +167,7 @@ interface PlayerFrameProps {
   readonly clock: VideoPlaybackClock;
   readonly muted: boolean;
   readonly playerUrl: string;
+  readonly frameStyle: CSSProperties;
   readonly loadTimeoutMs: number;
   readonly now: () => number;
   readonly onPlaybackEvent: VideosOverlayProps["onPlaybackEvent"];
@@ -188,7 +189,7 @@ function PlayerFrame(props: PlayerFrameProps) {
   }, [loadTimeoutMs, started]);
 
   return (
-    <div className="video-overlay__frame" data-state={started ? "playing" : "loading"}>
+    <div className="video-overlay__frame" data-state={started ? "playing" : "loading"} style={props.frameStyle}>
       {props.source.provider === "direct"
         ? <DirectPlayer {...props} reportRef={reportRef} />
         : <EmbeddedPlayer {...props} reportRef={reportRef} />}

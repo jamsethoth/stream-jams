@@ -11,7 +11,7 @@ The video shoutout module (`add-video-shoutout-overlay-module`) plays one Stream
   - Items are always queued. Nothing plays unless the operator starts it, or the submission sets an explicit `autoplay` flag from a source allowed to autoplay.
   - Queue controls: play next, play everything queued at that moment, pause or resume the current video, seek, skip current, stop, remove, reorder, and clear.
   - A configurable gap between videos (default 3 seconds).
-  - A configurable maximum length. Items over it, or of unknown length, stay visible as held items that the operator can play anyway.
+  - A configurable maximum length. Items known to be over it stay visible as held items that the operator can play anyway. Items of unknown length queue normally and are stopped and held as over the limit if the player reports a longer duration.
 - Add a provider allowlist:
   - Twitch clips and VODs.
   - YouTube videos and Shorts.

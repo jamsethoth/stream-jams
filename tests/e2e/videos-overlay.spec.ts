@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { installOverlayWebSocketMock } from "./e2e-helpers.js";
 
 const clipSource = { provider: "twitch-clip", clipSlug: "ClipOne" } as const;
+const layout = { x: 269, y: 140, width: 1382, height: 876 } as const;
 
 function composition(videos: unknown) {
   return {
@@ -14,7 +15,7 @@ function composition(videos: unknown) {
 
 function active(itemId: string, source: unknown, overrides: Record<string, unknown> = {}) {
   return {
-    status: "active", itemId, title: "The big play", requester: "Friendly Streamer",
+    status: "active", itemId, title: "The big play", requester: "Friendly Streamer", layout,
     delivery: { mode: "player", source, clock: { state: "playing", positionMs: 0, atEpochMs: Date.now() }, obsAudio: true },
     ...overrides
   };
@@ -62,7 +63,7 @@ test("plays a queued Twitch clip on the Videos browser source, shows a notice, a
   expect(twitchRequests).toHaveLength(1);
   expect(await page.locator("body").innerText()).not.toContain("ovl_videos");
 
-  await pushComposition(page, composition({ status: "notice", noticeId: "notice-1", notice: "no-clip", displayName: "Quiet Friend" }));
+  await pushComposition(page, composition({ status: "notice", noticeId: "notice-1", notice: "no-clip", displayName: "Quiet Friend", layout }));
   await expect(page.getByRole("status")).toHaveText("Quiet FriendNo clip to show right now");
   await expect(page.locator("iframe")).toHaveCount(0);
 
@@ -86,4 +87,17 @@ test("refuses a source outside the allowlist on the live browser source", async 
   await expect(page.locator("iframe, video")).toHaveCount(0);
   await expect(page.getByTestId("video-overlay")).toHaveCount(0);
   expect(outbound.filter(url => url.includes("evil"))).toEqual([]);
+});
+
+test("refuses a video box that leaves the canvas", async ({ page }) => {
+  await page.route("https://clips.twitch.tv/**", route => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Clip</title>" }));
+  await installOverlayWebSocketMock(page);
+  await page.route("**/overlay/modules/videos/live/ovl_videos/composition", route =>
+    route.fulfill({ contentType: "application/json", json: composition({ status: "idle" }) }));
+  await page.goto("/overlay/modules/videos/live/ovl_videos");
+  await expect(page.getByTestId("overlay-root")).toBeVisible();
+  await pushComposition(page, composition(active("off-canvas", clipSource, { layout: { x: 1700, y: 0, width: 480, height: 320 } })));
+  await expect.poll(() => socketMessages(page)).toContainEqual(expect.objectContaining({ type: "overlay.playback.failed", instructionId: "video:off-canvas" }));
+  await expect(page.locator("iframe, video")).toHaveCount(0);
+  await expect(page.getByTestId("video-overlay")).toHaveCount(0);
 });

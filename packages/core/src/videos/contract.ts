@@ -2,11 +2,15 @@ import { z } from "zod";
 import { nonNegativeIntegerSchema } from "../shared/schemas.js";
 import type { VideosProjection } from "./types.js";
 import { videoSourceSchema } from "./source-schema.js";
+import { videosLayoutSchema } from "./layout-schema.js";
 
 export * from "./providers.js";
 export * from "./mirror.js";
 export * from "./mirror-receiver.js";
 export { videoSourceSchema } from "./source-schema.js";
+export { videosLayoutSchema } from "./layout-schema.js";
+export * from "./layout.js";
+export * from "./placement-geometry.js";
 
 /*
  * Strict Videos contract, published with the provider allowlist as the
@@ -31,12 +35,13 @@ export const videosProjectionSchema = z.discriminatedUnion("status", [
     itemId: itemIdSchema,
     title: videoTitleSchema.nullable(),
     requester: videoRequesterSchema.nullable(),
+    layout: videosLayoutSchema,
     delivery: z.discriminatedUnion("mode", [
       z.object({ mode: z.literal("mirror"), paused: z.boolean(), obsAudio: z.boolean() }).strict(),
       z.object({ mode: z.literal("player"), source: videoSourceSchema, clock: videoPlaybackClockSchema, obsAudio: z.boolean() }).strict()
     ])
   }).strict(),
-  z.object({ status: z.literal("notice"), noticeId: itemIdSchema, notice: z.literal("no-clip"), displayName: videoRequesterSchema.nullable() }).strict()
+  z.object({ status: z.literal("notice"), noticeId: itemIdSchema, notice: z.literal("no-clip"), displayName: videoRequesterSchema.nullable(), layout: videosLayoutSchema }).strict()
 ]) satisfies z.ZodType<VideosProjection>;
 
 /** Overlay players report video playback as `video:<itemId>` so it never reaches alert or effect coordinators. */

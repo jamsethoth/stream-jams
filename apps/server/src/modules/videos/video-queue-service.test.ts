@@ -54,16 +54,141 @@ describe("VideoQueueService", () => {
     expect(view.current).toBeNull();
   });
 
-  it("holds over-limit and unknown-length items and releases them on Play anyway", () => {
+  it("holds over-limit items and releases them on Play anyway", () => {
     const { service } = setup({ maxLengthSeconds: 60 });
     const long = service.submit("live", clip("Long", 90_000));
-    const unknown = service.submit("live", clip("Unknown", null));
-    expect(service.view("live").items.map(item => item.holdReason)).toEqual(["over-limit", "unknown-length"]);
+    expect(service.view("live").items.map(item => [item.status, item.holdReason])).toEqual([["held", "over-limit"]]);
     expect(() => service.command("live", service.view("live").revision, { kind: "play-next" })).toThrow(VideoQueueCommandError);
 
     service.command("live", service.view("live").revision, { kind: "play-anyway", itemId: long.id });
     expect(service.view("live").current?.item).toMatchObject({ id: long.id, limitOverridden: true });
-    expect(service.view("live").items.find(item => item.id === unknown.id)?.status).toBe("held");
+  });
+
+  it("queues an item exactly at the limit", () => {
+    const { service } = setup({ maxLengthSeconds: 60 });
+    service.submit("live", clip("Exact", 60_000));
+    expect(service.view("live").items[0]).toMatchObject({ status: "queued", holdReason: null });
+  });
+
+  it("queues unknown-length items and plays them with Play next", () => {
+    const { service, scheduler } = setup({ maxLengthSeconds: 60 });
+    const unknown = service.submit("live", clip("Unknown", null));
+    expect(service.view("live").items[0]).toMatchObject({ status: "queued", holdReason: null, durationMs: null });
+    service.command("live", service.view("live").revision, { kind: "play-next" });
+    expect(service.view("live").current).toMatchObject({ phase: "loading", item: { id: unknown.id } });
+    service.reportStarted(unknown.id, { durationMs: 45_000 });
+    expect(service.view("live").current?.item.durationMs).toBe(45_000);
+    scheduler.advance(45_000 + videoEndGraceMs);
+    expect(service.view("live").current).toBeNull();
+    expect(service.view("live").items).toEqual([]);
+  });
+
+  it("autoplays an unknown-length submission", () => {
+    const { service } = setup();
+    const unknown = service.submit("live", clip("Unknown", null, { autoplay: true }));
+    expect(service.view("live").current?.item.id).toBe(unknown.id);
+  });
+
+  it("cuts an unknown-length item reported over the limit and holds it at its original position", () => {
+    const { service } = setup({ maxLengthSeconds: 60 });
+    const unknown = service.submit("live", clip("Unknown", null));
+    const later = service.submit("live", clip("Later"));
+    service.command("live", service.view("live").revision, { kind: "play-next" });
+    expect(service.reportStarted(unknown.id, { durationMs: 90_000 })).toBe(true);
+    const view = service.view("live");
+    expect(view.current).toBeNull();
+    expect(view.run).toBeNull();
+    expect(view.recentlyFailed).toEqual([]);
+    expect(view.items.map(item => [item.id, item.status, item.holdReason, item.durationMs, item.position])).toEqual([
+      [unknown.id, "held", "over-limit", 90_000, unknown.position],
+      [later.id, "queued", null, 30_000, later.position]
+    ]);
+    // Late reports for the cut item are ignored.
+    expect(service.reportEnded(unknown.id)).toBe(false);
+
+    service.command("live", service.view("live").revision, { kind: "play-anyway", itemId: unknown.id });
+    expect(service.view("live").current?.item).toMatchObject({ id: unknown.id, limitOverridden: true, durationMs: 90_000 });
+  });
+
+  it("cuts on a progress report and continues a Play all run after the gap", () => {
+    const { service, scheduler } = setup({ maxLengthSeconds: 60, gapSeconds: 3 });
+    const unknown = service.submit("live", clip("Unknown", null));
+    const next = service.submit("live", clip("Next"));
+    service.command("live", service.view("live").revision, { kind: "play-all" });
+    service.reportStarted(unknown.id);
+    scheduler.advance(5_000);
+    service.reportProgress(unknown.id, { positionMs: 5_000, durationMs: 61_000 });
+    expect(service.view("live").current).toBeNull();
+    expect(service.view("live").gapEndsAtEpochMs).toBe(scheduler.now + 3_000);
+    expect(service.view("live").items.find(item => item.id === unknown.id)).toMatchObject({ status: "held", holdReason: "over-limit" });
+    scheduler.advance(3_000);
+    expect(service.view("live").current?.item.id).toBe(next.id);
+  });
+
+  it("does not continue a run after a cut while the queue is paused", () => {
+    const { service } = setup({ maxLengthSeconds: 60, gapSeconds: 0 });
+    const unknown = service.submit("live", clip("Unknown", null));
+    const next = service.submit("live", clip("Next"));
+    service.command("live", service.view("live").revision, { kind: "play-all" });
+    service.command("live", service.view("live").revision, { kind: "pause-queue" });
+    service.reportStarted(unknown.id, { durationMs: 90_000 });
+    expect(service.view("live").current).toBeNull();
+    service.command("live", service.view("live").revision, { kind: "resume-queue" });
+    expect(service.view("live").current?.item.id).toBe(next.id);
+  });
+
+  it("cuts a paused unknown-length item that learns an over-limit duration", () => {
+    const { service } = setup({ maxLengthSeconds: 60 });
+    const unknown = service.submit("live", clip("Unknown", null));
+    service.command("live", service.view("live").revision, { kind: "play-next" });
+    service.reportStarted(unknown.id);
+    service.control("live", unknown.id, { kind: "pause" });
+    service.reportProgress(unknown.id, { positionMs: 1_000, durationMs: 120_000 });
+    expect(service.view("live").current).toBeNull();
+    expect(service.view("live").items[0]).toMatchObject({ id: unknown.id, status: "held", holdReason: "over-limit" });
+  });
+
+  it("never cuts an item released with Play anyway or one whose length was known", () => {
+    const { service, setConfig } = setup({ maxLengthSeconds: 60 });
+    const unknown = service.submit("live", clip("Unknown", null));
+    service.command("live", service.view("live").revision, { kind: "play-anyway", itemId: unknown.id });
+    service.reportStarted(unknown.id, { durationMs: 600_000 });
+    expect(service.view("live").current).toMatchObject({ phase: "playing", item: { id: unknown.id, durationMs: 600_000 } });
+    service.reportEnded(unknown.id);
+
+    const known = service.submit("live", clip("Known", 60_000));
+    service.command("live", service.view("live").revision, { kind: "play-next" });
+    service.reportStarted(known.id, { durationMs: 60_400 });
+    expect(service.view("live").current).toMatchObject({ phase: "playing", item: { id: known.id, durationMs: 60_400 } });
+    service.reportEnded(known.id);
+
+    setConfig({ maxLengthSeconds: 120 });
+    const atLimit = service.submit("live", clip("At limit", null));
+    service.command("live", service.view("live").revision, { kind: "play-next" });
+    service.reportStarted(atLimit.id, { durationMs: 120_000 });
+    expect(service.view("live").current).toMatchObject({ phase: "playing", item: { id: atLimit.id } });
+  });
+
+  it("keeps unknown-length items queued when limits are re-evaluated", () => {
+    const { service, setConfig } = setup({ maxLengthSeconds: 60 });
+    service.submit("live", clip("Unknown", null));
+    setConfig({ maxLengthSeconds: 30 });
+    service.reevaluateLimits();
+    expect(service.view("live").items[0]).toMatchObject({ status: "queued", holdReason: null });
+  });
+
+  it("queues legacy unknown-length holds again on restart", () => {
+    const first = setup({ maxLengthSeconds: 60 });
+    const unknown = first.service.submit("live", clip("Legacy", null));
+    const long = first.service.submit("live", clip("Long", 90_000));
+    first.service.dispose();
+    first.database.connection.prepare("UPDATE video_requests SET status = 'held', hold_reason = 'unknown-length' WHERE id = ?").run(unknown.id);
+
+    const restarted = setup({ maxLengthSeconds: 60 }, first.database);
+    expect(restarted.service.view("live").items.map(item => [item.id, item.status, item.holdReason])).toEqual([
+      [unknown.id, "queued", null],
+      [long.id, "held", "over-limit"]
+    ]);
   });
 
   it("re-queues held items when the limit rises", () => {

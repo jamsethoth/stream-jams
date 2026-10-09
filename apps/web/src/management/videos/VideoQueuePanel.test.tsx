@@ -46,13 +46,17 @@ describe("VideoQueuePanel", () => {
     expect(await screen.findByRole("button", { name: "Pause queue" })).toBeVisible();
   });
 
-  it("shows hold reasons and plays a held item anyway", async () => {
+  it("shows the over-limit hold, plays a held item anyway, and lists unknown-length items as queued", async () => {
     const user = userEvent.setup();
     const command = vi.fn(async () => heldVideos());
     renderManagement(<VideoQueuePanel api={createStaticVideoQueueApi(heldVideos(), { command })} />);
     const concert = await screen.findByRole("article", { name: "Full concert" });
     expect(within(concert).getByText("Over the length limit")).toBeVisible();
-    expect(within(screen.getByRole("article", { name: "Mystery link" })).getByText("Length unknown", { selector: ".video-queue__hold" })).toBeVisible();
+    const mystery = screen.getByRole("article", { name: "Mystery link" });
+    expect(within(mystery).getByText(/Length unknown/u)).toBeVisible();
+    expect(within(mystery).getByText("Queued")).toBeVisible();
+    expect(mystery.querySelector(".video-queue__hold")).toBeNull();
+    expect(within(mystery).queryByRole("button", { name: /Play anyway/u })).not.toBeInTheDocument();
     expect(within(screen.getByRole("article", { name: "Short clip" })).queryByRole("button", { name: /Play anyway/u })).not.toBeInTheDocument();
     await user.click(within(concert).getByRole("button", { name: "Play anyway: Full concert" }));
     expect(command).toHaveBeenCalledWith("live", 4, { kind: "play-anyway", itemId: "long" });
@@ -169,7 +173,7 @@ describe("VideoQueuePanel", () => {
     const user = userEvent.setup();
     const submit = vi.fn()
       .mockRejectedValueOnce(new ManagementHttpError("That site is not allowed. Add direct-file hosts in Videos settings. (VIDEO_REQUEST_REJECTED)", "VIDEO_REQUEST_REJECTED", null, null, [], [], 422))
-      .mockResolvedValue({ ...queuedVideos().items[0]!, status: "held", holdReason: "unknown-length" });
+      .mockResolvedValue({ ...queuedVideos().items[0]!, status: "held", holdReason: "over-limit" });
     renderManagement(<VideoQueuePanel api={createStaticVideoQueueApi(queuedVideos(), { submit })} />);
     const link = await screen.findByLabelText("Video link");
     await user.type(link, "https://unknown.example.com/video.mp4");
@@ -181,7 +185,7 @@ describe("VideoQueuePanel", () => {
     await user.type(screen.getByLabelText("Title (optional)"), "Viewer pick");
     await user.click(screen.getByRole("button", { name: "Add video" }));
     expect(submit).toHaveBeenLastCalledWith("live", { link: "https://youtu.be/abc", title: "Viewer pick" });
-    expect(await screen.findByText("Video added and held: its length is unknown.")).toBeVisible();
+    expect(await screen.findByText("Video added and held: it is over the length limit.")).toBeVisible();
     expect(link).toHaveValue("");
   });
 

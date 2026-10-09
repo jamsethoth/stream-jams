@@ -1,5 +1,5 @@
 import { Button, Checkbox, NativeSelect, TextInput } from "@mantine/core";
-import type { ActionableManagementError, AudioRouteStatus, OverlayPurpose, TwitchCustomReward, TwitchCustomRewardCatalog, VideosModuleConfig } from "@stream-jams/core";
+import { isValidVideosLayout, type ActionableManagementError, type AudioRouteStatus, type OverlayPurpose, type TwitchCustomReward, type TwitchCustomRewardCatalog, type VideosLayout, type VideosModuleConfig } from "@stream-jams/core";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import type { AudioApi } from "../audio/audio-api.js";
 import { actionableError } from "../foundation/actionable-error.js";
@@ -11,6 +11,7 @@ import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } fro
 import { MaskedValue } from "../foundation/MaskedValue.js";
 import { ModuleControls, ModulePageLayout, ModuleSection } from "../foundation/ModulePageLayout.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
+import { VideoPlacementEditor } from "./VideoPlacementEditor.js";
 import { VideoQueuePanel } from "./VideoQueuePanel.js";
 import { createHttpVideosApi, type VideoQueueApi, type VideosApi, type VideosBrowserSource } from "./videos-api.js";
 
@@ -34,9 +35,10 @@ interface Draft {
   readonly audioDeviceDelaysMs: Readonly<Record<string, string>>;
   readonly streamerBotAutoplay: boolean;
   readonly rewardMappings: VideosModuleConfig["rewardMappings"];
+  readonly layout: VideosLayout;
 }
 
-type FieldErrors = Partial<Record<"maxLengthSeconds" | "gapSeconds" | "host" | "reward" | `delay:${string}`, string>>;
+type FieldErrors = Partial<Record<"maxLengthSeconds" | "gapSeconds" | "host" | "reward" | "layout" | `delay:${string}`, string>>;
 type RewardCatalog = { readonly status: "loading" } | { readonly status: "loaded"; readonly rewards: readonly TwitchCustomReward[] } | { readonly status: "error"; readonly message: string };
 
 let defaultApi: VideosApi | null = null;
@@ -128,10 +130,11 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
       if (!Number.isInteger(delay) || delay < 0 || delay > limits.deviceDelayMs) errors[`delay:${id}`] = `Enter whole milliseconds from 0 to ${limits.deviceDelayMs}.`;
       else if (delay > 0) audioDeviceDelaysMs[id] = delay;
     }
+    if (!isValidVideosLayout(draft.layout)) errors.layout = "Keep the video box at least 240 x 180 px and inside the 1920 x 1080 canvas.";
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
     const config: VideosModuleConfig = { maxLengthSeconds: maxLength, gapSeconds: gap, allowedDirectHosts: draft.allowedDirectHosts, obsAudio: draft.obsAudio,
-      audioDeviceIds: draft.audioDeviceIds, audioDeviceDelaysMs, streamerBotAutoplay: draft.streamerBotAutoplay, rewardMappings: draft.rewardMappings };
+      audioDeviceIds: draft.audioDeviceIds, audioDeviceDelaysMs, streamerBotAutoplay: draft.streamerBotAutoplay, rewardMappings: draft.rewardMappings, layout: draft.layout };
     void mutate(async () => {
       const saved = await api.saveModuleConfig(enabled, config);
       setEnabled(saved.enabled); setDraft(toDraft(saved.config));
@@ -204,6 +207,11 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
       </BrowserSourcesPanel>
       </>}
       secondary={draft === null ? (loadError === null ? <p className="management-empty" role="status">Loading Videos settings…</p> : null) : <form className="videos-settings" onSubmit={save} noValidate>
+        <ModuleSection title="Placement" label="Video placement" id="video-placement"
+          description="Where the video appears on browser sources, the desktop overlay and the mirror. Changes apply after Save Videos settings.">
+          <VideoPlacementEditor value={draft.layout} disabled={busy} onChange={layout => { setDraft(current => current === null ? current : { ...current, layout }); setFieldErrors(current => withField(current, "layout", null)); }} />
+          {fieldErrors.layout === undefined ? null : <p className="videos-settings__error" role="alert">{fieldErrors.layout}</p>}
+        </ModuleSection>
         <ModuleSection title="Limits and audio" label="Limits and audio" description="Videos longer than the limit, or of unknown length, wait as held until you choose Play anyway.">
           <div className="videos-settings__grid">
             <TextInput label="Maximum length (seconds)" type="number" min={limits.minLength} max={limits.maxLength} step={1} value={draft.maxLengthSeconds} error={fieldErrors.maxLengthSeconds}
@@ -281,7 +289,7 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
 function toDraft(config: VideosModuleConfig): Draft {
   return { maxLengthSeconds: String(config.maxLengthSeconds), gapSeconds: String(config.gapSeconds), allowedDirectHosts: config.allowedDirectHosts, obsAudio: config.obsAudio,
     audioDeviceIds: config.audioDeviceIds, audioDeviceDelaysMs: Object.fromEntries(Object.entries(config.audioDeviceDelaysMs).map(([id, delay]) => [id, String(delay)])),
-    streamerBotAutoplay: config.streamerBotAutoplay, rewardMappings: config.rewardMappings };
+    streamerBotAutoplay: config.streamerBotAutoplay, rewardMappings: config.rewardMappings, layout: config.layout };
 }
 
 function withoutDevice(draft: Draft, id: string): Draft {

@@ -9,7 +9,8 @@ export const videosModuleDefinition = {
   // Nothing plays until a request is queued and the operator (or an allowed autoplay request) starts it.
   defaultEnabled: true,
   configSchemaVersion: 1,
-  defaultConfig: createDefaultVideosModuleConfig(),
+  // Pure so bundles that never read the definition (the management startup graph) drop it.
+  defaultConfig: /* @__PURE__ */ createDefaultVideosModuleConfig(),
   configSchema: videosModuleConfigSchema,
   wizard: { steps: [{ id: "videos-limits", title: "Video limits", fields: [
     { id: "maxLengthSeconds", label: "Maximum length (seconds)", type: "number", required: true },

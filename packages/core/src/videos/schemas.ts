@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { overlayPurposeSchema } from "../shared/schemas.js";
+import { createDefaultVideosLayout } from "./layout.js";
+import { videosLayoutSchema } from "./layout-schema.js";
 import type { VideosModuleConfig } from "./types.js";
+
+export { videosLayoutSchema } from "./layout-schema.js";
 
 export const videosMaximumLengthSecondsLimit = 4 * 60 * 60;
 export const videosMaximumGapSeconds = 30;
@@ -26,7 +30,9 @@ export const videosModuleConfigSchema = /* @__PURE__ */ z.object({
   streamerBotAutoplay: z.boolean(),
   rewardMappings: z.array(z.object({ rewardId: z.string().trim().min(1).max(128), purpose: overlayPurposeSchema }).strict())
     .max(videosMaximumRewardMappings)
-    .refine(mappings => new Set(mappings.map(mapping => mapping.rewardId)).size === mappings.length, "Rewards must be unique")
+    .refine(mappings => new Set(mappings.map(mapping => mapping.rewardId)).size === mappings.length, "Rewards must be unique"),
+  // Saved before placement existed: the fixed look those outputs already had.
+  layout: videosLayoutSchema.default(createDefaultVideosLayout)
 }).strict().refine(config => Object.keys(config.audioDeviceDelaysMs).every(id => config.audioDeviceIds.includes(id)),
   { message: "Delays are only allowed for selected devices", path: ["audioDeviceDelaysMs"] }) satisfies z.ZodType<VideosModuleConfig>;
 
@@ -39,6 +45,7 @@ export function createDefaultVideosModuleConfig(): VideosModuleConfig {
     audioDeviceIds: [],
     audioDeviceDelaysMs: {},
     streamerBotAutoplay: true,
-    rewardMappings: []
+    rewardMappings: [],
+    layout: createDefaultVideosLayout()
   };
 }

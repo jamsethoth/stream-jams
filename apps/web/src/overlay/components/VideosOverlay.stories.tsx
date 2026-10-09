@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
-import type { VideoSource, VideosProjection } from "@stream-jams/core";
+import { createDefaultVideosLayout, type VideoSource, type VideosProjection } from "@stream-jams/core";
 import type { VideoMirrorConnector, VideoMirrorPublisherSignal } from "@stream-jams/core/videos";
 import { VideosOverlay } from "./VideosOverlay.js";
 
@@ -14,6 +14,7 @@ function active(source: VideoSource, overrides: Partial<Extract<VideosProjection
     itemId: `story-${source.provider}`,
     title: "The comeback nobody expected",
     requester: "Friendly Streamer",
+    layout: createDefaultVideosLayout(),
     delivery: { mode: "player", source, clock: { state: "playing", positionMs: 0, atEpochMs: Date.now() }, obsAudio: false },
     ...overrides
   };
@@ -25,7 +26,10 @@ const meta = {
   tags: ["videos"],
   parameters: { layout: "fullscreen" },
   args: { resolvePlayerUrl: localPlayer },
-  decorators: [(Story) => <div style={{ width: "100vw", height: "100vh", position: "relative", background: "#343b4a" }}><Story /></div>]
+  // Outputs place the box on the 1920 x 1080 canvas, scaled to the viewport here as the desktop overlay does.
+  decorators: [(Story) => <div style={{ width: "100vw", height: "100vh", position: "relative", overflow: "hidden", background: "#343b4a" }}>
+    <div data-testid="story-canvas" style={{ position: "absolute", left: 0, top: 0, width: 1920, height: 1080, transformOrigin: "top left", transform: `scale(${Math.min(window.innerWidth / 1920, window.innerHeight / 1080)})` }}><Story /></div>
+  </div>]
 } satisfies Meta<typeof VideosOverlay>;
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -61,8 +65,19 @@ export const DirectFile: Story = {
   }
 };
 
+/** A small picture-in-picture box in the top right corner keeps a 16:9 picture with a smaller caption. */
+export const CustomPlacement: Story = {
+  args: { projection: active({ provider: "twitch-clip", clipSlug: "StorybookClip" }, { layout: { x: 1400, y: 40, width: 480, height: 330 } }) },
+  play: async ({ canvasElement }) => {
+    const box = within(canvasElement).getByTestId("video-overlay");
+    await expect(box).toHaveStyle({ left: "1400px", top: "40px", width: "480px", height: "330px" });
+    await expect(box.querySelector(".video-overlay__frame")).toHaveStyle({ width: "480px", height: "270px" });
+    await expect(within(canvasElement).getByText("Requested by Friendly Streamer")).toBeVisible();
+  }
+};
+
 export const NoClipNotice: Story = {
-  args: { projection: { status: "notice", noticeId: "story-notice", notice: "no-clip", displayName: "Quiet Friend" } },
+  args: { projection: { status: "notice", noticeId: "story-notice", notice: "no-clip", displayName: "Quiet Friend", layout: createDefaultVideosLayout() } },
   play: async ({ canvasElement }) => {
     await expect(within(canvasElement).getByRole("status")).toHaveTextContent("Quiet FriendNo clip to show right now");
   }
@@ -121,7 +136,7 @@ function storyMirror(behaviour: MirrorBehaviour): { connector: VideoMirrorConnec
 }
 
 function mirrored(paused: boolean): VideosProjection {
-  return { status: "active", itemId: "story-mirror", title: "The comeback nobody expected", requester: "Friendly Streamer", delivery: { mode: "mirror", paused, obsAudio: true } };
+  return { status: "active", itemId: "story-mirror", title: "The comeback nobody expected", requester: "Friendly Streamer", layout: createDefaultVideosLayout(), delivery: { mode: "mirror", paused, obsAudio: true } };
 }
 
 const mirrorArgs = (behaviour: MirrorBehaviour, paused = false) => {

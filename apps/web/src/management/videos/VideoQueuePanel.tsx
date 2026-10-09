@@ -319,7 +319,7 @@ function QueueItem({ actions, item }: { readonly actions: ReactNode; readonly it
       <div className="video-queue__item-summary">
         <strong className="video-queue__title">{item.title ?? <bdi dir="ltr">{item.link}</bdi>}</strong>
         <span>{details.join(" · ")}</span>
-        {item.status === "held" ? <span className="video-queue__hold">{item.holdReason === "unknown-length" ? "Length unknown" : "Over the length limit"}</span> : null}
+        {item.status === "held" ? <span className="video-queue__hold">Over the length limit</span> : null}
       </div>
       <StatusBadge label={statusLabel(item.status)} tone={statusTone(item.status)} />
       {actions === null ? null : <div className="video-queue__item-actions">{actions}</div>}
@@ -344,7 +344,7 @@ function AddVideoForm({ api, busy, onAdded, purpose }: {
       const item = await api.submit(purpose, { link: link.trim(), title });
       setLink(""); setTitle("");
       onAdded(item.status === "held"
-        ? `Video added and held: ${item.holdReason === "unknown-length" ? "its length is unknown" : "it is over the length limit"}.`
+        ? "Video added and held: it is over the length limit."
         : item.status === "playing" ? "Video added and playing." : "Video added to the queue.");
     } catch (reason) {
       setError(requestMessage(reason));

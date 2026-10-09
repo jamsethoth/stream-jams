@@ -1,4 +1,4 @@
-import type { VideoSource, VideosProjection } from "@stream-jams/core";
+import type { VideoSource, VideosLayout, VideosProjection } from "@stream-jams/core";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseYouTubeMessage, VideosOverlay } from "./VideosOverlay.js";
@@ -22,9 +22,9 @@ const youtube: VideoSource = { provider: "youtube", videoId: "dQw4w9WgXcQ", star
 const clip: VideoSource = { provider: "twitch-clip", clipSlug: "ClipOne" };
 const direct: VideoSource = { provider: "direct", url: "https://media.example.com/a.mp4" };
 
-function active(source: VideoSource, overrides: { clock?: { state: "playing" | "paused"; positionMs: number; atEpochMs: number }; obsAudio?: boolean; itemId?: string } = {}): VideosProjection {
+function active(source: VideoSource, overrides: { clock?: { state: "playing" | "paused"; positionMs: number; atEpochMs: number }; obsAudio?: boolean; itemId?: string; layout?: VideosLayout } = {}): VideosProjection {
   return {
-    status: "active", itemId: overrides.itemId ?? "item-1", title: "The big play", requester: "Viewer",
+    status: "active", itemId: overrides.itemId ?? "item-1", title: "The big play", requester: "Viewer", layout: overrides.layout ?? { x: 269, y: 140, width: 1382, height: 876 },
     delivery: { mode: "player", source, clock: overrides.clock ?? { state: "playing", positionMs: 0, atEpochMs: 1_000 }, obsAudio: overrides.obsAudio ?? true }
   };
 }
@@ -33,7 +33,7 @@ describe("VideosOverlay", () => {
   it("renders nothing while idle or mirrored", () => {
     const { container, rerender } = render(<VideosOverlay projection={{ status: "idle" }} />);
     expect(container).toBeEmptyDOMElement();
-    rerender(<VideosOverlay projection={{ status: "active", itemId: "item-1", title: null, requester: null, delivery: { mode: "mirror", paused: false, obsAudio: true } }} />);
+    rerender(<VideosOverlay projection={{ status: "active", itemId: "item-1", title: null, requester: null, layout: { x: 269, y: 140, width: 1382, height: 876 }, delivery: { mode: "mirror", paused: false, obsAudio: true } }} />);
     expect(container).toBeEmptyDOMElement();
   });
 
@@ -48,8 +48,30 @@ describe("VideosOverlay", () => {
     expect(JSON.stringify(events.mock.calls)).not.toContain("evil.example");
   });
 
+  it("places the picture and caption in the saved box, the same for every delivery", () => {
+    const layout = { x: 1400, y: 40, width: 480, height: 320 };
+    const { rerender } = render(<VideosOverlay projection={active(clip, { layout })} />);
+    const box = screen.getByTestId("video-overlay");
+    expect(box).toHaveStyle({ left: "1400px", top: "40px", width: "480px", height: "320px" });
+    // A small box keeps a 16:9 picture with half-size caption spacing below it.
+    expect(box.querySelector(".video-overlay__frame")).toHaveStyle({ width: "480px", height: "270px" });
+    expect(box.querySelector(".video-overlay__context")).toHaveStyle({ width: "480px" });
+    expect(box.style.getPropertyValue("--video-scale")).toBe("0.5");
+    rerender(<VideosOverlay projection={{ status: "notice", noticeId: "n1", notice: "no-clip", displayName: null, layout }} />);
+    expect(screen.getByTestId("video-overlay")).toHaveStyle({ left: "1400px", top: "40px", width: "480px", height: "320px" });
+  });
+
+  it("fails closed on a box that leaves the canvas", () => {
+    const events = vi.fn();
+    const { container } = render(<VideosOverlay onPlaybackEvent={events} projection={active(clip, { layout: { x: 1700, y: 0, width: 480, height: 320 } })} />);
+    expect(container).toBeEmptyDOMElement();
+    expect(events).toHaveBeenCalledWith(expect.objectContaining({ instructionId: "video:item-1", status: "failed" }));
+    const notice = render(<VideosOverlay projection={{ status: "notice", noticeId: "n1", notice: "no-clip", displayName: null, layout: { x: 0, y: 0, width: 100, height: 100 } }} />);
+    expect(notice.container).toBeEmptyDOMElement();
+  });
+
   it("shows the no-clip notice", () => {
-    render(<VideosOverlay projection={{ status: "notice", noticeId: "n1", notice: "no-clip", displayName: "Quiet Friend" }} />);
+    render(<VideosOverlay projection={{ status: "notice", noticeId: "n1", notice: "no-clip", displayName: "Quiet Friend", layout: { x: 269, y: 140, width: 1382, height: 876 } }} />);
     expect(screen.getByRole("status")).toHaveTextContent("Quiet FriendNo clip to show right now");
   });
 

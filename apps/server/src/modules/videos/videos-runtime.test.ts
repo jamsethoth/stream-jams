@@ -3,7 +3,7 @@ import { createDefaultVideosModuleConfig, type VideoControlSupport } from "@stre
 import { createInMemoryStreamJamsDatabase, type StreamJamsDatabase } from "../db/database.js";
 import { SqliteVideoQueueRepository } from "./video-queue-repository.js";
 import { VideoQueueService } from "./video-queue-service.js";
-import { VideosRuntime } from "./videos-runtime.js";
+import { toVideosProjection, VideosRuntime } from "./videos-runtime.js";
 
 const databases: StreamJamsDatabase[] = [];
 afterEach(() => { for (const database of databases.splice(0)) database.close(); });
@@ -39,6 +39,15 @@ describe("VideosRuntime with the desktop mirror", () => {
     expect(await snapshot()).toMatchObject({ videos: { delivery: { mode: "mirror", paused: true } } });
     mirror.available = false;
     expect(await snapshot()).toMatchObject({ videos: { delivery: { mode: "player", clock: { state: "paused" } } } });
+  });
+
+  it("places the video at the saved box for player and mirror delivery alike", async () => {
+    const { snapshot, queue } = setup();
+    expect(await snapshot()).toMatchObject({ videos: { layout: { x: 269, y: 140, width: 1382, height: 876 } } });
+    const layout = { x: 1400, y: 40, width: 480, height: 320 };
+    for (const mirrored of [false, true]) {
+      expect(toVideosProjection(queue.view("live"), { obsAudio: true, layout }, mirrored)).toMatchObject({ status: "active", layout, delivery: { mode: mirrored ? "mirror" : "player" } });
+    }
   });
 
   it("asks fallback players to start a loading item from its start position", async () => {

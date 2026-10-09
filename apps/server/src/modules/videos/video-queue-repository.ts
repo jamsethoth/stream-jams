@@ -58,6 +58,7 @@ const rowSchema = z.object({
   submitted_via: z.enum(["management", "operator", "automation", "streamerbot", "channel-points"]),
   duration_ms: z.number().int().positive().nullable(),
   status: z.enum(["queued", "held", "playing", "paused", "played", "failed", "removed"]),
+  // "unknown-length" rows come from older builds; the service queues them again at startup.
   hold_reason: z.enum(["over-limit", "unknown-length"]).nullable(),
   limit_overridden: z.number().int(),
   autoplay: z.number().int(),

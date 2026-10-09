@@ -121,6 +121,18 @@ describe("VideoMirrorDirector", () => {
     expect(queue.view("live").current).toBeNull();
   });
 
+  it("stops the desktop player and moves on when an unknown-length item reports a duration over the limit", () => {
+    const { transport, queue } = setup({ available: true, config: { maxLengthSeconds: 60, gapSeconds: 0 } });
+    const unknown = queue.submit("live", clip("Unknown", { durationMs: null }));
+    const next = queue.submit("live", clip("Next"));
+    queue.command("live", queue.view("live").revision, { kind: "play-all" });
+    expect(transport.sent.at(-1)).toMatchObject({ type: "load", itemId: unknown.id });
+    transport.emit({ type: "report", purpose: "live", itemId: unknown.id, state: "started", positionMs: 0, durationMs: 300_000 });
+    expect(transport.sent.at(-1)).toMatchObject({ type: "load", itemId: next.id });
+    expect(queue.view("live").current?.item.id).toBe(next.id);
+    expect(queue.view("live").items.find(item => item.id === unknown.id)).toMatchObject({ status: "held", holdReason: "over-limit", durationMs: 300_000 });
+  });
+
   it("follows the global mute and resolves device routes like alert audio", async () => {
     const { director, transport, setMuted } = setup({ available: true, config: { audioDeviceIds: ["route-a", "route-b"], audioDeviceDelaysMs: { "route-b": 40 } },
       devices: [{ routeId: "route-a", deviceId: "device-a" }, { routeId: "route-b", deviceId: "device-a" }] });

@@ -375,6 +375,8 @@ export * from "./music/projection.js";
 export * from "./music/asset-references.js";
 export type * from "./videos/types.js";
 export * from "./videos/schemas.js";
+export * from "./videos/layout.js";
+export * from "./videos/placement-geometry.js";
 export { videosModuleDefinition } from "./videos/module-definition.js";
 
 export * from "./management/local-websocket-connection.js";

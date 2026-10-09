@@ -40,6 +40,10 @@ export const HeldOverLimit: Story = {
     const held = await canvas.findByRole("article", { name: "Full concert" });
     await expect(within(held).getByText("Over the length limit")).toBeVisible();
     await expect(within(held).getByRole("button", { name: "Play anyway: Full concert" })).toBeEnabled();
+    const unknown = canvas.getByRole("article", { name: "Mystery link" });
+    await expect(within(unknown).getByText(/Length unknown/u)).toBeVisible();
+    await expect(within(unknown).getByText("Queued")).toBeVisible();
+    await expect(within(unknown).queryByRole("button", { name: /Play anyway/u })).not.toBeInTheDocument();
   }
 };
 

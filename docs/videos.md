@@ -25,7 +25,9 @@ Links must use HTTPS and carry no login, port or `#` fragment. Anything else is 
 - **Skip** ends the current video. During a gap it starts the next one immediately. **Stop** ends playback and the run. **Clear** removes everything waiting.
 - Items can be removed or reordered while they wait.
 
-Videos longer than **Maximum length**, and videos whose length is unknown, are held in the queue with the reason shown. **Play anyway** plays a held video once, ignoring the limit. Raising the limit releases held videos that now fit. Requests can carry the length (`durationSeconds`, or `duration` in the retired shoutout payload); without it, a video is held until you choose Play anyway (automatic length lookup is BL-058 in the [backlog](backlog.md)).
+Videos whose known length is over **Maximum length** are held in the queue as **Over the length limit**. **Play anyway** plays a held video once, ignoring the limit, and that playback is never cut. Raising the limit releases held videos that now fit.
+
+Requests can carry the length (`durationSeconds`, or `duration` in the retired shoutout payload). A video without a length is queued normally, shows "Length unknown", and plays with Play next, Play all now or autoplay like any other video. When the player reports its real length and it is over the limit, the queue stops it at once, puts it back in the queue held as Over the length limit at its original place (it is not counted as played or failed), and continues as if it had been skipped: the gap, the Play all run and Pause queue apply as usual. Only the desktop player reports a length today; a browser source playing on its own plays an unknown-length video to its end. Automatic length lookup before playback is BL-058 in the [backlog](backlog.md). Videos held for an unknown length by an older version are queued again on the next start.
 
 The queue is saved. After a restart, a video that was playing or paused goes back to the head of the queue and waits; nothing replays on its own.
 
@@ -61,7 +63,7 @@ Stream Jams listens to Streamer.bot's `General` / `Custom` WebSocket event when 
 | `purpose` | No | `live` (default) or `test` |
 | `link` | For `play` | An allowed link |
 | `title`, `requester` | No | Up to 200 and 64 characters |
-| `durationSeconds` | No | Length in seconds; without it, non-clip links are held for Play anyway |
+| `durationSeconds` | No | Length in seconds; over the limit, the request is held for Play anyway. Without it the request queues and is checked when the player reports its length |
 | `autoplay` | No | `true` starts playback when Streamer.bot autoplay is on |
 
 ```csharp
@@ -89,6 +91,10 @@ While the desktop app runs, it can also play the sound on chosen audio devices. 
 ## Playback
 
 A browser source shows nothing while idle. While a video plays, it shows the video with the title and requester underneath.
+
+### Placement
+
+The **Placement** section of the Videos page sets where the video appears and how big it is, on the same 1920 x 1080 canvas Timers and Music use. Drag the box in the preview to move it, or its corner to resize it; the box keeps its proportions while you drag. Snap to grid and Snap to alignment work as in the other editors, and the X, Y, width and height fields and arrow keys (Shift for 10 px) set exact values. The picture is the largest 16:9 frame that fits in the box with the title and requester below it, anchored to the box's bottom center; small boxes shrink the caption. **Save Videos settings** applies the placement to every Videos output at once: module and unified browser sources, the desktop overlay and the mirror. **Reset to default placement** restores the original look, centered and 72% of the canvas wide near the bottom, which is also what earlier saved settings get. The box must be at least 240 x 180 px and stay on the canvas; anything else is refused when saved and never rendered.
 
 ### Desktop mirror
 

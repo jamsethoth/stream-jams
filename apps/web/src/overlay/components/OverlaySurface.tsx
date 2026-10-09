@@ -18,6 +18,8 @@ import { AlertTextContent } from "./AlertTextContent.js";
 import { TimerStack } from "./TimerStack.js";
 import { MusicWidget } from "./MusicWidget.js";
 import { VideosOverlay } from "./VideosOverlay.js";
+// Re-exported so the Videos placement preview shares this chunk instead of adding one to every route's preload list.
+export { VideoBox, VideoCaption, videoFrameStyle } from "./VideoPlacement.js";
 import type { VideoMirrorConnector } from "@stream-jams/core/videos";
 
 export type OverlayPlaybackEvent =

@@ -14,7 +14,8 @@ function createFetch(handler: (url: string, init: RequestInit | undefined) => Re
   });
 }
 
-const config = { maxLengthSeconds: 120, gapSeconds: 3, allowedDirectHosts: [], obsAudio: true, audioDeviceIds: [], audioDeviceDelaysMs: {}, streamerBotAutoplay: true, rewardMappings: [] };
+const config = { maxLengthSeconds: 120, gapSeconds: 3, allowedDirectHosts: [], obsAudio: true, audioDeviceIds: [], audioDeviceDelaysMs: {}, streamerBotAutoplay: true, rewardMappings: [],
+  layout: { x: 269, y: 140, width: 1382, height: 876 } };
 
 describe("createHttpVideosApi", () => {
   it("attributes Operator submissions and sends guarded commands", async () => {

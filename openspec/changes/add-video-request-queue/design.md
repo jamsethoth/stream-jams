@@ -43,7 +43,9 @@ A general module name fits Twitch, YouTube and direct files. `video-shoutout` wa
 ### D2. Queue model
 Items: `{ id, purpose, provider, source, title, requester, submittedVia, durationMs | null, startAtMs, status, autoplay, createdAt, position }`.
 - `status` is one of `queued`, `held`, `playing`, `paused`, `played`, `failed` or `removed`.
-- `held` means the item is over the max length or of unknown length. `held` items show in the queue and play only through an explicit per-item **Play anyway**.
+- `held` means the item's known length is over the max length (`holdReason: "over-limit"`). `held` items show in the queue and play only through an explicit per-item **Play anyway**, which sets `limitOverridden`; an overridden item is never held or cut again.
+- An item of unknown length is `queued`, not held, and plays like any other item. When the player first reports a duration for it and that duration is over the limit (and the item is not `limitOverridden`), the queue ends playback immediately, does not mark it `played` or `failed`, and returns it as `held`/`over-limit` at its original `position` (positions never change during playback, so this is where it waited). The run then continues as after a skip: the gap, run snapshot and `acceptingPlayback` gate apply. A duration reported for an item whose length was already known never cuts it.
+- `unknown-length` remains a readable legacy `holdReason` value only; the service re-applies the limit at startup, which queues such rows again.
 - The queue has an `acceptingPlayback` gate (paused/resumed) and a consumption mode:
   - **Play next** (default): plays the first playable item, then returns to idle.
   - **Play all now**: snapshots the ids of playable items queued at that moment and plays them in order. Items submitted later wait.
@@ -63,7 +65,7 @@ One provider registry in `@stream-jams/core/videos` (subpath export, kept off th
 - **YouTube:** `youtube.com/watch?v=`, `youtu.be/`, `youtube.com/shorts/`, `youtube-nocookie.com/embed/`. Normalized to `https://www.youtube-nocookie.com/embed/<id>?enablejsapi=1&playsinline=1&start=<s>`.
 - **Direct file:** HTTPS URL whose host is on the operator allowlist, with a `.mp4` or `.webm` path. Played by a Stream Jams `<video>`.
 - Submissions are links, not embed URLs. The server builds embed URLs, so `parent` always matches the serving host (`127.0.0.1` by default). Credentials, ports other than 443, fragments and unknown hosts are rejected.
-- Durations: the submitter may supply `durationSeconds`. Streamer.bot clip payloads already do. Otherwise the duration is unknown until BL-058, so the item is `held`.
+- Durations: the submitter may supply `durationSeconds`. Streamer.bot clip payloads already do. Otherwise the duration is unknown until BL-058 or until the player reports it, so the item queues and is checked against the limit when that report arrives (D2).
 
 ### D4. Player control without third-party scripts in Stream Jams origins
 - Overlay and management pages carry keys in their URLs, so no provider JavaScript loads in Stream Jams origins.
@@ -134,7 +136,7 @@ Rejections are logged with reason and field names only.
 - **Independent fallback players are not frame-exact.** They are used only when the desktop app is not running.
 - **The YouTube `postMessage` protocol** is the stable basis of the official iframe API, but it isn't separately documented. The renderer feature-detects `infoDelivery` and falls back to play and stop.
 - **Twitch `parent` must match the serving host.** Changing the bind host requires regenerating embed URLs, and the server builds them at render time.
-- **Held unknown-length YouTube items** need a manual Play anyway until BL-058.
+- **Unknown-length items are only checked once a player reports their duration.** The desktop primary player reports it; an independent browser-source fallback does not yet, so without the desktop app an over-limit unknown-length video plays to its end until BL-058 or a browser duration report lands.
 
 ## Migration
 

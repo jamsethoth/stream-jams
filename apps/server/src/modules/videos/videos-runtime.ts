@@ -16,7 +16,7 @@ export interface VideosRuntimeOptions {
 }
 
 /** What browser sources render for the current queue state. A playing item wins over a notice. */
-export function toVideosProjection(view: VideoQueueView, config: Pick<VideosModuleConfig, "obsAudio">, mirrorAvailable = false): VideosProjection {
+export function toVideosProjection(view: VideoQueueView, config: Pick<VideosModuleConfig, "obsAudio" | "layout">, mirrorAvailable = false): VideosProjection {
   if (view.current !== null) {
     const { item, clock, phase } = view.current;
     return {
@@ -24,6 +24,7 @@ export function toVideosProjection(view: VideoQueueView, config: Pick<VideosModu
       itemId: item.id,
       title: item.title,
       requester: item.requester,
+      layout: { ...config.layout },
       // With the desktop app running, every output shows its primary player's mirror.
       // Without it, each browser source plays the item itself from the shared clock.
       delivery: mirrorAvailable
@@ -33,7 +34,7 @@ export function toVideosProjection(view: VideoQueueView, config: Pick<VideosModu
         : { mode: "player", source: item.source, clock: phase === "loading" ? { ...clock, state: "playing" } : { ...clock }, obsAudio: config.obsAudio }
     };
   }
-  if (view.notice !== null) return { status: "notice", noticeId: view.notice.id, notice: "no-clip", displayName: view.notice.displayName };
+  if (view.notice !== null) return { status: "notice", noticeId: view.notice.id, notice: "no-clip", displayName: view.notice.displayName, layout: { ...config.layout } };
   return { status: "idle" };
 }
 

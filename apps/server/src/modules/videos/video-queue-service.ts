@@ -110,6 +110,8 @@ export class VideoQueueService {
     for (const purpose of ["live", "test"] as const) {
       this.states.set(purpose, { snapshot: this.repository.load(purpose), current: null, gapEndsAtEpochMs: null, notice: null, playbackTimer: null, gapTimer: null, noticeTimer: null });
     }
+    // Older builds held unknown-length items; re-applying the limit queues them again.
+    this.reevaluateLimits();
   }
 
   view(purpose: OverlayPurpose): VideoQueueView {
@@ -263,7 +265,7 @@ export class VideoQueueService {
     if (current.phase !== "loading") return true;
     const now = this.now();
     state.current = { ...current, phase: "playing", clock: { state: "playing", positionMs: report.positionMs ?? current.clock.positionMs, atEpochMs: now } };
-    this.learnDuration(purpose, report.durationMs ?? null);
+    if (this.learnDuration(purpose, report.durationMs ?? null) === "cut") return true;
     this.scheduleEnd(purpose);
     this.emit(purpose);
     return true;
@@ -277,7 +279,7 @@ export class VideoQueueService {
     if (current.phase === "playing") {
       state.current = { ...current, clock: { state: "playing", positionMs: Math.max(0, Math.round(report.positionMs)), atEpochMs: this.now() } };
     }
-    if (this.learnDuration(purpose, report.durationMs ?? null) && current.phase === "playing") this.scheduleEnd(purpose);
+    if (this.learnDuration(purpose, report.durationMs ?? null) === "learned" && current.phase === "playing") this.scheduleEnd(purpose);
     return true;
   }
 
@@ -363,13 +365,19 @@ export class VideoQueueService {
     this.emit(purpose);
   }
 
-  private finish(purpose: OverlayPurpose, itemId: string, status: "played" | "failed"): void {
+  /**
+   * Ends the current item and continues the run. `over-limit` returns the item to
+   * the queue as held at its original position instead of marking it finished.
+   */
+  private finish(purpose: OverlayPurpose, itemId: string, outcome: "played" | "failed" | "over-limit"): void {
     const state = this.state(purpose);
     const current = state.current;
     if (current === null || current.item.id !== itemId) return;
     this.clearPlaybackTimer(state);
     state.current = null;
-    const done = { ...current.item, status, holdReason: null };
+    const done: VideoRequestItem = outcome === "over-limit"
+      ? { ...current.item, status: "held", holdReason: "over-limit" }
+      : { ...current.item, status: outcome, holdReason: null };
     const run = state.snapshot.run;
     const continues = run !== null && run.remainingIds.length > 0 && !state.snapshot.queuePaused;
     this.commit(purpose, state.snapshot.revision, { upsert: [done], ...(continues ? {} : { run: run !== null && run.remainingIds.length > 0 ? run : null }) }, true);
@@ -398,17 +406,26 @@ export class VideoQueueService {
     }, Math.max(0, remaining) + videoEndGraceMs);
   }
 
-  /** Records a duration learned from the player. Returns true when it was new. */
-  private learnDuration(purpose: OverlayPurpose, durationMs: number | null): boolean {
+  /**
+   * Records a duration learned from the player. An item queued with an unknown
+   * length that turns out to be over the limit, and was not released with Play
+   * anyway, is cut: playback ends and it returns to the queue held as over-limit.
+   */
+  private learnDuration(purpose: OverlayPurpose, durationMs: number | null): "unchanged" | "learned" | "cut" {
     const state = this.state(purpose);
     const current = state.current;
-    if (current === null || durationMs === null || !Number.isFinite(durationMs) || durationMs <= 0) return false;
+    if (current === null || durationMs === null || !Number.isFinite(durationMs) || durationMs <= 0) return "unchanged";
     const rounded = Math.round(durationMs);
-    if (current.item.durationMs === rounded) return false;
+    if (current.item.durationMs === rounded) return "unchanged";
+    const wasUnknown = current.item.durationMs === null;
     const item = { ...current.item, durationMs: rounded };
     state.current = { ...current, item };
+    if (wasUnknown && this.holdReason(rounded, item.limitOverridden) === "over-limit") {
+      this.finish(purpose, item.id, "over-limit");
+      return "cut";
+    }
     this.persistItem(purpose, item, true);
-    return true;
+    return "learned";
   }
 
   private persistItem(purpose: OverlayPurpose, item: VideoRequestItem, silent = false): void {
@@ -423,9 +440,12 @@ export class VideoQueueService {
     if (!silent) this.emit(purpose);
   }
 
+  /**
+   * Only a known length over the limit holds an item. Unknown-length items queue
+   * normally and are checked when the player reports their duration.
+   */
   private holdReason(durationMs: number | null, overridden: boolean): VideoHoldReason | null {
-    if (overridden) return null;
-    if (durationMs === null) return "unknown-length";
+    if (overridden || durationMs === null) return null;
     return durationMs > this.getConfig().maxLengthSeconds * 1000 ? "over-limit" : null;
   }
 

@@ -25,7 +25,7 @@ function connector() {
   return { value, sent, listeners, deliver: (signal: VideoMirrorPublisherSignal) => { for (const listener of listeners) listener(signal); } };
 }
 
-const mirrored = (paused = false, obsAudio = true): VideosProjection => ({ status: "active", itemId: "item-1", title: "The big play", requester: "Viewer", delivery: { mode: "mirror", paused, obsAudio } });
+const mirrored = (paused = false, obsAudio = true, layout = { x: 269, y: 140, width: 1382, height: 876 }): VideosProjection => ({ status: "active", itemId: "item-1", title: "The big play", requester: "Viewer", layout, delivery: { mode: "mirror", paused, obsAudio } });
 
 let play: ReturnType<typeof vi.fn<() => Promise<void>>>;
 beforeEach(() => {
@@ -57,6 +57,17 @@ describe("VideosOverlay mirror mode", () => {
     expect(video.muted).toBe(false);
     expect(play).toHaveBeenCalled();
     expect(sent).toContainEqual({ type: "answer", connection: 1, sdp: "answer-sdp" });
+  });
+
+  it("shows the mirrored picture in the saved box", async () => {
+    const { value, deliver } = connector();
+    const peers: FakePeer[] = [];
+    const layout = { x: 40, y: 600, width: 640, height: 460 };
+    render(<VideosOverlay createMirrorPeerConnection={() => { const peer = new FakePeer(); peers.push(peer); return peer as unknown as RTCPeerConnection; }} mirror={value} projection={mirrored(false, true, layout)} />);
+    await connect(peers, deliver);
+    const overlay = screen.getByTestId("video-overlay");
+    expect(overlay).toHaveStyle({ left: "40px", top: "600px", width: "640px", height: "460px" });
+    expect(overlay.querySelector(".video-overlay__frame")).toHaveStyle({ width: "640px", height: "360px" });
   });
 
   it("shows paused state and keeps the desktop overlay receiver muted", async () => {

@@ -54,7 +54,8 @@ describe("VideosPage", () => {
     expect(save).toHaveBeenCalledWith(true, {
       maxLengthSeconds: 300, gapSeconds: 3, allowedDirectHosts: ["videos.example.com", "cdn.example.org"], obsAudio: false,
       audioDeviceIds: ["stream", "private"], audioDeviceDelaysMs: { stream: 120 }, streamerBotAutoplay: false,
-      rewardMappings: [{ rewardId: "reward-video", purpose: "live" }, { rewardId: "reward-test", purpose: "test" }]
+      rewardMappings: [{ rewardId: "reward-video", purpose: "live" }, { rewardId: "reward-test", purpose: "test" }],
+      layout: { x: 269, y: 140, width: 1382, height: 876 }
     });
     expect(await screen.findByText("Videos settings saved. They apply to later requests and runs.")).toBeVisible();
   });
@@ -83,6 +84,43 @@ describe("VideosPage", () => {
     expect(screen.queryByLabelText("Stream mix delay (ms)")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Save Videos settings" }));
     expect(save).toHaveBeenLastCalledWith(true, expect.objectContaining({ audioDeviceIds: ["private"], audioDeviceDelaysMs: {} }));
+  });
+
+  it("places the video box in the preview and saves it with the settings", async () => {
+    const user = userEvent.setup();
+    const api = createStaticVideosApi(queuedVideos());
+    const save = vi.spyOn(api, "saveModuleConfig");
+    renderManagement(<VideosPage api={api} audioApi={createStoryAudioApi()} managementApi={managementApi()} />);
+    const placement = await screen.findByRole("region", { name: "Video placement" });
+    expect(await within(placement).findByLabelText("Video X (px)")).toHaveValue(269);
+    within(placement).getByRole("button", { name: "Move video box" }).focus();
+    await user.keyboard("{Shift>}{ArrowLeft}{/Shift}{ArrowUp}");
+    const width = within(placement).getByLabelText("Video width (px)");
+    await user.clear(width); await user.type(width, "960{Enter}");
+    expect(within(placement).getByLabelText("Video X (px)")).toHaveValue(259);
+    expect(screen.getByTestId("video-placement-preview")).toHaveStyle({ left: "259px", top: "139px", width: "960px", height: "876px" });
+    await user.click(screen.getByRole("button", { name: "Save Videos settings" }));
+    expect(save).toHaveBeenLastCalledWith(true, expect.objectContaining({ layout: { x: 259, y: 139, width: 960, height: 876 } }));
+    await user.click(within(placement).getByRole("button", { name: "Reset to default placement" }));
+    await user.click(screen.getByRole("button", { name: "Save Videos settings" }));
+    expect(save).toHaveBeenLastCalledWith(true, expect.objectContaining({ layout: { x: 269, y: 140, width: 1382, height: 876 } }));
+  });
+
+  it("keeps an off-canvas saved placement from being saved again", async () => {
+    const user = userEvent.setup();
+    const base = createStaticVideosApi(queuedVideos());
+    const state = await base.getModuleConfig();
+    const api = createStaticVideosApi(queuedVideos(), { getModuleConfig: async () => ({ ...state, config: { ...state.config, layout: { x: 900, y: 0, width: 1382, height: 876 } } }) });
+    const save = vi.spyOn(api, "saveModuleConfig");
+    renderManagement(<VideosPage api={api} audioApi={createStoryAudioApi()} managementApi={managementApi()} />);
+    await within(await screen.findByRole("region", { name: "Video placement" })).findByLabelText("Video X (px)");
+    await user.click(screen.getByRole("button", { name: "Save Videos settings" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Keep the video box at least 240 x 180 px and inside the 1920 x 1080 canvas.");
+    expect(save).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Reset to default placement" }));
+    expect(screen.queryByText(/Keep the video box/u)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Save Videos settings" }));
+    expect(save).toHaveBeenCalledWith(true, expect.objectContaining({ layout: { x: 269, y: 140, width: 1382, height: 876 } }));
   });
 
   it("says when the desktop app is not running so browser sources play on their own", async () => {

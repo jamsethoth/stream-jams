@@ -37,6 +37,14 @@ export interface VideoRewardMapping {
   readonly purpose: OverlayPurpose;
 }
 
+/** The Videos box on the 1920x1080 canvas: picture and caption, in whole canvas pixels. */
+export interface VideosLayout {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
 export interface VideosModuleConfig {
   readonly maxLengthSeconds: number;
   readonly gapSeconds: number;
@@ -47,6 +55,8 @@ export interface VideosModuleConfig {
   readonly audioDeviceDelaysMs: Readonly<Record<string, number>>;
   readonly streamerBotAutoplay: boolean;
   readonly rewardMappings: readonly VideoRewardMapping[];
+  /** Where every output (browser sources, desktop overlay, mirror) places the video. */
+  readonly layout: VideosLayout;
 }
 
 export type VideoLinkRejection = "invalid-link" | "unsafe-link" | "unsupported-source";
@@ -76,12 +86,13 @@ export type VideosProjection =
       readonly itemId: string;
       readonly title: string | null;
       readonly requester: string | null;
+      readonly layout: VideosLayout;
       /** `mirror`: show the desktop primary player's stream. `player`: desktop app absent, play locally. */
       readonly delivery:
         | { readonly mode: "mirror"; readonly paused: boolean; readonly obsAudio: boolean }
         | { readonly mode: "player"; readonly source: VideoSource; readonly clock: VideoPlaybackClock; readonly obsAudio: boolean };
     }
-  | { readonly status: "notice"; readonly noticeId: string; readonly notice: "no-clip"; readonly displayName: string | null };
+  | { readonly status: "notice"; readonly noticeId: string; readonly notice: "no-clip"; readonly displayName: string | null; readonly layout: VideosLayout };
 
 /** Queue state as returned to management, operator and automation clients. */
 export interface VideoQueueResponse {

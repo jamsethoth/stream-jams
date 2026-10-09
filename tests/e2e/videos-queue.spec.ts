@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { expect, test, type APIRequestContext, type BrowserContext, type Frame, type Page } from "@playwright/test";
+import type { DesktopVideoCommand, DesktopVideoEvent, DesktopVideoTransport } from "../../packages/core/src/videos/mirror.js";
 import { createProviderSecurityRuntimeFixture } from "../../apps/server/src/test-support/provider-security-runtime-fixture.js";
 
 // Videos queue acceptance against a real local runtime. Providers are stubbed: every
@@ -49,7 +50,7 @@ test.afterEach(async () => {
   await fixture.close();
 });
 
-test("management submit queues a safe link as held and rejects unsafe, unknown and disallowed links with a visible reason", async ({ context, page }) => {
+test("management submit queues a safe link without a length and rejects unsafe, unknown and disallowed links with a visible reason", async ({ context, page }) => {
   const outbound = await stubProviders(context);
   await page.goto(`${fixture.runtime.url}/manage/modules/videos`);
   const queue = page.getByRole("region", { name: "Video queue" });
@@ -96,25 +97,24 @@ test("management submit queues a safe link as held and rejects unsafe, unknown a
   await page.getByRole("button", { name: "Enable Videos module" }).click();
   await expect(page.getByText("Module enabled", { exact: true })).toBeVisible();
 
-  // A safe YouTube link without a length is queued but held until Play anyway.
+  // A safe YouTube link without a length queues normally; its length is shown as unknown, not as a hold.
   await link.fill("https://www.youtube.com/watch?v=e2eSubmitA1&t=5");
   await form.getByRole("textbox", { name: "Title (optional)" }).fill("Management pick");
   await add.click();
-  await expect(queue.getByRole("status").filter({ hasText: "Video added and held: its length is unknown." })).toBeVisible();
+  await expect(queue.getByRole("status").filter({ hasText: "Video added to the queue." })).toBeVisible();
   await expect(link).toHaveValue("");
   await expect(queue.getByRole("heading", { name: "Waiting (1)" })).toBeVisible();
-  const held = queue.getByRole("article", { name: "Management pick" });
-  await expect(held).toContainText("Held");
-  await expect(held).toContainText("Length unknown");
-  await expect(held).toContainText("YouTube · Length unknown · via management");
-  await expect(queue.getByRole("button", { name: "Play anyway: Management pick" })).toBeEnabled();
-  // Held items are not playable without Play anyway.
-  await expect(queue.getByRole("button", { name: "Play next" })).toBeDisabled();
-  await expect(queue.getByRole("button", { name: "Play all now" })).toBeDisabled();
+  const waiting = queue.getByRole("article", { name: "Management pick" });
+  await expect(waiting).toContainText("Queued");
+  await expect(waiting).toContainText("YouTube · Length unknown · via management");
+  await expect(waiting).not.toContainText("Over the length limit");
+  await expect(queue.getByRole("button", { name: "Play anyway: Management pick" })).toHaveCount(0);
+  await expect(queue.getByRole("button", { name: "Play next" })).toBeEnabled();
+  await expect(queue.getByRole("button", { name: "Play all now" })).toBeEnabled();
 
   const state = await readQueue();
   expect(state.items).toHaveLength(1);
-  expect(state.items[0]).toMatchObject({ status: "held", holdReason: "unknown-length", title: "Management pick", submittedVia: "management" });
+  expect(state.items[0]).toMatchObject({ status: "queued", holdReason: null, title: "Management pick", submittedVia: "management" });
   // Rejections are logged by reason and field only, never with the submitted link.
   const logs = await fixture.readLogs();
   for (const [value] of rejectedLinks) expect(logs).not.toContain(value);
@@ -299,6 +299,89 @@ test("Play all now plays only the snapshot, Pause queue holds the run, and a dir
   expect(outbound()).toEqual([]);
 });
 
+test("an unknown-length request queues and plays with Play next in the browser source", async ({ context, page }) => {
+  test.setTimeout(60_000);
+  const outbound = await stubProviders(context);
+  const overlay = await openBrowserSource(context);
+  await expect(overlay.getByTestId("overlay-root")).toBeVisible();
+
+  await page.goto(`${fixture.runtime.url}/manage/modules/videos`);
+  const queue = page.getByRole("region", { name: "Video queue" });
+  const form = queue.getByRole("form", { name: "Add video" });
+  await form.getByRole("textbox", { name: "Video link" }).fill("https://youtu.be/e2eUnknwnA1");
+  await form.getByRole("textbox", { name: "Title (optional)" }).fill("Unknown length pick");
+  await form.getByRole("button", { name: "Add video" }).click();
+  await expect(queue.getByRole("article", { name: "Unknown length pick" })).toContainText("Length unknown");
+
+  await queue.getByRole("button", { name: "Play next" }).click();
+  const stub = overlay.frameLocator("iframe[title='Video player']");
+  await expect(stub.getByText("video e2eUnknwnA1")).toBeVisible();
+  const nowPlaying = queue.getByRole("article", { name: "Now playing" });
+  await expect(nowPlaying).toContainText("Unknown length pick");
+  await expect(nowPlaying.getByText("Playing", { exact: true })).toBeVisible();
+  await expect(nowPlaying.getByLabel("Playback position")).toContainText("/ length unknown");
+  await expect(queue.getByRole("heading", { name: "Waiting (0)" })).toBeVisible();
+
+  await endStubVideo(overlay);
+  await expect(queue.getByText("Nothing is playing.")).toBeVisible();
+  await expect(overlay.getByTestId("video-overlay")).toHaveCount(0);
+  expect((await readQueue()).items).toEqual([]);
+  expect(outbound()).toEqual([]);
+});
+
+test("an unknown-length item the player reports over the limit is stopped, held as over the limit, and the run moves on", async ({ page }) => {
+  test.setTimeout(60_000);
+  // The desktop primary player is the output that reports a learned duration; stand in for it in-process.
+  const player = new StubDesktopVideoPlayer();
+  await fixture.close();
+  fixture = await createProviderSecurityRuntimeFixture({ desktopVideoTransport: player });
+  await fixture.start();
+  const saved = await fixture.request("/overlay-modules/videos/config", "PUT", { enabled: true, config: {
+    maxLengthSeconds: 60, gapSeconds: 0, allowedDirectHosts: [], obsAudio: true, audioDeviceIds: [], audioDeviceDelaysMs: {}, streamerBotAutoplay: true, rewardMappings: []
+  } });
+  expect(saved.status).toBe(200);
+
+  await page.goto(`${fixture.runtime.url}/manage/modules/videos`);
+  const queue = page.getByRole("region", { name: "Video queue" });
+  const form = queue.getByRole("form", { name: "Add video" });
+  for (const [link, title] of [["https://youtu.be/e2eTooLong1", "Turns out long"], ["https://youtu.be/e2eNextUp01", "Next up"]] as const) {
+    await form.getByRole("textbox", { name: "Video link" }).fill(link);
+    await form.getByRole("textbox", { name: "Title (optional)" }).fill(title);
+    await form.getByRole("button", { name: "Add video" }).click();
+    await expect(queue.getByRole("article", { name: title })).toContainText("Queued");
+  }
+  const [long, next] = (await readQueue()).items;
+  if (long === undefined || next === undefined) throw new Error("Both requests should be queued");
+
+  await queue.getByRole("button", { name: "Play all now" }).click();
+  await expect.poll(() => player.lastLoad()).toBe(long.id);
+  const nowPlaying = queue.getByRole("article", { name: "Now playing" });
+  await expect(nowPlaying).toContainText("Turns out long");
+
+  // The player learns the real length (5:00), over the 60 s limit: the queue ends it without marking it played.
+  player.report({ type: "report", purpose: "live", itemId: long.id, state: "started", positionMs: 0, durationMs: 300_000, controls: { pause: true, seek: true } });
+  await expect.poll(() => player.lastLoad()).toBe(next.id);
+  await expect(nowPlaying).toContainText("Next up");
+  const held = queue.getByRole("article", { name: "Turns out long" });
+  await expect(held).toContainText("Held");
+  await expect(held).toContainText("Over the length limit");
+  await expect(held).toContainText("YouTube · 5:00 · via management");
+  await expect(queue.getByRole("button", { name: "Play anyway: Turns out long" })).toBeEnabled();
+  const state = await readQueue();
+  expect(state.current).toMatchObject({ itemId: next.id });
+  expect(state.items.find(item => item.id === long.id)).toMatchObject({ status: "held", holdReason: "over-limit" });
+
+  // Play anyway still releases it, and it is never cut again.
+  player.report({ type: "report", purpose: "live", itemId: next.id, state: "ended" });
+  await expect(queue.getByText("Nothing is playing.")).toBeVisible();
+  await queue.getByRole("button", { name: "Play anyway: Turns out long" }).click();
+  await expect.poll(() => player.lastLoad()).toBe(long.id);
+  player.report({ type: "report", purpose: "live", itemId: long.id, state: "started", positionMs: 0, durationMs: 300_000, controls: { pause: true, seek: true } });
+  await expect(nowPlaying.getByText("Playing", { exact: true })).toBeVisible();
+  await expect(nowPlaying).toContainText("Turns out long");
+  expect((await readQueue()).current).toMatchObject({ itemId: long.id, phase: "playing" });
+});
+
 async function readQueue(): Promise<Queue> {
   const response = await fixture.request("/videos/live");
   expect(response.status).toBe(200);
@@ -349,4 +432,18 @@ async function endStubVideo(overlay: Page): Promise<void> {
   const frame = overlay.frames().find((candidate: Frame) => candidate.url().startsWith("https://www.youtube-nocookie.com/embed/"));
   if (frame === undefined) throw new Error("The stub YouTube player is not loaded");
   await frame.evaluate(() => (window as Window & { endStubVideo?: () => void }).endStubVideo?.());
+}
+
+/** An in-process stand-in for the desktop primary player: records commands and reports what a real player would. */
+class StubDesktopVideoPlayer implements DesktopVideoTransport {
+  readonly available = true;
+  readonly sent: DesktopVideoCommand[] = [];
+  readonly #listeners = new Set<(event: DesktopVideoEvent) => void>();
+  send(command: DesktopVideoCommand): void { this.sent.push(command); }
+  subscribe(listener: (event: DesktopVideoEvent) => void): () => void { this.#listeners.add(listener); return () => { this.#listeners.delete(listener); }; }
+  report(event: DesktopVideoEvent): void { for (const listener of this.#listeners) listener(event); }
+  lastLoad(): string | null {
+    const loads = this.sent.flatMap(command => command.type === "load" ? [command.itemId] : []);
+    return loads.at(-1) ?? null;
+  }
 }

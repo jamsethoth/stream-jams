@@ -54,15 +54,31 @@ The system SHALL provide play next, play all now, pause and resume the queue, sk
 - **THEN** it fails with a conflict and changes nothing
 
 ### Requirement: Maximum Length Holds Items For Manual Override
-The system SHALL hold items whose duration exceeds the configured maximum length, or whose duration is unknown, and SHALL let the operator play a held item explicitly.
+The system SHALL hold items whose known duration exceeds the configured maximum length, SHALL queue items of unknown duration normally, and SHALL let the operator play a held item explicitly. When a player reports a duration over the limit for an item queued with an unknown duration that the operator has not released with Play anyway, the system SHALL stop it and hold it as over the limit.
 
 #### Scenario: Over-limit item
 - **WHEN** an item longer than the maximum length is submitted
 - **THEN** it is shown in the queue as held with its length and the limit, and play next and play all skip it
 
+#### Scenario: Item exactly at the limit
+- **WHEN** an item whose length equals the maximum length is submitted
+- **THEN** it is queued, not held
+
+#### Scenario: Unknown-length item
+- **WHEN** an item without a known length is submitted
+- **THEN** it is queued with its length shown as unknown, and play next, play all and autoplay can play it
+
+#### Scenario: Player reports an unknown-length item over the limit
+- **WHEN** the player reports a duration over the maximum length for a playing or paused item that was queued with an unknown length and not released with Play anyway
+- **THEN** playback of that item ends immediately, the item is neither played nor failed but returns to the queue held as over the limit at its original position, and the run continues as if the item had been skipped, respecting the gap, the run snapshot and a paused queue
+
 #### Scenario: Play anyway
 - **WHEN** the operator chooses Play anyway on a held item
-- **THEN** that item plays to its natural end without changing the limit
+- **THEN** that item plays to its natural end without changing the limit, and a duration it reports never stops it
+
+#### Scenario: Legacy unknown-length holds
+- **WHEN** the service starts with items an older version held for an unknown length
+- **THEN** those items become queued in their existing positions
 
 #### Scenario: Limit changes
 - **WHEN** the operator raises the limit above a held item's length
@@ -157,6 +173,21 @@ Overlay outputs SHALL render only validated items, SHALL load no third-party scr
 #### Scenario: Load failure
 - **WHEN** a player does not load within the load timeout
 - **THEN** the item is marked failed, the next item in an active run starts after the gap, and the operator UI shows the failure
+
+### Requirement: Operators Place The Video On The Canvas
+The system SHALL let the operator position and resize the Videos box (the picture and its title and requester caption) on the 1920 x 1080 landscape canvas from the Videos page, with a live preview, the shared editor snapping and exact numeric and keyboard edits. The saved placement SHALL apply identically to module and unified browser sources, the desktop overlay and the mirror receiver. Settings saved before placement existed SHALL use a default equal to the earlier fixed look. A placement that is not whole pixels, is smaller than 240 x 180 or leaves the canvas SHALL be rejected by the server and SHALL make every output fail closed.
+
+#### Scenario: Move the video to a corner
+- **WHEN** the operator drags or types a new box on the Videos page and saves the settings
+- **THEN** the playing video on every output moves to that box without a reload, showing the largest 16:9 picture that fits above the caption
+
+#### Scenario: Earlier settings
+- **WHEN** Videos settings saved before placement existed are loaded
+- **THEN** the default box is used, matching the earlier centered look, and saving keeps the other settings unchanged
+
+#### Scenario: Invalid placement
+- **WHEN** a placement off the canvas or below the minimum size is submitted or reaches an output
+- **THEN** the server refuses to save it, the page shows a correction instead of saving, and outputs render nothing and report the item's failure
 
 ### Requirement: Management And Operator Surfaces
 The system SHALL provide a Videos management page and Operator UI queue tools covering the controls in this specification.
