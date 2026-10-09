@@ -5,10 +5,15 @@ import { fileURLToPath } from 'node:url';
 
 // Code scanning is unavailable for this private repository, so CodeQL results are gated here
 // with GitHub's default pull-request thresholds: security severity high or above, or level error.
-// Results carrying an accepted in-source suppression are listed but do not block.
+// Results carrying an accepted SARIF suppression, or matching a reviewed exception in
+// .github/codeql-exceptions.json by rule and file, are listed but do not block. The CodeQL CLI
+// does not turn in-source `codeql[rule-id]` comments into SARIF suppressions, so the exception
+// file is the record; an exception that no longer matches a result fails the gate so it is removed.
 export const blockingSecuritySeverity = 7;
 
-export function evaluateSarif(report) {
+export function evaluateSarif(report, exceptions = []) {
+  if (!Array.isArray(exceptions) || !exceptions.every(isException)) throw new Error('CodeQL exceptions must each name a rule, a file and a reason.');
+  const used = new Set();
   if (!report || typeof report !== 'object' || !Array.isArray(report.runs) || report.runs.length === 0) throw new Error('SARIF report is missing or has no runs.');
   const findings = [];
   for (const run of report.runs) {
@@ -24,12 +29,15 @@ export function evaluateSarif(report) {
       if (securitySeverity !== null && !Number.isFinite(securitySeverity)) throw new Error(`Rule ${ruleId} has an invalid security severity.`);
       const location = result.locations?.[0]?.physicalLocation;
       // An in-source `codeql[rule-id]` comment records a reviewed exception at the flagged line.
-      const suppressed = Array.isArray(result.suppressions) && result.suppressions.length > 0 && result.suppressions.every(entry => entry?.status === undefined || entry.status === 'accepted');
+      const file = location?.artifactLocation?.uri ?? 'unknown';
+      const exception = exceptions.findIndex(entry => entry.rule === ruleId && entry.file === file);
+      if (exception !== -1) used.add(exception);
+      const suppressed = exception !== -1 || (Array.isArray(result.suppressions) && result.suppressions.length > 0 && result.suppressions.every(entry => entry?.status === undefined || entry.status === 'accepted'));
       findings.push({
         ruleId,
         level,
         securitySeverity,
-        file: location?.artifactLocation?.uri ?? 'unknown',
+        file,
         line: location?.region?.startLine ?? null,
         message: result.message?.text ?? '',
         suppressed,
@@ -37,7 +45,11 @@ export function evaluateSarif(report) {
       });
     }
   }
-  return { findings, blocking: findings.filter(finding => finding.blocking) };
+  return { findings, blocking: findings.filter(finding => finding.blocking), staleExceptions: exceptions.filter((_, index) => !used.has(index)) };
+}
+
+function isException(entry) {
+  return ['rule', 'file', 'reason'].every(key => typeof entry?.[key] === 'string' && entry[key].trim() !== '');
 }
 
 function ruleFor(result, components) {
@@ -59,17 +71,22 @@ export function formatFinding(finding) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
-    const directory = process.argv[2];
-    if (!directory || process.argv.length !== 3) throw new Error('Usage: codeql-sarif-gate <sarif-directory>');
+    const [directory, exceptionsPath] = process.argv.slice(2);
+    if (!directory || process.argv.length > 4) throw new Error('Usage: codeql-sarif-gate <sarif-directory> [exceptions.json]');
+    const exceptions = exceptionsPath ? JSON.parse(fs.readFileSync(exceptionsPath, 'utf8')) : [];
     const files = fs.readdirSync(directory).filter(name => name.endsWith('.sarif'));
     if (files.length === 0) throw new Error(`No SARIF files were written to ${directory}.`);
     let blocking = 0;
+    const unused = new Set(exceptions);
     for (const file of files) {
-      const summary = evaluateSarif(JSON.parse(fs.readFileSync(path.join(directory, file), 'utf8')));
+      const summary = evaluateSarif(JSON.parse(fs.readFileSync(path.join(directory, file), 'utf8')), exceptions);
+      for (const entry of exceptions) if (!summary.staleExceptions.includes(entry)) unused.delete(entry);
       console.log(`${file}: ${summary.findings.length} findings, ${summary.blocking.length} blocking.`);
       for (const finding of summary.findings) console.log(`${finding.blocking ? 'BLOCKING ' : ''}${formatFinding(finding)}`);
       blocking += summary.blocking.length;
     }
-    if (blocking > 0) throw new Error(`${blocking} CodeQL findings are errors or high-severity security issues.`);
+    for (const entry of unused) console.log(`STALE EXCEPTION ${entry.file} ${entry.rule}: no longer reported; remove it.`);
+    if (unused.size > 0) blocking += unused.size;
+    if (blocking > 0) throw new Error(`${blocking} CodeQL findings are errors or high-severity security issues, or exceptions are stale.`);
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }

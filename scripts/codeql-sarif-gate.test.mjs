@@ -7,7 +7,7 @@ const result = (ruleId, index, extra = {}) => ({ ruleId, rule: { id: ruleId, ind
 const report = (rules, results) => ({ runs: [{ tool: { driver: { name: 'CodeQL', rules: [] }, extensions: [{ name: 'codeql/javascript-queries', rules }] }, results }] });
 
 test('a clean report has no findings', () => {
-  assert.deepEqual(evaluateSarif(report([], [])), { findings: [], blocking: [] });
+  assert.deepEqual(evaluateSarif(report([], [])), { findings: [], blocking: [], staleExceptions: [] });
 });
 
 test('high and critical security severity and error level block; lower findings are reported only', () => {
@@ -33,6 +33,17 @@ test('in-source suppressions are listed without blocking unless rejected', () =>
   ]));
   assert.deepEqual(summary.blocking.map(finding => finding.ruleId), ['js/b', 'js/c']);
   assert.match(formatFinding(summary.findings[0]), /^SUPPRESSED /);
+});
+
+test('reviewed exceptions match by rule and file, and unmatched exceptions are reported stale', () => {
+  const rules = [rule('js/a', 'error'), rule('js/b', 'error')];
+  const matched = { rule: 'js/a', file: 'apps/server/src/a.ts', reason: 'reviewed' };
+  const otherFile = { rule: 'js/b', file: 'apps/server/src/b.ts', reason: 'reviewed' };
+  const summary = evaluateSarif(report(rules, [result('js/a', 0), result('js/b', 1)]), [matched, otherFile]);
+  assert.deepEqual(summary.blocking.map(finding => finding.ruleId), ['js/b']);
+  assert.match(formatFinding(summary.findings[0]), /^SUPPRESSED /);
+  assert.deepEqual(summary.staleExceptions, [otherFile]);
+  for (const invalid of [{ rule: 'js/a', file: 'a.ts' }, { rule: '', file: 'a.ts', reason: 'r' }, 'js/a']) assert.throws(() => evaluateSarif(report(rules, []), [invalid]), /must each name/);
 });
 
 test('missing or malformed reports fail closed', () => {

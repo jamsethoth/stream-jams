@@ -271,7 +271,7 @@ jobs:
           output: codeql-results
 
       - name: Gate CodeQL findings
-        run: node scripts/codeql-sarif-gate.mjs codeql-results
+        run: node scripts/codeql-sarif-gate.mjs codeql-results .github/codeql-exceptions.json
 
       - name: Upload CodeQL results
         if: always()
