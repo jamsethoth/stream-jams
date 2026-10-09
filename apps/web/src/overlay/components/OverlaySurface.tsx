@@ -274,6 +274,19 @@ function OverlayInstructionLayer({
     progressRef.current.delete(element);
     return healthy;
   }, []);
+  const reportCompleted = useCallback(() => {
+    if (completionReportedRef.current) return;
+    if (!finishMedia(audioElementRef.current) || !finishMedia(videoElementRef.current) || completionReportedRef.current) return;
+    completionReportedRef.current = true;
+    if (hasTimedMedia) setTimingActive(false);
+    onPlaybackEvent?.({
+      instructionId: instruction.id,
+      status: "completed",
+      diagnostics: { ...diagnosticsRef.current, terminalOutcome: "completed", completionReason: [audioElementRef.current, videoElementRef.current].filter(element => element !== null).length > 0 && [audioElementRef.current, videoElementRef.current].every(element => element === null || naturalEndsRef.current.has(element)) ? "natural-end" : "configured-duration" }
+    });
+  }, [finishMedia, hasTimedMedia, instruction.id, onPlaybackEvent]);
+  const reportCompletedRef = useRef(reportCompleted);
+  useEffect(() => { reportCompletedRef.current = reportCompleted; }, [reportCompleted]);
   const naturalEnd = useCallback((element: HTMLMediaElement) => {
     naturalEndsRef.current.add(element);
     progressRef.current.get(element)?.stop();
@@ -315,7 +328,12 @@ function OverlayInstructionLayer({
     if (startsAt === undefined || endsAt === undefined) return;
     setTimingActive(Date.now() >= startsAt && (hasTimedMedia || Date.now() < endsAt));
     const start = window.setTimeout(() => setTimingActive(hasTimedMedia || Date.now() < endsAt), Math.max(0, startsAt - Date.now()));
-    const end = hasTimedMedia ? undefined : window.setTimeout(() => setTimingActive(false), Math.max(0, endsAt - Date.now()));
+    // The completion timer is due at the same deadline. If this hide commits first, it cancels
+    // that timer, so started playback reports completion here too.
+    const end = hasTimedMedia ? undefined : window.setTimeout(() => {
+      if (startedReportedRef.current) reportCompletedRef.current();
+      setTimingActive(false);
+    }, Math.max(0, endsAt - Date.now()));
     return () => { window.clearTimeout(start); window.clearTimeout(end); };
   }, [startsAt, endsAt, hasTimedMedia]);
 
@@ -357,23 +375,10 @@ function OverlayInstructionLayer({
         actualStartEpochMs: diagnosticsRef.current.actualStartEpochMs
       } });
     }
-    const timeoutId = window.setTimeout(() => {
-      if (completionReportedRef.current) {
-        return;
-      }
-
-      if (!finishMedia(audioElementRef.current) || !finishMedia(videoElementRef.current) || completionReportedRef.current) return;
-      completionReportedRef.current = true;
-      if (hasTimedMedia) setTimingActive(false);
-      onPlaybackEvent?.({
-        instructionId: instruction.id,
-        status: "completed",
-        diagnostics: { ...diagnosticsRef.current, terminalOutcome: "completed", completionReason: [audioElementRef.current, videoElementRef.current].filter(element => element !== null).length > 0 && [audioElementRef.current, videoElementRef.current].every(element => element === null || naturalEndsRef.current.has(element)) ? "natural-end" : "configured-duration" }
-      });
-    }, completionAt === undefined ? instruction.durationMs : Math.max(0, completionAt - Date.now()));
+    const timeoutId = window.setTimeout(reportCompleted, completionAt === undefined ? instruction.durationMs : Math.max(0, completionAt - Date.now()));
 
     return () => window.clearTimeout(timeoutId);
-  }, [audioStarted, instruction.durationMs, instruction.id, onPlaybackEvent, presentationInvalid, endsAt, preparing, timingActive, playbackActive, hasTimedMedia, mediaStarted, completionAt, finishMedia]);
+  }, [audioStarted, instruction.durationMs, instruction.id, onPlaybackEvent, presentationInvalid, endsAt, preparing, timingActive, playbackActive, hasTimedMedia, mediaStarted, completionAt, reportCompleted]);
 
   useEffect(() => {
     if (!hasTimedMedia || audioStartedAt === null) return;
