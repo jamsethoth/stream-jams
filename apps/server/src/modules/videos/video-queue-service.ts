@@ -283,6 +283,18 @@ export class VideoQueueService {
     return true;
   }
 
+  /**
+   * A media length from a fallback browser player, which never steers the shared clock.
+   * Learned while loading or playing, so an unknown-length item over the limit is cut and held.
+   */
+  reportDuration(itemId: string, durationMs: number): boolean {
+    const found = this.findCurrent(itemId);
+    if (found === null) return false;
+    const [purpose, , current] = found;
+    if (this.learnDuration(purpose, durationMs) === "learned" && current.phase === "playing") this.scheduleEnd(purpose);
+    return true;
+  }
+
   reportEnded(itemId: string): boolean {
     const found = this.findCurrent(itemId);
     if (found === null) return false;

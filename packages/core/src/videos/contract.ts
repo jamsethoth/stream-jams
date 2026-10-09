@@ -47,6 +47,20 @@ export const videosProjectionSchema = z.discriminatedUnion("status", [
 /** Overlay players report video playback as `video:<itemId>` so it never reaches alert or effect coordinators. */
 export const videoInstructionPrefix = "video:";
 
+/** Longest media length a player may report: 24 hours. */
+export const videoMediaDurationMaximumMs = 24 * 60 * 60 * 1000;
+
+/**
+ * A fallback browser player's report of the current item's media length, sent at most once
+ * per item and output, before or after it starts. Only `video:` instructions carry it.
+ */
+export const overlayVideoDurationMessageType = "overlay.playback.duration";
+export const overlayVideoDurationReportSchema = /* @__PURE__ */ z.object({
+  type: z.literal(overlayVideoDurationMessageType),
+  instructionId: z.string().min(videoInstructionPrefix.length + 1).max(videoInstructionPrefix.length + 128).startsWith(videoInstructionPrefix),
+  mediaDurationMs: z.number().int().min(1).max(videoMediaDurationMaximumMs)
+}).strict();
+
 /** Target media position for a clock at `nowEpochMs`. */
 export function videoClockPositionMs(clock: { readonly state: "playing" | "paused"; readonly positionMs: number; readonly atEpochMs: number }, nowEpochMs: number): number {
   return clock.state === "paused" ? clock.positionMs : clock.positionMs + Math.max(0, nowEpochMs - clock.atEpochMs);

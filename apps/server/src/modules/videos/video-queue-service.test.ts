@@ -148,6 +148,34 @@ describe("VideoQueueService", () => {
     expect(service.view("live").items[0]).toMatchObject({ id: unknown.id, status: "held", holdReason: "over-limit" });
   });
 
+  it("learns a browser-reported length without moving the clock, cutting an over-limit item while loading or playing", () => {
+    const { service, scheduler } = setup({ maxLengthSeconds: 60, gapSeconds: 0 });
+    const loading = service.submit("live", clip("Loading", null));
+    const playing = service.submit("live", clip("Playing", null));
+    const fits = service.submit("live", clip("Fits", null));
+    service.command("live", service.view("live").revision, { kind: "play-all" });
+    // Reported before the player starts: cut without ever playing.
+    expect(service.reportDuration(loading.id, 90_000)).toBe(true);
+    expect(service.view("live").items.find(item => item.id === loading.id)).toMatchObject({ status: "held", holdReason: "over-limit", durationMs: 90_000 });
+    expect(service.view("live").current?.item.id).toBe(playing.id);
+
+    service.reportStarted(playing.id);
+    scheduler.advance(4_000);
+    expect(service.reportDuration(playing.id, 61_000)).toBe(true);
+    expect(service.view("live").items.find(item => item.id === playing.id)).toMatchObject({ status: "held", holdReason: "over-limit" });
+
+    expect(service.view("live").current?.item.id).toBe(fits.id);
+    service.reportStarted(fits.id);
+    scheduler.advance(2_000);
+    expect(service.reportDuration(fits.id, 20_000)).toBe(true);
+    // The clock is left alone: the end is scheduled from the shared clock, not the reporting output.
+    expect(service.view("live").current).toMatchObject({ phase: "playing", item: { id: fits.id, durationMs: 20_000 }, clock: { positionMs: 0 } });
+    scheduler.advance(18_000 + videoEndGraceMs);
+    expect(service.view("live").current).toBeNull();
+    // Reports for items that are not current are ignored.
+    expect(service.reportDuration(fits.id, 20_000)).toBe(false);
+  });
+
   it("never cuts an item released with Play anyway or one whose length was known", () => {
     const { service, setConfig } = setup({ maxLengthSeconds: 60 });
     const unknown = service.submit("live", clip("Unknown", null));

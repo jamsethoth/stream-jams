@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { serializeException, type VideoPlaybackClock, type VideoSource, type VideosLayout, type VideosProjection } from "@stream-jams/core";
-import { buildVideoPlayerUrl, parseYouTubeMessage, videoClockPositionMs, videoInstructionPrefix, videoProviderOrigin, videosProjectionSchema } from "@stream-jams/core/videos";
+import { buildVideoPlayerUrl, parseYouTubeMessage, videoClockPositionMs, videoInstructionPrefix, videoMediaDurationMaximumMs, videoProviderOrigin, videosProjectionSchema } from "@stream-jams/core/videos";
 import type { OverlayPlaybackEvent } from "./OverlaySurface.js";
 import { VideoBox, VideoCaption, videoFrameStyle } from "./VideoPlacement.js";
 import { startVideoMirrorReceiver, type VideoMirrorConnector, type VideoMirrorReceiverState } from "@stream-jams/core/videos";
@@ -178,7 +178,7 @@ function PlayerFrame(props: PlayerFrameProps) {
   const [started, setStarted] = useState(false);
   const onPlaybackEventRef = useRef(onPlaybackEvent);
   useEffect(() => { onPlaybackEventRef.current = onPlaybackEvent; }, [onPlaybackEvent]);
-  // Created once per item: each player reports started, completed or failed at most once.
+  // Created once per item: each player reports started, completed or failed, and the media length, at most once.
   const [reporter] = useState(() => createReporter(itemId, setStarted, onPlaybackEventRef));
   const reportRef = useRef(reporter);
 
@@ -198,11 +198,12 @@ function PlayerFrame(props: PlayerFrameProps) {
   );
 }
 
-interface PlaybackReporter { started(): void; ended(): void; failed(message: string, cause: unknown): void }
+interface PlaybackReporter { started(): void; ended(): void; failed(message: string, cause: unknown): void; duration(mediaDurationMs: number): void }
 type Reporter = { readonly current: PlaybackReporter };
 
 function createReporter(itemId: string, setStarted: (started: boolean) => void, onPlaybackEventRef: { readonly current: VideosOverlayProps["onPlaybackEvent"] }): PlaybackReporter {
   let settled: "started" | "finished" | null = null;
+  let durationReported = false;
   const instructionId = `${videoInstructionPrefix}${itemId}`;
   return {
     started() {
@@ -220,6 +221,13 @@ function createReporter(itemId: string, setStarted: (started: boolean) => void, 
       if (settled !== null) return;
       settled = "finished";
       reportFailure(onPlaybackEventRef.current, itemId, message, cause);
+    },
+    // The server learns the length so an unknown-length item over the limit is cut; live streams report none.
+    duration(mediaDurationMs) {
+      const rounded = Math.round(mediaDurationMs);
+      if (durationReported || settled === "finished" || !(rounded >= 1 && rounded <= videoMediaDurationMaximumMs)) return;
+      durationReported = true;
+      onPlaybackEventRef.current?.({ instructionId, status: "duration", mediaDurationMs: rounded });
     }
   };
 }
@@ -246,6 +254,7 @@ function DirectPlayer({ clock, muted, now, playerUrl, reportRef }: PlayerFramePr
       className="video-overlay__player"
       data-testid="video-overlay-direct"
       muted={muted}
+      onDurationChange={event => reportRef.current.duration(event.currentTarget.duration * 1000)}
       onEnded={() => reportRef.current.ended()}
       onError={() => reportRef.current.failed("The video file could not be loaded.", new Error("Direct video failed to load"))}
       onPlaying={() => reportRef.current.started()}
@@ -275,6 +284,7 @@ function EmbeddedPlayer({ clock, now, playerUrl, reportRef, source }: PlayerFram
       const message = parseYouTubeMessage(event.data);
       if (message === null) return;
       if (message.currentTime !== null) playerTimeRef.current = message.currentTime;
+      if (message.duration !== undefined) reportRef.current.duration(message.duration * 1000);
       if (message.playerState === 1) reportRef.current.started();
       if (message.playerState === 0) reportRef.current.ended();
     };

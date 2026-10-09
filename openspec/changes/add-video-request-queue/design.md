@@ -103,6 +103,7 @@ One provider registry in `@stream-jams/core/videos` (subpath export, kept off th
 - **Fallback without the desktop app:**
   - If the desktop host is not running (CLI start), module browser sources play the item in their own sandboxed player following a server clock `{ itemId, state, positionMs, atEpochMs }`, with seeks for drift above 750 ms.
   - Management shows "Mirroring unavailable: desktop app not running".
+  - YouTube and direct-file fallback players report the media length once per item (`overlay.playback.duration`); the queue learns it without moving the shared clock, so the length limit applies as with the desktop player.
 - **Feasibility gate (first tasks):**
   - On Windows, prove frame audio capture from a cross-origin YouTube and Twitch frame, OBS browser-source WebRTC playback from 127.0.0.1, and multi-device `setSinkId` fan-out.
   - Measure the delay and CPU/GPU cost.
@@ -136,7 +137,7 @@ Rejections are logged with reason and field names only.
 - **Independent fallback players are not frame-exact.** They are used only when the desktop app is not running.
 - **The YouTube `postMessage` protocol** is the stable basis of the official iframe API, but it isn't separately documented. The renderer feature-detects `infoDelivery` and falls back to play and stop.
 - **Twitch `parent` must match the serving host.** Changing the bind host requires regenerating embed URLs, and the server builds them at render time.
-- **Unknown-length items are only checked once a player reports their duration.** The desktop primary player reports it; an independent browser-source fallback does not yet, so without the desktop app an over-limit unknown-length video plays to its end until BL-058 or a browser duration report lands.
+- **Unknown-length items are only checked once a player reports their duration.** The desktop primary player reports it with its start and progress reports. Without the desktop app, browser-source fallback players for YouTube (`infoDelivery.duration`) and direct files (`durationchange`) send one `overlay.playback.duration` report per item (`video:` instruction id, whole-millisecond `mediaDurationMs` from 1 ms to 24 hours, strictly validated by the gateway; ignored while the mirror is available), so an over-limit item can show briefly before it is stopped and held. Twitch fallback players expose no duration, so an over-limit unknown-length Twitch clip still plays to its end without the desktop app until BL-058 lands.
 
 ## Migration
 

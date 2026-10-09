@@ -1,6 +1,6 @@
 import { moduleMuteStateSchema } from "@stream-jams/core";
 import { serializeException, overlayInstructionSchema, overlayCompositionSchema, surfaceLayersSchema, type SurfaceLayer } from "@stream-jams/core";
-import { videoMirrorPublisherSignalSchema, videoMirrorSignalMessageType, type VideoMirrorPublisherSignal } from "@stream-jams/core/videos";
+import { overlayVideoDurationMessageType, videoMirrorPublisherSignalSchema, videoMirrorSignalMessageType, type VideoMirrorPublisherSignal } from "@stream-jams/core/videos";
 import type { VideoMirrorConnector } from "@stream-jams/core/videos";
 import type {
   OverlayPlaybackFailure,
@@ -29,6 +29,8 @@ export interface OverlayPlaybackReporter {
   reportStarted(instructionId: string, diagnostics?: PlaybackTimingMilestone): void;
   reportCompleted(instructionId: string, diagnostics?: PlaybackTimingDiagnostics): void;
   reportFailed(instructionId: string, failure: OverlayPlaybackFailure, diagnostics?: PlaybackTimingDiagnostics): void;
+  /** A fallback video player's media length for a `video:` instruction. */
+  reportDuration(instructionId: string, mediaDurationMs: number): void;
 }
 
 export interface OverlaySocketLike {
@@ -186,6 +188,9 @@ export function createOverlayPlaybackReporter(socket: OverlaySocketLike): Overla
         ...failure,
         ...(diagnostics === undefined ? {} : { diagnostics })
       });
+    },
+    reportDuration(instructionId: string, mediaDurationMs: number) {
+      sendIfOpen(socket, { type: overlayVideoDurationMessageType, instructionId, mediaDurationMs });
     }
   };
 }

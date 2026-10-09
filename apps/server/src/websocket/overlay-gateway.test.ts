@@ -500,6 +500,39 @@ describe("OverlayGateway", () => {
     expect(onPlaybackReport).toHaveBeenCalledTimes(2);
   });
 
+  it("accepts a bounded media length only for video instructions and rejects malformed duration reports", async () => {
+    const route = { overlayId: "default", moduleId: "videos", purpose: "live", scope: "module", rawKey: "key" } as const;
+    const onPlaybackReport = vi.fn();
+    const gateway = createGateway({ allowed: [route], onPlaybackReport });
+    await gateway.registerClient(new RecordingSocket(), route);
+    const report = { type: "overlay.playback.duration", instructionId: "video:item-1", mediaDurationMs: 212_000 };
+    gateway.handleClientMessage("client-1", JSON.stringify(report));
+    expect(onPlaybackReport).toHaveBeenCalledTimes(1);
+    expect(onPlaybackReport).toHaveBeenLastCalledWith({
+      clientId: "client-1", instructionId: "video:item-1", status: "duration", mediaDurationMs: 212_000,
+      message: null, referenceId: null, stage: null, exception: null, targetProfileId: null
+    });
+    gateway.handleClientMessage("client-1", JSON.stringify({ ...report, mediaDurationMs: 24 * 60 * 60 * 1000 }));
+    expect(onPlaybackReport).toHaveBeenCalledTimes(2);
+    for (const invalid of [
+      { ...report, mediaDurationMs: 0 },
+      { ...report, mediaDurationMs: -5 },
+      { ...report, mediaDurationMs: 1.5 },
+      { ...report, mediaDurationMs: 24 * 60 * 60 * 1000 + 1 },
+      { ...report, mediaDurationMs: "212000" },
+      { type: report.type, instructionId: report.instructionId },
+      { ...report, instructionId: "alert-1" },
+      { ...report, instructionId: "video:" },
+      { ...report, positionMs: 0 },
+      { ...report, diagnostics: { preparationDurationMs: 1, scheduledStartEpochMs: 1, actualStartEpochMs: 1 } }
+    ]) gateway.handleClientMessage("client-1", JSON.stringify(invalid));
+    gateway.handleClientMessage("client-1", "{\"type\":\"overlay.playback.duration\",\"instructionId\":\"video:item-1\",\"mediaDurationMs\":1e400}");
+    expect(onPlaybackReport).toHaveBeenCalledTimes(2);
+    // Started reports still carry no media length.
+    gateway.handleClientMessage("client-1", JSON.stringify({ type: "overlay.playback.started", instructionId: "video:item-1", mediaDurationMs: 212_000 }));
+    expect(onPlaybackReport).toHaveBeenLastCalledWith(expect.not.objectContaining({ mediaDurationMs: expect.anything() }));
+  });
+
   it("records playback lifecycle reports from registered clients", async () => {
     const reports: unknown[] = [];
     const gateway = createGateway({

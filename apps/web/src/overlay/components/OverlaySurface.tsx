@@ -26,7 +26,9 @@ export type OverlayPlaybackEvent =
   | { readonly instructionId: string; readonly status: "ready" }
   | { readonly instructionId: string; readonly status: "started"; readonly diagnostics?: PlaybackTimingMilestone }
   | { readonly instructionId: string; readonly status: "completed"; readonly diagnostics?: PlaybackTimingDiagnostics }
-  | { readonly instructionId: string; readonly status: "failed"; readonly failure: OverlayPlaybackFailure; readonly diagnostics?: PlaybackTimingDiagnostics };
+  | { readonly instructionId: string; readonly status: "failed"; readonly failure: OverlayPlaybackFailure; readonly diagnostics?: PlaybackTimingDiagnostics }
+  /** A fallback video player's media length (`video:` instructions only), sent at most once per item. */
+  | { readonly instructionId: string; readonly status: "duration"; readonly mediaDurationMs: number };
 
 export interface OverlaySurfaceProps {
   readonly composition: OverlayComposition;

@@ -66,14 +66,16 @@ export class VideosRuntime implements OverlayModuleRuntime, VideoRouteService {
   /**
    * Routes a browser player report. Video players report as `video:<itemId>`, so these
    * never reach the alert or effect coordinators. A failure from one output is ignored
-   * once another output has started the item.
+   * once another output has started the item. A `duration` report carries the media length the
+   * output learned, so an unknown-length item that turns out over the limit is cut and held.
    */
-  reportPlayback(instructionId: string, status: "ready" | "started" | "completed" | "failed"): boolean {
+  reportPlayback(instructionId: string, status: "ready" | "started" | "completed" | "failed" | "duration", mediaDurationMs?: number): boolean {
     if (!instructionId.startsWith(videoInstructionPrefix)) return false;
     // The desktop primary player reports for itself; a browser fallback still finishing must not steer the queue.
     if (this.options.mirror?.available === true) return true;
     const itemId = instructionId.slice(videoInstructionPrefix.length);
-    if (status === "started") this.options.queue.reportStarted(itemId);
+    if (status === "duration") { if (mediaDurationMs !== undefined) this.options.queue.reportDuration(itemId, mediaDurationMs); }
+    else if (status === "started") this.options.queue.reportStarted(itemId);
     else if (status === "completed") this.options.queue.reportEnded(itemId);
     else if (status === "failed" && this.currentPhase(itemId) === "loading") this.options.queue.reportFailed(itemId);
     return true;

@@ -27,6 +27,7 @@
 - [x] 3.5 Implement restart recovery so playing and paused items return to the queue head without replay.
 - [x] 3.6 Add service and repository tests, including stale-revision conflicts and restart recovery.
 - [x] 3.7 Queue unknown-length items instead of holding them; stop and hold an unknown-length item as over-limit when the player reports a duration over the limit (unless released with Play anyway), continue the run as after a skip, and queue legacy `unknown-length` holds again at startup.
+- [x] 3.8 Let YouTube and direct-file browser-source fallback players report the media length once per item (`overlay.playback.duration`, validated at the gateway, ignored while the mirror is available) so the length limit applies without the desktop app.
 
 ## 4. Intake Paths
 

@@ -140,6 +140,8 @@ export function OverlayApp() {
       reporter.reportStarted(event.instructionId, event.diagnostics);
     } else if (event.status === "completed") {
       reporter.reportCompleted(event.instructionId, event.diagnostics);
+    } else if (event.status === "duration") {
+      reporter.reportDuration(event.instructionId, event.mediaDurationMs);
     } else {
       reporter.reportFailed(event.instructionId, event.failure, event.diagnostics);
     }

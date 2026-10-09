@@ -128,6 +128,7 @@ describe("overlay-client", () => {
       message: "media failed",
       exception: { type: "NotSupportedError", message: "unsupported", stack: null, code: null, cause: null, thrownValue: null }
     });
+    reporter.reportDuration("video:item-1", 212_000);
 
     expect(socket.sent).toEqual([
       {
@@ -146,7 +147,8 @@ describe("overlay-client", () => {
         stage: "play",
         message: "media failed",
         exception: { type: "NotSupportedError", message: "unsupported", stack: null, code: null, cause: null, thrownValue: null }
-      }
+      },
+      { type: "overlay.playback.duration", instructionId: "video:item-1", mediaDurationMs: 212_000 }
     ]);
   });
 

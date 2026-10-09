@@ -75,4 +75,33 @@ describe("VideosRuntime with the desktop mirror", () => {
     runtime.reportPlayback(`video:${item.id}`, "started");
     expect(queue.view("live").current?.phase).toBe("playing");
   });
+
+  it("routes a fallback player's media length to the queue, which cuts an over-limit unknown-length item", () => {
+    const { runtime, mirror, queue, item } = setup();
+    queue.reportEnded(item.id);
+    const unknown = queue.submit("live", { source: { provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 0 }, title: "Unknown", requester: null, durationMs: null, autoplay: false, via: "management" });
+    queue.command("live", queue.view("live").revision, { kind: "play-next" });
+    // While the desktop player owns playback, a browser fallback's length is ignored.
+    mirror.available = true;
+    expect(runtime.reportPlayback(`video:${unknown.id}`, "duration", 600_000)).toBe(true);
+    expect(queue.view("live").current).toMatchObject({ phase: "loading", item: { id: unknown.id, durationMs: null } });
+    mirror.available = false;
+    // A duration report without a length changes nothing.
+    expect(runtime.reportPlayback(`video:${unknown.id}`, "duration")).toBe(true);
+    expect(queue.view("live").current?.item.durationMs).toBeNull();
+    expect(runtime.reportPlayback(`video:${unknown.id}`, "started")).toBe(true);
+    expect(runtime.reportPlayback(`video:${unknown.id}`, "duration", 600_000)).toBe(true);
+    expect(queue.view("live").current).toBeNull();
+    expect(queue.view("live").items).toEqual([expect.objectContaining({ id: unknown.id, status: "held", holdReason: "over-limit", durationMs: 600_000 })]);
+  });
+
+  it("learns a within-limit length and leaves non-video instructions to other coordinators", () => {
+    const { runtime, queue, item } = setup();
+    runtime.reportPlayback(`video:${item.id}`, "started");
+    expect(runtime.reportPlayback(`video:${item.id}`, "duration", 31_000)).toBe(true);
+    expect(queue.view("live").current).toMatchObject({ phase: "playing", item: { id: item.id, durationMs: 31_000 } });
+    expect(runtime.reportPlayback("alert-instruction", "duration", 600_000)).toBe(false);
+    expect(runtime.reportPlayback("alert-instruction", "started")).toBe(false);
+    expect(queue.view("live").current).toMatchObject({ phase: "playing", item: { id: item.id, durationMs: 31_000 } });
+  });
 });

@@ -20,18 +20,21 @@ const tinyVideo = readFile(resolve("tests/fixtures/media/neutral-trackless.webm"
 
 // A stand-in for the YouTube iframe player that speaks the enablejsapi postMessage protocol:
 // it answers playVideo/pauseVideo/seekTo with infoDelivery messages and shows the last command.
+// Videos whose id starts with "e2eLong" also report a 5:00 length, as a real player does once loaded.
 const youTubeStub = `<!doctype html><title>YouTube stub</title>
 <p id="video"></p><p id="state">waiting</p><p id="seek">no seek</p>
 <script>
   let time = 0;
-  document.getElementById("video").textContent = "video " + location.pathname.split("/").at(-1);
+  const id = location.pathname.split("/").at(-1);
+  const length = id.startsWith("e2eLong") ? { duration: 300 } : {};
+  document.getElementById("video").textContent = "video " + id;
   const post = info => parent.postMessage(JSON.stringify({ event: "infoDelivery", info }), "*");
   const show = (id, text) => { document.getElementById(id).textContent = text; };
   addEventListener("message", event => {
     let message;
     try { message = JSON.parse(event.data); } catch { return; }
     if (message.event !== "command") return;
-    if (message.func === "playVideo") { show("state", "state playing"); post({ playerState: 1, currentTime: time }); }
+    if (message.func === "playVideo") { show("state", "state playing"); post({ playerState: 1, currentTime: time, ...length }); }
     if (message.func === "pauseVideo") { show("state", "state paused"); post({ playerState: 2, currentTime: time }); }
     if (message.func === "seekTo") { time = Number(message.args[0]); show("seek", "seek " + Math.round(time)); post({ currentTime: time }); }
   });
@@ -380,6 +383,55 @@ test("an unknown-length item the player reports over the limit is stopped, held 
   await expect(nowPlaying.getByText("Playing", { exact: true })).toBeVisible();
   await expect(nowPlaying).toContainText("Turns out long");
   expect((await readQueue()).current).toMatchObject({ itemId: long.id, phase: "playing" });
+});
+
+test("without the desktop app, an unknown-length item the browser source reports over the limit is held and the run moves on", async ({ context, page }) => {
+  test.setTimeout(60_000);
+  const outbound = await stubProviders(context);
+  const saved = await fixture.request("/overlay-modules/videos/config", "PUT", { enabled: true, config: {
+    maxLengthSeconds: 60, gapSeconds: 0, allowedDirectHosts: [], obsAudio: true, audioDeviceIds: [], audioDeviceDelaysMs: {}, streamerBotAutoplay: true, rewardMappings: []
+  } });
+  expect(saved.status).toBe(200);
+  const overlay = await openBrowserSource(context);
+  await expect(overlay.getByTestId("overlay-root")).toBeVisible();
+
+  await page.goto(`${fixture.runtime.url}/manage/modules/videos`);
+  const queue = page.getByRole("region", { name: "Video queue" });
+  await expect(page.getByRole("note")).toContainText("Mirroring unavailable: desktop app not running");
+  const form = queue.getByRole("form", { name: "Add video" });
+  for (const [link, title] of [["https://youtu.be/e2eLongBrws", "Long in browser"], ["https://youtu.be/e2eNextBrws", "Next in browser"]] as const) {
+    await form.getByRole("textbox", { name: "Video link" }).fill(link);
+    await form.getByRole("textbox", { name: "Title (optional)" }).fill(title);
+    await form.getByRole("button", { name: "Add video" }).click();
+    await expect(queue.getByRole("article", { name: title })).toContainText("Length unknown");
+  }
+  const [long, next] = (await readQueue()).items;
+  if (long === undefined || next === undefined) throw new Error("Both requests should be queued");
+
+  // The browser source's player reports a 5:00 length, over the 60 s limit: the queue cuts it and plays the next item.
+  await queue.getByRole("button", { name: "Play all now" }).click();
+  const stub = overlay.frameLocator("iframe[title='Video player']");
+  await expect(stub.getByText("video e2eNextBrws")).toBeVisible();
+  const nowPlaying = queue.getByRole("article", { name: "Now playing" });
+  await expect(nowPlaying).toContainText("Next in browser");
+  const held = queue.getByRole("article", { name: "Long in browser" });
+  await expect(held).toContainText("Held");
+  await expect(held).toContainText("Over the length limit");
+  await expect(held).toContainText("YouTube · 5:00 · via management");
+  await expect(queue.getByRole("button", { name: "Play anyway: Long in browser" })).toBeEnabled();
+  expect((await readQueue()).items.find(item => item.id === long.id)).toMatchObject({ status: "held", holdReason: "over-limit" });
+
+  // Play anyway releases it, and the same report never cuts it again.
+  await endStubVideo(overlay);
+  await expect(queue.getByText("Nothing is playing.")).toBeVisible();
+  await queue.getByRole("button", { name: "Play anyway: Long in browser" }).click();
+  await expect(stub.getByText("video e2eLongBrws")).toBeVisible();
+  await expect(stub.getByText("state playing")).toBeVisible();
+  await expect(nowPlaying).toContainText("Long in browser");
+  await expect(nowPlaying.getByText("Playing", { exact: true })).toBeVisible();
+  await expect(nowPlaying.getByLabel("Playback position")).toContainText("/ 5:00");
+  expect((await readQueue()).current).toMatchObject({ itemId: long.id, phase: "playing" });
+  expect(outbound()).toEqual([]);
 });
 
 async function readQueue(): Promise<Queue> {

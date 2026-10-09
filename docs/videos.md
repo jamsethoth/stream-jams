@@ -27,7 +27,7 @@ Links must use HTTPS and carry no login, port or `#` fragment. Anything else is 
 
 Videos whose known length is over **Maximum length** are held in the queue as **Over the length limit**. **Play anyway** plays a held video once, ignoring the limit, and that playback is never cut. Raising the limit releases held videos that now fit.
 
-Requests can carry the length (`durationSeconds`, or `duration` in the retired shoutout payload). A video without a length is queued normally, shows "Length unknown", and plays with Play next, Play all now or autoplay like any other video. When the player reports its real length and it is over the limit, the queue stops it at once, puts it back in the queue held as Over the length limit at its original place (it is not counted as played or failed), and continues as if it had been skipped: the gap, the Play all run and Pause queue apply as usual. Only the desktop player reports a length today; a browser source playing on its own plays an unknown-length video to its end. Automatic length lookup before playback is BL-058 in the [backlog](backlog.md). Videos held for an unknown length by an older version are queued again on the next start.
+Requests can carry the length (`durationSeconds`, or `duration` in the retired shoutout payload). A video without a length is queued normally, shows "Length unknown", and plays with Play next, Play all now or autoplay like any other video. When the player reports its real length and it is over the limit, the queue stops it at once, puts it back in the queue held as Over the length limit at its original place (it is not counted as played or failed), and continues as if it had been skipped: the gap, the Play all run and Pause queue apply as usual. The desktop player reports the length; without the desktop app, browser sources playing YouTube or direct files report it as soon as their player knows it, so the video may show for a moment before it is stopped. Twitch players on browser sources report no length, so an unknown-length Twitch clip plays to its end without the desktop app. Automatic length lookup before playback is BL-058 in the [backlog](backlog.md). Videos held for an unknown length by an older version are queued again on the next start.
 
 The queue is saved. After a restart, a video that was playing or paused goes back to the head of the queue and waits; nothing replays on its own.
 
@@ -108,5 +108,6 @@ Each browser source runs its own player:
 
 - **YouTube** and **direct files** follow the shared clock. Pause, resume and seek apply to every output, and an output more than 750 ms off the clock jumps back to it.
 - **Twitch** plays from its start until the queue ends it. Pause and seek for Twitch need the desktop app.
+- YouTube and direct-file players report the video's length to the service once per video, so an unknown-length video over **Maximum length** is stopped and held as Over the length limit (see [Queue](#queue)). Twitch players report none.
 
 A video whose player does not load within 15 seconds is marked failed and the run moves on. Invalid data never reaches the screen: the browser source stays transparent and the failure is logged.

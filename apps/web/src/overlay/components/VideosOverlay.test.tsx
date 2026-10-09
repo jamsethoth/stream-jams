@@ -143,6 +143,73 @@ describe("VideosOverlay", () => {
     expect(events.mock.calls.map(([event]) => event.status)).toEqual(["started", "completed"]);
   });
 
+  it("reports the YouTube media length once per item, before or after it starts, and ignores unusable lengths", () => {
+    const events = vi.fn();
+    const { rerender } = render(<VideosOverlay onPlaybackEvent={events} projection={active(youtube)} />);
+    let frame = screen.getByTitle<HTMLIFrameElement>("Video player");
+    const deliver = (target: HTMLIFrameElement, info: object) => act(() => {
+      window.dispatchEvent(new MessageEvent("message", { origin: "https://www.youtube-nocookie.com", source: target.contentWindow, data: JSON.stringify({ event: "infoDelivery", info }) }));
+    });
+    // Live streams and unloaded players report no usable length.
+    deliver(frame, { duration: 0 });
+    deliver(frame, { currentTime: 1 });
+    expect(events).not.toHaveBeenCalled();
+    deliver(frame, { duration: 212.0405 });
+    deliver(frame, { playerState: 1, currentTime: 0, duration: 212.0405 });
+    deliver(frame, { duration: 300 });
+    expect(events.mock.calls).toEqual([
+      [{ instructionId: "video:item-1", status: "duration", mediaDurationMs: 212_041 }],
+      [{ instructionId: "video:item-1", status: "started" }]
+    ]);
+
+    // A new item reports its own length, here only after it started; longer than 24 hours is never sent.
+    events.mockClear();
+    rerender(<VideosOverlay onPlaybackEvent={events} projection={active(youtube, { itemId: "item-2" })} />);
+    frame = screen.getByTitle<HTMLIFrameElement>("Video player");
+    deliver(frame, { playerState: 1, currentTime: 0 });
+    deliver(frame, { duration: 24 * 60 * 60 + 1 });
+    deliver(frame, { duration: 95.5 });
+    deliver(frame, { duration: 95.5 });
+    expect(events.mock.calls).toEqual([
+      [{ instructionId: "video:item-2", status: "started" }],
+      [{ instructionId: "video:item-2", status: "duration", mediaDurationMs: 95_500 }]
+    ]);
+  });
+
+  it("reports a direct file's length once and never after the player finished", () => {
+    const events = vi.fn();
+    const { rerender } = render(<VideosOverlay onPlaybackEvent={events} projection={active(direct)} />);
+    let video = screen.getByTestId<HTMLVideoElement>("video-overlay-direct");
+    const setDuration = (target: HTMLVideoElement, seconds: number) => {
+      Object.defineProperty(target, "duration", { configurable: true, value: seconds });
+      fireEvent.durationChange(target);
+    };
+    setDuration(video, Number.NaN);
+    setDuration(video, Number.POSITIVE_INFINITY);
+    expect(events).not.toHaveBeenCalled();
+    setDuration(video, 61.25);
+    setDuration(video, 62);
+    fireEvent.playing(video);
+    expect(events.mock.calls).toEqual([
+      [{ instructionId: "video:item-1", status: "duration", mediaDurationMs: 61_250 }],
+      [{ instructionId: "video:item-1", status: "started" }]
+    ]);
+
+    events.mockClear();
+    rerender(<VideosOverlay onPlaybackEvent={events} projection={active(direct, { itemId: "item-2" })} />);
+    video = screen.getByTestId<HTMLVideoElement>("video-overlay-direct");
+    fireEvent.error(video);
+    setDuration(video, 30);
+    expect(events.mock.calls.map(([event]) => event.status)).toEqual(["failed"]);
+  });
+
+  it("reports no length for Twitch, which exposes none", () => {
+    const events = vi.fn();
+    render(<VideosOverlay onPlaybackEvent={events} projection={active(clip)} />);
+    fireEvent.load(screen.getByTitle("Video player"));
+    expect(events.mock.calls).toEqual([[{ instructionId: "video:item-1", status: "started" }]]);
+  });
+
   it("reports a player that never loads as failed", () => {
     vi.useFakeTimers();
     const events = vi.fn();

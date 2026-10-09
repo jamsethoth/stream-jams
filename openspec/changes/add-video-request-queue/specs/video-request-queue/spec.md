@@ -140,6 +140,11 @@ When the desktop app is running, the system SHALL play each item in one primary 
 - **THEN** browser sources play the item in their own player following the server clock
 - **AND** management shows that mirroring is unavailable
 
+#### Scenario: Fallback player reports the length
+- **WHEN** a browser-source fallback player for YouTube or a direct file learns the length of the current item while the desktop app is not running
+- **THEN** it reports that length once for the item, the system validates it as a whole number of milliseconds from 1 ms to 24 hours for a video item, and the length limit applies to it as to a length reported by the desktop player
+- **AND** while the desktop player is available, lengths reported by browser sources are ignored
+
 #### Scenario: Provider without pause or seek
 - **WHEN** an item's player cannot be paused or sought
 - **THEN** pause and seek are unavailable with a visible reason, and skip and stop work

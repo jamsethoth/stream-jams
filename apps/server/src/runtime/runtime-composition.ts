@@ -545,7 +545,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         );
       }
       // Video players report as `video:<itemId>` through the same path.
-      if (videosRuntime.reportPlayback(report.instructionId, report.status)) return;
+      if (videosRuntime.reportPlayback(report.instructionId, report.status, report.mediaDurationMs)) return;
       if (report.status === "completed" || report.status === "failed") {
         playbackCoordinator.reportInstructionFinished(report.clientId, report.instructionId);
         effectPlaybackCoordinator.reportInstructionFinished(

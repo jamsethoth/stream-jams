@@ -10,7 +10,7 @@ import type {
 } from "@stream-jams/core";
 import { overlayPlaybackFailureSchema, type OverlayPlaybackFailure, type SerializedException } from "@stream-jams/core";
 import {
-  videoMirrorPublisherSignalSchema, videoMirrorReceiverSignalSchema, videoMirrorSignalMessageType,
+  overlayVideoDurationMessageType, overlayVideoDurationReportSchema, videoMirrorPublisherSignalSchema, videoMirrorReceiverSignalSchema, videoMirrorSignalMessageType,
   type VideoMirrorPublisherSignal, type VideoMirrorReceiverSignal
 } from "@stream-jams/core/videos";
 
@@ -61,7 +61,9 @@ export interface OverlayGatewayPlaybackReport {
   readonly diagnostics?: PlaybackTimingDiagnostics | PlaybackTimingMilestone;
   readonly clientId: string;
   readonly instructionId: string;
-  readonly status: "started" | "completed" | "failed";
+  readonly status: "started" | "completed" | "failed" | "duration";
+  /** Media length a fallback video player learned; only on `duration` reports for `video:` instructions. */
+  readonly mediaDurationMs?: number;
   readonly message: string | null;
   readonly referenceId: string | null;
   readonly stage: OverlayPlaybackFailure["stage"] | null;
@@ -570,6 +572,15 @@ function parsePlaybackReport(client: RegisteredOverlayGatewayClient, rawMessage:
   };
   if (typeof candidate.type !== "string" || typeof candidate.instructionId !== "string") {
     return null;
+  }
+
+  if (candidate.type === overlayVideoDurationMessageType) {
+    const duration = overlayVideoDurationReportSchema.safeParse(parsed);
+    if (!duration.success) return null;
+    return {
+      clientId: client.id, instructionId: duration.data.instructionId, status: "duration", mediaDurationMs: duration.data.mediaDurationMs,
+      message: null, referenceId: null, stage: null, exception: null, targetProfileId: client.targetProfileId ?? null
+    };
   }
 
   if (

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  desktopVideoCommandSchema, desktopVideoEventSchema, isLocalHostIceCandidate, parseYouTubeMessage,
-  videoMirrorPublisherSignalSchema, videoMirrorReceiverIdSchema, videoMirrorReceiverSignalSchema
+  desktopVideoCommandSchema, desktopVideoEventSchema, isLocalHostIceCandidate, overlayVideoDurationReportSchema, parseYouTubeMessage,
+  videoMediaDurationMaximumMs, videoMirrorPublisherSignalSchema, videoMirrorReceiverIdSchema, videoMirrorReceiverSignalSchema
 } from "./contract.js";
 import { videosModuleConfigSchema, createDefaultVideosModuleConfig } from "./schemas.js";
 
@@ -85,5 +85,30 @@ describe("device delays", () => {
     expect(videosModuleConfigSchema.safeParse({ ...config, audioDeviceDelaysMs: { "route-a": -1 } }).success).toBe(false);
     expect(videosModuleConfigSchema.safeParse({ ...config, audioDeviceDelaysMs: { "route-a": 1.5 } }).success).toBe(false);
     expect(videosModuleConfigSchema.safeParse({ ...config, audioDeviceDelaysMs: { "route-b": 10 } }).success).toBe(false);
+  });
+});
+
+describe("browser player duration reports", () => {
+  const report = { type: "overlay.playback.duration", instructionId: "video:item-1", mediaDurationMs: 212_000 };
+
+  it("accepts a positive whole-millisecond length up to 24 hours for a video instruction", () => {
+    expect(overlayVideoDurationReportSchema.safeParse(report).success).toBe(true);
+    expect(overlayVideoDurationReportSchema.safeParse({ ...report, mediaDurationMs: 1 }).success).toBe(true);
+    expect(overlayVideoDurationReportSchema.safeParse({ ...report, mediaDurationMs: videoMediaDurationMaximumMs }).success).toBe(true);
+  });
+
+  it("rejects zero, negative, fractional, huge and non-numeric lengths", () => {
+    for (const mediaDurationMs of [0, -1, 1.5, videoMediaDurationMaximumMs + 1, Number.POSITIVE_INFINITY, Number.NaN, "212000", null]) {
+      expect(overlayVideoDurationReportSchema.safeParse({ ...report, mediaDurationMs }).success).toBe(false);
+    }
+    expect(overlayVideoDurationReportSchema.safeParse({ type: report.type, instructionId: report.instructionId }).success).toBe(false);
+  });
+
+  it("rejects non-video instructions, bare prefixes, oversized ids, other types and unknown fields", () => {
+    expect(overlayVideoDurationReportSchema.safeParse({ ...report, instructionId: "alert-1" }).success).toBe(false);
+    expect(overlayVideoDurationReportSchema.safeParse({ ...report, instructionId: "video:" }).success).toBe(false);
+    expect(overlayVideoDurationReportSchema.safeParse({ ...report, instructionId: `video:${"a".repeat(129)}` }).success).toBe(false);
+    expect(overlayVideoDurationReportSchema.safeParse({ ...report, type: "overlay.playback.started" }).success).toBe(false);
+    expect(overlayVideoDurationReportSchema.safeParse({ ...report, positionMs: 0 }).success).toBe(false);
   });
 });
