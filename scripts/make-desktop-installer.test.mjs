@@ -3,34 +3,46 @@ import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import process from "node:process";
 import test from "node:test";
-import { installerDirectory, installerOptions, makeInstaller, setupExecutable } from "./make-desktop-installer.mjs";
+import { installerConfig, installerDirectory, makeInstaller, setupExecutable } from "./make-desktop-installer.mjs";
 
 const root = resolve(import.meta.dirname, "..");
-const input = { packageId: "StreamJams", appDirectory: "C:\\temp\\stream-jams-installer-x", version: "0.1.0", description: "Stream Jams Windows desktop runtime", setupIcon: "C:\\icon.ico" };
+const input = { appId: "io.github.jamsethoth.streamjams", version: "0.1.0", icon: "C:\\icon.ico" };
 
-test("builds an unsigned per-user Squirrel installer without MSI or delta packages", () => {
-  const options = installerOptions(input);
-  assert.equal(options.name, "StreamJams");
-  assert.equal(options.exe, "Stream Jams.exe");
-  assert.equal(options.title, "Stream Jams");
-  assert.equal(options.setupExe, setupExecutable);
-  assert.equal(options.outputDirectory, installerDirectory);
-  assert.equal(options.noMsi, true);
-  assert.equal(options.noDelta, true);
-  for (const key of ["certificateFile", "certificatePassword", "signWithParams", "windowsSign", "remoteReleases", "remoteToken"]) assert.equal(key in options, false, key);
+test("builds an unsigned per-user NSIS setup wizard with a folder choice", () => {
+  const config = installerConfig(input);
+  assert.equal(config.appId, input.appId);
+  assert.equal(config.productName, "Stream Jams");
+  assert.equal(config.executableName, "Stream Jams");
+  assert.equal(config.directories.output, installerDirectory);
+  assert.deepEqual(config.win.target, [{ target: "nsis", arch: ["x64"] }]);
+  assert.equal(config.win.signAndEditExecutable, false);
+  assert.equal(config.nsis.oneClick, false);
+  assert.equal(config.nsis.perMachine, false);
+  assert.equal(config.nsis.selectPerMachineByDefault, false);
+  assert.equal(config.nsis.allowToChangeInstallationDirectory, true);
+  assert.equal(config.nsis.runAfterFinish, true);
+  assert.equal(config.nsis.createDesktopShortcut, true);
+  assert.equal(config.nsis.createStartMenuShortcut, true);
+  assert.equal(config.nsis.deleteAppDataOnUninstall, false);
+  assert.equal(config.nsis.differentialPackage, false);
+  assert.equal(config.nsis.artifactName, setupExecutable);
+  assert.equal(config.publish, null);
+  for (const key of ["certificateFile", "certificatePassword", "signtoolOptions", "azureSignOptions", "sign"]) assert.equal(key in config.win, false, key);
 });
 
-test("rejects package ids Squirrel cannot use and non-release versions", () => {
-  assert.throws(() => installerOptions({ ...input, packageId: "stream-jams" }), /alphanumeric/);
-  assert.throws(() => installerOptions({ ...input, packageId: "Stream Jams" }), /alphanumeric/);
-  assert.throws(() => installerOptions({ ...input, version: "0.1" }), /MAJOR\.MINOR\.PATCH/);
-  assert.throws(() => installerOptions({ ...input, version: "0.1.0-beta.1" }), /MAJOR\.MINOR\.PATCH/);
+test("rejects app ids that are not reverse-DNS and non-release versions", () => {
+  assert.throws(() => installerConfig({ ...input, appId: "Stream Jams" }), /reverse-DNS/);
+  assert.throws(() => installerConfig({ ...input, appId: "streamjams" }), /reverse-DNS/);
+  assert.throws(() => installerConfig({ ...input, version: "0.1" }), /MAJOR\.MINOR\.PATCH/);
+  assert.throws(() => installerConfig({ ...input, version: "0.1.0-beta.1" }), /MAJOR\.MINOR\.PATCH/);
 });
 
-test("the desktop package carries a release version for the installer", async () => {
+test("the desktop package and app identity are valid installer inputs", async () => {
   const manifest = JSON.parse(await readFile(join(root, "apps/desktop/package.json"), "utf8"));
-  assert.doesNotThrow(() => installerOptions({ ...input, version: manifest.version }));
-  assert.notEqual(manifest.version, "0.0.0");
+  const identity = await readFile(join(root, "apps/desktop/src/app-identity.ts"), "utf8");
+  const appId = /appUserModelId = "([^"]+)"/.exec(identity)?.[1];
+  assert.equal(appId, input.appId);
+  assert.doesNotThrow(() => installerConfig({ ...input, appId, version: manifest.version }));
 });
 
 test("refuses to build outside Windows", { skip: process.platform === "win32" }, async () => {

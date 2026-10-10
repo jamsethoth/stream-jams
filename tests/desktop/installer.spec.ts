@@ -1,5 +1,5 @@
-import { execFile } from "node:child_process";
-import { access, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { execFile, spawn } from "node:child_process";
+import { access, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -8,75 +8,64 @@ import { expect, test } from "@playwright/test";
 
 const run = promisify(execFile);
 const installerPath = resolve(process.env.STREAM_JAMS_TEST_INSTALLER ?? "apps/desktop/out/installer/StreamJamsSetup.exe");
-const uninstallKey = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\StreamJams";
+const uninstallRoot = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
 
 // Installing changes the signed-in Windows user's Start menu, desktop and
 // Apps list, so it only runs where that is explicitly allowed (CI sets it).
-test("unsigned installer installs per user, launches with the existing profile, and uninstalls without removing user data", async () => {
+test("unsigned setup wizard installs per user into a chosen folder, launches with the existing profile, and uninstalls without removing user data", async () => {
   test.skip(process.env.STREAM_JAMS_INSTALLER_TEST !== "1", "Set STREAM_JAMS_INSTALLER_TEST=1 to install into this Windows user profile.");
-  const localAppData = requiredEnvironment("LOCALAPPDATA");
-  const installRoot = join(localAppData, "StreamJams");
   const startMenu = join(requiredEnvironment("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs");
   const desktopFolder = join(requiredEnvironment("USERPROFILE"), "Desktop");
-  expect(await exists(installRoot), `Uninstall the existing Stream Jams installation at ${installRoot} first`).toBe(false);
+  expect(await uninstallEntry(), "Uninstall the existing Stream Jams installation first").toBeNull();
   await access(installerPath);
 
+  // mkdtemp paths have no spaces, as NSIS requires for an unquoted /D= value.
   const root = await mkdtemp(join(tmpdir(), "stream-jams-installer-"));
+  const installDirectory = join(root, "app");
   const port = await unusedPort();
   const configPath = join(root, "config.json");
   const dataDirectory = join(root, "data");
   await writeFile(configPath, JSON.stringify({ server: { host: "127.0.0.1", port }, storage: { dataDirectory, assetDirectory: join(root, "assets") } }));
   const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
   delete env.ELECTRON_RUN_AS_NODE;
-  // Squirrel launches the installed app after setup; it inherits this isolated profile.
   env.STREAM_JAMS_CONFIG_PATH = configPath;
   env.STREAM_JAMS_DESKTOP_USER_DATA_PATH = join(root, "electron");
-  let versionDirectory = "";
+  const executable = join(installDirectory, "Stream Jams.exe");
+  const uninstaller = join(installDirectory, "Uninstall Stream Jams.exe");
   try {
-    await test.step("Run Setup.exe without administrator rights", async () => {
-      await run(installerPath, [], { env, timeout: 180_000, windowsHide: true });
+    await test.step("Silent setup installs for the current user into the chosen folder without administrator rights", async () => {
+      // The wizard's pages are skipped by /S; /currentuser and /D= answer its install-mode and folder pages.
+      await run(installerPath, ["/S", "/currentuser", `/D=${installDirectory}`], { env, timeout: 180_000, windowsHide: true });
+      await access(executable);
+      await access(join(installDirectory, "resources", "app.asar"));
+      await access(uninstaller);
+      expect(await shortcuts(startMenu)).not.toHaveLength(0);
+      expect(await shortcuts(desktopFolder)).not.toHaveLength(0);
+      expect(await uninstallEntry()).toMatch(/UninstallString\s+REG_SZ\s+.*Uninstall Stream Jams\.exe/i);
     });
 
-    await test.step("Install into the user's local app data with shortcuts and an Apps entry", async () => {
-      const versions = (await readdir(installRoot)).filter((name) => name.startsWith("app-"));
-      expect(versions).toHaveLength(1);
-      versionDirectory = versions[0]!;
-      await access(join(installRoot, "Update.exe"));
-      await access(join(installRoot, versions[0]!, "Stream Jams.exe"));
-      await access(join(installRoot, versions[0]!, "resources", "app.asar"));
-      await expect.poll(() => shortcuts(startMenu), { timeout: 30_000 }).not.toHaveLength(0);
-      await expect.poll(() => shortcuts(desktopFolder), { timeout: 30_000 }).not.toHaveLength(0);
-      expect(await registryKeyExists(uninstallKey)).toBe(true);
-    });
-
-    await test.step("Launch the installed app on the configured profile after setup", async () => {
-      await expect.poll(() => health(port), { timeout: 90_000, message: "The installed app did not serve /health on the configured port" }).toBe(200);
-    });
-
-    await test.step("Uninstall removes the app, shortcuts and Apps entry", async () => {
-      await run(join(installRoot, "Update.exe"), ["--uninstall"], { env, timeout: 180_000, windowsHide: true });
-      await expect.poll(() => health(port), { timeout: 30_000 }).toBe(0);
-      expect(await shortcuts(startMenu)).toHaveLength(0);
-      expect(await shortcuts(desktopFolder)).toHaveLength(0);
-      expect(await registryKeyExists(uninstallKey)).toBe(false);
-      // Squirrel cannot delete the running Update.exe or its own bootstrapper
-      // copy, and Windows can briefly hold other app files open (for example
-      // while they are scanned), so it marks the folder .dead and leaves those
-      // behind. Nothing outside the installed app may remain.
-      let leftovers: string[] = [];
-      const required = [".dead", "update.exe", `${versionDirectory}\\squirrel.exe`.toLowerCase()];
+    await test.step("The installed app starts with the configured profile", async () => {
+      const child = spawn(executable, [], { env, detached: false, stdio: "ignore", windowsHide: true });
       try {
-        await expect.poll(async () => {
-          leftovers = await leftoverFiles(installRoot);
-          return required.filter((name) => !leftovers.includes(name));
-        }, { timeout: 30_000 }).toEqual([]);
-        expect(leftovers.filter((name) => ![".dead", "update.exe"].includes(name) && name !== versionDirectory.toLowerCase() && !name.startsWith(`${versionDirectory.toLowerCase()}\\`))).toEqual([]);
+        await expect.poll(() => health(port), { timeout: 90_000, message: "The installed app did not serve /health on the configured port" }).toBe(200);
+      } finally {
+        if (child.pid !== undefined) await run("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true }).catch((error: unknown) => console.error("Stopping the installed app failed", error));
+      }
+      await expect.poll(() => health(port), { timeout: 30_000 }).toBe(0);
+    });
+
+    await test.step("Uninstall removes the app folder, shortcuts and Apps entry", async () => {
+      // The uninstaller copies itself to a temporary folder and returns at once.
+      await run(uninstaller, ["/S", "/currentuser"], { env, timeout: 180_000, windowsHide: true });
+      try {
+        await expect.poll(() => exists(installDirectory), { timeout: 60_000 }).toBe(false);
       } catch (error) {
-        console.error(`Uninstall left unexpected files behind:\n${await leftoverEvidence(installRoot)}`);
+        console.error(`Uninstall left files behind:\n${(await readdir(installDirectory, { recursive: true }).catch(() => [])).slice(0, 40).join("\n")}`);
         throw error;
       }
-      const extra = leftovers.filter((name) => !required.includes(name) && name !== versionDirectory.toLowerCase());
-      if (extra.length > 0) console.log(`Uninstall left ${extra.length} locked app files in the .dead folder: ${extra.join(", ")}`);
+      expect(await shortcuts(startMenu)).toHaveLength(0);
+      expect(await shortcuts(desktopFolder)).toHaveLength(0);
+      expect(await uninstallEntry()).toBeNull();
     });
 
     await test.step("User configuration and data survive uninstall", async () => {
@@ -84,12 +73,10 @@ test("unsigned installer installs per user, launches with the existing profile, 
       expect((await stat(dataDirectory)).isDirectory()).toBe(true);
     });
   } finally {
-    if (await exists(join(installRoot, "Update.exe")) && !(await exists(join(installRoot, ".dead")))) {
-      await run(join(installRoot, "Update.exe"), ["--uninstall"], { env, timeout: 180_000, windowsHide: true }).catch((error: unknown) => console.error("Installer cleanup failed", error));
+    if (await exists(uninstaller)) {
+      await run(uninstaller, ["/S", "/currentuser"], { env, timeout: 180_000, windowsHide: true }).catch((error: unknown) => console.error("Installer cleanup failed", error));
+      await expect.poll(() => exists(installDirectory), { timeout: 60_000 }).toBe(false).catch((error: unknown) => console.error("Installer cleanup did not finish", error));
     }
-    // This test refused to start over an existing installation, so the
-    // uninstalled remnant folder is its own.
-    if (await exists(join(installRoot, ".dead"))) await rm(installRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 }).catch((error: unknown) => console.error("Installer remnant cleanup failed", error));
     // Only the directory returned by mkdtemp above is removed.
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
   }
@@ -110,20 +97,12 @@ async function shortcuts(directory: string): Promise<string[]> {
   return entries.filter((entry) => /(^|[\\/])Stream Jams[^\\/]*\.lnk$/i.test(entry));
 }
 
-async function leftoverFiles(installRoot: string): Promise<string[]> {
-  return (await readdir(installRoot, { recursive: true }).catch(() => [])).map((name) => name.toLowerCase()).sort();
-}
-
-async function leftoverEvidence(installRoot: string): Promise<string> {
-  const files = (await readdir(installRoot, { recursive: true }).catch(() => [])).slice(0, 40);
-  const processes = await run("powershell.exe", ["-NoProfile", "-Command", `Get-Process | Where-Object { $_.Path -like '${installRoot.replaceAll("'", "''")}*' } | ForEach-Object { "$($_.Id) $($_.Path)" }`], { windowsHide: true })
-    .then((result) => result.stdout.trim(), (error: unknown) => `process query failed: ${String(error)}`);
-  const log = await readFile(join(installRoot, "SquirrelSetup.log"), "utf8").then((text) => text.split(/\r?\n/).slice(-60).join("\n"), () => "(no SquirrelSetup.log)");
-  return [`files (first 40):`, ...files, `processes under install root:`, processes || "(none)", "SquirrelSetup.log (last 60 lines):", log].join("\n");
-}
-
-async function registryKeyExists(key: string): Promise<boolean> {
-  try { await run("reg.exe", ["query", key], { windowsHide: true }); return true; } catch { return false; }
+/** The current user's Apps-list entry for Stream Jams, or null when there is none. */
+async function uninstallEntry(): Promise<string | null> {
+  const query = await run("reg.exe", ["query", uninstallRoot, "/s", "/f", "Stream Jams", "/d", "/e"], { windowsHide: true }).catch(() => null);
+  const key = query?.stdout.split(/\r?\n/).find((line) => line.startsWith("HKEY_"));
+  if (key === undefined) return null;
+  return (await run("reg.exe", ["query", key], { windowsHide: true })).stdout;
 }
 
 async function health(port: number): Promise<number> {
