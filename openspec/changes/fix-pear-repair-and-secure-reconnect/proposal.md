@@ -13,6 +13,8 @@ The live source kept using its saved address and certificate. Since PR #156 (tru
 - The management auth-required message says the authorization, address or certificate changed and how to recover.
 - Pear video IDs that start with `-` or `_`, as YouTube IDs can, become track IDs with a `yt:` prefix; previously such a track failed the shared music identity pattern and forced a reconnect loop while it played. The mapping stays in the server adapter so the overlay bundle, which has no gzip headroom, is unchanged.
 
+- Raise the overlay gzip budget from 150 KiB to 151 KiB. `main` measured exactly 153,600 bytes against a 153,600-byte budget, and any web change renames the shared bootstrap chunk that overlay files import, moving overlay gzip by a few bytes without any overlay code change. The maintainer approved the 1 KiB raise on 2026-10-10.
+
 ## Out Of Scope
 
 Automatically rewriting a saved address to HTTPS or trusting a new certificate without the user's review. TLS verification stays enabled; the user re-pairs and reviews the certificate as before.
@@ -22,4 +24,5 @@ Automatically rewriting a saved address to HTTPS or trusting a new certificate w
 - `apps/server/src/modules/music/pear-music-source.ts`, `pear-config.ts` and tests.
 - `apps/server/src/modules/music/pear-normalization.ts` (track ID mapping) and tests.
 - `apps/web/src/management/music/MusicSourcesPage.tsx`, its story and tests.
+- `scripts/check-web-route-bundles.mjs` overlay budget.
 - `music-source-providers` spec: secure-connection changes request explicit re-pairing.
