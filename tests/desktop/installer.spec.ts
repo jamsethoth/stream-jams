@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -54,10 +54,15 @@ test("unsigned installer installs per user, launches with the existing profile, 
     await test.step("Uninstall removes the app, shortcuts and Apps entry", async () => {
       await run(join(installRoot, "Update.exe"), ["--uninstall"], { env, timeout: 180_000, windowsHide: true });
       await expect.poll(() => health(port), { timeout: 30_000 }).toBe(0);
-      await expect.poll(async () => (await readdir(installRoot).catch(() => [])).filter((name) => name.startsWith("app-")), { timeout: 30_000 }).toHaveLength(0);
       expect(await shortcuts(startMenu)).toHaveLength(0);
       expect(await shortcuts(desktopFolder)).toHaveLength(0);
       expect(await registryKeyExists(uninstallKey)).toBe(false);
+      try {
+        await expect.poll(() => appVersionDirectories(installRoot), { timeout: 30_000 }).toHaveLength(0);
+      } catch (error) {
+        console.error(`Uninstall left files behind:\n${await leftoverEvidence(installRoot)}`);
+        throw error;
+      }
     });
 
     await test.step("User configuration and data survive uninstall", async () => {
@@ -86,6 +91,18 @@ async function exists(path: string): Promise<boolean> {
 async function shortcuts(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { recursive: true }).catch(() => []);
   return entries.filter((entry) => /(^|[\\/])Stream Jams[^\\/]*\.lnk$/i.test(entry));
+}
+
+async function appVersionDirectories(installRoot: string): Promise<string[]> {
+  return (await readdir(installRoot).catch(() => [])).filter((name) => name.startsWith("app-"));
+}
+
+async function leftoverEvidence(installRoot: string): Promise<string> {
+  const files = (await readdir(installRoot, { recursive: true }).catch(() => [])).slice(0, 40);
+  const processes = await run("powershell.exe", ["-NoProfile", "-Command", `Get-Process | Where-Object { $_.Path -like '${installRoot.replaceAll("'", "''")}*' } | ForEach-Object { "$($_.Id) $($_.Path)" }`], { windowsHide: true })
+    .then((result) => result.stdout.trim(), (error: unknown) => `process query failed: ${String(error)}`);
+  const log = await readFile(join(installRoot, "SquirrelSetup.log"), "utf8").then((text) => text.split(/\r?\n/).slice(-60).join("\n"), () => "(no SquirrelSetup.log)");
+  return [`files (first 40):`, ...files, `processes under install root:`, processes || "(none)", "SquirrelSetup.log (last 60 lines):", log].join("\n");
 }
 
 async function registryKeyExists(key: string): Promise<boolean> {
