@@ -34,6 +34,7 @@
 - [x] 4.1 Add a shared intake service with autoplay policy and bounded rejection diagnostics.
 - [x] 4.2 Add a Streamer.bot custom-event adapter for the `VideoRequest` marker, with the legacy `VideoShoutout` mapping.
 - [x] 4.3 Add a channel point adapter for mapped rewards using the existing reward catalog.
+- [x] 4.3a Run both adapters as the `videos` central event bus consumer (declared General/Custom payload, one attempt, honest outcomes), replacing the `video-shoutout` consumer from main.
 - [x] 4.4 Add scoped automation `videos:read`, `videos:submit` and `videos:control` scopes and `/automation/v1/videos/...` routes with revision guards.
 - [x] 4.5 Add management and operator HTTP routes.
 - [x] 4.6 Add route tests using `inject()`, covering scope isolation, loopback, origin rejection and redaction.

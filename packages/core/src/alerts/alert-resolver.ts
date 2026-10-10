@@ -3,7 +3,7 @@ import { resolveAlertAudio } from "../audio/resolve-alert-audio.js";
 import { resolveAlertLayerDurationMs } from "../playback/media-duration.js";
 import { DefaultAlertConditionEvaluator, type AlertConditionEvaluator } from "./condition-evaluator.js";
 import { buildAlertLayerInstruction } from "./alert-layer-instruction.js";
-import type { NormalizedStreamEvent } from "../events/types.js";
+import type { AlertEventType, AlertSourceEvent, ExternalAlertEvent, NormalizedStreamEvent } from "../events/types.js";
 import type { ResolvedAlert } from "../playback/types.js";
 import type {
   OverlayInstruction,
@@ -85,7 +85,7 @@ export interface AlertResolverDependencies {
 }
 
 export interface AlertTemplateSampleContextSource {
-  readonly eventType: NormalizedStreamEvent["type"];
+  readonly eventType: AlertEventType;
   readonly samplePayload: Record<string, unknown>;
 }
 
@@ -364,14 +364,18 @@ function toEditorTargetProfileId(value: OverlayTargetProfileId | null | undefine
 }
 
 export function createAlertTemplateContext(
-  source: NormalizedStreamEvent | AlertTemplateSampleContextSource
+  source: AlertSourceEvent | AlertTemplateSampleContextSource
 ): Record<string, unknown> {
   const isSample = "samplePayload" in source;
-  const eventType = isSample ? source.eventType : source.type;
+  if (isSample ? source.eventType === "external_event" : source.type === "external_event") {
+    return createExternalAlertTemplateContext(isSample ? source.samplePayload : source as ExternalAlertEvent);
+  }
+  const canonical = source as NormalizedStreamEvent | AlertTemplateSampleContextSource;
+  const eventType = "samplePayload" in canonical ? canonical.eventType : canonical.type;
   const values = (isSample ? source.samplePayload : source) as Record<string, unknown>;
-  const actor = isSample
+  const actor = "samplePayload" in canonical
     ? readTemplateActor(values.actor, values.userName)
-    : source.actor;
+    : canonical.actor;
   const metadata = sanitizeMetadataRecord(asRecord(values.metadata));
   const context: Record<string, unknown> = {
     id: values.id,
@@ -466,6 +470,21 @@ export function createAlertTemplateContext(
   }
 
   return context;
+}
+
+/** External alerts render only the allowlisted variables; raw payload fields never reach a template. */
+function createExternalAlertTemplateContext(source: Record<string, unknown> | ExternalAlertEvent): Record<string, unknown> {
+  const values = source as Record<string, unknown>;
+  const identity = asRecord(values.identity);
+  return {
+    summary: readBoundedText(values.summary, 256),
+    userName: readBoundedText(values.userName, 100),
+    eventType: readBoundedText(identity.eventType ?? values.eventType, 120)
+  };
+}
+
+function readBoundedText(value: unknown, maxLength: number): string {
+  return typeof value === "string" ? Array.from(value).slice(0, maxLength).join("") : "";
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

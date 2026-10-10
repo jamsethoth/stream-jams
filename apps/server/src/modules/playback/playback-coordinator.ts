@@ -8,7 +8,7 @@ import type {
   AlertVariant,
   AssetRepository,
   AssetRecord,
-  NormalizedStreamEvent,
+  AlertSourceEvent,
   PlaybackCooldownService,
   PlaybackDedupeService,
   PlaybackQueue,
@@ -200,11 +200,11 @@ export class PlaybackCoordinator {
     return this.#closePromise;
   }
 
-  async enqueueEvent(event: NormalizedStreamEvent): Promise<PlaybackEnqueueResult> {
+  async enqueueEvent(event: AlertSourceEvent): Promise<PlaybackEnqueueResult> {
     return this.#localMediaService === undefined ? this.#enqueueEvent(event) : this.#localMediaService.runAdmission(() => this.#enqueueEvent(event));
   }
 
-  async #enqueueEvent(event: NormalizedStreamEvent): Promise<PlaybackEnqueueResult> {
+  async #enqueueEvent(event: AlertSourceEvent): Promise<PlaybackEnqueueResult> {
     if (this.#closed) throw new Error("Playback has stopped.");
     if (!this.#dedupeService.accept(event)) {
       return this.#result("duplicate", [], []);
@@ -271,6 +271,7 @@ export class PlaybackCoordinator {
     );
     const snapshot = this.enqueueResolvedTest({
       sourceEvent: event,
+      deliveredBy: event.ingestProvider,
       replayDocuments: [...editorDocuments.values()],
       alerts: resolvedAlerts,
       audio,
@@ -532,7 +533,7 @@ export class PlaybackCoordinator {
         const durationMs = durations.get(value.documentId) ?? value.durationMs;
         return { ...value, durationMs, layers: value.layers.map(layer => ({ ...layer, playbackDurationMs: Math.min(records.get(layer.assetId)?.durationMs ?? durationMs, durationMs) })) };
       });
-      return this.enqueueResolvedTest({ sourceEvent: item.sourceEvent, alerts, audio, priority: item.priority, replayDocuments: authored });
+      return this.enqueueResolvedTest({ sourceEvent: item.sourceEvent, alerts, audio, priority: item.priority, deliveredBy: item.deliveredBy, replayDocuments: authored });
     });
   }
 

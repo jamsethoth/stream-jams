@@ -620,14 +620,14 @@ describe("management alert contracts and rules", () => {
     );
   });
 
-  it("groups one template for every canonical event and exposes stable normalized fields", () => {
+  it("groups one template for every alert event type and exposes stable normalized fields", () => {
     const templates = core.alertStarterTemplates as readonly {
       readonly eventType: string;
       readonly group: string;
       readonly label: string;
       readonly text: string;
     }[];
-    const eventTypes = core.streamEventTypes as readonly string[];
+    const eventTypes = core.alertEventTypes as readonly string[];
     const variableCatalog = exportedFunction("getAlertTemplateVariableCatalog") as unknown as (
       eventType: string
     ) => readonly { readonly key: string }[];
@@ -635,7 +635,7 @@ describe("management alert contracts and rules", () => {
     expect([...templates.map((template) => template.eventType)].sort()).toEqual([...eventTypes].sort());
     expect(new Set(templates.map((template) => template.eventType)).size).toBe(eventTypes.length);
     expect([...new Set(templates.map((template) => template.group))]).toEqual([
-      "Core", "Subscriptions", "Hype Train", "Polls", "Predictions", "Stream"
+      "Core", "Subscriptions", "Hype Train", "Polls", "Predictions", "Stream", "External"
     ]);
     expect(templates.find((template) => template.eventType === "gift_subscription")).toMatchObject({
       group: "Subscriptions",
@@ -665,7 +665,9 @@ describe("management alert contracts and rules", () => {
       prediction_lock: ["title", "totalUsers", "totalPoints", "status"],
       prediction_end: ["title", "totalUsers", "totalPoints", "status"],
       stream_online: ["streamType"],
-      stream_offline: []
+      stream_offline: [],
+      // Only allowlisted, sanitized fields; raw payload fields are never offered.
+      external_event: ["summary", "userName", "eventType"]
     };
 
     for (const eventType of eventTypes) {

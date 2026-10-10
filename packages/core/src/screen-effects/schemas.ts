@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { alertAudioOutputsSchema, mediaVolumeSchema } from "../audio/schemas.js";
+import { eventTriggerSelectorIdentity, eventTriggerSelectorSchema } from "../event-bus/selector.js";
+import { streamEventTypes } from "../events/types.js";
 import { isoDateTimeSchema, overlayElementLayoutSchema } from "../shared/schemas.js";
 import type {
   CreateScreenEffectDocumentInput,
@@ -30,25 +32,10 @@ const triggerSummarySchema = z.string().trim().min(1).max(256).refine(
   "Event summaries cannot contain control characters"
 );
 
-const twitchRewardBindingSchema = z.object({
+export const effectBindingSchema = z.object({
   id: storageSafeIdSchema,
-  kind: z.literal("twitch-reward"),
-  broadcasterId: storageSafeIdSchema,
-  rewardId: storageSafeIdSchema
-}).strict();
-
-const streamerBotEventBindingSchema = z.object({
-  id: storageSafeIdSchema,
-  kind: z.literal("streamerbot-event"),
-  providerId: storageSafeIdSchema,
-  sourceKey: boundedIdentityTextSchema,
-  eventType: boundedIdentityTextSchema
-}).strict();
-
-export const effectBindingSchema = z.discriminatedUnion("kind", [
-  twitchRewardBindingSchema,
-  streamerBotEventBindingSchema
-]) satisfies z.ZodType<EffectBinding>;
+  selector: eventTriggerSelectorSchema
+}).strict() satisfies z.ZodType<EffectBinding>;
 
 export const effectTriggerSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -66,6 +53,15 @@ export const effectTriggerSchema = z.discriminatedUnion("kind", [
     providerId: storageSafeIdSchema,
     sourceKey: boundedIdentityTextSchema,
     eventType: boundedIdentityTextSchema,
+    summary: triggerSummarySchema,
+    /** Sanitized payload user name, empty when absent; journaled triggers from before it existed omit it. */
+    userName: z.string().max(100).optional()
+  }).strict(),
+  z.object({
+    kind: z.literal("canonical-event"),
+    eventId: boundedIdentityTextSchema,
+    occurredAt: isoDateTimeSchema,
+    eventType: z.enum(streamEventTypes),
     summary: triggerSummarySchema
   }).strict()
 ]) satisfies z.ZodType<EffectTrigger>;
@@ -181,9 +177,7 @@ export function createScreenEffectDocument(input: CreateScreenEffectDocumentInpu
 }
 
 export function effectBindingIdentity(binding: EffectBinding): string {
-  return binding.kind === "twitch-reward"
-    ? `${binding.kind}:${JSON.stringify([binding.broadcasterId, binding.rewardId])}`
-    : `${binding.kind}:${JSON.stringify([binding.providerId, binding.sourceKey, binding.eventType])}`;
+  return eventTriggerSelectorIdentity(binding.selector);
 }
 
 function addDuplicateIssues(

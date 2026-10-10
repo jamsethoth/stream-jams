@@ -40,7 +40,7 @@ it("persists rename/bind/unbind across restart and enforces SQLite NOCASE names"
 
 it("checks references in the same transaction as saves and deletes, whichever wins first", async () => {
   using db = createInMemoryStreamJamsDatabase();
-  db.connection.exec("INSERT INTO alert_rules VALUES ('alert-a', 'Follow', 'follow', 0, 0, 0)");
+  db.connection.exec("INSERT INTO alert_rules (id, name, event_type, enabled, cooldown_seconds, priority) VALUES ('alert-a', 'Follow', 'follow', 0, 0, 0)");
   const routes = new SqliteAudioOutputRouteRepository(db.connection);
   const documents = new SqliteAlertEditorDocumentRepository(db.connection);
   const document = alertEditorDocumentSchema.parse({ schemaVersion: 1,

@@ -13,8 +13,8 @@ import { createHttpManagementApi, type ManagementApi } from "./management-api.js
 import { HomePanel } from "./home/HomePanel.js";
 import { DirtyNavigationProvider, useManagementNavigation } from "./navigation/dirty-navigation.js";
 import { ManagementNavigation } from "./navigation/ManagementNavigation.js";
-import { EventSourcesPage } from "./providers/EventSourcesPage.js";
-import { TtsProvidersPage } from "./providers/TtsProvidersPage.js";
+const EventSourcesPage = lazy(() => import("./providers/EventSourcesPage.js").then(module => ({ default: module.EventSourcesPage })));
+const TtsProvidersPage = lazy(() => import("./providers/TtsProvidersPage.js").then(module => ({ default: module.TtsProvidersPage })));
 const MusicSourcesPage = lazy(() => import("./music/MusicSourcesPage.js").then(module => ({ default: module.MusicSourcesPage })));
 const MusicPage = lazy(() => import("./music/MusicPage.js").then(module => ({ default: module.MusicPage })));
 import {
@@ -145,9 +145,9 @@ function RouteContent({
     case "home":
       return <HomePanel managementApi={managementApi} />;
     case "event-sources":
-      return <EventSourcesPage initialProviderId={route.providerId} managementApi={managementApi} openSetupOnLoad={route.setup === "add"} />;
+      return <Suspense fallback={<p role="status">Loading Event Sources…</p>}><EventSourcesPage initialProviderId={route.providerId} managementApi={managementApi} openSetupOnLoad={route.setup === "add"} /></Suspense>;
     case "tts-providers":
-      return <TtsProvidersPage initialProviderId={route.providerId} managementApi={managementApi} openSetupOnLoad={route.setup === "add"} />;
+      return <Suspense fallback={<p role="status">Loading TTS providers…</p>}><TtsProvidersPage initialProviderId={route.providerId} managementApi={managementApi} openSetupOnLoad={route.setup === "add"} /></Suspense>;
     case "music-sources":
       return <Suspense fallback={<p role="status">Loading Music sources…</p>}><MusicSourcesPage api={managementApi} initialProviderId={route.providerId} /></Suspense>;
     case "modules-music":

@@ -10,7 +10,7 @@ import {
   type AlertTtsConfig,
   type AlertVariant,
   type OverlayElementLayout,
-  type StreamEventType
+  type AlertEventType
 } from "@stream-jams/core";
 import { runInTransaction } from "../db/database.js";
 
@@ -27,6 +27,7 @@ interface AlertRuleRow {
   readonly enabled: unknown;
   readonly cooldown_seconds: unknown;
   readonly priority: unknown;
+  readonly external_identity_json: unknown;
 }
 
 interface AlertConditionRow {
@@ -130,11 +131,12 @@ export class SqliteAlertRepository implements AlertRepository {
     runInTransaction(this.#connection, () => {
       this.#connection
         .prepare(
-          `INSERT INTO alert_rules (id, name, event_type, enabled, cooldown_seconds, priority)
-           VALUES (?, ?, ?, ?, ?, ?)
+          `INSERT INTO alert_rules (id, name, event_type, enabled, cooldown_seconds, priority, external_identity_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
              name = excluded.name,
              event_type = excluded.event_type,
+             external_identity_json = excluded.external_identity_json,
              enabled = excluded.enabled,
              cooldown_seconds = excluded.cooldown_seconds,
              priority = excluded.priority`
@@ -145,7 +147,8 @@ export class SqliteAlertRepository implements AlertRepository {
           parsed.eventType,
           booleanToInteger(parsed.enabled),
           parsed.cooldownSeconds,
-          parsed.priority
+          parsed.priority,
+          parsed.externalIdentity === undefined ? null : JSON.stringify(parsed.externalIdentity)
         );
 
       this.#connection.prepare("DELETE FROM alert_rule_collections WHERE rule_id = ?").run(parsed.id);
@@ -246,7 +249,7 @@ export class SqliteAlertRepository implements AlertRepository {
   listRulesSync(): readonly AlertRule[] {
     const rows = this.#connection
       .prepare(
-         `SELECT id, name, event_type, enabled, cooldown_seconds, priority
+         `SELECT id, name, event_type, enabled, cooldown_seconds, priority, external_identity_json
          FROM alert_rules
          ORDER BY id`
       )
@@ -255,13 +258,13 @@ export class SqliteAlertRepository implements AlertRepository {
     return rows.map((row) => this.#mapRuleRow(row as unknown as AlertRuleRow));
   }
 
-  async listActiveRules(input: { readonly eventType?: StreamEventType } = {}): Promise<readonly AlertRule[]> {
+  async listActiveRules(input: { readonly eventType?: AlertEventType } = {}): Promise<readonly AlertRule[]> {
     const eventFilter = input.eventType === undefined ? "" : "AND rules.event_type = ?";
     const parameters = input.eventType === undefined ? [] : [input.eventType];
     const ruleRows = this.#connection
       .prepare(
         `SELECT rules.id, rules.name, rules.event_type, rules.enabled,
-                rules.cooldown_seconds, rules.priority
+                rules.cooldown_seconds, rules.priority, rules.external_identity_json
          FROM alert_collections AS collections
          JOIN alert_rule_collections AS memberships ON memberships.collection_id = collections.id
          JOIN alert_rules AS rules ON rules.id = memberships.rule_id
@@ -309,7 +312,8 @@ export class SqliteAlertRepository implements AlertRepository {
       return alertRuleSchema.parse({
         id: ruleId,
         name: String(row.name),
-        eventType: row.event_type as StreamEventType,
+        eventType: row.event_type as AlertEventType,
+        ...externalIdentityFromRow(row),
         enabled: integerToBoolean(row.enabled),
         collectionIds: collectionsByRule.get(ruleId) ?? [],
         conditions: conditionsByRule.get(ruleId) ?? [],
@@ -331,7 +335,7 @@ export class SqliteAlertRepository implements AlertRepository {
   #findRuleById(ruleId: string): AlertRule | null {
     const row = this.#connection
       .prepare(
-        `SELECT id, name, event_type, enabled, cooldown_seconds, priority
+        `SELECT id, name, event_type, enabled, cooldown_seconds, priority, external_identity_json
          FROM alert_rules
          WHERE id = ?`
       )
@@ -345,7 +349,8 @@ export class SqliteAlertRepository implements AlertRepository {
     return alertRuleSchema.parse({
       id: ruleId,
       name: String(row.name),
-      eventType: row.event_type as StreamEventType,
+      eventType: row.event_type as AlertEventType,
+      ...externalIdentityFromRow(row),
       enabled: integerToBoolean(row.enabled),
       collectionIds: this.#listCollectionIdsForRule(ruleId),
       conditions: this.#listConditionsForRule(ruleId),
@@ -448,4 +453,10 @@ function groupRows<TRow extends AlertRuleChildRow, TValue>(
     grouped.set(ruleId, values);
   }
   return grouped;
+}
+
+function externalIdentityFromRow(row: AlertRuleRow): { readonly externalIdentity?: unknown } {
+  return row.external_identity_json === null || row.external_identity_json === undefined
+    ? {}
+    : { externalIdentity: JSON.parse(String(row.external_identity_json)) as unknown };
 }

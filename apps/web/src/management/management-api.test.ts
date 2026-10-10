@@ -21,6 +21,25 @@ describe("createHttpManagementApi", () => {
     await expect(api.setOverlayModuleEnabled("alerts", false)).resolves.toBe(false);
   });
 
+  it("loads bus activity and loads and saves the replay age", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (url === "/management/diagnostics/event-bus") return jsonResponse({ events: [] });
+      expect(url).toBe("/management/settings/event-bus");
+      if (init?.method === "PUT") {
+        expect(init.body).toBe(JSON.stringify({ replayAgeSeconds: 300 }));
+        return jsonResponse({ replayAgeSeconds: 300 });
+      }
+      return jsonResponse({ replayAgeSeconds: 120 });
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.getEventBusActivity!()).resolves.toEqual({ events: [] });
+    await expect(api.getEventBusSettings!()).resolves.toEqual({ replayAgeSeconds: 120 });
+    await expect(api.saveEventBusSettings!({ replayAgeSeconds: 300 })).resolves.toEqual({ replayAgeSeconds: 300 });
+  });
+
   it("reports management client exceptions through the protected diagnostics endpoint", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === "/auth/management/sessions") {
@@ -503,6 +522,7 @@ describe("createHttpManagementApi", () => {
   it("loads and updates validated Streamer.bot subscription catalogs", async () => {
     const catalog = {
       providerId: "provider-streamerbot",
+      forwardTwitchEvents: true,
       available: true,
       sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
       selected: [],
@@ -516,6 +536,11 @@ describe("createHttpManagementApi", () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (url === "/providers/provider-streamerbot/streamerbot-forwarding") {
+        expect(init?.method).toBe("PUT");
+        expect(init?.body).toBe(JSON.stringify({ forwardTwitchEvents: false }));
+        return jsonResponse({ ...catalog, forwardTwitchEvents: false });
+      }
       expect(url).toBe("/providers/provider-streamerbot/streamerbot-subscriptions");
       if (init?.method === "PUT") {
         expect(init.body).toBe(JSON.stringify(update));
@@ -530,6 +555,8 @@ describe("createHttpManagementApi", () => {
       selected: update.externalSubscriptions,
       twitchBroadcasterId: "broadcaster-1"
     });
+    await expect(api.setStreamerBotForwarding("provider-streamerbot", { forwardTwitchEvents: false }))
+      .resolves.toMatchObject({ forwardTwitchEvents: false });
   });
 
   it("loads Twitch status and runtime-validates Device Code start and poll responses", async () => {

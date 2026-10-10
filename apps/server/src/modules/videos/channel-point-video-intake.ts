@@ -1,6 +1,6 @@
-import type { NormalizedStreamEvent, VideosModuleConfig } from "@stream-jams/core";
+import type { EventBusHandleOutcome, NormalizedStreamEvent, VideosModuleConfig } from "@stream-jams/core";
 import type { VideoRequestIntake } from "./video-request-intake.js";
-import type { VideoIntakeDiagnostic } from "./streamerbot-video-intake.js";
+import { rejectionOutcome, type VideoIntakeDiagnostic } from "./streamerbot-video-intake.js";
 
 export interface ChannelPointVideoIntakeOptions {
   readonly intake: Pick<VideoRequestIntake, "submit">;
@@ -15,10 +15,10 @@ export interface ChannelPointVideoIntakeOptions {
  */
 export function createChannelPointVideoIntake(options: ChannelPointVideoIntakeOptions) {
   return {
-    async handleEvent(event: NormalizedStreamEvent): Promise<void> {
-      if (event.type !== "channel_point_redemption") return;
+    async handleEvent(event: NormalizedStreamEvent): Promise<EventBusHandleOutcome> {
+      if (event.type !== "channel_point_redemption") return "no-match";
       const mapping = (await options.getConfig()).rewardMappings.find(candidate => candidate.rewardId === event.rewardId);
-      if (mapping === undefined) return;
+      if (mapping === undefined) return "no-match";
       const link = event.userInput?.trim() ?? "";
       const result = await options.intake.submit(mapping.purpose, {
         link: link === "" ? undefined : link,
@@ -27,6 +27,7 @@ export function createChannelPointVideoIntake(options: ChannelPointVideoIntakeOp
       await options.onDiagnostic?.(result.status === "accepted"
         ? { level: "info", message: "Channel point video request was queued.", metadata: { purpose: mapping.purpose, itemId: result.item.id, provider: result.item.source.provider, status: result.item.status } }
         : { level: "warn", message: "Channel point video request was rejected and not queued.", metadata: { purpose: mapping.purpose, reason: result.reason, fields: result.fields, eventId: event.id } });
+      return result.status === "accepted" ? "admitted" : rejectionOutcome(result.reason);
     }
   };
 }

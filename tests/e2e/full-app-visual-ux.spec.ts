@@ -373,6 +373,7 @@ function row(moduleId: string, occurrenceId: string, name: string, status: Opera
     occurrenceId,
     name,
     summary: "Synthetic full-app fixture",
+    source: "twitch",
     status,
     enqueuedAtMs: Date.parse("2026-09-15T12:00:00.000Z"),
     completedAtMs: null,

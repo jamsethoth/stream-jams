@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ingestProviderIdSchema } from "../events/schemas.js";
 import { nonEmptyStringSchema } from "../shared/schemas.js";
 import { playbackSafetyStateSchema } from "./schemas.js";
 import type { PlaybackSafetyState } from "./types.js";
@@ -16,6 +17,8 @@ export const operationRowSchema = z.object({
   occurrenceId: nonEmptyStringSchema.max(256),
   name: nonEmptyStringSchema.max(120),
   summary: z.string().max(256),
+  /** Source kind that delivered the event; null for manual tests. */
+  source: ingestProviderIdSchema.nullable(),
   status: operationStatusSchema,
   enqueuedAtMs: z.number().int().nonnegative(),
   completedAtMs: z.number().int().nonnegative().nullable(),

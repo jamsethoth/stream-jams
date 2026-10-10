@@ -1304,7 +1304,8 @@ export function evaluateAlertEditorDraftSample(
             : "twitch",
       payload: samplePayload,
       id: "alert-editor-sample",
-      occurredAt: "2000-01-01T00:00:00.000Z"
+      occurredAt: "2000-01-01T00:00:00.000Z",
+      externalIdentity: editor.document.externalIdentity
     }),
     ruleConditions: editor.document.conditions,
     candidates,

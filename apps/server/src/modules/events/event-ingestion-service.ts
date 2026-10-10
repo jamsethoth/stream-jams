@@ -45,9 +45,26 @@ export interface EventIngestionDiagnostic {
   readonly exception?: unknown;
 }
 
+/**
+ * A sink may report that it already holds the event, for example after a restart (`duplicate`), or that
+ * another source already delivered the same occurrence (`merged`). Both are reported as duplicates.
+ */
+export type EventSinkOutcome = { readonly status: "accepted" | "duplicate" | "merged" };
+
+export interface EventSinkDuplicate {
+  readonly sourceKind: "twitch" | "streamerbot";
+  readonly kind: "canonical" | "external" | null;
+  readonly eventType: string | null;
+}
+
 export interface EventSink {
-  handleEvent(event: NormalizedStreamEvent, triggers: readonly EffectTrigger[]): void | Promise<void>;
-  handleTriggers?(triggers: readonly EffectTrigger[]): void | Promise<void>;
+  handleEvent(event: NormalizedStreamEvent, triggers: readonly EffectTrigger[]): void | EventSinkOutcome | Promise<void | EventSinkOutcome>;
+  /** `payload` is the untrusted external payload; the sink keeps it only for identities a consumer declared. */
+  handleTriggers?(triggers: readonly EffectTrigger[], payload?: unknown): void | EventSinkOutcome | Promise<void | EventSinkOutcome>;
+  /** Records input a source delivered that was rejected before it could be published. */
+  recordRejected?(sourceKind: "twitch" | "streamerbot", referenceId: string): void;
+  /** Records a redelivery this service recognized before publishing; `eventType` is a bounded label. */
+  recordDuplicate?(input: EventSinkDuplicate): void;
 }
 
 export interface EventIngestionServiceOptions {
@@ -99,7 +116,7 @@ export class EventIngestionService {
     }, effectTriggers);
   }
 
-  async ingestEffectTriggers(eventId: string, triggers: unknown): Promise<EffectTriggerIngestionResult> {
+  async ingestEffectTriggers(eventId: string, triggers: unknown, payload?: unknown): Promise<EffectTriggerIngestionResult> {
     const parsed = effectTriggerSchema.array().min(1).safeParse(triggers);
     if (!parsed.success || eventId.trim().length === 0 || parsed.data.some((trigger) => trigger.eventId !== eventId)) {
       return this.#reject({
@@ -110,6 +127,8 @@ export class EventIngestionService {
     }
 
     if (this.#seenMessageIds.has(eventId) || this.#inFlightMessageIds.has(eventId)) {
+      const trigger = parsed.data.find((candidate) => candidate.kind === "streamerbot-event");
+      this.#recordDuplicate({ sourceKind: "streamerbot", kind: "external", eventType: trigger === undefined ? null : `${trigger.sourceKey} · ${trigger.eventType}` });
       this.#status = {
         ...this.#status,
         state: this.#status.state === "idle" ? "ready" : this.#status.state,
@@ -124,8 +143,11 @@ export class EventIngestionService {
       if (this.#sink.handleTriggers === undefined) {
         throw new Error("Screen Effects trigger sink is unavailable");
       }
-      await this.#sink.handleTriggers(parsed.data);
+      const outcome = await this.#sink.handleTriggers(parsed.data, payload);
       this.#rememberMessageId(eventId);
+      if (outcome?.status === "duplicate" || outcome?.status === "merged") {
+        return this.#markDuplicate(eventId, "Duplicate Streamer.bot event ignored");
+      }
       this.#markAccepted();
       return { status: "accepted", eventId };
     } catch (error) {
@@ -143,6 +165,7 @@ export class EventIngestionService {
   async ingestTwitchEventSubNotification(message: unknown): Promise<EventIngestionResult> {
     const messageId = getTwitchEventSubMessageId(message);
     if (messageId !== null && this.#seenMessageIds.has(messageId)) {
+      this.#recordDuplicate({ sourceKind: "twitch", kind: "canonical", eventType: null });
       this.#status = {
         ...this.#status,
         state: this.#status.state === "idle" ? "ready" : this.#status.state,
@@ -200,6 +223,7 @@ export class EventIngestionService {
     }
     const diagnosticContext = getNormalizedEventDiagnosticContext(normalizedEvent);
     if (this.#seenMessageIds.has(normalizedEvent.id) || this.#inFlightMessageIds.has(normalizedEvent.id)) {
+      this.#recordDuplicate({ sourceKind: normalizedEvent.ingestProvider, kind: "canonical", eventType: normalizedEvent.type });
       this.#status = {
         ...this.#status,
         state: this.#status.state === "idle" ? "ready" : this.#status.state,
@@ -211,8 +235,10 @@ export class EventIngestionService {
 
     this.#inFlightMessageIds.add(normalizedEvent.id);
     try {
-      await this.#sink.handleEvent(normalizedEvent, parsedTriggers.data);
+      const outcome = await this.#sink.handleEvent(normalizedEvent, parsedTriggers.data);
       this.#rememberMessageId(normalizedEvent.id);
+      if (outcome?.status === "duplicate") return this.#markDuplicate(normalizedEvent.id, messages.duplicateMessage);
+      if (outcome?.status === "merged") return this.#markDuplicate(normalizedEvent.id, "Event already received from another source; merged");
       this.#markAccepted();
       return { status: "accepted", event: normalizedEvent };
     } catch (error) {
@@ -225,6 +251,26 @@ export class EventIngestionService {
     } finally {
       this.#inFlightMessageIds.delete(normalizedEvent.id);
     }
+  }
+
+  #recordDuplicate(input: EventSinkDuplicate): void {
+    try {
+      this.#sink.recordDuplicate?.(input);
+    }
+    // error-provenance: allow cleanup -- intake diagnostics are best effort; a recording failure must not change the duplicate result
+    catch {
+      // The duplicate is still counted in the ingestion status.
+    }
+  }
+
+  #markDuplicate(messageId: string, message: string): { readonly status: "duplicate"; readonly messageId: string } {
+    this.#status = {
+      ...this.#status,
+      state: this.#status.state === "idle" ? "ready" : this.#status.state,
+      duplicateCount: this.#status.duplicateCount + 1,
+      message
+    };
+    return { status: "duplicate", messageId };
   }
 
   #markAccepted(): void {
@@ -247,6 +293,15 @@ export class EventIngestionService {
   }> {
     const referenceId = this.#generateReferenceId();
     const { message } = diagnostic;
+    if (diagnostic.ingestProvider !== undefined) {
+      try {
+        this.#sink.recordRejected?.(diagnostic.ingestProvider, referenceId);
+      }
+      // error-provenance: allow cleanup -- the rejection is still reported through diagnostics below; the intake record is best effort
+      catch {
+        // The journal may be the reason intake failed.
+      }
+    }
     this.#status = {
       ...this.#status,
       state: "degraded",

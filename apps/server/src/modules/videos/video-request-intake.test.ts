@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultVideosModuleConfig, type NormalizedStreamEvent, type VideoRequestItem, type VideosModuleConfig } from "@stream-jams/core";
-import type { StreamerBotEventEnvelope } from "../streamerbot/streamerbot-client.js";
+import { externalBusEvent } from "../../test-support/bus-event-fixtures.js";
 import { createChannelPointVideoIntake } from "./channel-point-video-intake.js";
 import { createStreamerBotVideoIntake, type VideoIntakeDiagnostic } from "./streamerbot-video-intake.js";
 import { VideoRequestIntake } from "./video-request-intake.js";
@@ -80,12 +80,13 @@ describe("VideoRequestIntake", () => {
   });
 });
 
-function envelope(data: unknown, source = "General", type = "Custom"): StreamerBotEventEnvelope {
-  return { event: { source, type }, data } as StreamerBotEventEnvelope;
+function envelope(payload: Record<string, unknown> | undefined, sourceKey = "General", eventType = "Custom") {
+  const eventId = "sb-video";
+  return { ...externalBusEvent([{ kind: "streamerbot-event", eventId, occurredAt: "2026-10-07T00:00:00.000Z", providerId: "provider-streamerbot", sourceKey, eventType, summary: "Custom", userName: "" }]), ...(payload === undefined ? {} : { payload }) };
 }
 
-function streamerBotSetup(overrides: Partial<VideosModuleConfig> = {}) {
-  const base = setup(overrides);
+function streamerBotSetup(overrides: Partial<VideosModuleConfig> = {}, options: { enabled?: boolean } = {}) {
+  const base = setup(overrides, options);
   const diagnostics: VideoIntakeDiagnostic[] = [];
   const commands: unknown[] = [];
   const notices: (string | null)[] = [];
@@ -105,15 +106,17 @@ function streamerBotSetup(overrides: Partial<VideosModuleConfig> = {}) {
 describe("Streamer.bot video intake", () => {
   it("ignores events without a Videos marker", async () => {
     const { handle, submissions } = streamerBotSetup();
-    expect(await handle(envelope({ source: "StreamJams", type: "Other", link: youtube }))).toBe(false);
-    expect(await handle(envelope({ source: "StreamJams", type: "VideoRequest", link: youtube }, "Twitch", "Follow"))).toBe(false);
-    expect(await handle(envelope("text"))).toBe(false);
+    expect(await handle(envelope({ source: "StreamJams", type: "Other", link: youtube }))).toBe("no-match");
+    expect(await handle(envelope({ source: "StreamJams", type: "VideoRequest", link: youtube }, "Twitch", "Follow"))).toBe("no-match");
+    expect(await handle(envelope({ source: "StreamJams", type: "VideoRequest", link: youtube }, "General", "Other"))).toBe("no-match");
+    expect(await handle(envelope({ source: "SomethingElse", type: "VideoShoutout", clipId: "ClipOne" }))).toBe("no-match");
+    expect(await handle(envelope(undefined))).toBe("no-match");
     expect(submissions).toHaveLength(0);
   });
 
   it("queues VideoRequest payloads and honors explicit autoplay", async () => {
     const { handle, submissions, diagnostics } = streamerBotSetup();
-    expect(await handle(envelope({ source: "StreamJams", type: "VideoRequest", purpose: "test", link: youtube, requester: "Mod", autoplay: true }))).toBe(true);
+    expect(await handle(envelope({ source: "StreamJams", type: "VideoRequest", purpose: "test", link: youtube, requester: "Mod", autoplay: true }))).toBe("admitted");
     expect(submissions[0]).toMatchObject({ via: "streamerbot", requester: "Mod", autoplay: true });
     expect(diagnostics[0]?.metadata).toMatchObject({ purpose: "test", legacy: false, autoplay: true });
     expect(JSON.stringify(diagnostics)).not.toContain("dQw4w9WgXcQ");
@@ -125,13 +128,26 @@ describe("Streamer.bot video intake", () => {
     expect(submissions[0]).toMatchObject({ source: { provider: "twitch-clip", clipSlug: "FunnyClip-abc" }, requester: "Friend", durationMs: 29_500, autoplay: false });
   });
 
+  it("matches the General source case-insensitively", async () => {
+    const { handle, submissions } = streamerBotSetup();
+    expect(await handle(envelope({ source: "StreamJams", type: "VideoRequest", link: youtube }, "general"))).toBe("admitted");
+    expect(submissions).toHaveLength(1);
+  });
+
   it("reports rejections by reason and field without values", async () => {
     const { handle, diagnostics, submissions } = streamerBotSetup();
-    await handle(envelope({ source: "StreamJams", type: "VideoRequest", link: "https://evil.example/private.mp4" }));
-    await handle(envelope({ source: "StreamJams", type: "VideoRequest", purpose: "staging", link: youtube }));
+    expect(await handle(envelope({ source: "StreamJams", type: "VideoRequest", link: "https://evil.example/private.mp4" }))).toBe("failed");
+    expect(await handle(envelope({ source: "StreamJams", type: "VideoRequest", purpose: "staging", link: youtube }))).toBe("failed");
     expect(submissions).toHaveLength(0);
     expect(diagnostics.map(entry => entry.metadata.reason)).toEqual(["unsupported-source", "invalid-request"]);
     expect(JSON.stringify(diagnostics)).not.toContain("private");
+  });
+
+  it("reports requests the disabled module turned away as matching nothing", async () => {
+    const { handle, diagnostics, submissions } = streamerBotSetup({}, { enabled: false });
+    expect(await handle(envelope({ source: "StreamJams", type: "VideoRequest", link: youtube }))).toBe("no-match");
+    expect(submissions).toHaveLength(0);
+    expect(diagnostics[0]).toMatchObject({ level: "warn", metadata: { reason: "module-disabled" } });
   });
 
   it("stops current playback on clear and shows the no-clip notice", async () => {
@@ -156,11 +172,12 @@ describe("channel point video intake", () => {
     const base = setup({ rewardMappings: [{ rewardId: "reward-1", purpose: "live" }] });
     const diagnostics: VideoIntakeDiagnostic[] = [];
     const handler = createChannelPointVideoIntake({ intake: base.intake, getConfig: () => base.config, onDiagnostic: entry => { diagnostics.push(entry); } });
-    await handler.handleEvent(redemption("reward-2", youtube));
+    expect(await handler.handleEvent(redemption("reward-2", youtube))).toBe("no-match");
+    expect(await handler.handleEvent({ ...redemption("reward-1", youtube), type: "follow" } as NormalizedStreamEvent)).toBe("no-match");
     expect(base.submissions).toHaveLength(0);
-    await handler.handleEvent(redemption("reward-1", ` ${youtube} `));
+    expect(await handler.handleEvent(redemption("reward-1", ` ${youtube} `))).toBe("admitted");
     expect(base.submissions[0]).toMatchObject({ via: "channel-points", requester: "Viewer", autoplay: false });
-    await handler.handleEvent(redemption("reward-1", "   "));
+    expect(await handler.handleEvent(redemption("reward-1", "   "))).toBe("failed");
     expect(diagnostics.at(-1)).toMatchObject({ level: "warn", metadata: { reason: "invalid-request", fields: ["link"] } });
   });
 });

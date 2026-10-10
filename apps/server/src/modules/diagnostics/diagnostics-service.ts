@@ -313,7 +313,7 @@ export class DiagnosticsService {
       id: log.event.id,
       type: log.event.type,
       providerId,
-      sourcePlatform: log.event.sourcePlatform,
+      sourcePlatform: log.event.type === "external_event" ? null : log.event.sourcePlatform,
       ingestProvider: log.event.ingestProvider,
       occurredAt: log.event.occurredAt,
       actor: log.event.actor,

@@ -34,6 +34,9 @@ export const SimultaneousCurrentInterleavedQueues: Story = {
     await expect(nowPlaying.compareDocumentPosition(canvas.getByRole("heading", { name: "Module queues" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     await expect(canvas.getByText("Flash sweep")).toBeVisible();
     await expect(canvas.getByText("Cheer burst").closest("article")).toHaveTextContent("#2");
+    await expect(canvas.getByText("Large raid").closest("article")).toHaveTextContent("Viewer One · via Twitch");
+    await expect(canvas.getByText("Flash sweep").closest("article")).toHaveTextContent("Viewer One · via Streamer.bot");
+    await expect(canvas.getByText("Recent follow").closest("article")).not.toHaveTextContent("via");
   }
 };
 
@@ -198,9 +201,9 @@ function activeSnapshot(): MergedOperationsSnapshot {
   return {
     ...emptySnapshot(),
     revision: 7,
-    current: [row("alerts", "alert-current", "Large raid", "playing"), row("screen-effects", "effect-current", "Flash sweep", "playing")],
+    current: [row("alerts", "alert-current", "Large raid", "playing"), { ...row("screen-effects", "effect-current", "Flash sweep", "playing"), source: "streamerbot" }],
     queued: [row("screen-effects", "effect-next", "Cheer burst", "queued", 2), row("alerts", "alert-next", "Follow alert", "queued", 1)],
-    recent: [row("alerts", "alert-recent", "Recent follow", "completed")]
+    recent: [{ ...row("alerts", "alert-recent", "Recent follow", "completed"), source: null }]
   };
 }
 
@@ -210,6 +213,7 @@ function row(moduleId: string, occurrenceId: string, name: string, status: Opera
     occurrenceId,
     name,
     summary: "Viewer One",
+    source: "twitch",
     status,
     enqueuedAtMs: Date.parse("2026-09-13T12:00:00.000Z"),
     completedAtMs: status === "completed" ? Date.parse("2026-09-13T12:01:00.000Z") : null,

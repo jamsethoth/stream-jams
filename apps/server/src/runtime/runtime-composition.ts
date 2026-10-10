@@ -106,7 +106,10 @@ import {
   EventIngestionService,
   type EventIngestionDiagnostic
 } from "../modules/events/event-ingestion-service.js";
+import { EventBus } from "../modules/events/event-bus.js";
+import { EventBusSettingsService } from "../modules/events/event-bus-settings-service.js";
 import { EventPipeline } from "../modules/events/event-pipeline.js";
+import { SqliteEventBusJournalRepository } from "../modules/events/sqlite-event-bus-journal-repository.js";
 import { SqliteTimerRunRepository } from "../modules/timers/sqlite-timer-run-repository.js";
 import { TimerEventService } from "../modules/timers/timer-event-service.js";
 import { SqliteOverlayModuleConfigRepository } from "../modules/overlay-modules/sqlite-module-config-repository.js";
@@ -137,8 +140,9 @@ import { VideoMirrorDirector } from "../modules/videos/video-mirror-director.js"
 import type { DesktopVideoTransport } from "@stream-jams/core/videos";
 import { createStreamerBotVideoIntake, type VideoIntakeDiagnostic } from "../modules/videos/streamerbot-video-intake.js";
 import { createChannelPointVideoIntake } from "../modules/videos/channel-point-video-intake.js";
+import { createVideosBusConsumer } from "../modules/videos/videos-bus-consumer.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
-import { evaluateProviderActivationImpact } from "../modules/providers/provider-activation-impact.js";
+import { evaluateProviderActivationImpact, findOverlappingTwitchSources } from "../modules/providers/provider-activation-impact.js";
 import { SqliteProviderRegistrationRepository } from "../modules/providers/sqlite-provider-registration-repository.js";
 import type { OsCredentialAdapter } from "../modules/security/os-secret-store.js";
 import { createRedactor } from "../modules/security/redactor.js";
@@ -202,7 +206,12 @@ import { TimerCueService } from "../modules/timers/timer-cue-service.js";
 import { TimerAutomationCredentialService } from "../modules/timers/timer-automation-credential-service.js";
 import { createTimerAutomationSecurityPreHandler } from "../http/middleware/timer-automation-security.js";
 
+/** Browser sources retry at most every 10 seconds; give them one full retry before replaying restart events. */
+const defaultEventReplayDelayMs = 12_000;
+
 export interface RuntimeAppCompositionOptions {
+  /** Wait after the server listens before replaying events from before the restart, so outputs can reconnect. */
+  readonly eventReplayDelayMs?: number | undefined;
   readonly audioDeviceHost?: AudioDeviceHost;
   readonly audioPlaybackSink?: AudioPlaybackSink;
   readonly desktopAudioTransport?: DesktopAudioTransport;
@@ -258,7 +267,12 @@ export interface RuntimeAppComposition {
   readonly streamerBotRuntimeService: StreamerBotRuntimeService;
   readonly eventIngestionService: EventIngestionService;
   recordDesktopDiagnostic(report: RuntimeDesktopDiagnostic): Promise<void>;
-  syncEventSourceRuntime(): Promise<void>;
+  syncEventSourceRuntime(kinds?: readonly ProviderKind[]): Promise<void>;
+  /**
+   * Schedules delivery of events journaled before the last shutdown that are still within the replay age,
+   * after `eventReplayDelayMs` so browser sources and the desktop overlay can reconnect first.
+   */
+  scheduleEventReplay(): void;
   close(): Promise<void>;
 }
 
@@ -493,7 +507,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     mirror: { get available() { return videoMirror.director?.available === true; }, controlsFor: itemId => videoMirror.director?.controlsFor(itemId) }
   });
   const writeVideoIntakeDiagnostic = async (source: string, entry: VideoIntakeDiagnostic) => {
-    const context = { module: "videos", source, correlationId: generateEventSourceReferenceId(), processingId: null, metadata: { ...entry.metadata } };
+    const context = { module: "videos", source, correlationId: generateRuntimeReferenceId(), processingId: null, metadata: { ...entry.metadata } };
     await (entry.level === "warn" ? runtimeLogger.warn(entry.message, context) : runtimeLogger.info(entry.message, context));
   };
   const overlayGateway = new OverlayGateway({
@@ -894,44 +908,93 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const automationControlService = new AutomationControlService({ timers: timerRuntimeCoordinator, definitions: timerManagementService, playback: playbackOperationsService, now: () => now().getTime(), runCommand: work => maintenanceGate.runIntake(work) });
   const eventPipeline = new EventPipeline({
     timerEventSink: new TimerEventService(timerDefinitionRepository, timerRuntimeCoordinator),
-    videoEventSink: createChannelPointVideoIntake({
-      intake: videoRequestIntake,
-      getConfig: () => videosConfig,
-      onDiagnostic: entry => writeVideoIntakeDiagnostic("videos.channel-points", entry)
-    }),
-    onVideoError: (error, event) => runtimeLogger.error("Video request handling failed", {
-      module: "videos", source: "videos.event-admission", correlationId: `event:${event.providerId}:${event.id}`,
-      processingId: null, metadata: { eventType: event.type }
-    }, error),
     onTimerError: (error, event) => runtimeLogger.error("Timer event handling failed", {
-      module: "timers", source: "timers.event-admission", correlationId: `event:${event.providerId}:${event.id}`,
-      processingId: null, metadata: { eventType: event.type }
+      module: "timers", source: "timers.event-admission", correlationId: `event:${event.sourceKind}:${event.eventId}`,
+      processingId: null, metadata: { eventType: event.kind === "canonical" ? event.event.type : "external" }
     }, error),
     playbackCoordinator,
-    effectTriggerSink: {
-      async handleTriggers(triggers) {
-        const result = await effectAdmissionService.handleTriggers(triggers);
+    effectEventSink: {
+      async handleEvent(event) {
+        const result = await effectAdmissionService.handleEvent(event);
         await effectPlaybackCoordinator.startNext();
         return result;
       }
     },
     diagnosticsLogRepository,
     generateId: generateEventPipelineId,
-    onEffectError: (error, triggers) => runtimeLogger.error("Screen Effects trigger handling failed", {
+    onEffectError: (error, event) => runtimeLogger.error("Screen Effects trigger handling failed", {
       module: "screen-effects",
       source: "screen-effects.event-admission",
-      correlationId: triggers[0] === undefined ? "event:screen-effects:unknown" : `event:${triggers[0].eventId}`,
+      correlationId: `event:${event.eventId}`,
       processingId: null,
       metadata: {
         errorName: error.name,
-        eventIds: Array.from(new Set(triggers.map((trigger) => trigger.eventId))),
-        triggerKinds: triggers.map((trigger) => trigger.kind)
+        eventIds: [event.eventId],
+        triggerKinds: event.kind === "canonical" ? ["canonical-event", ...event.effectTriggers.map((trigger) => trigger.kind)] : event.effectTriggers.map((trigger) => trigger.kind)
       }
     })
   });
   const generateEventSourceReferenceId = generateRuntimeReferenceId;
+  const eventBusSettingsService = new EventBusSettingsService(database.connection, now);
+  const eventBusJournal = new SqliteEventBusJournalRepository(database.connection);
+  const eventBus = new EventBus({
+    journal: eventBusJournal,
+    consumers: [
+      ...eventPipeline.consumers(),
+      createVideosBusConsumer({
+        streamerBot: createStreamerBotVideoIntake({
+          intake: videoRequestIntake,
+          queue: videoQueueService,
+          onDiagnostic: entry => writeVideoIntakeDiagnostic("videos.streamerbot", entry)
+        }),
+        channelPoints: createChannelPointVideoIntake({
+          intake: videoRequestIntake,
+          getConfig: () => videosConfig,
+          onDiagnostic: entry => writeVideoIntakeDiagnostic("videos.channel-points", entry)
+        }),
+        onError: (error, event) => runtimeLogger.error("Video request handling failed", {
+          module: "videos", source: "videos.event-admission", correlationId: `event:${event.sourceKind}:${event.eventId}`,
+          processingId: null, metadata: { eventType: event.kind === "canonical" ? event.event.type : "external" }
+        }, error)
+      })
+    ],
+    generateReferenceId: generateEventSourceReferenceId,
+    resolveSourceRegistrationId: async (kind) => (await providerRegistrationRepository.findActiveByKind(kind))?.provider.id ?? null,
+    now,
+    onDeliveryFailure: (failure) => runtimeLogger.error("Event bus consumer failed", {
+      module: "events",
+      source: "events.bus-consumer",
+      correlationId: failure.event?.kind === "canonical"
+        ? `event:${failure.event.event.providerId}:${failure.event.event.id}`
+        : `event:${failure.event?.eventId ?? "unknown"}`,
+      processingId: null,
+      metadata: { consumerId: failure.consumerId, sequence: failure.sequence, attempts: failure.attempts, referenceId: failure.referenceId }
+    }, failure.error),
+    getReplayAgeMs: () => eventBusSettingsService.replayAgeMs(),
+    onExpired: (consumerId, expiredCount) => runtimeLogger.warn("Event bus expired events older than the replay age", {
+      module: "events",
+      source: "events.bus-replay",
+      correlationId: `event-bus:${consumerId}`,
+      processingId: null,
+      metadata: { consumerId, expiredCount }
+    }),
+    onWorkerError: (consumerId, error) => runtimeLogger.error("Event bus delivery stopped before the cursor advanced", {
+      module: "events",
+      source: "events.bus-worker",
+      correlationId: `event-bus:${consumerId}`,
+      processingId: null,
+      metadata: { consumerId }
+    }, error)
+  });
+  await eventBus.start();
+  let eventReplayTimer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleEventReplay = () => {
+    clearTimeout(eventReplayTimer);
+    eventReplayTimer = setTimeout(() => { void trackRuntimeWork(() => eventBus.resume()); }, options.eventReplayDelayMs ?? defaultEventReplayDelayMs);
+  };
+  cleanups.push(() => clearTimeout(eventReplayTimer));
   const eventIngestionService = new EventIngestionService({
-    sink: eventPipeline,
+    sink: eventBus,
     generateReferenceId: generateEventSourceReferenceId,
     onDiagnostic: (entry) => writeEventSourceFailureDiagnostic(runtimeLogger, "events", "event-intake", entry)
   });
@@ -950,15 +1013,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     ingestionService: {
       ingestNormalizedEvent: (event, effectTriggers) =>
         maintenanceGate.runIntake(() => eventIngestionService.ingestNormalizedEvent(event, effectTriggers)),
-      ingestEffectTriggers: (eventId, triggers) =>
-        maintenanceGate.runIntake(() => eventIngestionService.ingestEffectTriggers(eventId, triggers))
+      ingestEffectTriggers: (eventId, triggers, payload) =>
+        maintenanceGate.runIntake(() => eventIngestionService.ingestEffectTriggers(eventId, triggers, payload))
     },
     generateReferenceId: generateEventSourceReferenceId,
-    customEventHandler: createStreamerBotVideoIntake({
-      intake: videoRequestIntake,
-      queue: videoQueueService,
-      onDiagnostic: entry => writeVideoIntakeDiagnostic("videos.streamerbot", entry)
-    }),
+    consumerExternalEvents: eventBus.externalPayloadIdentities(),
     onDiagnostic: (entry) => writeStreamerBotRuntimeDiagnostic(runtimeLogger, entry),
     now
   });
@@ -967,8 +1026,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     apiClient: options.twitchEventSubApiClient ?? new DefaultTwitchEventSubApiClient(),
     socketFactory: options.twitchEventSubSocketFactory ?? createNodeWebSocket,
     onNotification: async (message) => {
-      const activeEventSource = await providerRegistrationRepository.findActive("event-source");
-      if (activeEventSource?.provider.kind !== "twitch") {
+      if (await providerRegistrationRepository.findActiveByKind("twitch") === null) {
         return;
       }
       await maintenanceGate.runIntake(() => eventIngestionService.ingestTwitchEventSubNotification(message));
@@ -997,17 +1055,18 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       await authService.validateConnectedAccount({ notifyConnectionChanged: false });
     }
   });
-  const syncEventSourceRuntime = () => trackRuntimeWork(() => syncEventSourceRuntimes({
+  const syncEventSourceRuntime = (kinds?: readonly ProviderKind[]) => trackRuntimeWork(() => syncEventSourceRuntimes({
     repository: providerRegistrationRepository,
     twitchRuntime: twitchEventSubRuntimeService,
-    streamerBotRuntime: streamerBotRuntimeService
+    streamerBotRuntime: streamerBotRuntimeService,
+    kinds
   }));
   const twitchAuthService = new TwitchOAuthService({
     apiClient: twitchApiClient,
     clientId: twitchClientId,
     generateAuthorizationId: randomUUID,
     now,
-    onConnectionChanged: syncEventSourceRuntime,
+    onConnectionChanged: () => syncEventSourceRuntime(["twitch"]),
     repository: twitchAccountRepository,
     secretStore,
     assertSecretStoreAvailable: runtimeSecretStore.assertAvailable
@@ -1112,7 +1171,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
           : target.provider.capability === "tts"
             ? activeRules.filter((rule) => rule.variants.some((variant) => variant.enabled && variant.ttsConfig !== null)).length
             : 0;
-      const current = await providerRegistrationRepository.findActive(target.provider.capability);
+      const current = target.provider.capability === "event-source"
+        ? await providerRegistrationRepository.findActiveByKind(target.provider.kind)
+        : await providerRegistrationRepository.findActive(target.provider.capability);
       const changesProviderKind =
         current !== null && current.provider.id !== target.provider.id && current.provider.kind !== target.provider.kind;
       return evaluateProviderActivationImpact({
@@ -1121,7 +1182,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         changesProviderKind,
         currentProviderName: current?.provider.name ?? "the current provider",
         targetProviderName: target.provider.name,
-        occurredAt: now().toISOString()
+        occurredAt: now().toISOString(),
+        overlappingTwitchSources: await findOverlappingTwitchSources(providerRegistrationRepository, target)
       });
     },
     async getUsedByAlertCount(kind: ProviderKind) {
@@ -1137,7 +1199,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     streamerBotSubscriptions: streamerBotRuntimeService,
     getVerifiedTwitchBroadcasterId: async () =>
       (await twitchAccountRepository.findConnectedAccount())?.accountId ?? null,
-    onEventSourceChanged: syncEventSourceRuntime,
+    onEventSourceChanged: (kind) => syncEventSourceRuntime([kind]),
     onMusicSourceChanged: () => musicRuntimeCoordinator.reconcile(),
     runMusicMutation: work => maintenanceGate.runIntake(work),
     now
@@ -1177,6 +1239,26 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     },
     now
   });
+  async function isStreamerBotSelectionConfigured(sourceKey: string, eventType: string): Promise<boolean> {
+    // Identities a bus consumer registered for are subscribed whenever Streamer.bot advertises them.
+    if (eventBus.externalPayloadIdentities().some((identity) =>
+      identity.sourceKey.toLowerCase() === sourceKey.toLowerCase() && identity.eventType === eventType)) return true;
+    try {
+      const providers = (await providerManagementService.listProviders("event-source"))
+        .filter((provider) => provider.kind === "streamerbot")
+        .sort((left, right) => Number(right.active) - Number(left.active));
+      for (const provider of providers) {
+        const catalog = await providerManagementService.getStreamerBotSubscriptions(provider.id);
+        if (isStreamerBotSubscriptionAvailable(catalog, sourceKey, eventType)) return true;
+      }
+      return false;
+    // error-provenance: allow expected -- provider selection probes intentionally collapse unavailable catalogs to false
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
+      return false;
+    }
+  }
   const alertSetManagementService = new AlertSetManagementService({
     alertService,
     metadataRepository: alertSetMetadataRepository,
@@ -1186,7 +1268,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     mutationStore: alertAggregateMutationStore,
     listBrowserSources: () => outputReadinessService.listAlertBrowserSources(
       `http://${initialConfig.server.host}:${initialConfig.server.port}`
-    )
+    ),
+    isExternalIdentitySubscribed: (identity) => isStreamerBotSelectionConfigured(identity.sourceKey, identity.eventType)
   });
   const diagnosticsService = new DiagnosticsService({
     repository: diagnosticsLogRepository,
@@ -1327,6 +1410,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     },
     reloadRuntimeConfiguration: async () => {
       moderationService.reloadSettings();
+      eventBusSettingsService.reload();
+      // Events journaled before the restore belong to the replaced configuration; never play them late.
+      await eventBus.expirePending();
       await desktopConfigService.refresh();
       const { playback } = await configStore.readConfig();
       const [alertSettings, effectSettings] = await Promise.all([
@@ -1637,21 +1723,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         return false;
       }
     },
-    async isStreamerBotSelectionConfigured(providerId, sourceKey, eventType) {
-      try {
-        const providers = await providerManagementService.listProviders("event-source");
-        if (!providers.some((provider) => provider.id === providerId && provider.kind === "streamerbot")) {
-          return false;
-        }
-        const catalog = await providerManagementService.getStreamerBotSubscriptions(providerId);
-        return isStreamerBotSubscriptionAvailable(catalog, sourceKey, eventType);
-      // error-provenance: allow expected -- provider selection probes intentionally collapse unavailable catalogs to false
-      }
-      // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
-      catch {
-        return false;
-      }
-    }
+    isStreamerBotSelectionConfigured
   });
   const refreshCommittedMusicConfig = async (enabled: boolean): Promise<void> => {
     // Persistence has committed. Report runtime failures without turning a durable save into a failed request.
@@ -1740,6 +1812,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     getConfigurationBackupSummary: () => configurationBackupService.summary(),
     openDataFolder: () => localMaintenanceService.openDataFolder(),
     clearOldLogs: () => localMaintenanceService.clearOldLogs(),
+    getEventBusActivity: () => ({ events: eventBusJournal.recentActivity(100).map((record) => ({ id: record.id, receivedAt: record.receivedAt, sourceKind: record.sourceKind, kind: record.kind, eventType: record.eventType, outcome: record.outcome, referenceId: record.referenceId, consumers: record.consumers.map((consumer) => ({ ...consumer })) })) }),
+    getEventBusSettings: () => eventBusSettingsService.get(),
+    saveEventBusSettings: (settings) => eventBusSettingsService.save(settings),
     overlayAccessService,
     overlayCompositionService,
     overlayOutputManagementService,
@@ -1856,6 +1931,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     eventIngestionService,
     recordDesktopDiagnostic,
     syncEventSourceRuntime,
+    scheduleEventReplay,
     close
   };
   } catch (error) {

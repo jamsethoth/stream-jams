@@ -306,6 +306,35 @@ describe("EventIngestionService", () => {
     });
     expect(batches).toEqual([[trigger]]);
   });
+
+  it("records duplicates it recognizes and rejected input with the sink, without letting recording break intake", async () => {
+    const recorded: unknown[] = [];
+    const trigger: EffectTrigger = {
+      kind: "streamerbot-event", eventId: "scene-1", occurredAt: "2026-05-30T12:00:00.000Z",
+      providerId: "provider-streamerbot", sourceKey: "OBS", eventType: "SceneChanged", summary: "Scene changed"
+    };
+    const service = new EventIngestionService({
+      generateReferenceId: () => "ref-rejected",
+      sink: {
+        handleEvent() {},
+        async handleTriggers() {},
+        recordDuplicate(input) { recorded.push(["duplicate", input]); },
+        recordRejected(sourceKind, referenceId) { recorded.push(["rejected", sourceKind, referenceId]); throw new Error("journal down"); }
+      }
+    });
+
+    await service.ingestEffectTriggers("scene-1", [trigger]);
+    await service.ingestEffectTriggers("scene-1", [trigger]);
+    await service.ingestTwitchEventSubNotification(followNotification("message-1"));
+    await service.ingestTwitchEventSubNotification(followNotification("message-1"));
+    await expect(service.ingestEffectTriggers("bad", [{ kind: "nope" }])).resolves.toMatchObject({ status: "rejected" });
+
+    expect(recorded).toEqual([
+      ["duplicate", { sourceKind: "streamerbot", kind: "external", eventType: "OBS · SceneChanged" }],
+      ["duplicate", { sourceKind: "twitch", kind: "canonical", eventType: null }],
+      ["rejected", "streamerbot", "ref-rejected"]
+    ]);
+  });
 });
 
 function followNotification(messageId: string) {

@@ -123,7 +123,8 @@ test("an unavailable renderer requires native confirmation before service shutdo
     const healthStatus = await fetch(`http://127.0.0.1:${fixture.port}/health`, { signal: AbortSignal.timeout(1_000) })
       .then((response) => response.status, () => 0);
     const dialogs = desktop === undefined ? [] : await nativeDialogMessages(desktop).catch(() => []);
-    console.info("Renderer-failure shutdown observation:", { mainPid, healthStatus, lifecycleEvents, dialogs });
+    const runtimeEvents = (await runtimeLogEntries(join(fixture.root, "data", "logs")).catch(() => [])).slice(-30).map((entry) => entry.event);
+    console.info("Renderer-failure shutdown observation:", { mainPid, healthStatus, lifecycleEvents, dialogs, runtimeEvents });
     throw error;
   } finally {
     await cleanup(desktop, mainPid, fixture.root);
@@ -195,7 +196,8 @@ test("native dialog replies target the requested pending dialog rather than the 
     await quit(desktop, fixture.port);
     desktop = undefined;
   } catch (error) {
-    console.info("Dialog-helper quit observation:", desktop === undefined ? [] : await nativeDialogMessages(desktop).catch(() => []));
+    const phases = (await readFile(join(fixture.root, "shutdown.jsonl"), "utf8").catch(() => "")).split("\n").filter(Boolean).map((line) => (JSON.parse(line) as { phase: string }).phase);
+    console.info("Dialog-helper quit observation:", desktop === undefined ? [] : await nativeDialogMessages(desktop).catch(() => []), { phases });
     throw error;
   } finally {
     await cleanup(desktop, mainPid, fixture.root);
@@ -220,7 +222,9 @@ async function desktopFixture(name: string, requestedPort?: number): Promise<Des
   const env: Record<string, string> = {
     ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
     STREAM_JAMS_CONFIG_PATH: configPath,
-    STREAM_JAMS_DESKTOP_USER_DATA_PATH: join(root, "electron")
+    STREAM_JAMS_DESKTOP_USER_DATA_PATH: join(root, "electron"),
+    // Opt-in phase evidence, printed when a quit stalls.
+    STREAM_JAMS_SHUTDOWN_LOG: join(root, "shutdown.jsonl")
   };
   delete env.ELECTRON_RUN_AS_NODE;
   return { configPath, env, port, root };

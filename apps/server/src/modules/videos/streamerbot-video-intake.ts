@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { overlayPurposeSchema, type OverlayPurpose } from "@stream-jams/core";
+import { overlayPurposeSchema, type BusEvent, type EventBusHandleOutcome, type OverlayPurpose } from "@stream-jams/core";
 import { videoRequesterSchema } from "@stream-jams/core/videos";
-import type { StreamerBotEventEnvelope } from "../streamerbot/streamerbot-client.js";
-import type { VideoRequestIntake } from "./video-request-intake.js";
+import { externalIdentityMatchesTrigger } from "../events/event-bus.js";
+import type { VideoRequestIntake, VideoRequestRejection } from "./video-request-intake.js";
 import type { VideoQueueService } from "./video-queue-service.js";
 
 /**
@@ -13,6 +13,13 @@ import type { VideoQueueService } from "./video-queue-service.js";
 export const videoStreamerBotEvent = { source: "General", type: "Custom" } as const;
 export const videoRequestMarker = { source: "StreamJams", type: "VideoRequest" } as const;
 export const legacyVideoShoutoutMarker = { source: "StreamJams", type: "VideoShoutout" } as const;
+
+/** The Streamer.bot identity that carries video requests; the event bus journals its payload for Videos. */
+export const videoExternalIdentity = {
+  providerKind: "streamerbot",
+  sourceKey: videoStreamerBotEvent.source,
+  eventType: videoStreamerBotEvent.type
+} as const;
 
 export interface VideoIntakeDiagnostic {
   readonly level: "info" | "warn";
@@ -31,47 +38,52 @@ const envelopeSchema = z.object({ action: z.enum(["play", "no-clip", "clear"]).d
 const twitchClipIdSchema = z.string().trim().regex(/^[A-Za-z0-9_-]{1,100}$/u);
 
 /**
- * Passive adapter: it never calls Twitch, parses chat, or executes Streamer.bot actions.
- * Returns true when the event carried a Videos marker, so it skips stream-event ingestion.
+ * Passive adapter for General/Custom bus events: it never calls Twitch, parses chat, or executes Streamer.bot
+ * actions. Broadcasts without a Videos marker are left to the modules that select them.
  */
 export function createStreamerBotVideoIntake(options: StreamerBotVideoIntakeOptions) {
   const report = async (entry: VideoIntakeDiagnostic) => { await options.onDiagnostic?.(entry); };
-  return async (envelope: StreamerBotEventEnvelope): Promise<boolean> => {
-    if (envelope.event.source.toLowerCase() !== videoStreamerBotEvent.source.toLowerCase() || envelope.event.type !== videoStreamerBotEvent.type) return false;
-    const marker = readMarker(envelope.data);
-    if (marker === null) return false;
-    const data = envelope.data as Record<string, unknown>;
+  return async (event: BusEvent): Promise<EventBusHandleOutcome> => {
+    if (event.kind !== "external" || !event.effectTriggers.some(trigger => externalIdentityMatchesTrigger(videoExternalIdentity, trigger))) return "no-match";
+    const marker = readMarker(event.payload);
+    if (marker === null) return "no-match";
+    const data = event.payload as Record<string, unknown>;
     const parsedEnvelope = envelopeSchema.safeParse(data);
     if (!parsedEnvelope.success) {
       await report({ level: "warn", message: "Streamer.bot video request was rejected.", metadata: { reason: "invalid-request", fields: ["action", "purpose"].filter(field => field in data) } });
-      return true;
+      return "failed";
     }
     const { action, purpose } = parsedEnvelope.data;
     if (action === "clear") {
       stopCurrent(options.queue, purpose);
       await report({ level: "info", message: "Streamer.bot stopped the current video.", metadata: { purpose } });
-      return true;
+      return "admitted";
     }
     if (action === "no-clip") {
       const displayName = videoRequesterSchema.safeParse(data.displayName);
       options.queue.showNotice(purpose, displayName.success ? displayName.data : null);
       await report({ level: "info", message: "Streamer.bot reported no clip to show.", metadata: { purpose } });
-      return true;
+      return "admitted";
     }
 
     const request = marker === "request" ? requestFields(data) : legacyRequestFields(data);
     const result = await options.intake.submit(purpose, request, { via: "streamerbot", mayAutoplay: true });
     if (result.status === "rejected") {
       await report({ level: "warn", message: "Streamer.bot video request was rejected and not queued.", metadata: { reason: result.reason, fields: result.fields, purpose } });
-      return true;
+      return rejectionOutcome(result.reason);
     }
     await report({
       level: "info",
       message: "Streamer.bot video request was queued.",
       metadata: { purpose, itemId: result.item.id, provider: result.item.source.provider, status: result.item.status, autoplay: result.item.autoplay, legacy: marker === "legacy" }
     });
-    return true;
+    return "admitted";
   };
+}
+
+/** A request the disabled module turned away did not match anything; any other rejection failed. */
+export function rejectionOutcome(reason: VideoRequestRejection): EventBusHandleOutcome {
+  return reason === "module-disabled" ? "no-match" : "failed";
 }
 
 function readMarker(data: unknown): "request" | "legacy" | null {

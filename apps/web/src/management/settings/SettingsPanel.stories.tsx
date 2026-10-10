@@ -28,6 +28,15 @@ type Story = StoryObj<typeof meta>;
 
 export const Overview: Story = {};
 
+export const EventReplayExpanded: Story = {
+  args: { managementApi: createSettingsStoryApi({ getEventBusSettings: async () => ({ replayAgeSeconds: 120 }), saveEventBusSettings: async (settings) => settings }) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Event replay"));
+    await expect(await canvas.findByRole("combobox", { name: "Replay age" })).toHaveValue("120");
+  }
+};
+
 export const AudioSaveAndLeaveFailure: Story = {
   args: { audioApi: { ...createAudioStoryApi(), updateRoute: fn(async () => { throw new ManagementHttpError("Device settings could not be written", "AUDIO_SAVE_FAILED", "ref-disposable-story", "Reconnect the selected endpoint, then retry."); }) } },
   render: args => <DirtyNavigationProvider><NavigationSaveScenario {...args} /></DirtyNavigationProvider>,

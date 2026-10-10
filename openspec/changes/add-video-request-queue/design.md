@@ -118,6 +118,12 @@ One provider registry in `@stream-jams/core/videos` (subpath export, kept off th
 
 Rejections are logged with reason and field names only.
 
+The Streamer.bot and channel point adapters run inside one central event bus consumer, `videos` (`videos-bus-consumer.ts`), which replaced the `video-shoutout` consumer when main's event bus merged:
+- It declares the Streamer.bot `General` / `Custom` identity, so the bus journals that payload and the Streamer.bot source subscribes to it. Broadcasts without a Videos marker are left to alerts and Screen Effects that select them.
+- Canonical events go to the channel point adapter; only redemptions of mapped rewards submit a request.
+- It makes one delivery attempt and ignores a redelivered journal row, because submissions are not idempotent. An adapter error is logged and reported as `failed`; a request the disabled module turns away is `no-match`; other rejections are `failed`, so Diagnostics, Event intake explains them.
+- The new cursor ID starts at the journal head, so events pending for the retired `video-shoutout` cursor at upgrade are not replayed into the queue.
+
 ### D7. UI
 - **Management "Videos" page** (Mantine, following the module page layout):
   - enablement
@@ -141,5 +147,5 @@ Rejections are logged with reason and field names only.
 
 ## Migration
 
-- A SQLite migration adds `video_requests` and `video_queue_state` tables and removes `video-shoutout` module rows and outputs.
+- A SQLite migration (`040-video-request-queue`, after main's event bus migrations 034 to 039) adds `video_requests` and `video_queue_state` tables and removes `video-shoutout` module rows and outputs. A database from a pre-merge Videos build, which recorded it as `033-video-request-queue` right after `032-music-source-providers`, runs the event bus migrations and keeps its queue tables under the new ID. Backups at schema 38 and older drop retired `video-shoutout` rows and outputs.
 - BL-053 and BL-057 close when this change is archived.

@@ -73,6 +73,7 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async getStreamerBotSubscriptions(providerId) {
       return {
         providerId,
+        forwardTwitchEvents: true,
         available: false,
         sources: [],
         selected: [],
@@ -83,11 +84,23 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async updateStreamerBotSubscriptions(providerId, input) {
       return {
         providerId,
+        forwardTwitchEvents: true,
         available: true,
         sources: input.externalSubscriptions,
         selected: input.externalSubscriptions,
         unavailableSelections: [],
         twitchBroadcasterId: input.twitchBroadcasterId
+      };
+    },
+    async setStreamerBotForwarding(providerId, input) {
+      return {
+        providerId,
+        forwardTwitchEvents: input.forwardTwitchEvents,
+        available: false,
+        sources: [],
+        selected: [],
+        unavailableSelections: [],
+        twitchBroadcasterId: null
       };
     },
     async activateProvider() {

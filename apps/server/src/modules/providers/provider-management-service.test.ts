@@ -33,6 +33,7 @@ describe("ProviderManagementService", () => {
   let impacts: Map<string, ProviderActivationImpact>;
   let service: ProviderManagementService;
   let eventSourceSyncCount: number;
+  let eventSourceSyncKinds: string[];
   let musicSourceSyncCount: number;
   let logger: Pick<Logger, "error">;
   let pairing: PearPairingService;
@@ -45,6 +46,7 @@ describe("ProviderManagementService", () => {
     secrets = new InMemorySecrets();
     impacts = new Map();
     eventSourceSyncCount = 0;
+    eventSourceSyncKinds = [];
     musicSourceSyncCount = 0;
     logger = { error: vi.fn(async () => {}) };
     pairing = new PearPairingService({ ...hermeticTls,
@@ -68,8 +70,9 @@ describe("ProviderManagementService", () => {
       validateMusicConnection: async () => ({ valid: true, connectionState: "connected", intakeState: null, validatedAt: "2026-07-15T12:00:00.000Z", availableVoices: [], error: null }),
       getActivationImpact: async (providerId) => impacts.get(providerId) ?? emptyImpact,
       getUsedByAlertCount: async (kind) => (kind === "speakerbot" ? 3 : 2),
-      onEventSourceChanged: async () => {
+      onEventSourceChanged: async (kind) => {
         eventSourceSyncCount += 1;
+        eventSourceSyncKinds.push(kind);
       },
       onMusicSourceChanged: async () => { musicSourceSyncCount += 1; },
       generateId: () => `provider-${++id}`,
@@ -115,6 +118,7 @@ describe("ProviderManagementService", () => {
       port: 8080,
       endpoint: "/",
       allowUnauthenticatedLocalConnection: false,
+      forwardTwitchEvents: true,
       twitchBroadcasterId: null,
       externalSubscriptions: []
     });
@@ -134,7 +138,7 @@ describe("ProviderManagementService", () => {
     if (second.status !== "registered") throw new Error("Expected second Music source");
     await service.activateProvider(second.provider.provider.id, false);
     expect((await repository.findActive("music-source"))?.provider.id).toBe(second.provider.provider.id);
-    expect((await repository.findActive("event-source"))?.provider.kind).toBe("twitch");
+    expect((await repository.listActive("event-source")).map((record) => record.provider.kind)).toEqual(["twitch"]);
     expect(eventSourceSyncCount).toBe(1);
     expect(musicSourceSyncCount).toBe(2);
     await service.deactivateProvider(second.provider.provider.id);
@@ -552,7 +556,8 @@ describe("ProviderManagementService", () => {
 
     const activated = await service.activateProvider(second.provider.provider.id, true);
     expect(activated.provider.active).toBe(true);
-    expect(activated.replacedProviderId).toBe("provider-1");
+    expect(activated.replacedProviderId).toBeNull();
+    expect((await repository.listActive("event-source")).map((record) => record.provider.kind).sort()).toEqual(["streamerbot", "twitch"]);
   });
 
   it("deactivates an event source without deleting its registration", async () => {
@@ -564,10 +569,43 @@ describe("ProviderManagementService", () => {
     const deactivated = await service.deactivateProvider(registered.provider.provider.id);
 
     expect(deactivated).toMatchObject({ active: false, intakeState: "inactive" });
-    expect(await repository.findActive("event-source")).toBeNull();
+    expect(await repository.listActive("event-source")).toEqual([]);
     await expect(service.getProvider(registered.provider.provider.id)).resolves.toMatchObject({
       provider: { id: registered.provider.provider.id, active: false }
     });
+  });
+
+  it("saves Streamer.bot Twitch forwarding and reconnects only a registration in use", async () => {
+    await service.registerProvider(twitchSetup());
+    const streamerBot = await service.registerProvider({
+      name: "Local Streamer.bot",
+      kind: "streamerbot",
+      configuration: {
+        protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/",
+        externalSubscriptions: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }]
+      },
+      credential: "secret"
+    });
+    if (streamerBot.status !== "registered") throw new Error("Expected Streamer.bot registration");
+    const providerId = streamerBot.provider.provider.id;
+    const syncsBefore = eventSourceSyncCount;
+
+    const inactive = await service.setStreamerBotForwarding(providerId, { forwardTwitchEvents: false });
+
+    expect(inactive).toMatchObject({ providerId, forwardTwitchEvents: false, available: false });
+    expect((await repository.findById(providerId))?.configuration).toMatchObject({
+      forwardTwitchEvents: false,
+      externalSubscriptions: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }]
+    });
+    expect(eventSourceSyncCount).toBe(syncsBefore);
+
+    await service.activateProvider(providerId, true);
+    await service.setStreamerBotForwarding(providerId, { forwardTwitchEvents: true });
+
+    expect((await repository.findById(providerId))?.configuration).toMatchObject({ forwardTwitchEvents: true });
+    expect(eventSourceSyncCount).toBe(syncsBefore + 2);
+    await expect(service.setStreamerBotForwarding((await repository.findActiveByKind("twitch"))!.provider.id, { forwardTwitchEvents: false }))
+      .rejects.toThrow();
   });
 
   it("synchronizes runtime only after durable active event-source changes", async () => {
@@ -585,6 +623,7 @@ describe("ProviderManagementService", () => {
 
     await service.registerProvider(speakerBotSetup());
     expect(eventSourceSyncCount).toBe(3);
+    expect(eventSourceSyncKinds).toEqual(["twitch", "streamerbot", "streamerbot"]);
   });
 
   it("returns derived usage, saves TTS safety, and runs a provider voice test", async () => {

@@ -1,14 +1,15 @@
 import {
-  effectTriggerSchema,
-  matchesEffectBinding,
+  matchEffectBinding,
   resolveEffectContent,
   collectEffectDurationAssetIds,
   resolveMediaDuration,
   type AssetRecord,
+  type BusEvent,
   type EffectContentSnapshot,
   type EffectOccurrence,
   type EffectQueue,
   type EffectTrigger,
+  type IngestProviderId,
   type PlaybackCooldownKeyService,
   type PlaybackDedupeKeyService,
   type ScreenEffectDocument,
@@ -126,12 +127,9 @@ export class EffectAdmissionService {
     this.#assetDurationCatalog = options.assetDurationCatalog ?? null;
   }
 
-  async handleTriggers(candidateTriggers: readonly EffectTrigger[]): Promise<EffectAdmissionResult> {
-    const triggers = effectTriggerSchema.array().min(1).parse(candidateTriggers);
-    const eventId = triggers[0]!.eventId;
-    if (triggers.some((trigger) => trigger.eventId !== eventId)) {
-      throw new TypeError("Screen Effects trigger batches must describe one upstream event");
-    }
+  /** Admits every enabled effect with a binding whose selector matches the journal-validated bus event. */
+  async handleEvent(event: BusEvent): Promise<EffectAdmissionResult> {
+    const { eventId } = event;
     if (!await this.#isModuleEnabled()) {
       return this.#report({ status: "module-disabled", eventId, outcomes: [] });
     }
@@ -145,7 +143,7 @@ export class EffectAdmissionService {
       this.#getModuleCooldownSeconds()
     ]);
     validateCooldown(moduleCooldownSeconds);
-    const matches = matchEffects(documents, triggers);
+    const matches = matchEffects(documents, event);
     if (!await this.#isModuleEnabled()) {
       return this.#report({ status: "module-disabled", eventId, outcomes: [] });
     }
@@ -154,7 +152,7 @@ export class EffectAdmissionService {
     }
 
     const admission = this.#admissionTail.then(
-      () => this.#admitMatches(eventId, matches, moduleCooldownSeconds)
+      () => this.#admitMatches(eventId, event.sourceKind, matches, moduleCooldownSeconds)
     );
     this.#admissionTail = admission.then(() => undefined, () => undefined);
     return admission;
@@ -205,15 +203,16 @@ export class EffectAdmissionService {
     if (!this.#queue.hasPendingCapacity()) {
       return { effectId: retained.content.effectId, status: "full" };
     }
-    return this.#enqueueExplicit(retained.content, retained.trigger);
+    return this.#enqueueExplicit(retained.content, retained.trigger, false, retained.sourceKind);
   }
 
   async #enqueueExplicit(
     content: EffectContentSnapshot,
     trigger: EffectTrigger | null,
-    requireLive = false
+    requireLive = false,
+    sourceKind: IngestProviderId | null = null
   ): Promise<EffectAdmissionOutcome> {
-    const work = () => this.#enqueueCaptured(content, trigger, requireLive);
+    const work = () => this.#enqueueCaptured(content, trigger, requireLive, sourceKind);
     try { return this.#localMediaService === undefined ? await work() : await this.#localMediaService.runAdmission(work); }
     catch (error) {
       if (error instanceof MediaUnavailableError) return { effectId: content.effectId, status: "missing-reference" };
@@ -221,7 +220,12 @@ export class EffectAdmissionService {
     }
   }
 
-  async #enqueueCaptured(content: EffectContentSnapshot, trigger: EffectTrigger | null, requireLive: boolean): Promise<EffectAdmissionOutcome> {
+  async #enqueueCaptured(
+    content: EffectContentSnapshot,
+    trigger: EffectTrigger | null,
+    requireLive: boolean,
+    sourceKind: IngestProviderId | null
+  ): Promise<EffectAdmissionOutcome> {
     content = await this.#resolveContentDuration(content);
     if (!await this.#isModuleEnabled()) {
       return { effectId: content.effectId, status: "module-disabled" };
@@ -241,7 +245,7 @@ export class EffectAdmissionService {
     if (requireLive && !this.#isEffectLive(content.effectId)) return { effectId: content.effectId, status: "module-disabled" };
 
     const occurrenceId = this.#generateOccurrenceId();
-    const queued = this.#queue.enqueue(this.#createOccurrence(occurrenceId, content, trigger));
+    const queued = this.#queue.enqueue(this.#createOccurrence(occurrenceId, content, trigger, sourceKind));
     if (queued !== "full") this.#localMediaService?.commitAdmission(effectOccurrenceKey("screen-effects", occurrenceId));
     return queued === "full"
       ? { effectId: content.effectId, status: "full" }
@@ -250,6 +254,7 @@ export class EffectAdmissionService {
 
   async #admitMatches(
     eventId: string,
+    sourceKind: IngestProviderId,
     matches: readonly MatchedEffect[],
     moduleCooldownSeconds: number
   ): Promise<EffectAdmissionResult> {
@@ -271,7 +276,7 @@ export class EffectAdmissionService {
         continue;
       }
 
-      const outcome = await this.#enqueueExplicit(resolveEffectContent(document, this.#random()), match.trigger, true);
+      const outcome = await this.#enqueueExplicit(resolveEffectContent(document, this.#random()), match.trigger, true, sourceKind);
       if (outcome.status === "module-disabled" && !this.#isEffectLive(document.id)) continue;
       outcomes.push(outcome);
       admittedAny ||= outcome.status === "queued";
@@ -319,12 +324,14 @@ export class EffectAdmissionService {
   #createOccurrence(
     occurrenceId: string,
     content: EffectContentSnapshot,
-    trigger: EffectTrigger | null
+    trigger: EffectTrigger | null,
+    sourceKind: IngestProviderId | null
   ): EffectOccurrence {
     return {
       id: occurrenceId,
       moduleId: "screen-effects",
       trigger: trigger === null ? null : structuredClone(trigger),
+      sourceKind,
       content: structuredClone(content),
       enqueuedAtMs: this.#now(),
       sequence: this.#nextSequence++,
@@ -348,14 +355,14 @@ export class EffectAdmissionService {
 
 function matchEffects(
   documents: readonly ScreenEffectDocument[],
-  triggers: readonly EffectTrigger[]
+  event: BusEvent
 ): readonly MatchedEffect[] {
   const matches: MatchedEffect[] = [];
   for (const document of documents) {
     if (!document.enabled) continue;
     const trigger = document.bindings
-      .map((binding) => triggers.find((candidate) => matchesEffectBinding(binding, candidate)))
-      .find((candidate): candidate is EffectTrigger => candidate !== undefined);
+      .map((binding) => matchEffectBinding(binding, event))
+      .find((candidate): candidate is EffectTrigger => candidate !== null);
     if (trigger !== undefined) matches.push({ document, trigger });
   }
   return matches.sort((left, right) => {

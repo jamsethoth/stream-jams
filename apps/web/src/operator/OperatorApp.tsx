@@ -386,7 +386,7 @@ function OperationList({ heading, items, renderAction }: { readonly heading: str
 function OperationCard({ action, item }: { readonly action: React.ReactNode; readonly item: OperationRow }) {
   return (
     <article className="operator-item">
-      <div className="operator-item__summary"><div><strong>{item.name}</strong><span>{item.summary}</span></div>{action}</div>
+      <div className="operator-item__summary"><div><strong>{item.name}</strong><span>{item.source === null ? item.summary : `${item.summary} · via ${sourceLabel(item.source)}`}</span></div>{action}</div>
       <dl>
         <ItemDetail label="Module" value={moduleLabel(item.moduleId)} />
         {item.moduleQueuePosition === null ? null : <ItemDetail label="Module position" value={`#${item.moduleQueuePosition}`} />}
@@ -403,6 +403,10 @@ function ItemDetail({ label, tone, value }: { readonly label: string; readonly t
 
 function moduleLabel(moduleId: string): string {
   return moduleId === "alerts" ? "Alerts" : moduleId === "screen-effects" ? "Screen Effects" : moduleId;
+}
+
+function sourceLabel(source: NonNullable<OperationRow["source"]>): string {
+  return source === "twitch" ? "Twitch" : "Streamer.bot";
 }
 
 function operationKey(item: OperationRow): string {

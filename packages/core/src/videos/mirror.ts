@@ -81,41 +81,51 @@ export const videoMirrorReceiverIdSchema = z.string().regex(/^(?:browser|desktop
 
 export const videoDeviceDelayMaximumMs = 500;
 
-const purposeSchema = z.enum(["live", "test"]);
-const itemIdSchema = z.string().min(1).max(128);
-const positionSchema = z.number().int().min(0).max(24 * 60 * 60 * 1000);
-const deviceIdSchema = z.string().min(1).max(512).refine(id => id === id.trim() && id !== "default" && id !== "communications");
+/** Fields the desktop host IPC schemas share; built on demand so browser routes never construct them. */
+function desktopVideoFields() {
+  return {
+    purposeSchema: z.enum(["live", "test"]),
+    itemIdSchema: z.string().min(1).max(128),
+    positionSchema: z.number().int().min(0).max(24 * 60 * 60 * 1000)
+  };
+}
 
-/** Commands from the server's videos runtime to the desktop player host. */
-export const desktopVideoCommandSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("load"), purpose: purposeSchema, itemId: itemIdSchema, source: videoSourceSchema, positionMs: positionSchema, paused: z.boolean() }).strict(),
-  z.object({ type: z.literal("play"), purpose: purposeSchema, itemId: itemIdSchema, positionMs: positionSchema }).strict(),
-  z.object({ type: z.literal("pause"), purpose: purposeSchema, itemId: itemIdSchema }).strict(),
-  z.object({ type: z.literal("seek"), purpose: purposeSchema, itemId: itemIdSchema, positionMs: positionSchema }).strict(),
-  z.object({ type: z.literal("stop"), purpose: purposeSchema }).strict(),
-  z.object({
-    type: z.literal("set-output"), purpose: purposeSchema, muted: z.boolean(),
-    devices: z.array(z.object({ deviceId: deviceIdSchema, delayMs: z.number().int().min(0).max(videoDeviceDelayMaximumMs) }).strict()).max(8)
-      .refine(devices => new Set(devices.map(device => device.deviceId)).size === devices.length, "Devices must be unique")
-  }).strict(),
-  z.object({ type: z.literal("signal"), purpose: purposeSchema, receiverId: videoMirrorReceiverIdSchema, signal: videoMirrorReceiverSignalSchema }).strict()
-]);
+/** Commands from the server's videos runtime to the desktop player host. Pure, so browser routes drop it. */
+export const desktopVideoCommandSchema = /* @__PURE__ */ (() => {
+  const { purposeSchema, itemIdSchema, positionSchema } = desktopVideoFields();
+  const deviceIdSchema = z.string().min(1).max(512).refine(id => id === id.trim() && id !== "default" && id !== "communications");
+  return z.discriminatedUnion("type", [
+    z.object({ type: z.literal("load"), purpose: purposeSchema, itemId: itemIdSchema, source: videoSourceSchema, positionMs: positionSchema, paused: z.boolean() }).strict(),
+    z.object({ type: z.literal("play"), purpose: purposeSchema, itemId: itemIdSchema, positionMs: positionSchema }).strict(),
+    z.object({ type: z.literal("pause"), purpose: purposeSchema, itemId: itemIdSchema }).strict(),
+    z.object({ type: z.literal("seek"), purpose: purposeSchema, itemId: itemIdSchema, positionMs: positionSchema }).strict(),
+    z.object({ type: z.literal("stop"), purpose: purposeSchema }).strict(),
+    z.object({
+      type: z.literal("set-output"), purpose: purposeSchema, muted: z.boolean(),
+      devices: z.array(z.object({ deviceId: deviceIdSchema, delayMs: z.number().int().min(0).max(videoDeviceDelayMaximumMs) }).strict()).max(8)
+        .refine(devices => new Set(devices.map(device => device.deviceId)).size === devices.length, "Devices must be unique")
+    }).strict(),
+    z.object({ type: z.literal("signal"), purpose: purposeSchema, receiverId: videoMirrorReceiverIdSchema, signal: videoMirrorReceiverSignalSchema }).strict()
+  ]);
+})();
 
-const controlsSchema = z.object({ pause: z.boolean(), seek: z.boolean() }).strict();
-
-/** Events from the desktop player host back to the server. */
-export const desktopVideoEventSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("status"), available: z.boolean() }).strict(),
-  z.object({
-    type: z.literal("report"), purpose: purposeSchema, itemId: itemIdSchema,
-    state: z.enum(["started", "progress", "ended", "failed"]),
-    positionMs: positionSchema.optional(),
-    durationMs: z.number().int().min(1).max(24 * 60 * 60 * 1000).nullable().optional(),
-    controls: controlsSchema.optional(),
-    reason: z.string().min(1).max(200).optional()
-  }).strict(),
-  z.object({ type: z.literal("signal"), purpose: purposeSchema, receiverId: videoMirrorReceiverIdSchema, signal: videoMirrorPublisherSignalSchema }).strict()
-]);
+/** Events from the desktop player host back to the server. Pure, so browser routes drop it. */
+export const desktopVideoEventSchema = /* @__PURE__ */ (() => {
+  const { purposeSchema, itemIdSchema, positionSchema } = desktopVideoFields();
+  const controlsSchema = z.object({ pause: z.boolean(), seek: z.boolean() }).strict();
+  return z.discriminatedUnion("type", [
+    z.object({ type: z.literal("status"), available: z.boolean() }).strict(),
+    z.object({
+      type: z.literal("report"), purpose: purposeSchema, itemId: itemIdSchema,
+      state: z.enum(["started", "progress", "ended", "failed"]),
+      positionMs: positionSchema.optional(),
+      durationMs: z.number().int().min(1).max(24 * 60 * 60 * 1000).nullable().optional(),
+      controls: controlsSchema.optional(),
+      reason: z.string().min(1).max(200).optional()
+    }).strict(),
+    z.object({ type: z.literal("signal"), purpose: purposeSchema, receiverId: videoMirrorReceiverIdSchema, signal: videoMirrorPublisherSignalSchema }).strict()
+  ]);
+})();
 
 export type DesktopVideoCommand =
   | { readonly type: "load"; readonly purpose: OverlayPurpose; readonly itemId: string; readonly source: VideoSource; readonly positionMs: number; readonly paused: boolean }

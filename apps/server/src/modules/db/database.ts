@@ -34,7 +34,13 @@ import { persistentEventTimersMigration } from "./migrations/030-persistent-even
 import { musicSourceProvidersMigration } from "./migrations/032-music-source-providers.js";
 
 import { automationGrantsMigration } from "./migrations/031-automation-grants.js";
-import { videoRequestQueueMigration } from "./migrations/033-video-request-queue.js";
+import { eventBusJournalMigration } from "./migrations/034-event-bus-journal.js";
+import { eventBusCorrelationMigration } from "./migrations/035-event-bus-correlation.js";
+import { eventSourceActivePerKindMigration } from "./migrations/036-event-source-active-per-kind.js";
+import { eventTriggerSelectorsMigration } from "./migrations/037-event-trigger-selectors.js";
+import { externalAlertIdentityMigration } from "./migrations/038-external-alert-identity.js";
+import { eventBusOutcomesMigration } from "./migrations/039-event-bus-outcomes.js";
+import { videoRequestQueueMigration } from "./migrations/040-video-request-queue.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -80,8 +86,13 @@ const migrations = [
   persistentEventTimersMigration,
   automationGrantsMigration,
   musicSourceProvidersMigration,
+  eventBusJournalMigration,
+  eventBusCorrelationMigration,
+  eventSourceActivePerKindMigration,
+  eventTriggerSelectorsMigration,
+  externalAlertIdentityMigration,
+  eventBusOutcomesMigration,
   videoRequestQueueMigration
-
 ] satisfies readonly StreamJamsMigration[];
 
 export const currentSchemaVersion = migrations.length;
@@ -177,6 +188,7 @@ class NodeSqliteStreamJamsDatabase implements StreamJamsDatabase {
         this.connection.prepare("INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)").run(musicSourceProvidersMigration.id, String(history[30]!.applied_at));
       });
     }
+    reconcilePreMergeVideosHistory(this.connection);
     const appliedCount = validateMigrationHistory(this.connection);
     for (const migration of migrations.slice(appliedCount)) {
       runInTransaction(this.connection, () => {
@@ -195,6 +207,27 @@ class NodeSqliteStreamJamsDatabase implements StreamJamsDatabase {
   [Symbol.dispose](): void {
     this.close();
   }
+}
+
+/**
+ * A Videos build made before the event bus merge applied its queue migration as "033-video-request-queue" right
+ * after the Music providers migration. Main's event bus migrations come first now, so that history runs them and
+ * keeps its already-applied Videos tables under the queue migration's current ID and original time.
+ */
+function reconcilePreMergeVideosHistory(connection: DatabaseSync): void {
+  const history = connection.prepare("SELECT id, applied_at FROM schema_migrations ORDER BY rowid").all();
+  const musicIndex = migrations.indexOf(musicSourceProvidersMigration);
+  const videosIndex = migrations.indexOf(videoRequestQueueMigration);
+  if (history.length !== musicIndex + 2 || history[musicIndex + 1]?.id !== "033-video-request-queue"
+    || !history.slice(0, musicIndex + 1).every((row, index) => row.id === migrations[index]?.id)) return;
+  runInTransaction(connection, () => {
+    connection.prepare("DELETE FROM schema_migrations WHERE id = ?").run("033-video-request-queue");
+    for (const migration of migrations.slice(musicIndex + 1, videosIndex)) {
+      connection.exec(migration.sql);
+      insertMigrationRecord(connection, migration.id);
+    }
+    connection.prepare("INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)").run(videoRequestQueueMigration.id, String(history[musicIndex + 1]!.applied_at));
+  });
 }
 
 function validateMigrationHistory(connection: DatabaseSync): number {

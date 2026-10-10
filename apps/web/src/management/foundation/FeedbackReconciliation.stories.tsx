@@ -30,7 +30,7 @@ function FeedbackReconciliation({ surface }: { readonly surface: "assets" | "tts
   const api = createStoryManagementApi({
     listRegisteredProviders: async () => surface === "tts" ? [speaker, backup] : [bot],
     getProvider: async id => ({ provider: id === backup.id ? backup : surface === "tts" ? speaker : bot, configuration: {}, availableVoices: [], ttsSafety: null }),
-    getStreamerBotSubscriptions: async () => ({ providerId: bot.id, available: true, sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }], selected: [], unavailableSelections: [], twitchBroadcasterId: null }),
+    getStreamerBotSubscriptions: async () => ({ providerId: bot.id, forwardTwitchEvents: true, available: true, sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }], selected: [], unavailableSelections: [], twitchBroadcasterId: null }),
     updateStreamerBotSubscriptions: async () => { throw failure; },
     updateTtsSafety: async () => { throw failure; },
     updateModerationSettings: async () => { throw failure; },

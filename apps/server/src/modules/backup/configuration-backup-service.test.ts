@@ -15,6 +15,7 @@ import { SqliteAlertRepository } from "../alerts/sqlite-alert-repository.js";
 import { SqliteAlertEditorDocumentRepository } from "../alerts/sqlite-alert-editor-document-repository.js";
 import { SqliteAudioOutputRouteRepository } from "../audio/sqlite-audio-output-route-repository.js";
 import { SqliteModerationSettingsRepository } from "../moderation/sqlite-moderation-settings-repository.js";
+import { SqliteTimerDefinitionRepository } from "../timers/sqlite-timer-definition-repository.js";
 import {
   ConfigurationBackupService,
   ConfigurationRestoreBlockedError,
@@ -129,7 +130,7 @@ describe("ConfigurationBackupService", () => {
     }
   });
 
-  it.each([19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
+  it.each([19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
     const target = createRealService();
     try {
       const archive = await target.service.exportArchive();
@@ -152,6 +153,17 @@ describe("ConfigurationBackupService", () => {
         archive.manifest.configurationRecordCount -= archive.configuration.tables.overlay_surfaces?.length ?? 0;
         delete archive.configuration.tables.overlay_surfaces;
       }
+      if (schemaVersion < 38) {
+        archive.manifest.configurationRecordCount -= archive.configuration.tables.event_bus_settings?.length ?? 0;
+        delete archive.configuration.tables.event_bus_settings;
+      }
+      if (schemaVersion < 37) {
+        archive.configuration.tables.alert_rules = (archive.configuration.tables.alert_rules ?? []).map((row) => {
+          const legacy = { ...row };
+          delete legacy.external_identity_json;
+          return legacy;
+        });
+      }
       if (schemaVersion < 27) {
         archive.configuration.tables.alert_set_metadata = (archive.configuration.tables.alert_set_metadata ?? []).map((row) => ({
           ...row,
@@ -170,11 +182,100 @@ describe("ConfigurationBackupService", () => {
     } finally { target.database.close(); }
   });
 
-  it("drops retired Video shoutout settings and outputs from schema-32 backups", async () => {
+  it("round-trips the event bus replay age and rejects one out of range", async () => {
+    const target = createRealService();
+    try {
+      target.database.connection.prepare("UPDATE event_bus_settings SET replay_age_seconds = 600").run();
+      const archive = await target.service.exportArchive();
+      expect(archive.configuration.tables.event_bus_settings).toEqual([expect.objectContaining({ id: 1, replay_age_seconds: 600 })]);
+      target.database.connection.prepare("UPDATE event_bus_settings SET replay_age_seconds = 30").run();
+      const preflight = await target.service.preflight(archive);
+      expect(preflight.state).toBe("valid");
+      await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
+      expect(target.database.connection.prepare("SELECT replay_age_seconds FROM event_bus_settings").all()).toEqual([{ replay_age_seconds: 600 }]);
+
+      const invalid = await target.service.exportArchive();
+      invalid.configuration.tables.event_bus_settings = [{ ...invalid.configuration.tables.event_bus_settings![0]!, replay_age_seconds: 1_801 }];
+      invalid.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(invalid.configuration);
+      expect((await target.service.preflight(invalid)).state).not.toBe("valid");
+    } finally { target.database.close(); }
+  });
+
+  it("restores the default replay age from a backup made before the setting existed", async () => {
     const target = createRealService();
     try {
       const archive = await target.service.exportArchive();
-      archive.manifest.schemaVersion = 32;
+      archive.manifest.schemaVersion = 37;
+      archive.manifest.configurationRecordCount -= archive.configuration.tables.event_bus_settings?.length ?? 0;
+      delete archive.configuration.tables.event_bus_settings;
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      target.database.connection.prepare("UPDATE event_bus_settings SET replay_age_seconds = 30").run();
+      const preflight = await target.service.preflight(archive);
+      expect(preflight.state).toBe("valid");
+      await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
+      expect(target.database.connection.prepare("SELECT replay_age_seconds FROM event_bus_settings").all()).toEqual([{ replay_age_seconds: 120 }]);
+    } finally { target.database.close(); }
+  });
+
+  it("round-trips external alert identities and rejects an identity on a canonical rule", async () => {
+    const target = createRealService();
+    try {
+      const rules = new SqliteAlertRepository(target.database.connection);
+      const identity = { providerKind: "streamerbot" as const, sourceKey: "General", eventType: "Custom" };
+      await rules.saveRule({
+        id: "alert-external", name: "Custom", eventType: "external_event", externalIdentity: identity, enabled: true,
+        collectionIds: ["set-default"], conditions: [], cooldownSeconds: 0, priority: 0,
+        variants: [{ id: "variant-external", name: "Default", enabled: true, weight: 1, visualAssetId: null, audioAssetId: null,
+          textTemplate: "{summary}", ttsConfig: null, durationMs: 1000, layout: { x: 0, y: 0, width: 10, height: 10, zIndex: 1 } }]
+      });
+      const archive = await target.service.exportArchive();
+      expect(archive.configuration.tables.alert_rules).toEqual([expect.objectContaining({ external_identity_json: JSON.stringify(identity) })]);
+      const preflight = await target.service.preflight(archive);
+      expect(preflight.state).toBe("valid");
+      await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
+      await expect(rules.findRuleById("alert-external")).resolves.toMatchObject({ eventType: "external_event", externalIdentity: identity });
+
+      const invalid = await target.service.exportArchive();
+      invalid.configuration.tables.alert_rules = invalid.configuration.tables.alert_rules!.map((row) => ({ ...row, event_type: "follow" }));
+      invalid.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(invalid.configuration);
+      expect((await target.service.preflight(invalid)).state).not.toBe("valid");
+    } finally { target.database.close(); }
+  });
+
+  it("restores schema-35 timer rules as trigger selectors", async () => {
+    const target = createRealService();
+    try {
+      const timers = new SqliteTimerDefinitionRepository(target.database.connection);
+      timers.save({
+        id: "timer-legacy", label: "Legacy", durationMs: 10000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null,
+        outputs: { browserSource: false, deviceRouteIds: [] }, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z", eventRules: []
+      });
+      const archive = await target.service.exportArchive();
+      archive.manifest.schemaVersion = 35;
+      archive.configuration.tables.timer_definitions = archive.configuration.tables.timer_definitions!.map((row) => ({
+        ...row,
+        event_rules_json: JSON.stringify([{ enabled: true, ingestProvider: "twitch", eventType: "cheer", rewardId: null, tier: null, action: "increment", amountMs: 30000, quantityUnit: 100, inactiveBehavior: "ignore" }])
+      }));
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      const preflight = await target.service.preflight(archive);
+      expect(preflight.state).toBe("valid");
+      await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
+      expect(timers.findById("timer-legacy")?.eventRules).toEqual([{
+        enabled: true,
+        selector: { match: { kind: "canonical", type: "cheer" }, sources: ["twitch"], conditions: [] },
+        action: "increment",
+        amountMs: 30000,
+        quantityUnit: 100,
+        inactiveBehavior: "ignore"
+      }]);
+    } finally { target.database.close(); }
+  });
+
+  it.each([32, 38])("drops retired Video shoutout settings and outputs from schema-%i backups", async (schemaVersion) => {
+    const target = createRealService();
+    try {
+      const archive = await target.service.exportArchive();
+      archive.manifest.schemaVersion = schemaVersion;
       const moduleConfig = archive.configuration.tables.overlay_module_config ?? [];
       archive.configuration.tables.overlay_module_config = [...moduleConfig, { module_id: "video-shoutout", enabled: 1, config_json: "{}", updated_at: new Date(0).toISOString() }];
       archive.configuration.overlayOutputs = [...archive.configuration.overlayOutputs, { overlayId: "shoutout", scope: "module", moduleId: "video-shoutout", purpose: "live", targetProfileId: null }];

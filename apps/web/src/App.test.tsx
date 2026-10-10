@@ -75,10 +75,13 @@ function createManagementApi(): ManagementApi {
       throw new Error("not called");
     },
     async getStreamerBotSubscriptions(providerId) {
-      return { providerId, available: false, sources: [], selected: [], unavailableSelections: [], twitchBroadcasterId: null };
+      return { providerId, forwardTwitchEvents: true, available: false, sources: [], selected: [], unavailableSelections: [], twitchBroadcasterId: null };
     },
     async updateStreamerBotSubscriptions(providerId, input) {
-      return { providerId, available: true, sources: input.externalSubscriptions, selected: input.externalSubscriptions, unavailableSelections: [], twitchBroadcasterId: input.twitchBroadcasterId };
+      return { providerId, forwardTwitchEvents: true, available: true, sources: input.externalSubscriptions, selected: input.externalSubscriptions, unavailableSelections: [], twitchBroadcasterId: input.twitchBroadcasterId };
+    },
+    async setStreamerBotForwarding() {
+      throw new Error("not called");
     },
     async activateProvider() {
       throw new Error("not called");

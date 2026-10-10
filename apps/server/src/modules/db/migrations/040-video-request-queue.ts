@@ -1,5 +1,5 @@
 export const videoRequestQueueMigration = {
-  id: "033-video-request-queue",
+  id: "040-video-request-queue",
   sql: `
 CREATE TABLE video_requests (
   id TEXT PRIMARY KEY NOT NULL,

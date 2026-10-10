@@ -1,0 +1,56 @@
+# Event Bus Consumers
+
+Every module that reacts to stream events registers as a consumer of the central event bus. Alerts, Screen Effects, Timers and Videos do so today. Custom data overlay rules (BL-061, building on BL-055) use the same contract. The [central event bus design](../../openspec/changes/archive/2026-10-08-add-central-event-bus/design.md) explains why the bus exists. This page covers what a consumer must do.
+
+## Registration
+
+A consumer is an `EventBusConsumerRegistration` from `@stream-jams/core`. Runtime composition (`apps/server/src/runtime/runtime-composition.ts`) passes it to the `EventBus`.
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Stable name of the consumer's persisted cursor. Renaming it loses the consumer's position. IDs must be unique. |
+| `maxAttempts` | Total delivery attempts before the event is recorded in `event_bus_delivery_failures` and skipped. Defaults to 3. Use 1 when a retry could apply a non-idempotent change twice. |
+| `externalPayloads` | Exact external identities (`providerKind`, `sourceKey`, `eventType`) whose payload the consumer needs. See below. |
+| `expiresAfterReplayAge` | Defaults to true: after a restart, an event older than the replay age is recorded as expired instead of delivered. Set false for a state consumer that must apply every event, however late. |
+| `handle(event, context)` | Handles one `BusEvent` and returns its outcome: `"admitted"`, `"no-match"` or `"failed"` (no return value means admitted). A thrown error is retried, then recorded and skipped. One failing consumer never delays or fails another consumer or intake. |
+
+## Delivery
+
+- Each consumer reads the journal after its own cursor, one event at a time, in journal order. There is no ordering guarantee across consumers.
+- Delivery is at least once. A consumer that does not checkpoint must be idempotent by `busId`.
+- A canonical event (`kind: "canonical"`) carries the validated `NormalizedStreamEvent`. An external event (`kind: "external"`) carries its identity in `effectTriggers` and, when declared, its payload.
+- `sourceKind` and `sourceRegistrationId` name the source that delivered the event. When Twitch and Streamer.bot both deliver the same occurrence, the copies are merged and the consumer sees it once, from the first source to deliver it.
+- Match events with the shared selector (`matchSelector` and `EventTriggerSelector` in `@stream-jams/core`) rather than custom matching. External identities match exactly; payload content never selects anything.
+
+## Restart replay and Diagnostics
+
+Events journaled before a restart are replayed a few seconds after startup, once browser sources and the desktop overlay can reconnect. The replay age (Settings, Event replay; 2 minutes by default, Off to 30 minutes) decides which of them are still delivered. A configuration restore expires every pending event. Global pause, mute and do not disturb apply to replayed events as to live ones.
+
+Diagnostics, Event intake, lists each intake (`accepted`, `duplicate`, `merged`, `rejected`) with every consumer's outcome (`admitted`, `no match`, `failed`, `expired`, or `pending` while delivery is under way). A failure's reference ID opens that event there. Return an honest outcome from `handle` so users can tell why something did not play.
+
+## Transactional checkpoints
+
+A consumer that changes its own SQLite state can make each event apply exactly once. To do that, call `context.checkpoint()` inside its own transaction on the bus database connection:
+
+```ts
+async handle(event, { checkpoint }) {
+  runInTransaction(connection, () => {
+    applyChange(event);
+    checkpoint();
+  });
+}
+```
+
+The state change and the cursor commit or roll back together. When `handle` throws after the checkpoint committed, the bus does not deliver that event to the consumer again.
+
+## External payloads
+
+The bus journals an external event's payload only when some registered consumer declared that event's identity in `externalPayloads`. Source keys compare case-insensitively and event types exactly. Payloads of undeclared identities are dropped at intake. Declaring an identity also makes the Streamer.bot connection subscribe to it while Streamer.bot advertises it, whatever the user's configured subscriptions.
+
+A payload is an untrusted JSON object of at most 16 KiB. The consumer must validate it with its own schema before use and must never use it to choose media, routes, files or commands. Videos is the reference: `apps/server/src/modules/videos/videos-bus-consumer.ts` declares `General` / `Custom`, and its Streamer.bot adapter (`streamerbot-video-intake.ts`) ignores payloads without a Videos marker and validates the rest through the shared video request intake.
+
+Diagnostics and logs never include raw payloads. Log only bounded identifiers and field names.
+
+## Outputs
+
+The bus has no overlay output. A consumer keeps its module's own outputs: the desktop overlay, the OBS browser source and the management UI. Its queue shows the delivering source to the operator (`OperationRow.source`).

@@ -3,7 +3,9 @@
 ## Purpose
 
 Define management UI behavior for configuring alert collections, rules, variants, media, layout, and local test alerts.
+
 ## Requirements
+
 ### Requirement: Alert Rules Are Fully Managed
 
 The system SHALL allow authorized management users to create, edit, enable, disable, and delete alert rules with event type, collection membership, conditions, cooldown, and priority.
@@ -1085,3 +1087,25 @@ The system SHALL present Alert audio-layer and enabled video-soundtrack volume a
 - **WHEN** an operator sets an Alert media source to 200%
 - **THEN** preview and saved playback SHALL use normalized gain 2
 - **AND** the editor SHALL restore the value as 200%
+
+### Requirement: Alerts Can Trigger On External Events
+Alert rules SHALL be able to select an exact configured external event identity in addition to canonical event types. External-event alerts SHALL apply the existing alert moderation policy to viewer-controlled text.
+
+#### Scenario: Custom Streamer.bot event plays an alert
+- **WHEN** an enabled alert selects Streamer.bot source `General` type `Custom` with a configured identity and that event arrives
+- **THEN** the Alerts consumer admits the alert and renders its allowlisted variables
+
+#### Scenario: Unsubscribed external identity
+- **WHEN** a user saves an alert for an external identity that no active source subscribes to
+- **THEN** management shows the missing setup and links to provider configuration without expanding subscriptions
+
+#### Scenario: Payload text is moderated
+- **WHEN** an external event summary contains blocked viewer text
+- **THEN** the existing moderation outcome applies before playback
+
+### Requirement: External Event Alerts Offer Only Allowlisted Variables
+External-event alerts SHALL offer only `{summary}` (the existing sanitized, 256-character external summary), `{userName}` (a bounded, sanitized string from the payload's `user.name` or `userName`, empty when absent) and `{eventType}`. Raw external payload fields SHALL NOT be offered or rendered.
+
+#### Scenario: Payload has extra fields
+- **WHEN** an external event payload includes fields such as `url` or `file`
+- **THEN** the variable picker does not offer them and playback does not render them

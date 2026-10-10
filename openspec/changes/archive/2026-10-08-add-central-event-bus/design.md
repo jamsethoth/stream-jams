@@ -31,6 +31,8 @@ Current intake (checked against `main` at 6f3a69c):
 
 ### 1. Bus event envelope
 
+Slice 1 ships the envelope with `effectTriggers` (derived at intake, as today) and an `external` kind without a payload. Slice 4 matches consumers through selectors: a canonical selector reads the event and its conditions, while reward and external selectors match the identities in `effectTriggers`, which intake keeps deriving. Slice 5 adds the external payload.
+
 ```ts
 type BusEvent = {
   busId: string;                 // journal-assigned, monotonic sequence + random suffix
@@ -49,12 +51,12 @@ type BusEvent = {
 ### 2. Journal and per-consumer cursors
 
 - SQLite tables `event_bus_journal` (sequence, bus ID, source, kind, event JSON, correlation key, received/occurred time) and `event_bus_consumer_cursors` (consumer ID, last delivered sequence, updated time), plus `event_bus_delivery_failures` for poisoned deliveries.
-- Publishing validates, dedupes, and appends in one narrow transaction. Ingestion reports `accepted` once the row is committed, not once consumers finish.
+- Publishing validates, dedupes, and appends in one narrow transaction. Publishing then waits for each consumer's delivery attempt so intake keeps its existing back-pressure, but a consumer failure never turns into an ingestion failure: ingestion reports `accepted` once the row is committed.
 - Each registered consumer runs one worker that reads the journal after its cursor in small batches (default 25) and advances its cursor after its handler returns an admission result. Publishing only wakes workers; there is no unbounded in-memory buffer.
 - Delivery is at-least-once. Consumers stay idempotent by bus ID (Alerts and Screen Effects already dedupe by event ID; their dedupe moves to the bus ID).
 - A consumer may instead take **transactional checkpoints**: its handler receives a checkpoint callback that writes its cursor inside the consumer's own SQLite transaction (same connection), so its state change and cursor commit together and each event applies exactly once. Custom data overlays (BL-061) use this.
 - Replay age (decision 7) is set per consumer. Playback consumers use the short default; state consumers such as data overlays may opt out of expiry.
-- A handler error is logged with the consumer, bus ID and reference ID, retried up to three times with backoff, then recorded in `event_bus_delivery_failures` and skipped so one bad event cannot block the consumer.
+- A handler error is logged with the consumer, bus ID and reference ID, retried up to three times with backoff, then recorded in `event_bus_delivery_failures` and skipped so one bad event cannot block the consumer. A consumer can lower its attempt count: Timers use one attempt because adjustments are not idempotent, and Alerts and Screen Effects use one because their dedupe already accepts the event before a failure, so a retry could only report a duplicate.
 - Order is FIFO per consumer. There is no ordering guarantee across consumers.
 - Retention: the journal keeps the newer of 7 days or 10,000 rows, pruned at startup and hourly, never pruning rows still ahead of any consumer cursor younger than the replay age.
 - The journal is runtime data. It is excluded from configuration backup; a restore marks undelivered rows expired so restored configuration is not fed old events. WAL companion handling follows existing SQLite rules.
@@ -65,12 +67,16 @@ type BusEvent = {
 Two keys:
 
 - **Exact key** (`sourceKind` + event ID): a redelivery from the same source is a duplicate, as today, but now checked against the journal so it survives restart (window: 10 minutes).
-- **Correlation key** for Twitch-origin canonical events, built from Twitch-native identity:
-  - Redemptions: `twitch:redemption:<redemptionId>`.
-  - Polls, predictions, hype trains: `twitch:<type>:<pollId|predictionId|trainId>:<status or level>`.
-  - Follows, subs, resubs, gifts, cheers, raids, stream online/offline (no shared native ID): `twitch:<type>:<actorId or anon>:<amount>:<tier>:<sha256(message)>`.
+- **Correlation key** for Twitch-origin canonical events (`twitchCorrelationKey` in core), built only from fields both normalizers report the same way:
+  - Follows, subs, stream online/offline: `twitch:<type>:<actorId>`.
+  - Resubs, cheers, raids: `twitch:<type>:<actorId or anon>:<amount>`.
+  - Redemptions: `twitch:channel_point_redemption:<actorId>:<rewardId>`.
+  - Gift subs: `twitch:gift_subscription:<recipientId>:<tier>`. Community gifts: `twitch:community_gift:<actorId or anon>:<amount>:<tier>`.
+  - Hype train, poll and prediction phases: `twitch:<type>:<trainId|pollId|predictionId>`, plus level and total, vote total, or user and point totals for progress events.
 
-A new event whose correlation key matches an event accepted from a **different** source within the correlation window (default 30 seconds) is recorded as `merged` and not journaled again. Each accepted event can absorb at most one copy from each other source, so two genuine identical cheers from the same viewer arriving through both sources still produce two events. Same-source events with different IDs are never merged. First arrival wins; the merged copy's source is recorded on the journal row for Diagnostics.
+  Keys leave out message text (sources format cheermotes and emotes differently), tier on subs and resubs (EventSub reports Prime as tier 1000), and the redemption ID (not every Streamer.bot redemption carries it). One-to-one pairing keeps genuine repeats apart. Slice 2 tests the keys against paired payloads from both normalizers for every canonical type.
+
+A new event whose correlation key matches an event accepted from a **different** source within the correlation window (default 30 seconds) is recorded as `merged` in `event_bus_correlation_merges` (absorbing row, source, event ID, time) and not journaled again; ingestion reports it as a duplicate. The exact-duplicate check also covers merged copies, so a redelivered merged copy stays a duplicate across restart. Each accepted event can absorb at most one copy from each other source, so two genuine identical cheers from the same viewer arriving through both sources still produce two events. Same-source events with different IDs are never merged. First arrival wins; the merged copy's source is recorded on the journal row for Diagnostics.
 
 External events have no correlation key.
 
@@ -129,7 +135,7 @@ On startup each consumer resumes after its cursor. Rows older than the replay ag
 
 ## Risks / Trade-offs
 
-- **False merges.** Two genuinely distinct events with equal correlation keys from different sources within 30 seconds would merge. One-to-one pairing and the message hash make this rare; the `forwardTwitchEvents` switch removes it entirely.
+- **False merges.** Two genuinely distinct events with equal correlation keys from different sources within 30 seconds would merge. One-to-one pairing makes this rare, because a false merge needs an unpaired copy from the other source with the same key inside the window; the `forwardTwitchEvents` switch removes it entirely.
 - **Missed merges.** If Streamer.bot normalizes amount, tier or message differently from EventSub, both copies play. Slice 2 must test correlation keys against recorded fixtures from both normalizers for every Twitch-origin type.
 - **Journal growth and write cost.** One insert per event plus cursor updates is small at stream event rates; retention bounds disk use.
 - **Behavior change for Video shoutouts.** General/Custom events now flow through the bus. The Videos module work owns that module; this change only moves its intake and keeps the existing payload contract.

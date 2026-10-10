@@ -95,7 +95,7 @@ For a Stream Deck or another local HTTP client, create a one-time-visible Timer 
 
 Open **Modules → Screen Effects**, expand a set, and choose **New effect** to create a definition. Exactly one set is live: only its enabled effects respond to automatic triggers. Existing effects migrate into the active **Default** set. Create or duplicate sets to prepare inactive alternatives, then explicitly **Activate set** to switch; already queued effects retain their saved playback. The active set cannot be deleted. Expand an effect to see its variants, then select a variant to open it in the editor. A new effect starts disabled and selecting media never plays it. Choose one local image, GIF or video and/or one local sound, then select visual and audio destinations explicitly. New variants default to **Match longest media**: the longest local video or separate sound sets the duration, with a 10-second fallback and a 2-minute cap. Choose **Custom** for a fixed duration. Existing variants remain Custom until changed. Video soundtrack and separate sound can both be enabled with independent volumes and independent fade-in/fade-out controls; they share the variant's Browser Source and named-device selections. An audio-only effect is valid when at least one explicit audio destination is usable.
 
-Add one or more trusted triggers. Twitch channel-point bindings use stable broadcaster and reward IDs. Streamer.bot bindings use an exact source/type already selected under **Event sources**; saving an effect does not change subscriptions or switch the active provider. Save the definition, return to the inventory and explicitly enable it. **Preview** plays the selected draft variant locally with its layout, duration and sound. Use **Play preview**, **Stop preview**, and **Mute preview**; preview never sends to live output routes. **Test saved…** requires a saved, enabled, unchanged definition, lists the destinations it will affect, and sends the exact selected variant only after confirmation. Screen Effects has no animation controls; Alert-layer animation remains separate.
+Add one or more trusted triggers. A stream event trigger plays the effect for an event type such as raid or cheer from any active event source, optionally limited to Twitch or Streamer.bot and to typed conditions such as raid viewers at least 10; it uses the same conditions as alert rules. Twitch channel-point bindings use stable broadcaster and reward IDs. Streamer.bot bindings use an exact source/type already selected under **Event sources**; saving an effect does not change subscriptions or switch the active provider. Save the definition, return to the inventory and explicitly enable it. **Preview** plays the selected draft variant locally with its layout, duration and sound. Use **Play preview**, **Stop preview**, and **Mute preview**; preview never sends to live output routes. **Test saved…** requires a saved, enabled, unchanged definition, lists the destinations it will affect, and sends the exact selected variant only after confirmation. Screen Effects has no animation controls; Alert-layer animation remains separate.
 
 Every enabled variant participates in one weighted pool. Use **New variant** for a blank disabled variant or **Copy variant** to clone the selection. **Remove variant** changes only the draft after confirmation and supports Undo; the last variant and the only enabled variant cannot be removed. Save persists removal. Queue priority orders waiting effects without interrupting the current effect. Per-effect cooldown is owned by the triggering event; the optional module cooldown remains available.
 
@@ -179,6 +179,21 @@ Credential store is unavailable. Configure Windows Credential Manager, macOS Key
 ```
 
 On Linux, install and unlock a Secret Service-compatible keyring such as GNOME Keyring or KWallet through the desktop session before connecting Twitch. There is no plaintext fallback for real runtime tokens; in-memory or fake secret stores are only for automated tests.
+
+## Using Twitch and Streamer.bot together
+
+`Event sources` can keep one source of each kind in use, so direct Twitch and Streamer.bot can run together. Activating a source of the same kind replaces the one in use; other kinds keep running. When both deliver the same Twitch event, Stream Jams merges the copies so the event plays once.
+
+Streamer.bot forwards Twitch events by default. To keep direct Twitch as the only Twitch path and use Streamer.bot only for its configured external events, open the Streamer.bot source, clear `Forward Twitch events from Streamer.bot`, and select `Save forwarding`.
+
+## Streamer.bot event alerts
+
+An alert can play for one exact Streamer.bot event that is not a canonical Twitch event. In the alert set, choose `Add alert`, pick `Streamer.bot event`, and enter the exact `Streamer.bot source` and `Streamer.bot event type` (matching is case-sensitive). Only events from that source and type play the alert.
+
+- Templates can use only `{summary}`, `{userName}`, and `{eventType}`. Other placeholders render empty; raw Streamer.bot payload fields never reach the overlay.
+- These alerts have no conditions. Rendered-text moderation still applies to the summary and user name.
+- Queueing, dedupe, cooldown, and playback outputs work as for other alerts.
+- Saving the alert does not change event subscriptions. When no in-use Streamer.bot source subscribes to the selected event, the alert row shows a warning with `Open Event sources`; subscribe the event there.
 
 ## Channel point reward alerts
 

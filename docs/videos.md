@@ -76,6 +76,8 @@ CPH.WebsocketBroadcastJson(JsonConvert.SerializeObject(new {
 
 The retired `VideoShoutout` payload is still accepted: `clipId` becomes a Twitch clip link, `displayName` the requester and `duration` the length. It no longer needs `embedUrl` or a `parent`. `action: "no-clip"` shows "No clip to show right now" for five seconds. Ordinary stream events, such as follows and raids, never queue videos.
 
+`General` / `Custom` broadcasts, video requests included, reach the central event bus like any other Streamer.bot event. A Screen Effect or Streamer.bot event alert that selects `General` / `Custom` therefore also plays for video request broadcasts. Diagnostics, Event intake, shows the Videos outcome of each one: admitted, no match (no Videos marker, or the module is off) or failed (rejected; the log names the reason and fields).
+
 ### Channel point rewards
 
 Map a reward to a purpose on the Videos page. A redemption's text is used as the link and the viewer's name as the requester. Redemptions always queue and never autoplay. A redemption with no valid link is logged and skipped; refunds stay with Twitch or Streamer.bot.

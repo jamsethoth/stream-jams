@@ -57,3 +57,51 @@ describe("management client exception route", () => {
     expect(reportClientException).toHaveBeenCalledExactlyOnceWith(body);
   });
 });
+
+describe("management event bus routes", () => {
+  it("serves bus activity and validates the replay age behind management auth", async () => {
+    const sessionService = new LocalManagementSessionService({
+      clock: () => new Date("2026-10-08T12:00:00.000Z"),
+      generateId: () => "mgmt_event_bus",
+      sessionTtlMs: 60_000
+    });
+    const session = await sessionService.createSession();
+    let settings = { replayAgeSeconds: 120 };
+    const saveEventBusSettings = vi.fn((next: { replayAgeSeconds: number }) => { settings = next; return settings; });
+    const activity = {
+      events: [{
+        id: 1, receivedAt: "2026-10-08T12:00:00.000Z", sourceKind: "twitch" as const, kind: "canonical" as const, eventType: "follow",
+        outcome: "accepted" as const, referenceId: null, consumers: [{ consumerId: "alerts", outcome: "admitted" as const, referenceId: null }]
+      }]
+    };
+    const app = createApp({
+      metadata: { appName: "stream-jams", version: "0.0.0" },
+      getDiagnosticsWorkspace: async () => ({ problems: [], events: [], rawLogs: [] }),
+      getConfigurationBackupSummary: async () => ({} as never),
+      openDataFolder: async () => ({ dataDirectory: "C:/data" }),
+      clearOldLogs: async () => ({ deletedCount: 0 }),
+      reportClientException: async (input) => ({ referenceId: input.referenceId }),
+      getEventBusActivity: () => activity,
+      getEventBusSettings: () => settings,
+      saveEventBusSettings,
+      preHandlers: [createTestManagementSecurity(sessionService)]
+    });
+
+    expect((await app.inject({ method: "GET", url: "/management/diagnostics/event-bus" })).statusCode).toBe(401);
+    expect((await app.inject({ method: "GET", url: "/management/settings/event-bus" })).statusCode).toBe(401);
+    const read = await app.inject({ method: "GET", url: "/management/diagnostics/event-bus", headers: managementTestHeaders(session, "GET") });
+    expect(read.json()).toEqual(activity);
+    expect((await app.inject({ method: "GET", url: "/management/settings/event-bus", headers: managementTestHeaders(session, "GET") })).json())
+      .toEqual({ replayAgeSeconds: 120 });
+
+    for (const payload of [{ replayAgeSeconds: -1 }, { replayAgeSeconds: 1_801 }, { replayAgeSeconds: 1.5 }, { replayAgeSeconds: 60, extra: true }, {}]) {
+      const rejected = await app.inject({ method: "PUT", url: "/management/settings/event-bus", headers: managementTestHeaders(session, "PUT"), payload });
+      expect(rejected.statusCode, JSON.stringify(payload)).toBe(400);
+      expect(rejected.json()).toMatchObject({ error: { code: "EVENT_BUS_SETTINGS_INVALID" } });
+    }
+    expect(saveEventBusSettings).not.toHaveBeenCalled();
+    const saved = await app.inject({ method: "PUT", url: "/management/settings/event-bus", headers: managementTestHeaders(session, "PUT"), payload: { replayAgeSeconds: 0 } });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json()).toEqual({ replayAgeSeconds: 0 });
+  });
+});

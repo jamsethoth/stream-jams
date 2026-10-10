@@ -267,6 +267,36 @@ describe("OverlaySurface", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
     expect(events).toHaveBeenCalledWith({ instructionId: value.id, status: "completed", diagnostics: expect.objectContaining({ terminalOutcome: "completed" }) });
   });
+  it("reports a timed text-only instruction complete even when the end-of-interval hide commits first", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(1000);
+    // Record the deadline timers so they can run as separate tasks with a React commit between
+    // them, as a busy renderer can, instead of in one fake-timer batch.
+    const scheduled = new Map<number, { readonly callback: () => void; readonly dueAt: number }>();
+    const cleared = new Set<number>();
+    const setTimer = window.setTimeout.bind(window); const clearTimer = window.clearTimeout.bind(window);
+    vi.spyOn(window, "setTimeout").mockImplementation(((callback: () => void, delay?: number) => {
+      const id = setTimer(callback, delay);
+      scheduled.set(id, { callback, dueAt: Date.now() + Math.max(0, delay ?? 0) });
+      return id;
+    }) as typeof window.setTimeout);
+    vi.spyOn(window, "clearTimeout").mockImplementation(((id?: number) => { if (id !== undefined) cleared.add(id); clearTimer(id); }) as typeof window.clearTimeout);
+    const events = vi.fn();
+    const value: OverlayInstruction = { ...instruction(), durationMs: 1000, timing: { startsAtEpochMs: 1000, endsAtEpochMs: 2000 }, text: {
+      text: "Shared deadline", textStyle: compatibilityAlertTextStyle, layout: { x: 0, y: 0, width: 400, height: 100, zIndex: 1 }
+    } };
+    render(<OverlaySurface composition={composition(value)} resolveAssetUrl={() => ""} onPlaybackEvent={events} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(999); });
+    expect(events).toHaveBeenCalledWith(expect.objectContaining({ instructionId: value.id, status: "started" }));
+    const due = [...scheduled].filter(([id, timer]) => timer.dueAt === 2000 && !cleared.has(id));
+    expect(due.length).toBeGreaterThanOrEqual(2);
+    vi.setSystemTime(2000);
+    for (const [id, timer] of due) {
+      clearTimer(id);
+      if (cleared.has(id)) continue;
+      await act(async () => { timer.callback(); });
+    }
+    expect(events).toHaveBeenCalledWith({ instructionId: value.id, status: "completed", diagnostics: expect.objectContaining({ terminalOutcome: "completed", completionReason: "configured-duration" }) });
+  });
   it("starts timed video at zero before reveal and preserves its full duration", async () => {
     vi.useFakeTimers(); vi.setSystemTime(4000);
     const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
