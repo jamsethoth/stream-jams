@@ -54,8 +54,11 @@ test("unsigned installer installs per user, launches with the existing profile, 
     });
 
     await test.step("Uninstall removes the app, shortcuts and Apps entry", async () => {
-      await run(join(installRoot, "Update.exe"), ["--uninstall"], { env, timeout: 180_000, windowsHide: true });
+      // Squirrel cannot delete an executable that is still exiting, so a race
+      // with the app launched after setup can leave Stream Jams.exe behind.
+      await stopInstalledProcesses(installRoot);
       await expect.poll(() => health(port), { timeout: 30_000 }).toBe(0);
+      await run(join(installRoot, "Update.exe"), ["--uninstall"], { env, timeout: 180_000, windowsHide: true });
       expect(await shortcuts(startMenu)).toHaveLength(0);
       expect(await shortcuts(desktopFolder)).toHaveLength(0);
       expect(await registryKeyExists(uninstallKey)).toBe(false);
@@ -110,6 +113,11 @@ async function leftoverEvidence(installRoot: string): Promise<string> {
     .then((result) => result.stdout.trim(), (error: unknown) => `process query failed: ${String(error)}`);
   const log = await readFile(join(installRoot, "SquirrelSetup.log"), "utf8").then((text) => text.split(/\r?\n/).slice(-60).join("\n"), () => "(no SquirrelSetup.log)");
   return [`files (first 40):`, ...files, `processes under install root:`, processes || "(none)", "SquirrelSetup.log (last 60 lines):", log].join("\n");
+}
+
+async function stopInstalledProcesses(installRoot: string): Promise<void> {
+  const prefix = `${installRoot.replaceAll("'", "''")}\\*`;
+  await run("powershell.exe", ["-NoProfile", "-Command", `$p = Get-Process | Where-Object { $_.Path -like '${prefix}' }; $p | Stop-Process -Force -ErrorAction SilentlyContinue; $p | Wait-Process -Timeout 30`], { windowsHide: true });
 }
 
 async function registryKeyExists(key: string): Promise<boolean> {
