@@ -51,6 +51,8 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async getMusicConfig() { return { enabled: false, config: createDefaultMusicModuleConfig() }; },
     async saveMusicConfig(enabled, config) { return { enabled, config }; },
     async listMusicOutputs() { return []; },
+    async getMusicNowPlaying() { return { status: { state: "disconnected" as const, stale: false, diagnosticReference: null }, snapshot: null }; },
+    async getMusicArtwork(): Promise<Blob> { throw new Error("No live Music artwork in stories."); },
     async getMusicStatus() { return { enabled: false, selectedProviderId: null, status: { state: "disconnected" as const, stale: false, diagnosticReference: null }, missingAssetIds: { landscape: [], vertical: [] } }; },
     async reconnectMusicSource() { return { enabled: false, selectedProviderId: null, status: { state: "disconnected" as const, stale: false, diagnosticReference: null }, missingAssetIds: { landscape: [], vertical: [] } }; },
     async replaceMusicCredential() { return { validation: { valid: true, connectionState: "connected" as const, intakeState: null, validatedAt: "2026-07-15T05:00:00.000Z", availableVoices: [], error: null }, runtimeReconcilePending: false, credentialRetirementPending: false }; },

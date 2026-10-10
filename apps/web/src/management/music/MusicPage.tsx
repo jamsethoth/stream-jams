@@ -18,6 +18,7 @@ import type { MusicApi } from "./music-api.js";
 import type { ManagementApi } from "../management-api.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import type { MusicFontRole } from "./MusicAppearanceEditor.js";
+import { useLiveMusicPreview } from "./use-live-music-preview.js";
 const MusicAppearanceEditor = lazy(() => import("./MusicAppearanceEditor.js").then(module => ({ default: module.MusicAppearanceEditor })));
 const MusicBrandingEditor = lazy(() => import("./MusicBrandingEditor.js").then(module => ({ default: module.MusicBrandingEditor })));
 const MusicCssEditor = lazy(() => import("./MusicCssEditor.js").then(module => ({ default: module.MusicCssEditor })));
@@ -26,7 +27,7 @@ const MusicDesktopPlacement = lazy(() => import("./MusicDesktopPlacement.js").th
 import type { SurfaceSettingsApi } from "../settings/overlay-surfaces-api.js";
 import "./music.css";
 
-export type MusicPageApi = Pick<MusicApi, "getMusicConfig" | "saveMusicConfig" | "listMusicOutputs"> & Pick<ManagementApi, "createOverlayOutputKey" | "regenerateOverlayOutputKey" | "setOverlayModuleEnabled"> & AssetLibraryManagementApi;
+export type MusicPageApi = Pick<MusicApi, "getMusicConfig" | "saveMusicConfig" | "listMusicOutputs" | "getMusicNowPlaying" | "getMusicArtwork"> & Pick<ManagementApi, "createOverlayOutputKey" | "regenerateOverlayOutputKey" | "setOverlayModuleEnabled"> & AssetLibraryManagementApi;
 const fixtureTime = 1_000_000;
 const fixture: MusicSnapshot = {
   providerId: "preview", generation: "fixture", revision: 1,
@@ -157,14 +158,19 @@ export function MusicPage({ api, assetApi, surfaceApi }: { readonly api: MusicPa
   const desktopAssetIds = desktopOpen && draft !== null ? Object.values(draft.profiles.landscape.views).flatMap(item => [item.branding.assetId, item.titleFont.fontAssetId, item.detailsFont.fontAssetId]) : [];
   const requiredIds = [...(appearance === null ? [] : [appearance.branding.assetId, appearance.titleFont.fontAssetId, appearance.detailsFont.fontAssetId]), ...desktopAssetIds].filter((id): id is string => id !== null);
   const { descriptors, unavailable: mediaUnavailable } = useMediaPreviewGroup(assetApi, requiredIds);
+  const live = useLiveMusicPreview(api);
+  const previewSnapshot = live.snapshot ?? fixture;
+  // Live playback is projected at the moment it was observed so progress matches what the source reported.
+  const previewTime = live.snapshot?.observedAtEpochMs ?? fixtureTime;
   const projection = useMemo(() => {
     if (draft === null) return null;
     const previewConfig = { ...draft, profiles: { ...draft.profiles, [profileId]: { ...draft.profiles[profileId], initialView: view, idleMode: "none" as const } }, css: { ...lastValidCss, enabled: draft.css.enabled && lastValidCss.source !== "" } };
-    const result = projectMusicWidget(fixture, { state: "connected", stale: false, diagnosticReference: null }, previewConfig, profileId, fixtureTime, fixtureTime);
+    const result = projectMusicWidget(previewSnapshot, { state: "connected", stale: false, diagnosticReference: null }, previewConfig, profileId, previewTime, previewTime);
     if (result === null) return null;
     return { ...result, assets: Object.values(descriptors).map(descriptor => musicPublicAssetReferenceSchema.safeParse(descriptor.snapshot)).filter(candidate => candidate.success).map(candidate => candidate.data) };
-  }, [draft, lastValidCss, profileId, view, descriptors]);
-  const resolver: MusicAssetResolver = useMemo(() => ({ resolveAsset: asset => descriptors[asset.assetId]?.url ?? null, resolveArtwork: () => null }), [descriptors]);
+  }, [draft, lastValidCss, profileId, view, descriptors, previewSnapshot, previewTime]);
+  const artworkUrl = live.artworkUrl;
+  const resolver: MusicAssetResolver = useMemo(() => ({ resolveAsset: asset => descriptors[asset.assetId]?.url ?? null, resolveArtwork: () => artworkUrl }), [descriptors, artworkUrl]);
   const changeProfile = (next: MusicProfileConfig) => updateDraft(current => ({ ...current, profiles: { ...current.profiles, [profileId]: { ...next, views: { full: fitMusicComponentLayout(next.views.full), compact: fitMusicComponentLayout(next.views.compact) } } } }));
   const changeAppearance = (next: NonNullable<typeof appearance>) => { if (profile !== null) changeProfile({ ...profile, views: { ...profile.views, [view]: next } }); };
   async function createOutput(output: OverlayOutputView, regenerate = false) {
@@ -203,7 +209,7 @@ export function MusicPage({ api, assetApi, surfaceApi }: { readonly api: MusicPa
       {outputs.some(output => output.purpose === "test") ? <details><summary>Test browser sources</summary><div className="music-browser-sources__list">{sourceRows("test")}</div></details> : null}
       {outputs.length === 0 ? <p role="status">No Music outputs were returned. Check the local service and reload this page.</p> : null}
     </BrowserSourcesPanel>} secondary={<>    <DisclosureSection id="music-desktop-overlay-placement" detailsId="music-desktop-overlay-placement-details" title="Desktop overlay placement" expanded={desktopOpen} onToggle={() => setDesktopOpen(current => !current)} summary={draft.desktopPlacement.full === null && draft.desktopPlacement.compact === null ? "Uses alignment" : "Custom desktop position"}>
-      <Suspense fallback={<p role="status">Loading desktop placement…</p>}><MusicDesktopPlacement config={draft} snapshot={fixture} now={fixtureTime} resolveAsset={resolver} surfaceApi={surfaceApi} onChange={next => updateDraft(() => next)} /></Suspense>
+      <Suspense fallback={<p role="status">Loading desktop placement…</p>}><MusicDesktopPlacement config={draft} snapshot={previewSnapshot} now={previewTime} resolveAsset={resolver} surfaceApi={surfaceApi} onChange={next => updateDraft(() => next)} /></Suspense>
     </DisclosureSection>
     <ModuleSection label="Configuration" title="Configuration">
 <div className="music-editor__grid">
@@ -234,10 +240,11 @@ export function MusicPage({ api, assetApi, surfaceApi }: { readonly api: MusicPa
 
     <ModuleSection label="Music preview" title="Preview">
 <div className="music-editor__grid"><NativeSelect label="Output profile" value={profileId} onChange={event => setProfileId(event.currentTarget.value as typeof profileId)}><option value="landscape">Landscape</option><option value="vertical">Vertical</option></NativeSelect><NativeSelect label="Preview view" value={view} onChange={event => setView(event.currentTarget.value as typeof view)}><option value="full">Full</option><option value="compact">Compact</option></NativeSelect></div><p>Unsaved changes appear here only. Live output continues using saved settings.</p>
+      <p role="status">{live.snapshot !== null ? "Showing the track playing in the selected Music source." : saved?.enabled === true ? "Showing a sample track. Play music in the selected Music source to preview it here." : "Showing a sample track. Enable the Music module and play music in the selected source to preview it here."}</p>
       {mediaUnavailable ? <p role="status">A preview image or font is unavailable. The native fallback is shown. Reselect the asset to retry.</p> : null}
       <Suspense fallback={<p role="status">Loading Music preview…</p>}><MusicLayoutEditor key={`${profileId}-${view}`} projection={projection} resolveAsset={resolver} appearance={appearance} onChange={changeAppearance} onSelectComponent={role => { setAppearanceComponent(role === "time" ? "details" : role); setAppearanceOpen(true); }} /></Suspense>
       <div className="music-editor__actions"><Button variant="default" disabled={!draft.css.enabled} onClick={() => updateDraft(current => ({ ...current, css: { ...current.css, enabled: false } }))} type="button">Disable custom CSS</Button><a href="/manage/music-sources">Music sources</a><a href="/manage/settings">Overlay outputs</a></div>
-      <div aria-label="Full preview metadata" className="music-editor__metadata"><strong>{fixture.track?.title}</strong><span>{fixture.track?.artists.join(", ")}</span><span>{fixture.track?.album}</span></div>
+      <div aria-label="Full preview metadata" className="music-editor__metadata"><strong>{previewSnapshot.track?.title}</strong><span>{previewSnapshot.track?.artists.join(", ")}</span><span>{previewSnapshot.track?.album}</span></div>
     </ModuleSection>
 
     <AssetPicker assetApi={assetApi} compatibleMediaTypes={picker === "brand" ? ["image"] : ["font"]} managementApi={api} onCancel={() => setPicker(null)} onSelect={(assetId, _mediaType, item) => { setAssets(current => [...current.filter(candidate => candidate.id !== item.id), item]); if (picker === "brand") changeAppearance({ ...appearance, branding: { ...appearance.branding, assetId } }); else if (picker !== null) changeAppearance({ ...appearance, [picker]: { ...appearance[picker], fontAssetId: assetId } }); setPicker(null); }} open={picker !== null} selectedAssetId={picker === "brand" ? appearance.branding.assetId : picker === null ? null : appearance[picker].fontAssetId} />

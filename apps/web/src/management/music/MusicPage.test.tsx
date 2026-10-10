@@ -26,6 +26,28 @@ async function openEditorControls() {
 }
 
 describe("Music appearance", () => {
+  it("previews the track playing in the selected source with its artwork and falls back to the sample track", async () => {
+    const snapshot = { providerId: "provider-1", generation: "music_1", revision: 1, track: { id: "song", title: "Live Pear title", artists: ["Live artist"], album: "Live album", artworkRef: "art_1" }, playbackState: "playing" as const, positionMs: 30_000, durationMs: 120_000, observedAtEpochMs: 2_000_000, session: null };
+    const connected = { state: "connected" as const, stale: false, diagnosticReference: null };
+    let current: typeof snapshot | null = snapshot;
+    const createObjectURL = vi.fn(() => "blob:live-artwork");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL, revokeObjectURL }));
+    try {
+      const getMusicArtwork = vi.fn(async () => new Blob(["x"], { type: "image/png" }));
+      renderPage({ getMusicNowPlaying: async () => ({ status: connected, snapshot: current }), getMusicArtwork });
+      await waitFor(() => expect(screen.getByLabelText("Full preview metadata")).toHaveTextContent("Live Pear title"));
+      expect(screen.getByLabelText("Full preview metadata")).toHaveTextContent("Live artist");
+      expect(screen.getByText("Showing the track playing in the selected Music source.")).toBeInTheDocument();
+      await waitFor(() => expect(getMusicArtwork).toHaveBeenCalledWith("art_1"));
+      await waitFor(() => expect(screen.getByTestId("music-widget").shadowRoot!.querySelector("img")?.getAttribute("src")).toBe("blob:live-artwork"));
+      current = null;
+      await waitFor(() => expect(screen.getByLabelText("Full preview metadata")).toHaveTextContent("A long song title"), { timeout: 3_000 });
+      expect(screen.getByText(/Showing a sample track/u)).toBeInTheDocument();
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:live-artwork");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("keeps a failed module confirmation scoped, blocks duplicate requests and clears fresh reviews", async () => {
     const user = userEvent.setup();
     let reject!: (cause: Error) => void;

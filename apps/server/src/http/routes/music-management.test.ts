@@ -71,11 +71,13 @@ describe("Music pairing management routes", () => {
     const pairing = { begin: vi.fn(), get: vi.fn(), cancel: vi.fn(), acceptCertificate: vi.fn() };
     const status = musicManagementStatusSchema.parse({ enabled: true, selectedProviderId: "provider-1", status: { state: "auth-required", stale: false, diagnosticReference: "ref_1" }, missingAssetIds: { landscape: ["brand"], vertical: [] } });
     const replacement = musicCredentialReplacementResultSchema.parse({ validation: { valid: true, connectionState: "connected", intakeState: null, validatedAt: "2026-07-15T12:00:00.000Z", availableVoices: [], error: null }, runtimeReconcilePending: false, credentialRetirementPending: false });
-    const management = { getStatus: vi.fn(async () => status), reconnect: vi.fn(async () => status) };
+    const nowPlaying = { status: { state: "connected" as const, stale: false, diagnosticReference: null }, snapshot: { providerId: "provider-1", generation: "music_1", revision: 3, track: { id: "song", title: "Live title", artists: ["Artist"], album: null, artworkRef: "art_1" }, playbackState: "playing" as const, positionMs: 12_000, durationMs: 90_000, observedAtEpochMs: 1_000, session: null } };
+    const management = { getStatus: vi.fn(async () => status), getNowPlaying: vi.fn(() => nowPlaying), reconnect: vi.fn(async () => status) };
     const providers = { replaceMusicCredential: vi.fn(async () => replacement) };
     const app = createApp({ metadata: { appName: "stream-jams", version: "0.0.0" }, pairing, management, providers, preHandlers: [createTestManagementSecurity(sessions)] });
     for (const route of [
       { method: "GET" as const, url: "/management/music/status" },
+      { method: "GET" as const, url: "/management/music/now-playing" },
       { method: "POST" as const, url: "/management/music/providers/provider-1/reconnect" },
       { method: "POST" as const, url: "/management/music/providers/provider-1/credential", payload: { configuration: {}, pairingAttemptId: "opaque" } }
     ]) {
@@ -85,6 +87,9 @@ describe("Music pairing management routes", () => {
     const result = await app.inject({ method: "GET", url: "/management/music/status", headers: managementTestHeaders(session, "GET") });
     expect(result.statusCode).toBe(200);
     expect(musicManagementStatusSchema.parse(result.json())).toEqual(status);
+    const live = await app.inject({ method: "GET", url: "/management/music/now-playing", headers: managementTestHeaders(session, "GET") });
+    expect(live.statusCode).toBe(200);
+    expect(live.json()).toEqual(nowPlaying);
     const reconnect = await app.inject({ method: "POST", url: "/management/music/providers/provider-1/reconnect", headers: managementTestHeaders(session, "POST") });
     expect(musicManagementStatusSchema.parse(reconnect.json())).toEqual(status);
     const replaced = await app.inject({ method: "POST", url: "/management/music/providers/provider-1/credential", headers: managementTestHeaders(session, "POST"), payload: { configuration: { baseUrl: "http://127.0.0.1:26538", transport: "auto" }, pairingAttemptId: "opaque" } });
