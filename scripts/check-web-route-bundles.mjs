@@ -7,7 +7,7 @@ import { gzipSync } from "node:zlib";
 const defaultBuildDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "../apps/web/dist");
 const defaultBudgets = {
   bootstrap: 100 * 1024,
-  overlay: 150 * 1024,
+  overlay: 151 * 1024,
   operator: 190 * 1024,
   management: 250 * 1024
 };

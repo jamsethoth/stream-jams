@@ -5,8 +5,8 @@ import * as https from "node:https";
 import { isIP } from "node:net";
 import WebSocket, { type RawData } from "ws";
 import { musicSnapshotSchema, musicStatusSchema, type MusicConnectionTestResult, type MusicSnapshot, type MusicSourceAdapter, type MusicStatus, type PearConfiguration, type ProviderValidationResult } from "@stream-jams/core";
-import { parsePearConfiguration, pearTlsOptions, resolvePearDestination } from "./pear-config.js";
-import { extractPearArtworkDescriptor, normalizePearObservation } from "./pear-normalization.js";
+import { inspectPearCertificate, isPearCertificateTrustFailure, parsePearConfiguration, pearTlsOptions, resolvePearDestination, type PresentedPearCertificate } from "./pear-config.js";
+import { extractPearArtworkDescriptor, normalizePearObservation, pearTrackId } from "./pear-normalization.js";
 
 const requestTimeoutMs = 5_000;
 const pollIntervalMs = 3_000;
@@ -18,9 +18,11 @@ const capabilities = { artwork: true, position: true, duration: true, sessionSel
 
 export class PearAuthenticationError extends Error { constructor() { super("Pear authorization is required"); } }
 export class PearTransportUnavailableError extends Error {
-  constructor(readonly retryAfterMs: number | null = null, readonly webSocketUnavailable = false) { super("Pear transport is unavailable"); }
+  constructor(readonly retryAfterMs: number | null = null, readonly webSocketUnavailable = false, readonly statusCode: number | null = null) { super("Pear transport is unavailable"); }
 }
 export class PearProtocolError extends Error { constructor() { super("Pear returned invalid player data"); } }
+/** Pear now serves HTTPS where this source saved HTTP, or presents a certificate this source does not trust. */
+export class PearSecureConnectionChangedError extends Error { constructor(options?: ErrorOptions) { super("Pear secure connection changed; pair again", options); } }
 
 export interface PearMusicSourceOptions {
   readonly config: PearConfiguration;
@@ -30,6 +32,8 @@ export interface PearMusicSourceOptions {
   readonly generation: string;
   readonly now?: () => number;
   readonly jitter?: () => number;
+  /** Credential-free probe used to notice Pear switching a saved HTTP address to HTTPS. */
+  readonly inspectCertificate?: (config: PearConfiguration, signal: AbortSignal) => Promise<PresentedPearCertificate | null>;
 }
 
 interface SongResponse { readonly observation: unknown; }
@@ -152,7 +156,8 @@ export class PearMusicSource implements MusicSourceAdapter {
             await delay(pollIntervalMs, signal);
             if (nextWsProbeAt !== null && this.#now() >= nextWsProbeAt) transport = "ws";
           }
-        } catch (error) {
+        } catch (caught) {
+          let error = caught;
           this.#transportEpoch += 1;
           this.#socket?.terminate(); this.#socket = null;
           if (signal.aborted) break;
@@ -160,7 +165,9 @@ export class PearMusicSource implements MusicSourceAdapter {
             // error-provenance: allow cleanup -- original transport error above controls reconnect status
             () => {}
           );
-          if (error instanceof PearAuthenticationError) {
+          if (!(error instanceof PearAuthenticationError) && await this.#secureConnectionChanged(error, signal)) error = new PearSecureConnectionChangedError({ cause: error });
+          if (signal.aborted) break;
+          if (error instanceof PearAuthenticationError || error instanceof PearSecureConnectionChangedError) {
             this.#clearLive();
             this.#setStatus("auth-required", false);
             if (firstPending) { firstReject(error); firstPending = false; }
@@ -191,6 +198,20 @@ export class PearMusicSource implements MusicSourceAdapter {
       if (this.#staleTimer !== null) clearTimeout(this.#staleTimer);
       this.#staleTimer = null;
     }
+  }
+
+  /**
+   * Retrying cannot recover a source whose saved address or certificate no longer matches Pear, so report it as needing
+   * re-pairing instead of reconnecting forever.
+   */
+  async #secureConnectionChanged(error: unknown, signal: AbortSignal): Promise<boolean> {
+    if (error instanceof PearSecureConnectionChangedError || isPearCertificateTrustFailure(error)) return true;
+    if (new URL(this.#config.baseUrl).protocol !== "http:") return false;
+    if (error instanceof PearProtocolError || (error instanceof PearTransportUnavailableError && error.statusCode !== null)) return false;
+    const secure = parsePearConfiguration({ ...this.#config, baseUrl: this.#config.baseUrl.replace(/^http:/u, "https:"), trustedCertificate: undefined });
+    try { return await (this.#options.inspectCertificate ?? inspectPearCertificate)(secure, signal) !== null; }
+    // error-provenance: allow expected -- a refused or plain-HTTP probe means Pear has not moved to HTTPS; retry as usual
+    catch { return false; }
   }
 
   async #reconcileWs(opened: OpenSocket, signal: AbortSignal, epoch: number): Promise<void> {
@@ -227,7 +248,8 @@ export class PearMusicSource implements MusicSourceAdapter {
     if (descriptor !== null) {
       const priorRef = this.#snapshot?.track?.artworkRef;
       const sameTrack = source.song !== null && typeof source.song === "object" && !Array.isArray(source.song)
-        && (source.song as Record<string, unknown>).videoId === this.#snapshot?.track?.id;
+        && typeof (source.song as Record<string, unknown>).videoId === "string"
+        && pearTrackId((source.song as Record<string, unknown>).videoId as string) === this.#snapshot?.track?.id;
       if (sameTrack && priorRef && this.#artwork.get(priorRef)?.url === descriptor.url) artworkRef = priorRef;
       else {
         artworkRef = `art_${randomUUID().replaceAll("-", "")}`;
@@ -282,7 +304,7 @@ export class PearMusicSource implements MusicSourceAdapter {
         if (status === 401 || status === 403) { response.resume(); reject(new PearAuthenticationError()); return; }
         if (status === 204) { response.resume(); resolve({ observation: { type: "REST_EMPTY" } }); return; }
         if (status !== 200) {
-          response.resume(); reject(new PearTransportUnavailableError(parseRetryAfter(response.headers["retry-after"], this.#now()))); return;
+          response.resume(); reject(new PearTransportUnavailableError(parseRetryAfter(response.headers["retry-after"], this.#now()), false, status)); return;
         }
         const chunks: Buffer[] = []; let size = 0;
         response.on("data", (chunk: Buffer) => {
@@ -296,7 +318,7 @@ export class PearMusicSource implements MusicSourceAdapter {
           catch { reject(new PearProtocolError()); }
         });
       });
-      request.on("error", error => reject(signal.aborted ? signal.reason : error));
+      request.on("error", error => reject(signal.aborted ? signal.reason : isPearCertificateTrustFailure(error) ? new PearSecureConnectionChangedError() : error));
       request.end();
     });
   }
@@ -352,11 +374,11 @@ export class PearMusicSource implements MusicSourceAdapter {
         const status = response.statusCode ?? 0;
         fail(status === 401 || status === 403 ? new PearAuthenticationError()
           : status >= 300 && status < 400 ? new PearProtocolError()
-            : new PearTransportUnavailableError(parseRetryAfter(response.headers["retry-after"], this.#now()), [404, 405, 501, 503].includes(status)));
+            : new PearTransportUnavailableError(parseRetryAfter(response.headers["retry-after"], this.#now()), [404, 405, 501, 503].includes(status), status));
       });
       socket.on("error", error => {
-        fail(/max payload|too big|invalid webSocket frame|utf-8/iu.test(error.message)
-          ? new PearProtocolError() : new PearTransportUnavailableError());
+        fail(isPearCertificateTrustFailure(error) ? new PearSecureConnectionChangedError()
+          : /max payload|too big|invalid webSocket frame|utf-8/iu.test(error.message) ? new PearProtocolError() : new PearTransportUnavailableError());
       });
       socket.on("close", code => {
         const error = code === 1008 ? new PearAuthenticationError() : new PearTransportUnavailableError();

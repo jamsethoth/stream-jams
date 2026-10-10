@@ -1,3 +1,7 @@
+import { X509Certificate } from "node:crypto";
+import { readFileSync } from "node:fs";
+import * as https from "node:https";
+import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { startPearProtocolFixture, type PearProtocolFixture } from "@stream-jams/test-support";
 import type { MusicSnapshot, MusicStatus } from "@stream-jams/core";
@@ -320,5 +324,75 @@ describe("PearMusicSource lifecycle", () => {
     expect(source.getArtworkDescriptor(ref!, { providerId: "provider_1", generation: "generation_1" })).toBeNull();
     await source.stop();
     expect(source.getArtworkDescriptor(ref!, { providerId: "provider_1", generation: "generation_1" })).toBeNull();
+  });
+});
+
+// Public test material: trusted.pem is signed by a test CA this process does not trust, like a self-signed Pear certificate.
+const tlsFixture = (name: string) => readFileSync(new URL(`../../test-support/provider-tls/${name}`, import.meta.url), "utf8");
+
+describe("PearMusicSource secure connection changes", () => {
+  let server: https.Server | null = null;
+  afterEach(async () => { await new Promise(resolve => server === null ? resolve(undefined) : server.close(resolve)); server = null; });
+
+  async function startTlsPear(): Promise<{ port: number; requests: () => number }> {
+    let requests = 0;
+    server = https.createServer({ cert: tlsFixture("trusted.pem"), key: tlsFixture("trusted-key.pem") }, (_request, response) => { requests += 1; response.end(); });
+    server.on("upgrade", (_request, socket) => { requests += 1; socket.destroy(); });
+    await new Promise<void>(resolve => server!.listen(0, "127.0.0.1", resolve));
+    return { port: (server.address() as AddressInfo).port, requests: () => requests };
+  }
+
+  async function startedStatuses(config: ConstructorParameters<typeof PearMusicSource>[0]["config"]): Promise<MusicStatus[]> {
+    adapter = new PearMusicSource({ config, token: "throwaway-token", providerId: "provider_1", generation: "generation_1", jitter: () => 0 });
+    const statuses: MusicStatus[] = [];
+    await expect(adapter.start(() => {}, value => statuses.push(value), new AbortController().signal)).rejects.toThrow(/secure connection changed/u);
+    return statuses;
+  }
+
+  it.each(["auto", "ws", "poll"] as const)("asks to re-pair when Pear now serves HTTPS at a saved HTTP address (%s)", async transport => {
+    const pear = await startTlsPear();
+    const statuses = await startedStatuses({ baseUrl: `http://127.0.0.1:${pear.port}`, transport });
+    expect(statuses.at(-1)?.state).toBe("auth-required");
+    expect(statuses.map(status => status.state)).not.toContain("reconnecting");
+    await new Promise(resolve => setTimeout(resolve, 1_500));
+    expect(pear.requests()).toBe(0);
+  });
+
+  it.each(["auto", "poll"] as const)("asks to re-pair when Pear's certificate no longer matches the accepted one (%s)", async transport => {
+    const pear = await startTlsPear();
+    const accepted = tlsFixture("expired.pem");
+    const statuses = await startedStatuses({
+      baseUrl: `https://127.0.0.1:${pear.port}`, transport,
+      trustedCertificate: { sha256: new X509Certificate(accepted).fingerprint256, pem: accepted }
+    });
+    expect(statuses.at(-1)?.state).toBe("auth-required");
+    expect(pear.requests()).toBe(0);
+  });
+
+  it("asks to re-pair when Pear presents an untrusted certificate with no accepted one", async () => {
+    const pear = await startTlsPear();
+    const statuses = await startedStatuses({ baseUrl: `https://127.0.0.1:${pear.port}`, transport: "auto" });
+    expect(statuses.at(-1)?.state).toBe("auth-required");
+  });
+
+  it("keeps reconnecting a plain HTTP source while Pear is not reachable", async () => {
+    const pear = await startTlsPear();
+    const port = pear.port;
+    await new Promise(resolve => server!.close(resolve)); server = null;
+    adapter = new PearMusicSource({ config: { baseUrl: `http://127.0.0.1:${port}`, transport: "auto" }, token: "throwaway-token", providerId: "provider_1", generation: "generation_1", jitter: () => 0 });
+    const statuses: MusicStatus[] = [];
+    void adapter.start(() => {}, value => statuses.push(value), new AbortController().signal).catch(() => {});
+    await vi.waitFor(() => expect(statuses.at(-1)?.state).toBe("reconnecting"));
+    expect(statuses.map(status => status.state)).not.toContain("auth-required");
+  });
+});
+
+describe("PearMusicSource track identity", () => {
+  it("publishes YouTube video IDs that start with a dash", async () => {
+    const source = await create("ws"); fixture!.setFirstFrame({ type: "PLAYER_INFO", song: { ...song, videoId: "-tJYN-eG1zk" }, isPlaying: true });
+    const statuses: MusicStatus[] = [];
+    await source.start(() => {}, value => statuses.push(value), new AbortController().signal);
+    expect(source.getSnapshot()?.track?.id).toBe("yt:-tJYN-eG1zk");
+    expect(statuses.at(-1)?.state).toBe("connected");
   });
 });

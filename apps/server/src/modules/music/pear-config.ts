@@ -35,6 +35,22 @@ export async function resolvePearDestination(url: URL): Promise<string> {
   return addresses[0]!.address;
 }
 
+/** The certificate Pear presents no longer matches the one the user accepted while pairing. */
+export class PearCertificateChangedError extends Error { constructor() { super("Pear certificate changed"); } }
+
+// Node TLS verification codes that a retry cannot fix; only re-pairing with Pear's current certificate can.
+const certificateTrustCodes = new Set([
+  "DEPTH_ZERO_SELF_SIGNED_CERT", "SELF_SIGNED_CERT_IN_CHAIN", "UNABLE_TO_VERIFY_LEAF_SIGNATURE", "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "UNABLE_TO_GET_ISSUER_CERT", "CERT_UNTRUSTED", "CERT_SIGNATURE_FAILURE", "CERT_HAS_EXPIRED", "CERT_NOT_YET_VALID", "ERR_TLS_CERT_ALTNAME_INVALID"
+]);
+
+/** True when a TLS failure means Pear's certificate is not the one this source trusts. */
+export function isPearCertificateTrustFailure(error: unknown): boolean {
+  if (error instanceof PearCertificateChangedError) return true;
+  const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+  return typeof code === "string" && certificateTrustCodes.has(code);
+}
+
 /** The certificate a Pear HTTPS endpoint presented, and whether default trust (system CAs and hostname) accepted it. */
 export interface PresentedPearCertificate {
   readonly pem: string;
@@ -62,7 +78,7 @@ export function pearTlsOptions(config: PearConfiguration, hostname: string): tls
     ca: pinned.pem,
     // Lets a CA-issued leaf (for example from mkcert) be the trust anchor without trusting its issuer.
     allowPartialTrustChain: true,
-    checkServerIdentity: (_host, certificate) => certificate.fingerprint256 === pinned.sha256 ? undefined : new Error("Pear certificate changed")
+    checkServerIdentity: (_host, certificate) => certificate.fingerprint256 === pinned.sha256 ? undefined : new PearCertificateChangedError()
   };
 }
 
