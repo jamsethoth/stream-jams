@@ -30,6 +30,11 @@ export interface VideoRequestIntakeOptions {
   readonly queue: Pick<VideoQueueService, "submit" | "recentItem" | "requeue">;
   readonly getConfig: () => Promise<VideosModuleConfig> | VideosModuleConfig;
   readonly isModuleEnabled: () => Promise<boolean> | boolean;
+  /**
+   * Called once for every request this intake queues, after the queue accepted it, so provider
+   * details can be looked up without delaying the submitter. It must not throw or block.
+   */
+  readonly onQueued?: ((purpose: OverlayPurpose, item: VideoRequestItem) => void) | undefined;
 }
 
 export interface VideoRequestContext {
@@ -66,6 +71,7 @@ export class VideoRequestIntake {
         autoplay,
         via: context.via
       });
+      this.options.onQueued?.(purpose, item);
       return { status: "accepted", item };
     } catch (error) {
       if (error instanceof VideoQueueCommandError && error.code === "queue-full") return { status: "rejected", reason: "queue-full", fields: [] };
@@ -84,6 +90,8 @@ export class VideoRequestIntake {
     const config = await this.options.getConfig();
     const recent = queue.recentItem(purpose, itemId);
     if (!isAllowedVideoSource(recent.source, { allowedDirectHosts: config.allowedDirectHosts })) return { status: "rejected", reason: "unsupported-source" };
-    return { status: "accepted", item: queue.requeue(purpose, expectedRevision, itemId, via) };
+    const item = queue.requeue(purpose, expectedRevision, itemId, via);
+    this.options.onQueued?.(purpose, item);
+    return { status: "accepted", item };
   }
 }

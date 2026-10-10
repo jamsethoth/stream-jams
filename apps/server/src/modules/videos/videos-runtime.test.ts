@@ -26,6 +26,24 @@ function setup() {
 }
 
 describe("VideosRuntime with the desktop mirror", () => {
+  it("returns provider details in queue and Recent responses but keeps them off the stream caption", async () => {
+    const { runtime, queue, item, snapshot } = setup();
+    queue.applyMetadata("live", item.id, { title: "Provider clip title", channelName: "SpeedyStreamer", durationMs: null });
+    const waiting = queue.submit("live", { source: { provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 0 }, title: null, requester: null, durationMs: null, autoplay: false, via: "operator" });
+    queue.applyMetadata("live", waiting.id, { title: "Never Gonna Give You Up", channelName: "Rick Astley", durationMs: null });
+    const response = runtime.response("live");
+    expect(response.items.map(entry => ({ id: entry.id, title: entry.title, providerTitle: entry.providerTitle, channelName: entry.channelName, link: entry.link }))).toEqual([
+      { id: item.id, title: "Clip", providerTitle: "Provider clip title", channelName: "SpeedyStreamer", link: "https://clips.twitch.tv/FunnyClip" },
+      { id: waiting.id, title: null, providerTitle: "Never Gonna Give You Up", channelName: "Rick Astley", link: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" }
+    ]);
+    // The overlay caption shows only the submitted title.
+    expect(await snapshot()).toMatchObject({ videos: { status: "active", title: "Clip" } });
+    expect(JSON.stringify(await snapshot())).not.toMatch(/Provider clip title|SpeedyStreamer/u);
+    queue.reportStarted(item.id);
+    queue.reportEnded(item.id);
+    expect(runtime.response("live").recent[0]).toMatchObject({ id: item.id, providerTitle: "Provider clip title", channelName: "SpeedyStreamer" });
+  });
+
   it("projects player delivery without the desktop app and mirror delivery while it runs", async () => {
     const { mirror, snapshot, queue, item } = setup();
     expect(await snapshot()).toMatchObject({ kind: "videos", videos: { status: "active", itemId: item.id, delivery: { mode: "player", source: { provider: "twitch-clip" } } } });

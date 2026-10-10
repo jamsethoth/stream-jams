@@ -8,7 +8,7 @@ import { createInMemoryStreamJamsDatabase, type StreamJamsDatabase } from "../db
 import { SqliteVideoQueueRepository, VideoQueueConflictError } from "./video-queue-repository.js";
 import { VideoQueueCommandError, VideoQueueService, type VideoSubmission } from "./video-queue-service.js";
 
-function setup(overrides: Partial<VideosModuleConfig> = {}, options: { enabled?: boolean; full?: boolean } = {}) {
+function setup(overrides: Partial<VideosModuleConfig> = {}, options: { enabled?: boolean; full?: boolean; onQueued?: (purpose: string, item: VideoRequestItem) => void } = {}) {
   const submissions: VideoSubmission[] = [];
   const config: VideosModuleConfig = { ...createDefaultVideosModuleConfig(), ...overrides };
   const queue: Pick<VideoQueueService, "submit" | "recentItem" | "requeue"> = {
@@ -18,13 +18,13 @@ function setup(overrides: Partial<VideosModuleConfig> = {}, options: { enabled?:
       if (options.full === true) throw new VideoQueueCommandError("queue-full", "full");
       submissions.push(submission);
       return {
-        id: `id${submissions.length}`, purpose, source: submission.source, title: submission.title, requester: submission.requester,
+        id: `id${submissions.length}`, purpose, source: submission.source, title: submission.title, providerTitle: null, channelName: null, requester: submission.requester,
         submittedVia: submission.via, durationMs: submission.durationMs, status: "queued", holdReason: null, limitOverridden: false,
         autoplay: submission.autoplay, position: submissions.length, createdAt: new Date(0).toISOString()
       } satisfies VideoRequestItem;
     }
   };
-  const intake = new VideoRequestIntake({ queue, getConfig: () => config, isModuleEnabled: () => options.enabled ?? true });
+  const intake = new VideoRequestIntake({ queue, getConfig: () => config, isModuleEnabled: () => options.enabled ?? true, onQueued: options.onQueued });
   return { intake, submissions, config };
 }
 
@@ -36,6 +36,23 @@ describe("VideoRequestIntake", () => {
     const result = await intake.submit("live", { link: youtube, title: "Song", requester: "Viewer", durationSeconds: 12.2 }, { via: "management", mayAutoplay: true });
     expect(result).toMatchObject({ status: "accepted", item: { status: "queued", autoplay: false } });
     expect(submissions[0]).toMatchObject({ source: { provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 65_000 }, durationMs: 12_200, via: "management" });
+  });
+
+  it("announces each accepted request once for a provider lookup, after the queue accepted it, and never a rejected one", async () => {
+    const announced: string[] = [];
+    const { intake } = setup({}, { onQueued: (purpose, item) => announced.push(`${purpose}:${item.id}`) });
+    const accepted = await intake.submit("test", { link: youtube }, { via: "streamerbot", mayAutoplay: false });
+    await intake.submit("test", { link: "not a link" }, { via: "streamerbot", mayAutoplay: false });
+    await intake.submit("test", { title: "no link" }, { via: "streamerbot", mayAutoplay: false });
+    expect(accepted.status).toBe("accepted");
+    expect(announced).toEqual(["test:id1"]);
+
+    const full: string[] = [];
+    const rejected = setup({}, { full: true, onQueued: (_purpose, item) => full.push(item.id) });
+    expect(await rejected.intake.submit("live", { link: youtube }, { via: "automation", mayAutoplay: false })).toMatchObject({ status: "rejected", reason: "queue-full" });
+    const disabled = setup({}, { enabled: false, onQueued: (_purpose, item) => full.push(item.id) });
+    expect(await disabled.intake.submit("live", { link: youtube }, { via: "automation", mayAutoplay: false })).toMatchObject({ status: "rejected", reason: "module-disabled" });
+    expect(full).toEqual([]);
   });
 
   it("honors autoplay only when the caller and channel allow it", async () => {
@@ -202,7 +219,8 @@ describe("VideoRequestIntake replay", () => {
       getConfig: () => config,
       scheduler: { setTimeout: () => null, clearTimeout: () => {} }
     });
-    const intake = new VideoRequestIntake({ queue, getConfig: () => config, isModuleEnabled: () => enabled });
+    const queued: string[] = [];
+    const intake = new VideoRequestIntake({ queue, getConfig: () => config, isModuleEnabled: () => enabled, onQueued: (purpose, item) => queued.push(`${purpose}:${item.id}`) });
     async function finished(link: string) {
       const result = await intake.submit("live", { link, title: "Replay me" }, { via: "streamerbot", mayAutoplay: true });
       if (result.status !== "accepted") throw new Error("not accepted");
@@ -210,13 +228,15 @@ describe("VideoRequestIntake replay", () => {
       queue.reportEnded(result.item.id);
       return result.item;
     }
-    return { queue, intake, finished, setConfig: (next: Partial<VideosModuleConfig>) => { config = { ...config, ...next }; }, setEnabled: (value: boolean) => { enabled = value; } };
+    return { queue, intake, finished, queued, setConfig: (next: Partial<VideosModuleConfig>) => { config = { ...config, ...next }; }, setEnabled: (value: boolean) => { enabled = value; } };
   }
 
   it("queues a Recent item again under the replaying surface", async () => {
-    const { queue, intake, finished } = setupReplay();
+    const { queue, intake, finished, queued } = setupReplay();
     const played = await finished(youtube);
     const result = await intake.requeue("live", queue.view("live").revision, played.id, "operator");
+    // The replay is announced for a provider lookup like any new request.
+    expect(queued).toEqual([`live:${played.id}`, `live:${result.status === "accepted" ? result.item.id : ""}`]);
     expect(result).toMatchObject({ status: "accepted", item: { source: played.source, title: "Replay me", submittedVia: "operator", autoplay: false, status: "queued" } });
     expect(queue.view("live").items).toHaveLength(1);
     expect(queue.view("live").current).toBeNull();

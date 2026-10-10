@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createStaticVideoQueueApi, failedVideos, heldVideos, playingVideo, queuedVideos, recentVideo, recentVideos, twitchClipPlaying, videoQueue } from "../../stories/video-queue-fixtures.js";
+import { createStaticVideoQueueApi, describedRecentVideos, describedVideos, failedVideos, heldVideos, playingVideo, queuedVideos, recentVideo, recentVideos, twitchClipPlaying, videoQueue } from "../../stories/video-queue-fixtures.js";
 import { renderManagement } from "../../test-support/render-management.js";
 import { ManagementHttpError } from "../management-http-client.js";
 import { OperatorItemCard } from "../../operator/OperatorItemCard.js";
@@ -61,6 +61,53 @@ describe("VideoQueuePanel", () => {
     expect(within(screen.getByRole("article", { name: "Short clip" })).queryByRole("button", { name: /Play anyway/u })).not.toBeInTheDocument();
     await user.click(within(concert).getByRole("button", { name: "Play anyway: Full concert" }));
     expect(command).toHaveBeenCalledWith("live", 4, { kind: "play-anyway", itemId: "long" });
+  });
+
+  describe("provider details", () => {
+    it("titles each row by the submitted title, then the provider's, then the link, with the channel beside the length", async () => {
+      renderManagement(<VideoQueuePanel api={createStaticVideoQueueApi(describedVideos())} pollIntervalMs={60_000} />);
+      const rows = (await screen.findAllByRole("article")).filter(row => row.classList.contains("video-queue__item"));
+      expect(rows.map(row => row.getAttribute("aria-label"))).toEqual([
+        "Never Gonna Give You Up (Official Video)", "Clutch final round", "Full charity marathon", "Viewer's pick", "https://videos.example.com/clip.mp4"
+      ]);
+      const bylines = rows.map(row => row.querySelector(".video-queue__byline")?.textContent);
+      expect(bylines).toEqual(["Rick Astley · Length unknown", "SpeedyStreamer · 0:28", "SpeedyStreamer · 1:12:03", "Some Channel · Length unknown", "Length unknown"]);
+      expect(within(rows[0]!).getByText("Requested by viewer_one · YouTube · via Streamer.bot")).toBeVisible();
+      expect(within(rows[2]!).getByText("Over the length limit")).toBeVisible();
+      expect(screen.getByRole("button", { name: "Play anyway: Full charity marathon" })).toBeEnabled();
+      // The provider title is stored beside a submitted one but not shown over it.
+      expect(screen.queryByText("Provider title is kept beside it")).not.toBeInTheDocument();
+      expect(document.body).not.toHaveTextContent(/undefined|null/u);
+    });
+
+    it("names actions with the provider title when no title was submitted", async () => {
+      const user = userEvent.setup();
+      const command = vi.fn(async () => describedVideos());
+      renderManagement(<VideoQueuePanel api={createStaticVideoQueueApi(describedVideos(), { command })} pollIntervalMs={60_000} />);
+      await user.click(await screen.findByRole("button", { name: "Remove: Never Gonna Give You Up (Official Video)" }));
+      expect(command).toHaveBeenCalledWith("live", 4, { kind: "remove", itemId: "yt" });
+      expect(await screen.findByText("Never Gonna Give You Up (Official Video) removed.")).toBeVisible();
+    });
+
+    it("shows the channel on the now-playing card", async () => {
+      const now = Date.now();
+      const playing = videoQueue({ serverTimeEpochMs: now, items: [{ ...describedVideos().items[1]!, status: "playing" }],
+        current: { itemId: "clip", phase: "playing", positionMs: 1_000, atEpochMs: now, durationMs: 28_400, controls: { pause: false, seek: false } } });
+      renderManagement(<VideoQueuePanel api={createStaticVideoQueueApi(playing)} pollIntervalMs={60_000} />);
+      const card = await screen.findByRole("article", { name: "Now playing" });
+      expect(within(card).getByText("Clutch final round")).toBeVisible();
+      expect(within(card).getByText("SpeedyStreamer · Requested by viewer_one · Twitch clip")).toBeVisible();
+      expect(within(card).getByLabelText("Playback position")).toHaveTextContent("/ 0:28");
+    });
+
+    it("leads Operator Recent summaries with the channel", async () => {
+      renderManagement(<VideoQueuePanel api={createStaticVideoQueueApi(describedRecentVideos())} pollIntervalMs={60_000} recentCard={OperatorItemCard} />);
+      const recent = await screen.findByRole("region", { name: "Recent videos" });
+      const cards = within(recent).getAllByRole("article");
+      expect(cards.map(card => card.getAttribute("aria-label"))).toEqual(["Never Gonna Give You Up (Official Video)", "Viewer's pick"]);
+      expect(cards[0]).toHaveTextContent("Rick Astley · Requested by viewer_one · YouTube · youtu.be · via channel points");
+      expect(within(recent).getByRole("button", { name: "Replay Viewer's pick in Videos" })).toBeEnabled();
+    });
   });
 
   it("lists recent failures apart from the waiting queue, without controls", async () => {

@@ -19,7 +19,12 @@ export interface VideoRequestItem {
   readonly id: string;
   readonly purpose: OverlayPurpose;
   readonly source: VideoSource;
+  /** The title given with the submission. It wins over `providerTitle` and is the only title shown on stream. */
   readonly title: string | null;
+  /** The title the provider reported for the video after it was queued, or null when unknown. */
+  readonly providerTitle: string | null;
+  /** The uploader or broadcaster name the provider reported, or null when unknown. */
+  readonly channelName: string | null;
   readonly requester: string | null;
   readonly submittedVia: VideoSubmissionChannel;
   readonly durationMs: number | null;
@@ -37,6 +42,16 @@ export interface VideoRecentItem extends VideoRequestItem {
   readonly status: "played" | "failed";
   /** When playback ended; skipped and stopped videos count as played. */
   readonly finishedAt: string;
+}
+
+/**
+ * What a provider reported about a queued video. Every field is optional because providers
+ * differ: YouTube oEmbed has no length, and direct files are never looked up.
+ */
+export interface VideoMetadata {
+  readonly title: string | null;
+  readonly channelName: string | null;
+  readonly durationMs: number | null;
 }
 
 export interface VideoRewardMapping {

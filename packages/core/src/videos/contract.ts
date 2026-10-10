@@ -20,6 +20,8 @@ export * from "./placement-geometry.js";
 
 export const videoTitleSchema = z.string().trim().min(1).max(200);
 export const videoRequesterSchema = z.string().trim().min(1).max(64);
+/** A provider-reported uploader or broadcaster name. */
+export const videoChannelNameSchema = /* @__PURE__ */ z.string().trim().min(1).max(100);
 const itemIdSchema = z.string().min(1).max(128);
 
 export const videoPlaybackClockSchema = z.object({

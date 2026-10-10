@@ -139,6 +139,9 @@ import { VideosRuntime } from "../modules/videos/videos-runtime.js";
 import { VideoMirrorDirector } from "../modules/videos/video-mirror-director.js";
 import type { DesktopVideoTransport } from "@stream-jams/core/videos";
 import { createStreamerBotVideoIntake, type VideoIntakeDiagnostic } from "../modules/videos/streamerbot-video-intake.js";
+import { VideoMetadataLookup } from "../modules/videos/video-metadata-lookup.js";
+import { VideoMetadataEnricher } from "../modules/videos/video-metadata-enricher.js";
+import { createTwitchConnectedAccessReader } from "../modules/twitch/twitch-connected-access.js";
 import { createChannelPointVideoIntake } from "../modules/videos/channel-point-video-intake.js";
 import { createVideosBusConsumer } from "../modules/videos/videos-bus-consumer.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
@@ -232,6 +235,8 @@ export interface RuntimeAppCompositionOptions {
   /** In-process artwork transport for disposable acceptance; normal runtime keeps pinned DNS and HTTPS. */
   readonly musicArtworkNetwork?: Pick<MusicArtworkServiceOptions, "resolveAddresses" | "fetchBytes">;
   readonly twitchApiClient?: TwitchApiClient;
+  /** Outbound HTTPS for Videos title, channel and length lookups (YouTube oEmbed and Twitch Helix only). */
+  readonly videoMetadataFetch?: typeof fetch | undefined;
   readonly twitchRewardApiClient?: TwitchRewardApiClient;
   readonly twitchEventSubApiClient?: TwitchEventSubApiClient;
   readonly twitchEventSubSocketFactory?: (url: string) => TwitchEventSubSocket;
@@ -494,10 +499,23 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     getConfig: () => videosConfig,
     now: () => now().getTime()
   });
+  const videoMetadataEnricher = new VideoMetadataEnricher({
+    lookup: new VideoMetadataLookup({
+      fetch: options.videoMetadataFetch,
+      getTwitchAccess: createTwitchConnectedAccessReader({ repository: twitchAccountRepository, secretStore, clientId: twitchClientId })
+    }),
+    queue: videoQueueService,
+    onDiagnostic: entry => {
+      const context = { module: "videos", source: "videos.metadata", correlationId: generateRuntimeReferenceId(), processingId: null, metadata: { ...entry.metadata } };
+      void (entry.level === "info" ? runtimeLogger.info(entry.message, context) : runtimeLogger.debug(entry.message, context));
+    }
+  });
   const videoRequestIntake = new VideoRequestIntake({
     queue: videoQueueService,
     getConfig: () => videosConfig,
-    isModuleEnabled: async () => (await overlayModuleConfigService.getModuleConfig("videos")).enabled
+    isModuleEnabled: async () => (await overlayModuleConfigService.getModuleConfig("videos")).enabled,
+    // Queue first, describe after: the submitter never waits on YouTube or Twitch.
+    onQueued: (purpose, item) => { void trackRuntimeWork(() => videoMetadataEnricher.enrich(purpose, item)); }
   });
   // Bound once the audio routes it resolves devices through exist; the gateway and runtime read it lazily.
   const videoMirror: { director?: VideoMirrorDirector } = {};
@@ -1904,6 +1922,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     unsubscribeMusicOutputs();
     unsubscribeVideoOutputs();
     videoMirror.director?.close();
+    videoMetadataEnricher.dispose();
     videoQueueService.dispose();
     await videoOutputSyncTail;
     await timerOutputSyncTail;
