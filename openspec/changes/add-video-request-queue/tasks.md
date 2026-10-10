@@ -49,6 +49,7 @@
 - [x] 5.6 Add the fallback player for browser sources when the desktop app is absent, with server-clock drift correction.
 - [x] 5.7 Add Storybook stories for receiver states (connecting, playing, paused, unavailable) and fallback provider players, using tiny local assets.
 - [x] 5.8 Add Electron and Playwright coverage for the mirror path using a local test video; a desktop test config where needed.
+- [x] 5.9 Cut the mirror's CPU cost: receivers declare the media and picture size they show (`hello` `media`, `maxWidth`, `maxHeight`); the publisher sends only those tracks and caps each video encode to that size, 30 fps and an area-scaled bitrate, reconnecting once only when an output needs more; with unit, Electron and benchmark evidence.
 
 ## 6. Management And Operator UI
 
@@ -57,6 +58,7 @@
 - [x] 6.3 Add Storybook stories and component tests for both surfaces.
 - [x] 6.4 Add Videos placement: a persisted canvas box in the module config (default equal to the earlier look), validated on save and in the projection, applied by browser sources, the desktop overlay and the mirror, and edited on the Videos page with the shared snapping, plus stories, unit tests and Playwright coverage.
 - [x] 6.5 Add an Operator Recent list for Videos (newest 10 played or failed items per purpose, in the Alerts/Effects Recent card layout) with a revision-guarded Replay that queues the source again as a new operator request through the intake rules (module on, current allowlist, length limit), plus service, route, component, Storybook and Playwright coverage.
+- [x] 6.6 Turn desktop GPU acceleration on by default (smoother mirrored video with less CPU) with a persisted `desktop.gpuAcceleration` Settings opt-out that the main process mirrors to a validated launch preference file and applies at the next start, as the fallback for the Windows quit hang; with schema, service, route, IPC, preference-file, component, Storybook and Playwright coverage.
 
 ## 7. Docs, Backlog And Verification
 

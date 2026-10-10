@@ -40,6 +40,7 @@ The video shoutout module (`add-video-shoutout-overlay-module`) plays one Stream
 
 - `video-shoutout-overlay` (from `add-video-shoutout-overlay-module`) is retired. Its Streamer.bot payload is accepted as a `videos` submission, and the `video-shoutout` module, routes and keys are removed.
 - `scoped-automation` gains the `videos:*` scopes and routes.
+- `windows-desktop-runtime` turns GPU acceleration on by default, with a desktop Settings opt-out applied at the next launch.
 
 ## Out Of Scope (follow-up slices in the backlog)
 

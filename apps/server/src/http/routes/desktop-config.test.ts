@@ -36,12 +36,16 @@ async function fixture(available = true, maxRequests = 20) {
 
 it("persists the close policy before applying it and keeps runtime availability out of config", async () => {
   const { app, store, headers, applied } = await fixture();
-  expect((await app.inject({ method: "GET", url: "/config/desktop", headers })).json()).toEqual({ available: true, closeToTray: true });
+  expect((await app.inject({ method: "GET", url: "/config/desktop", headers })).json()).toEqual({ available: true, closeToTray: true, gpuAcceleration: true });
   const response = await app.inject({ method: "PATCH", url: "/config/desktop", headers, payload: { closeToTray: false } });
   expect(response.statusCode, response.body).toBe(200);
-  expect(response.json()).toEqual({ available: true, closeToTray: false });
-  expect((await store.readConfig()).desktop).toEqual({ closeToTray: false });
-  expect(applied).toEqual([false]);
+  expect(response.json()).toEqual({ available: true, closeToTray: false, gpuAcceleration: true });
+  expect((await store.readConfig()).desktop).toEqual({ closeToTray: false, gpuAcceleration: true });
+  const gpu = await app.inject({ method: "PATCH", url: "/config/desktop", headers, payload: { gpuAcceleration: false } });
+  expect(gpu.statusCode, gpu.body).toBe(200);
+  expect(gpu.json()).toEqual({ available: true, closeToTray: false, gpuAcceleration: false });
+  expect((await store.readConfig()).desktop).toEqual({ closeToTray: false, gpuAcceleration: false });
+  expect(applied).toEqual([false, false]);
 });
 
 it("requires a session, CSRF proof, and an approved origin before changing the preference", async () => {
@@ -60,7 +64,7 @@ it("requires a session, CSRF proof, and an approved origin before changing the p
 
 it("rejects malformed and unknown fields and limits repeated config reads", async () => {
   const { app, headers } = await fixture(true, 4);
-  for (const payload of [{ closeToTray: "false" }, { available: true }]) {
+  for (const payload of [{ closeToTray: "false" }, { gpuAcceleration: "false" }, { gpuAcceleration: null }, { available: true }]) {
     expect((await app.inject({ method: "PATCH", url: "/config/desktop", headers, payload })).statusCode).toBe(400);
   }
   for (let request = 0; request < 4; request += 1) {
@@ -71,7 +75,8 @@ it("rejects malformed and unknown fields and limits repeated config reads", asyn
 
 it("preserves the preference but rejects desktop-only writes in CLI mode", async () => {
   const { app, headers, store } = await fixture(false);
-  expect((await app.inject({ method: "GET", url: "/config/desktop", headers })).json()).toEqual({ available: false, closeToTray: true });
+  expect((await app.inject({ method: "GET", url: "/config/desktop", headers })).json()).toEqual({ available: false, closeToTray: true, gpuAcceleration: true });
   expect((await app.inject({ method: "PATCH", url: "/config/desktop", headers, payload: { closeToTray: false } })).statusCode).toBe(409);
+  expect((await app.inject({ method: "PATCH", url: "/config/desktop", headers, payload: { gpuAcceleration: false } })).statusCode).toBe(409);
   expect((await store.readConfig()).desktop.closeToTray).toBe(true);
 });

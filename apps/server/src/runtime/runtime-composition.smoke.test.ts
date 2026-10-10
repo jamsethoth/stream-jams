@@ -267,7 +267,7 @@ describe("runtime app composition smoke", () => {
       webBuildDirectory: await createWebBuildFixture(testRoot),
       configStore: new StaticConfigStore({
         ...config,
-        desktop: { closeToTray: false },
+        desktop: { closeToTray: false, gpuAcceleration: true },
         playback: { ...config.playback, muted: true, moduleMutes: { alerts: true, "screen-effects": true } }
       }),
       desktopHost: { onConfigChanged: ({ closeToTray }) => { desktopChanges.push(closeToTray); }, onPlaybackStateChanged: () => {} },
@@ -324,7 +324,7 @@ describe("runtime app composition smoke", () => {
     expect(restored.statusCode, restored.body).toBe(200);
     expect(sinkMuteChanges.at(-1)).toBe(true);
     expect(desktopChanges.at(-1)).toBe(false);
-    expect((await composition.app.inject({ method: "GET", url: "/config/desktop", headers })).json()).toEqual({ available: true, closeToTray: false });
+    expect((await composition.app.inject({ method: "GET", url: "/config/desktop", headers })).json()).toEqual({ available: true, closeToTray: false, gpuAcceleration: true });
     expect((await composition.app.inject({ method: "GET", url: "/health" })).statusCode).toBe(200);
     expect(active.json()).toEqual({
       renderedText: { maxLength: 240, blockedTerms: [], stripUrls: false },
@@ -2278,7 +2278,7 @@ function createConfig(
   playback: PlaybackSafetyState = { paused: false, muted: false, doNotDisturb: false }
 ): AppConfig {
   return {
-    desktop: { closeToTray: true },
+    desktop: { closeToTray: true, gpuAcceleration: true },
     server: {
       host: "127.0.0.1",
       port: 39187

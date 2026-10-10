@@ -92,7 +92,9 @@ test("packaged app serves its built UI, preserves close preference, and shuts do
     await desktop.close();
     await closed;
     desktop = undefined;
-    expect(JSON.parse(await readFile(configPath, "utf8")).desktop).toEqual({ closeToTray: false });
+    expect(JSON.parse(await readFile(configPath, "utf8")).desktop).toEqual({ closeToTray: false, gpuAcceleration: true });
+    // The launch-time GPU preference mirrors the service-owned setting (on by default).
+    expect(JSON.parse(await readFile(join(root, "electron", "gpu-preference.json"), "utf8"))).toEqual({ version: 1, gpuAcceleration: true });
     await expect.poll(async () => fetch(`http://127.0.0.1:${port}/health`).then(() => true, () => false)).toBe(false);
 
     desktop = await _electron.launch({ executablePath: isolatedExecutable, cwd: root, env, chromiumSandbox: true });
@@ -109,7 +111,7 @@ test("packaged app serves its built UI, preserves close preference, and shuts do
     await desktop.close();
     await stopped;
     desktop = undefined;
-    expect(JSON.parse(await readFile(configPath, "utf8")).desktop).toEqual({ closeToTray: false });
+    expect(JSON.parse(await readFile(configPath, "utf8")).desktop).toEqual({ closeToTray: false, gpuAcceleration: true });
 
     desktop = await _electron.launch({ executablePath: isolatedExecutable, cwd: root, env, chromiumSandbox: true });
     mainPid = await desktop.evaluate(() => process.pid);
@@ -133,7 +135,7 @@ test("packaged app serves its built UI, preserves close preference, and shuts do
     await expect(failedSaveQuit.getByRole("alert")).toContainText("Injected desktop settings save failure. (TEST_WRITE_FAILED)");
     expect((await fetch(`http://127.0.0.1:${port}/health`)).status).toBe(200);
     await expect(failedSaveCloseToTray).toBeChecked();
-    expect(JSON.parse(await readFile(configPath, "utf8")).desktop).toEqual({ closeToTray: false });
+    expect(JSON.parse(await readFile(configPath, "utf8")).desktop).toEqual({ closeToTray: false, gpuAcceleration: true });
     await failedSaveQuit.getByRole("button", { name: "Discard", exact: true }).click();
     await expect.poll(async () => fetch(`http://127.0.0.1:${port}/health`).then(() => true, () => false), { timeout: 10_000 }).toBe(false);
     await desktop.close();

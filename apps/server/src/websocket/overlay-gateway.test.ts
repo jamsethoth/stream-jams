@@ -801,6 +801,8 @@ describe("Videos mirror signaling", () => {
     for (const signal of [
       { type: "hello" },
       { type: "hello", connection: 0 },
+      { type: "hello", connection: 1, media: "screen" },
+      { type: "hello", connection: 1, media: "video", maxWidth: 3841 },
       { type: "offer", connection: 1, sdp: "v=0" },
       { type: "answer", connection: 1, sdp: "x".repeat(40_000) },
       { type: "ice", connection: 1, candidate: { candidate: "candidate:1 1 udp 1 203.0.113.4 5000 typ srflx" } },
@@ -810,6 +812,10 @@ describe("Videos mirror signaling", () => {
     expect(onVideoMirrorSignal).not.toHaveBeenCalled();
     gateway.handleClientMessage("client-1", JSON.stringify({ type: "videos.mirror.signal", signal: { type: "ice", connection: 1, candidate: { candidate: "candidate:1 1 udp 2122260223 127.0.0.1 51000 typ host generation 0", sdpMid: "0", sdpMLineIndex: 0 } } }));
     expect(onVideoMirrorSignal).toHaveBeenCalledOnce();
+    // A browser source declaring what it plays is relayed as sent.
+    const request = { type: "hello", connection: 2, media: "both", maxWidth: 1382, maxHeight: 778 };
+    gateway.handleClientMessage("client-1", JSON.stringify({ type: "videos.mirror.signal", signal: request }));
+    expect(onVideoMirrorSignal).toHaveBeenLastCalledWith(expect.objectContaining({ id: "client-1" }), request);
   });
 
   it("bounds each output's signaling rate and resets the budget per window", async () => {

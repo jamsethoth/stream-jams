@@ -217,7 +217,7 @@ function createManagementApi(): ManagementApi {
         port: 39187
       };
     },
-    async getDesktopConfig() { return { available: false, closeToTray: true }; },
+    async getDesktopConfig() { return { available: false, closeToTray: true, gpuAcceleration: true }; },
     async updateDesktopConfig(input) { return { ...input, available: true }; },
     async updateServerConfig(input) {
       return input;

@@ -837,7 +837,7 @@ async function createWebBuildFixture(testRoot: string): Promise<string> {
 
 function createConfig(testRoot: string): AppConfig {
   return {
-    desktop: { closeToTray: true },
+    desktop: { closeToTray: true, gpuAcceleration: true },
     server: { host: "127.0.0.1", port: 39_187 },
     storage: { dataDirectory: join(testRoot, "data"), assetDirectory: join(testRoot, "assets") },
     logging: { level: "INFO", rollover: "hourly", retentionHours: 48 },

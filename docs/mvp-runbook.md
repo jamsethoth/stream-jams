@@ -37,6 +37,7 @@ The desktop main process owns one utility-process service, a sandboxed managemen
 - Tray **Open** restores management. **Mute/Unmute** uses the same persisted playback safety state as the Operator Console.
 - Tray **Quit** stops the owned service. Unsaved management changes require Save and leave, Discard, or Cancel first.
 - In Settings, disable **Close window to tray** and save to make X perform a full Quit. This preference also participates in backup restore and rollback.
+- GPU acceleration is on by default. If Stream Jams keeps running after Quit (seen on Windows 25H2 when the GPU process does not exit), clear **Use GPU acceleration** in Settings and save. The desktop app reads this choice before it starts, so it takes effect at the next launch. It is saved with the other settings and mirrored to `gpu-preference.json` in the Electron profile; a missing or damaged file means on.
 - If management crashes, native Quit warns that unsaved edits cannot be recovered. Startup has a 20-second deadline; graceful shutdown has 10 seconds before terminating only the owned worker.
 - A second launch with the same Electron profile focuses the existing instance. `STREAM_JAMS_DESKTOP_USER_DATA_PATH` accepts an absolute path for isolated testing; it does not change the application data directory or make concurrent use of one data profile safe.
 

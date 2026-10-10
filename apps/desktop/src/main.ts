@@ -9,6 +9,7 @@ import { overlayPlayerScheme } from "./overlay/overlay-player-policy.js";
 import { closeAction } from "./close-policy.js";
 import { ManagementWindow } from "./management-window.js";
 import { ServiceSupervisor } from "./service-supervisor.js";
+import { GpuPreferenceSync, readGpuAccelerationPreference } from "./gpu-preference.js";
 import { createTray } from "./tray.js";
 import { ShutdownLog } from "./shutdown-log.js";
 import { collectPriorCrashDumpMetadata, createDesktopDiagnosticFallbackWriter, DesktopDiagnostics } from "./desktop-diagnostics.js";
@@ -20,10 +21,6 @@ import { runVideoMirrorCheck, videoMirrorCheckGpuSwitch, videoMirrorCheckSwitch 
 // Diagnostic mode for the Videos mirror feasibility check; it replaces the normal app for that run.
 const videoMirrorCheck = process.argv.includes(videoMirrorCheckSwitch);
 
-// Keep the management renderer off the hardware GPU process. On Windows 25H2,
-// that subprocess can remain in a terminating state after every JS quit event,
-// delaying the owned desktop process and locking its isolated profile.
-if (!videoMirrorCheck || !process.argv.includes(videoMirrorCheckGpuSwitch)) app.disableHardwareAcceleration();
 registerAudioPlayerScheme([overlayPlayerScheme]);
 
 const isolatedUserData = process.env.STREAM_JAMS_DESKTOP_USER_DATA_PATH;
@@ -31,6 +28,16 @@ if (isolatedUserData !== undefined) {
   if (!isAbsolute(isolatedUserData) || isolatedUserData.trim() === "") throw new Error("STREAM_JAMS_DESKTOP_USER_DATA_PATH must be absolute.");
   app.setPath("userData", isolatedUserData);
 }
+
+// GPU acceleration is on by default. Settings can turn it off; Electron only honors that
+// before app ready, so the saved choice is read from userData here and applies at the next
+// launch. Turning it off is the fallback for the Windows 25H2 quit hang, where the GPU
+// process can stay terminating after quit and keep the desktop process alive.
+// The video mirror check keeps its own switch and runs without the GPU unless asked.
+const gpuAcceleration = videoMirrorCheck
+  ? process.argv.includes(videoMirrorCheckGpuSwitch)
+  : readGpuAccelerationPreference(app.getPath("userData"));
+if (!gpuAcceleration) app.disableHardwareAcceleration();
 let management: ManagementWindow | null = null;
 const audio = new AudioHost((callbacks, generation) => new AudioWindow(callbacks, () => ownedMediaOptions(generation)), (input) => diagnostics.record(input));
 // The Videos primary players. Their page is served from the owned service's origin.
@@ -52,8 +59,14 @@ let failureVisible = false;
 let firstHide = true;
 let shutdownLog: ShutdownLog | undefined;
 
+let gpuPreference: GpuPreferenceSync | null = null;
+
 const supervisor = new ServiceSupervisor(() => utilityProcess.fork(resolve(import.meta.dirname, "service-worker.js"), [], { serviceName: "Stream Jams local service", stdio: "ignore" }), () => {
   tray?.update(supervisor.snapshot);
+  if (supervisor.snapshot !== null) {
+    gpuPreference ??= new GpuPreferenceSync(app.getPath("userData"), (input) => diagnostics.record(input));
+    gpuPreference.sync(supervisor.snapshot.gpuAcceleration);
+  }
   if (supervisor.state === "failed" && !exiting) void showFailure();
 }, audio, overlay, (input) => diagnostics.record(input), (report) => diagnostics.fallback(report), video);
 const diagnostics = new DesktopDiagnostics({

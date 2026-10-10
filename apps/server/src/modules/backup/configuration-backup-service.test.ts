@@ -27,7 +27,7 @@ import { RuntimeMaintenanceGate, RuntimeMaintenanceUnavailableError } from "./ru
 
 const pngBytes = Buffer.from("89504e470d0a1a0a", "hex");
 const appConfig: AppConfig = {
-  desktop: { closeToTray: true },
+  desktop: { closeToTray: true, gpuAcceleration: true },
   server: { host: "127.0.0.1", port: 39187 },
   storage: { dataDirectory: "C:/source/data", assetDirectory: "C:/source/assets" },
   logging: { level: "INFO", rollover: "hourly", retentionHours: 336 },
@@ -620,7 +620,7 @@ describe("ConfigurationBackupService", () => {
       server: { host: "127.0.0.1", port: 40123 },
       logging: appConfig.logging,
       playback: appConfig.playback,
-      desktop: { closeToTray: false }
+      desktop: { closeToTray: false, gpuAcceleration: true }
     }));
     expect(updateConfig.mock.calls[0]?.[0]).not.toHaveProperty("storage");
     expect(regenerateOutput).toHaveBeenCalledWith(expect.anything(), "http://127.0.0.1:40123");
@@ -694,8 +694,8 @@ describe("ConfigurationBackupService", () => {
     })).rejects.toMatchObject({ code: "RESTORE_FAILED" });
 
     expect(updateConfig).toHaveBeenCalledTimes(2);
-    expect(updateConfig.mock.calls[0]?.[0].desktop).toEqual({ closeToTray: false });
-    expect(updateConfig.mock.calls[1]?.[0].desktop).toEqual({ closeToTray: true });
+    expect(updateConfig.mock.calls[0]?.[0].desktop).toEqual({ closeToTray: false, gpuAcceleration: true });
+    expect(updateConfig.mock.calls[1]?.[0].desktop).toEqual({ closeToTray: true, gpuAcceleration: true });
     expect(persistedConfig).toEqual(appConfig);
   });
 

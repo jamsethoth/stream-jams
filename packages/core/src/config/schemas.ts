@@ -14,11 +14,11 @@ export const appStorageConfigSchema = z.object({
   assetDirectory: nonEmptyStringSchema
 });
 
-export const desktopConfigSchema = z.object({ closeToTray: z.boolean().default(true) });
-export const desktopConfigUpdateSchema = z.object({ closeToTray: z.boolean() }).strict().partial();
+export const desktopConfigSchema = z.object({ closeToTray: z.boolean().default(true), gpuAcceleration: z.boolean().default(true) });
+export const desktopConfigUpdateSchema = z.object({ closeToTray: z.boolean(), gpuAcceleration: z.boolean() }).strict().partial();
 
 export const appConfigSchema = z.object({
-  desktop: desktopConfigSchema.default({ closeToTray: true }),
+  desktop: desktopConfigSchema.default({ closeToTray: true, gpuAcceleration: true }),
   server: appServerConfigSchema,
   storage: appStorageConfigSchema,
   logging: logSettingsSchema.default(defaultLogSettings),

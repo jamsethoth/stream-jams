@@ -124,23 +124,66 @@ describe("SettingsPanel", () => {
   });
 
   it("saves the desktop opt-out explicitly and does not show it in CLI mode", async () => {
-    const managementApi = createManagementApi({ getDesktopConfig: async () => ({ available: true, closeToTray: true }) });
+    const managementApi = createManagementApi({ getDesktopConfig: async () => ({ available: true, closeToTray: true, gpuAcceleration: true }) });
     const view = render(<SettingsPanel managementApi={managementApi} />);
     await userEvent.click(await screen.findByRole("checkbox", { name: "Close window to tray" }));
     expect(managementApi.updateDesktopConfig).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Save desktop settings" }));
     expect(await screen.findByText("Desktop settings saved.")).toBeVisible();
-    expect(managementApi.updateDesktopConfig).toHaveBeenCalledWith({ closeToTray: false });
+    expect(managementApi.updateDesktopConfig).toHaveBeenCalledWith({ closeToTray: false, gpuAcceleration: true });
     expect(screen.getByRole("checkbox", { name: "Close window to tray" })).not.toBeChecked();
+    expect(screen.queryByText("Restart Stream Jams to apply the GPU acceleration change.")).not.toBeInTheDocument();
     view.unmount();
     render(<SettingsPanel managementApi={createManagementApi()} />);
     await screen.findByLabelText("Port");
     expect(screen.queryByRole("checkbox", { name: "Close window to tray" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Use GPU acceleration" })).not.toBeInTheDocument();
+  });
+
+  it("saves the GPU opt-out, notes that it applies after a restart, and clears the note when restored", async () => {
+    const user = userEvent.setup();
+    const managementApi = createManagementApi({ getDesktopConfig: vi.fn(async () => ({ available: true, closeToTray: false, gpuAcceleration: true })) });
+    render(<SettingsPanel managementApi={managementApi} />);
+    const gpu = await screen.findByRole("checkbox", { name: "Use GPU acceleration" });
+    expect(gpu).toBeChecked();
+    expect(screen.getByText(/Takes effect the next time Stream Jams starts\./)).toBeVisible();
+    await user.click(gpu);
+    expect(screen.queryByText("Restart Stream Jams to apply the GPU acceleration change.")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save desktop settings" }));
+    expect(await screen.findByText("Desktop settings saved.")).toBeVisible();
+    expect(managementApi.updateDesktopConfig).toHaveBeenLastCalledWith({ closeToTray: false, gpuAcceleration: false });
+    expect(screen.getByRole("checkbox", { name: "Use GPU acceleration" })).not.toBeChecked();
+    expect(screen.getByText("Restart Stream Jams to apply the GPU acceleration change.")).toBeVisible();
+    await user.click(screen.getByRole("checkbox", { name: "Use GPU acceleration" }));
+    await user.click(screen.getByRole("button", { name: "Save desktop settings" }));
+    await waitFor(() => expect(managementApi.updateDesktopConfig).toHaveBeenLastCalledWith({ closeToTray: false, gpuAcceleration: true }));
+    await waitFor(() => expect(screen.queryByText("Restart Stream Jams to apply the GPU acceleration change.")).not.toBeInTheDocument());
+  });
+
+  it("guards an unsaved GPU change on navigation, saving or discarding it", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/manage/settings");
+    const managementApi = createManagementApi({ getDesktopConfig: vi.fn(async () => ({ available: true, closeToTray: true, gpuAcceleration: false })) });
+    const view = render(<DirtyNavigationProvider><SettingsNavigationHarness audioApi={createAudioApi()} managementApi={managementApi} /></DirtyNavigationProvider>);
+    await user.click(await screen.findByRole("checkbox", { name: "Use GPU acceleration" }));
+    await user.click(screen.getByRole("button", { name: "Go home" }));
+    await user.click(await screen.findByRole("button", { name: "Discard" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/manage"));
+    expect(managementApi.updateDesktopConfig).not.toHaveBeenCalled();
+    view.unmount();
+
+    window.history.replaceState(null, "", "/manage/settings");
+    render(<DirtyNavigationProvider><SettingsNavigationHarness audioApi={createAudioApi()} managementApi={managementApi} /></DirtyNavigationProvider>);
+    await user.click(await screen.findByRole("checkbox", { name: "Use GPU acceleration" }));
+    await user.click(screen.getByRole("button", { name: "Go home" }));
+    await user.click(await screen.findByRole("button", { name: "Save and leave" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/manage"));
+    expect(managementApi.updateDesktopConfig).toHaveBeenCalledWith({ closeToTray: true, gpuAcceleration: true });
   });
 
   it("keeps the desktop draft recoverable when saving fails", async () => {
     render(<SettingsPanel managementApi={createManagementApi({
-      getDesktopConfig: async () => ({ available: true, closeToTray: true }),
+      getDesktopConfig: async () => ({ available: true, closeToTray: true, gpuAcceleration: true }),
       updateDesktopConfig: async () => { throw new Error("Disk is read-only"); }
     })} />);
     await userEvent.click(await screen.findByRole("checkbox", { name: "Close window to tray" }));
@@ -533,7 +576,7 @@ async function openDisclosure(user: ReturnType<typeof userEvent.setup>, name: st
 
 function createManagementApi(overrides: Partial<SettingsApi> = {}): SettingsApi {
   return {
-    getDesktopConfig: vi.fn(async () => ({ available: false, closeToTray: true })),
+    getDesktopConfig: vi.fn(async () => ({ available: false, closeToTray: true, gpuAcceleration: true })),
     updateDesktopConfig: vi.fn(async (input) => ({ ...input, available: true })),
     getServerConfig: vi.fn(async () => ({ host: "127.0.0.1", port: 39187 })),
     updateServerConfig: vi.fn(async (input) => input),

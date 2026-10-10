@@ -33,7 +33,7 @@ export interface ServiceWorker {
   on(event: "message", listener: (message: unknown) => void): unknown;
   on(event: "exit", listener: (code: number) => void): unknown;
 }
-export interface ServiceSnapshot { readonly url: string; readonly closeToTray: boolean; readonly muted: boolean }
+export interface ServiceSnapshot { readonly url: string; readonly closeToTray: boolean; readonly gpuAcceleration: boolean; readonly muted: boolean }
 export type ServiceState = "starting" | "running" | "stopping" | "stopped" | "failed";
 
 /** Owns exactly the worker it creates. Never discovers or kills a port's owner. */
@@ -230,7 +230,7 @@ export class ServiceSupervisor {
       if (this.state !== "starting" || message.requestId !== this.#startId) return;
       clearTimeout(this.#startTimer);
       this.state = "running";
-      this.snapshot = { url: message.url, closeToTray: message.closeToTray, muted: message.muted };
+      this.snapshot = { url: message.url, closeToTray: message.closeToTray, gpuAcceleration: message.gpuAcceleration, muted: message.muted };
       this.#startResolve?.(this.snapshot);
       this.#startReject = null;
     } else if (message.type === "diagnostic-recorded") {
@@ -247,7 +247,7 @@ export class ServiceSupervisor {
       this.#record("desktop.worker.command-failed", message.message, error, message.referenceId);
       if (message.requestId !== null) this.#finishCommand(message.requestId, error);
     } else if (this.state === "running" && this.snapshot !== null) {
-      if (message.type === "desktop-config-changed") this.snapshot = { ...this.snapshot, closeToTray: message.closeToTray };
+      if (message.type === "desktop-config-changed") this.snapshot = { ...this.snapshot, closeToTray: message.closeToTray, gpuAcceleration: message.gpuAcceleration };
       if (message.type === "playback-state-changed") {
         this.snapshot = { ...this.snapshot, muted: message.muted };
         if (message.requestId !== null) this.#finishCommand(message.requestId);

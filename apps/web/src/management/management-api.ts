@@ -89,7 +89,10 @@ export interface ServerConfigView {
 export interface DesktopConfigView {
   readonly available: boolean;
   readonly closeToTray: boolean;
+  readonly gpuAcceleration: boolean;
 }
+
+export type DesktopConfigInput = Pick<DesktopConfigView, "closeToTray" | "gpuAcceleration">;
 
 export interface ModerationTargetSettingsView {
   readonly maxLength: number;
@@ -334,7 +337,7 @@ export interface ManagementApi extends MusicApi {
   clearOldLogs(): Promise<ClearOldLogsResult>;
   getServerConfig(): Promise<ServerConfigView>;
   getDesktopConfig(): Promise<DesktopConfigView>;
-  updateDesktopConfig(input: { readonly closeToTray: boolean }): Promise<DesktopConfigView>;
+  updateDesktopConfig(input: DesktopConfigInput): Promise<DesktopConfigView>;
   updateServerConfig(input: ServerConfigView): Promise<ServerConfigView>;
   getModerationSettings(): Promise<ModerationSettingsView>;
   updateModerationSettings(input: ModerationSettingsView): Promise<ModerationSettingsView>;

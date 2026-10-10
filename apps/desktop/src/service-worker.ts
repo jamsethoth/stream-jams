@@ -39,14 +39,14 @@ parent.on("message", ({ data }: { data: unknown }) => {
       desktopOverlayTransport: overlay,
       desktopVideoTransport: video,
       desktopHost: {
-        onConfigChanged(config) { send({ type: "desktop-config-changed", generation: request.generation, requestId: null, closeToTray: config.closeToTray }); },
+        onConfigChanged(config) { send({ type: "desktop-config-changed", generation: request.generation, requestId: null, closeToTray: config.closeToTray, gpuAcceleration: config.gpuAcceleration }); },
         onPlaybackStateChanged(state) { send({ type: "playback-state-changed", generation: request.generation, requestId: null, muted: state.muted }); }
       }
     });
     void runtime.then(async (started) => {
       if (stopping) return;
       const { desktop } = await started.composition.configStore.readConfig();
-      send({ type: "ready", generation: request.generation, requestId: request.requestId, url: started.url, closeToTray: desktop.closeToTray, muted: started.composition.playbackOperationsService.getSnapshot().muted });
+      send({ type: "ready", generation: request.generation, requestId: request.requestId, url: started.url, closeToTray: desktop.closeToTray, gpuAcceleration: desktop.gpuAcceleration, muted: started.composition.playbackOperationsService.getSnapshot().muted });
       // The player page is served from the service origin, which the main process learns from "ready".
       video?.start();
     }).catch((error: unknown) => {
