@@ -15,7 +15,7 @@ For fast frontend iteration, use `corepack pnpm dev`. That path may run Vite for
 
 ## Windows desktop startup and tray
 
-The approved desktop follow-on adds a Windows x64 Electron host around the same local runtime. Build its unsigned runnable folder with `corepack pnpm desktop:package`, then launch `apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe`. Keep the entire folder together; the executable depends on its sibling resources. On Windows, `corepack pnpm desktop:installer` then builds the unsigned per-user installer `apps/desktop/out/installer/StreamJamsSetup.exe` from that folder. Neither is signed, so Windows may warn about an unsigned application.
+The approved desktop follow-on adds a Windows x64 Electron host around the same local runtime. Build its unsigned runnable folder with `corepack pnpm desktop:package`, then launch `apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe`. Keep the entire folder together; the executable depends on its sibling resources. On Windows, `corepack pnpm desktop:installer` then builds the unsigned setup wizard `apps/desktop/out/installer/StreamJamsSetup.exe` from that folder with electron-builder (NSIS). Neither is signed, so Windows may warn about an unsigned application.
 
 ### Download a portable CI build
 
@@ -36,12 +36,15 @@ Local implementation evidence and the remaining hosted Actions acceptance gap ar
 The same job also publishes `StreamJamsSetup.exe` as an artifact named `stream-jams-windows-x64-installer-<ref>-<commit>`, with its own digest in the job summary. The separate `windows-desktop` job installs, launches and uninstalls that exact installer on its disposable runner profile.
 
 1. Download the installer artifact, check its SHA-256 against the job summary, and extract `StreamJamsSetup.exe`.
-2. Run it. No administrator rights are needed. Because it is unsigned, SmartScreen shows "Windows protected your PC" and the publisher is unknown: choose **More info**, then **Run anyway** only for a build you downloaded from this repository's CI.
-3. Setup installs into `%LocalAppData%\StreamJams`, adds Desktop and Start menu shortcuts and a Settings → Apps entry, then starts Stream Jams with your existing profile.
-4. To install a newer build, quit Stream Jams from the tray and run the newer Setup. Builds of the same version reinstall in place; there is no automatic update yet.
-5. To uninstall, quit Stream Jams from the tray first, then remove it from **Settings → Apps**. Uninstalling stops a running copy without the normal quit flow. The `.stream-jams` profile, Electron settings and keyring credentials are kept; delete them yourself only if you want a clean reset. Squirrel also leaves a small `%LocalAppData%\StreamJams` folder holding its updater and sometimes a few app files Windows still had open; the folder is safe to delete.
+2. Run it. Because it is unsigned, SmartScreen shows "Windows protected your PC" and the publisher is unknown: choose **More info**, then **Run anyway** only for a build you downloaded from this repository's CI.
+3. The setup wizard asks who to install for. **Only for me** is preselected and needs no administrator rights; **Anyone who uses this computer** asks for administrator approval and installs under Program Files.
+4. Choose the folder, or keep the default `%LocalAppData%\Programs\Stream Jams` for a per-user install. Setup adds Desktop and Start menu shortcuts and a Settings → Apps entry. Its finish page can start Stream Jams with your existing profile.
+5. To install a newer build, quit Stream Jams from the tray and run the newer Setup; it replaces the installed files in place. There is no automatic update yet.
+6. To uninstall, quit Stream Jams from the tray first, then remove it from **Settings → Apps**. Uninstalling stops a running copy without the normal quit flow and removes the installation folder. The `.stream-jams` profile, Electron settings and keyring credentials are kept; delete them yourself only if you want a clean reset.
 
-Run `corepack pnpm test:desktop` with `STREAM_JAMS_INSTALLER_TEST=1` only on a Windows account where installing and uninstalling Stream Jams is acceptable; the installer test refuses to run over an existing installation.
+If you installed the earlier one-click build, which used `%LocalAppData%\StreamJams`, uninstall it from **Settings → Apps** before running the new Setup.
+
+Run `corepack pnpm test:desktop` with `STREAM_JAMS_INSTALLER_TEST=1` only on a Windows account where installing and uninstalling Stream Jams is acceptable. The installer test installs silently into a temporary folder for the current user and refuses to run while Stream Jams is already listed in Settings → Apps.
 
 The desktop main process owns one utility-process service, a sandboxed management window, and a tray icon. The service still owns Fastify, SQLite, provider connections, and configuration. The default loopback address, `.stream-jams` data profile, `STREAM_JAMS_CONFIG_PATH` override, and OS keyring adapter are unchanged. Quit any existing CLI service before using desktop with the same profile. An occupied port produces an actionable failure; desktop never kills that listener or chooses another port automatically.
 

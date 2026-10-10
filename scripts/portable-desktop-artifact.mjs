@@ -122,7 +122,7 @@ async function summarizeInstaller() {
     `- Download: [Authenticated artifact](${artifactUrl})`,
     "- Retention: 30 days",
     "- Signing: unsigned; Windows SmartScreen shows a warning (More info, then Run anyway)",
-    "- Install: per user, no administrator rights; uninstall from Windows Settings, Apps",
+    "- Install: setup wizard; just you (default, no administrator rights) or all users, with a choice of folder; uninstall from Windows Settings, Apps",
     "- User data: kept outside the installation and preserved on uninstall",
     ""
   ].join("\n");

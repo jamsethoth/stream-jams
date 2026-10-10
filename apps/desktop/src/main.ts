@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { basename, isAbsolute, resolve } from "node:path";
 import { app, crashReporter, dialog, utilityProcess } from "electron";
 import { AudioWindow, registerAudioPlayerScheme } from "./audio/audio-window.js";
@@ -14,7 +13,7 @@ import { GpuPreferenceSync, readGpuAccelerationPreference } from "./gpu-preferen
 import { createTray } from "./tray.js";
 import { ShutdownLog } from "./shutdown-log.js";
 import { collectPriorCrashDumpMetadata, createDesktopDiagnosticFallbackWriter, DesktopDiagnostics } from "./desktop-diagnostics.js";
-import { runSquirrelEvent, squirrelAppUserModelId, squirrelEvent } from "./squirrel-events.js";
+import { appUserModelId } from "./app-identity.js";
 import { VideoPlayerHost } from "./videos/video-player-host.js";
 import { VideoPlayerWindow } from "./videos/video-player-window.js";
 import { VideoDeviceWindow } from "./videos/video-device-window.js";
@@ -188,21 +187,15 @@ function requestQuit(): void {
   })().finally(() => { quitPending = null; });
 }
 
-const installerEvent = squirrelEvent(process.argv);
 if (videoMirrorCheck) {
   void runVideoMirrorCheck().catch((error: unknown) => {
     dialog.showErrorBox("Video mirror check failed to start", error instanceof Error ? error.message : String(error));
     app.quit();
   });
-} else if (installerEvent !== null) {
-  // Installer hooks only manage shortcuts. They run before the single-instance
-  // lock so an update still completes while another instance is running.
-  void runSquirrelEvent(installerEvent, process.execPath).finally(() => app.exit(0));
 } else if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  const appUserModelId = squirrelAppUserModelId(process.execPath, existsSync);
-  if (appUserModelId !== null) app.setAppUserModelId(appUserModelId);
+  app.setAppUserModelId(appUserModelId);
   shutdownLog = new ShutdownLog(process.env.STREAM_JAMS_SHUTDOWN_LOG);
   app.on("second-instance", () => management?.show());
   app.on("window-all-closed", () => { /* The tray owns service lifetime. */ });

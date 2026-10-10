@@ -512,7 +512,7 @@ The canonical post-MVP list, current priorities, dependency triggers, rejected d
 
 ## Remaining Implementation Questions
 
-- Which signing, durable-release, and auto-update tooling should extend the implemented Electron Forge folder and unsigned Squirrel installer pipeline? Paid certificates are ruled out for now (2026-10-09); SignPath Foundation is the preferred free signing candidate.
+- Which signing, durable-release, and auto-update tooling should extend the implemented Electron Forge folder and unsigned NSIS (electron-builder) installer pipeline? Paid certificates are ruled out for now (2026-10-09); SignPath Foundation is the preferred free signing candidate.
 - Should a future approved credential migration replace the current Node keyring adapter with Electron `safeStorage`, and where should its ciphertext be persisted?
 - Should future modules be loaded only from code shipped with the app, or should a plugin-style external module system be supported later?
 - Should the future music widget be integrated by sharing code from `stream-jams-music-widget`, embedding it as a module package, or communicating with it as a separate local service?
