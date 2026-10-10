@@ -8,5 +8,15 @@
     "rule": "js/disabling-certificate-validation",
     "file": "apps/server/src/modules/music/pear-config.ts",
     "reason": "Inspection-only socket that reads the Pear certificate for operator consent; no data is sent and it is destroyed on secureConnect."
+  },
+  {
+    "rule": "js/insufficient-password-hash",
+    "file": "apps/server/src/modules/streamerbot/streamerbot-client.ts",
+    "reason": "Streamer.bot's WebSocket protocol mandates base64(sha256(password + salt)) then sha256 with the challenge; this is the challenge response, not password storage. See docs/security/codeql-suppressions.md."
+  },
+  {
+    "rule": "js/insufficient-password-hash",
+    "file": "apps/server/src/modules/streamerbot/streamerbot-client.test.ts",
+    "reason": "Streamer.bot's WebSocket protocol mandates base64(sha256(password + salt)) then sha256 with the challenge; this is the challenge response, not password storage. See docs/security/codeql-suppressions.md."
   }
 ]
