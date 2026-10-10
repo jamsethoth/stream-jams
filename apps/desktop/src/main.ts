@@ -10,15 +10,19 @@ import { overlayPlayerScheme } from "./overlay/overlay-player-policy.js";
 import { closeAction } from "./close-policy.js";
 import { ManagementWindow } from "./management-window.js";
 import { ServiceSupervisor } from "./service-supervisor.js";
+import { GpuPreferenceSync, readGpuAccelerationPreference } from "./gpu-preference.js";
 import { createTray } from "./tray.js";
 import { ShutdownLog } from "./shutdown-log.js";
 import { collectPriorCrashDumpMetadata, createDesktopDiagnosticFallbackWriter, DesktopDiagnostics } from "./desktop-diagnostics.js";
 import { runSquirrelEvent, squirrelAppUserModelId, squirrelEvent } from "./squirrel-events.js";
+import { VideoPlayerHost } from "./videos/video-player-host.js";
+import { VideoPlayerWindow } from "./videos/video-player-window.js";
+import { VideoDeviceWindow } from "./videos/video-device-window.js";
+import { runVideoMirrorCheck, videoMirrorCheckGpuSwitch, videoMirrorCheckSwitch } from "./video-mirror-check/check-main.js";
 
-// Keep the management renderer off the hardware GPU process. On Windows 25H2,
-// that subprocess can remain in a terminating state after every JS quit event,
-// delaying the owned desktop process and locking its isolated profile.
-app.disableHardwareAcceleration();
+// Diagnostic mode for the Videos mirror feasibility check; it replaces the normal app for that run.
+const videoMirrorCheck = process.argv.includes(videoMirrorCheckSwitch);
+
 registerAudioPlayerScheme([overlayPlayerScheme]);
 
 const isolatedUserData = process.env.STREAM_JAMS_DESKTOP_USER_DATA_PATH;
@@ -26,9 +30,28 @@ if (isolatedUserData !== undefined) {
   if (!isAbsolute(isolatedUserData) || isolatedUserData.trim() === "") throw new Error("STREAM_JAMS_DESKTOP_USER_DATA_PATH must be absolute.");
   app.setPath("userData", isolatedUserData);
 }
+
+// GPU acceleration is on by default. Settings can turn it off; Electron only honors that
+// before app ready, so the saved choice is read from userData here and applies at the next
+// launch. Turning it off is the fallback for the Windows 25H2 quit hang, where the GPU
+// process can stay terminating after quit and keep the desktop process alive.
+// The video mirror check keeps its own switch and runs without the GPU unless asked.
+const gpuAcceleration = videoMirrorCheck
+  ? process.argv.includes(videoMirrorCheckGpuSwitch)
+  : readGpuAccelerationPreference(app.getPath("userData"));
+if (!gpuAcceleration) app.disableHardwareAcceleration();
 let management: ManagementWindow | null = null;
 const audio = new AudioHost((callbacks, generation) => new AudioWindow(callbacks, () => ownedMediaOptions(generation)), (input) => diagnostics.record(input));
-const overlay = new OverlayHost((config, callbacks, generation) => PrivateOverlayWindow.create(config, callbacks, () => ownedMediaOptions(generation)), () => ({
+// The Videos primary players. Their page is served from the owned service's origin.
+const video = new VideoPlayerHost({
+  createPlayer: (purpose, callbacks) => new VideoPlayerWindow(purpose, serviceOrigin(), callbacks),
+  // Device output shares the audio player's session, which must be serving before it loads.
+  createDeviceOutput: (_purpose, callbacks) => new VideoDeviceWindow(callbacks, async () => { await audio.listOutputDevices(); }),
+  playerOrigin: () => serviceOrigin(),
+  diagnose: (input) => diagnostics.record(input)
+});
+const overlay = new OverlayHost((config, callbacks, generation) => PrivateOverlayWindow.create(config, callbacks, () => ownedMediaOptions(generation),
+  deliver => video.attachDesktopReceiver("desktop:overlay", "live", deliver)), () => ({
   available: process.platform === "win32", displays: process.platform === "win32" ? enumerateDesktopDisplays() : []
 }), (input) => diagnostics.record(input));
 let tray: ReturnType<typeof createTray> | null = null;
@@ -38,14 +61,25 @@ let failureVisible = false;
 let firstHide = true;
 let shutdownLog: ShutdownLog | undefined;
 
+let gpuPreference: GpuPreferenceSync | null = null;
+
 const supervisor = new ServiceSupervisor(() => utilityProcess.fork(resolve(import.meta.dirname, "service-worker.js"), [], { serviceName: "Stream Jams local service", stdio: "ignore" }), () => {
   tray?.update(supervisor.snapshot);
+  if (supervisor.snapshot !== null) {
+    gpuPreference ??= new GpuPreferenceSync(app.getPath("userData"), (input) => diagnostics.record(input));
+    gpuPreference.sync(supervisor.snapshot.gpuAcceleration);
+  }
   if (supervisor.state === "failed" && !exiting) void showFailure();
-}, audio, overlay, (input) => diagnostics.record(input), (report) => diagnostics.fallback(report));
+}, audio, overlay, (input) => diagnostics.record(input), (report) => diagnostics.fallback(report), video);
 const diagnostics = new DesktopDiagnostics({
   send: (report) => supervisor.recordDiagnostic(report),
   writeFallback: createDesktopDiagnosticFallbackWriter(resolve(app.getPath("logs"), "desktop-emergency.jsonl"))
 });
+
+function serviceOrigin(): string {
+  if (supervisor.snapshot === null) throw new Error("The owned local service is unavailable");
+  return new URL(supervisor.snapshot.url).origin;
+}
 
 function ownedMediaOptions(generation: number): { trustedServiceOrigin: string; generation: number } {
   if (supervisor.snapshot === null) throw new Error("The owned media service is unavailable");
@@ -98,8 +132,8 @@ async function start(): Promise<void> {
         }
       } else requestQuit();
     });
-    management.window.on("query-session-end", () => { shutdownLog?.record("query-session-end"); exiting = true; audio.serviceLost(); void supervisor.stop().catch((error: unknown) => diagnostics.record({ component: "service-worker", source: "desktop.shutdown.session-stop-failed", message: "The local service failed to stop during session shutdown.", exception: error })); });
-    management.window.on("session-end", () => { shutdownLog?.record("session-end"); exiting = true; audio.serviceLost(); void supervisor.stop().catch((error: unknown) => diagnostics.record({ component: "service-worker", source: "desktop.shutdown.session-stop-failed", message: "The local service failed to stop during session shutdown.", exception: error })); });
+    management.window.on("query-session-end", () => { shutdownLog?.record("query-session-end"); exiting = true; audio.serviceLost(); video.serviceLost(); void supervisor.stop().catch((error: unknown) => diagnostics.record({ component: "service-worker", source: "desktop.shutdown.session-stop-failed", message: "The local service failed to stop during session shutdown.", exception: error })); });
+    management.window.on("session-end", () => { shutdownLog?.record("session-end"); exiting = true; audio.serviceLost(); video.serviceLost(); void supervisor.stop().catch((error: unknown) => diagnostics.record({ component: "service-worker", source: "desktop.shutdown.session-stop-failed", message: "The local service failed to stop during session shutdown.", exception: error })); });
     await management.load();
   } catch (error) {
     diagnostics.record({ component: "management-window", source: "desktop.management.start-failed", message: "The management window could not be started.", exception: error });
@@ -141,6 +175,7 @@ function requestQuit(): void {
     shutdownLog?.record("audio-close-requested");
     await audio.close();
     shutdownLog?.record("audio-closed");
+    await video.close();
     shutdownLog?.record("overlay-close-requested");
     await overlay.close();
     shutdownLog?.record("overlay-closed");
@@ -154,7 +189,12 @@ function requestQuit(): void {
 }
 
 const installerEvent = squirrelEvent(process.argv);
-if (installerEvent !== null) {
+if (videoMirrorCheck) {
+  void runVideoMirrorCheck().catch((error: unknown) => {
+    dialog.showErrorBox("Video mirror check failed to start", error instanceof Error ? error.message : String(error));
+    app.quit();
+  });
+} else if (installerEvent !== null) {
   // Installer hooks only manage shortcuts. They run before the single-instance
   // lock so an update still completes while another instance is running.
   void runSquirrelEvent(installerEvent, process.execPath).finally(() => app.exit(0));

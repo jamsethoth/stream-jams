@@ -1,6 +1,6 @@
 # Event Bus Consumers
 
-Every module that reacts to stream events registers as a consumer of the central event bus. Alerts, Screen Effects, Timers and Video shoutouts do so today. Custom data overlay rules (BL-061, building on BL-055) use the same contract. The [central event bus design](../../openspec/changes/archive/2026-10-08-add-central-event-bus/design.md) explains why the bus exists. This page covers what a consumer must do.
+Every module that reacts to stream events registers as a consumer of the central event bus. Alerts, Screen Effects, Timers and Videos do so today. Custom data overlay rules (BL-061, building on BL-055) use the same contract. The [central event bus design](../../openspec/changes/archive/2026-10-08-add-central-event-bus/design.md) explains why the bus exists. This page covers what a consumer must do.
 
 ## Registration
 
@@ -47,7 +47,7 @@ The state change and the cursor commit or roll back together. When `handle` thro
 
 The bus journals an external event's payload only when some registered consumer declared that event's identity in `externalPayloads`. Source keys compare case-insensitively and event types exactly. Payloads of undeclared identities are dropped at intake. Declaring an identity also makes the Streamer.bot connection subscribe to it while Streamer.bot advertises it, whatever the user's configured subscriptions.
 
-A payload is an untrusted JSON object of at most 16 KiB. The consumer must validate it with its own schema before use and must never use it to choose media, routes, files or commands. Video shoutouts are the reference: `apps/server/src/modules/video-shoutout/video-shoutout-bus-consumer.ts` declares `General` / `Custom`, ignores payloads without its marker, and validates the rest with `parseVideoShoutoutCommand`.
+A payload is an untrusted JSON object of at most 16 KiB. The consumer must validate it with its own schema before use and must never use it to choose media, routes, files or commands. Videos is the reference: `apps/server/src/modules/videos/videos-bus-consumer.ts` declares `General` / `Custom`, and its Streamer.bot adapter (`streamerbot-video-intake.ts`) ignores payloads without a Videos marker and validates the rest through the shared video request intake.
 
 Diagnostics and logs never include raw payloads. Log only bounded identifiers and field names.
 

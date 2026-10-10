@@ -267,7 +267,7 @@ describe("runtime app composition smoke", () => {
       webBuildDirectory: await createWebBuildFixture(testRoot),
       configStore: new StaticConfigStore({
         ...config,
-        desktop: { closeToTray: false },
+        desktop: { closeToTray: false, gpuAcceleration: true },
         playback: { ...config.playback, muted: true, moduleMutes: { alerts: true, "screen-effects": true } }
       }),
       desktopHost: { onConfigChanged: ({ closeToTray }) => { desktopChanges.push(closeToTray); }, onPlaybackStateChanged: () => {} },
@@ -324,7 +324,7 @@ describe("runtime app composition smoke", () => {
     expect(restored.statusCode, restored.body).toBe(200);
     expect(sinkMuteChanges.at(-1)).toBe(true);
     expect(desktopChanges.at(-1)).toBe(false);
-    expect((await composition.app.inject({ method: "GET", url: "/config/desktop", headers })).json()).toEqual({ available: true, closeToTray: false });
+    expect((await composition.app.inject({ method: "GET", url: "/config/desktop", headers })).json()).toEqual({ available: true, closeToTray: false, gpuAcceleration: true });
     expect((await composition.app.inject({ method: "GET", url: "/health" })).statusCode).toBe(200);
     expect(active.json()).toEqual({
       renderedText: { maxLength: 240, blockedTerms: [], stripUrls: false },
@@ -1033,7 +1033,7 @@ describe("runtime app composition smoke", () => {
         { consumer_id: "alerts", last_sequence: head },
         { consumer_id: "screen-effects", last_sequence: head },
         { consumer_id: "timers", last_sequence: head },
-        { consumer_id: "video-shoutout", last_sequence: head }
+        { consumer_id: "videos", last_sequence: head }
       ]);
     } finally {
       journal.close();
@@ -1064,7 +1064,7 @@ describe("runtime app composition smoke", () => {
     });
   }, 30_000);
 
-  it("routes Streamer.bot manual video shoutouts to the module browser source without event ingestion", async () => {
+  it("queues Streamer.bot and management video requests and plays them on the module browser source only when started", async () => {
     const testRoot = await createTemporaryDirectory();
     const streamerBotSockets: ControlledStreamerBotSocket[] = [];
     const composition = await createRuntimeAppComposition({
@@ -1105,47 +1105,61 @@ describe("runtime app composition smoke", () => {
     await waitFor(() => composition.streamerBotRuntimeService.getStatus().state === "connected");
 
     const outputs = await composition.app.inject({ method: "GET", url: "/management/overlay-outputs", headers: authHeaders });
-    expect((outputs.json() as readonly { readonly moduleId: string | null; readonly purpose: string }[])
-      .filter(output => output.moduleId === "video-shoutout").map(output => output.purpose)).toEqual(["live", "test"]);
+    const outputModules = (outputs.json() as readonly { readonly moduleId: string | null; readonly purpose: string }[]).map(output => output.moduleId);
+    expect(outputModules).toContain("videos");
+    expect(outputModules).not.toContain("video-shoutout");
     const key = await composition.app.inject({
       method: "POST",
       url: "/management/overlay-outputs/keys",
       headers: authHeaders,
-      payload: { overlayId: "default", scope: "module", moduleId: "video-shoutout", purpose: "live", targetProfileId: null }
+      payload: { overlayId: "default", scope: "module", moduleId: "videos", purpose: "live", targetProfileId: null }
     });
     expect(key.statusCode, key.body).toBe(200);
     const compositionPath = `${new URL((key.json() as { readonly url: string }).url).pathname}/composition`;
-    expect(compositionPath).toMatch(/^\/overlay\/modules\/video-shoutout\/live\/[^/]+\/composition$/u);
-    const readShoutout = async () => ((await composition.app.inject({ url: compositionPath })).json() as {
-      readonly modules: readonly { readonly presentation?: { readonly shoutout: { readonly status: string; readonly clip?: { readonly clipId: string } } } }[];
-    }).modules[0]?.presentation?.shoutout;
-    expect(await readShoutout()).toEqual({ status: "idle" });
-
-    const clip = {
-      source: "StreamJams", type: "VideoShoutout", login: "friendly_streamer", displayName: "Friendly Streamer", clipId: "ClipOne",
-      embedUrl: "https://clips.twitch.tv/embed?clip=ClipOne&parent=127.0.0.1", title: "The big play", duration: 12
+    expect(compositionPath).toMatch(/^\/overlay\/modules\/videos\/live\/[^/]+\/composition$/u);
+    const readVideos = async () => ((await composition.app.inject({ url: compositionPath })).json() as {
+      readonly modules: readonly { readonly presentation?: { readonly videos: { readonly status: string; readonly itemId?: string; readonly delivery?: { readonly mode: string; readonly source?: unknown } } } }[];
+    }).modules[0]?.presentation?.videos;
+    const readQueue = async () => (await composition.app.inject({ url: "/videos/live", headers: authHeaders })).json() as {
+      readonly revision: number; readonly items: readonly { readonly id: string; readonly status: string; readonly submittedVia: string; readonly link: string }[];
     };
-    // Ordinary stream events never select clips, even when they carry clip-shaped data.
+    expect(await readVideos()).toEqual({ status: "idle" });
+
+    // Ordinary stream events never queue videos, even when they carry request-shaped data.
     await streamerBotSockets[1]!.emitEvent({
       timeStamp: "2026-10-07T12:00:01.000Z", event: { source: "Twitch", type: "Raid" },
-      data: { ...clip, user: { id: "user-raid", login: "raider", name: "Raider" }, viewers: 3 }
+      data: { source: "StreamJams", type: "VideoRequest", link: "https://youtu.be/dQw4w9WgXcQ", user: { id: "user-raid", login: "raider", name: "Raider" }, viewers: 3 }
     });
-    expect(await readShoutout()).toEqual({ status: "idle" });
+    await streamerBotSockets[1]!.emitEvent({ timeStamp: "2026-10-07T12:00:02.000Z", event: { source: "General", type: "Custom" }, data: { source: "StreamJams", type: "VideoRequest", link: "https://evil.example/private.mp4" } });
+    expect((await readQueue()).items).toEqual([]);
 
-    await streamerBotSockets[1]!.emitEvent({ timeStamp: "2026-10-07T12:00:02.000Z", event: { source: "General", type: "Custom" }, data: { ...clip, embedUrl: "https://evil.example/embed?clip=ClipOne&parent=x" } });
-    expect(await readShoutout()).toEqual({ status: "idle" });
+    // The retired shoutout payload is queued as a Twitch clip; nothing autoplays.
+    await streamerBotSockets[1]!.emitEvent({
+      timeStamp: "2026-10-07T12:00:03.000Z", event: { source: "General", type: "Custom" },
+      data: { source: "StreamJams", type: "VideoShoutout", login: "friendly_streamer", displayName: "Friendly Streamer", clipId: "ClipOne", title: "The big play", duration: 12 }
+    });
+    await waitFor(async () => (await readQueue()).items.length === 1);
+    expect((await readQueue()).items[0]).toMatchObject({ status: "queued", submittedVia: "streamerbot", link: "https://clips.twitch.tv/ClipOne" });
+    expect(await readVideos()).toEqual({ status: "idle" });
 
-    await streamerBotSockets[1]!.emitEvent({ timeStamp: "2026-10-07T12:00:03.000Z", event: { source: "General", type: "Custom" }, data: clip });
-    await waitFor(async () => (await readShoutout())?.status === "loading");
-    expect(await readShoutout()).toMatchObject({ status: "loading", clip: { clipId: "ClipOne", durationMs: 12_000 } });
+    const submitted = await composition.app.inject({ method: "POST", url: "/videos/live/requests?from=operator", headers: authHeaders, payload: { link: "https://www.youtube.com/watch?v=dQw4w9WgXcQ", durationSeconds: 30 } });
+    expect(submitted.statusCode, submitted.body).toBe(201);
+    const started = await composition.app.inject({ method: "POST", url: "/videos/live/commands", headers: authHeaders, payload: { expectedRevision: (await readQueue()).revision, command: { kind: "play-next" } } });
+    expect(started.statusCode, started.body).toBe(200);
+    const first = (await readQueue()).items[0]!;
+    await waitFor(async () => (await readVideos())?.status === "active");
+    expect(await readVideos()).toMatchObject({ status: "active", itemId: first.id, delivery: { mode: "player", source: { provider: "twitch-clip", clipSlug: "ClipOne" } } });
+    expect((await composition.app.inject({ method: "POST", url: "/videos/live/commands", headers: { ...authHeaders, authorization: "Bearer wrong" }, payload: { expectedRevision: 0, command: { kind: "stop" } } })).statusCode).toBe(401);
 
-    await streamerBotSockets[1]!.emitEvent({ timeStamp: "2026-10-07T12:00:04.000Z", event: { source: "General", type: "Custom" }, data: { source: "StreamJams", type: "VideoShoutout", action: "clear" } });
-    await waitFor(async () => (await readShoutout())?.status === "idle");
+    await streamerBotSockets[1]!.emitEvent({ timeStamp: "2026-10-07T12:00:04.000Z", event: { source: "General", type: "Custom" }, data: { source: "StreamJams", type: "VideoRequest", action: "clear" } });
+    await waitFor(async () => (await readVideos())?.status === "idle");
+    // Play next consumes one item and stops; the YouTube request is still waiting.
+    expect((await readQueue()).items.find(item => item.submittedVia === "operator")?.status).toBe("queued");
 
     const logDirectory = join(testRoot, "data", "logs");
     const log = (await Promise.all((await readdir(logDirectory)).map(file => readFile(join(logDirectory, file), "utf8")))).join("\n");
-    expect(log).toContain("Streamer.bot video shoutout was rejected and not shown.");
-    expect(log).toContain("Streamer.bot video shoutout was accepted.");
+    expect(log).toContain("Streamer.bot video request was rejected and not queued.");
+    expect(log).toContain("Streamer.bot video request was queued.");
     expect(log).not.toContain("evil.example");
     expect(log).not.toContain((key.json() as { readonly url: string }).url.split("/").at(-1)!);
   }, 30_000);
@@ -1535,11 +1549,11 @@ describe("runtime app composition smoke", () => {
         })
       }),
       expect.objectContaining({
-        id: "video-shoutout",
-        displayName: "Video shoutout",
+        id: "videos",
+        displayName: "Videos",
         defaultEnabled: true,
         renderer: expect.objectContaining({
-          supportedOutputs: ["module"]
+          supportedOutputs: ["module", "unified"]
         })
       })
     ]);
@@ -2264,7 +2278,7 @@ function createConfig(
   playback: PlaybackSafetyState = { paused: false, muted: false, doNotDisturb: false }
 ): AppConfig {
   return {
-    desktop: { closeToTray: true },
+    desktop: { closeToTray: true, gpuAcceleration: true },
     server: {
       host: "127.0.0.1",
       port: 39187

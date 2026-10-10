@@ -7,7 +7,11 @@ import { resolve } from "node:path";
 for (const [directory, entry, format, fileName] of [
   ["audio", "audio-preload.cts", "cjs", "audio-preload.cjs"],
   ["audio", "player.ts", "es", "player.js"],
-  ["overlay", "overlay-preload.cts", "cjs", "overlay-preload.cjs"]
+  ["overlay", "overlay-preload.cts", "cjs", "overlay-preload.cjs"],
+  ["videos", "video-player-preload.cts", "cjs", "video-player-preload.cjs"],
+  ["videos", "video-devices-preload.cts", "cjs", "video-devices-preload.cjs"],
+  ["videos", "player-page.ts", "es", "player.js"],
+  ["videos", "device-output-page.ts", "es", "video-devices.js"]
 ]) {
   await build({ configFile: false, publicDir: false, build: {
     outDir: `dist/${directory}`, emptyOutDir: false, minify: false,

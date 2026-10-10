@@ -34,7 +34,7 @@ const customModule: OverlayModuleDefinition = {
 };
 
 describe("overlay module registry", () => {
-  it("registers Alerts, disabled Screen Effects, Timers, Music and Video shoutout in stable built-in order", () => {
+  it("registers Alerts, disabled Screen Effects, Timers, Music and Videos in stable built-in order", () => {
     const registry = createDefaultOverlayModuleRegistry();
 
     expect(registry.listModules()).toEqual([
@@ -42,7 +42,7 @@ describe("overlay module registry", () => {
       screenEffectsOverlayModuleDefinition,
       registry.getModule("timers"),
       registry.getModule("music"),
-      registry.getModule("video-shoutout")
+      registry.getModule("videos")
     ]);
     expect(registry.getModule("alerts")).toEqual(alertsOverlayModuleDefinition);
     expect(registry.getModule("screen-effects")).toEqual(screenEffectsOverlayModuleDefinition);
@@ -58,14 +58,15 @@ describe("overlay module registry", () => {
     });
   });
 
-  it("registers Video shoutout for module-specific outputs only", () => {
+  it("registers Videos for module-specific and unified outputs and retires Video shoutout", () => {
     const registry = createDefaultOverlayModuleRegistry();
 
-    expect(registry.getModule("video-shoutout")).toMatchObject({
-      id: "video-shoutout",
-      renderer: { supportedOutputs: ["module"] }
+    expect(registry.getModule("videos")).toMatchObject({
+      id: "videos",
+      renderer: { supportedOutputs: ["module", "unified"] }
     });
-    expect(listUnifiedOverlayModuleIds(registry)).toEqual(["alerts", "screen-effects", "timers", "music"]);
+    expect(registry.getModule("video-shoutout")).toBeNull();
+    expect(listUnifiedOverlayModuleIds(registry)).toEqual(["alerts", "screen-effects", "timers", "music", "videos"]);
   });
 
   it("returns null for unknown module ids", () => {

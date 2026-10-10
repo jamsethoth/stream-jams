@@ -1,7 +1,7 @@
 # central-event-bus Specification
 
 ## Purpose
-Every active event source publishes into one journaled bus, and every module that reacts to events (Alerts, Screen Effects, Timers, Video shoutouts and future consumers) receives each accepted event independently, in order, at least once, across restarts.
+Every active event source publishes into one journaled bus, and every module that reacts to events (Alerts, Screen Effects, Timers, Videos and future consumers) receives each accepted event independently, in order, at least once, across restarts.
 
 ## Requirements
 
@@ -65,10 +65,10 @@ A consumer SHALL be able to commit its cursor inside its own SQLite transaction 
 ### Requirement: External Payloads Are Kept Only For Declaring Consumers
 The bus SHALL journal an external event's payload only when a registered consumer declared that event's exact identity, and only when the payload is a JSON object within 16 KiB. Declaring an identity SHALL subscribe the Streamer.bot source to it while Streamer.bot advertises it. The declaring consumer SHALL validate the payload with its own schema, and payloads SHALL NOT appear in diagnostics or logs.
 
-#### Scenario: Video shoutout broadcast
-- **WHEN** a Streamer.bot General/Custom broadcast carries the video shoutout marker
+#### Scenario: Video request broadcast
+- **WHEN** a Streamer.bot General/Custom broadcast carries the `VideoRequest` marker or the retired `VideoShoutout` marker
 - **THEN** it is published as an external bus event with its payload
-- **AND** the Video shoutout consumer validates and applies it
+- **AND** the Videos consumer validates it and submits it to the video queue intake
 - **AND** Screen Effects and alerts that select General/Custom also receive it
 
 #### Scenario: Undeclared identity

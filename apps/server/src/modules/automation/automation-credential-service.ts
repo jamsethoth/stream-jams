@@ -1,8 +1,8 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-export const automationScopes = ["timers:read", "timers:control", "playback:read", "playback:pause:alerts", "playback:pause:screen-effects", "playback:skip:alerts", "playback:skip:screen-effects", "playback:clear:alerts", "playback:clear:screen-effects", "playback:mute:alerts", "playback:mute:screen-effects"] as const;
+export const automationScopes = ["timers:read", "timers:control", "playback:read", "playback:pause:alerts", "playback:pause:screen-effects", "playback:skip:alerts", "playback:skip:screen-effects", "playback:clear:alerts", "playback:clear:screen-effects", "playback:mute:alerts", "playback:mute:screen-effects", "videos:read", "videos:submit", "videos:control"] as const;
 export type AutomationScope = typeof automationScopes[number];
-export const automationScopesSchema = z.array(z.enum(automationScopes)).min(1).max(automationScopes.length).refine(s => new Set(s).size === s.length && (!s.includes("timers:control") || s.includes("timers:read")) && (!s.some(v => v.startsWith("playback:") && v !== "playback:read") || s.includes("playback:read")));
+export const automationScopesSchema = z.array(z.enum(automationScopes)).min(1).max(automationScopes.length).refine(s => new Set(s).size === s.length && (!s.includes("timers:control") || s.includes("timers:read")) && (!s.some(v => v.startsWith("playback:") && v !== "playback:read") || s.includes("playback:read")) && (!s.some(v => v === "videos:submit" || v === "videos:control") || s.includes("videos:read")));
 export const pairingInputSchema = z.object({ clientName: z.string().trim().min(1).max(80), scopes: automationScopesSchema, codeChallenge: z.string().regex(/^[A-Za-z0-9_-]{43}$/u) }).strict();
 export const approvalInputSchema = z.object({ scopes: automationScopesSchema }).strict();
 export const proofInputSchema = z.object({ verifier: z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/u) }).strict();

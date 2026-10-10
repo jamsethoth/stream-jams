@@ -58,12 +58,12 @@ describe("overlay module routes", () => {
         }
       }),
       expect.objectContaining({
-        id: "video-shoutout",
-        displayName: "Video shoutout",
+        id: "videos",
+        displayName: "Videos",
         defaultEnabled: true,
         renderer: {
-          entryPoint: "overlay/modules/video-shoutout",
-          supportedOutputs: ["module"]
+          entryPoint: "overlay/modules/videos",
+          supportedOutputs: ["module", "unified"]
         }
       })
     ]);

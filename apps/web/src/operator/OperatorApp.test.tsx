@@ -6,6 +6,14 @@ import { ManagementHttpError } from "../management/management-http-client.js";
 import { OperatorApp } from "./OperatorApp.js";
 import { PlaybackOperationsConflictError, type PlaybackApi } from "./playback-api.js";
 import type { OperatorTimersApi } from "./timers-api.js";
+import { createStaticVideoQueueApi, playingVideo, recentVideos, videoQueue } from "../stories/video-queue-fixtures.js";
+import { createHttpVideosApi } from "../management/videos/videos-api.js";
+
+// The lazily loaded Videos panel defaults to the HTTP client; keep tests that do not exercise it on an idle in-memory queue.
+vi.mock("../management/videos/videos-api.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../management/videos/videos-api.js")>();
+  return { ...actual, createHttpVideosApi: vi.fn(() => ({ getQueue: async () => ({ purpose: "live", revision: 1, queuePaused: false, runRemaining: 0, gapEndsAtEpochMs: null, serverTimeEpochMs: Date.now(), mirror: { available: false }, items: [], recent: [], current: null }) })) };
+});
 const idleTimersApi: OperatorTimersApi = { listStates: async () => [], adjust: async () => ({ changed: false, state: null }), command: async () => ({ changed: false, state: null }) };
 
 afterEach(() => {
@@ -231,6 +239,46 @@ describe("OperatorApp", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("Playback state may be stale");
     expect(screen.getByText("Large raid")).toBeVisible();
+  });
+
+  it("loads the Videos queue panel lazily and attributes default requests to the Operator", async () => {
+    render(<OperatorApp api={api()} timersApi={idleTimersApi} />);
+    expect(await screen.findByRole("heading", { name: "Video queue" })).toBeVisible();
+    expect(vi.mocked(createHttpVideosApi)).toHaveBeenCalledWith({ from: "operator" });
+  });
+
+  it("operates the Videos queue from the Operator Console with keyboard-reachable controls", async () => {
+    const user = userEvent.setup();
+    const command = vi.fn(async () => videoQueue());
+    const control = vi.fn(async () => playingVideo("paused"));
+    const submit = vi.fn(async () => playingVideo().items[1]!);
+    render(<OperatorApp api={api()} timersApi={idleTimersApi} videosApi={createStaticVideoQueueApi(playingVideo(), { command, control, submit })} />);
+    const card = await screen.findByRole("article", { name: "Now playing" });
+    expect(within(card).getByText("Now playing clip")).toBeVisible();
+    expect(within(card).getByRole("slider", { name: "Seek" })).toBeVisible();
+    within(card).getByRole("button", { name: "Pause video" }).focus();
+    await user.keyboard("{Enter}");
+    expect(control).toHaveBeenCalledWith("live", "pause", "now", undefined);
+    await user.click(await screen.findByRole("button", { name: "Play next" }));
+    expect(command).toHaveBeenCalledWith("live", 4, { kind: "play-next" });
+    await user.type(screen.getByLabelText("Video link"), "https://youtu.be/abc{Enter}");
+    expect(submit).toHaveBeenCalledWith("live", { link: "https://youtu.be/abc", title: "" });
+  });
+
+  it("lists recent Videos beside the Alerts and Effects Recent list and replays one into the queue", async () => {
+    const user = userEvent.setup();
+    const requeue = vi.fn(async () => recentVideos());
+    render(<OperatorApp api={api()} timersApi={idleTimersApi} videosApi={createStaticVideoQueueApi(recentVideos(), { requeue })} />);
+    const recent = await screen.findByRole("region", { name: "Recent videos" });
+    expect(screen.getByRole("heading", { name: "Recent (1)", level: 2 })).toBeVisible();
+    expect(within(recent).getByRole("heading", { name: "Recent (3)", level: 3 })).toBeVisible();
+    // Same card layout as the Alerts and Effects Recent rows.
+    const card = within(recent).getByRole("article", { name: "Cat plays keyboard" });
+    expect(card).toHaveClass("operator-item");
+    expect(screen.getByText("Recent follow").closest("article")).toHaveClass("operator-item");
+    await user.click(within(card).getByRole("button", { name: "Replay Cat plays keyboard in Videos" }));
+    expect(requeue).toHaveBeenCalledWith("live", 4, "done");
+    expect(await screen.findByText("Cat plays keyboard added to the live video queue.")).toBeVisible();
   });
 
   it("shows an actionable initial error without inventing playback state", async () => {

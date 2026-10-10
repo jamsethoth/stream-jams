@@ -53,6 +53,7 @@ import {
 import { registerWebShellRoutes, type WebShellRouteDependencies } from "./http/routes/web-shell.js";
 import { createRedactor } from "./modules/security/redactor.js";
 import { registerTimerRoutes, type TimerRouteDependencies } from "./http/routes/timers.js";
+import { registerVideoRoutes, type VideoRouteDependencies } from "./http/routes/videos.js";
 import { registerTimerAutomationRoutes, type TimerAutomationRouteDependencies } from "./http/routes/timer-automation.js";
 import { registerMusicArtworkRoutes, type MusicArtworkRouteDependencies } from "./http/routes/music-artwork.js";
 
@@ -102,6 +103,7 @@ export type ProductionServerAppDependencies = BaseServerAppOptions
   & Partial<MusicArtworkRouteDependencies>
   & AutomationPairingRouteDependencies
   & AutomationControlRouteDependencies
+  & Partial<Pick<VideoRouteDependencies, "videos">>
 
   & WebShellRouteDependencies;
 
@@ -143,6 +145,7 @@ export function createServerApp(dependencies: ProductionServerAppDependencies): 
   registerTimerAutomationRoutes(app, dependencies);
   registerAutomationPairingRoutes(app, dependencies);
   registerAutomationControlRoutes(app, dependencies);
+  if (dependencies.videos !== undefined) registerVideoRoutes(app, { ...dependencies, videos: dependencies.videos });
   registerTtsRoutes(app, dependencies);
   registerTwitchAuthRoutes(app, dependencies);
   registerTwitchEventSubRoutes(app, dependencies);

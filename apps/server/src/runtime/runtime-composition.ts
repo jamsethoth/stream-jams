@@ -26,7 +26,10 @@ import {
   overlayScopeSchema,
   pearConfigurationSchema,
   musicModuleConfigSchema,
+  resolveAudioDestinations,
   type ActionableManagementError,
+  type OverlayPurpose,
+  type VideosModuleConfig,
   type AlertEditorErrorReportInput,
   type AudioDeviceHost,
   type AudioPlaybackSink,
@@ -129,8 +132,15 @@ import { MusicManagementService } from "../modules/music/music-management-servic
 import { saveValidatedMusicConfig } from "../modules/music/music-config-save.js";
 import { MusicArtworkService, type MusicArtworkServiceOptions } from "../modules/music/music-artwork-service.js";
 import { MusicOutputRuntime } from "../modules/music/music-output-runtime.js";
-import { VideoShoutoutService } from "../modules/video-shoutout/video-shoutout-service.js";
-import { createVideoShoutoutBusConsumer } from "../modules/video-shoutout/video-shoutout-bus-consumer.js";
+import { SqliteVideoQueueRepository } from "../modules/videos/video-queue-repository.js";
+import { VideoQueueService } from "../modules/videos/video-queue-service.js";
+import { VideoRequestIntake } from "../modules/videos/video-request-intake.js";
+import { VideosRuntime } from "../modules/videos/videos-runtime.js";
+import { VideoMirrorDirector } from "../modules/videos/video-mirror-director.js";
+import type { DesktopVideoTransport } from "@stream-jams/core/videos";
+import { createStreamerBotVideoIntake, type VideoIntakeDiagnostic } from "../modules/videos/streamerbot-video-intake.js";
+import { createChannelPointVideoIntake } from "../modules/videos/channel-point-video-intake.js";
+import { createVideosBusConsumer } from "../modules/videos/videos-bus-consumer.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
 import { evaluateProviderActivationImpact, findOverlappingTwitchSources } from "../modules/providers/provider-activation-impact.js";
 import { SqliteProviderRegistrationRepository } from "../modules/providers/sqlite-provider-registration-repository.js";
@@ -206,6 +216,8 @@ export interface RuntimeAppCompositionOptions {
   readonly audioPlaybackSink?: AudioPlaybackSink;
   readonly desktopAudioTransport?: DesktopAudioTransport;
   readonly desktopOverlayTransport?: DesktopOverlayTransport;
+  /** The desktop primary video player; without it browser sources play videos on their own. */
+  readonly desktopVideoTransport?: DesktopVideoTransport;
   readonly desktopHost?: {
     onConfigChanged(config: DesktopConfig): void;
     onPlaybackStateChanged(state: PlaybackSafetyState): void;
@@ -474,22 +486,30 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const twitchApiClient = options.twitchApiClient ?? defaultTwitchApiClient;
   const twitchRewardApiClient = options.twitchRewardApiClient ?? defaultTwitchApiClient;
   let currentModuleMutes = initialConfig.playback.moduleMutes ?? { alerts: false, "screen-effects": false };
-  const videoShoutoutService = new VideoShoutoutService({
-    clock: { now: () => now().getTime() },
-    scheduler: {
-      schedule(delayMs, callback) {
-        const handle = setTimeout(callback, delayMs);
-        return { cancel: () => clearTimeout(handle) };
-      }
-    },
-    generateActivationId: randomUUID,
-    onTransition(transition) {
-      void runtimeLogger.info("Video shoutout state changed.", {
-        module: "video-shoutout", source: "video-shoutout.state", correlationId: transition.activationId ?? "video-shoutout", processingId: null,
-        metadata: { purpose: transition.purpose, from: transition.from, to: transition.to, cause: transition.cause }
-      });
-    }
+  const readVideosConfig = async () => (await overlayModuleConfigService.getModuleConfig("videos")).config as VideosModuleConfig;
+  // The queue reads limits synchronously; saves through the runtime config service refresh this copy.
+  let videosConfig = await readVideosConfig();
+  const videoQueueService = new VideoQueueService({
+    repository: new SqliteVideoQueueRepository(database.connection),
+    getConfig: () => videosConfig,
+    now: () => now().getTime()
   });
+  const videoRequestIntake = new VideoRequestIntake({
+    queue: videoQueueService,
+    getConfig: () => videosConfig,
+    isModuleEnabled: async () => (await overlayModuleConfigService.getModuleConfig("videos")).enabled
+  });
+  // Bound once the audio routes it resolves devices through exist; the gateway and runtime read it lazily.
+  const videoMirror: { director?: VideoMirrorDirector } = {};
+  let videoOutputsReady = false;
+  const videosRuntime = new VideosRuntime({
+    queue: videoQueueService, intake: videoRequestIntake, getConfig: async () => videosConfig, now: () => now().getTime(),
+    mirror: { get available() { return videoMirror.director?.available === true; }, controlsFor: itemId => videoMirror.director?.controlsFor(itemId) }
+  });
+  const writeVideoIntakeDiagnostic = async (source: string, entry: VideoIntakeDiagnostic) => {
+    const context = { module: "videos", source, correlationId: generateRuntimeReferenceId(), processingId: null, metadata: { ...entry.metadata } };
+    await (entry.level === "warn" ? runtimeLogger.warn(entry.message, context) : runtimeLogger.info(entry.message, context));
+  };
   const overlayGateway = new OverlayGateway({
     overlayAccessService,
     generateClientId: options.generateOverlayClientId ?? generateOverlayClientId,
@@ -501,7 +521,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         ? runtimeLogger.info("Overlay transport connection changed.", { module: "overlay", source: "overlay.transport.connection", correlationId: diagnostic.clientId, processingId: null, metadata })
         : runtimeLogger.error("Overlay transport failed.", { module: "overlay", source: "overlay.transport.failed", correlationId: diagnostic.clientId, processingId: null, metadata }, exception));
     },
+    onVideoMirrorSignal(client, signal) { videoMirror.director?.receiveBrowserSignal(client, signal); },
     onClientDisconnected(clientId) {
+      videoMirror.director?.browserClientDisconnected(clientId);
       playbackCoordinator.reportClientDisconnected(clientId);
       effectPlaybackCoordinator.reportClientDisconnected(clientId);
     },
@@ -536,8 +558,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
           report.exception
         );
       }
-      // Video shoutout players report against their activation id through the same path.
-      if (videoShoutoutService.reportPlayback(report.instructionId, report.status)) return;
+      // Video players report as `video:<itemId>` through the same path.
+      if (videosRuntime.reportPlayback(report.instructionId, report.status, report.mediaDurationMs)) return;
       if (report.status === "completed" || report.status === "failed") {
         playbackCoordinator.reportInstructionFinished(report.clientId, report.instructionId);
         effectPlaybackCoordinator.reportInstructionFinished(
@@ -594,7 +616,27 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     runMutation: work => maintenanceGate.runConfigurationMutation(() => runInTransaction(database.connection, work)),
     runTest: work => maintenanceGate.runIntake(work),
     logger: runtimeLogger,
-    generateReferenceId: generateRuntimeReferenceId
+    generateReferenceId: generateRuntimeReferenceId,
+    // Videos device output caches resolved devices; re-send them when a route is rebound or removed.
+    onRoutesChanged: () => videoMirror.director?.refreshOutput()
+  });
+  videoMirror.director = new VideoMirrorDirector({
+    queue: videoQueueService,
+    transport: options.desktopVideoTransport,
+    getConfig: () => videosConfig,
+    // Videos follow the global mute: both module mutes on.
+    isMuted: () => currentModuleMutes.alerts && currentModuleMutes["screen-effects"],
+    resolveDevices: async routeIds => {
+      if (routeIds.length === 0) return [];
+      const capability = await audioOutputService.getDevices();
+      const { destinations } = resolveAudioDestinations(routeIds, audioOutputService.listRoutes(), new Set(capability.devices.map(device => device.deviceId)));
+      return destinations.flatMap(destination => destination.routeIds.map(routeId => ({ routeId, deviceId: destination.deviceId })));
+    },
+    deliverSignal: (clientId, signal) => overlayGateway.sendVideoMirrorSignal(clientId, signal),
+    // Outputs connect only after composition; until then they read the current mode on connect.
+    onAvailabilityChanged: () => { if (videoOutputsReady) void trackRuntimeWork(() => Promise.all([queueVideoOutputSync("live"), queueVideoOutputSync("test")]).then(() => undefined)); },
+    onError: (message, error) => { void runtimeLogger.error(message, { module: "videos", source: "videos.mirror.failed", correlationId: generateRuntimeReferenceId(), processingId: null, metadata: {} }, error); },
+    now: () => now().getTime()
   });
   const timerDefinitionRepository = new SqliteTimerDefinitionRepository(database.connection);
   const timerCueService = new TimerCueService({
@@ -838,6 +880,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     },
     applySafety: async (state) => {
       currentModuleMutes = state.moduleMutes ?? { alerts: false, "screen-effects": false };
+      videoMirror.director?.refreshOutput();
       const failures: unknown[] = [];
       try {
         await playbackCoordinator.applySafetyState({ ...state, moduleMutes: currentModuleMutes, muted: currentModuleMutes.alerts });
@@ -898,13 +941,21 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     journal: eventBusJournal,
     consumers: [
       ...eventPipeline.consumers(),
-      createVideoShoutoutBusConsumer({
-        service: videoShoutoutService,
-        isModuleEnabled: async () => (await overlayModuleConfigService.getModuleConfig("video-shoutout")).enabled,
-        onDiagnostic: async (entry) => {
-          const context = { module: "video-shoutout", source: "video-shoutout.streamerbot", correlationId: generateRuntimeReferenceId(), processingId: null, metadata: { ...entry.metadata } };
-          await (entry.level === "warn" ? runtimeLogger.warn(entry.message, context) : runtimeLogger.info(entry.message, context));
-        }
+      createVideosBusConsumer({
+        streamerBot: createStreamerBotVideoIntake({
+          intake: videoRequestIntake,
+          queue: videoQueueService,
+          onDiagnostic: entry => writeVideoIntakeDiagnostic("videos.streamerbot", entry)
+        }),
+        channelPoints: createChannelPointVideoIntake({
+          intake: videoRequestIntake,
+          getConfig: () => videosConfig,
+          onDiagnostic: entry => writeVideoIntakeDiagnostic("videos.channel-points", entry)
+        }),
+        onError: (error, event) => runtimeLogger.error("Video request handling failed", {
+          module: "videos", source: "videos.event-admission", correlationId: `event:${event.sourceKind}:${event.eventId}`,
+          processingId: null, metadata: { eventType: event.kind === "canonical" ? event.event.type : "external" }
+        }, error)
       })
     ],
     generateReferenceId: generateEventSourceReferenceId,
@@ -1488,7 +1539,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     ["screen-effects", effectPlaybackCoordinator],
     ["timers", timerRuntimeCoordinator],
     ["music", musicOutputRuntime],
-    ["video-shoutout", videoShoutoutService]
+    ["videos", videosRuntime]
   ]);
   const overlayCompositionService = new DefaultOverlayCompositionService({
     surfaceRepository,
@@ -1507,6 +1558,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     runtime: timerRuntimeCoordinator,
     assets: desktopVisualAssetResolver,
     music: { runtime: musicOutputRuntime, coordinator: musicRuntimeCoordinator, assets: desktopVisualAssetResolver, artwork: musicArtworkService },
+    videos: { runtime: videosRuntime },
     logger: runtimeLogger,
     generateReferenceId: generateRuntimeReferenceId
   });
@@ -1587,26 +1639,33 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     return pendingMusicOutputSync.promise;
   };
   const unsubscribeMusicOutputs = musicRuntimeCoordinator.subscribe(() => { void queueMusicOutputSync(); });
-  const syncVideoShoutoutOutputs = async (purpose: "live" | "test") => {
+  const syncVideoOutputs = async (purpose: OverlayPurpose) => {
+    const moduleIds = listUnifiedOverlayModuleIds(overlayModuleRegistry);
     await Promise.all(overlayGateway.clients
-      .filter(client => client.scope === "module" && client.moduleId === "video-shoutout" && client.purpose === purpose)
+      .filter(client => client.purpose === purpose && (client.scope === "unified" || client.moduleId === "videos"))
       .map(async client => {
-        overlayGateway.deliverComposition(client.id, await overlayCompositionService.resolveModuleOutput({
-          moduleId: "video-shoutout", overlayId: client.overlayId, purpose: client.purpose,
-          ...(client.targetProfileId == null ? {} : { targetProfileId: client.targetProfileId })
-        }));
+        overlayGateway.deliverComposition(client.id, client.scope === "module"
+          ? await overlayCompositionService.resolveModuleOutput({
+            moduleId: "videos", overlayId: client.overlayId, purpose: client.purpose,
+            ...(client.targetProfileId == null ? {} : { targetProfileId: client.targetProfileId })
+          })
+          : await overlayCompositionService.resolveUnifiedOutput({ overlayId: client.overlayId, purpose: client.purpose, enabledModuleIds: moduleIds }));
       }));
+    if (purpose === "live") await desktopModuleSnapshotSink?.syncVideos();
   };
-  let videoShoutoutOutputSyncTail = Promise.resolve();
-  const unsubscribeVideoShoutoutOutputs = videoShoutoutService.subscribe(purpose => {
-    void trackRuntimeWork(() => {
-      const pending = videoShoutoutOutputSyncTail.then(() => syncVideoShoutoutOutputs(purpose));
-      videoShoutoutOutputSyncTail = pending.catch(
-        // error-provenance: allow expected -- pending preserves the rejection for tracked diagnostics; the tail only keeps later syncs ordered
-        () => undefined
-      );
-      return pending;
-    });
+  let videoOutputSyncTail = Promise.resolve();
+  videoOutputsReady = true;
+  const queueVideoOutputSync = (purpose: OverlayPurpose) => {
+    const pending = videoOutputSyncTail.then(() => syncVideoOutputs(purpose));
+    videoOutputSyncTail = pending.catch(
+      // error-provenance: allow expected -- pending preserves the rejection for tracked diagnostics; the tail only keeps later syncs ordered
+      () => undefined
+    );
+    return pending;
+  };
+  const unsubscribeVideoOutputs = videoQueueService.subscribe((purpose, view) => {
+    videoMirror.director?.queueChanged(purpose, view);
+    void trackRuntimeWork(() => queueVideoOutputSync(purpose));
   });
   for (const surface of await surfaceRepository.list()) {
     if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
@@ -1621,7 +1680,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     moduleIds: () => listUnifiedOverlayModuleIds(overlayModuleRegistry),
     changed: async surface => {
       if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
-      if (surface.kind === "desktop") await Promise.all([queueTimerOutputSync(), queueMusicOutputSync()]);
+      if (surface.kind === "desktop") await Promise.all([queueTimerOutputSync(), queueMusicOutputSync(), queueVideoOutputSync("live")]);
     },
     runMutation: work => maintenanceGate.runIntake(work),
     logger: runtimeLogger,
@@ -1632,6 +1691,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       await surfaceSettingsService.initializeDesktop();
       await queueTimerOutputSync();
       await queueMusicOutputSync();
+      await queueVideoOutputSync("live");
     } catch (error) {
       await runtimeLogger.error("Desktop overlay could not be reconciled or configured. Other outputs remain available.", {
         module: "overlay-surfaces", source: "desktop-overlay.configure.failed", correlationId: generateRuntimeReferenceId(), processingId: null,
@@ -1670,6 +1730,19 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     await Promise.allSettled([trackRuntimeWork(() => enabled ? musicRuntimeCoordinator.refreshConfig() : musicRuntimeCoordinator.reconcile())]);
     await Promise.allSettled([queueMusicOutputSync(true)]);
   };
+  const refreshCommittedVideosConfig = async (enabled: boolean): Promise<void> => {
+    videosConfig = await readVideosConfig();
+    videoQueueService.reevaluateLimits();
+    videoMirror.director?.refreshOutput();
+    // Turning the module off ends playback; queued requests stay for later.
+    if (!enabled) {
+      for (const purpose of ["live", "test"] as const) {
+        const view = videoQueueService.view(purpose);
+        if (view.current !== null || view.gapEndsAtEpochMs !== null) videoQueueService.command(purpose, view.revision, { kind: "stop" });
+      }
+    }
+    await Promise.allSettled([queueVideoOutputSync("live"), queueVideoOutputSync("test")]);
+  };
   const runtimeOverlayModuleConfigService: OverlayModuleConfigService = {
     getModuleConfig: (moduleId) => overlayModuleConfigService.getModuleConfig(moduleId),
     async saveModuleConfig(input) {
@@ -1686,6 +1759,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       }
       if (config.moduleId === "timers") await queueTimerOutputSync();
       if (config.moduleId === "music") await refreshCommittedMusicConfig(config.enabled);
+      if (config.moduleId === "videos") await refreshCommittedVideosConfig(config.enabled);
       return config;
     },
     async setModuleEnabled(moduleId, enabled) {
@@ -1697,6 +1771,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       }
       if (config.moduleId === "timers") await queueTimerOutputSync();
       if (config.moduleId === "music") await refreshCommittedMusicConfig(config.enabled);
+      if (config.moduleId === "videos") await refreshCommittedVideosConfig(config.enabled);
       return config;
     }
   };
@@ -1770,6 +1845,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     automationMachinePreHandler,
     automationAuthPreHandler,
     automationControlService,
+    videos: videosRuntime,
     effectSets: effectManagementService,
     managementAuthPreHandler: createManagementSecurityPreHandler({
       sessionService: managementSessionService,
@@ -1826,9 +1902,10 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   cleanups.push(async () => {
     unsubscribeTimerOutputs();
     unsubscribeMusicOutputs();
-    unsubscribeVideoShoutoutOutputs();
-    videoShoutoutService.dispose();
-    await videoShoutoutOutputSyncTail;
+    unsubscribeVideoOutputs();
+    videoMirror.director?.close();
+    videoQueueService.dispose();
+    await videoOutputSyncTail;
     await timerOutputSyncTail;
     await desktopModuleSnapshotSink?.close();
   });

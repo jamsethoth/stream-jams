@@ -266,7 +266,7 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async getServerConfig() {
       return storyServerConfig;
     },
-    async getDesktopConfig() { return { available: false, closeToTray: true }; },
+    async getDesktopConfig() { return { available: false, closeToTray: true, gpuAcceleration: true }; },
     async updateDesktopConfig(input) { return { ...input, available: true }; },
     async updateServerConfig(input) {
       return input;

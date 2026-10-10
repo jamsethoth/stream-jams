@@ -20,14 +20,24 @@ const validConfig = {
 
 describe("appConfigSchema", () => {
   it("defaults desktop close policy and rejects coercion", () => {
-    expect(desktopConfigSchema.parse({})).toEqual({ closeToTray: true });
+    expect(desktopConfigSchema.parse({})).toEqual({ closeToTray: true, gpuAcceleration: true });
     expect(desktopConfigSchema.safeParse({ closeToTray: "false" }).success).toBe(false);
-    expect(appConfigSchema.parse(validConfig).desktop).toEqual({ closeToTray: true });
+    expect(appConfigSchema.parse(validConfig).desktop).toEqual({ closeToTray: true, gpuAcceleration: true });
     expect(appConfigUpdateSchema.parse({ desktop: { closeToTray: false } }).desktop).toEqual({ closeToTray: false });
+  });
+  it("defaults GPU acceleration on for saved desktop settings without it and rejects coercion", () => {
+    expect(desktopConfigSchema.parse({ closeToTray: false })).toEqual({ closeToTray: false, gpuAcceleration: true });
+    expect(desktopConfigSchema.parse({ closeToTray: true, gpuAcceleration: false })).toEqual({ closeToTray: true, gpuAcceleration: false });
+    expect(appConfigSchema.parse({ ...validConfig, desktop: { closeToTray: false } }).desktop).toEqual({ closeToTray: false, gpuAcceleration: true });
+    for (const gpuAcceleration of ["false", 0, null]) {
+      expect(desktopConfigSchema.safeParse({ gpuAcceleration }).success).toBe(false);
+      expect(appConfigUpdateSchema.safeParse({ desktop: { gpuAcceleration } }).success).toBe(false);
+    }
+    expect(appConfigUpdateSchema.parse({ desktop: { gpuAcceleration: false } }).desktop).toEqual({ gpuAcceleration: false });
   });
   it("accepts local-only server and storage settings", () => {
     const expected = {
-      desktop: { closeToTray: true },
+      desktop: { closeToTray: true, gpuAcceleration: true },
       ...validConfig,
       playback: {
         paused: false,
@@ -47,7 +57,7 @@ describe("appConfigSchema", () => {
     };
 
     expect(appConfigSchema.parse(legacyConfig)).toEqual({
-      desktop: { closeToTray: true },
+      desktop: { closeToTray: true, gpuAcceleration: true },
       ...legacyConfig,
       logging: defaultLogSettings,
       playback: {

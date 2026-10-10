@@ -16,7 +16,7 @@ import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } fro
 import { formatBytes, formatCount, formatHours } from "../foundation/formatters.js";
 import { MaskedValue } from "../foundation/MaskedValue.js";
 import { ThemeSwitcher } from "../foundation/ThemeSwitcher.js";
-import type { DesktopConfigView, ManagementApi, ServerConfigView } from "../management-api.js";
+import type { DesktopConfigInput, DesktopConfigView, ManagementApi, ServerConfigView } from "../management-api.js";
 import { DesktopSettingsPanel } from "./DesktopSettingsPanel.js";
 import { OverlaySurfacesPanel, type OverlaySurfacesPanelHandle } from "./OverlaySurfacesPanel.js";
 import type { SurfaceSettingsApi } from "./overlay-surfaces-api.js";
@@ -41,6 +41,11 @@ export interface SettingsPanelProps {
 }
 
 const defaultServerConfig: ServerConfigView = { host: "127.0.0.1", port: 39187 };
+const defaultDesktopDraft: DesktopConfigInput = { closeToTray: true, gpuAcceleration: true };
+
+function desktopDraftOf(config: DesktopConfigView | null): DesktopConfigInput {
+  return config === null ? defaultDesktopDraft : { closeToTray: config.closeToTray, gpuAcceleration: config.gpuAcceleration };
+}
 
 export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfaceApi, managementApi }: SettingsPanelProps) {
   const audioPanelRef = useRef<AudioOutputsPanelHandle>(null);
@@ -49,7 +54,9 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
   const [savedConfig, setSavedConfig] = useState(defaultServerConfig);
   const [configDraft, setConfigDraft] = useState(defaultServerConfig);
   const [desktopConfig, setDesktopConfig] = useState<DesktopConfigView | null>(null);
-  const [closeToTray, setCloseToTray] = useState(true);
+  const [desktopDraft, setDesktopDraft] = useState(defaultDesktopDraft);
+  // GPU acceleration is fixed when the desktop app starts; the first loaded value stands in for it.
+  const [launchGpuAcceleration, setLaunchGpuAcceleration] = useState<boolean | null>(null);
   const [summary, setSummary] = useState<ConfigurationBackupSummary | null>(null);
   const [archive, setArchive] = useState<ConfigurationBackupArchive | null>(null);
   const [archiveName, setArchiveName] = useState<string | null>(null);
@@ -84,7 +91,8 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
     await Promise.all([managementApi.getServerConfig(), managementApi.getConfigurationBackupSummary(), managementApi.getDesktopConfig()])
       .then(([serverConfig, backupSummary, desktop]) => {
         setDesktopConfig(desktop);
-        setCloseToTray(desktop.closeToTray);
+        setDesktopDraft(desktopDraftOf(desktop));
+        setLaunchGpuAcceleration((current) => current ?? desktop.gpuAcceleration);
         setSavedConfig(serverConfig);
         setConfigDraft(serverConfig);
         if (backupSummary.state === "invalid" || backupSummary.blockers.length > 0) setDataOpen(true);
@@ -118,13 +126,16 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
   }, [loading]);
 
   const serverDirty = savedConfig.host !== configDraft.host || savedConfig.port !== configDraft.port;
-  const desktopDirty = desktopConfig?.available === true && desktopConfig.closeToTray !== closeToTray;
+  const desktopDirty = desktopConfig?.available === true &&
+    (desktopConfig.closeToTray !== desktopDraft.closeToTray || desktopConfig.gpuAcceleration !== desktopDraft.gpuAcceleration);
+
+  const gpuRestartPending = desktopConfig !== null && launchGpuAcceleration !== null && desktopConfig.gpuAcceleration !== launchGpuAcceleration;
 
   const saveDesktop = useCallback(async () => {
-    const saved = await managementApi.updateDesktopConfig({ closeToTray });
+    const saved = await managementApi.updateDesktopConfig(desktopDraft);
     setDesktopConfig(saved);
-    setCloseToTray(saved.closeToTray);
-  }, [closeToTray, managementApi]);
+    setDesktopDraft(desktopDraftOf(saved));
+  }, [desktopDraft, managementApi]);
 
   const saveServer = useCallback(async () => {
     const saved = await managementApi.updateServerConfig(configDraft);
@@ -146,7 +157,7 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
   }, [audioDirty, desktopDirty, surfacesDirty, saveDesktop, saveServer, serverDirty]);
 
   const discard = useCallback(() => {
-    setCloseToTray(desktopConfig?.closeToTray ?? true);
+    setDesktopDraft(desktopDraftOf(desktopConfig));
     setConfigDraft(savedConfig);
     setArchive(null);
     setArchiveName(null);
@@ -264,7 +275,7 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
       setSummary(await managementApi.getConfigurationBackupSummary());
       const desktop = await managementApi.getDesktopConfig();
       setDesktopConfig(desktop);
-      setCloseToTray(desktop.closeToTray);
+      setDesktopDraft(desktopDraftOf(desktop));
     } catch (cause) {
       setError(actionable("Configuration was not restored", cause, "Resolve the reported failure, validate the backup again, and retry."));
     } finally {
@@ -346,12 +357,19 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
 
       {desktopConfig?.available !== true ? null : (
         <section aria-labelledby="desktop-heading" className="settings-page__section">
-          <SectionHeading level={3} id="desktop-heading" title="Desktop app" description="Choose what happens when you close the management window." />
+          <SectionHeading level={3} id="desktop-heading" title="Desktop app" description="Choose what happens when you close the management window and whether the desktop app uses the GPU." />
           <form className="settings-page__form" onSubmit={submitDesktop}>
-            <DesktopSettingsPanel closeToTray={closeToTray} disabled={busy} onChange={setCloseToTray} />
+            <DesktopSettingsPanel
+              closeToTray={desktopDraft.closeToTray}
+              gpuAcceleration={desktopDraft.gpuAcceleration}
+              disabled={busy}
+              onCloseToTrayChange={(closeToTray) => setDesktopDraft((draft) => ({ ...draft, closeToTray }))}
+              onGpuAccelerationChange={(gpuAcceleration) => setDesktopDraft((draft) => ({ ...draft, gpuAcceleration }))}
+            />
             {desktopDirty ? <Button disabled={busy} type="submit">Save desktop settings</Button> : null}
             <FocusFallback visible={desktopDirty} target={() => document.querySelector<HTMLElement>(".desktop-settings input")} />
           </form>
+          {gpuRestartPending ? <p className="settings-page__hint" role="status">Restart Stream Jams to apply the GPU acceleration change.</p> : null}
         </section>
       )}
 

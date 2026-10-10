@@ -1,8 +1,26 @@
+import { videoMirrorPublisherSignalSchema } from "@stream-jams/core/videos";
+import type { VideoMirrorConnector } from "@stream-jams/core/videos";
 import { privateVisualMediaUrl, type PrivateDesktopMediaAsset, DesktopVisualRendererReply, DesktopVisualRendererRequest } from "@stream-jams/core";
 
 export interface DesktopOverlayBridge {
   onCommand(callback: (request: DesktopVisualRendererRequest) => void): () => void;
   report(reply: DesktopVisualRendererReply): void;
+  /** Videos mirror signaling relayed by the desktop app to its primary player. */
+  readonly videoMirror?: {
+    send(signal: unknown): void;
+    onSignal(callback: (signal: unknown) => void): () => void;
+  };
+}
+
+/** Adapts the desktop bridge to a mirror connector, re-validating every signal at this boundary. */
+export function createDesktopVideoMirrorConnector(bridge: NonNullable<DesktopOverlayBridge["videoMirror"]>): VideoMirrorConnector {
+  return {
+    send: signal => bridge.send(signal),
+    subscribe: listener => bridge.onSignal(candidate => {
+      const parsed = videoMirrorPublisherSignalSchema.safeParse(candidate);
+      if (parsed.success) listener(parsed.data);
+    })
+  };
 }
 
 declare global { interface Window { streamJamsOverlayHost?: DesktopOverlayBridge } }

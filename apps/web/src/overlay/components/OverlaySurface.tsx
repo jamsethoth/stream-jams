@@ -17,13 +17,18 @@ import { useMediaVolumeEnvelope } from "../../media/use-media-volume-envelope.js
 import { AlertTextContent } from "./AlertTextContent.js";
 import { TimerStack } from "./TimerStack.js";
 import { MusicWidget } from "./MusicWidget.js";
-import { VideoShoutout } from "./VideoShoutout.js";
+import { VideosOverlay } from "./VideosOverlay.js";
+// Re-exported so the Videos placement preview shares this chunk instead of adding one to every route's preload list.
+export { VideoBox, VideoCaption, videoFrameStyle } from "./VideoPlacement.js";
+import type { VideoMirrorConnector } from "@stream-jams/core/videos";
 
 export type OverlayPlaybackEvent =
   | { readonly instructionId: string; readonly status: "ready" }
   | { readonly instructionId: string; readonly status: "started"; readonly diagnostics?: PlaybackTimingMilestone }
   | { readonly instructionId: string; readonly status: "completed"; readonly diagnostics?: PlaybackTimingDiagnostics }
-  | { readonly instructionId: string; readonly status: "failed"; readonly failure: OverlayPlaybackFailure; readonly diagnostics?: PlaybackTimingDiagnostics };
+  | { readonly instructionId: string; readonly status: "failed"; readonly failure: OverlayPlaybackFailure; readonly diagnostics?: PlaybackTimingDiagnostics }
+  /** A fallback video player's media length (`video:` instructions only), sent at most once per item. */
+  | { readonly instructionId: string; readonly status: "duration"; readonly mediaDurationMs: number };
 
 export interface OverlaySurfaceProps {
   readonly composition: OverlayComposition;
@@ -33,6 +38,10 @@ export interface OverlaySurfaceProps {
   readonly resolveAssetUrl: (assetId: string, version?: string) => string;
   readonly resolveMusicAsset?: MusicAssetResolver | undefined;
   readonly onPlaybackEvent?: ((event: OverlayPlaybackEvent) => void) | undefined;
+  /** Signaling to the desktop Videos mirror for this output. */
+  readonly videoMirror?: VideoMirrorConnector | undefined;
+  /** False on the desktop overlay, whose mirror shows pictures only. */
+  readonly videoMirrorAudio?: boolean | undefined;
 }
 
 export const overlayRootStyle: CSSProperties = {
@@ -45,7 +54,7 @@ export const overlayRootStyle: CSSProperties = {
 
 const testAudioActivationEvent = "stream-jams:test-audio-activation";
 
-export function OverlaySurface({ composition, preparingInstructionIds, muted = false, moduleMutes, onPlaybackEvent, resolveAssetUrl, resolveMusicAsset }: OverlaySurfaceProps) {
+export function OverlaySurface({ composition, preparingInstructionIds, muted = false, moduleMutes, onPlaybackEvent, resolveAssetUrl, resolveMusicAsset, videoMirror, videoMirrorAudio = true }: OverlaySurfaceProps) {
 
   const [blockedTestAudioIds, setBlockedTestAudioIds] = useState<ReadonlySet<string>>(() => new Set());
   const rootElementRef = useRef<HTMLDivElement | null>(null);
@@ -115,7 +124,11 @@ export function OverlaySurface({ composition, preparingInstructionIds, muted = f
       ))}
       {moduleSnapshot.surfaceLayer?.visible === false ? null : (
         <ModulePresentation
+          // Videos follow the global mute: every module muted.
+          muted={moduleMutes === undefined ? muted : moduleMutes.alerts && moduleMutes["screen-effects"]}
           onPlaybackEvent={onPlaybackEvent}
+          videoMirror={videoMirror}
+          videoMirrorAudio={videoMirrorAudio}
           presentation={moduleSnapshot.presentation}
           resolveAssetUrl={resolveAssetUrl}
           resolveMusicAsset={resolveMusicAsset}
@@ -148,18 +161,24 @@ export function OverlaySurface({ composition, preparingInstructionIds, muted = f
 }
 
 function ModulePresentation({
+  muted,
   onPlaybackEvent,
   presentation,
   resolveAssetUrl,
-  resolveMusicAsset
+  resolveMusicAsset,
+  videoMirror,
+  videoMirrorAudio
 }: {
+  readonly muted: boolean;
+  readonly videoMirror: VideoMirrorConnector | undefined;
+  readonly videoMirrorAudio: boolean;
   readonly onPlaybackEvent?: ((event: OverlayPlaybackEvent) => void) | undefined;
   readonly presentation: OverlayComposition["modules"][number]["presentation"];
   readonly resolveAssetUrl: (assetId: string, version?: string) => string;
   readonly resolveMusicAsset?: MusicAssetResolver | undefined;
 }) {
   if (presentation?.kind === "music-widget") return resolveMusicAsset === undefined ? null : <MusicWidget projection={presentation.widget} resolveAsset={resolveMusicAsset} />;
-  if (presentation?.kind === "video-shoutout") return <VideoShoutout onPlaybackEvent={onPlaybackEvent} projection={presentation.shoutout} />;
+  if (presentation?.kind === "videos") return <VideosOverlay mirror={videoMirror} mirrorAudio={videoMirrorAudio} muted={muted} onPlaybackEvent={onPlaybackEvent} projection={presentation.videos} />;
   if (presentation?.kind !== "timer-stack") return null;
   const stack = timerStackProjectionSchema.safeParse(presentation.stack);
   return stack.success ? <TimerStack stack={stack.data} resolveAssetUrl={resolveAssetUrl} /> : null;
