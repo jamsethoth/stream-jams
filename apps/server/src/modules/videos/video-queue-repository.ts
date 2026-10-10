@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import type { OverlayPurpose, VideoRecentItem, VideoRequestItem } from "@stream-jams/core";
-import { videoRequesterSchema, videoSourceSchema, videoTitleSchema } from "@stream-jams/core/videos";
+import { videoChannelNameSchema, videoRequesterSchema, videoSourceSchema, videoTitleSchema } from "@stream-jams/core/videos";
 import { runInTransaction } from "../db/database.js";
 
 /** An active play-all run: the ids snapshotted when the operator chose Play all now. */
@@ -58,6 +58,8 @@ const rowSchema = z.object({
   purpose: z.enum(["live", "test"]),
   source_json: z.string(),
   title: z.string().nullable(),
+  provider_title: z.string().nullable(),
+  channel_name: z.string().nullable(),
   requester: z.string().nullable(),
   submitted_via: z.enum(["management", "operator", "automation", "streamerbot", "channel-points"]),
   duration_ms: z.number().int().positive().nullable(),
@@ -110,18 +112,20 @@ export class SqliteVideoQueueRepository implements VideoQueueRepository {
           .run(change.run === null ? null : JSON.stringify(runSchema.parse(change.run)), purpose);
       }
       const upsert = this.connection.prepare(`
-INSERT INTO video_requests (id, purpose, source_json, title, requester, submitted_via, duration_ms, status, hold_reason, limit_overridden, autoplay, position, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO video_requests (id, purpose, source_json, title, provider_title, channel_name, requester, submitted_via, duration_ms, status, hold_reason, limit_overridden, autoplay, position, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
   duration_ms = excluded.duration_ms, status = excluded.status, hold_reason = excluded.hold_reason,
   limit_overridden = excluded.limit_overridden, autoplay = excluded.autoplay, position = excluded.position,
-  title = excluded.title, updated_at = excluded.updated_at
+  title = excluded.title, provider_title = excluded.provider_title, channel_name = excluded.channel_name, updated_at = excluded.updated_at
 WHERE video_requests.purpose = excluded.purpose`);
       for (const item of change.upsert ?? []) {
         if (item.purpose !== purpose) throw new Error("Video request purpose does not match the queue.");
         upsert.run(
           item.id, item.purpose, JSON.stringify(videoSourceSchema.parse(item.source)),
           item.title === null ? null : videoTitleSchema.parse(item.title),
+          item.providerTitle === null ? null : videoTitleSchema.parse(item.providerTitle),
+          item.channelName === null ? null : videoChannelNameSchema.parse(item.channelName),
           item.requester === null ? null : videoRequesterSchema.parse(item.requester),
           item.submittedVia, item.durationMs, item.status, item.holdReason,
           item.limitOverridden ? 1 : 0, item.autoplay ? 1 : 0, item.position, item.createdAt, this.now()
@@ -168,6 +172,8 @@ function toItem(row: z.infer<typeof rowSchema>): VideoRequestItem {
     purpose: row.purpose,
     source: videoSourceSchema.parse(JSON.parse(row.source_json)),
     title: row.title,
+    providerTitle: row.provider_title,
+    channelName: row.channel_name,
     requester: row.requester,
     submittedVia: row.submitted_via,
     durationMs: row.duration_ms,

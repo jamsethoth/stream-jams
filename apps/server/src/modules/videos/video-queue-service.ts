@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { OverlayPurpose, VideoHoldReason, VideoRecentItem, VideoRequestItem, VideoSource, VideoSubmissionChannel, VideosModuleConfig } from "@stream-jams/core";
+import type { OverlayPurpose, VideoHoldReason, VideoMetadata, VideoRecentItem, VideoRequestItem, VideoSource, VideoSubmissionChannel, VideosModuleConfig } from "@stream-jams/core";
 import { videoClockPositionMs } from "@stream-jams/core/videos";
 import { VideoQueueConflictError, type VideoQueueChange, type VideoQueueRepository, type VideoQueueRun, type VideoQueueSnapshot } from "./video-queue-repository.js";
 
@@ -229,7 +229,9 @@ export class VideoQueueService {
     const state = this.state(purpose);
     this.requireRevision(state.snapshot, expectedRevision);
     const recent = this.recentItem(purpose, itemId);
-    const item = this.newItem(purpose, { source: recent.source, title: recent.title, requester: recent.requester, durationMs: recent.durationMs, autoplay: false, via });
+    // The provider details travel with the replay, so it needs no new lookup.
+    const item = { ...this.newItem(purpose, { source: recent.source, title: recent.title, requester: recent.requester, durationMs: recent.durationMs, autoplay: false, via }),
+      providerTitle: recent.providerTitle, channelName: recent.channelName };
     this.commit(purpose, expectedRevision, { upsert: [item] });
     return item;
   }
@@ -316,6 +318,46 @@ export class VideoQueueService {
     const found = this.findCurrent(itemId);
     if (found === null) return false;
     this.finish(found[0], itemId, "failed");
+    return true;
+  }
+
+  /**
+   * Records what the provider reported for a request still in the queue. The submitted title is
+   * kept; the provider title and channel are stored beside it. A provider length counts as a
+   * known length: it fills an unknown length only, and the length limit then applies exactly as
+   * when a player reports it, holding a waiting item as over the limit or cutting the current one.
+   * Returns false when the item is no longer in the queue, so nothing changes.
+   */
+  applyMetadata(purpose: OverlayPurpose, itemId: string, metadata: VideoMetadata): boolean {
+    if (this.disposed) return false;
+    const state = this.state(purpose);
+    const item = state.snapshot.items.find(candidate => candidate.id === itemId);
+    if (item === undefined) return false;
+    const described = {
+      ...item,
+      providerTitle: metadata.title ?? item.providerTitle,
+      channelName: metadata.channelName ?? item.channelName
+    };
+    const durationMs = validDurationMs(metadata.durationMs);
+    const current = state.current;
+    if (current?.item.id === itemId) {
+      // Learned only while the length is unknown, as the queue would when the player reports it.
+      this.persistItem(purpose, { ...current.item, providerTitle: described.providerTitle, channelName: described.channelName }, true);
+      const learned = current.item.durationMs === null ? this.learnDuration(purpose, durationMs) : "unchanged";
+      if (learned === "cut") return true;
+      if (learned === "learned" && state.current?.phase === "playing") this.scheduleEnd(purpose);
+      this.emit(purpose);
+      return true;
+    }
+    const waiting = item.status === "queued" || item.status === "held";
+    const known = item.durationMs ?? (waiting ? durationMs : null);
+    let next: VideoRequestItem = { ...described, durationMs: known };
+    if (waiting && !item.limitOverridden) {
+      const hold = this.holdReason(known, false);
+      next = { ...next, status: hold === null ? "queued" : "held", holdReason: hold };
+    }
+    // A held item drops out of the run; the run skips anything not queued when it gets there.
+    this.commit(purpose, state.snapshot.revision, { upsert: [next] });
     return true;
   }
 
@@ -480,6 +522,8 @@ export class VideoQueueService {
       purpose,
       source: submission.source,
       title: submission.title,
+      providerTitle: null,
+      channelName: null,
       requester: submission.requester,
       submittedVia: submission.via,
       durationMs: submission.durationMs,
@@ -536,6 +580,10 @@ export class VideoQueueService {
     const view = this.view(purpose);
     for (const listener of this.listeners) listener(purpose, view);
   }
+}
+
+function validDurationMs(durationMs: number | null): number | null {
+  return durationMs !== null && Number.isFinite(durationMs) && durationMs > 0 ? Math.round(durationMs) : null;
 }
 
 function playable(items: readonly VideoRequestItem[]): VideoRequestItem[] {

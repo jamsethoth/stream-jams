@@ -41,6 +41,7 @@ import { eventTriggerSelectorsMigration } from "./migrations/037-event-trigger-s
 import { externalAlertIdentityMigration } from "./migrations/038-external-alert-identity.js";
 import { eventBusOutcomesMigration } from "./migrations/039-event-bus-outcomes.js";
 import { videoRequestQueueMigration } from "./migrations/040-video-request-queue.js";
+import { videoRequestMetadataMigration } from "./migrations/041-video-request-metadata.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -92,7 +93,8 @@ const migrations = [
   eventTriggerSelectorsMigration,
   externalAlertIdentityMigration,
   eventBusOutcomesMigration,
-  videoRequestQueueMigration
+  videoRequestQueueMigration,
+  videoRequestMetadataMigration
 ] satisfies readonly StreamJamsMigration[];
 
 export const currentSchemaVersion = migrations.length;

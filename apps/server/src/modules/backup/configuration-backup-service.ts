@@ -710,6 +710,8 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   // A schema-33 archive from a Videos build made before the event bus merge differs from main's schema 33 only by its
   // Videos settings row, which restores as is.
   if (currentSchemaVersion === 39) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 38;
+  // Schema 40 adds provider details to the runtime Videos queue, which backups never contain.
+  if (currentSchemaVersion === 40) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 39;
   if (currentSchemaVersion === 28) return [19, 20, 21, 22, 23, 24, 25, 26, 27].includes(archiveSchemaVersion);
   return false;
 }

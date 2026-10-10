@@ -106,6 +106,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isQueueItem(value: unknown, requireLink: boolean): boolean {
   return isRecord(value) && typeof value.id === "string" && statuses.includes(String(value.status))
     && (value.title === null || typeof value.title === "string") && (value.requester === null || typeof value.requester === "string")
+    && (value.providerTitle === null || typeof value.providerTitle === "string") && (value.channelName === null || typeof value.channelName === "string")
     && (value.durationMs === null || typeof value.durationMs === "number")
     && (value.holdReason === null || value.holdReason === "over-limit" || value.holdReason === "unknown-length")
     && isRecord(value.source) && typeof value.source.provider === "string"

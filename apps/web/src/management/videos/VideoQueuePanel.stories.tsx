@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
-import { createStaticVideoQueueApi, failedVideos, heldVideos, playingVideo, queuedVideos, recentVideos, twitchClipPlaying, videoQueue } from "../../stories/video-queue-fixtures.js";
+import { createStaticVideoQueueApi, describedRecentVideos, describedVideos, failedVideos, heldVideos, playingVideo, queuedVideos, recentVideos, twitchClipPlaying, videoQueue } from "../../stories/video-queue-fixtures.js";
 import { ManagementHttpError } from "../management-http-client.js";
 import { OperatorItemCard } from "../../operator/OperatorItemCard.js";
 import { VideoQueuePanel } from "./VideoQueuePanel.js";
@@ -31,6 +31,27 @@ export const QueuedRequests: Story = {
     await expect(await canvas.findByRole("article", { name: "Cat plays keyboard" })).toBeVisible();
     await expect(canvas.getByRole("heading", { name: "Waiting (3)" })).toBeVisible();
     await expect(canvas.getByRole("button", { name: "Move up: Cat plays keyboard" })).toBeDisabled();
+  }
+};
+
+/** After provider lookup: titles and channels from YouTube and Twitch, a Twitch length over the limit, and a direct file with neither. */
+export const ProviderDetails: Story = {
+  args: { api: createStaticVideoQueueApi(describedVideos()) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const youtube = await canvas.findByRole("article", { name: "Never Gonna Give You Up (Official Video)" });
+    await expect(within(youtube).getByText("Rick Astley · Length unknown")).toBeVisible();
+    const clip = canvas.getByRole("article", { name: "Clutch final round" });
+    await expect(within(clip).getByText("SpeedyStreamer · 0:28")).toBeVisible();
+    const vod = canvas.getByRole("article", { name: "Full charity marathon" });
+    await expect(within(vod).getByText("SpeedyStreamer · 1:12:03")).toBeVisible();
+    await expect(within(vod).getByText("Over the length limit")).toBeVisible();
+    // A submitted title wins over the provider's.
+    await expect(canvas.getByRole("article", { name: "Viewer's pick" })).toHaveTextContent("Some Channel · Length unknown");
+    await expect(canvas.queryByText("Provider title is kept beside it")).not.toBeInTheDocument();
+    const file = canvas.getByRole("article", { name: "https://videos.example.com/clip.mp4" });
+    await expect(within(file).getByText("Length unknown")).toBeVisible();
+    await expect(canvas.queryByText(/undefined|null/u)).not.toBeInTheDocument();
   }
 };
 
@@ -69,6 +90,18 @@ export const OperatorRecentVideos: Story = {
     await expect(canvas.queryByText(/Failed recently/u)).not.toBeInTheDocument();
     await userEvent.click(recent.getByRole("button", { name: "Replay Removed upload in Videos" }));
     await expect(await canvas.findByText("Removed upload added to the live video queue.")).toBeVisible();
+  }
+};
+
+/** Operator Recent with provider details: the channel leads the summary and the provider title names the card. */
+export const OperatorRecentProviderDetails: Story = {
+  args: { api: createStaticVideoQueueApi(describedRecentVideos()), recentCard: OperatorItemCard },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const recent = within(await canvas.findByRole("region", { name: "Recent videos" }));
+    await expect(recent.getByRole("article", { name: "Never Gonna Give You Up (Official Video)" })).toHaveTextContent("Rick Astley · Requested by viewer_one · YouTube");
+    await expect(recent.getByRole("button", { name: "Replay Never Gonna Give You Up (Official Video) in Videos" })).toBeEnabled();
+    await expect(recent.getByRole("article", { name: "Viewer's pick" })).toHaveTextContent("Some Channel · Requested by viewer_one");
   }
 };
 

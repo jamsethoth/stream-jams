@@ -476,4 +476,123 @@ describe("VideoQueueService", () => {
       expect(service.view("test").items).toEqual([]);
     });
   });
+
+  describe("provider details", () => {
+    const twitchClip = (title: string | null, extra: Partial<VideoSubmission> = {}) =>
+      clip(title as string, null, { source: { provider: "twitch-clip", clipSlug: "FunnyClip" }, ...extra });
+
+    it("stores the provider title and channel beside a submitted title and announces the change", () => {
+      const { service, database } = setup();
+      const named = service.submit("live", clip("Viewer's pick", null));
+      const untitled = service.submit("live", { ...clip("x", null), title: null });
+      const views: string[] = [];
+      service.subscribe((purpose, view) => views.push(`${purpose}:${view.revision}`));
+      const revision = service.view("live").revision;
+
+      expect(service.applyMetadata("live", named.id, { title: "Official upload", channelName: "Some Channel", durationMs: null })).toBe(true);
+      expect(service.applyMetadata("live", untitled.id, { title: "Only the provider's", channelName: null, durationMs: null })).toBe(true);
+
+      const items = service.view("live").items;
+      expect(items.map(item => [item.title, item.providerTitle, item.channelName, item.status, item.durationMs])).toEqual([
+        ["Viewer's pick", "Official upload", "Some Channel", "queued", null],
+        [null, "Only the provider's", null, "queued", null]
+      ]);
+      expect(service.view("live").revision).toBe(revision + 2);
+      expect(views).toEqual([`live:${revision + 1}`, `live:${revision + 2}`]);
+      // Persisted with the row, so a restart keeps it.
+      expect(new SqliteVideoQueueRepository(database.connection).load("live").items[0]).toMatchObject({ title: "Viewer's pick", providerTitle: "Official upload", channelName: "Some Channel" });
+    });
+
+    it("holds a waiting item when the provider's length is over the limit, as if a player had reported it", () => {
+      const { service } = setup({ maxLengthSeconds: 60 });
+      const long = service.submit("live", twitchClip("Long clip"));
+      const short = service.submit("live", twitchClip("Short clip"));
+      service.applyMetadata("live", long.id, { title: "Long", channelName: "Streamer", durationMs: 90_000 });
+      service.applyMetadata("live", short.id, { title: "Short", channelName: "Streamer", durationMs: 30_000 });
+      expect(service.view("live").items.map(item => [item.id, item.status, item.holdReason, item.durationMs, item.position])).toEqual([
+        [long.id, "held", "over-limit", 90_000, long.position],
+        [short.id, "queued", null, 30_000, short.position]
+      ]);
+      // Play next skips the held item, and Play anyway still releases it.
+      service.command("live", service.view("live").revision, { kind: "play-next" });
+      expect(service.view("live").current?.item.id).toBe(short.id);
+      service.command("live", service.view("live").revision, { kind: "play-anyway", itemId: long.id });
+      expect(service.view("live").items.find(item => item.id === long.id)).toMatchObject({ status: "queued", limitOverridden: true });
+    });
+
+    it("keeps a length that was already known", () => {
+      const { service } = setup({ maxLengthSeconds: 60 });
+      const declared = service.submit("live", twitchClip("Declared", { durationMs: 20_000 }));
+      service.applyMetadata("live", declared.id, { title: null, channelName: null, durationMs: 90_000 });
+      expect(service.view("live").items[0]).toMatchObject({ status: "queued", holdReason: null, durationMs: 20_000 });
+    });
+
+    it("drops a Play all run item that becomes held and plays the rest", () => {
+      const { service } = setup({ maxLengthSeconds: 60, gapSeconds: 0 });
+      const first = service.submit("live", twitchClip("First", { durationMs: 10_000 }));
+      const long = service.submit("live", twitchClip("Long"));
+      const last = service.submit("live", twitchClip("Last", { durationMs: 10_000 }));
+      service.command("live", service.view("live").revision, { kind: "play-all" });
+      service.reportStarted(first.id);
+      service.applyMetadata("live", long.id, { title: null, channelName: null, durationMs: 120_000 });
+      service.reportEnded(first.id);
+      expect(service.view("live").current?.item.id).toBe(last.id);
+      expect(service.view("live").items.find(item => item.id === long.id)).toMatchObject({ status: "held", holdReason: "over-limit" });
+    });
+
+    it("cuts the current item when its provider length is over the limit, holding it and moving the run on", () => {
+      const { service } = setup({ maxLengthSeconds: 60, gapSeconds: 0 });
+      const long = service.submit("live", twitchClip("Long"));
+      const next = service.submit("live", twitchClip("Next", { durationMs: 10_000 }));
+      service.command("live", service.view("live").revision, { kind: "play-all" });
+      service.reportStarted(long.id);
+      expect(service.applyMetadata("live", long.id, { title: "Long", channelName: "Streamer", durationMs: 90_000 })).toBe(true);
+      const view = service.view("live");
+      expect(view.current?.item.id).toBe(next.id);
+      expect(view.items.find(item => item.id === long.id)).toMatchObject({ status: "held", holdReason: "over-limit", durationMs: 90_000, providerTitle: "Long", channelName: "Streamer", position: long.position });
+      expect(view.recent).toEqual([]);
+    });
+
+    it("learns a fitting provider length for the current item and ends it on time", () => {
+      const { service, scheduler } = setup({ maxLengthSeconds: 60 });
+      const item = service.submit("live", twitchClip("Fits"));
+      service.command("live", service.view("live").revision, { kind: "play-next" });
+      service.reportStarted(item.id);
+      service.applyMetadata("live", item.id, { title: "Fits", channelName: "Streamer", durationMs: 30_000 });
+      expect(service.view("live").current?.item).toMatchObject({ durationMs: 30_000, providerTitle: "Fits", channelName: "Streamer" });
+      scheduler.advance(30_000 + videoEndGraceMs);
+      expect(service.view("live").current).toBeNull();
+      expect(service.view("live").recent[0]).toMatchObject({ id: item.id, status: "played", providerTitle: "Fits" });
+    });
+
+    it("never cuts a current item released with Play anyway", () => {
+      const { service } = setup({ maxLengthSeconds: 60 });
+      const item = service.submit("live", twitchClip("Released", { durationMs: 90_000 }));
+      service.command("live", service.view("live").revision, { kind: "play-anyway", itemId: item.id });
+      service.reportStarted(item.id);
+      service.applyMetadata("live", item.id, { title: "Released", channelName: null, durationMs: 95_000 });
+      expect(service.view("live").current?.item).toMatchObject({ id: item.id, durationMs: 90_000, providerTitle: "Released" });
+    });
+
+    it("ignores details for a request that already left the queue", () => {
+      const { service } = setup();
+      const item = service.submit("live", twitchClip("Gone"));
+      service.command("live", service.view("live").revision, { kind: "remove", itemId: item.id });
+      const revision = service.view("live").revision;
+      expect(service.applyMetadata("live", item.id, { title: "Late", channelName: null, durationMs: 10_000 })).toBe(false);
+      expect(service.applyMetadata("test", item.id, { title: "Wrong purpose", channelName: null, durationMs: null })).toBe(false);
+      expect(service.view("live").revision).toBe(revision);
+    });
+
+    it("carries provider details into a replay", () => {
+      const { service } = setup();
+      const item = service.submit("live", twitchClip(null));
+      service.applyMetadata("live", item.id, { title: "Clip title", channelName: "Streamer", durationMs: 20_000 });
+      service.command("live", service.view("live").revision, { kind: "play-next" });
+      service.reportStarted(item.id);
+      service.reportEnded(item.id);
+      const replay = service.requeue("live", service.view("live").revision, item.id, "operator");
+      expect(replay).toMatchObject({ title: null, providerTitle: "Clip title", channelName: "Streamer", durationMs: 20_000, status: "queued" });
+    });
+  });
 });

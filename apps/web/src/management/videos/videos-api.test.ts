@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { queuedVideos, recentVideos, videoItem } from "../../stories/video-queue-fixtures.js";
+import { describedVideos, queuedVideos, recentVideos, videoItem } from "../../stories/video-queue-fixtures.js";
 import { createHttpVideosApi, isVideoQueueConflict } from "./videos-api.js";
 
 function json(body: unknown, status = 200): Response {
@@ -44,6 +44,17 @@ describe("createHttpVideosApi", () => {
     await expect(api.getQueue("live")).resolves.toMatchObject({ recent: [{ id: "done" }, { id: "broken", status: "failed" }, { id: "file" }] });
     for (const recent of [undefined, [{ ...valid.recent[0], status: "removed" }], [{ ...valid.recent[0], finishedAt: "later" }], [{ ...valid.recent[0], link: undefined }]]) {
       body = { ...valid, recent };
+      await expect(api.getQueue("live")).rejects.toThrow("invalid response");
+    }
+  });
+
+  it("accepts provider titles and channels and rejects malformed ones", async () => {
+    const valid = describedVideos();
+    let body: unknown = valid;
+    const api = createHttpVideosApi({ fetch: createFetch(() => json(body)) });
+    await expect(api.getQueue("live")).resolves.toMatchObject({ items: [{ id: "yt", providerTitle: "Never Gonna Give You Up (Official Video)", channelName: "Rick Astley" }, {}, {}, {}, {}] });
+    for (const change of [{ providerTitle: 5 }, { channelName: { name: "x" } }, { providerTitle: undefined }]) {
+      body = { ...valid, items: [{ ...valid.items[0], ...change }] };
       await expect(api.getQueue("live")).rejects.toThrow("invalid response");
     }
   });
