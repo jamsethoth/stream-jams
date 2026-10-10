@@ -20,7 +20,7 @@
 
 - [x] 4.1 Unit tests for hook handling, installer options, and installer artifact metadata.
 - [x] 4.2 Playwright install, launch, uninstall and data-retention test.
-- [ ] 4.3 Hosted Windows CI passes the installer test.
+- [x] 4.3 Hosted Windows CI passes the installer test (CI run 38022728101).
 
 ## 5. Documentation
 
