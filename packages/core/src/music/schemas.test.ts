@@ -43,6 +43,10 @@ describe("Music normalized boundaries", () => {
       }
     }
   });
+  it("accepts YouTube track IDs that start with a dash or underscore", () => {
+    for (const id of ["-tJYN-eG1zk", "_OBlgSz8sSM"]) expect(musicSnapshotSchema.safeParse({ ...observation, track: { ...observation.track, id } }).success).toBe(true);
+    for (const id of [".hidden", ":x", "a b"]) expect(musicSnapshotSchema.safeParse({ ...observation, track: { ...observation.track, id } }).success).toBe(false);
+  });
   it("rejects malformed clocks, progress and revision without coercion", () => {
     for (const field of ["positionMs", "durationMs", "observedAtEpochMs", "revision"] as const) {
       for (const value of [-1, NaN, Infinity, -Infinity, "100"]) expect(musicSnapshotSchema.safeParse({ ...observation, [field]: value }).success).toBe(false);

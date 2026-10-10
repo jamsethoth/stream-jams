@@ -23,7 +23,7 @@ export const Connected: Story = {
 
 export const AuthorizationRequired: Story = {
   args: { api: createStoryManagementApi({ listRegisteredProviders: async () => [provider], getMusicStatus: async () => ({ ...baseStatus, status: { state: "auth-required", stale: false, diagnosticReference: "ref_story" } }), getProvider: async () => ({ provider, configuration: { baseUrl: "http://127.0.0.1:26538", transport: "auto" }, availableVoices: [], ttsSafety: null }) }) },
-  play: async ({ canvasElement }) => { await expect(await within(canvasElement).findByText(/Pear authorization is required/u)).toBeVisible(); }
+  play: async ({ canvasElement }) => { await expect(await within(canvasElement).findByText(/Pear needs to be paired again/u)).toBeVisible(); }
 };
 
 export const Reconnecting: Story = {
