@@ -219,7 +219,7 @@ export function MusicSourcesPage({ api, initialProviderId }: { readonly api: Mus
       <p><strong>Music module:</strong> {status?.enabled ? "Enabled" : "Disabled"}</p>
       <p><strong>Selected source:</strong> {providers.find(provider => provider.id === status?.selectedProviderId)?.name ?? "None"}</p>
       <p role="status"><strong>Live connection:</strong> {status?.enabled ? status.status.state : "Not running while Music is disabled"}{status?.status.stale || refreshError !== null ? " — status stale" : ""}</p>
-      {status?.status.state === "auth-required" ? <p role="alert">Pear authorization is required. Re-pair the selected source below.</p> : null}
+      {status?.status.state === "auth-required" ? <p role="alert">Pear needs to be paired again because its authorization, address or certificate changed. Re-pair the selected source below, then save the new authorization.</p> : null}
       {status?.status.diagnosticReference ? <p>Diagnostic reference: <code>{status.status.diagnosticReference}</code></p> : null}
       <Group gap="sm" wrap="wrap"><Button disabled={busy || status === null} onClick={() => void runAction(() => api.setOverlayModuleEnabled("music", !status!.enabled), status?.enabled ? "Music module disabled." : "Music module enabled.")} type="button">{status?.enabled ? "Disable Music" : "Enable Music"}</Button>
       {selected?.active ? <Button disabled={busy} onClick={() => void runAction(() => api.reconnectMusicSource(selected.id), "Music source reconnecting.")} type="button">Reconnect source</Button> : null}</Group>
@@ -250,10 +250,10 @@ export function MusicSourcesPage({ api, initialProviderId }: { readonly api: Mus
         <Button disabled={busy || name.trim() === ""} onClick={() => void beginPairing()} type="button">{pairing === null ? "Pair Pear Desktop" : "Start new pairing"}</Button>
         {pairing !== null ? <Button variant="default" disabled={busy} onClick={cancelPairing} type="button">Cancel pairing</Button> : null}
         <Button disabled={busy || pairing?.status !== "approved"} onClick={() => void testConnection()} type="button">Test connection</Button>
-        <Button disabled={busy || pairing?.status !== "approved" || validation?.valid !== true} onClick={() => void save()} type="button">{adding ? "Save source" : "Replace authorization"}</Button>
+        <Button disabled={busy || pairing?.status !== "approved" || validation?.valid !== true} onClick={() => void save()} type="button">{adding ? "Save source" : "Save new authorization"}</Button>
       </div>
       {pairing !== null ? <p role="status">Pear approval: {pairingStatusLabel(pairing.status)}</p> : null}
-      {validation?.valid === true ? <p role="status">Connection test passed. Save to use this source.</p> : null}
+      {validation?.valid === true ? <p role="status">{adding ? "Connection test passed. Save to use this source." : "Connection test passed. Save the new authorization to use it."}</p> : null}
       {validation?.error ? <ManagementErrorBanner error={validation.error} /> : null}
       {pairing?.status === "denied" || pairing?.status === "expired" ? <p role="alert">Pairing did not complete. Start a new pairing request and approve it in Pear Desktop.</p> : null}
       {error === null ? null : <ManagementErrorBanner error={error} />}
