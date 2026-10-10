@@ -3,7 +3,7 @@
 ## Product And Architecture
 
 - Stream Jams is a local-first streaming overlay app. The MVP serves a React management UI, browser-source overlays, HTTP API, assets, and WebSockets from a local Node/Fastify service bound to `127.0.0.1` by default.
-- Current outputs include module-specific and unified browser-source URLs plus an opt-in Windows desktop overlay and explicitly selected local audio devices. The implemented Electron host provides a tray, an unsigned Windows x64 runnable folder, and an unsigned per-user Squirrel installer, both as verified CI artifacts. OBS WebSocket, native OBS plugins, LAN mode, cloud sync, Docker delivery, signing, and automatic updates remain deferred.
+- Current outputs include module-specific and unified browser-source URLs plus an opt-in Windows desktop overlay and explicitly selected local audio devices. The implemented Electron host provides a tray, an unsigned Windows x64 runnable folder, and an unsigned NSIS setup wizard, both as verified CI artifacts. OBS WebSocket, native OBS plugins, LAN mode, cloud sync, Docker delivery, signing, and automatic updates remain deferred.
 - Monorepo boundaries:
   - `apps/server`: Fastify HTTP/WebSocket service and runtime composition.
   - `apps/web`: React/Vite management and overlay UIs.

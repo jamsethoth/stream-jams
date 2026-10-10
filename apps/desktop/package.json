@@ -20,7 +20,7 @@
     "@electron-forge/core": "8.0.1",
     "@electron-forge/shared-types": "8.0.1",
     "electron": "44.5.1",
-    "electron-winstaller": "5.4.4",
+    "electron-builder": "26.15.3",
     "typescript": "6.0.3",
     "vite": "8.3.2"
   }
