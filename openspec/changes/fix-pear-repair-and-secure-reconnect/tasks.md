@@ -15,4 +15,4 @@
 
 - [x] 3.1 Unit tests for HTTP-to-HTTPS, changed and untrusted certificates (auto, ws, poll), unreachable Pear, and dash-prefixed track IDs.
 - [x] 3.2 Management page test for re-pair save.
-- [ ] 3.3 Maintainer re-pairs Pear Desktop on Windows and live Music reaches connected.
+- [x] 3.3 Maintainer re-pairs Pear Desktop on Windows and live Music reaches connected.

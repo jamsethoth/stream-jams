@@ -41,7 +41,7 @@ export interface ManagementUiRouteDependencies {
     | "replaceMusicCredential"
   >;
   readonly musicPairingService?: Pick<PearPairingService, "begin" | "get" | "cancel" | "acceptCertificate"> | undefined;
-  readonly musicManagementService?: Pick<MusicManagementService, "getStatus" | "reconnect"> | undefined;
+  readonly musicManagementService?: Pick<MusicManagementService, "getStatus" | "getNowPlaying" | "reconnect"> | undefined;
   readonly alertSetManagementService: Pick<
     AlertSetManagementService,
     | "listSets"

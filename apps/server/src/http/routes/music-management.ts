@@ -1,4 +1,4 @@
-import { musicCredentialReplacementInputSchema, musicCredentialReplacementResultSchema, musicManagementStatusSchema, musicPairingAttemptViewSchema, musicPairingCertificateAcceptanceSchema, pearConfigurationSchema } from "@stream-jams/core";
+import { musicCredentialReplacementInputSchema, musicCredentialReplacementResultSchema, musicManagementStatusSchema, musicPairingAttemptViewSchema, musicPairingCertificateAcceptanceSchema, musicSnapshotSchema, musicStatusSchema, pearConfigurationSchema } from "@stream-jams/core";
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
 import type { PearPairingService } from "../../modules/music/pear-pairing-service.js";
 import type { MusicManagementService } from "../../modules/music/music-management-service.js";
@@ -10,7 +10,7 @@ import { readParam, sendProviderCommandError } from "./management-route-errors.j
 
 export interface MusicManagementRouteDependencies {
   readonly pairing: Pick<PearPairingService, "begin" | "get" | "cancel" | "acceptCertificate">;
-  readonly management?: Pick<MusicManagementService, "getStatus" | "reconnect"> | undefined;
+  readonly management?: Pick<MusicManagementService, "getStatus" | "getNowPlaying" | "reconnect"> | undefined;
   readonly providers?: Pick<ProviderManagementService, "replaceMusicCredential"> | undefined;
   readonly preHandlers: preHandlerHookHandler[];
 }
@@ -42,6 +42,10 @@ export function registerMusicManagementRoutes(app: FastifyInstance, dependencies
     app.get("/management/music/status", { preHandler }, async () =>
       musicManagementStatusSchema.parse(await dependencies.management!.getStatus())
     );
+    app.get("/management/music/now-playing", { preHandler }, async () => {
+      const { status, snapshot } = dependencies.management!.getNowPlaying();
+      return { status: musicStatusSchema.parse(status), snapshot: snapshot === null ? null : musicSnapshotSchema.parse(snapshot) };
+    });
     app.post("/management/music/providers/:providerId/reconnect", { preHandler }, async (request, reply) => {
       try { return musicManagementStatusSchema.parse(await dependencies.management!.reconnect(readParam(request.params, "providerId"))); }
       catch (error) {

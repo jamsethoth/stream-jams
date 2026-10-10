@@ -95,6 +95,18 @@ describe("MusicRuntimeCoordinator", () => {
     await f.runtime.stop();
   });
 
+  it("exposes the live snapshot only while the source is connected and fresh", async () => {
+    const f = fixture(); f.setEnabled(true); await f.runtime.reconcile();
+    const source = f.sources[0]!;
+    expect(f.runtime.getLiveSnapshot()).toBeNull();
+    source.onStatus?.(connected); source.onSnapshot?.(snapshot(f.runtime.generation!, 1, 1000));
+    expect(f.runtime.getLiveSnapshot()?.track?.id).toBe("song");
+    source.onStatus?.({ state: "reconnecting", stale: false, diagnosticReference: null });
+    expect(f.runtime.getLiveSnapshot()).toBeNull();
+    await f.runtime.stop();
+    expect(f.runtime.getLiveSnapshot()).toBeNull();
+  });
+
   it("rejects out-of-order revisions while polls and pausing preserve the appearance epoch", async () => {
     const f = fixture(); f.setEnabled(true); await f.runtime.reconcile();
     const source = f.sources[0]!; const generation = f.runtime.generation!;

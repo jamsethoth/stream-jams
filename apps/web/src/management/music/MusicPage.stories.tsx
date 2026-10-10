@@ -87,3 +87,19 @@ export const DisclosuresAndColourSelection: Story = {
     await expect(canvas.getByRole("button", { name: "Disable custom CSS" })).toBeVisible();
   }
 };
+
+export const LiveTrack: Story = {
+  args: { api: createStoryManagementApi({
+    listMusicOutputs: async () => [],
+    getMusicNowPlaying: async () => ({
+      status: { state: "connected", stale: false, diagnosticReference: null },
+      snapshot: { providerId: "pear-story", generation: "music_story", revision: 1, track: { id: "story-live", title: "Live from Pear", artists: ["Story Artist"], album: "Preview Sessions", artworkRef: "art_story" }, playbackState: "playing", positionMs: 42_000, durationMs: 180_000, observedAtEpochMs: Date.parse("2026-07-15T05:00:00.000Z"), session: null }
+    }),
+    getMusicArtwork: async () => (await fetch("/storybook-assets/tiny-image.png")).blob()
+  }) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText("Showing the track playing in the selected Music source.")).toBeVisible();
+    await expect(canvas.getAllByText("Live from Pear").length).toBeGreaterThan(0);
+  }
+};

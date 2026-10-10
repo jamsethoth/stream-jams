@@ -490,6 +490,8 @@ function createManagementApi(): ManagementApi {
     getMusicPairing: vi.fn(async () => ({ attemptId: "pair_test", status: "approved" as const, expiresAt: "2026-07-16T18:00:00.000Z", configuration: { baseUrl: "http://127.0.0.1:26538", transport: "auto" as const }, certificate: null })),
     cancelMusicPairing: vi.fn(async () => undefined),
     acceptMusicPairingCertificate: vi.fn(async () => { throw new Error("No certificate review in this fixture"); }),
+    getMusicNowPlaying: vi.fn(async () => ({ status: { state: "disconnected" as const, stale: false, diagnosticReference: null }, snapshot: null })),
+    getMusicArtwork: vi.fn(async (): Promise<Blob> => { throw new Error("No Music artwork in this test."); }),
     getMusicStatus: vi.fn(async () => ({ enabled: false, selectedProviderId: null, status: { state: "disconnected" as const, stale: false, diagnosticReference: null }, missingAssetIds: { landscape: [], vertical: [] } })),
     reconnectMusicSource: vi.fn(async () => ({ enabled: false, selectedProviderId: null, status: { state: "disconnected" as const, stale: false, diagnosticReference: null }, missingAssetIds: { landscape: [], vertical: [] } })),
     replaceMusicCredential: vi.fn(async () => ({ validation: { valid: true, connectionState: "connected" as const, intakeState: null, validatedAt: "2026-07-15T05:00:00.000Z", availableVoices: [], error: null }, runtimeReconcilePending: false, credentialRetirementPending: false })),
