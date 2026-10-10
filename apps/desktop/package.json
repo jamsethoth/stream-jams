@@ -19,9 +19,9 @@
   "devDependencies": {
     "@electron-forge/core": "8.0.1",
     "@electron-forge/shared-types": "8.0.1",
-    "electron": "44.5.1",
+    "electron": "44.6.0",
     "electron-builder": "26.15.3",
     "typescript": "6.0.3",
-    "vite": "8.3.2"
+    "vite": "8.3.3"
   }
 }

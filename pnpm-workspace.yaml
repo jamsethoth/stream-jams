@@ -5,6 +5,9 @@ nodeVersion: 24.16.0
 engineStrict: true
 runtimeOnFail: download
 overrides:
+  # Jest 30.5 rejects Storybook's module.register() loader hook before stories run.
+  # Retain the working runtime until Storybook supports that Jest restriction.
+  'jest-runtime': 30.4.2
   # The sprintf-js <=1.1.3 denial-of-service advisory has no patched release. electron-builder only
   # reaches it through @electron/get's optional proxy agent, which a
   # prepackaged installer build never uses to download Electron.
