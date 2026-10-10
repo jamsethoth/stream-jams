@@ -53,13 +53,28 @@ export const videoMirrorIceCandidateSchema = z.object({
 
 const sdpSchema = z.string().min(1).max(maximumSdpLength);
 
-/** Messages a receiver sends to the primary player. */
-export const videoMirrorReceiverSignalSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("hello"), connection: connectionSchema }).strict(),
+/** What a receiver plays: the device output needs sound only, the desktop overlay the picture only. */
+export type VideoMirrorMedia = "audio" | "video" | "both";
+/** The largest picture a receiver may declare; anything bigger than the capture is never upscaled. */
+export const videoMirrorMaximumWidth = 3840;
+export const videoMirrorMaximumHeight = 2160;
+
+/** Messages a receiver sends to the primary player. Pure, so overlays, which only receive, drop it. */
+export const videoMirrorReceiverSignalSchema = /* @__PURE__ */ (() => z.discriminatedUnion("type", [
+  /*
+   * `media` defaults to both. `maxWidth` and `maxHeight` are the device pixels the receiver
+   * shows the picture at, so the publisher encodes no more than that.
+   */
+  z.object({
+    type: z.literal("hello"), connection: connectionSchema,
+    media: z.enum(["audio", "video", "both"]).optional(),
+    maxWidth: z.number().int().min(1).max(videoMirrorMaximumWidth).optional(),
+    maxHeight: z.number().int().min(1).max(videoMirrorMaximumHeight).optional()
+  }).strict(),
   z.object({ type: z.literal("answer"), connection: connectionSchema, sdp: sdpSchema }).strict(),
   z.object({ type: z.literal("ice"), connection: connectionSchema, candidate: videoMirrorIceCandidateSchema }).strict(),
   z.object({ type: z.literal("bye"), connection: connectionSchema }).strict()
-]);
+]))();
 
 /** Messages the primary player sends to one receiver. */
 export const videoMirrorPublisherSignalSchema = z.discriminatedUnion("type", [
@@ -70,14 +85,38 @@ export const videoMirrorPublisherSignalSchema = z.discriminatedUnion("type", [
 ]);
 
 export type VideoMirrorReceiverSignal = z.infer<typeof videoMirrorReceiverSignalSchema>;
+export type VideoMirrorHello = Extract<VideoMirrorReceiverSignal, { type: "hello" }>;
+/** What one receiver asks the publisher for. */
+export type VideoMirrorRequest = Pick<VideoMirrorHello, "media" | "maxWidth" | "maxHeight">;
 export type VideoMirrorPublisherSignal = z.infer<typeof videoMirrorPublisherSignalSchema>;
 export type VideoMirrorIceCandidate = z.infer<typeof videoMirrorIceCandidateSchema>;
+
+/** Frame rate of the capture and the cap on every encode. */
+export const videoMirrorFrameRate = 30;
+/** Bitrate cap for a full 1920 x 1080 encode; smaller encodes get a proportional share. */
+export const videoMirrorFullHdBitrate = 6_000_000;
+const minimumVideoBitrate = 600_000;
+
+/**
+ * Encoding for one receiver's video: scaled down (never up) to the picture size it declared,
+ * at the capture frame rate, with a bitrate cap proportional to the encoded area.
+ */
+export function videoMirrorVideoEncoding(capture: { readonly width: number; readonly height: number }, request: VideoMirrorRequest): {
+  readonly scaleResolutionDownBy: number; readonly maxBitrate: number; readonly maxFramerate: number;
+} {
+  const ratio = (size: number, limit: number | undefined) => limit === undefined || !(size > 0) ? 1 : size / limit;
+  // Two decimals, rounded up, so the encode is never larger than the box.
+  const scale = Math.max(1, Math.ceil(Math.max(ratio(capture.width, request.maxWidth), ratio(capture.height, request.maxHeight)) * 100) / 100);
+  const area = capture.width > 0 && capture.height > 0 ? capture.width * capture.height / (scale * scale) : 1920 * 1080;
+  const maxBitrate = Math.round(Math.max(minimumVideoBitrate, Math.min(videoMirrorFullHdBitrate, videoMirrorFullHdBitrate * area / (1920 * 1080))) / 1000) * 1000;
+  return { scaleResolutionDownBy: scale, maxBitrate, maxFramerate: videoMirrorFrameRate };
+}
 
 /** Overlay WebSocket message type for mirror signaling in both directions. */
 export const videoMirrorSignalMessageType = "videos.mirror.signal";
 
 /** Receiver ids are assigned by the relay, never by the receiver, so one output cannot speak for another. */
-export const videoMirrorReceiverIdSchema = z.string().regex(/^(?:browser|desktop):[A-Za-z0-9_.:-]{1,120}$/u);
+export const videoMirrorReceiverIdSchema = /* @__PURE__ */ (() => z.string().regex(/^(?:browser|desktop):[A-Za-z0-9_.:-]{1,120}$/u))();
 
 export const videoDeviceDelayMaximumMs = 500;
 

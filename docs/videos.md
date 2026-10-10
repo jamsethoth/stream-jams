@@ -106,6 +106,8 @@ While the desktop app runs, it plays each video once in a hidden player and mirr
 
 If a browser source loses the mirror, it reconnects on its own. Stopping or skipping a video ends its sound on every output.
 
+Each output costs the desktop app its own video encode, done in software when **Use GPU acceleration** is turned off in Settings. To keep that down, every output asks only for what it plays: the device output gets sound only, the desktop overlay and muted browser sources get the picture only, and the picture is encoded no larger than the output shows it (the Videos box in screen pixels, never above the 1080p capture), at up to 30 fps. Under load the encode lowers resolution before it drops frames, so motion stays smooth. Unmuting a browser source, turning **OBS audio** on or enlarging the box mid-video reconnects that output once, with a brief blank; muting or shrinking does not. In a local benchmark this cut the app's CPU for a mirrored 1080p video with three outputs by about 30% (see [video mirror feasibility](verification/video-mirror-feasibility.md#2026-10-10-mirror-cpu-reductions-linux-container)).
+
 The mirrored picture shows only the video: YouTube and Twitch control bars, titles and play buttons are hidden from the start. For Twitch clips the desktop player also picks the best quality the clip offers. Without the desktop app, YouTube players start without controls, but Twitch embeds keep their own overlay.
 
 ### Without the desktop app

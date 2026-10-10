@@ -1,5 +1,5 @@
 import type { VideosProjection } from "@stream-jams/core";
-import type { VideoMirrorConnector, VideoMirrorPublisherSignal, VideoMirrorReceiverSignal } from "@stream-jams/core/videos";
+import { videoMirrorUpgradeDelayMs, type VideoMirrorConnector, type VideoMirrorPublisherSignal, type VideoMirrorReceiverSignal } from "@stream-jams/core/videos";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VideosOverlay } from "./VideosOverlay.js";
@@ -49,7 +49,8 @@ describe("VideosOverlay mirror mode", () => {
     expect(overlay).toHaveAttribute("data-state", "connecting");
     expect(overlay).toHaveAttribute("data-delivery", "mirror");
     expect(screen.queryByText("The big play")).toBeNull();
-    expect(sent).toEqual([{ type: "hello", connection: 1 }]);
+    // Sound and the picture at the box's frame size (default box, 1:1 canvas in the test DOM).
+    expect(sent).toEqual([{ type: "hello", connection: 1, media: "both", maxWidth: 1382, maxHeight: 777 }]);
     await connect(peers, deliver);
     expect(overlay).toHaveAttribute("data-state", "playing");
     expect(screen.getByText("The big play")).toBeVisible();
@@ -92,6 +93,63 @@ describe("VideosOverlay mirror mode", () => {
     rerender(<VideosOverlay createMirrorPeerConnection={create} mirror={value} projection={mirrored(false, false)} />);
     expect(video.muted).toBe(true);
     expect(peers).toHaveLength(1);
+  });
+
+  it("asks the desktop overlay and muted outputs for the picture only, sized to the frame in device pixels", () => {
+    const first = connector();
+    render(<VideosOverlay mirror={first.value} mirrorAudio={false} projection={mirrored()} />);
+    expect(first.sent).toEqual([{ type: "hello", connection: 1, media: "video", maxWidth: 1382, maxHeight: 777 }]);
+    cleanup();
+    const second = connector();
+    render(<VideosOverlay mirror={second.value} muted projection={mirrored()} />);
+    expect(second.sent[0]).toMatchObject({ media: "video" });
+    cleanup();
+    const third = connector();
+    render(<VideosOverlay mirror={third.value} projection={mirrored(false, false)} />);
+    expect(third.sent[0]).toMatchObject({ media: "video" });
+    cleanup();
+    // A canvas scaled to a 1280 x 720 browser source on a 2x display: 2/3 of the canvas, twice the pixels.
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 640 * 2 / 3, height: 460 * 2 / 3 } as DOMRect);
+    vi.spyOn(window, "devicePixelRatio", "get").mockReturnValue(2);
+    const scaled = connector();
+    render(<VideosOverlay mirror={scaled.value} projection={mirrored(false, true, { x: 40, y: 600, width: 640, height: 460 })} />);
+    expect(scaled.sent).toEqual([{ type: "hello", connection: 1, media: "both", maxWidth: 853, maxHeight: 480 }]);
+  });
+
+  it("reconnects with sound once when it is unmuted mid-item, and keeps the connection when muted", async () => {
+    vi.useFakeTimers();
+    const { value, sent, deliver } = connector();
+    const peers: FakePeer[] = [];
+    const create = () => { const peer = new FakePeer(); peers.push(peer); return peer as unknown as RTCPeerConnection; };
+    const { rerender } = render(<VideosOverlay createMirrorPeerConnection={create} mirror={value} muted projection={mirrored()} />);
+    await connect(peers, deliver);
+    expect(sent[0]).toMatchObject({ type: "hello", connection: 1, media: "video" });
+    rerender(<VideosOverlay createMirrorPeerConnection={create} mirror={value} projection={mirrored()} />);
+    rerender(<VideosOverlay createMirrorPeerConnection={create} mirror={value} muted projection={mirrored()} />);
+    rerender(<VideosOverlay createMirrorPeerConnection={create} mirror={value} projection={mirrored()} />);
+    act(() => { vi.advanceTimersByTime(videoMirrorUpgradeDelayMs); });
+    const hellos = () => sent.filter(signal => signal.type === "hello");
+    expect(hellos()).toEqual([expect.objectContaining({ media: "video" }), { type: "hello", connection: 2, media: "both", maxWidth: 1382, maxHeight: 777 }]);
+    expect(peers[0]!.closed).toBe(true);
+    // Muting again, or turning OBS audio off, only mutes the element.
+    rerender(<VideosOverlay createMirrorPeerConnection={create} mirror={value} muted projection={mirrored()} />);
+    rerender(<VideosOverlay createMirrorPeerConnection={create} mirror={value} projection={mirrored(false, false)} />);
+    act(() => { vi.advanceTimersByTime(videoMirrorUpgradeDelayMs * 4); });
+    expect(hellos()).toHaveLength(2);
+    expect(screen.getByTestId<HTMLVideoElement>("video-overlay-mirror").muted).toBe(true);
+  });
+
+  it("reconnects for a bigger box but not a smaller one", () => {
+    vi.useFakeTimers();
+    const { value, sent } = connector();
+    const small = { x: 40, y: 600, width: 640, height: 460 };
+    const { rerender } = render(<VideosOverlay mirror={value} projection={mirrored(false, true, small)} />);
+    rerender(<VideosOverlay mirror={value} projection={mirrored(false, true, { ...small, width: 600, height: 400 })} />);
+    act(() => { vi.advanceTimersByTime(videoMirrorUpgradeDelayMs); });
+    expect(sent.filter(signal => signal.type === "hello")).toHaveLength(1);
+    rerender(<VideosOverlay mirror={value} projection={mirrored()} />);
+    act(() => { vi.advanceTimersByTime(videoMirrorUpgradeDelayMs); });
+    expect(sent.filter(signal => signal.type === "hello").map(signal => signal.type === "hello" ? signal.maxWidth : null)).toEqual([640, 1382]);
   });
 
   it("reports unavailable and stays hidden when the desktop player is not ready", () => {

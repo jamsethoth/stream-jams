@@ -18,8 +18,8 @@ export function VideoBox({ layout, children, ...attributes }: { readonly layout:
 
 /** The picture's size in canvas pixels; it stays the same with or without a caption. */
 export function videoFrameStyle(layout: VideosLayout): CSSProperties {
-  const { frame } = videosPlacementGeometry(layout);
-  return { width: frame.width, height: frame.height };
+  // A fresh object of exactly width and height on every call.
+  return videosPlacementGeometry(layout).frame;
 }
 
 /** Title and requester under the picture, matching its width. Renders nothing without either. */

@@ -1,4 +1,7 @@
-import { isLocalHostIceCandidate, parseYouTubeMessage, videoMirrorIceServers, type VideoMirrorReceiverSignal } from "@stream-jams/core/videos";
+import {
+  isLocalHostIceCandidate, parseYouTubeMessage, videoMirrorFrameRate, videoMirrorIceServers, videoMirrorVideoEncoding,
+  type VideoMirrorHello, type VideoMirrorReceiverSignal
+} from "@stream-jams/core/videos";
 import type { VideoPlayerCommand, VideoPlayerReport } from "./video-ipc.js";
 
 /*
@@ -175,31 +178,54 @@ function load(command: LoadCommand): void {
 
 /* Capture and publishing. */
 
+interface Connection {
+  readonly connection: number;
+  readonly pc: RTCPeerConnection;
+  /** Diagnostics without receiver ids: media, then per video sender its scale, bitrate and frame rate caps. */
+  summary: string;
+}
+
 let captured: MediaStream | null = null;
-const connections = new Map<string, { readonly connection: number; readonly pc: RTCPeerConnection }>();
+const connections = new Map<string, Connection>();
+const captureSize = { width: 1920, height: 1080 };
 
 function captureLive(): boolean {
   return captured !== null && captured.getTracks().length > 0 && captured.getTracks().every(track => track.readyState === "live");
+}
+
+/** Inspectable state for diagnostics and acceptance tests; receiver ids stay private. */
+function describeConnections(): void {
+  document.documentElement.dataset.mirrorPeers = [...connections.values()].map(entry => entry.summary).join(";");
+}
+
+function closeConnection(receiverId: string, entry: Connection): void {
+  entry.pc.close();
+  if (connections.get(receiverId) === entry) connections.delete(receiverId);
+  describeConnections();
+}
+
+function closeAll(): void {
+  for (const connection of connections.values()) connection.pc.close();
+  connections.clear();
+  describeConnections();
 }
 
 window.streamJamsStartCapture = async () => {
   if (captureLive()) return true;
   try {
     const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: 30, width: 1920, height: 1080 },
+      video: { frameRate: videoMirrorFrameRate, width: captureSize.width, height: captureSize.height },
       // Music, not a call: no voice processing, keep stereo. The hidden player must not also play
       // its own sound locally, or every output is heard twice at different delays.
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2, suppressLocalAudioPlayback: true } as MediaTrackConstraints
     });
-    for (const connection of connections.values()) connection.pc.close();
-    connections.clear();
+    closeAll();
     captured = stream;
     for (const track of stream.getTracks()) {
       track.addEventListener("ended", () => {
         if (captured !== stream) return;
         captured = null;
-        for (const connection of connections.values()) connection.pc.close();
-        connections.clear();
+        closeAll();
         report({ type: "capture", ok: false, reason: "capture-ended" });
       }, { once: true });
     }
@@ -215,24 +241,43 @@ function sendToReceiver(receiverId: string, signal: Extract<VideoPlayerReport, {
   report({ type: "signal", receiverId, signal });
 }
 
+/**
+ * Every receiver costs its own software encode (hardware acceleration is off), so each one
+ * gets only what it plays: no video for the device output, no audio for the desktop overlay,
+ * and video no larger than the picture it shows. Motion stays smooth under load: the encoder
+ * lowers resolution before it drops frames.
+ */
+async function limitVideo(sender: RTCRtpSender, track: MediaStreamTrack, hello: VideoMirrorHello): Promise<string> {
+  const settings = track.getSettings();
+  const encoding = videoMirrorVideoEncoding({ width: settings.width ?? captureSize.width, height: settings.height ?? captureSize.height }, hello);
+  const parameters = sender.getParameters();
+  const first = parameters.encodings[0];
+  if (first === undefined) return "unlimited";
+  Object.assign(first, encoding);
+  parameters.degradationPreference = "maintain-framerate";
+  try { await sender.setParameters(parameters); }
+  // error-provenance: allow expected -- a refused cap still mirrors, at the capture size, rather than leaving the receiver blank
+  catch { return "unlimited"; }
+  const applied = sender.getParameters();
+  const used = applied.encodings[0];
+  return [used?.scaleResolutionDownBy, used?.maxBitrate, used?.maxFramerate, applied.degradationPreference].join(",");
+}
+
 async function receiverSignal(receiverId: string, signal: VideoMirrorReceiverSignal): Promise<void> {
   const existing = connections.get(receiverId);
   if (signal.type === "bye") {
-    if (existing !== undefined && (signal.connection === Number.MAX_SAFE_INTEGER || signal.connection === existing.connection)) {
-      existing.pc.close();
-      connections.delete(receiverId);
-    }
+    if (existing !== undefined && (signal.connection === Number.MAX_SAFE_INTEGER || signal.connection === existing.connection)) closeConnection(receiverId, existing);
     return;
   }
   if (signal.type === "hello") {
-    if (!captureLive() || captured === null) { sendToReceiver(receiverId, { type: "not-ready", connection: signal.connection }); return; }
-    existing?.pc.close();
-    connections.delete(receiverId);
-    if (connections.size >= maximumConnections) { sendToReceiver(receiverId, { type: "not-ready", connection: signal.connection }); return; }
+    if (existing !== undefined) closeConnection(receiverId, existing);
+    const media = signal.media ?? "both";
+    const tracks = captured === null || !captureLive() ? [] : captured.getTracks().filter(track => media === "both" || track.kind === media);
+    if (captured === null || tracks.length === 0 || connections.size >= maximumConnections) { sendToReceiver(receiverId, { type: "not-ready", connection: signal.connection }); return; }
+    const stream = captured;
     const pc = new RTCPeerConnection({ iceServers: [...videoMirrorIceServers] });
-    const entry = { connection: signal.connection, pc };
+    const entry: Connection = { connection: signal.connection, pc, summary: media };
     connections.set(receiverId, entry);
-    for (const track of captured.getTracks()) pc.addTrack(track, captured);
     pc.addEventListener("icecandidate", event => {
       const candidate = event.candidate;
       if (candidate === null || connections.get(receiverId) !== entry || !isLocalHostIceCandidate(candidate.candidate)) return;
@@ -241,8 +286,14 @@ async function receiverSignal(receiverId: string, signal: VideoMirrorReceiverSig
       } });
     });
     pc.addEventListener("connectionstatechange", () => {
-      if ((pc.connectionState === "failed" || pc.connectionState === "closed") && connections.get(receiverId) === entry) { pc.close(); connections.delete(receiverId); }
+      if ((pc.connectionState === "failed" || pc.connectionState === "closed") && connections.get(receiverId) === entry) closeConnection(receiverId, entry);
     });
+    for (const track of tracks) {
+      const sender = pc.addTrack(track, stream);
+      if (track.kind === "video") entry.summary += `:${await limitVideo(sender, track, signal)}`;
+    }
+    if (connections.get(receiverId) !== entry) return;
+    describeConnections();
     await pc.setLocalDescription(await pc.createOffer());
     const sdp = pc.localDescription?.sdp;
     if (connections.get(receiverId) === entry && sdp !== undefined) sendToReceiver(receiverId, { type: "offer", connection: entry.connection, sdp });
@@ -269,8 +320,7 @@ bridge?.onCommand(command => {
         () => {
         const entry = connections.get(command.receiverId);
         if (entry === undefined || entry.connection !== command.signal.connection) return;
-        entry.pc.close();
-        connections.delete(command.receiverId);
+        closeConnection(command.receiverId, entry);
       });
       break;
   }

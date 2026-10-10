@@ -128,3 +128,23 @@ Twitch clip, with one OBS browser source, the desktop receiver and two ticked de
 5. The desktop overlay receiver shows the picture muted.
 6. Device output runs in its own hidden receiver, with one `AudioContext` per device created with that device's `sinkId`, and the stream kept on a muted media element.
 7. Stop, Skip and app exit end the player's sound.
+
+### 2026-10-10: Mirror CPU reductions (Linux container)
+
+Owner report: playing a video in the Videos module cost noticeable CPU on Windows, while alerts and effects did not. Every receiver had its own peer connection carrying the full 1080p capture, so each output cost a full software video encode (hardware acceleration is off app-wide), and the device output received and decoded video it never shows.
+
+Change: receivers say what they need in `hello` (`media`, `maxWidth`, `maxHeight`). The device output asks for audio, the desktop overlay for video, browser sources for video or both (when they play OBS audio), each with its frame size in device pixels. The publisher adds only the requested tracks and sets each video sender to `scaleResolutionDownBy` for that box (never up), `maxFramerate` 30, `maxBitrate` 6 Mbps scaled by encoded area (minimum 0.6 Mbps), and `degradationPreference: "maintain-framerate"`. The capture stays one 1080p, 30 fps capture.
+
+Method: a local Electron script (not committed) using the production player host, player window and device window, with `app.disableHardwareAcceleration()` as in the product, under `xvfb-run` at 1920 x 1080 on a 4-core container. Three receivers: the device output (one fixture device), a desktop-overlay-like window and a browser-source-like window, both showing the default box (1382 x 778). After the item started and the receivers connected (+2 s), `app.getAppMetrics()` `cpu.percentCPUUsage` was summed over all processes once a second for 10 s; figures are means, in percent of one core, three runs each unless noted. Clips: the repo fixture `neutral-with-audio.webm` (320 x 180, looped to 30 s) and a 1080p30 VP8 `testsrc2` motion clip with a tone. The receiver windows are included; without the browser-source-like window (which runs in OBS in practice) the app totals are about 1.5 to 4.5 points lower.
+
+| Clip | No receivers | Before | After | Player page before → after | Device window before → after |
+| --- | --- | --- | --- | --- | --- |
+| Fixture (looped) | 4.7 | 18.2 | 12.2 | 7.0 → 3.9 | 1.5 → 0.5 |
+| 1080p motion | 20.3 | 85.6 | 60.4 | 52.9 → 29.5 | 4.3 → 0.5 |
+
+- With the motion clip, the mirror's own cost (total minus no receivers) fell from about 65 to 40 points of one core, 38% less; the totals fell 29% (fixture 33%).
+- Smoothness improved: before, both video receivers got 20 to 24 fps of VP8 at 1918 px wide (the encoder could not keep up three times); after, 30 fps at 1380 px wide. The device window had no video track.
+- Alternatives measured with the motion clip (two runs each): `balanced` 61.2 with 15 to 30 fps; `maintain-resolution` 60.8 with 12 to 20 fps; no bitrate cap 64.0 with 26 to 29 fps; `contentHint = "motion"` 26.4 but Chromium's CPU adaptation dropped the picture to 344 px wide, which changes what viewers see, so it is not used. `maintain-framerate` with the scaled cap kept full frame rate at the box size for the least CPU among the options that keep the picture.
+- Not shareable: WebRTC encodes per peer connection, so two receivers asking for the same size still cost two encodes. Sharing one encode would need an SFU-style forwarder or a non-WebRTC transport, which is out of scope.
+- What remains: the source decode in the player (software VP9 or AV1 for YouTube, H.264 for Twitch), the 1080p capture and compositing in the GPU process (software, about 14 points at idle playback with the motion clip), and one encode per video receiver. Ideas: let the operator cap the capture at 720p, re-enable hardware acceleration for the player window only if the shutdown issue allows, or prefer H.264 through OpenH264 if it measures cheaper than VP8.
+

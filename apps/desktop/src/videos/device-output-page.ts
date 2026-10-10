@@ -4,7 +4,8 @@ import type { VideoDevicesCommand, VideoDevicesReport } from "./video-ipc.js";
 /*
  * Hidden device-output receiver for the Videos mirror (OpenSpec add-video-request-queue 5.5).
  * It runs outside the captured player, so its sound is never captured back into the mirror.
- * Remote WebRTC audio needs the stream attached to a media element, so it stays on a muted
+ * It asks the publisher for sound only, so no video is encoded or decoded for it. Remote
+ * WebRTC audio needs the stream attached to a media element, so it stays on a muted
  * `<video>`; each selected device gets its own AudioContext bound to that device, with a
  * per-device delay to line it up with OBS.
  */
@@ -111,7 +112,8 @@ const receiver = startVideoMirrorReceiver({
       () => undefined);
     void rebuild();
   },
-  onState: () => undefined
+  onState: () => undefined,
+  request: () => ({ media: "audio" })
 });
 
 bridge?.onCommand(command => {

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { serializeException, type VideoPlaybackClock, type VideoSource, type VideosLayout, type VideosProjection } from "@stream-jams/core";
+import { serializeException, videosPlacementGeometry, type VideoPlaybackClock, type VideoSource, type VideosLayout, type VideosProjection } from "@stream-jams/core";
 import { buildVideoPlayerUrl, parseYouTubeMessage, videoClockPositionMs, videoInstructionPrefix, videoMediaDurationMaximumMs, videoProviderOrigin, videosProjectionSchema } from "@stream-jams/core/videos";
 import type { OverlayPlaybackEvent } from "./OverlaySurface.js";
 import { VideoBox, VideoCaption, videoFrameStyle } from "./VideoPlacement.js";
-import { startVideoMirrorReceiver, type VideoMirrorConnector, type VideoMirrorReceiverState } from "@stream-jams/core/videos";
+import { startVideoMirrorReceiver, videoMirrorPictureSize, type VideoMirrorConnector, type VideoMirrorReceiver, type VideoMirrorReceiverState } from "@stream-jams/core/videos";
 
 export { parseYouTubeMessage } from "@stream-jams/core/videos";
 import "../overlay.css";
@@ -113,26 +113,39 @@ interface MirrorReceiverProps {
 /**
  * Shows the desktop primary player's stream. Stays transparent until frames arrive and
  * whenever the mirror is unavailable; reconnects on its own and releases the connection on unmount.
+ * It asks only for what it plays: sound only while audible, and a picture no larger than its
+ * frame in device pixels. Needing more later (unmuted, a bigger box) reconnects once; needing less does not.
  */
 function MirrorReceiver({ connector, context, layout, muted, paused, createPeerConnection }: MirrorReceiverProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [state, setState] = useState<VideoMirrorReceiverState>("connecting");
-  const mutedRef = useRef(muted);
+  // The latest props, read by the receiver's callbacks.
+  const latest = useRef({ muted, layout });
+  const receiverRef = useRef<VideoMirrorReceiver | null>(null);
   useEffect(() => {
-    mutedRef.current = muted;
+    latest.current = { muted, layout };
     if (videoRef.current !== null) videoRef.current.muted = muted;
-  }, [muted]);
+    receiverRef.current?.refresh();
+  }, [muted, layout]);
   useEffect(() => {
     const receiver = startVideoMirrorReceiver({
       connector,
       createPeerConnection,
+      request: () => {
+        const box = latest.current.layout;
+        const { frame } = videosPlacementGeometry(box);
+        // The canvas is scaled to the output; measure the box to get device pixels.
+        const width = videoRef.current?.closest(".video-overlay")?.getBoundingClientRect().width ?? 0;
+        const scale = (width / box.width || 1) * devicePixelRatio;
+        return { media: latest.current.muted ? "video" : "both", ...videoMirrorPictureSize(frame.width * scale, frame.height * scale) };
+      },
       onState: setState,
       onStream: stream => {
         const video = videoRef.current;
         if (video === null || video.srcObject === stream) return;
         video.srcObject = stream;
         if (stream === null) return;
-        video.muted = mutedRef.current;
+        video.muted = latest.current.muted;
         // A browser that refuses autoplay with sound still shows the picture.
         void video.play().catch(
           // error-provenance: allow expected -- autoplay with sound was refused; show the picture muted instead
@@ -144,6 +157,8 @@ function MirrorReceiver({ connector, context, layout, muted, paused, createPeerC
           });
       }
     });
+    // A stopped receiver ignores refresh, so the ref needs no clearing.
+    receiverRef.current = receiver;
     return () => {
       receiver.stop();
       const video = videoRef.current;

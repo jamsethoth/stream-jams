@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   desktopVideoCommandSchema, desktopVideoEventSchema, isLocalHostIceCandidate, overlayVideoDurationReportSchema, parseYouTubeMessage,
-  videoMediaDurationMaximumMs, videoMirrorPublisherSignalSchema, videoMirrorReceiverIdSchema, videoMirrorReceiverSignalSchema
+  videoMediaDurationMaximumMs, videoMirrorPublisherSignalSchema, videoMirrorReceiverIdSchema, videoMirrorReceiverSignalSchema, videoMirrorVideoEncoding
 } from "./contract.js";
 import { videosModuleConfigSchema, createDefaultVideosModuleConfig } from "./schemas.js";
 
@@ -38,6 +38,23 @@ describe("mirror signals", () => {
     expect(videoMirrorReceiverSignalSchema.safeParse({ type: "hello", connection: 1, extra: true }).success).toBe(false);
   });
 
+  it("lets a hello declare the media it plays and the picture size it shows", () => {
+    const hello = (fields: object) => videoMirrorReceiverSignalSchema.safeParse({ type: "hello", connection: 1, ...fields }).success;
+    for (const media of ["audio", "video", "both"]) expect(hello({ media }), media).toBe(true);
+    expect(hello({ media: "video", maxWidth: 1382, maxHeight: 778 })).toBe(true);
+    expect(hello({ maxWidth: 1, maxHeight: 1 })).toBe(true);
+    expect(hello({ maxWidth: 3840, maxHeight: 2160 })).toBe(true);
+    expect(hello({ maxWidth: 640 })).toBe(true);
+    expect(videoMirrorReceiverSignalSchema.parse({ type: "hello", connection: 1 })).toEqual({ type: "hello", connection: 1 });
+    for (const fields of [
+      { media: "none" }, { media: "AUDIO" }, { media: null }, { media: ["audio"] },
+      { maxWidth: 0 }, { maxWidth: -1 }, { maxWidth: 3841 }, { maxHeight: 2161 }, { maxWidth: 1382.5 }, { maxHeight: Number.NaN },
+      { maxWidth: Number.POSITIVE_INFINITY }, { maxWidth: "1382" }, { maxWidth: null }, { size: 1 }
+    ]) expect(hello(fields), JSON.stringify(fields)).toBe(false);
+    // Only a hello carries a request.
+    expect(videoMirrorReceiverSignalSchema.safeParse({ type: "bye", connection: 1, media: "audio" }).success).toBe(false);
+  });
+
   it("rejects non-local ICE in either direction", () => {
     const candidate = { candidate: host("8.8.4.4"), sdpMid: "0", sdpMLineIndex: 0 };
     expect(videoMirrorReceiverSignalSchema.safeParse({ type: "ice", connection: 1, candidate }).success).toBe(false);
@@ -48,6 +65,28 @@ describe("mirror signals", () => {
     expect(videoMirrorReceiverIdSchema.safeParse("browser:client-1").success).toBe(true);
     expect(videoMirrorReceiverIdSchema.safeParse("desktop:overlay").success).toBe(true);
     expect(videoMirrorReceiverIdSchema.safeParse("client-1").success).toBe(false);
+  });
+});
+
+describe("videoMirrorVideoEncoding", () => {
+  const capture = { width: 1920, height: 1080 };
+  it("scales a full-size capture down to the declared box at the capture frame rate", () => {
+    expect(videoMirrorVideoEncoding(capture, { maxWidth: 1382, maxHeight: 778 })).toEqual({ scaleResolutionDownBy: 1.39, maxBitrate: 3_105_000, maxFramerate: 30 });
+    expect(videoMirrorVideoEncoding(capture, { maxWidth: 960, maxHeight: 540 })).toEqual({ scaleResolutionDownBy: 2, maxBitrate: 1_500_000, maxFramerate: 30 });
+    // The tighter side wins, rounded up so the encode never exceeds the box.
+    expect(videoMirrorVideoEncoding(capture, { maxWidth: 1920, maxHeight: 360 }).scaleResolutionDownBy).toBe(3);
+    expect(1920 / videoMirrorVideoEncoding(capture, { maxWidth: 1383 }).scaleResolutionDownBy).toBeLessThanOrEqual(1383);
+  });
+
+  it("never upscales and caps a full-size encode at 6 Mbps", () => {
+    for (const request of [{}, { media: "both" as const }, { maxWidth: 1920, maxHeight: 1080 }, { maxWidth: 3840, maxHeight: 2160 }]) {
+      expect(videoMirrorVideoEncoding(capture, request)).toEqual({ scaleResolutionDownBy: 1, maxBitrate: 6_000_000, maxFramerate: 30 });
+    }
+  });
+
+  it("keeps a usable bitrate floor for small boxes and tolerates an unknown capture size", () => {
+    expect(videoMirrorVideoEncoding(capture, { maxWidth: 240, maxHeight: 135 })).toEqual({ scaleResolutionDownBy: 8, maxBitrate: 600_000, maxFramerate: 30 });
+    expect(videoMirrorVideoEncoding({ width: 0, height: 0 }, { maxWidth: 640, maxHeight: 360 })).toEqual({ scaleResolutionDownBy: 1, maxBitrate: 6_000_000, maxFramerate: 30 });
   });
 });
 

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { startVideoMirrorReceiver, videoMirrorOfferTimeoutMs, type VideoMirrorReceiverState } from "./mirror-receiver.js";
-import type { VideoMirrorPublisherSignal, VideoMirrorReceiverSignal } from "./mirror.js";
+import {
+  startVideoMirrorReceiver, videoMirrorOfferTimeoutMs, videoMirrorPictureSize, videoMirrorRequestGrew, videoMirrorUpgradeDelayMs,
+  type VideoMirrorReceiverState
+} from "./mirror-receiver.js";
+import type { VideoMirrorPublisherSignal, VideoMirrorReceiverSignal, VideoMirrorRequest } from "./mirror.js";
 
 class FakeTimers {
   now = 0;
@@ -39,7 +42,7 @@ class FakePeer {
   state(next: RTCPeerConnectionState) { this.connectionState = next; this.onconnectionstatechange?.(); }
 }
 
-function setup() {
+function setup(request?: () => VideoMirrorRequest) {
   const timers = new FakeTimers();
   const sent: VideoMirrorReceiverSignal[] = [];
   const listeners = new Set<(signal: VideoMirrorPublisherSignal) => void>();
@@ -51,7 +54,8 @@ function setup() {
     onStream: stream => streams.push(stream),
     onState: state => states.push(state),
     createPeerConnection: configuration => { const peer = new FakePeer(configuration); peers.push(peer); return peer as unknown as RTCPeerConnection; },
-    timers
+    timers,
+    request
   });
   const deliver = (signal: VideoMirrorPublisherSignal) => { for (const listener of listeners) listener(signal); };
   const flush = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -142,5 +146,98 @@ describe("startVideoMirrorReceiver", () => {
     expect(streams.at(-1)).toBeNull();
     expect(listeners.size).toBe(0);
     expect(timers.pending).toBe(0);
+  });
+});
+
+describe("receiver requests", () => {
+  it("declares its media and picture size in every hello", () => {
+    let request: VideoMirrorRequest = { media: "video", maxWidth: 1382, maxHeight: 778 };
+    const { sent, deliver, timers } = setup(() => request);
+    expect(sent).toEqual([{ type: "hello", connection: 1, media: "video", maxWidth: 1382, maxHeight: 778 }]);
+    request = { media: "audio" };
+    deliver({ type: "not-ready", connection: 1 });
+    timers.advance(1000);
+    expect(sent.at(-1)).toEqual({ type: "hello", connection: 2, media: "audio" });
+  });
+
+  it("reconnects once, after a short delay, when it needs sound or a bigger picture", async () => {
+    let request: VideoMirrorRequest = { media: "video", maxWidth: 640, maxHeight: 360 };
+    const { receiver, sent, peers, states, deliver, timers, flush } = setup(() => request);
+    deliver({ type: "offer", connection: 1, sdp: "offer" });
+    await flush();
+    peers[0]!.state("connected");
+    request = { media: "both", maxWidth: 640, maxHeight: 360 };
+    receiver.refresh();
+    receiver.refresh();
+    timers.advance(videoMirrorUpgradeDelayMs - 1);
+    expect(sent.filter(signal => signal.type === "hello")).toHaveLength(1);
+    timers.advance(1);
+    expect(sent.at(-1)).toEqual({ type: "hello", connection: 2, media: "both", maxWidth: 640, maxHeight: 360 });
+    expect(peers[0]!.closed).toBe(true);
+    expect(states.at(-1)).toBe("playing");
+    deliver({ type: "offer", connection: 2, sdp: "offer" });
+    await flush();
+    peers[1]!.state("connected");
+    request = { media: "both", maxWidth: 1280, maxHeight: 720 };
+    receiver.refresh();
+    timers.advance(videoMirrorUpgradeDelayMs);
+    expect(sent.at(-1)).toEqual({ type: "hello", connection: 3, media: "both", maxWidth: 1280, maxHeight: 720 });
+  });
+
+  it("does not reconnect when it needs less, or when a change is undone within the delay", async () => {
+    let request: VideoMirrorRequest = { media: "both", maxWidth: 1280, maxHeight: 720 };
+    const { receiver, sent, peers, deliver, timers, flush } = setup(() => request);
+    deliver({ type: "offer", connection: 1, sdp: "offer" });
+    await flush();
+    peers[0]!.state("connected");
+    request = { media: "video", maxWidth: 640, maxHeight: 360 };
+    receiver.refresh();
+    timers.advance(videoMirrorUpgradeDelayMs * 4);
+    // Muted then unmuted again quickly: the connection still carries sound.
+    request = { media: "both", maxWidth: 1280, maxHeight: 720 };
+    receiver.refresh();
+    timers.advance(videoMirrorUpgradeDelayMs * 4);
+    expect(sent.filter(signal => signal.type === "hello")).toHaveLength(1);
+    expect(peers[0]!.closed).toBe(false);
+  });
+
+  it("cancels a pending reconnect on stop and ignores refresh without a request", () => {
+    let request: VideoMirrorRequest = { media: "video" };
+    const { receiver, sent, timers } = setup(() => request);
+    request = { media: "both" };
+    receiver.refresh();
+    receiver.stop();
+    receiver.refresh();
+    expect(timers.pending).toBe(0);
+    expect(sent.filter(signal => signal.type === "hello")).toHaveLength(1);
+    const plain = setup();
+    plain.receiver.refresh();
+    expect(plain.timers.pending).toBe(1); // Only the offer timeout.
+    expect(plain.sent).toEqual([{ type: "hello", connection: 1 }]);
+  });
+});
+
+describe("videoMirrorRequestGrew", () => {
+  it("treats missing media as both and a missing size as unbounded", () => {
+    expect(videoMirrorRequestGrew({ media: "audio" }, { media: "both" })).toBe(true);
+    expect(videoMirrorRequestGrew({ media: "audio" }, {})).toBe(true);
+    expect(videoMirrorRequestGrew({ media: "video" }, { media: "audio" })).toBe(true);
+    expect(videoMirrorRequestGrew({}, { media: "audio" })).toBe(false);
+    expect(videoMirrorRequestGrew({ maxWidth: 640, maxHeight: 360 }, {})).toBe(true);
+    expect(videoMirrorRequestGrew({}, { maxWidth: 640, maxHeight: 360 })).toBe(false);
+    expect(videoMirrorRequestGrew({ maxWidth: 640, maxHeight: 360 }, { maxWidth: 640, maxHeight: 361 })).toBe(true);
+    // Size does not matter to a receiver that wants no picture.
+    expect(videoMirrorRequestGrew({ media: "audio", maxWidth: 10 }, { media: "audio", maxWidth: 1000 })).toBe(false);
+  });
+});
+
+describe("videoMirrorPictureSize", () => {
+  it("rounds to whole pixels within the schema bounds and drops unknown sizes", () => {
+    expect(videoMirrorPictureSize(1382, 777.375)).toEqual({ maxWidth: 1382, maxHeight: 777 });
+    expect(videoMirrorPictureSize(853.3333, 480.0000001)).toEqual({ maxWidth: 853, maxHeight: 480 });
+    expect(videoMirrorPictureSize(0.2, 0.1)).toEqual({ maxWidth: 1, maxHeight: 1 });
+    expect(videoMirrorPictureSize(7680, 4320)).toEqual({ maxWidth: 3840, maxHeight: 2160 });
+    expect(videoMirrorPictureSize(0, 360)).toEqual({});
+    expect(videoMirrorPictureSize(Number.NaN, 360)).toEqual({});
   });
 });

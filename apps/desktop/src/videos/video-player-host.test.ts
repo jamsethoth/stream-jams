@@ -220,6 +220,27 @@ describe("VideoPlayerHost", () => {
     expect(players[0]!.sent.at(-1)).toMatchObject({ receiverId: "browser:client-1" });
   });
 
+  it("relays each receiver's media and picture size to the player and drops invalid requests", async () => {
+    const { host, players, devices } = setup();
+    const overlay = host.attachDesktopReceiver("desktop:overlay", "live", () => undefined);
+    host.handle({ type: "load", purpose: "live", itemId: "a", source: youtube, positionMs: 0, paused: false });
+    host.handle({ type: "set-output", purpose: "live", muted: false, devices: [{ deviceId: "speakers", delayMs: 0 }] });
+    await vi.advanceTimersByTimeAsync(0);
+    const relayed = () => players[0]!.sent.filter(command => command.type === "signal");
+    host.handle({ type: "signal", purpose: "live", receiverId: "browser:client-1", signal: { type: "hello", connection: 1, media: "both", maxWidth: 1382, maxHeight: 778 } });
+    overlay.send({ type: "hello", connection: 1, media: "video", maxWidth: 2560, maxHeight: 1440 });
+    devices[0]!.report({ type: "signal", signal: { type: "hello", connection: 1, media: "audio" } });
+    expect(relayed()).toEqual([
+      { type: "signal", receiverId: "browser:client-1", signal: { type: "hello", connection: 1, media: "both", maxWidth: 1382, maxHeight: 778 } },
+      { type: "signal", receiverId: "desktop:overlay", signal: { type: "hello", connection: 1, media: "video", maxWidth: 2560, maxHeight: 1440 } },
+      { type: "signal", receiverId: "desktop:devices", signal: { type: "hello", connection: 1, media: "audio" } }
+    ]);
+    host.handle({ type: "signal", purpose: "live", receiverId: "browser:client-1", signal: { type: "hello", connection: 2, media: "picture" } as never });
+    overlay.send({ type: "hello", connection: 2, maxWidth: 4000 } as never);
+    devices[0]!.report({ type: "signal", signal: { type: "hello", connection: 2, media: "audio", maxHeight: 0 } });
+    expect(relayed()).toHaveLength(3);
+  });
+
   it("drops public ICE candidates from the page", async () => {
     const { host, players, events } = setup();
     host.handle({ type: "load", purpose: "live", itemId: "a", source: youtube, positionMs: 0, paused: false });

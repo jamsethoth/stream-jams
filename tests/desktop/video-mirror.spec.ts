@@ -16,7 +16,7 @@ interface MainState {
   videoFixtureError?: string;
   videoEvents: VideoEvent[];
   videoDiagnostics: { source: string }[];
-  desktopSignals: { type: string; sdp?: string }[];
+  desktopSignals: { type: string; connection?: number; sdp?: string }[];
   desktopReceiver: { send(signal: unknown): void; detach(): void };
   videoHost: { handle(command: unknown): void; serviceLost(): void };
 }
@@ -80,19 +80,40 @@ test("desktop primary player captures one hidden page and mirrors it to the devi
     expect(player.url()).toBe(playerUrl);
     expect(desktop.windows().some(page => URL.canParse(page.url()) && new URL(page.url()).hostname === "example.com")).toBe(false);
 
-    // A desktop receiver gets an offer carrying the captured picture and sound.
+    // A receiver that declares nothing gets an offer carrying the captured picture and sound.
+    const offer = (connection: number) => desktop.evaluate((_electron, id) => (globalThis as unknown as MainState).desktopSignals.find(signal => signal.type === "offer" && signal.connection === id)?.sdp ?? "", connection);
     await desktop.evaluate(() => (globalThis as unknown as MainState).desktopReceiver.send({ type: "hello", connection: 1 }));
-    await expect.poll(() => desktop.evaluate(() => (globalThis as unknown as MainState).desktopSignals.find(signal => signal.type === "offer")?.sdp ?? ""), { timeout: 10_000 })
-      .toMatch(/m=audio[\s\S]*m=video|m=video[\s\S]*m=audio/u);
+    await expect.poll(() => offer(1), { timeout: 10_000 }).toMatch(/m=audio[\s\S]*m=video|m=video[\s\S]*m=audio/u);
+    // The capture size depends on the display; the encode is never scaled up and is capped at 30 fps.
+    const peers = () => player.evaluate(() => (document.documentElement.dataset.mirrorPeers ?? "").split(";").filter(Boolean).sort());
+    const sender = (summary: string | undefined) => {
+      const [media, caps] = (summary ?? "").split(":");
+      const [scale, bitrate, framerate, degradation] = (caps ?? "").split(",");
+      return { media, scale: Number(scale), bitrate: Number(bitrate), framerate: Number(framerate), degradation };
+    };
+    await expect.poll(async () => (await peers()).length).toBe(1);
+    expect(sender((await peers())[0])).toEqual({ media: "both", scale: 1, bitrate: expect.any(Number), framerate: 30, degradation: "maintain-framerate" });
+    expect(sender((await peers())[0]).bitrate).toBeLessThanOrEqual(6_000_000);
+    // The desktop overlay asks for the picture only, at its frame size: no audio is sent and the encode is capped to the box.
+    await desktop.evaluate(() => (globalThis as unknown as MainState).desktopReceiver.send({ type: "hello", connection: 2, media: "video", maxWidth: 960, maxHeight: 540 }));
+    await expect.poll(() => offer(2), { timeout: 10_000 }).toMatch(/m=video/u);
+    expect(await offer(2)).not.toMatch(/m=audio/u);
+    await expect.poll(async () => sender((await peers())[0]).media).toBe("video");
+    const overlay = sender((await peers())[0]);
+    expect(overlay).toMatchObject({ framerate: 30, degradation: "maintain-framerate" });
+    expect(overlay.scale).toBeGreaterThan(1);
+    expect(overlay.bitrate).toBeLessThanOrEqual(1_500_000);
 
     // Device fan-out runs in its own hidden receiver, outside the captured page, with the per-device delay.
     await command(desktop, { type: "set-output", purpose: "live", muted: false, devices: [{ deviceId: "fixture-output", delayMs: 120 }] });
     const devices = await windowByUrl(desktop, devicesUrl);
+    // It asks for sound only: its connection carries no video, so nothing is encoded or decoded for it.
     await expect.poll(() => devices.evaluate(() => {
       const video = document.querySelector("video");
       const stream = video?.srcObject;
-      return stream instanceof MediaStream && video!.muted && video!.videoWidth > 0 && stream.getAudioTracks().some(track => track.readyState === "live");
+      return stream instanceof MediaStream && video!.muted && stream.getVideoTracks().length === 0 && stream.getAudioTracks().some(track => track.readyState === "live");
     }), { timeout: 15_000 }).toBe(true);
+    await expect.poll(async () => (await peers()).map(summary => sender(summary).media)).toEqual(["audio", "video"]);
     await expect.poll(() => devices.evaluate(() => ({ ...document.documentElement.dataset }))).toMatchObject({ outputs: "1", muted: "false", delaysMs: "120" });
     // Mute and delay changes apply in place.
     await command(desktop, { type: "set-output", purpose: "live", muted: true, devices: [{ deviceId: "fixture-output", delayMs: 40 }] });
