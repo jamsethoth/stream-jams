@@ -173,6 +173,7 @@ jobs:
     timeout-minutes: 30
     outputs:
       artifact-name: ${{ steps.portable-desktop-metadata.outputs.artifact-name }}
+      installer-artifact-name: ${{ steps.desktop-installer-metadata.outputs.installer-artifact-name }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -188,6 +189,10 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Package unsigned Windows folder
         run: pnpm desktop:package
+      # Built before the portable metadata step so the installer contains only
+      # the packaged application, not the portable BUILD-STATUS notice.
+      - name: Build unsigned Windows installer
+        run: pnpm desktop:installer
       - name: Prepare portable desktop artifact
         id: portable-desktop-metadata
         run: node scripts/portable-desktop-artifact.mjs prepare
@@ -206,6 +211,24 @@ jobs:
           STREAM_JAMS_PORTABLE_ARTIFACT_URL: ${{ steps.portable-desktop-artifact.outputs.artifact-url }}
           STREAM_JAMS_PORTABLE_ARTIFACT_DIGEST: ${{ steps.portable-desktop-artifact.outputs.artifact-digest }}
         run: node scripts/portable-desktop-artifact.mjs summarize
+      - name: Prepare desktop installer artifact
+        id: desktop-installer-metadata
+        run: node scripts/portable-desktop-artifact.mjs prepare-installer
+      - name: Upload built desktop installer artifact (not desktop-test-verified)
+        id: desktop-installer-artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.desktop-installer-metadata.outputs.installer-artifact-name }}
+          path: apps/desktop/out/installer/StreamJamsSetup.exe
+          if-no-files-found: error
+          retention-days: 30
+          include-hidden-files: false
+      - name: Record desktop installer artifact
+        env:
+          STREAM_JAMS_INSTALLER_ARTIFACT_NAME: ${{ steps.desktop-installer-metadata.outputs.installer-artifact-name }}
+          STREAM_JAMS_INSTALLER_ARTIFACT_URL: ${{ steps.desktop-installer-artifact.outputs.artifact-url }}
+          STREAM_JAMS_INSTALLER_ARTIFACT_DIGEST: ${{ steps.desktop-installer-artifact.outputs.artifact-digest }}
+        run: node scripts/portable-desktop-artifact.mjs summarize-installer
 
   desktop:
     name: windows-desktop
@@ -233,10 +256,18 @@ jobs:
         with:
           name: ${{ needs.desktop-package.outputs.artifact-name }}
           path: apps/desktop/out/Stream Jams-win32-x64/
+      - name: Download the published installer
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.desktop-package.outputs.installer-artifact-name }}
+          path: apps/desktop/out/installer/
       - name: Verify isolated packaged runtime
         run: pnpm test:desktop
         env:
           CI: true
+          # The hosted runner's user profile is disposable, so the installer
+          # test may install and uninstall there.
+          STREAM_JAMS_INSTALLER_TEST: "1"
       - name: Upload desktop failure evidence
         if: failure()
         uses: actions/upload-artifact@v7

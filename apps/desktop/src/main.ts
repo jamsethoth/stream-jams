@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { basename, isAbsolute, resolve } from "node:path";
 import { app, crashReporter, dialog, utilityProcess } from "electron";
 import { AudioWindow, registerAudioPlayerScheme } from "./audio/audio-window.js";
@@ -12,6 +13,7 @@ import { ServiceSupervisor } from "./service-supervisor.js";
 import { createTray } from "./tray.js";
 import { ShutdownLog } from "./shutdown-log.js";
 import { collectPriorCrashDumpMetadata, createDesktopDiagnosticFallbackWriter, DesktopDiagnostics } from "./desktop-diagnostics.js";
+import { runSquirrelEvent, squirrelAppUserModelId, squirrelEvent } from "./squirrel-events.js";
 
 // Keep the management renderer off the hardware GPU process. On Windows 25H2,
 // that subprocess can remain in a terminating state after every JS quit event,
@@ -151,9 +153,16 @@ function requestQuit(): void {
   })().finally(() => { quitPending = null; });
 }
 
-if (!app.requestSingleInstanceLock()) {
+const installerEvent = squirrelEvent(process.argv);
+if (installerEvent !== null) {
+  // Installer hooks only manage shortcuts. They run before the single-instance
+  // lock so an update still completes while another instance is running.
+  void runSquirrelEvent(installerEvent, process.execPath).finally(() => app.exit(0));
+} else if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
+  const appUserModelId = squirrelAppUserModelId(process.execPath, existsSync);
+  if (appUserModelId !== null) app.setAppUserModelId(appUserModelId);
   shutdownLog = new ShutdownLog(process.env.STREAM_JAMS_SHUTDOWN_LOG);
   app.on("second-instance", () => management?.show());
   app.on("window-all-closed", () => { /* The tray owns service lifetime. */ });
