@@ -1067,12 +1067,19 @@ describe("runtime app composition smoke", () => {
   it("queues Streamer.bot and management video requests and plays them on the module browser source only when started", async () => {
     const testRoot = await createTemporaryDirectory();
     const streamerBotSockets: ControlledStreamerBotSocket[] = [];
+    // Video details come from a local stand-in; nothing reaches YouTube or Twitch.
+    const metadataRequests: string[] = [];
+    const videoMetadataFetch = (async (input: string | URL | Request) => {
+      metadataRequests.push(String(input));
+      return new Response(JSON.stringify({ title: "Never Gonna Give You Up", author_name: "Rick Astley" }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
     const composition = await createRuntimeAppComposition({
       homeDirectory: testRoot,
       webBuildDirectory: await createWebBuildFixture(testRoot),
       configStore: new StaticConfigStore(createConfig(testRoot)),
       environment: { TWITCH_CLIENT_ID: "test-client" },
       secretStore: new InMemorySecretStore(),
+      videoMetadataFetch,
       // Any Twitch API or EventSub use fails these doubles: Streamer.bot owns clip lookup.
       twitchApiClient: new ThrowingTwitchApiClient(),
       twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
@@ -1121,7 +1128,8 @@ describe("runtime app composition smoke", () => {
       readonly modules: readonly { readonly presentation?: { readonly videos: { readonly status: string; readonly itemId?: string; readonly delivery?: { readonly mode: string; readonly source?: unknown } } } }[];
     }).modules[0]?.presentation?.videos;
     const readQueue = async () => (await composition.app.inject({ url: "/videos/live", headers: authHeaders })).json() as {
-      readonly revision: number; readonly items: readonly { readonly id: string; readonly status: string; readonly submittedVia: string; readonly link: string }[];
+      readonly revision: number; readonly items: readonly { readonly id: string; readonly status: string; readonly submittedVia: string; readonly link: string;
+        readonly title: string | null; readonly providerTitle: string | null; readonly channelName: string | null }[];
     };
     expect(await readVideos()).toEqual({ status: "idle" });
 
@@ -1144,6 +1152,11 @@ describe("runtime app composition smoke", () => {
 
     const submitted = await composition.app.inject({ method: "POST", url: "/videos/live/requests?from=operator", headers: authHeaders, payload: { link: "https://www.youtube.com/watch?v=dQw4w9WgXcQ", durationSeconds: 30 } });
     expect(submitted.statusCode, submitted.body).toBe(201);
+    // The request is answered first; its YouTube title and channel follow from oEmbed.
+    await waitFor(async () => (await readQueue()).items.some(item => item.providerTitle !== null));
+    expect((await readQueue()).items.find(item => item.submittedVia === "operator")).toMatchObject({ title: null, providerTitle: "Never Gonna Give You Up", channelName: "Rick Astley" });
+    // Only the YouTube request was looked up: without a connected Twitch account the clip is skipped.
+    expect(metadataRequests).toEqual(["https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ&format=json"]);
     const started = await composition.app.inject({ method: "POST", url: "/videos/live/commands", headers: authHeaders, payload: { expectedRevision: (await readQueue()).revision, command: { kind: "play-next" } } });
     expect(started.statusCode, started.body).toBe(200);
     const first = (await readQueue()).items[0]!;

@@ -22,6 +22,7 @@
 .video-queue__list { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
 .video-queue__item { align-items: center; grid-template-columns: minmax(0, 1fr) auto; }
 .video-queue__item-actions { grid-column: 1 / -1; }
+.video-queue__item-summary .video-queue__byline { color: var(--color-text); }
 .video-queue__item-summary .video-queue__hold { color: var(--color-warning); font-weight: 600; }
 .video-queue__add { align-items: end; display: grid; gap: 8px; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; }
 @media (max-width: 640px) {

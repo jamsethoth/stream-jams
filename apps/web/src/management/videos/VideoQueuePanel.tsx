@@ -284,8 +284,8 @@ function NowPlaying({ busy, clockOffsetMs, control, headingTag: Heading, item, n
       <div className="video-queue__now-summary">
         <div>
           <Heading>Now playing</Heading>
-          <strong className="video-queue__title">{item?.title ?? <bdi dir="ltr">{item?.link ?? name}</bdi>}</strong>
-          <span>{[item?.requester === null || item?.requester === undefined ? null : `Requested by ${item.requester}`, item === null ? null : providerLabel(item.source.provider)].filter(Boolean).join(" · ")}</span>
+          <strong className="video-queue__title">{item === null ? name : <ItemTitle item={item} />}</strong>
+          <span>{[item?.channelName ?? null, item?.requester === null || item?.requester === undefined ? null : `Requested by ${item.requester}`, item === null ? null : providerLabel(item.source.provider)].filter(Boolean).join(" · ")}</span>
         </div>
         <StatusBadge label={current.phase === "loading" ? "Loading" : current.phase === "paused" ? "Paused" : "Playing"} tone={current.phase === "playing" ? "positive" : current.phase === "paused" ? "warning" : "info"} />
       </div>
@@ -316,16 +316,19 @@ function NowPlaying({ busy, clockOffsetMs, control, headingTag: Heading, item, n
 }
 
 function QueueItem({ actions, item }: { readonly actions: ReactNode; readonly item: VideoQueueItem }) {
+  // Channel and length sit under the title; who asked and how follows on its own line. Unknown details are left out.
+  const byline = [item.channelName, item.durationMs === null ? "Length unknown" : formatDuration(item.durationMs)]
+    .filter((value): value is string => value !== null);
   const details = [
     item.requester === null ? null : `Requested by ${item.requester}`,
     providerLabel(item.source.provider),
-    item.durationMs === null ? "Length unknown" : formatDuration(item.durationMs),
     `via ${channelLabel(item.submittedVia)}`
   ].filter((value): value is string => value !== null);
   return (
     <article aria-label={itemName(item)} className="video-queue__item">
       <div className="video-queue__item-summary">
-        <strong className="video-queue__title">{item.title ?? <bdi dir="ltr">{item.link}</bdi>}</strong>
+        <strong className="video-queue__title"><ItemTitle item={item} /></strong>
+        <span className="video-queue__byline">{byline.join(" · ")}</span>
         <span>{details.join(" · ")}</span>
         {item.status === "held" ? <span className="video-queue__hold">Over the length limit</span> : null}
       </div>
@@ -353,8 +356,8 @@ function RecentVideos({ busy, card: Card, headingTag: Heading, items, onReplay }
       <Heading ref={headingRef} tabIndex={-1}>Recent ({items.length})</Heading>
       {items.length === 0 ? <p className="management-empty">No videos have finished yet.</p> : (
         <ol className="operator-list">
-          {items.map(item => <li key={item.id}><Card label={itemName(item)} title={item.title ?? <bdi dir="ltr">{item.link}</bdi>}
-            summary={[item.requester === null ? null : `Requested by ${item.requester}`, providerLabel(item.source.provider), linkHost(item.link), `via ${channelLabel(item.submittedVia)}`].filter(Boolean).join(" · ")}
+          {items.map(item => <li key={item.id}><Card label={itemName(item)} title={<ItemTitle item={item} />}
+            summary={[item.channelName, item.requester === null ? null : `Requested by ${item.requester}`, providerLabel(item.source.provider), linkHost(item.link), `via ${channelLabel(item.submittedVia)}`].filter(Boolean).join(" · ")}
             action={<Button aria-label={`Replay ${itemName(item)} in Videos`} variant="default" size="xs" disabled={busy} onClick={event => { restoreFocusRef.current = event.currentTarget; onReplay(item); }}>Replay</Button>}
             details={[
               { label: "Module", value: "Videos" },
@@ -404,8 +407,15 @@ function AddVideoForm({ api, busy, onAdded, purpose }: {
   );
 }
 
+/** The submitted title wins; otherwise the provider's title; otherwise the link. */
 function itemName(item: VideoQueueItem): string {
-  return item.title ?? item.link;
+  return item.title ?? item.providerTitle ?? item.link;
+}
+
+function ItemTitle({ item }: { readonly item: VideoQueueItem }) {
+  const title = item.title ?? item.providerTitle;
+  // Provider titles and links can be in any script; isolate them so they never reorder the line around them.
+  return title === null ? <bdi dir="ltr">{item.link}</bdi> : <bdi>{title}</bdi>;
 }
 
 function providerLabel(provider: string): string {

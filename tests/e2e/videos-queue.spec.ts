@@ -4,13 +4,16 @@ import { resolve } from "node:path";
 import { expect, test, type APIRequestContext, type BrowserContext, type Frame, type Page } from "@playwright/test";
 import type { DesktopVideoCommand, DesktopVideoEvent, DesktopVideoTransport } from "../../packages/core/src/videos/mirror.js";
 import { createProviderSecurityRuntimeFixture } from "../../apps/server/src/test-support/provider-security-runtime-fixture.js";
+import { SqliteTwitchAccountRepository } from "../../apps/server/src/modules/twitch/sqlite-twitch-account-repository.js";
+import { createTwitchTokenSecretRef } from "../../apps/server/src/modules/twitch/twitch-oauth-service.js";
 
 // Videos queue acceptance against a real local runtime. Providers are stubbed: every
 // non-loopback request is answered locally, so no test reaches YouTube, Twitch or a file host.
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
 type Fixture = Awaited<ReturnType<typeof createProviderSecurityRuntimeFixture>>;
-type QueueItem = { readonly id: string; readonly status: string; readonly holdReason: string | null; readonly title: string | null; readonly submittedVia: string; readonly autoplay: boolean };
+type QueueItem = { readonly id: string; readonly status: string; readonly holdReason: string | null; readonly title: string | null; readonly submittedVia: string; readonly autoplay: boolean;
+  readonly providerTitle: string | null; readonly channelName: string | null; readonly durationMs: number | null; readonly link: string };
 type Queue = { readonly revision: number; readonly queuePaused: boolean; readonly runRemaining: number; readonly items: readonly QueueItem[];
   readonly recent: readonly (QueueItem & { readonly finishedAt: string; readonly link: string })[];
   readonly current: { readonly itemId: string; readonly phase: string; readonly positionMs: number } | null; readonly mirror: { readonly available: boolean } };
@@ -110,7 +113,8 @@ test("management submit queues a safe link without a length and rejects unsafe, 
   await expect(queue.getByRole("heading", { name: "Waiting (1)" })).toBeVisible();
   const waiting = queue.getByRole("article", { name: "Management pick" });
   await expect(waiting).toContainText("Queued");
-  await expect(waiting).toContainText("YouTube · Length unknown · via management");
+  await expect(waiting).toContainText("Length unknown");
+  await expect(waiting).toContainText("YouTube · via management");
   await expect(waiting).not.toContainText("Over the length limit");
   await expect(queue.getByRole("button", { name: "Play anyway: Management pick" })).toHaveCount(0);
   await expect(queue.getByRole("button", { name: "Play next" })).toBeEnabled();
@@ -123,6 +127,98 @@ test("management submit queues a safe link without a length and rejects unsafe, 
   const logs = await fixture.readLogs();
   for (const [value] of rejectedLinks) expect(logs).not.toContain(value);
   expect(logs).not.toContain("secret@");
+  expect(outbound()).toEqual([]);
+});
+
+test("queued requests show the provider's title and channel, and a Twitch length over the limit holds the clip", async ({ context, page }) => {
+  test.setTimeout(60_000);
+  const outbound = await stubProviders(context);
+  // The server's own lookups go to this stand-in for YouTube oEmbed and Twitch Helix, never the network.
+  const lookups: { readonly url: string; readonly authorization: string | null; readonly clientId: string | null }[] = [];
+  const answer = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+  const videoMetadataFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const headers = new Headers(init?.headers);
+    lookups.push({ url: url.href, authorization: headers.get("authorization"), clientId: headers.get("client-id") });
+    if (url.origin + url.pathname === "https://www.youtube.com/oembed" && url.searchParams.get("url") === "https://www.youtube.com/watch?v=e2eMetaYT01") {
+      return answer({ title: "Stubbed YouTube title", author_name: "Stub Channel", type: "video" });
+    }
+    if (url.origin + url.pathname === "https://api.twitch.tv/helix/clips" && url.searchParams.get("id") === "E2eLongClip") {
+      return answer({ data: [{ id: "E2eLongClip", title: "Stubbed long clip", broadcaster_name: "Clip Streamer", duration: 95.5 }] });
+    }
+    if (url.origin + url.pathname === "https://api.twitch.tv/helix/videos" && url.searchParams.get("id") === "987654321") {
+      return answer({ data: [{ id: "987654321", title: "Stubbed VOD", user_name: "Vod Streamer", duration: "45s" }] });
+    }
+    return new Response("not found", { status: 404 });
+  }) as typeof fetch;
+  await fixture.close();
+  fixture = await createProviderSecurityRuntimeFixture({ videoMetadataFetch });
+  await fixture.start();
+  // A connected Twitch account, as the Twitch connection flow would leave it.
+  await new SqliteTwitchAccountRepository(fixture.runtime.composition.database.connection).saveAccount({
+    accountId: "e2e-broadcaster", login: "e2e_streamer", displayName: "E2E Streamer", scopes: [], connectedAt: "2026-10-10T00:00:00.000Z", updatedAt: "2026-10-10T00:00:00.000Z"
+  });
+  await fixture.secretStore.setSecret(createTwitchTokenSecretRef("e2e-broadcaster", "access_token"), "e2e-user-token-value");
+  const saved = await fixture.request("/overlay-modules/videos/config", "PUT", { enabled: true, config: {
+    maxLengthSeconds: 60, gapSeconds: 0, allowedDirectHosts: [], obsAudio: true, audioDeviceIds: [], audioDeviceDelaysMs: {}, streamerBotAutoplay: true, rewardMappings: []
+  } });
+  expect(saved.status).toBe(200);
+
+  await page.goto(`${fixture.runtime.url}/manage/modules/videos`);
+  const queue = page.getByRole("region", { name: "Video queue" });
+  const form = queue.getByRole("form", { name: "Add video" });
+  const add = async (link: string, title = "") => {
+    await form.getByRole("textbox", { name: "Video link" }).fill(link);
+    await form.getByRole("textbox", { name: "Title (optional)" }).fill(title);
+    await form.getByRole("button", { name: "Add video" }).click();
+    await expect(form.getByRole("textbox", { name: "Video link" })).toHaveValue("");
+  };
+  await add("https://www.youtube.com/watch?v=e2eMetaYT01");
+  // A submitted title wins over the provider's; Twitch reports this clip at 1:35, over the 60 s limit.
+  await add("https://clips.twitch.tv/E2eLongClip", "My clip pick");
+  await add("https://www.twitch.tv/videos/987654321");
+
+  const youtube = queue.getByRole("article", { name: "Stubbed YouTube title" });
+  await expect(youtube).toContainText("Stub Channel · Length unknown");
+  await expect(youtube.getByText("Queued", { exact: true })).toBeVisible();
+  const clip = queue.getByRole("article", { name: "My clip pick" });
+  await expect(clip).toContainText("Clip Streamer · 1:35");
+  await expect(clip).toContainText("Over the length limit");
+  await expect(clip.getByText("Held", { exact: true })).toBeVisible();
+  await expect(queue.getByRole("button", { name: "Play anyway: My clip pick" })).toBeVisible();
+  const vod = queue.getByRole("article", { name: "Stubbed VOD" });
+  await expect(vod).toContainText("Vod Streamer · 0:45");
+  await expect(vod.getByText("Queued", { exact: true })).toBeVisible();
+  await expect(queue.getByText("undefined")).toHaveCount(0);
+
+  const items = (await readQueue()).items;
+  expect(items.map(item => [item.title, item.providerTitle, item.channelName, item.durationMs, item.status, item.holdReason])).toEqual([
+    [null, "Stubbed YouTube title", "Stub Channel", null, "queued", null],
+    ["My clip pick", "Stubbed long clip", "Clip Streamer", 95_500, "held", "over-limit"],
+    [null, "Stubbed VOD", "Vod Streamer", 45_000, "queued", null]
+  ]);
+  // Play next skips the held clip.
+  await queue.getByRole("button", { name: "Play next" }).click();
+  await expect(queue.getByRole("article", { name: "Now playing" })).toContainText("Stubbed YouTube title");
+  await expect(queue.getByRole("article", { name: "Now playing" })).toContainText("Stub Channel");
+
+  // The Operator shows the same details.
+  await page.goto(`${fixture.runtime.url}/operator`);
+  const operatorQueue = page.getByRole("region", { name: "Video queue" });
+  await expect(operatorQueue.getByRole("article", { name: "Stubbed VOD" })).toContainText("Vod Streamer · 0:45");
+  await expect(operatorQueue.getByRole("article", { name: "My clip pick" })).toContainText("Clip Streamer · 1:35");
+
+  // One lookup per request, only to YouTube oEmbed and Twitch Helix; the Twitch token goes only to Twitch.
+  expect(lookups.map(lookup => new URL(lookup.url).origin + new URL(lookup.url).pathname)).toEqual([
+    "https://www.youtube.com/oembed", "https://api.twitch.tv/helix/clips", "https://api.twitch.tv/helix/videos"
+  ]);
+  expect(lookups[0]?.authorization).toBeNull();
+  expect(lookups.slice(1).map(lookup => lookup.authorization)).toEqual(["Bearer e2e-user-token-value", "Bearer e2e-user-token-value"]);
+  expect(lookups.slice(1).every(lookup => (lookup.clientId ?? "") !== "")).toBe(true);
+  const logs = await fixture.readLogs();
+  expect(logs).not.toContain("e2e-user-token-value");
+  expect(logs).not.toContain("Stubbed long clip");
+  // The browser never contacted a provider for details.
   expect(outbound()).toEqual([]);
 });
 
@@ -153,7 +249,8 @@ test("an over-limit automation request waits held, plays through Play anyway, an
   const queue = page.getByRole("region", { name: "Video queue" });
   const held = queue.getByRole("article", { name: "Long request" });
   await expect(held).toContainText("Over the length limit");
-  await expect(held).toContainText("Requested by Patient Viewer · YouTube · 10:00 · via automation");
+  await expect(held).toContainText("10:00");
+  await expect(held).toContainText("Requested by Patient Viewer · YouTube · via automation");
   await expect(queue.getByRole("button", { name: "Play next" })).toBeDisabled();
 
   await queue.getByRole("button", { name: "Play anyway: Long request" }).click();
@@ -420,7 +517,8 @@ test("an unknown-length item the player reports over the limit is stopped, held 
   const held = queue.getByRole("article", { name: "Turns out long" });
   await expect(held).toContainText("Held");
   await expect(held).toContainText("Over the length limit");
-  await expect(held).toContainText("YouTube · 5:00 · via management");
+  await expect(held).toContainText("5:00");
+  await expect(held).toContainText("YouTube · via management");
   await expect(queue.getByRole("button", { name: "Play anyway: Turns out long" })).toBeEnabled();
   const state = await readQueue();
   expect(state.current).toMatchObject({ itemId: next.id });
@@ -469,7 +567,8 @@ test("without the desktop app, an unknown-length item the browser source reports
   const held = queue.getByRole("article", { name: "Long in browser" });
   await expect(held).toContainText("Held");
   await expect(held).toContainText("Over the length limit");
-  await expect(held).toContainText("YouTube · 5:00 · via management");
+  await expect(held).toContainText("5:00");
+  await expect(held).toContainText("YouTube · via management");
   await expect(queue.getByRole("button", { name: "Play anyway: Long in browser" })).toBeEnabled();
   expect((await readQueue()).items.find(item => item.id === long.id)).toMatchObject({ status: "held", holdReason: "over-limit" });
 

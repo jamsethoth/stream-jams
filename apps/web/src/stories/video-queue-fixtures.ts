@@ -5,7 +5,7 @@ const createdAt = "2026-10-08T18:00:00.000Z";
 
 export function videoItem(id: string, overrides: Partial<VideoQueueItem> = {}): VideoQueueItem {
   return {
-    id, purpose: "live", source: { provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 0 }, title: `Video ${id}`, requester: "viewer_one",
+    id, purpose: "live", source: { provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 0 }, title: `Video ${id}`, providerTitle: null, channelName: null, requester: "viewer_one",
     submittedVia: "streamerbot", durationMs: 95_000, status: "queued", holdReason: null, limitOverridden: false, autoplay: false,
     position: 1, createdAt, link: `https://youtu.be/${id}`, ...overrides
   };
@@ -23,6 +23,27 @@ export const queuedVideos = (): VideoQueueResponse => videoQueue({ items: [
   videoItem("a", { title: "Cat plays keyboard", position: 1 }),
   videoItem("b", { title: "Speedrun highlight", requester: "speedy", submittedVia: "channel-points", durationMs: 42_000, position: 2 }),
   videoItem("c", { title: null, requester: null, submittedVia: "management", position: 3, source: { provider: "direct", url: "https://videos.example.com/clip.mp4" }, link: "https://videos.example.com/clip.mp4" })
+] });
+
+/**
+ * Queue rows after provider lookup: a YouTube video with only its provider title and channel, a
+ * Twitch clip whose length came from Twitch, a submitted title that wins over the provider's,
+ * and a direct file that is never looked up.
+ */
+export const describedVideos = (): VideoQueueResponse => videoQueue({ items: [
+  videoItem("yt", { title: null, providerTitle: "Never Gonna Give You Up (Official Video)", channelName: "Rick Astley", durationMs: null, position: 1 }),
+  videoItem("clip", { title: null, providerTitle: "Clutch final round", channelName: "SpeedyStreamer", durationMs: 28_400, position: 2,
+    source: { provider: "twitch-clip", clipSlug: "FunnyClip" }, link: "https://clips.twitch.tv/FunnyClip" }),
+  videoItem("vod", { title: null, providerTitle: "Full charity marathon", channelName: "SpeedyStreamer", durationMs: 4_323_000, status: "held", holdReason: "over-limit", position: 3,
+    source: { provider: "twitch-vod", videoId: "123456789", startAtMs: 0 }, link: "https://www.twitch.tv/videos/123456789" }),
+  videoItem("named", { title: "Viewer's pick", providerTitle: "Provider title is kept beside it", channelName: "Some Channel", durationMs: null, position: 4 }),
+  videoItem("file", { title: null, requester: null, submittedVia: "management", durationMs: null, position: 5, source: { provider: "direct", url: "https://videos.example.com/clip.mp4" }, link: "https://videos.example.com/clip.mp4" })
+] });
+
+/** Recent videos with provider details: one known only by its provider title, one with a submitted title. */
+export const describedRecentVideos = (): VideoQueueResponse => videoQueue({ recent: [
+  recentVideo("yt", { title: null, providerTitle: "Never Gonna Give You Up (Official Video)", channelName: "Rick Astley", submittedVia: "channel-points", finishedAt: "2026-10-08T18:09:00.000Z" }),
+  recentVideo("named", { title: "Viewer's pick", providerTitle: "Provider title is kept beside it", channelName: "Some Channel", submittedVia: "operator", finishedAt: "2026-10-08T18:07:00.000Z" })
 ] });
 
 export const heldVideos = (): VideoQueueResponse => videoQueue({ items: [
