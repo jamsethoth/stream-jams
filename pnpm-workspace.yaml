@@ -35,8 +35,12 @@ allowBuilds:
   '@parcel/watcher': true
   esbuild: true
   unrs-resolver: true
+  # Squirrel installer builder. Its reviewed install script only copies the
+  # vendored 7-Zip binary for the host architecture to vendor/7z.exe.
+  electron-winstaller: true
 onlyBuiltDependencies:
   - electron
+  - electron-winstaller
   - '@swc/core'
   - '@parcel/watcher'
   - esbuild

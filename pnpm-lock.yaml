@@ -83,6 +83,9 @@ importers:
       electron:
         specifier: 44.5.1
         version: 44.5.1
+      electron-winstaller:
+        specifier: 5.4.4
+        version: 5.4.4
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -524,6 +527,11 @@ packages:
     resolution: {integrity: sha512-+bqFCP98pLI0Tt0XQo1TmlXtwjWchISndDOxCkEcIuUgXWpBnLyRI+2DU+mesvnMMX6L1XDqYNA0lXNDHd/yiA==}
     engines: {node: '>=22.12.0'}
 
+  '@electron/asar@3.4.1':
+    resolution: {integrity: sha512-i4/rNPRS84t0vSRa2HorerGRXWyF4vThfHesw0dmcWHp+cspK743UanA0suA5Q5y8kzY2y6YKrvbIUn69BCAiA==}
+    engines: {node: '>=10.12.0'}
+    hasBin: true
+
   '@electron/asar@4.3.1':
     resolution: {integrity: sha512-6pI64z/tMSBkUTZLQFYhs2YiB7fS9sKA6gy7/2nH1Ju7GGwT32UPsj4Mxsws5NMmtR6C0zYdXVxEU/rGqJRCJA==}
     engines: {node: '>=22.12.0'}
@@ -555,6 +563,11 @@ packages:
   '@electron/universal@3.0.6':
     resolution: {integrity: sha512-MonS1kfkZdSEkLZI0pdR/TCx8ecxwRSFm7sORfwIkDI9UaIbHnk4Mgeqq+Ob9qDQRV8LZ9+hHCmimpA9BRcNxw==}
     engines: {node: '>=22.12.0'}
+
+  '@electron/windows-sign@1.2.2':
+    resolution: {integrity: sha512-dfZeox66AvdPtb2lD8OsIIQh12Tp0GNCRUDfBHIKGpbmopZto2/A8nSpYYLoedPIHpqkeblZ/k8OV0Gy7PYuyQ==}
+    engines: {node: '>=14.14'}
+    hasBin: true
 
   '@electron/windows-sign@2.1.0':
     resolution: {integrity: sha512-hyRE175pWNxU3R0k7B7Zwm4KpSgK/Ql+7yqUPRfnYc9K06uVPJDLvXH6oXpl/RAKbLu0Y114xuH6BdjDhF/pKA==}
@@ -2710,6 +2723,10 @@ packages:
   commander@3.0.2:
     resolution: {integrity: sha512-Gar0ASD4BDyKC4hl4DwHqDrmvjoxWKZigVnAbn5H1owvm4CxCPdb0HQDehwNYMJpla5+M2tPmPARzhtYuwpHow==}
 
+  commander@5.1.0:
+    resolution: {integrity: sha512-P0CysNDQ7rtVw4QIQtm+MRxV66vKFSvlsQvGYXZWR3qFU0jlMKHZZZgw8e+8DSah4UDKMqnknRDQz+xuQXQ/Zg==}
+    engines: {node: '>= 6'}
+
   commander@9.5.0:
     resolution: {integrity: sha512-KRs7WVDKg86PWiuAqhDrAQnTXZKraVcCc6vFdL14qrZ/DcWwuRo7VoiYXalXO7S5GKpqYiVEwCbgFDfxNHKJBQ==}
     engines: {node: ^12.20.0 || >=14}
@@ -2741,6 +2758,9 @@ packages:
   cookie@1.1.1:
     resolution: {integrity: sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ==}
     engines: {node: '>=18'}
+
+  cross-dirname@0.1.0:
+    resolution: {integrity: sha512-+R08/oI0nl3vfPcqftZRpytksBXDzOUveBq/NBVx0sUp1axwzPQrKinNx5yd5sxPu8j1wIy8AfnVQ+5eFdha6Q==}
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -2881,6 +2901,10 @@ packages:
 
   electron-to-chromium@1.5.427:
     resolution: {integrity: sha512-n14zb3FdsChZ2BNobqNHAJMcP3ifFv4paox2LvCrfVAQcqGiSURgbJl+PfMpHVCNFkStnNc+RRVtPBTVW5PDgw==}
+
+  electron-winstaller@5.4.4:
+    resolution: {integrity: sha512-j9ETcBGJaXxAY/b6UBpR7LZfjdU4BAO+yvr4ifqHEdyuc3UNCy91PDGkWKY5UQ4coHNYfnwFggrqD6QPeFGAlg==}
+    engines: {node: '>=8.0.0'}
 
   electron@44.5.1:
     resolution: {integrity: sha512-lx7AYoFIiyvEvgvpyWO9kOC60xtNPpiPZAth6Fmg9NutzpCAMLwpUlaBY2EXfZyIgUdzEmLMj9KvK0Vrokl1yQ==}
@@ -3202,6 +3226,14 @@ packages:
   fs-exists-sync@0.1.0:
     resolution: {integrity: sha512-cR/vflFyPZtrN6b38ZyWxpWdhlXrzZEBawlpBQMq7033xVY7/kg0GDMBK5jg8lDYQckdJ5x/YC88lM3C7VMsLg==}
     engines: {node: '>=0.10.0'}
+
+  fs-extra@11.4.1:
+    resolution: {integrity: sha512-KYAb4c9BJQI6QqGKthV68OHe0badztdXJWKo0WtBA9IuCFPTKvE5ZdUBglP833aMjhaSPNO4A5j/EkzZtGlKjA==}
+    engines: {node: '>=14.14'}
+
+  fs-extra@7.0.1:
+    resolution: {integrity: sha512-YJDaCJZEnBmcbw13fvdAM9AwNOJwOzrE4pqMqBq5nFiEqXUqHwlK4B+3pUw6JNvfSPtX05xFHtYy/1ni01eGCw==}
+    engines: {node: '>=6 <7 || >=8'}
 
   fs.realpath@1.0.0:
     resolution: {integrity: sha512-OO0pH2lK6a0hZnAdau5ItzHPI6pUlvI7jMVnxUQRtw4owF2wk8lOSabtGDCTP4Ggrg2MbGnWO9X8K1t4+fGMDw==}
@@ -3720,6 +3752,12 @@ packages:
   jsonc-parser@3.3.1:
     resolution: {integrity: sha512-HUgH65KyejrUFPvHFPbqOY0rsFip3Bo5wb4ngvdi1EpCYWUQDC5V+Y7mZws+DLkr4M//zQJoanu1SP+87Dv1oQ==}
 
+  jsonfile@4.0.0:
+    resolution: {integrity: sha512-m6F1R3z8jjlf2imQHS2Qez5sjKWQzbuuhuJ/FKYFRZvPE3PuHcSMVZzfsLhGVOkfd20obL5SWEBew5ShlquNxg==}
+
+  jsonfile@6.2.1:
+    resolution: {integrity: sha512-zwOTdL3rFQ/lRdBnntKVOX6k5cKJwEc1HdilT71BWEu7J41gXIB2MRp+vxduPSwZJPWBxEzv4yH1wYLJGUHX4Q==}
+
   junk@4.0.1:
     resolution: {integrity: sha512-Qush0uP+G8ZScpGMZvHUiRfI0YBWuB3gVBYlI0v0vvOJt5FLicco+IkP0a50LqTTQhmts/m6tP5SWE+USyIvcQ==}
     engines: {node: '>=12.20'}
@@ -3947,6 +3985,10 @@ packages:
   minizlib@3.1.0:
     resolution: {integrity: sha512-KZxYo1BUkWD2TVFLr0MQoM8vUUigWD3LlD83a/75BqC+4qE0Hb1Vo5v1FgcfaNXvfXzr+5EhQ6ing/CaBijTlw==}
     engines: {node: '>= 18'}
+
+  mkdirp@0.5.6:
+    resolution: {integrity: sha512-FP+p8RB8OWpF3YZBCrP5gtADmtXApB5AMLn+vdyA+PyxCjrCs00mjyUozssO33cwDeT3wNGdLxJ5M//YqtHAJw==}
+    hasBin: true
 
   mkdirp@1.0.4:
     resolution: {integrity: sha512-vVqVZQyf3WLx2Shd0qJ9xuvqgAyKPLAiqITEtqW0oIUjzo3PePDd6fW9iFz30ef7Ysp/oiWqbhszeGWW2T6Gzw==}
@@ -4519,6 +4561,11 @@ packages:
   rfdc@1.4.1:
     resolution: {integrity: sha512-q1b3N5QkRUWUl7iyylaaj3kOpIT0N2i9MqIEQXP73GVsN9cw3fdx8X63cEmWhJGi2PPCF23Ijp7ktmd39rawIA==}
 
+  rimraf@2.6.3:
+    resolution: {integrity: sha512-mwqeW5XsA2qAejG46gYdENaxXjx9onRNCfn7L0duuP4hCuTIi/QO7PDK07KJfp1d+izWPrzEJDcSqBa0OZQriA==}
+    deprecated: Rimraf versions prior to v4 are no longer supported
+    hasBin: true
+
   rimraf@3.0.2:
     resolution: {integrity: sha512-JZkJMZkAGFFPP2YqXZXPbMlMBgsxzE8ILs4lMIX/2o0L9UBw9O/Y3o6wFw/i9YLapcUJWwqbi3kdxIPdC62TIA==}
     deprecated: Rimraf versions prior to v4 are no longer supported
@@ -4773,6 +4820,10 @@ packages:
     resolution: {integrity: sha512-XdhtCvlMywwxpCW8YEq3lOXBJpUPTR2OHHcwLPO3HwsJqOHa2Ok/oJ7ruGzp+JrKoRPVCzJwAdEjqLW/vNRPHA==}
     engines: {node: '>=18'}
 
+  temp@0.9.4:
+    resolution: {integrity: sha512-yYrrsWnrXMcdsnu/7YMYAofM1ktpL5By7vZhf15CrXijWWrEYZks5AXBudalfSWJLlnen/QUJUB5aoB0kqZUGA==}
+    engines: {node: '>=6.0.0'}
+
   terminal-size@4.0.1:
     resolution: {integrity: sha512-avMLDQpUI9I5XFrklECw1ZEUPJhqzcwSWsyyI8blhRLT+8N1jLJWLWWYQpB2q2xthq8xDvjZPISVh53T/+CLYQ==}
     engines: {node: '>=18'}
@@ -4920,6 +4971,14 @@ packages:
   undici@7.29.1:
     resolution: {integrity: sha512-RYONW2MeafgYlkVOKYKkA/Ag7BmXqgIWCa8t1m0JcxrQg9pI9lEqRhAOruOBCbAohOa/gkCF+iPi9hrgvTzu6Q==}
     engines: {node: '>=20.18.1'}
+
+  universalify@0.1.2:
+    resolution: {integrity: sha512-rBJeI5CXAlmy1pV+617WB9J63U6XcazHHF2f2dbJix4XzpUF0RS3Zbj0FGIOCAva5P/d/GBOYaACQ1w+0azUkg==}
+    engines: {node: '>= 4.0.0'}
+
+  universalify@2.0.1:
+    resolution: {integrity: sha512-gptHNQghINnc/vTGIk0SOFGFNXw7JVrlRUtConJRlvaw6DuX0wO5Jeko9sWrMBhh+PsYAZ7oXAiOnf/UKogyiw==}
+    engines: {node: '>= 10.0.0'}
 
   unrs-resolver@1.12.2:
     resolution: {integrity: sha512-dmlRxBJJayXjqTwC+JtF1HhJmgf3ftQ3YejFcZrf4+KKtJv0qDsK1pjqaaVjG7wJ5NJ6UVP1OqRMQ71Z4C3rxQ==}
@@ -5581,6 +5640,12 @@ snapshots:
 
   '@electron-internal/extract-zip@1.0.5': {}
 
+  '@electron/asar@3.4.1':
+    dependencies:
+      commander: 5.1.0
+      glob: 7.2.3
+      minimatch: 3.1.5
+
   '@electron/asar@4.3.1':
     dependencies:
       glob: 13.0.6
@@ -5655,6 +5720,17 @@ snapshots:
       plist: 3.1.1
     transitivePeerDependencies:
       - supports-color
+
+  '@electron/windows-sign@1.2.2':
+    dependencies:
+      cross-dirname: 0.1.0
+      debug: 4.4.3
+      fs-extra: 11.4.1
+      minimist: 1.2.8
+      postject: 1.0.0-alpha.6
+    transitivePeerDependencies:
+      - supports-color
+    optional: true
 
   '@electron/windows-sign@2.1.0':
     dependencies:
@@ -7538,6 +7614,8 @@ snapshots:
 
   commander@3.0.2: {}
 
+  commander@5.1.0: {}
+
   commander@9.5.0: {}
 
   commondir@1.0.1: {}
@@ -7555,6 +7633,9 @@ snapshots:
   convert-to-spaces@2.0.1: {}
 
   cookie@1.1.1: {}
+
+  cross-dirname@0.1.0:
+    optional: true
 
   cross-spawn@7.0.6:
     dependencies:
@@ -7672,6 +7753,19 @@ snapshots:
   eastasianwidth@0.2.0: {}
 
   electron-to-chromium@1.5.427: {}
+
+  electron-winstaller@5.4.4:
+    dependencies:
+      '@electron/asar': 3.4.1
+      debug: 4.4.3
+      fs-extra: 7.0.1
+      lodash: 4.18.1
+      semver: 7.8.5
+      temp: 0.9.4
+    optionalDependencies:
+      '@electron/windows-sign': 1.2.2
+    transitivePeerDependencies:
+      - supports-color
 
   electron@44.5.1:
     dependencies:
@@ -8065,6 +8159,19 @@ snapshots:
   fromentries@1.3.2: {}
 
   fs-exists-sync@0.1.0: {}
+
+  fs-extra@11.4.1:
+    dependencies:
+      graceful-fs: 4.2.11
+      jsonfile: 6.2.1
+      universalify: 2.0.1
+    optional: true
+
+  fs-extra@7.0.1:
+    dependencies:
+      graceful-fs: 4.2.11
+      jsonfile: 4.0.0
+      universalify: 0.1.2
 
   fs.realpath@1.0.0: {}
 
@@ -8823,6 +8930,17 @@ snapshots:
 
   jsonc-parser@3.3.1: {}
 
+  jsonfile@4.0.0:
+    optionalDependencies:
+      graceful-fs: 4.2.11
+
+  jsonfile@6.2.1:
+    dependencies:
+      universalify: 2.0.1
+    optionalDependencies:
+      graceful-fs: 4.2.11
+    optional: true
+
   junk@4.0.1: {}
 
   keyv@5.6.0:
@@ -9001,6 +9119,10 @@ snapshots:
   minizlib@3.1.0:
     dependencies:
       minipass: 7.1.3
+
+  mkdirp@0.5.6:
+    dependencies:
+      minimist: 1.2.8
 
   mkdirp@1.0.4: {}
 
@@ -9517,6 +9639,10 @@ snapshots:
 
   rfdc@1.4.1: {}
 
+  rimraf@2.6.3:
+    dependencies:
+      glob: 7.2.3
+
   rimraf@3.0.2:
     dependencies:
       glob: 7.2.3
@@ -9806,6 +9932,11 @@ snapshots:
       minizlib: 3.1.0
       yallist: 5.0.0
 
+  temp@0.9.4:
+    dependencies:
+      mkdirp: 0.5.6
+      rimraf: 2.6.3
+
   terminal-size@4.0.1: {}
 
   test-exclude@6.0.0:
@@ -9923,6 +10054,11 @@ snapshots:
   undici@6.29.0: {}
 
   undici@7.29.1: {}
+
+  universalify@0.1.2: {}
+
+  universalify@2.0.1:
+    optional: true
 
   unrs-resolver@1.12.2:
     dependencies:
