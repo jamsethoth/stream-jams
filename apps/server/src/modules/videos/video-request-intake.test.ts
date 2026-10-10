@@ -1,15 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { createDefaultVideosModuleConfig, type NormalizedStreamEvent, type VideoRequestItem, type VideosModuleConfig } from "@stream-jams/core";
 import { externalBusEvent } from "../../test-support/bus-event-fixtures.js";
 import { createChannelPointVideoIntake } from "./channel-point-video-intake.js";
 import { createStreamerBotVideoIntake, type VideoIntakeDiagnostic } from "./streamerbot-video-intake.js";
 import { VideoRequestIntake } from "./video-request-intake.js";
-import { VideoQueueCommandError, type VideoQueueService, type VideoSubmission } from "./video-queue-service.js";
+import { createInMemoryStreamJamsDatabase, type StreamJamsDatabase } from "../db/database.js";
+import { SqliteVideoQueueRepository, VideoQueueConflictError } from "./video-queue-repository.js";
+import { VideoQueueCommandError, VideoQueueService, type VideoSubmission } from "./video-queue-service.js";
 
 function setup(overrides: Partial<VideosModuleConfig> = {}, options: { enabled?: boolean; full?: boolean } = {}) {
   const submissions: VideoSubmission[] = [];
   const config: VideosModuleConfig = { ...createDefaultVideosModuleConfig(), ...overrides };
-  const queue: Pick<VideoQueueService, "submit"> = {
+  const queue: Pick<VideoQueueService, "submit" | "recentItem" | "requeue"> = {
+    recentItem: () => { throw new VideoQueueCommandError("not-found", "missing"); },
+    requeue: () => { throw new VideoQueueCommandError("not-found", "missing"); },
     submit: (purpose, submission) => {
       if (options.full === true) throw new VideoQueueCommandError("queue-full", "full");
       submissions.push(submission);
@@ -179,5 +183,61 @@ describe("channel point video intake", () => {
     expect(base.submissions[0]).toMatchObject({ via: "channel-points", requester: "Viewer", autoplay: false });
     expect(await handler.handleEvent(redemption("reward-1", "   "))).toBe("failed");
     expect(diagnostics.at(-1)).toMatchObject({ level: "warn", metadata: { reason: "invalid-request", fields: ["link"] } });
+  });
+});
+
+describe("VideoRequestIntake replay", () => {
+  const databases: StreamJamsDatabase[] = [];
+  afterEach(() => { for (const database of databases.splice(0)) database.close(); });
+
+  function setupReplay() {
+    const database = createInMemoryStreamJamsDatabase();
+    database.runMigrations();
+    databases.push(database);
+    let config: VideosModuleConfig = { ...createDefaultVideosModuleConfig(), allowedDirectHosts: ["videos.example.com"] };
+    let enabled = true;
+    let tick = 0;
+    const queue = new VideoQueueService({
+      repository: new SqliteVideoQueueRepository(database.connection, () => new Date(1_000 + tick++).toISOString()),
+      getConfig: () => config,
+      scheduler: { setTimeout: () => null, clearTimeout: () => {} }
+    });
+    const intake = new VideoRequestIntake({ queue, getConfig: () => config, isModuleEnabled: () => enabled });
+    async function finished(link: string) {
+      const result = await intake.submit("live", { link, title: "Replay me" }, { via: "streamerbot", mayAutoplay: true });
+      if (result.status !== "accepted") throw new Error("not accepted");
+      queue.command("live", queue.view("live").revision, { kind: "play-next" });
+      queue.reportEnded(result.item.id);
+      return result.item;
+    }
+    return { queue, intake, finished, setConfig: (next: Partial<VideosModuleConfig>) => { config = { ...config, ...next }; }, setEnabled: (value: boolean) => { enabled = value; } };
+  }
+
+  it("queues a Recent item again under the replaying surface", async () => {
+    const { queue, intake, finished } = setupReplay();
+    const played = await finished(youtube);
+    const result = await intake.requeue("live", queue.view("live").revision, played.id, "operator");
+    expect(result).toMatchObject({ status: "accepted", item: { source: played.source, title: "Replay me", submittedVia: "operator", autoplay: false, status: "queued" } });
+    expect(queue.view("live").items).toHaveLength(1);
+    expect(queue.view("live").current).toBeNull();
+  });
+
+  it("rejects replay while the module is off or once the link is no longer allowed", async () => {
+    const { queue, intake, finished, setConfig, setEnabled } = setupReplay();
+    const direct = await finished("https://videos.example.com/clip.mp4");
+    setEnabled(false);
+    expect(await intake.requeue("live", queue.view("live").revision, direct.id, "operator")).toEqual({ status: "rejected", reason: "module-disabled" });
+    setEnabled(true);
+    setConfig({ allowedDirectHosts: [] });
+    expect(await intake.requeue("live", queue.view("live").revision, direct.id, "operator")).toEqual({ status: "rejected", reason: "unsupported-source" });
+    expect(queue.view("live").items).toEqual([]);
+  });
+
+  it("passes stale revisions and missing items through as queue errors", async () => {
+    const { queue, intake, finished } = setupReplay();
+    const played = await finished(youtube);
+    await expect(intake.requeue("live", queue.view("live").revision + 1, played.id, "operator")).rejects.toBeInstanceOf(VideoQueueConflictError);
+    await expect(intake.requeue("live", queue.view("live").revision, "video:missing", "operator")).rejects.toBeInstanceOf(VideoQueueCommandError);
+    expect(queue.view("live").items).toEqual([]);
   });
 });

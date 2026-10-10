@@ -18,7 +18,7 @@ function setup() {
     scheduler: { setTimeout: () => 0, clearTimeout: () => undefined }, createId: (() => { let id = 0; return () => `id${++id}`; })()
   });
   const mirror = { available: false, controls: new Map<string, VideoControlSupport>(), controlsFor(itemId: string) { return this.controls.get(itemId); } };
-  const runtime = new VideosRuntime({ queue, intake: { submit: async () => { throw new Error("unused"); } }, getConfig: async () => config, now: () => 1_000_000, mirror });
+  const runtime = new VideosRuntime({ queue, intake: { submit: async () => { throw new Error("unused"); }, requeue: async () => { throw new Error("unused"); } }, getConfig: async () => config, now: () => 1_000_000, mirror });
   const item = queue.submit("live", { source: { provider: "twitch-clip", clipSlug: "FunnyClip" }, title: "Clip", requester: "viewer", durationMs: 30_000, autoplay: false, via: "management" });
   queue.command("live", queue.view("live").revision, { kind: "play-next" });
   const snapshot = async () => (await runtime.getModuleSnapshot({ purpose: "live" } as never)).presentation;

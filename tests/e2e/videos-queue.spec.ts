@@ -12,6 +12,7 @@ test.use({ trace: "off", screenshot: "off", video: "off" });
 type Fixture = Awaited<ReturnType<typeof createProviderSecurityRuntimeFixture>>;
 type QueueItem = { readonly id: string; readonly status: string; readonly holdReason: string | null; readonly title: string | null; readonly submittedVia: string; readonly autoplay: boolean };
 type Queue = { readonly revision: number; readonly queuePaused: boolean; readonly runRemaining: number; readonly items: readonly QueueItem[];
+  readonly recent: readonly (QueueItem & { readonly finishedAt: string; readonly link: string })[];
   readonly current: { readonly itemId: string; readonly phase: string; readonly positionMs: number } | null; readonly mirror: { readonly available: boolean } };
 
 const directHost = "videos.example.com";
@@ -329,6 +330,57 @@ test("an unknown-length request queues and plays with Play next in the browser s
   await expect(queue.getByText("Nothing is playing.")).toBeVisible();
   await expect(overlay.getByTestId("video-overlay")).toHaveCount(0);
   expect((await readQueue()).items).toEqual([]);
+  expect(outbound()).toEqual([]);
+});
+
+test("the Operator replays a video that played to the end from Recent back into the queue", async ({ context, page }) => {
+  test.setTimeout(60_000);
+  const outbound = await stubProviders(context);
+  const overlay = await openBrowserSource(context);
+  await expect(overlay.getByTestId("overlay-root")).toBeVisible();
+
+  await page.goto(`${fixture.runtime.url}/operator`);
+  const queue = page.getByRole("region", { name: "Video queue" });
+  const recent = queue.getByRole("region", { name: "Recent videos" });
+  await expect(recent.getByText("No videos have finished yet.")).toBeVisible();
+  const form = queue.getByRole("form", { name: "Add video" });
+  await form.getByRole("textbox", { name: "Video link" }).fill("https://youtu.be/e2eReplayA1");
+  await form.getByRole("textbox", { name: "Title (optional)" }).fill("Replay pick");
+  await form.getByRole("button", { name: "Add video" }).click();
+  await queue.getByRole("button", { name: "Play next" }).click();
+  await expect(overlay.frameLocator("iframe[title='Video player']").getByText("video e2eReplayA1")).toBeVisible();
+  await expect(queue.getByRole("article", { name: "Now playing" })).toContainText("Replay pick");
+
+  await endStubVideo(overlay);
+  await expect(queue.getByText("Nothing is playing.")).toBeVisible();
+  await expect(recent.getByRole("heading", { name: "Recent (1)" })).toBeVisible();
+  const card = recent.getByRole("article", { name: "Replay pick" });
+  await expect(card).toContainText("YouTube · www.youtube.com · via Operator");
+  await expect(card.getByText("Played", { exact: true })).toBeVisible();
+  await expect(queue.getByRole("heading", { name: "Waiting (0)" })).toBeVisible();
+  const played = (await readQueue()).recent[0]!;
+  expect(played).toMatchObject({ title: "Replay pick", status: "played", link: "https://www.youtube.com/watch?v=e2eReplayA1" });
+
+  // Replay queues a new request like Alerts' Replay: it waits for Play next and never starts on its own.
+  const replay = card.getByRole("button", { name: "Replay Replay pick in Videos" });
+  await replay.focus();
+  await page.keyboard.press("Enter");
+  await expect(queue.getByRole("status").filter({ hasText: "Replay pick added to the live video queue." })).toBeVisible();
+  await expect(queue.getByRole("heading", { name: "Waiting (1)" })).toBeVisible();
+  await expect(queue.getByRole("list").first().getByRole("article", { name: "Replay pick" })).toContainText("Queued");
+  await expect(replay).toBeFocused();
+  const state = await readQueue();
+  expect(state.current).toBeNull();
+  expect(state.items).toHaveLength(1);
+  expect(state.items[0]).toMatchObject({ title: "Replay pick", status: "queued", submittedVia: "operator", autoplay: false });
+  expect(state.items[0]!.id).not.toBe(played.id);
+  expect(state.recent.map(item => item.id)).toEqual([played.id]);
+
+  // The usual queue rules apply: with the module off, Replay is refused with a visible reason and nothing is queued.
+  expect((await fixture.request("/overlay-modules/videos/enabled", "PATCH", { enabled: false })).status).toBe(200);
+  await replay.click();
+  await expect(page.getByRole("alert").filter({ hasText: "The Videos module is turned off." })).toBeVisible();
+  expect((await readQueue()).items).toHaveLength(1);
   expect(outbound()).toEqual([]);
 });
 

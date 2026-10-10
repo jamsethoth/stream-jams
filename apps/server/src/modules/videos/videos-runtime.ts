@@ -1,6 +1,6 @@
 import type { OverlayModuleRuntime, OverlayModuleSnapshot, OverlayModuleSnapshotRequest, OverlayPurpose, VideoQueueResponse, VideosModuleConfig, VideosProjection } from "@stream-jams/core";
 import { videoInstructionPrefix } from "@stream-jams/core/videos";
-import type { VideoRouteService } from "../../http/routes/videos.js";
+import type { VideoRequeueOutcome, VideoRouteService } from "../../http/routes/videos.js";
 import { toVideoQueueResponse } from "./video-queue-response.js";
 import type { VideoItemCommand, VideoPlaybackPhase, VideoQueueCommand, VideoQueueService, VideoQueueView } from "./video-queue-service.js";
 import type { VideoRequestContext, VideoRequestIntake, VideoRequestResult } from "./video-request-intake.js";
@@ -8,7 +8,7 @@ import type { VideoMirrorDirector } from "./video-mirror-director.js";
 
 export interface VideosRuntimeOptions {
   readonly queue: VideoQueueService;
-  readonly intake: Pick<VideoRequestIntake, "submit">;
+  readonly intake: Pick<VideoRequestIntake, "submit" | "requeue">;
   readonly getConfig: () => Promise<VideosModuleConfig>;
   readonly now: () => number;
   /** The desktop primary player, when the desktop app is running. */
@@ -56,6 +56,11 @@ export class VideosRuntime implements OverlayModuleRuntime, VideoRouteService {
 
   control(purpose: OverlayPurpose, expectedItemId: string, command: VideoItemCommand): VideoQueueResponse {
     return this.toResponse(this.options.queue.control(purpose, expectedItemId, command));
+  }
+
+  async requeue(purpose: OverlayPurpose, expectedRevision: number, itemId: string, context: Pick<VideoRequestContext, "via">): Promise<VideoRequeueOutcome> {
+    const result = await this.options.intake.requeue(purpose, expectedRevision, itemId, context.via);
+    return result.status === "rejected" ? result : { status: "accepted", queue: this.response(purpose) };
   }
 
   async getModuleSnapshot(request: OverlayModuleSnapshotRequest): Promise<OverlayModuleSnapshot> {

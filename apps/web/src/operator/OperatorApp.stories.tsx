@@ -1,11 +1,11 @@
 import type { MergedOperationsSnapshot, OperationRow, TimerRunState } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, userEvent, within } from "storybook/test";
+import { expect, userEvent, waitFor, within } from "storybook/test";
 import { ManagementHttpError } from "../management/management-http-client.js";
 import { OperatorApp } from "./OperatorApp.js";
 import { PlaybackOperationsConflictError, type PlaybackApi } from "./playback-api.js";
 import type { OperatorTimersApi } from "./timers-api.js";
-import { createStaticVideoQueueApi, playingVideo, videoQueue } from "../stories/video-queue-fixtures.js";
+import { createStaticVideoQueueApi, playingVideo, recentVideos, videoQueue } from "../stories/video-queue-fixtures.js";
 
 const meta = {
   title: "Operator/Playback Console",
@@ -48,6 +48,43 @@ export const VideoQueuePlaying: Story = {
     await expect(card.getByText("Now playing clip")).toBeVisible();
     await expect(card.getByRole("slider", { name: "Seek" })).toBeVisible();
     await expect(canvas.getByRole("button", { name: "Play next" })).toBeEnabled();
+  }
+};
+
+/** Finished videos appear under the Videos panel's Recent list, in the same cards as Alerts and Effects Recent, and Replay queues one again. */
+export const RecentVideosReplay: Story = {
+  args: { api: createApi(activeSnapshot()), videosApi: createStaticVideoQueueApi(recentVideos()) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const recent = within(await canvas.findByRole("region", { name: "Recent videos" }));
+    await expect(recent.getByRole("heading", { name: "Recent (3)" })).toBeVisible();
+    const failed = recent.getByRole("article", { name: "Removed upload" });
+    await expect(within(failed).getByText("Failed")).toBeVisible();
+    await expect(failed).toHaveTextContent("via Streamer.bot");
+    const replay = recent.getByRole("button", { name: "Replay Cat plays keyboard in Videos" });
+    replay.focus();
+    await userEvent.keyboard("{Enter}");
+    await expect(await canvas.findByText("Cat plays keyboard added to the live video queue.")).toBeVisible();
+    await waitFor(() => expect(recent.getByRole("button", { name: "Replay Cat plays keyboard in Videos" })).toHaveFocus());
+  }
+};
+
+export const RecentVideosEmpty: Story = {
+  args: { api: createApi(emptySnapshot()) },
+  play: async ({ canvasElement }) => {
+    const recent = within(await within(canvasElement).findByRole("region", { name: "Recent videos" }));
+    await expect(recent.getByText("No videos have finished yet.")).toBeVisible();
+  }
+};
+
+export const RecentVideoReplayRejected: Story = {
+  args: { api: createApi(emptySnapshot()), videosApi: createStaticVideoQueueApi(recentVideos(), {
+    requeue: async () => { throw new ManagementHttpError("That link is no longer allowed. Add its host in Videos settings to replay it.", "VIDEO_REQUEST_REJECTED", null, null, [], [], 422); }
+  }) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Replay https://videos.example.com/clip.mp4 in Videos" }));
+    await expect(await canvas.findByRole("alert")).toHaveTextContent("That link is no longer allowed.");
   }
 };
 

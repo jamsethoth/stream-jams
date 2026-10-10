@@ -1,5 +1,5 @@
 import type { VideoQueueResponse } from "@stream-jams/core";
-import type { VideoQueueApi, VideoQueueItem, VideosApi } from "../management/videos/videos-api.js";
+import type { VideoQueueApi, VideoQueueItem, VideoRecentItem, VideosApi } from "../management/videos/videos-api.js";
 
 const createdAt = "2026-10-08T18:00:00.000Z";
 
@@ -11,8 +11,12 @@ export function videoItem(id: string, overrides: Partial<VideoQueueItem> = {}): 
   };
 }
 
+export function recentVideo(id: string, overrides: Partial<VideoRecentItem> = {}): VideoRecentItem {
+  return { ...videoItem(id), status: "played", finishedAt: "2026-10-08T18:05:00.000Z", ...overrides };
+}
+
 export function videoQueue(overrides: Partial<VideoQueueResponse> = {}): VideoQueueResponse {
-  return { purpose: "live", revision: 4, queuePaused: false, runRemaining: 0, gapEndsAtEpochMs: null, serverTimeEpochMs: Date.now(), mirror: { available: true }, items: [], current: null, ...overrides };
+  return { purpose: "live", revision: 4, queuePaused: false, runRemaining: 0, gapEndsAtEpochMs: null, serverTimeEpochMs: Date.now(), mirror: { available: true }, items: [], recent: [], current: null, ...overrides };
 }
 
 export const queuedVideos = (): VideoQueueResponse => videoQueue({ items: [
@@ -30,6 +34,13 @@ export const heldVideos = (): VideoQueueResponse => videoQueue({ items: [
 export const failedVideos = (): VideoQueueResponse => videoQueue({ items: [
   videoItem("next", { title: "Next in line", position: 4 }),
   videoItem("broken", { title: "Removed upload", status: "failed", position: 2 })
+] });
+
+/** Finished videos, newest first: one played to the end, one that failed to load, one direct file. */
+export const recentVideos = (): VideoQueueResponse => videoQueue({ items: [videoItem("waiting", { title: "Waiting clip", position: 5 })], recent: [
+  recentVideo("done", { title: "Cat plays keyboard", requester: "viewer_one", submittedVia: "channel-points", finishedAt: "2026-10-08T18:09:00.000Z" }),
+  recentVideo("broken", { title: "Removed upload", status: "failed", submittedVia: "streamerbot", finishedAt: "2026-10-08T18:07:00.000Z" }),
+  recentVideo("file", { title: null, requester: null, submittedVia: "operator", source: { provider: "direct", url: "https://videos.example.com/clip.mp4" }, link: "https://videos.example.com/clip.mp4" })
 ] });
 
 export const playingVideo = (phase: "playing" | "paused" = "playing", seek = true): VideoQueueResponse => {
@@ -54,6 +65,7 @@ export function createStaticVideoQueueApi(queue: VideoQueueResponse, overrides: 
     submit: async (_purpose, input) => videoItem("added", { link: input.link, title: input.title ?? null, submittedVia: "management" }),
     command: async () => queue,
     control: async () => queue,
+    requeue: async () => queue,
     ...overrides
   };
 }

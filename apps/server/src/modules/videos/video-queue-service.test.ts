@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createDefaultVideosModuleConfig, type VideosModuleConfig } from "@stream-jams/core";
 import { createInMemoryStreamJamsDatabase, type StreamJamsDatabase } from "../db/database.js";
-import { SqliteVideoQueueRepository, VideoQueueConflictError } from "./video-queue-repository.js";
-import { VideoQueueCommandError, VideoQueueService, videoEndGraceMs, videoLoadTimeoutMs, type VideoSubmission } from "./video-queue-service.js";
+import { SqliteVideoQueueRepository, VideoQueueConflictError, videoRecentLimit } from "./video-queue-repository.js";
+import { VideoQueueCommandError, VideoQueueService, videoEndGraceMs, videoFinishedHistoryLimit, videoLoadTimeoutMs, type VideoSubmission } from "./video-queue-service.js";
 
 class FakeScheduler {
   now = 1_000_000;
@@ -32,7 +32,8 @@ function setup(overrides: Partial<VideosModuleConfig> = {}, database = createInM
   let config: VideosModuleConfig = { ...createDefaultVideosModuleConfig(), ...overrides };
   let ids = 0;
   const service = new VideoQueueService({
-    repository: new SqliteVideoQueueRepository(database.connection),
+    // Rows record when they finished on the test clock, so Recent order follows it.
+    repository: new SqliteVideoQueueRepository(database.connection, () => new Date(scheduler.now).toISOString()),
     getConfig: () => config,
     now: () => scheduler.now,
     scheduler,
@@ -369,5 +370,110 @@ describe("VideoQueueService", () => {
     expect(view.current).toBeNull();
     expect(view.run).toBeNull();
     expect(view.items.map(item => [item.id, item.status, item.autoplay])).toEqual([[playing.id, "queued", false], [expect.any(String), "queued", false]]);
+  });
+
+  it("keeps a bounded finished history per purpose across restarts, newest first", () => {
+    const first = setup();
+    const insert = first.database.connection.prepare(`INSERT INTO video_requests (id, purpose, source_json, title, requester, submitted_via, duration_ms, status,
+      hold_reason, limit_overridden, autoplay, position, created_at, updated_at) VALUES (?, ?, ?, ?, NULL, 'management', 30000, ?, NULL, 0, 0, ?, ?, ?)`);
+    const source = JSON.stringify({ provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 0 });
+    const at = (index: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString();
+    for (let index = 0; index < videoFinishedHistoryLimit + 5; index += 1) insert.run(`live-${index}`, "live", source, `Live ${index}`, index % 2 === 0 ? "played" : "removed", index, at(index), at(index));
+    for (let index = 0; index < 3; index += 1) insert.run(`test-${index}`, "test", source, `Test ${index}`, "failed", index, at(index), at(index));
+    const waiting = first.service.submit("live", clip("Still waiting"));
+    first.service.dispose();
+
+    const restarted = setup({}, first.database);
+    const count = (purpose: string) => Number(first.database.connection.prepare("SELECT COUNT(*) AS n FROM video_requests WHERE purpose = ? AND status IN ('played', 'failed', 'removed')").get(purpose)?.n);
+    expect(count("live")).toBe(videoFinishedHistoryLimit);
+    expect(count("test")).toBe(3);
+    expect(first.database.connection.prepare("SELECT id FROM video_requests WHERE id IN ('live-0', 'live-4', 'live-5')").all().map(row => row.id)).toEqual(["live-5"]);
+    expect(restarted.service.view("live").items.map(item => item.id)).toEqual([waiting.id]);
+  });
+
+  describe("Recent and replay", () => {
+    function playToEnd(service: VideoQueueService, scheduler: FakeScheduler, purpose: "live" | "test", title: string, durationMs = 30_000) {
+      const item = service.submit(purpose, clip(title, durationMs));
+      service.command(purpose, service.view(purpose).revision, { kind: "play-next" });
+      service.reportStarted(item.id);
+      scheduler.advance(1_000);
+      service.reportEnded(item.id);
+      scheduler.advance(1_000);
+      return item;
+    }
+
+    it("lists played and failed items newest first with when they finished, and leaves removed items out", () => {
+      const { service, scheduler } = setup();
+      const played = playToEnd(service, scheduler, "live", "Played");
+      const failed = service.submit("live", clip("Failed"));
+      service.command("live", service.view("live").revision, { kind: "play-next" });
+      scheduler.advance(videoLoadTimeoutMs);
+      const skipped = service.submit("live", clip("Skipped"));
+      service.command("live", service.view("live").revision, { kind: "play-next" });
+      service.reportStarted(skipped.id);
+      scheduler.advance(1_000);
+      service.command("live", service.view("live").revision, { kind: "skip" });
+      const removed = service.submit("live", clip("Removed"));
+      service.command("live", service.view("live").revision, { kind: "remove", itemId: removed.id });
+      service.submit("live", clip("Cleared"));
+      service.command("live", service.view("live").revision, { kind: "clear" });
+
+      const view = service.view("live");
+      expect(view.recent.map(item => [item.id, item.status])).toEqual([[skipped.id, "played"], [failed.id, "failed"], [played.id, "played"]]);
+      expect(view.recent[0]?.finishedAt).toBe(new Date(scheduler.now).toISOString());
+      expect(view.recent.every((item, index, all) => index === 0 || all[index - 1]!.finishedAt >= item.finishedAt)).toBe(true);
+      expect(view.items).toEqual([]);
+    });
+
+    it("bounds Recent and keeps purposes separate", () => {
+      const { service, scheduler } = setup();
+      for (let index = 1; index <= videoRecentLimit + 2; index += 1) playToEnd(service, scheduler, "live", `Live ${index}`);
+      playToEnd(service, scheduler, "test", "Test only");
+      const live = service.view("live").recent;
+      expect(live).toHaveLength(videoRecentLimit);
+      expect(live.map(item => item.title)).toEqual(Array.from({ length: videoRecentLimit }, (_, index) => `Live ${videoRecentLimit + 2 - index}`));
+      expect(service.view("test").recent.map(item => item.title)).toEqual(["Test only"]);
+    });
+
+    it("replays a failed item as a new waiting request without starting it", () => {
+      const { service, scheduler } = setup();
+      const failed = service.submit("live", clip("Broken", 40_000, { via: "streamerbot", requester: "chatter", autoplay: true }));
+      scheduler.advance(videoLoadTimeoutMs);
+      const waiting = service.submit("live", clip("Waiting"));
+      expect(service.view("live").recent.map(item => item.id)).toEqual([failed.id]);
+
+      const replay = service.requeue("live", service.view("live").revision, failed.id, "operator");
+      const view = service.view("live");
+      expect(replay).toMatchObject({ source: failed.source, title: "Broken", requester: "chatter", durationMs: 40_000, submittedVia: "operator", autoplay: false, status: "queued", limitOverridden: false });
+      expect(replay.id).not.toBe(failed.id);
+      expect(view.current).toBeNull();
+      expect(view.items.map(item => item.id)).toEqual([waiting.id, replay.id]);
+      // The original stays in Recent, so it can be replayed again.
+      expect(view.recent.map(item => item.id)).toEqual([failed.id]);
+    });
+
+    it("applies the current length limit to a replay", () => {
+      const { service, scheduler, setConfig } = setup();
+      const played = playToEnd(service, scheduler, "live", "Long-ish", 90_000);
+      setConfig({ maxLengthSeconds: 60 });
+      const replay = service.requeue("live", service.view("live").revision, played.id, "management");
+      expect(replay).toMatchObject({ status: "held", holdReason: "over-limit", submittedVia: "management" });
+    });
+
+    it("rejects a stale revision and items not in this purpose's Recent without changing the queue", () => {
+      const { service, scheduler } = setup();
+      const played = playToEnd(service, scheduler, "live", "Played");
+      const revision = service.view("live").revision;
+      expect(() => service.requeue("live", revision - 1, played.id, "operator")).toThrow(VideoQueueConflictError);
+      expect(() => service.requeue("test", service.view("test").revision, played.id, "operator")).toThrow(VideoQueueCommandError);
+      const removed = service.submit("live", clip("Removed"));
+      service.command("live", service.view("live").revision, { kind: "remove", itemId: removed.id });
+      const waiting = service.submit("live", clip("Waiting"));
+      for (const itemId of [removed.id, waiting.id, "video:missing"]) {
+        expect(() => service.requeue("live", service.view("live").revision, itemId, "operator")).toThrow(VideoQueueCommandError);
+      }
+      expect(service.view("live").items.map(item => item.id)).toEqual([waiting.id]);
+      expect(service.view("test").items).toEqual([]);
+    });
   });
 });

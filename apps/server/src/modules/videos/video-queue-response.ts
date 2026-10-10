@@ -22,6 +22,7 @@ export function toVideoQueueResponse(view: VideoQueueView, now: number, twitchCo
     mirror: { available: mirrorAvailable },
     // Recent failures follow the queue so the operator can see why an item did not play.
     items: [...view.items, ...view.recentlyFailed].map(item => ({ ...item, link: canonicalVideoLink(item.source) })),
+    recent: view.recent.map(item => ({ ...item, link: canonicalVideoLink(item.source) })),
     current: view.current === null ? null : {
       itemId: view.current.item.id,
       phase: view.current.phase,

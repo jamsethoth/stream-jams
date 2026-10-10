@@ -32,6 +32,13 @@ export interface VideoRequestItem {
   readonly createdAt: string;
 }
 
+/** A finished request kept for operator review and replay, newest first. */
+export interface VideoRecentItem extends VideoRequestItem {
+  readonly status: "played" | "failed";
+  /** When playback ended; skipped and stopped videos count as played. */
+  readonly finishedAt: string;
+}
+
 export interface VideoRewardMapping {
   readonly rewardId: string;
   readonly purpose: OverlayPurpose;
@@ -105,6 +112,8 @@ export interface VideoQueueResponse {
   /** Whether the desktop primary player is running; without it browser sources play on their own. */
   readonly mirror: { readonly available: boolean };
   readonly items: readonly (VideoRequestItem & { readonly link: string })[];
+  /** The newest finished (played or failed) items, newest first and bounded; removed items are left out. */
+  readonly recent: readonly (VideoRecentItem & { readonly link: string })[];
   readonly current: {
     readonly itemId: string;
     readonly phase: "loading" | "playing" | "paused";

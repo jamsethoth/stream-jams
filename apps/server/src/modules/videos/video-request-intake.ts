@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { OverlayPurpose, VideoRequestItem, VideoSubmissionChannel, VideosModuleConfig } from "@stream-jams/core";
-import { parseVideoLink, videoMaximumLinkLength, videoRequesterSchema, videoTitleSchema } from "@stream-jams/core/videos";
+import { isAllowedVideoSource, parseVideoLink, videoMaximumLinkLength, videoRequesterSchema, videoTitleSchema } from "@stream-jams/core/videos";
 import { VideoQueueCommandError, type VideoQueueService } from "./video-queue-service.js";
 
 /** Longest duration a submitter may declare; the configured limit decides whether it plays. */
@@ -22,8 +22,12 @@ export type VideoRequestResult =
   | { readonly status: "accepted"; readonly item: VideoRequestItem }
   | { readonly status: "rejected"; readonly reason: VideoRequestRejection; readonly fields: readonly string[] };
 
+export type VideoRequeueResult =
+  | { readonly status: "accepted"; readonly item: VideoRequestItem }
+  | { readonly status: "rejected"; readonly reason: Extract<VideoRequestRejection, "module-disabled" | "unsupported-source"> };
+
 export interface VideoRequestIntakeOptions {
-  readonly queue: Pick<VideoQueueService, "submit">;
+  readonly queue: Pick<VideoQueueService, "submit" | "recentItem" | "requeue">;
   readonly getConfig: () => Promise<VideosModuleConfig> | VideosModuleConfig;
   readonly isModuleEnabled: () => Promise<boolean> | boolean;
 }
@@ -67,5 +71,19 @@ export class VideoRequestIntake {
       if (error instanceof VideoQueueCommandError && error.code === "queue-full") return { status: "rejected", reason: "queue-full", fields: [] };
       throw error;
     }
+  }
+
+  /**
+   * Replays a Recent item by queueing its source again. The same rules as a new request apply:
+   * the module must be on and the link must still pass the current allowlist. Revision conflicts,
+   * a missing Recent item and a full queue throw from the queue service.
+   */
+  async requeue(purpose: OverlayPurpose, expectedRevision: number, itemId: string, via: VideoSubmissionChannel): Promise<VideoRequeueResult> {
+    const { queue } = this.options;
+    if (!(await this.options.isModuleEnabled())) return { status: "rejected", reason: "module-disabled" };
+    const config = await this.options.getConfig();
+    const recent = queue.recentItem(purpose, itemId);
+    if (!isAllowedVideoSource(recent.source, { allowedDirectHosts: config.allowedDirectHosts })) return { status: "rejected", reason: "unsupported-source" };
+    return { status: "accepted", item: queue.requeue(purpose, expectedRevision, itemId, via) };
   }
 }

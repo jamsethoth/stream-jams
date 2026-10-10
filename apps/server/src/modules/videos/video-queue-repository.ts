@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
-import type { OverlayPurpose, VideoRequestItem } from "@stream-jams/core";
+import type { OverlayPurpose, VideoRecentItem, VideoRequestItem } from "@stream-jams/core";
 import { videoRequesterSchema, videoSourceSchema, videoTitleSchema } from "@stream-jams/core/videos";
 import { runInTransaction } from "../db/database.js";
 
@@ -19,6 +19,8 @@ export interface VideoQueueSnapshot {
   readonly items: readonly VideoRequestItem[];
   /** The newest failed items, oldest first, for operator review. They are not part of the queue. */
   readonly recentlyFailed: readonly VideoRequestItem[];
+  /** The newest played or failed items, newest first, for the Operator's Recent list and replay. Removed items are left out. */
+  readonly recent: readonly VideoRecentItem[];
 }
 
 export interface VideoQueueChange {
@@ -47,6 +49,8 @@ export interface VideoQueueRepository {
 const activeStatuses = ["queued", "held", "playing", "paused"] as const;
 /** How many failed items a snapshot carries for review. */
 export const videoRecentFailureLimit = 5;
+/** How many finished items a snapshot carries for the Recent list. */
+export const videoRecentLimit = 10;
 const runSchema = z.object({ mode: z.enum(["next", "all"]), remainingIds: z.array(z.string().min(1).max(128)).max(1000) }).strict();
 
 const rowSchema = z.object({
@@ -63,7 +67,8 @@ const rowSchema = z.object({
   limit_overridden: z.number().int(),
   autoplay: z.number().int(),
   position: z.number().int(),
-  created_at: z.string()
+  created_at: z.string(),
+  updated_at: z.string()
 });
 
 export class SqliteVideoQueueRepository implements VideoQueueRepository {
@@ -78,13 +83,18 @@ export class SqliteVideoQueueRepository implements VideoQueueRepository {
     const failedRows = this.connection.prepare(
       "SELECT * FROM video_requests WHERE purpose = ? AND status = 'failed' ORDER BY updated_at DESC, id DESC LIMIT ?"
     ).all(purpose, videoRecentFailureLimit);
+    // updated_at is when the row last changed, which for a finished row is when it finished; rowid breaks ties.
+    const recentRows = this.connection.prepare(
+      "SELECT * FROM video_requests WHERE purpose = ? AND status IN ('played', 'failed') ORDER BY updated_at DESC, rowid DESC LIMIT ?"
+    ).all(purpose, videoRecentLimit);
     return {
       purpose,
       revision: Number(state.revision),
       queuePaused: Number(state.queue_paused) === 1,
       run: state.run_json === null ? null : runSchema.parse(JSON.parse(String(state.run_json))),
       items: rows.map(row => toItem(rowSchema.parse(row))),
-      recentlyFailed: failedRows.reverse().map(row => toItem(rowSchema.parse(row)))
+      recentlyFailed: failedRows.reverse().map(row => toItem(rowSchema.parse(row))),
+      recent: recentRows.map(row => toRecentItem(rowSchema.parse(row)))
     };
   }
 
@@ -138,11 +148,18 @@ WHERE video_requests.purpose = excluded.purpose`);
   }
 
   pruneFinished(keep: number): void {
-    this.connection.prepare(`
-DELETE FROM video_requests WHERE status IN ('played', 'failed', 'removed') AND id NOT IN (
-  SELECT id FROM video_requests WHERE status IN ('played', 'failed', 'removed') ORDER BY updated_at DESC, id LIMIT ?
-)`).run(keep);
+    const prune = this.connection.prepare(`
+DELETE FROM video_requests WHERE purpose = ? AND status IN ('played', 'failed', 'removed') AND id NOT IN (
+  SELECT id FROM video_requests WHERE purpose = ? AND status IN ('played', 'failed', 'removed') ORDER BY updated_at DESC, rowid DESC LIMIT ?
+)`);
+    runInTransaction(this.connection, () => { for (const purpose of ["live", "test"] as const) prune.run(purpose, purpose, keep); });
   }
+}
+
+function toRecentItem(row: z.infer<typeof rowSchema>): VideoRecentItem {
+  const item = toItem(row);
+  if (item.status !== "played" && item.status !== "failed") throw new Error("A recent video must be played or failed.");
+  return { ...item, status: item.status, finishedAt: row.updated_at };
 }
 
 function toItem(row: z.infer<typeof rowSchema>): VideoRequestItem {

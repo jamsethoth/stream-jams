@@ -13,6 +13,7 @@ import {
   PlaybackOperationsConflictError,
   type PlaybackApi
 } from "./playback-api.js";
+import { OperatorItemCard } from "./OperatorItemCard.js";
 import { TimerAdjustmentControls } from "../management/timers/TimerAdjustmentControls.js";
 import { defaultOperatorTimersApi, type OperatorTimersApi } from "./timers-api.js";
 import type { VideoQueueApi } from "../management/videos/videos-api.js";
@@ -348,7 +349,7 @@ function OperatorConsole({ api = defaultPlaybackApi, timersApi = defaultOperator
         )}>Replay</Button>
       )} />
 
-      <Suspense fallback={<p role="status">Loading the video queue…</p>}><OperatorVideosPanel api={videosApi} /></Suspense>
+      <Suspense fallback={<p role="status">Loading the video queue…</p>}><OperatorVideosPanel api={videosApi} recentCard={OperatorItemCard} /></Suspense>
     </main>
   );
 }
@@ -384,21 +385,12 @@ function OperationList({ heading, items, renderAction }: { readonly heading: str
 }
 
 function OperationCard({ action, item }: { readonly action: React.ReactNode; readonly item: OperationRow }) {
-  return (
-    <article className="operator-item">
-      <div className="operator-item__summary"><div><strong>{item.name}</strong><span>{item.source === null ? item.summary : `${item.summary} · via ${sourceLabel(item.source)}`}</span></div>{action}</div>
-      <dl>
-        <ItemDetail label="Module" value={moduleLabel(item.moduleId)} />
-        {item.moduleQueuePosition === null ? null : <ItemDetail label="Module position" value={`#${item.moduleQueuePosition}`} />}
-        <ItemDetail label="Status" value={formatStatus(item.status)} tone={statusTone(item.status)} />
-        <ItemDetail label="Received" value={formatDateTime(item.enqueuedAtMs)} />
-      </dl>
-    </article>
-  );
-}
-
-function ItemDetail({ label, tone, value }: { readonly label: string; readonly tone?: StatusBadgeTone; readonly value: string }) {
-  return <div><dt>{label}</dt><dd>{tone === undefined ? value : <StatusBadge label={value} tone={tone} />}</dd></div>;
+  return <OperatorItemCard action={action} title={item.name} summary={item.source === null ? item.summary : `${item.summary} · via ${sourceLabel(item.source)}`} details={[
+    { label: "Module", value: moduleLabel(item.moduleId) },
+    ...(item.moduleQueuePosition === null ? [] : [{ label: "Module position", value: `#${item.moduleQueuePosition}` }]),
+    { label: "Status", value: formatStatus(item.status), tone: statusTone(item.status) },
+    { label: "Received", value: formatDateTime(item.enqueuedAtMs) }
+  ]} />;
 }
 
 function moduleLabel(moduleId: string): string {

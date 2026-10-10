@@ -1,10 +1,12 @@
 import { Button, TextInput } from "@mantine/core";
 import type { OverlayPurpose, VideoQueueResponse } from "@stream-jams/core";
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ComponentType, type FormEvent, type ReactNode, type RefObject } from "react";
 import { ManagementModalSurface, ManagementModalTitle } from "../foundation/ManagementModalSurface.js";
 import { StatusBadge, type StatusBadgeTone } from "../foundation/StatusBadge.js";
 import { ManagementHttpError } from "../management-http-client.js";
-import { isVideoQueueConflict, type VideoCurrentAction, type VideoQueueApi, type VideoQueueCommand, type VideoQueueItem } from "./videos-api.js";
+import type { OperatorItemCardProps } from "../../operator/OperatorItemCard.js";
+import { formatDateTime } from "../foundation/formatters.js";
+import { isVideoQueueConflict, type VideoCurrentAction, type VideoQueueApi, type VideoQueueCommand, type VideoQueueItem, type VideoRecentItem } from "./videos-api.js";
 import "./video-queue.css";
 
 const defaultPollIntervalMs = 1_500;
@@ -16,6 +18,11 @@ export interface VideoQueuePanelProps {
   readonly pollIntervalMs?: number;
   /** Heading level of the panel title; nested headings follow it. */
   readonly headingLevel?: 2 | 3;
+  /**
+   * Operator Console: list finished videos under Recent, with Replay, in place of the failed-only list, drawn with the
+   * Operator's own list card. The Operator passes its card in so the card stays in the Operator chunk.
+   */
+  readonly recentCard?: ComponentType<OperatorItemCardProps> | undefined;
 }
 
 interface QueueSnapshot {
@@ -25,7 +32,7 @@ interface QueueSnapshot {
 }
 
 /** Shared management and Operator queue tools. The server owns queue state; this component polls and sends guarded commands. */
-export function VideoQueuePanel({ api, initialPurpose = "live", pollIntervalMs = defaultPollIntervalMs, headingLevel = 2 }: VideoQueuePanelProps) {
+export function VideoQueuePanel({ api, initialPurpose = "live", pollIntervalMs = defaultPollIntervalMs, headingLevel = 2, recentCard }: VideoQueuePanelProps) {
   const headingId = useId();
   const [purpose, setPurpose] = useState<OverlayPurpose>(initialPurpose);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -40,14 +47,14 @@ export function VideoQueuePanel({ api, initialPurpose = "live", pollIntervalMs =
         </div>
       </div>
       {/* Each purpose owns its own snapshot, poll and pending command; switching remounts instead of mixing them. */}
-      <QueueWorkspace key={purpose} api={api} headingLevel={headingLevel} headingRef={headingRef} pollIntervalMs={pollIntervalMs} purpose={purpose} />
+      <QueueWorkspace key={purpose} api={api} headingLevel={headingLevel} headingRef={headingRef} pollIntervalMs={pollIntervalMs} purpose={purpose} recentCard={recentCard} />
     </section>
   );
 }
 
-function QueueWorkspace({ api, headingLevel, headingRef, pollIntervalMs, purpose }: {
+function QueueWorkspace({ api, headingLevel, headingRef, pollIntervalMs, purpose, recentCard }: {
   readonly api: VideoQueueApi; readonly headingLevel: 2 | 3; readonly headingRef: RefObject<HTMLHeadingElement | null>;
-  readonly pollIntervalMs: number; readonly purpose: OverlayPurpose;
+  readonly pollIntervalMs: number; readonly purpose: OverlayPurpose; readonly recentCard: ComponentType<OperatorItemCardProps> | undefined;
 }) {
   const [snapshot, setSnapshot] = useState<QueueSnapshot | null>(null);
   const [loadError, setLoadError] = useState<QueueError | null>(null);
@@ -222,7 +229,8 @@ function QueueWorkspace({ api, headingLevel, headingRef, pollIntervalMs, purpose
             </>} /></li>)}
           </ol>
         )}
-        {failed.length === 0 ? null : <>
+        {recentCard !== undefined ? <RecentVideos busy={busy} card={recentCard} headingTag={SubheadingTag} items={queue.recent} onReplay={item => void run(`replay:${item.id}`, current => api.requeue(purpose, current.revision, item.id),
+          `${itemName(item)} added to the ${purpose === "live" ? "live" : "test"} video queue.`)} /> : failed.length === 0 ? null : <>
           <SubheadingTag>Failed recently ({failed.length})</SubheadingTag>
           <p className="video-queue__hint">These videos did not load in time. Check the link, then add it again if needed.</p>
           <ol className="video-queue__list">{failed.map(item => <li key={item.id}><QueueItem item={item} actions={null} /></li>)}</ol>
@@ -325,6 +333,42 @@ function QueueItem({ actions, item }: { readonly actions: ReactNode; readonly it
       {actions === null ? null : <div className="video-queue__item-actions">{actions}</div>}
     </article>
   );
+}
+
+/** Finished videos for this purpose, newest first, in the same card layout as the Operator's Alerts and Effects Recent list. */
+function RecentVideos({ busy, card: Card, headingTag: Heading, items, onReplay }: {
+  readonly busy: boolean; readonly card: ComponentType<OperatorItemCardProps>; readonly headingTag: "h3" | "h4"; readonly items: readonly VideoRecentItem[]; readonly onReplay: (item: VideoRecentItem) => void;
+}) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const restoreFocusRef = useRef<HTMLButtonElement | null>(null);
+  // Replay disables every command while it runs; return focus to the pressed button, or the heading if it is gone.
+  useEffect(() => {
+    const target = restoreFocusRef.current;
+    if (busy || target === null) return;
+    restoreFocusRef.current = null;
+    if (target.isConnected && !target.disabled) target.focus(); else headingRef.current?.focus();
+  }, [busy]);
+  return (
+    <section aria-label="Recent videos" className="video-queue__recent">
+      <Heading ref={headingRef} tabIndex={-1}>Recent ({items.length})</Heading>
+      {items.length === 0 ? <p className="management-empty">No videos have finished yet.</p> : (
+        <ol className="operator-list">
+          {items.map(item => <li key={item.id}><Card label={itemName(item)} title={item.title ?? <bdi dir="ltr">{item.link}</bdi>}
+            summary={[item.requester === null ? null : `Requested by ${item.requester}`, providerLabel(item.source.provider), linkHost(item.link), `via ${channelLabel(item.submittedVia)}`].filter(Boolean).join(" · ")}
+            action={<Button aria-label={`Replay ${itemName(item)} in Videos`} variant="default" size="xs" disabled={busy} onClick={event => { restoreFocusRef.current = event.currentTarget; onReplay(item); }}>Replay</Button>}
+            details={[
+              { label: "Module", value: "Videos" },
+              { label: "Status", value: item.status === "failed" ? "Failed" : "Played", tone: item.status === "failed" ? "negative" : "positive" },
+              { label: "Finished", value: formatDateTime(item.finishedAt) }
+            ]} /></li>)}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+function linkHost(link: string): string | null {
+  return URL.canParse(link) ? new URL(link).hostname : null;
 }
 
 function AddVideoForm({ api, busy, onAdded, purpose }: {

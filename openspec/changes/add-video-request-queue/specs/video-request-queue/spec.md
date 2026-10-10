@@ -204,3 +204,12 @@ The system SHALL provide a Videos management page and Operator UI queue tools co
 #### Scenario: Operate during a stream
 - **WHEN** the operator opens the Operator UI
 - **THEN** a now-playing card shows title, requester, progress and available controls, and the queue list shows queued and held items with their actions, all keyboard operable
+
+#### Scenario: Replay a recent video from the Operator UI
+- **WHEN** a video in the queue being viewed has played (including skipped or stopped) or failed
+- **THEN** the Operator UI lists it under Recent, newest first and limited to the 10 newest finished videos of that purpose, with title, requester, link host, how it was requested, outcome and finish time, in the same list layout as the Alerts and Screen Effects Recent list, and removed or cleared videos are not listed
+- **AND** choosing Replay, guarded by the observed queue revision, adds the same source to the end of that queue as a new operator-submitted request that waits for Play next or Play all now and never starts on its own, with the current length limit applied
+
+#### Scenario: Replay refused
+- **WHEN** the operator replays a recent video while the Videos module is off, after its direct-file host was removed from the allowlist, against a stale queue revision, or after it has left Recent
+- **THEN** nothing is queued and the Operator UI shows the reason

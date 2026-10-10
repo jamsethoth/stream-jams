@@ -5,6 +5,7 @@ import { createManagementHttpClient, ManagementHttpError, type HttpManagementCli
 // The server validates every request; these guards only reject responses the UI cannot render.
 
 export type VideoQueueItem = VideoQueueResponse["items"][number];
+export type VideoRecentItem = VideoQueueResponse["recent"][number];
 export type VideoQueueCommand =
   | { readonly kind: "play-next" | "play-all" | "pause-queue" | "resume-queue" | "skip" | "stop" | "clear" }
   | { readonly kind: "remove" | "play-anyway"; readonly itemId: string }
@@ -22,6 +23,8 @@ export interface VideoQueueApi {
   submit(purpose: OverlayPurpose, input: VideoRequestInput): Promise<VideoQueueItem>;
   command(purpose: OverlayPurpose, expectedRevision: number, command: VideoQueueCommand): Promise<VideoQueueResponse>;
   control(purpose: OverlayPurpose, action: VideoCurrentAction, expectedItemId: string, positionMs?: number): Promise<VideoQueueResponse>;
+  /** Queues a Recent item's video again as a new request; it waits like any other request. */
+  requeue(purpose: OverlayPurpose, expectedRevision: number, itemId: string): Promise<VideoQueueResponse>;
 }
 
 export interface VideosBrowserSource {
@@ -70,6 +73,9 @@ export function createHttpVideosApi(options: HttpManagementClientOptions & { rea
     async control(purpose, action, expectedItemId, positionMs) {
       return parseQueue(await client.postJson(`${path(purpose)}/current/${action}`, { expectedItemId, ...(positionMs === undefined ? {} : { positionMs }) }, `Unable to ${action} the video.`));
     },
+    async requeue(purpose, expectedRevision, itemId) {
+      return parseQueue(await client.postJson(`${path(purpose)}/recent/requeue?from=${options.from ?? "management"}`, { expectedRevision, itemId }, "Unable to replay the video."));
+    },
     async getModuleConfig() { return parseModuleState(await client.getJson("/overlay-modules/videos/config", "Unable to load Videos settings.")); },
     async saveModuleConfig(enabled, config) {
       return parseModuleState(await client.putJson("/overlay-modules/videos/config", { enabled, config }, "Unable to save Videos settings."));
@@ -106,11 +112,17 @@ function isQueueItem(value: unknown, requireLink: boolean): boolean {
     && (!requireLink || typeof value.link === "string");
 }
 
+function isRecentItem(value: unknown): boolean {
+  return isQueueItem(value, true) && isRecord(value) && (value.status === "played" || value.status === "failed")
+    && typeof value.finishedAt === "string" && Number.isFinite(Date.parse(value.finishedAt));
+}
+
 function parseQueue(value: unknown): VideoQueueResponse {
   const current = isRecord(value) ? value.current : undefined;
   if (!isRecord(value) || (value.purpose !== "live" && value.purpose !== "test") || typeof value.revision !== "number"
     || typeof value.queuePaused !== "boolean" || typeof value.serverTimeEpochMs !== "number"
     || !Array.isArray(value.items) || !value.items.every(item => isQueueItem(item, true))
+    || !Array.isArray(value.recent) || !value.recent.every(isRecentItem)
     || (current !== null && !(isRecord(current) && typeof current.itemId === "string" && typeof current.positionMs === "number"
       && typeof current.atEpochMs === "number" && ["loading", "playing", "paused"].includes(String(current.phase)) && isRecord(current.controls)))) {
     throw new TypeError("The video queue returned an invalid response. Reload and retry.");

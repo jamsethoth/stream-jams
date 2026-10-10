@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { queuedVideos, videoItem } from "../../stories/video-queue-fixtures.js";
+import { queuedVideos, recentVideos, videoItem } from "../../stories/video-queue-fixtures.js";
 import { createHttpVideosApi, isVideoQueueConflict } from "./videos-api.js";
 
 function json(body: unknown, status = 200): Response {
@@ -33,6 +33,19 @@ describe("createHttpVideosApi", () => {
     expect(fetcher).toHaveBeenLastCalledWith("/videos/live/commands", expect.objectContaining({ method: "POST", body: JSON.stringify({ expectedRevision: 4, command: { kind: "reorder", itemIds: ["b", "a"] } }) }));
     await api.control("live", "seek", "a", 1_000);
     expect(fetcher).toHaveBeenLastCalledWith("/videos/live/current/seek", expect.objectContaining({ body: JSON.stringify({ expectedItemId: "a", positionMs: 1_000 }) }));
+    await api.requeue("test", 7, "video:done");
+    expect(fetcher).toHaveBeenLastCalledWith("/videos/test/recent/requeue?from=operator", expect.objectContaining({ method: "POST", body: JSON.stringify({ expectedRevision: 7, itemId: "video:done" }) }));
+  });
+
+  it("accepts Recent items and rejects malformed ones", async () => {
+    const valid = recentVideos();
+    let body: unknown = valid;
+    const api = createHttpVideosApi({ fetch: createFetch(() => json(body)) });
+    await expect(api.getQueue("live")).resolves.toMatchObject({ recent: [{ id: "done" }, { id: "broken", status: "failed" }, { id: "file" }] });
+    for (const recent of [undefined, [{ ...valid.recent[0], status: "removed" }], [{ ...valid.recent[0], finishedAt: "later" }], [{ ...valid.recent[0], link: undefined }]]) {
+      body = { ...valid, recent };
+      await expect(api.getQueue("live")).rejects.toThrow("invalid response");
+    }
   });
 
   it("defaults submissions to management", async () => {

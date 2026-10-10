@@ -6,13 +6,13 @@ import { LocalManagementRateLimiter } from "../middleware/local-management-rate-
 import { VideoQueueConflictError } from "../../modules/videos/video-queue-repository.js";
 import { VideoQueueCommandError } from "../../modules/videos/video-queue-service.js";
 import type { VideoRequestContext, VideoRequestResult } from "../../modules/videos/video-request-intake.js";
-import { registerVideoRoutes, type VideoRouteService } from "./videos.js";
+import { registerVideoRoutes, type VideoRequeueOutcome, type VideoRouteService } from "./videos.js";
 
-const emptyResponse: VideoQueueResponse = { purpose: "live", revision: 3, queuePaused: false, runRemaining: 0, gapEndsAtEpochMs: null, serverTimeEpochMs: 0, mirror: { available: false }, items: [], current: null };
+const emptyResponse: VideoQueueResponse = { purpose: "live", revision: 3, queuePaused: false, runRemaining: 0, gapEndsAtEpochMs: null, serverTimeEpochMs: 0, mirror: { available: false }, items: [], recent: [], current: null };
 
 type Scope = "videos:read" | "videos:submit" | "videos:control";
 
-function setup(options: { submitResult?: VideoRequestResult; commandError?: Error } = {}) {
+function setup(options: { submitResult?: VideoRequestResult; commandError?: Error; requeueResult?: VideoRequeueOutcome } = {}) {
   const calls: { kind: string; args: unknown[] }[] = [];
   const service: VideoRouteService = {
     response: purpose => { calls.push({ kind: "response", args: [purpose] }); return { ...emptyResponse, purpose }; },
@@ -25,7 +25,12 @@ function setup(options: { submitResult?: VideoRequestResult; commandError?: Erro
       if (options.commandError !== undefined) throw options.commandError;
       return emptyResponse;
     },
-    control: (purpose, itemId, command) => { calls.push({ kind: "control", args: [purpose, itemId, command] }); return emptyResponse; }
+    control: (purpose, itemId, command) => { calls.push({ kind: "control", args: [purpose, itemId, command] }); return emptyResponse; },
+    requeue: async (purpose, revision, itemId, context) => {
+      calls.push({ kind: "requeue", args: [purpose, revision, itemId, context] });
+      if (options.commandError !== undefined) throw options.commandError;
+      return options.requeueResult ?? { status: "accepted", queue: { ...emptyResponse, purpose, revision: revision + 1 } };
+    }
   };
   const grants: Record<string, readonly Scope[]> = {
     reader: ["videos:read"],
@@ -139,6 +144,54 @@ describe("video routes", () => {
     expect((await app.inject({ method: "POST", url: `${url}/current/pause`, headers: bearer("submitter"), payload: { expectedItemId: "item-1" } })).statusCode).toBe(403);
     expect((await app.inject({ method: "POST", url: `${url}/commands`, headers: bearer("controller"), payload: { expectedRevision: 3, command: { kind: "stop" } } })).statusCode).toBe(200);
     expect((await app.inject({ method: "POST", url: `${url}/current/pause`, headers: bearer("controller"), payload: { expectedItemId: "item-1" } })).statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("replays a Recent item for management and the Operator with a revision guard", async () => {
+    const { app, calls } = setup();
+    const headers = { "x-management": "yes" };
+    const url = "/videos/test/recent/requeue";
+    expect((await app.inject({ method: "POST", url, payload: { expectedRevision: 3, itemId: "video:1" } })).statusCode).toBe(401);
+    for (const payload of [{ itemId: "video:1" }, { expectedRevision: -1, itemId: "video:1" }, { expectedRevision: 3, itemId: "" }, { expectedRevision: 3, itemId: "video:1", autoplay: true }]) {
+      expect((await app.inject({ method: "POST", url, headers, payload })).statusCode).toBe(400);
+    }
+    expect(calls).toHaveLength(0);
+    const response = await app.inject({ method: "POST", url: `${url}?from=operator`, headers, payload: { expectedRevision: 3, itemId: "video:1" } });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ purpose: "test", revision: 4 });
+    await app.inject({ method: "POST", url: `${url}?from=automation`, headers, payload: { expectedRevision: 3, itemId: "video:1" } });
+    expect(calls.map(call => call.args)).toEqual([["test", 3, "video:1", { via: "operator" }], ["test", 3, "video:1", { via: "management" }]]);
+    await app.close();
+  });
+
+  it("maps replay rejections, conflicts and missing items", async () => {
+    const headers = { "x-management": "yes" };
+    const payload = { expectedRevision: 3, itemId: "video:1" };
+    for (const [reason, status] of [["module-disabled", 409], ["unsupported-source", 422]] as const) {
+      const { app } = setup({ requeueResult: { status: "rejected", reason } });
+      const response = await app.inject({ method: "POST", url: "/videos/live/recent/requeue", headers, payload });
+      expect(response.statusCode).toBe(status);
+      expect(response.json()).toMatchObject({ error: { code: "VIDEO_REQUEST_REJECTED", reason } });
+      await app.close();
+    }
+    const conflict = setup({ commandError: new VideoQueueConflictError() });
+    const stale = await conflict.app.inject({ method: "POST", url: "/videos/live/recent/requeue", headers, payload });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({ error: { code: "VIDEO_QUEUE_CONFLICT" } });
+    await conflict.app.close();
+    const missing = setup({ commandError: new VideoQueueCommandError("not-found", "That video is no longer in Recent.") });
+    const gone = await missing.app.inject({ method: "POST", url: "/videos/live/recent/requeue", headers, payload });
+    expect(gone.statusCode).toBe(409);
+    expect(gone.json()).toMatchObject({ error: { code: "VIDEO_QUEUE_COMMAND_REJECTED", reason: "not-found" } });
+    await missing.app.close();
+  });
+
+  it("offers no replay on the automation API", async () => {
+    const { app, calls } = setup();
+    const payload = { expectedRevision: 3, itemId: "video:1" };
+    expect((await app.inject({ method: "POST", url: "/automation/v1/videos/live/recent/requeue", headers: bearer("controller"), payload })).statusCode).toBe(404);
+    expect((await app.inject({ method: "POST", url: "/automation/v1/videos/live/commands", headers: bearer("controller"), payload: { expectedRevision: 3, command: { kind: "requeue", itemId: "video:1" } } })).statusCode).toBe(400);
+    expect(calls).toHaveLength(0);
     await app.close();
   });
 });

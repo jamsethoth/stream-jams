@@ -1,9 +1,10 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createStaticVideoQueueApi, failedVideos, heldVideos, playingVideo, queuedVideos, twitchClipPlaying, videoQueue } from "../../stories/video-queue-fixtures.js";
+import { createStaticVideoQueueApi, failedVideos, heldVideos, playingVideo, queuedVideos, recentVideo, recentVideos, twitchClipPlaying, videoQueue } from "../../stories/video-queue-fixtures.js";
 import { renderManagement } from "../../test-support/render-management.js";
 import { ManagementHttpError } from "../management-http-client.js";
+import { OperatorItemCard } from "../../operator/OperatorItemCard.js";
 import { VideoQueuePanel } from "./VideoQueuePanel.js";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -69,6 +70,65 @@ describe("VideoQueuePanel", () => {
     expect(within(failed).queryByRole("button")).not.toBeInTheDocument();
     expect(screen.getByText("Failed recently (1)")).toBeVisible();
     expect(screen.getByText("Waiting (1)")).toBeVisible();
+  });
+
+  it("keeps management on the failed-only list without Recent", async () => {
+    renderManagement(<VideoQueuePanel api={createStaticVideoQueueApi({ ...failedVideos(), recent: recentVideos().recent })} />);
+    expect(await screen.findByText("Failed recently (1)")).toBeVisible();
+    expect(screen.queryByRole("region", { name: "Recent videos" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Replay/u })).not.toBeInTheDocument();
+  });
+
+  describe("Operator Recent", () => {
+    it("lists finished videos newest first with requester, host, channel, outcome and finish time", async () => {
+      renderManagement(<VideoQueuePanel api={createStaticVideoQueueApi(recentVideos())} recentCard={OperatorItemCard} />);
+      const recent = await screen.findByRole("region", { name: "Recent videos" });
+      expect(within(recent).getByRole("heading", { name: "Recent (3)" })).toBeVisible();
+      const cards = within(recent).getAllByRole("article");
+      expect(cards.map(card => card.getAttribute("aria-label"))).toEqual(["Cat plays keyboard", "Removed upload", "https://videos.example.com/clip.mp4"]);
+      expect(cards[0]).toHaveTextContent("Requested by viewer_one · YouTube · youtu.be · via channel points");
+      expect(within(cards[0]!).getByText("Played")).toBeVisible();
+      expect(within(cards[0]!).getByText(/2026/u)).toBeVisible();
+      expect(within(cards[1]!).getByText("Failed")).toBeVisible();
+      expect(cards[2]).toHaveTextContent("Direct file · videos.example.com · via Operator");
+      // Failures are part of Recent here, so the separate failed-only list is not repeated.
+      expect(screen.queryByText(/Failed recently/u)).not.toBeInTheDocument();
+    });
+
+    it("shows an empty Recent list", async () => {
+      renderManagement(<VideoQueuePanel api={createStaticVideoQueueApi(videoQueue())} recentCard={OperatorItemCard} />);
+      const recent = await screen.findByRole("region", { name: "Recent videos" });
+      expect(within(recent).getByText("No videos have finished yet.")).toBeVisible();
+    });
+
+    it("replays from the keyboard with the observed revision and keeps focus on Replay", async () => {
+      const user = userEvent.setup();
+      const replayed = videoQueue({ ...recentVideos(), revision: 5, items: [...recentVideos().items, { ...recentVideo("again", { title: "Cat plays keyboard", submittedVia: "operator" }), status: "queued", position: 6 }] });
+      const requeue = vi.fn(async () => replayed);
+      renderManagement(<VideoQueuePanel api={createStaticVideoQueueApi(recentVideos(), { requeue })} pollIntervalMs={60_000} recentCard={OperatorItemCard} />);
+      const replay = await screen.findByRole("button", { name: "Replay Cat plays keyboard in Videos" });
+      replay.focus();
+      await user.keyboard("{Enter}");
+      expect(requeue).toHaveBeenCalledWith("live", 4, "done");
+      expect(await screen.findByText("Cat plays keyboard added to the live video queue.")).toBeVisible();
+      expect(screen.getByText("Waiting (2)")).toBeVisible();
+      await waitFor(() => expect(screen.getByRole("button", { name: "Replay Cat plays keyboard in Videos" })).toHaveFocus());
+    });
+
+    it("reports a replay the server rejects and refreshes after a conflict", async () => {
+      const user = userEvent.setup();
+      const requeue = vi.fn()
+        .mockRejectedValueOnce(new ManagementHttpError("That link is no longer allowed. Add its host in Videos settings to replay it.", "VIDEO_REQUEST_REJECTED", null, null, [], [], 422))
+        .mockRejectedValueOnce(conflict());
+      const getQueue = vi.fn(async () => recentVideos());
+      renderManagement(<VideoQueuePanel api={createStaticVideoQueueApi(recentVideos(), { requeue, getQueue })} pollIntervalMs={60_000} recentCard={OperatorItemCard} />);
+      await user.click(await screen.findByRole("button", { name: "Replay https://videos.example.com/clip.mp4 in Videos" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("That link is no longer allowed.");
+      const calls = getQueue.mock.calls.length;
+      await user.click(screen.getByRole("button", { name: "Replay Removed upload in Videos" }));
+      expect(await screen.findByText("The queue changed; try again.")).toBeVisible();
+      expect(getQueue.mock.calls.length).toBeGreaterThan(calls);
+    });
   });
 
   it("reorders and removes waiting items", async () => {

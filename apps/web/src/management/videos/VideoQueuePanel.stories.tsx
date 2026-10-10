@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
-import { createStaticVideoQueueApi, failedVideos, heldVideos, playingVideo, queuedVideos, twitchClipPlaying, videoQueue } from "../../stories/video-queue-fixtures.js";
+import { createStaticVideoQueueApi, failedVideos, heldVideos, playingVideo, queuedVideos, recentVideos, twitchClipPlaying, videoQueue } from "../../stories/video-queue-fixtures.js";
 import { ManagementHttpError } from "../management-http-client.js";
+import { OperatorItemCard } from "../../operator/OperatorItemCard.js";
 import { VideoQueuePanel } from "./VideoQueuePanel.js";
 
 /** The shared queue tools used by the Videos page and the Operator Console. */
@@ -54,6 +55,20 @@ export const RecentFailure: Story = {
     const failed = await canvas.findByRole("article", { name: "Removed upload" });
     await expect(within(failed).getByText("Failed")).toBeVisible();
     await expect(canvas.getByText("Failed recently (1)")).toBeVisible();
+  }
+};
+
+/** The Operator Console variant: finished videos, newest first, with Replay in place of the failed-only list. */
+export const OperatorRecentVideos: Story = {
+  args: { api: createStaticVideoQueueApi(recentVideos()), recentCard: OperatorItemCard },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const recent = within(await canvas.findByRole("region", { name: "Recent videos" }));
+    await expect(recent.getAllByRole("article").map(card => card.getAttribute("aria-label"))).toEqual(["Cat plays keyboard", "Removed upload", "https://videos.example.com/clip.mp4"]);
+    await expect(recent.getByRole("article", { name: "Cat plays keyboard" })).toHaveTextContent("youtu.be · via channel points");
+    await expect(canvas.queryByText(/Failed recently/u)).not.toBeInTheDocument();
+    await userEvent.click(recent.getByRole("button", { name: "Replay Removed upload in Videos" }));
+    await expect(await canvas.findByText("Removed upload added to the live video queue.")).toBeVisible();
   }
 };
 

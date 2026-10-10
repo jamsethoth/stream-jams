@@ -1,6 +1,7 @@
 import { Button, Checkbox, NativeSelect, TextInput } from "@mantine/core";
 import { isValidVideosLayout, type ActionableManagementError, type AudioRouteStatus, type OverlayPurpose, type TwitchCustomReward, type TwitchCustomRewardCatalog, type VideosLayout, type VideosModuleConfig } from "@stream-jams/core";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentType, type FormEvent } from "react";
+import type { OperatorItemCardProps } from "../../operator/OperatorItemCard.js";
 import type { AudioApi } from "../audio/audio-api.js";
 import { actionableError } from "../foundation/actionable-error.js";
 import { BrowserSourceRow } from "../foundation/BrowserSourceRow.js";
@@ -48,9 +49,9 @@ function resolveDefaultApi(): VideosApi { return defaultApi ??= createHttpVideos
  * The Operator Console's Videos panel. It lives in this lazily loaded module so the page and the panel share one chunk
  * and neither route's static graph grows. Requests added here are attributed to the Operator.
  */
-export function OperatorVideosPanel({ api }: { readonly api?: VideoQueueApi | undefined }) {
+export function OperatorVideosPanel({ api, recentCard }: { readonly api?: VideoQueueApi | undefined; readonly recentCard: ComponentType<OperatorItemCardProps> }) {
   const [operatorApi] = useState(() => api ?? createHttpVideosApi({ from: "operator" }));
-  return <section className="operator-section operator-videos"><VideoQueuePanel api={api ?? operatorApi} /></section>;
+  return <section className="operator-section operator-videos"><VideoQueuePanel api={api ?? operatorApi} recentCard={recentCard} /></section>;
 }
 
 export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi }: VideosPageProps) {

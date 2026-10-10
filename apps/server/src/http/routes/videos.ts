@@ -5,13 +5,19 @@ import { getAutomationGrant } from "../middleware/automation-security.js";
 import { sendHttpError } from "../errors.js";
 import { VideoQueueConflictError } from "../../modules/videos/video-queue-repository.js";
 import { VideoQueueCommandError, type VideoItemCommand, type VideoQueueCommand } from "../../modules/videos/video-queue-service.js";
-import type { VideoRequestContext, VideoRequestResult } from "../../modules/videos/video-request-intake.js";
+import type { VideoRequestContext, VideoRequestResult, VideoRequeueResult } from "../../modules/videos/video-request-intake.js";
+
+export type VideoRequeueOutcome =
+  | { readonly status: "accepted"; readonly queue: VideoQueueResponse }
+  | Extract<VideoRequeueResult, { status: "rejected" }>;
 
 export interface VideoRouteService {
   response(purpose: OverlayPurpose): VideoQueueResponse;
   submit(purpose: OverlayPurpose, input: unknown, context: VideoRequestContext): Promise<VideoRequestResult>;
   command(purpose: OverlayPurpose, expectedRevision: number, command: VideoQueueCommand): VideoQueueResponse;
   control(purpose: OverlayPurpose, expectedItemId: string, command: VideoItemCommand): VideoQueueResponse;
+  /** Queues a Recent item's video again as a new request. */
+  requeue(purpose: OverlayPurpose, expectedRevision: number, itemId: string, context: Pick<VideoRequestContext, "via">): Promise<VideoRequeueOutcome>;
 }
 
 export interface VideoRouteDependencies {
@@ -36,6 +42,7 @@ const commandSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("reorder"), itemIds: z.array(itemIdSchema).max(500) }).strict()
 ]);
 const commandBodySchema = z.object({ expectedRevision: revisionSchema, command: commandSchema }).strict();
+const requeueBodySchema = z.object({ expectedRevision: revisionSchema, itemId: itemIdSchema }).strict();
 const controlBodySchema = z.object({
   expectedItemId: itemIdSchema,
   positionMs: z.number().int().nonnegative().max(24 * 60 * 60 * 1000).optional()
@@ -56,6 +63,15 @@ export function registerVideoRoutes(app: FastifyInstance, dependencies: VideoRou
   app.post("/videos/:purpose/commands", management, async (request, reply) => handle(reply, () => {
     const body = commandBodySchema.parse(request.body);
     return videos.command(readPurpose(request), body.expectedRevision, body.command);
+  }));
+  // Replay from Recent. Management and the Operator only; the automation API has no replay.
+  app.post("/videos/:purpose/recent/requeue", management, async (request, reply) => handle(reply, async () => {
+    const via = submitterSchema.catch("management").parse((request.query as { readonly from?: unknown } | undefined)?.from);
+    const purpose = readPurpose(request);
+    const body = requeueBodySchema.parse(request.body);
+    const result = await videos.requeue(purpose, body.expectedRevision, body.itemId, { via });
+    if (result.status === "accepted") return result.queue;
+    return reply.status(result.reason === "module-disabled" ? 409 : 422).send({ error: { code: "VIDEO_REQUEST_REJECTED", message: requeueRejectionMessage(result.reason), reason: result.reason }, fields: [] });
   }));
   app.post("/videos/:purpose/current/:action", management, async (request, reply) => handle(reply, () => control(videos, request)));
 
@@ -115,6 +131,10 @@ function rejectionMessage(reason: Extract<VideoRequestResult, { status: "rejecte
     case "unsupported-source": return "That site is not allowed. Add direct-file hosts in Videos settings.";
     case "queue-full": return "The video queue is full. Remove or clear videos first.";
   }
+}
+
+function requeueRejectionMessage(reason: Extract<VideoRequeueOutcome, { status: "rejected" }>["reason"]): string {
+  return reason === "module-disabled" ? rejectionMessage(reason) : "That link is no longer allowed. Add its host in Videos settings to replay it.";
 }
 
 async function handle(reply: FastifyReply, work: () => unknown): Promise<unknown> {

@@ -56,6 +56,7 @@
 - [x] 6.2 Add the Operator panel: now-playing card and queue list with all controls, keyboard operable, with confirmation for clear.
 - [x] 6.3 Add Storybook stories and component tests for both surfaces.
 - [x] 6.4 Add Videos placement: a persisted canvas box in the module config (default equal to the earlier look), validated on save and in the projection, applied by browser sources, the desktop overlay and the mirror, and edited on the Videos page with the shared snapping, plus stories, unit tests and Playwright coverage.
+- [x] 6.5 Add an Operator Recent list for Videos (newest 10 played or failed items per purpose, in the Alerts/Effects Recent card layout) with a revision-guarded Replay that queues the source again as a new operator request through the intake rules (module on, current allowlist, length limit), plus service, route, component, Storybook and Playwright coverage.
 
 ## 7. Docs, Backlog And Verification
 
