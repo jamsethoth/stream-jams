@@ -53,6 +53,7 @@ The installer SHALL install without administrator rights into the current user's
 #### Scenario: User uninstalls Stream Jams
 - **WHEN** the user uninstalls Stream Jams from the Apps list
 - **THEN** the installed application files, shortcuts and uninstall entry are removed
+- **AND** at most Squirrel's own updater remnants remain in a folder marked as uninstalled
 - **AND** the `.stream-jams` profile, Electron user data and keyring credentials remain
 
 #### Scenario: Portable folder is launched

@@ -31,6 +31,7 @@ test("unsigned installer installs per user, launches with the existing profile, 
   // Squirrel launches the installed app after setup; it inherits this isolated profile.
   env.STREAM_JAMS_CONFIG_PATH = configPath;
   env.STREAM_JAMS_DESKTOP_USER_DATA_PATH = join(root, "electron");
+  let versionDirectory = "";
   try {
     await test.step("Run Setup.exe without administrator rights", async () => {
       await run(installerPath, [], { env, timeout: 180_000, windowsHide: true });
@@ -39,6 +40,7 @@ test("unsigned installer installs per user, launches with the existing profile, 
     await test.step("Install into the user's local app data with shortcuts and an Apps entry", async () => {
       const versions = (await readdir(installRoot)).filter((name) => name.startsWith("app-"));
       expect(versions).toHaveLength(1);
+      versionDirectory = versions[0]!;
       await access(join(installRoot, "Update.exe"));
       await access(join(installRoot, versions[0]!, "Stream Jams.exe"));
       await access(join(installRoot, versions[0]!, "resources", "app.asar"));
@@ -57,8 +59,10 @@ test("unsigned installer installs per user, launches with the existing profile, 
       expect(await shortcuts(startMenu)).toHaveLength(0);
       expect(await shortcuts(desktopFolder)).toHaveLength(0);
       expect(await registryKeyExists(uninstallKey)).toBe(false);
+      // Squirrel cannot delete the running Update.exe or its own bootstrapper
+      // copy, so it marks the folder .dead and leaves only those behind.
       try {
-        await expect.poll(() => appVersionDirectories(installRoot), { timeout: 30_000 }).toHaveLength(0);
+        await expect.poll(() => leftoverFiles(installRoot), { timeout: 30_000 }).toEqual([".dead", "Update.exe", versionDirectory, `${versionDirectory}\\squirrel.exe`].map((name) => name.toLowerCase()).sort());
       } catch (error) {
         console.error(`Uninstall left files behind:\n${await leftoverEvidence(installRoot)}`);
         throw error;
@@ -70,9 +74,12 @@ test("unsigned installer installs per user, launches with the existing profile, 
       expect((await stat(dataDirectory)).isDirectory()).toBe(true);
     });
   } finally {
-    if (await exists(join(installRoot, "Update.exe"))) {
+    if (await exists(join(installRoot, "Update.exe")) && !(await exists(join(installRoot, ".dead")))) {
       await run(join(installRoot, "Update.exe"), ["--uninstall"], { env, timeout: 180_000, windowsHide: true }).catch((error: unknown) => console.error("Installer cleanup failed", error));
     }
+    // This test refused to start over an existing installation, so the
+    // uninstalled remnant folder is its own.
+    if (await exists(join(installRoot, ".dead"))) await rm(installRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 }).catch((error: unknown) => console.error("Installer remnant cleanup failed", error));
     // Only the directory returned by mkdtemp above is removed.
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
   }
@@ -93,8 +100,8 @@ async function shortcuts(directory: string): Promise<string[]> {
   return entries.filter((entry) => /(^|[\\/])Stream Jams[^\\/]*\.lnk$/i.test(entry));
 }
 
-async function appVersionDirectories(installRoot: string): Promise<string[]> {
-  return (await readdir(installRoot).catch(() => [])).filter((name) => name.startsWith("app-"));
+async function leftoverFiles(installRoot: string): Promise<string[]> {
+  return (await readdir(installRoot, { recursive: true }).catch(() => [])).map((name) => name.toLowerCase()).sort();
 }
 
 async function leftoverEvidence(installRoot: string): Promise<string> {
