@@ -13,10 +13,10 @@
     "test-storybook:ci": "start-server-and-test \"storybook dev --host 127.0.0.1 --port 6006 --ci\" http://127.0.0.1:6006 \"node ../../scripts/test-storybook.mjs --url http://127.0.0.1:6006 --ci --failOnConsole --maxWorkers=1 --testTimeout=30000\""
   },
   "dependencies": {
-    "@mantine/core": "9.7.0",
-    "@mantine/hooks": "9.7.0",
+    "@mantine/core": "9.7.1",
+    "@mantine/hooks": "9.7.1",
     "@stream-jams/core": "workspace:*",
-    "pixi.js": "8.21.0",
+    "pixi.js": "8.22.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
