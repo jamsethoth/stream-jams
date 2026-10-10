@@ -69,24 +69,35 @@ export function formatFinding(finding) {
   return `${finding.suppressed ? 'SUPPRESSED ' : ''}${finding.file}${finding.line === null ? '' : `:${finding.line}`} ${finding.ruleId} (${severity}): ${finding.message}`;
 }
 
+// Pull-request analysis is diff-informed, so it reports only results near changed lines and
+// an exception missing from it may still be needed. Stale exceptions block only on full scans.
+export function gateDirectory(directory, exceptions, { partialScan = false } = {}) {
+  const files = fs.readdirSync(directory).filter(name => name.endsWith('.sarif'));
+  if (files.length === 0) throw new Error(`No SARIF files were written to ${directory}.`);
+  const lines = [];
+  let blocking = 0;
+  const unused = new Set(exceptions);
+  for (const file of files) {
+    const summary = evaluateSarif(JSON.parse(fs.readFileSync(path.join(directory, file), 'utf8')), exceptions);
+    for (const entry of exceptions) if (!summary.staleExceptions.includes(entry)) unused.delete(entry);
+    lines.push(`${file}: ${summary.findings.length} findings, ${summary.blocking.length} blocking.`);
+    for (const finding of summary.findings) lines.push(`${finding.blocking ? 'BLOCKING ' : ''}${formatFinding(finding)}`);
+    blocking += summary.blocking.length;
+  }
+  for (const entry of unused) lines.push(partialScan ? `Exception not reported by this partial scan: ${entry.file} ${entry.rule}.` : `STALE EXCEPTION ${entry.file} ${entry.rule}: no longer reported; remove it.`);
+  if (!partialScan) blocking += unused.size;
+  return { lines, blocking };
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
-    const [directory, exceptionsPath] = process.argv.slice(2);
-    if (!directory || process.argv.length > 4) throw new Error('Usage: codeql-sarif-gate <sarif-directory> [exceptions.json]');
+    const args = process.argv.slice(2);
+    const partialScan = args[0] === '--partial-scan';
+    const [directory, exceptionsPath, ...extra] = partialScan ? args.slice(1) : args;
+    if (!directory || extra.length > 0) throw new Error('Usage: codeql-sarif-gate [--partial-scan] <sarif-directory> [exceptions.json]');
     const exceptions = exceptionsPath ? JSON.parse(fs.readFileSync(exceptionsPath, 'utf8')) : [];
-    const files = fs.readdirSync(directory).filter(name => name.endsWith('.sarif'));
-    if (files.length === 0) throw new Error(`No SARIF files were written to ${directory}.`);
-    let blocking = 0;
-    const unused = new Set(exceptions);
-    for (const file of files) {
-      const summary = evaluateSarif(JSON.parse(fs.readFileSync(path.join(directory, file), 'utf8')), exceptions);
-      for (const entry of exceptions) if (!summary.staleExceptions.includes(entry)) unused.delete(entry);
-      console.log(`${file}: ${summary.findings.length} findings, ${summary.blocking.length} blocking.`);
-      for (const finding of summary.findings) console.log(`${finding.blocking ? 'BLOCKING ' : ''}${formatFinding(finding)}`);
-      blocking += summary.blocking.length;
-    }
-    for (const entry of unused) console.log(`STALE EXCEPTION ${entry.file} ${entry.rule}: no longer reported; remove it.`);
-    if (unused.size > 0) blocking += unused.size;
+    const { lines, blocking } = gateDirectory(directory, exceptions, { partialScan });
+    for (const line of lines) console.log(line);
     if (blocking > 0) throw new Error(`${blocking} CodeQL findings are errors or high-severity security issues, or exceptions are stale.`);
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }

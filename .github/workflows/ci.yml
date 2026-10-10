@@ -301,8 +301,9 @@ jobs:
           upload: never
           output: codeql-results
 
+      # Pull-request analysis is diff-informed, so only full push scans can prove an exception stale.
       - name: Gate CodeQL findings
-        run: node scripts/codeql-sarif-gate.mjs codeql-results .github/codeql-exceptions.json
+        run: node scripts/codeql-sarif-gate.mjs ${{ github.event_name == 'pull_request' && '--partial-scan' || '' }} codeql-results .github/codeql-exceptions.json
 
       - name: Upload CodeQL results
         if: always()

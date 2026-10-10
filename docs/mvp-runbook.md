@@ -39,7 +39,7 @@ The same job also publishes `StreamJamsSetup.exe` as an artifact named `stream-j
 2. Run it. No administrator rights are needed. Because it is unsigned, SmartScreen shows "Windows protected your PC" and the publisher is unknown: choose **More info**, then **Run anyway** only for a build you downloaded from this repository's CI.
 3. Setup installs into `%LocalAppData%\StreamJams`, adds Desktop and Start menu shortcuts and a Settings → Apps entry, then starts Stream Jams with your existing profile.
 4. To install a newer build, quit Stream Jams from the tray and run the newer Setup. Builds of the same version reinstall in place; there is no automatic update yet.
-5. To uninstall, quit Stream Jams from the tray first, then remove it from **Settings → Apps**. Uninstalling stops a running copy without the normal quit flow. The `.stream-jams` profile, Electron settings and keyring credentials are kept; delete them yourself only if you want a clean reset. Squirrel also leaves a small `%LocalAppData%\StreamJams` folder holding only its updater, which is safe to delete.
+5. To uninstall, quit Stream Jams from the tray first, then remove it from **Settings → Apps**. Uninstalling stops a running copy without the normal quit flow. The `.stream-jams` profile, Electron settings and keyring credentials are kept; delete them yourself only if you want a clean reset. Squirrel also leaves a small `%LocalAppData%\StreamJams` folder holding its updater and sometimes a few app files Windows still had open; the folder is safe to delete.
 
 Run `corepack pnpm test:desktop` with `STREAM_JAMS_INSTALLER_TEST=1` only on a Windows account where installing and uninstalling Stream Jams is acceptable; the installer test refuses to run over an existing installation.
 

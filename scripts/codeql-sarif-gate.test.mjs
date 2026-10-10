@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { evaluateSarif, formatFinding } from './codeql-sarif-gate.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { evaluateSarif, formatFinding, gateDirectory } from './codeql-sarif-gate.mjs';
 
 const rule = (id, level, severity) => ({ id, defaultConfiguration: { level }, properties: severity === undefined ? {} : { 'security-severity': severity } });
 const result = (ruleId, index, extra = {}) => ({ ruleId, rule: { id: ruleId, index, toolComponent: { index: 0 } }, message: { text: `${ruleId} found` }, locations: [{ physicalLocation: { artifactLocation: { uri: 'apps/server/src/a.ts' }, region: { startLine: 4 } } }], ...extra });
@@ -50,4 +53,20 @@ test('missing or malformed reports fail closed', () => {
   for (const value of [null, {}, { runs: [] }, { runs: [{ tool: {}, results: [] }] }, { runs: [{ tool: { driver: { rules: [] } } }] }]) assert.throws(() => evaluateSarif(value));
   assert.throws(() => evaluateSarif(report([], [{ message: { text: 'no rule' } }])), /rule identifier/);
   assert.throws(() => evaluateSarif(report([rule('js/a', 'warning', 'high')], [result('js/a', 0)])), /invalid security severity/);
+});
+
+test('stale exceptions block full scans but not diff-informed pull-request scans', t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'codeql-gate-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(directory, 'javascript.sarif'), JSON.stringify(report([rule('js/a', 'error')], [result('js/a', 0)])));
+  const matched = { rule: 'js/a', file: 'apps/server/src/a.ts', reason: 'reviewed' };
+  const absent = { rule: 'js/b', file: 'apps/server/src/b.ts', reason: 'reviewed' };
+  const full = gateDirectory(directory, [matched, absent]);
+  assert.equal(full.blocking, 1);
+  assert.ok(full.lines.includes('STALE EXCEPTION apps/server/src/b.ts js/b: no longer reported; remove it.'));
+  const partial = gateDirectory(directory, [matched, absent], { partialScan: true });
+  assert.equal(partial.blocking, 0);
+  assert.ok(partial.lines.includes('Exception not reported by this partial scan: apps/server/src/b.ts js/b.'));
+  fs.writeFileSync(path.join(directory, 'javascript.sarif'), JSON.stringify(report([rule('js/b', 'error')], [result('js/b', 0)])));
+  assert.equal(gateDirectory(directory, [], { partialScan: true }).blocking, 1);
 });
