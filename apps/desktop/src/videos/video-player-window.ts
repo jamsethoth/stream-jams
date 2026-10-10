@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { BrowserWindow, ipcMain, session, type IpcMainEvent, type Session, type WebFrameMain } from "electron";
+import { BrowserWindow, ipcMain, session, webFrameMain, type IpcMainEvent, type Session, type WebFrameMain } from "electron";
 import { z } from "zod";
 import type { OverlayPurpose } from "@stream-jams/core";
 import { VIDEO_PLAYER_COMMAND_CHANNEL, VIDEO_PLAYER_REPORT_CHANNEL, videoPlayerCommandSchema, type VideoPlayerCommand } from "./video-ipc.js";
-import { twitchFrameScript } from "./twitch-frame-script.js";
+import { providerFrameCleanScript, twitchFrameScript } from "./twitch-frame-script.js";
 import type { TwitchFrameOperation, TwitchFrameState, VideoPlayerPort, VideoPortCallbacks } from "./video-player-host.js";
 
 /*
@@ -32,6 +32,15 @@ const twitchHosts = new Set(["clips.twitch.tv", "player.twitch.tv"]);
 
 export function videoPlayerPageUrl(origin: string, purpose: OverlayPurpose): string {
   return `${origin}${videoPlayerBasePath}${purpose}`;
+}
+
+const youtubeHosts = new Set(["www.youtube-nocookie.com", "www.youtube.com"]);
+
+/** Provider frames whose chrome is hidden in the captured player. */
+export function isProviderFrame(url: string): boolean {
+  if (!URL.canParse(url)) return false;
+  const parsed = new URL(url);
+  return parsed.protocol === "https:" && (twitchHosts.has(parsed.hostname) || youtubeHosts.has(parsed.hostname));
 }
 
 /** The provider frames whose `<video>` the main process may read or steer. */
@@ -143,6 +152,18 @@ export class VideoPlayerWindow implements VideoPlayerPort {
     this.window.webContents.on("will-redirect", event => { if (event.isMainFrame) event.preventDefault(); });
     this.window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     this.window.webContents.on("will-attach-webview", event => event.preventDefault());
+    // Hide provider chrome as soon as each provider document is ready, and again after it loads.
+    this.window.webContents.on("frame-created", (_event, { frame }) => { frame?.on("dom-ready", () => this.#clean(frame)); });
+    this.window.webContents.on("did-frame-finish-load", (_event, isMainFrame, processId, routingId) => {
+      if (!isMainFrame) this.#clean(webFrameMain.fromId(processId, routingId));
+    });
+  }
+
+  #clean(frame: WebFrameMain | null | undefined): void {
+    if (frame === null || frame === undefined || frame.isDestroyed() || !isProviderFrame(frame.url)) return;
+    void frame.executeJavaScript(providerFrameCleanScript, true).catch(
+      // error-provenance: allow expected -- a frame that navigated away or closed has nothing to clean
+      () => undefined);
   }
 
   isMainFrame(frame: WebFrameMain): boolean {
@@ -170,6 +191,7 @@ export class VideoPlayerWindow implements VideoPlayerPort {
     if (this.#destroying || this.window.isDestroyed()) return null;
     const frame = this.window.webContents.mainFrame.framesInSubtree.find(candidate => candidate !== this.window.webContents.mainFrame && isTwitchProviderFrame(candidate.url));
     if (frame === undefined) return null;
+    this.#clean(frame);
     const parsed = twitchStateSchema.safeParse(await frame.executeJavaScript(twitchFrameScript(operation), true));
     if (!parsed.success) return { video: false };
     return parsed.data;

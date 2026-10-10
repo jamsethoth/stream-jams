@@ -45,7 +45,7 @@ describe("player URLs", () => {
   it("builds privacy-enhanced YouTube embeds with the JS API enabled", () => {
     const url = new URL(buildVideoPlayerUrl({ provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 90_500 }, player));
     expect(url.origin + url.pathname).toBe("https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ");
-    expect(Object.fromEntries(url.searchParams)).toMatchObject({ enablejsapi: "1", start: "90", origin: "http://127.0.0.1:4580" });
+    expect(Object.fromEntries(url.searchParams)).toMatchObject({ enablejsapi: "1", start: "90", origin: "http://127.0.0.1:4580", controls: "0", disablekb: "1", fs: "0", iv_load_policy: "3", rel: "0" });
   });
 
   it("adds the Twitch parent host", () => {

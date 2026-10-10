@@ -90,7 +90,8 @@ export function buildVideoPlayerUrl(source: VideoSource, options: VideoPlayerUrl
     case "youtube": {
       const url = new URL(`https://www.youtube-nocookie.com/embed/${source.videoId}`);
       url.search = new URLSearchParams({
-        enablejsapi: "1", playsinline: "1", autoplay: "1", rel: "0",
+        // No player chrome on stream: Stream Jams drives YouTube through its iframe API instead.
+        enablejsapi: "1", playsinline: "1", autoplay: "1", rel: "0", controls: "0", disablekb: "1", fs: "0", iv_load_policy: "3",
         start: String(Math.floor(source.startAtMs / 1000)), origin: options.playerOrigin, mute: options.muted === true ? "1" : "0"
       }).toString();
       return url.href;
