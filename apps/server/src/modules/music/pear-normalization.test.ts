@@ -9,6 +9,15 @@ describe("normalizePearObservation", () => {
     expect(snapshot).toMatchObject({ track: { id: "abc", title: "Title", artists: ["Doe, Jane"] }, playbackState: "playing", positionMs: 12_000, durationMs: 95_000 });
   });
 
+  it("prefixes YouTube video IDs that start with a dash or underscore and keeps them stable across events", () => {
+    for (const videoId of ["-tJYN-eG1zk", "_OBlgSz8sSM"]) {
+      const first = normalizePearObservation({ type: "PLAYER_INFO", song: { videoId, title: "Title", artist: "Jane", songDuration: 95 }, isPlaying: true }, null, context);
+      expect(first.track?.id).toBe(`yt:${videoId}`);
+      const again = normalizePearObservation({ type: "VIDEO_CHANGED", song: { videoId }, position: 0 }, first, { ...context, revision: 2 });
+      expect(again.track).toMatchObject({ id: `yt:${videoId}`, title: "Title", artists: ["Jane"] });
+    }
+  });
+
   it("clears on an explicit empty song and preserves same-track metadata on partial events", () => {
     const first = normalizePearObservation({ type: "PLAYER_INFO", song: { videoId: "abc", title: "Title", artist: "Jane", songDuration: 95 }, isPlaying: true, position: 12 }, null, context);
     const partial = normalizePearObservation({ type: "POSITION_CHANGED", position: 13 }, first, { ...context, revision: 2 });

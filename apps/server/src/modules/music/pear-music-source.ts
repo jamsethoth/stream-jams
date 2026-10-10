@@ -6,7 +6,7 @@ import { isIP } from "node:net";
 import WebSocket, { type RawData } from "ws";
 import { musicSnapshotSchema, musicStatusSchema, type MusicConnectionTestResult, type MusicSnapshot, type MusicSourceAdapter, type MusicStatus, type PearConfiguration, type ProviderValidationResult } from "@stream-jams/core";
 import { inspectPearCertificate, isPearCertificateTrustFailure, parsePearConfiguration, pearTlsOptions, resolvePearDestination, type PresentedPearCertificate } from "./pear-config.js";
-import { extractPearArtworkDescriptor, normalizePearObservation } from "./pear-normalization.js";
+import { extractPearArtworkDescriptor, normalizePearObservation, pearTrackId } from "./pear-normalization.js";
 
 const requestTimeoutMs = 5_000;
 const pollIntervalMs = 3_000;
@@ -248,7 +248,8 @@ export class PearMusicSource implements MusicSourceAdapter {
     if (descriptor !== null) {
       const priorRef = this.#snapshot?.track?.artworkRef;
       const sameTrack = source.song !== null && typeof source.song === "object" && !Array.isArray(source.song)
-        && (source.song as Record<string, unknown>).videoId === this.#snapshot?.track?.id;
+        && typeof (source.song as Record<string, unknown>).videoId === "string"
+        && pearTrackId((source.song as Record<string, unknown>).videoId as string) === this.#snapshot?.track?.id;
       if (sameTrack && priorRef && this.#artwork.get(priorRef)?.url === descriptor.url) artworkRef = priorRef;
       else {
         artworkRef = `art_${randomUUID().replaceAll("-", "")}`;

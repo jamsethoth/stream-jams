@@ -9,7 +9,7 @@
 
 - [x] 2.1 Report `auth-required` instead of reconnecting when Pear's certificate is not trusted by the saved source.
 - [x] 2.2 Report `auth-required` when a saved HTTP source finds Pear serving HTTPS, using a credential-free certificate probe.
-- [x] 2.3 Accept track IDs that start with `-` or `_`.
+- [x] 2.3 Map Pear video IDs that start with `-` or `_` to `yt:`-prefixed track IDs.
 
 ## 3. Verification
 

@@ -33,6 +33,11 @@ function secondsToMs(value: unknown): number | null {
   return value * 1_000;
 }
 
+/** Track ID for a Pear video ID. YouTube IDs may start with "-" or "_", which music identities cannot, so those get a prefix. */
+export function pearTrackId(videoId: string): string {
+  return /^[-_]/u.test(videoId) ? `yt:${videoId}` : videoId;
+}
+
 export function extractPearArtworkDescriptor(songInput: unknown): PrivateArtworkDescriptor | null {
   if (typeof songInput !== "object" || songInput === null || Array.isArray(songInput)) return null;
   const imageSrc = (songInput as Record<string, unknown>).imageSrc;
@@ -55,7 +60,7 @@ export function normalizePearObservation(input: unknown, previous: MusicSnapshot
     track = null; durationMs = null; positionMs = null; playbackState = "stopped";
   } else if (event === "VIDEO_CHANGED" || event === "PLAYER_INFO" || event === "REST_SONG") {
     const song = record(observation.song);
-    const id = stringField(song.videoId, musicLimits.identityCharacters);
+    const id = pearTrackId(stringField(song.videoId, musicLimits.identityCharacters));
     const sameTrack = previous?.track?.id === id;
     const title = song.title === undefined
       ? (sameTrack ? previous!.track!.title : "")

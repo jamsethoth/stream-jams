@@ -392,7 +392,7 @@ describe("PearMusicSource track identity", () => {
     const source = await create("ws"); fixture!.setFirstFrame({ type: "PLAYER_INFO", song: { ...song, videoId: "-tJYN-eG1zk" }, isPlaying: true });
     const statuses: MusicStatus[] = [];
     await source.start(() => {}, value => statuses.push(value), new AbortController().signal);
-    expect(source.getSnapshot()?.track?.id).toBe("-tJYN-eG1zk");
+    expect(source.getSnapshot()?.track?.id).toBe("yt:-tJYN-eG1zk");
     expect(statuses.at(-1)?.state).toBe("connected");
   });
 });

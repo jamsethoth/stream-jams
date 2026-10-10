@@ -16,9 +16,8 @@ export const musicLimits = {
 
 const boundedInteger = (limit: { readonly min: number; readonly max: number }) => z.number().int().min(limit.min).max(limit.max);
 const milliseconds = z.number().finite().nonnegative();
-// May start with "-" or "_" because Pear reports YouTube video IDs, which can, as track IDs.
-const identity = z.string().min(1).max(musicLimits.identityCharacters).regex(/^[-\w][\w.:-]*$/);
-const opaqueReference = z.string().min(1).max(musicLimits.identityCharacters).regex(/^[A-Za-z0-9][\w-]*$/);
+const identity = z.string().min(1).max(musicLimits.identityCharacters).regex(/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/);
+const opaqueReference = z.string().min(1).max(musicLimits.identityCharacters).regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/);
 const metadata = z.string().max(musicLimits.metadataCharacters);
 
 export const musicCapabilitiesSchema = z.object({ artwork: z.boolean(), position: z.boolean(), duration: z.boolean(), sessionSelection: z.boolean() }).strict();
