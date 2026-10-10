@@ -14,7 +14,7 @@
 
 - [x] 3.1 Unit tests for the installer configuration and app identity.
 - [x] 3.2 Playwright silent install into a chosen folder, launch, uninstall and data-retention test.
-- [ ] 3.3 Hosted Windows CI passes the installer test.
+- [x] 3.3 Hosted Windows CI passes the installer test (CI run 38054956107).
 
 ## 4. Documentation
 
