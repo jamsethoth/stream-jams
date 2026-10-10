@@ -14,6 +14,8 @@ export interface DesktopModuleSnapshotSinkDependencies {
     readonly assets: Pick<DesktopVisualAssetResolver, "resolveMusicModule" | "releaseMusicOwner">;
     readonly artwork: Pick<MusicArtworkService, "resolve" | "issueGrant" | "revokeRecipient">;
   };
+  /** The Videos runtime; the desktop overlay shows only its desktop mirror. */
+  readonly videos?: { readonly runtime: OverlayModuleRuntime };
   readonly logger?: Pick<Logger, "warn">;
   readonly generateReferenceId?: () => string;
 }
@@ -22,6 +24,8 @@ export class DesktopModuleSnapshotSink {
   readonly #refresh: ReturnType<typeof setInterval>;
   #revision = 0;
   #musicRevision = 0;
+  #videosRevision = 0;
+  #videosVisible = false;
   #musicOwner: string | null = null;
   #musicRequest = 0;
   #musicFrame: { command: DesktopModuleSync; identity: string | null; sourceRevision: number } | null = null;
@@ -138,6 +142,27 @@ export class DesktopModuleSnapshotSink {
     await this.dependencies.transport.syncModule(command);
   }
 
+  /** Shows the Videos mirror on the desktop overlay layer, or clears it. A browser-only player is never sent here. */
+  async syncVideos(): Promise<void> {
+    const videos = this.dependencies.videos;
+    if (this.#closed || videos === undefined) return;
+    const revision = ++this.#videosRevision;
+    const obsolete = () => this.#closed || revision !== this.#videosRevision;
+    const surface = (await this.dependencies.surfaces.list()).find(candidate => candidate.kind === "desktop");
+    if (obsolete()) return;
+    const visible = surface?.kind === "desktop" && surface.enabled && surface.displayId !== null &&
+      surface.layers.some(layer => layer.moduleId === "videos" && layer.visible);
+    const snapshot = visible ? await videos.runtime.getModuleSnapshot({
+      moduleId: "videos", overlayId: "desktop:primary", purpose: "live", scope: "unified", targetProfileId: "landscape"
+    }) : null;
+    if (obsolete()) return;
+    const projection = snapshot?.enabled === true && snapshot.presentation?.kind === "videos" ? snapshot.presentation.videos : null;
+    const shown = projection !== null && (projection.status !== "active" || projection.delivery.mode === "mirror");
+    if (!shown && !this.#videosVisible) return;
+    this.#videosVisible = shown;
+    await this.dependencies.transport.syncModule({ moduleId: "videos", revision, presentation: shown && projection !== null ? { kind: "videos", videos: projection } : null, assets: [] });
+  }
+
   async sync(): Promise<void> {
     if (this.#closed) return;
     const revision = ++this.#revision;
@@ -181,5 +206,6 @@ export class DesktopModuleSnapshotSink {
     if (this.#musicOwner !== null) { await this.dependencies.music?.assets.releaseMusicOwner(this.#musicOwner); this.#musicOwner = null; }
     await this.dependencies.transport.syncModule({ moduleId: "timers", revision: ++this.#revision, presentation: null, assets: [] });
     if (this.dependencies.music !== undefined) await this.dependencies.transport.syncModule({ moduleId: "music", revision: ++this.#musicRevision, presentation: null, assets: [], artwork: null });
+    if (this.#videosVisible) { this.#videosVisible = false; await this.dependencies.transport.syncModule({ moduleId: "videos", revision: ++this.#videosRevision, presentation: null, assets: [] }); }
   }
 }

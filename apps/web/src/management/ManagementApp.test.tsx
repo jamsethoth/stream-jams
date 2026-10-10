@@ -709,7 +709,7 @@ function createManagementApi(): ManagementApi {
       host: "127.0.0.1",
       port: 39187
     })),
-    getDesktopConfig: vi.fn(async () => ({ available: false, closeToTray: true })),
+    getDesktopConfig: vi.fn(async () => ({ available: false, closeToTray: true, gpuAcceleration: true })),
     updateDesktopConfig: vi.fn(async (input) => ({ ...input, available: true })),
     updateServerConfig: vi.fn(async (input) => input),
     getModerationSettings: vi.fn(async () => ({

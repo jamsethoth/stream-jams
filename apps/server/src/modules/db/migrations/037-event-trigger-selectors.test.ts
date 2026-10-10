@@ -39,6 +39,7 @@ async function legacyDatabase() {
   });
   db.exec(`DROP TABLE screen_effect_bindings; ${legacyBindingsTable}
     CREATE INDEX screen_effect_bindings_effect_order ON screen_effect_bindings(effect_id, position);
+    DROP TABLE video_requests; DROP TABLE video_queue_state; DELETE FROM schema_migrations WHERE id = '040-video-request-queue';
     DROP TABLE event_bus_settings; DROP TABLE event_bus_intake_log; DROP TABLE event_bus_consumer_outcomes; DELETE FROM schema_migrations WHERE id = '039-event-bus-outcomes'; ALTER TABLE alert_rules DROP COLUMN external_identity_json; DELETE FROM schema_migrations WHERE id = '038-external-alert-identity';
     DELETE FROM schema_migrations WHERE id = '037-event-trigger-selectors';`);
   const insert = db.prepare("INSERT INTO screen_effect_bindings (id, effect_id, position, kind, canonical_identity, document_json) VALUES (?, 'effect-legacy', ?, ?, ?, ?)");
@@ -94,7 +95,7 @@ describe("037-event-trigger-selectors", () => {
     database.runMigrations();
     const bindings = bindingRows(database);
     const rules = database.connection.prepare("SELECT event_rules_json FROM timer_definitions").all();
-    database.connection.exec("DROP TABLE event_bus_settings; DROP TABLE event_bus_intake_log; DROP TABLE event_bus_consumer_outcomes; DELETE FROM schema_migrations WHERE id = '039-event-bus-outcomes'; ALTER TABLE alert_rules DROP COLUMN external_identity_json; DELETE FROM schema_migrations WHERE id IN ('037-event-trigger-selectors', '038-external-alert-identity', '039-event-bus-outcomes')");
+    database.connection.exec("DROP TABLE video_requests; DROP TABLE video_queue_state; DELETE FROM schema_migrations WHERE id = '040-video-request-queue'; DROP TABLE event_bus_settings; DROP TABLE event_bus_intake_log; DROP TABLE event_bus_consumer_outcomes; DELETE FROM schema_migrations WHERE id = '039-event-bus-outcomes'; ALTER TABLE alert_rules DROP COLUMN external_identity_json; DELETE FROM schema_migrations WHERE id IN ('037-event-trigger-selectors', '038-external-alert-identity', '039-event-bus-outcomes')");
     database.runMigrations();
     expect(bindingRows(database)).toEqual(bindings);
     expect(database.connection.prepare("SELECT event_rules_json FROM timer_definitions").all()).toEqual(rules);

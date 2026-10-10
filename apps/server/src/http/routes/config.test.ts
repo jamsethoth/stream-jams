@@ -7,7 +7,7 @@ import { createTestManagementSecurity, managementTestHeaders } from "../test-sup
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 
 const baseConfig: AppConfig = {
-  desktop: { closeToTray: true },
+  desktop: { closeToTray: true, gpuAcceleration: true },
   server: {
     host: "127.0.0.1",
     port: 39187

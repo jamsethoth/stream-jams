@@ -128,6 +128,7 @@ describe("overlay-client", () => {
       message: "media failed",
       exception: { type: "NotSupportedError", message: "unsupported", stack: null, code: null, cause: null, thrownValue: null }
     });
+    reporter.reportDuration("video:item-1", 212_000);
 
     expect(socket.sent).toEqual([
       {
@@ -146,7 +147,8 @@ describe("overlay-client", () => {
         stage: "play",
         message: "media failed",
         exception: { type: "NotSupportedError", message: "unsupported", stack: null, code: null, cause: null, thrownValue: null }
-      }
+      },
+      { type: "overlay.playback.duration", instructionId: "video:item-1", mediaDurationMs: 212_000 }
     ]);
   });
 
@@ -297,6 +299,46 @@ describe("overlay-client", () => {
     });
     vi.advanceTimersByTime(30_000);
     expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+});
+
+describe("overlay-client Videos mirror signaling", () => {
+  it("relays validated mirror signals to subscribers without treating them as overlay messages", async () => {
+    const onMessage = vi.fn();
+    const connection = connectClient(onMessage);
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+    const socket = FakeWebSocket.instances[0]!;
+    const received: unknown[] = [];
+    const unsubscribe = connection.videoMirror.subscribe(signal => received.push(signal));
+    // Nothing is sent before the socket opens.
+    connection.videoMirror.send({ type: "hello", connection: 1 });
+    expect(socket.sent).toEqual([]);
+    socket.emit("open");
+    connection.videoMirror.send({ type: "hello", connection: 1 });
+    expect(JSON.parse(socket.sent.at(-1)!)).toEqual({ type: "videos.mirror.signal", signal: { type: "hello", connection: 1 } });
+    socket.emitMessage(JSON.stringify({ type: "videos.mirror.signal", signal: { type: "offer", connection: 1, sdp: "v=0" } }));
+    socket.emitMessage(JSON.stringify({ type: "videos.mirror.signal", signal: { type: "ice", connection: 1, candidate: { candidate: "candidate:1 1 udp 1 203.0.113.1 5000 typ relay" } } }));
+    socket.emitMessage(JSON.stringify({ type: "videos.mirror.signal", signal: { type: "answer", connection: 1, sdp: "v=0" } }));
+    expect(received).toEqual([{ type: "offer", connection: 1, sdp: "v=0" }]);
+    expect(onMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "videos.mirror.signal" }));
+    unsubscribe();
+    socket.emitMessage(JSON.stringify({ type: "videos.mirror.signal", signal: { type: "not-ready", connection: 1 } }));
+    expect(received).toHaveLength(1);
+    connection.close();
+  });
+
+  it("bounds mirror subscribers per page and clears them on close", async () => {
+    const connection = connectClient();
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+    const socket = FakeWebSocket.instances[0]!;
+    const listeners = Array.from({ length: 6 }, () => vi.fn());
+    for (const listener of listeners) connection.videoMirror.subscribe(listener);
+    const signal = JSON.stringify({ type: "videos.mirror.signal", signal: { type: "not-ready", connection: 1 } });
+    socket.emitMessage(signal);
+    expect(listeners.map(listener => listener.mock.calls.length)).toEqual([1, 1, 1, 1, 0, 0]);
+    connection.close();
+    socket.emitMessage(signal);
+    expect(listeners.map(listener => listener.mock.calls.length)).toEqual([1, 1, 1, 1, 0, 0]);
   });
 });
 

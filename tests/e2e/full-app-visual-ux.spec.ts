@@ -193,7 +193,7 @@ test.describe.serial("full application visual UX acceptance", () => {
   });
 
   test("Settings disclosures and desktop tray control work in the served full application", async ({ page }) => {
-    await page.route(`${runtime.url}/config/desktop`, (route) => route.fulfill({ json: { available: true, closeToTray: true } }));
+    await page.route(`${runtime.url}/config/desktop`, (route) => route.fulfill({ json: { available: true, closeToTray: true, gpuAcceleration: true } }));
     await page.route(`${runtime.url}/management/settings/backup-summary`, (route) => route.fulfill({ json: {
       state: "ready", appVersion: "0.0.0", schemaVersion: 1, configurationRecordCount: 8, assetCount: 1, totalAssetBytes: 4,
       dataDirectory: "C:/isolated/data", assetDirectory: "C:/isolated/assets", logLevel: "INFO", logRetentionHours: 48,
@@ -235,9 +235,14 @@ test.describe.serial("full application visual UX acceptance", () => {
 
     const tray = page.getByRole("checkbox", { name: "Close window to tray" });
     const trayText = page.getByText("Close window to tray", { exact: true });
+    const gpu = page.getByRole("checkbox", { name: "Use GPU acceleration" });
+    const gpuText = page.getByText("Use GPU acceleration", { exact: true });
+    await expect(gpu).toBeChecked();
     await expectInlineCheckbox(tray, trayText);
+    await expectInlineCheckbox(gpu, gpuText);
     await page.setViewportSize({ width: 390, height: 844 });
     await expectInlineCheckbox(tray, trayText);
+    await expectInlineCheckbox(gpu, gpuText);
     await captureEvidence(page, "settings-phone-light.png");
   });
 

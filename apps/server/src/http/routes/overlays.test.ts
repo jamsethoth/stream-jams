@@ -35,36 +35,36 @@ describe("overlay routes", () => {
       expect(compositions.moduleRequests.map(request => [request.purpose, request.targetProfileId])).toEqual([["live", "vertical"], ["test", "landscape"]]);
     } finally { await app.close(); }
   });
-  it("authorizes Video shoutout browser sources through the existing module route keys only", async () => {
-    const access = createAccessService(["ovl_shoutoutLive", "ovl_shoutoutTest", "ovl_alertsLive", "ovl_unified"]);
-    const live = await access.createKey({ overlayId: "default", moduleId: "video-shoutout", purpose: "live", scope: "module" });
-    const test = await access.createKey({ overlayId: "default", moduleId: "video-shoutout", purpose: "test", scope: "module" });
+  it("authorizes Videos browser sources through the existing module route keys only", async () => {
+    const access = createAccessService(["ovl_videosLive", "ovl_videosTest", "ovl_alertsLive", "ovl_unified"]);
+    const live = await access.createKey({ overlayId: "default", moduleId: "videos", purpose: "live", scope: "module" });
+    const test = await access.createKey({ overlayId: "default", moduleId: "videos", purpose: "test", scope: "module" });
     const alerts = await access.createKey({ overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module" });
     const unified = await access.createKey({ overlayId: "default", moduleId: null, purpose: "live", scope: "unified" });
     const compositions = new RecordingOverlayCompositionService();
     const app = createServerApp({ metadata: { appName: "stream-jams", version: "1.2.3" }, overlayAccessService: access,
-      overlayCompositionService: compositions, overlayModuleRegistry: createRegistry(["alerts", "video-shoutout"]), webShellRenderer: createTestWebShellRenderer() });
+      overlayCompositionService: compositions, overlayModuleRegistry: createRegistry(["alerts", "videos"]), webShellRenderer: createTestWebShellRenderer() });
     try {
-      const shell = await app.inject({ url: `/overlay/modules/video-shoutout/live/${live.rawKey}` });
+      const shell = await app.inject({ url: `/overlay/modules/videos/live/${live.rawKey}` });
       expect(shell.statusCode).toBe(200);
       expect(shell.body).not.toContain(live.rawKey);
-      expect((await app.inject({ url: `/overlay/modules/video-shoutout/live/${live.rawKey}/composition` })).statusCode).toBe(200);
-      expect((await app.inject({ url: `/overlay/modules/video-shoutout/test/${test.rawKey}/composition` })).statusCode).toBe(200);
+      expect((await app.inject({ url: `/overlay/modules/videos/live/${live.rawKey}/composition` })).statusCode).toBe(200);
+      expect((await app.inject({ url: `/overlay/modules/videos/test/${test.rawKey}/composition` })).statusCode).toBe(200);
       for (const url of [
-        "/overlay/modules/video-shoutout/live",
-        `/overlay/modules/video-shoutout/test/${live.rawKey}/composition`,
-        `/overlay/modules/video-shoutout/live/${alerts.rawKey}/composition`,
-        `/overlay/modules/video-shoutout/live/${unified.rawKey}/composition`
+        "/overlay/modules/videos/live",
+        `/overlay/modules/videos/test/${live.rawKey}/composition`,
+        `/overlay/modules/videos/live/${alerts.rawKey}/composition`,
+        `/overlay/modules/videos/live/${unified.rawKey}/composition`
       ]) {
         expect((await app.inject({ url })).statusCode).toBe(401);
       }
       // Overlay keys never authorize management APIs.
       expect((await app.inject({ url: "/management/overlay-outputs", headers: { authorization: `Bearer ${live.rawKey}` } })).statusCode).not.toBe(200);
       await access.revokeKey(live.record.id);
-      expect((await app.inject({ url: `/overlay/modules/video-shoutout/live/${live.rawKey}/composition` })).statusCode).toBe(401);
+      expect((await app.inject({ url: `/overlay/modules/videos/live/${live.rawKey}/composition` })).statusCode).toBe(401);
 
       expect((await app.inject({ url: `/overlay/unified/live/${unified.rawKey}/composition` })).statusCode).toBe(200);
-      expect(compositions.unifiedRequests.map(request => request.enabledModuleIds)).toEqual([["alerts"]]);
+      expect(compositions.unifiedRequests.map(request => request.enabledModuleIds)).toEqual([["alerts", "videos"]]);
     } finally { await app.close(); }
   });
   it("serves a module overlay shell and composition through a module route key", async () => {
@@ -370,7 +370,7 @@ function createRegistry(moduleIds: readonly string[]): Pick<OverlayModuleRegistr
         (id) =>
           ({
             id,
-            renderer: { entryPoint: `overlay/modules/${id}`, supportedOutputs: id === "video-shoutout" ? ["module"] : ["module", "unified"] }
+            renderer: { entryPoint: `overlay/modules/${id}`, supportedOutputs: ["module", "unified"] }
           }) as unknown as OverlayModuleDefinition
       );
     }

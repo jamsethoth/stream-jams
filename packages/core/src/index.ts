@@ -386,9 +386,11 @@ export * from "./music/management.js";
 export * from "./music/module-definition.js";
 export * from "./music/projection.js";
 export * from "./music/asset-references.js";
-export type * from "./video-shoutout/types.js";
-export * from "./video-shoutout/schemas.js";
-export { videoShoutoutModuleDefinition } from "./video-shoutout/module-definition.js";
+export type * from "./videos/types.js";
+export * from "./videos/schemas.js";
+export * from "./videos/layout.js";
+export * from "./videos/placement-geometry.js";
+export { videosModuleDefinition } from "./videos/module-definition.js";
 
 export * from "./management/local-websocket-connection.js";
 export { moduleMuteStateSchema } from "./playback/schemas.js";
