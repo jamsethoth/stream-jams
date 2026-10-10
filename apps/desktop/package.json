@@ -1,7 +1,7 @@
 {
   "name": "@stream-jams/desktop",
   "productName": "Stream Jams",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "dist/main.js",
@@ -20,6 +20,7 @@
     "@electron-forge/core": "8.0.1",
     "@electron-forge/shared-types": "8.0.1",
     "electron": "44.5.1",
+    "electron-winstaller": "5.4.4",
     "typescript": "6.0.3",
     "vite": "8.3.2"
   }
