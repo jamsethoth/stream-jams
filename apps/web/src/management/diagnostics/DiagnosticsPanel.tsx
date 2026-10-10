@@ -391,7 +391,7 @@ function sourceLabel(sourceKind: BusEventView["sourceKind"]): string {
 }
 
 function consumerLabel(consumerId: string): string {
-  return ({ alerts: "Alerts", "screen-effects": "Screen Effects", timers: "Timers", "video-shoutout": "Video shoutouts" } as Record<string, string>)[consumerId] ?? consumerId;
+  return ({ alerts: "Alerts", "screen-effects": "Screen Effects", timers: "Timers", videos: "Videos" } as Record<string, string>)[consumerId] ?? consumerId;
 }
 
 function consumerOutcomeLabel(outcome: BusConsumerOutcome): string {

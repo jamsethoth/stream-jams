@@ -706,7 +706,12 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   // Schema 36 converts Screen Effect bindings and timer rules to trigger selectors; older rows are upgraded.
   // Schema 37 adds the external alert identity column; older alert rules are all canonical.
   // Schema 38 adds event bus outcomes (runtime only) and the replay age setting, which restores its default when absent.
-  if (currentSchemaVersion === 38) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 37;
+  // Schema 39 adds the runtime Videos queue and retires Video shoutout settings and outputs, which older rows drop.
+  // A schema-33 archive from a Videos build made before the event bus merge differs from main's schema 33 only by its
+  // Videos settings row, which restores as is.
+  if (currentSchemaVersion === 39) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 38;
+  // Schema 40 adds provider details to the runtime Videos queue, which backups never contain.
+  if (currentSchemaVersion === 40) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 39;
   if (currentSchemaVersion === 28) return [19, 20, 21, 22, 23, 24, 25, 26, 27].includes(archiveSchemaVersion);
   return false;
 }
@@ -757,6 +762,13 @@ function upgradeLegacyConfiguration(
   }
   if (schemaVersion < 37 && tables.alert_rules !== undefined) {
     tables = { ...tables, alert_rules: tables.alert_rules.map(row => ({ ...row, external_identity_json: null })) };
+  }
+  if (schemaVersion < 39) {
+    // Videos replaced the retired Video shoutout module; its settings and outputs have nothing to restore into.
+    const retired = (moduleId: unknown) => moduleId === "video-shoutout";
+    tables = { ...tables, ...(tables.overlay_module_config === undefined ? {} : { overlay_module_config: tables.overlay_module_config.filter(row => !retired(row.module_id)) }) };
+    const overlayOutputs = configuration.overlayOutputs.filter(output => !retired(output.moduleId));
+    return { ...configuration, tables, overlayOutputs };
   }
   return tables === configuration.tables ? configuration : { ...configuration, tables };
 }

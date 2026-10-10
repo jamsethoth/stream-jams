@@ -7,7 +7,7 @@ Define opt-in bounded shutdown evidence and staged silent reproduction that dist
 ## Requirements
 
 ### Requirement: Shutdown Phase Logging Is Opt In And Bounded
-The desktop SHALL support an optional absolute path for a new exclusively created JSONL file. Logging SHALL accept only fixed phases and generated version, launch, PID, attempt, sequence and time fields. It SHALL NOT await disk work during Quit, exceed 256 records or 64 KiB of accepted data, overwrite evidence, delete files automatically or expose secrets.
+The desktop SHALL support an optional absolute path for a new exclusively created JSONL file. Logging SHALL accept only fixed phases and generated version, launch, PID, attempt, sequence and time fields. Each accepted record SHALL be written with one bounded synchronous append so the final phases survive an immediate process exit; logging SHALL NOT flush to stable storage or await asynchronous disk work during Quit, and SHALL NOT exceed 256 records or 64 KiB of accepted data, overwrite evidence, delete files automatically or expose secrets.
 
 #### Scenario: Logging is disabled or path is invalid
 - **WHEN** no path is configured or the path is relative

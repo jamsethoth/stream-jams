@@ -9,12 +9,22 @@ const meta = {
   tags: ["mantine-stage6b"],
   title: "Management/Settings/Desktop",
   component: SettingsPanel,
-  args: { audioApi: createStoryAudioApi(), managementApi: { ...api, getDesktopConfig: async () => ({ available: true, closeToTray: true }) } }
+  args: { audioApi: createStoryAudioApi(), managementApi: { ...api, getDesktopConfig: async () => ({ available: true, closeToTray: true, gpuAcceleration: true }) } }
 } satisfies Meta<typeof SettingsPanel>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const CloseToTray: Story = {};
-export const CloseQuits: Story = { args: { managementApi: { ...api, getDesktopConfig: async () => ({ available: true, closeToTray: false }) } } };
+export const CloseQuits: Story = { args: { managementApi: { ...api, getDesktopConfig: async () => ({ available: true, closeToTray: false, gpuAcceleration: true }) } } };
+export const GpuAccelerationOff: Story = { args: { managementApi: { ...api, getDesktopConfig: async () => ({ available: true, closeToTray: true, gpuAcceleration: false }) } } };
+export const GpuChangeNeedsRestart: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("checkbox", { name: "Use GPU acceleration" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Save desktop settings" }));
+    await expect(canvas.findByText("Restart Stream Jams to apply the GPU acceleration change.")).resolves.toBeVisible();
+    await expect(canvas.getByRole("checkbox", { name: "Use GPU acceleration" })).not.toBeChecked();
+  }
+};
 export const RuntimeUnavailable: Story = { args: { managementApi: api } };
 export const Loading: Story = { args: { managementApi: { ...api, getDesktopConfig: () => new Promise(() => {}) } } };
 export const LoadFailed: Story = { args: { managementApi: { ...api, getDesktopConfig: async () => { throw new Error("The desktop service is unavailable. Retry loading settings."); } } } };

@@ -104,7 +104,8 @@ describe("SqliteEffectRepository", () => {
   it("upgrades populated pre-set data without changing document identities or flags", async () => {
     using database = createInMemoryStreamJamsDatabase();
     await seedReferences(database.connection);
-    database.connection.exec(`DROP TRIGGER screen_effect_assign_set;
+    database.connection.exec(`DROP TABLE video_requests; DROP TABLE video_queue_state; DELETE FROM schema_migrations WHERE id = '041-video-request-metadata'; DELETE FROM schema_migrations WHERE id = '040-video-request-queue';
+      DROP TRIGGER screen_effect_assign_set;
       DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements;
       DROP TABLE screen_effect_set_memberships; DROP TABLE screen_effect_sets;
       DROP TABLE event_bus_settings; DROP TABLE event_bus_intake_log; DROP TABLE event_bus_consumer_outcomes; DELETE FROM schema_migrations WHERE id = '039-event-bus-outcomes'; ALTER TABLE alert_rules DROP COLUMN external_identity_json; DELETE FROM schema_migrations WHERE id = '038-external-alert-identity'; DELETE FROM schema_migrations WHERE id = '037-event-trigger-selectors'; DROP INDEX provider_registrations_one_active_event_source_kind; DROP INDEX provider_registrations_one_active_capability; CREATE UNIQUE INDEX provider_registrations_one_active_capability ON provider_registrations (capability) WHERE active = 1; DELETE FROM schema_migrations WHERE id = '036-event-source-active-per-kind'; DROP TABLE event_bus_correlation_merges; DELETE FROM schema_migrations WHERE id = '035-event-bus-correlation'; DROP TABLE event_bus_delivery_failures; DROP TABLE event_bus_consumer_cursors; DROP TABLE event_bus_journal; DELETE FROM schema_migrations WHERE id = '034-event-bus-journal'; 

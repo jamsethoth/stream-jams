@@ -12,7 +12,7 @@ This contract is for native same-computer integrations. Default origin is `http:
 
 Management-only (existing management authorization and CSRF): GET `/api/automation/pairings`, GET `/api/automation/pairings/:id`, POST `/:id/approve` with `{scopes}`, POST `/:id/deny` with `{}`; GET `/api/automation/grants`, POST `/api/automation/grants/:id/revoke` with `{}`. Grant metadata is visible here; tokens are never retrievable. Configuration exports exclude grants; restore invalidates grants and pending approvals.
 
-Scopes: `timers:read`, `timers:control`, `playback:read`, plus `playback:<pause|skip|clear|mute>:<alerts|screen-effects>`. Related read permission is required when requesting controls. Approval can grant a subset. New modules require explicit new consent; no wildcard grants.
+Scopes: `timers:read`, `timers:control`, `playback:read`, plus `playback:<pause|skip|clear|mute>:<alerts|screen-effects>`, and `videos:read`, `videos:submit`, `videos:control` for the [Videos](videos.md#local-automation-api) routes under `/automation/v1/videos`. Related read permission is required when requesting controls. Approval can grant a subset. New modules require explicit new consent; no wildcard grants.
 
 ## Discovery and state
 

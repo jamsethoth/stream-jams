@@ -383,7 +383,7 @@ function busActivity(): EventBusActivityView {
         { consumerId: "alerts", outcome: "admitted", referenceId: null },
         { consumerId: "screen-effects", outcome: "no-match", referenceId: null },
         { consumerId: "timers", outcome: "no-match", referenceId: null },
-        { consumerId: "video-shoutout", outcome: "pending", referenceId: null }
+        { consumerId: "videos", outcome: "pending", referenceId: null }
       ] }
     ]
   };

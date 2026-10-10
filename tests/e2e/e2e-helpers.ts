@@ -71,7 +71,7 @@ export async function mockManagementShell(page: Page): Promise<void> {
     capability: { available: false, devices: [], reason: "desktop-unavailable", nextStep: "Open the desktop app to use device outputs." }, muted: false, routes: []
   } }));
   await page.route("**/config/desktop", async (route) => {
-    await route.fulfill({ contentType: "application/json", json: { available: false, closeToTray: true } });
+    await route.fulfill({ contentType: "application/json", json: { available: false, closeToTray: true, gpuAcceleration: true } });
   });
   await page.route("**/auth/management/sessions", async (route) => {
     await route.fulfill({

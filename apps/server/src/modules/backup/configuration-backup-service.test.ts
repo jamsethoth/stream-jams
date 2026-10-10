@@ -27,7 +27,7 @@ import { RuntimeMaintenanceGate, RuntimeMaintenanceUnavailableError } from "./ru
 
 const pngBytes = Buffer.from("89504e470d0a1a0a", "hex");
 const appConfig: AppConfig = {
-  desktop: { closeToTray: true },
+  desktop: { closeToTray: true, gpuAcceleration: true },
   server: { host: "127.0.0.1", port: 39187 },
   storage: { dataDirectory: "C:/source/data", assetDirectory: "C:/source/assets" },
   logging: { level: "INFO", rollover: "hourly", retentionHours: 336 },
@@ -130,7 +130,7 @@ describe("ConfigurationBackupService", () => {
     }
   });
 
-  it.each([19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
+  it.each([19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
     const target = createRealService();
     try {
       const archive = await target.service.exportArchive();
@@ -268,6 +268,25 @@ describe("ConfigurationBackupService", () => {
         quantityUnit: 100,
         inactiveBehavior: "ignore"
       }]);
+    } finally { target.database.close(); }
+  });
+
+  it.each([32, 38])("drops retired Video shoutout settings and outputs from schema-%i backups", async (schemaVersion) => {
+    const target = createRealService();
+    try {
+      const archive = await target.service.exportArchive();
+      archive.manifest.schemaVersion = schemaVersion;
+      const moduleConfig = archive.configuration.tables.overlay_module_config ?? [];
+      archive.configuration.tables.overlay_module_config = [...moduleConfig, { module_id: "video-shoutout", enabled: 1, config_json: "{}", updated_at: new Date(0).toISOString() }];
+      archive.configuration.overlayOutputs = [...archive.configuration.overlayOutputs, { overlayId: "shoutout", scope: "module", moduleId: "video-shoutout", purpose: "live", targetProfileId: null }];
+      archive.manifest.configurationRecordCount += 1;
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      const preflight = await target.service.preflight(archive);
+      expect(preflight.state).toBe("valid");
+      await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
+      const snapshot = target.snapshotRepository.snapshot();
+      expect(snapshot.tables.overlay_module_config?.map(row => row.module_id)).not.toContain("video-shoutout");
+      expect(snapshot.overlayOutputs.map(output => output.moduleId)).not.toContain("video-shoutout");
     } finally { target.database.close(); }
   });
 
@@ -601,7 +620,7 @@ describe("ConfigurationBackupService", () => {
       server: { host: "127.0.0.1", port: 40123 },
       logging: appConfig.logging,
       playback: appConfig.playback,
-      desktop: { closeToTray: false }
+      desktop: { closeToTray: false, gpuAcceleration: true }
     }));
     expect(updateConfig.mock.calls[0]?.[0]).not.toHaveProperty("storage");
     expect(regenerateOutput).toHaveBeenCalledWith(expect.anything(), "http://127.0.0.1:40123");
@@ -675,8 +694,8 @@ describe("ConfigurationBackupService", () => {
     })).rejects.toMatchObject({ code: "RESTORE_FAILED" });
 
     expect(updateConfig).toHaveBeenCalledTimes(2);
-    expect(updateConfig.mock.calls[0]?.[0].desktop).toEqual({ closeToTray: false });
-    expect(updateConfig.mock.calls[1]?.[0].desktop).toEqual({ closeToTray: true });
+    expect(updateConfig.mock.calls[0]?.[0].desktop).toEqual({ closeToTray: false, gpuAcceleration: true });
+    expect(updateConfig.mock.calls[1]?.[0].desktop).toEqual({ closeToTray: true, gpuAcceleration: true });
     expect(persistedConfig).toEqual(appConfig);
   });
 

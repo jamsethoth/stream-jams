@@ -6,6 +6,7 @@ import { LocalRuntimeStartupError, startLocalRuntime, type StartedLocalRuntime }
 import { workerRequestSchema, type WorkerMessage } from "./desktop-ipc.js";
 import { WorkerAudioClient } from "./audio/worker-audio-client.js";
 import { WorkerOverlayClient } from "./overlay/worker-overlay-client.js";
+import { WorkerVideoClient } from "./videos/worker-video-client.js";
 import { serializeException } from "@stream-jams/core";
 
 const parent = process.parentPort;
@@ -15,6 +16,7 @@ let runtime: Promise<StartedLocalRuntime> | null = null;
 let stopping = false;
 let audio: WorkerAudioClient | null = null;
 let overlay: WorkerOverlayClient | null = null;
+let video: WorkerVideoClient | null = null;
 function send(message: WorkerMessage): void { parent!.postMessage(message); }
 
 parent.on("message", ({ data }: { data: unknown }) => {
@@ -23,28 +25,34 @@ parent.on("message", ({ data }: { data: unknown }) => {
   const request = parsed.data;
   if (request.type === "audio-response") { audio?.receive(request); return; }
   if (request.type === "overlay-response") { overlay?.receive(request); return; }
+  if (request.type === "video-event") { video?.receive(request); return; }
   if (request.type === "start") {
     if (runtime !== null || stopping) return;
     generation = request.generation;
     audio = new WorkerAudioClient(generation, send);
     overlay = new WorkerOverlayClient(generation, send);
+    video = new WorkerVideoClient(generation, send);
     runtime = startLocalRuntime({
       homeDirectory: homedir(),
       webBuildDirectory: resolve(import.meta.dirname, "../web"),
       desktopAudioTransport: audio,
       desktopOverlayTransport: overlay,
+      desktopVideoTransport: video,
       desktopHost: {
-        onConfigChanged(config) { send({ type: "desktop-config-changed", generation: request.generation, requestId: null, closeToTray: config.closeToTray }); },
+        onConfigChanged(config) { send({ type: "desktop-config-changed", generation: request.generation, requestId: null, closeToTray: config.closeToTray, gpuAcceleration: config.gpuAcceleration }); },
         onPlaybackStateChanged(state) { send({ type: "playback-state-changed", generation: request.generation, requestId: null, muted: state.muted }); }
       }
     });
     void runtime.then(async (started) => {
       if (stopping) return;
       const { desktop } = await started.composition.configStore.readConfig();
-      send({ type: "ready", generation: request.generation, requestId: request.requestId, url: started.url, closeToTray: desktop.closeToTray, muted: started.composition.playbackOperationsService.getSnapshot().muted });
+      send({ type: "ready", generation: request.generation, requestId: request.requestId, url: started.url, closeToTray: desktop.closeToTray, gpuAcceleration: desktop.gpuAcceleration, muted: started.composition.playbackOperationsService.getSnapshot().muted });
+      // The player page is served from the service origin, which the main process learns from "ready".
+      video?.start();
     }).catch((error: unknown) => {
       audio?.dispose();
       overlay?.dispose();
+      video?.dispose();
       send({ type: "failed", generation: request.generation, requestId: request.requestId, referenceId: `err_${randomUUID()}`, exception: serializeException(error), message: error instanceof LocalRuntimeStartupError ? error.message : "The local service could not start. Check the configured data paths and runtime dependencies, then retry." });
     });
     return;
@@ -56,11 +64,13 @@ parent.on("message", ({ data }: { data: unknown }) => {
     void runtime.then((started) => started.close()).then(() => {
       audio?.dispose();
       overlay?.dispose();
+      video?.dispose();
       send({ type: "stopped", generation: request.generation, requestId: request.requestId });
       process.exit(0);
     }).catch((error: unknown) => {
       audio?.dispose();
       overlay?.dispose();
+      video?.dispose();
       send({ type: "command-failed", generation: request.generation, requestId: request.requestId, referenceId: `err_${randomUUID()}`, exception: serializeException(error), message: "The local service could not stop cleanly." });
       process.exit(1);
     });

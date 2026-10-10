@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FileConfigStore } from "./file-config-store.js";
 
 const defaultConfig: AppConfig = {
-  desktop: { closeToTray: true },
+  desktop: { closeToTray: true, gpuAcceleration: true },
   server: {
     host: "127.0.0.1",
     port: 39187
@@ -56,7 +56,7 @@ describe("FileConfigStore", () => {
       store.readConfig()
     ]);
     const persisted = await new FileConfigStore({ configFilePath, defaultConfig }).readConfig();
-    expect(persisted.desktop).toEqual({ closeToTray: false });
+    expect(persisted.desktop).toEqual({ closeToTray: false, gpuAcceleration: true });
     expect(persisted.playback.muted).toBe(true);
   });
 
@@ -91,7 +91,7 @@ describe("FileConfigStore", () => {
     });
 
     expect(updated).toEqual({
-      desktop: { closeToTray: true },
+      desktop: { closeToTray: true, gpuAcceleration: true },
       server: {
         host: "127.0.0.1",
         port: 39188
@@ -109,7 +109,7 @@ describe("FileConfigStore", () => {
     });
 
     await expect(new FileConfigStore({ configFilePath, defaultConfig }).readConfig()).resolves.toEqual({
-      desktop: { closeToTray: true },
+      desktop: { closeToTray: true, gpuAcceleration: true },
       server: {
         host: "127.0.0.1",
         port: 39188

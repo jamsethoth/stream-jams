@@ -30,7 +30,7 @@ it("routes overlay RPC separately, ignores stale leases, and clears visuals befo
   const supervisor = new ServiceSupervisor(() => worker, () => {}, undefined, overlay);
   const ready = supervisor.start();
   const generation = worker.messages[0]!.generation as number;
-  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, gpuAcceleration: true, muted: false });
   await ready;
   expect(overlay.beginOwnership).toHaveBeenCalledOnce();
   worker.emit("message", { type: "overlay-lease", generation: generation + 1, requestId: null });
@@ -75,7 +75,7 @@ it("preserves renderer failure provenance across the main-to-worker overlay resp
   const supervisor = new ServiceSupervisor(() => worker, () => {}, undefined, overlay, diagnose);
   const ready = supervisor.start();
   const generation = worker.messages[0]!.generation;
-  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, gpuAcceleration: true, muted: false });
   await ready;
   const requestId = randomUUID();
 
@@ -98,7 +98,7 @@ it("routes only owned validated audio RPC and tears audio down with service loss
   const supervisor = new ServiceSupervisor(() => worker, () => {}, audio);
   const ready = supervisor.start();
   const generation = worker.messages[0]!.generation;
-  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false }); await ready;
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, gpuAcceleration: true, muted: false }); await ready;
   expect(audio.beginOwnership).toHaveBeenCalledOnce();
   worker.emit("message", { type: "audio-lease", generation, requestId: null });
   expect(audio.refreshLease).toHaveBeenCalledOnce();
@@ -116,7 +116,7 @@ it("ignores audio ownership leases while the worker is stopping", async () => {
   const supervisor = new ServiceSupervisor(() => worker, () => {}, audio);
   const ready = supervisor.start();
   const generation = worker.messages[0]!.generation;
-  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false }); await ready;
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, gpuAcceleration: true, muted: false }); await ready;
   worker.emit("message", { type: "audio-lease", generation, requestId: null });
   expect(audio.refreshLease).toHaveBeenCalledOnce();
 
@@ -133,10 +133,10 @@ it("starts one worker, accepts only its generation, and applies persisted mute s
   const ready = supervisor.start();
   expect(supervisor.start()).toBe(ready);
   const first = worker.messages[0]!;
-  worker.emit("message", { ...first, generation: -1, type: "ready", url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
+  worker.emit("message", { ...first, generation: -1, type: "ready", url: "http://127.0.0.1:39187", closeToTray: true, gpuAcceleration: true, muted: false });
   expect(supervisor.state).toBe("starting");
-  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
-  expect(await ready).toEqual({ url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, gpuAcceleration: true, muted: false });
+  expect(await ready).toEqual({ url: "http://127.0.0.1:39187", closeToTray: true, gpuAcceleration: true, muted: false });
   const muted = supervisor.setMuted(true);
   expect(supervisor.snapshot?.muted).toBe(false);
   worker.reply("playback-state-changed", { muted: true });
@@ -167,7 +167,7 @@ it("kills the owned worker after the graceful-stop deadline and reports abnormal
   vi.useFakeTimers();
   const { worker, supervisor } = fixture();
   const ready = supervisor.start();
-  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: false, muted: true });
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: false, gpuAcceleration: false, muted: true });
   await ready;
   const stop = supervisor.stop();
   const failure = expect(stop).rejects.toThrow(/10 seconds/);
@@ -179,7 +179,7 @@ it("kills the owned worker after the graceful-stop deadline and reports abnormal
 it("reports an unexpected exit without automatically starting another worker", async () => {
   const { worker, supervisor } = fixture();
   const ready = supervisor.start();
-  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, gpuAcceleration: true, muted: false });
   await ready;
   worker.emit("exit", 1);
   expect(supervisor.state).toBe("failed");
@@ -227,7 +227,7 @@ it("records native spawn and abnormal worker exit failures", async () => {
   const worker = new Worker();
   const supervisor = new ServiceSupervisor(() => worker, () => {}, undefined, undefined, diagnose);
   const ready = supervisor.start();
-  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, gpuAcceleration: true, muted: false });
   await ready;
   worker.emit("exit", 7);
   expect(diagnose).toHaveBeenCalledWith(expect.objectContaining({ source: "desktop.worker.exit", exitCode: 7 }));
@@ -248,7 +248,7 @@ it("sends validated diagnostics only while the worker is owned", async () => {
 
   expect(supervisor.recordDiagnostic(report)).toBe(false);
   const ready = supervisor.start();
-  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, gpuAcceleration: true, muted: false });
   await ready;
   expect(supervisor.recordDiagnostic(report)).toBe(true);
   expect(worker.messages.at(-1)).toMatchObject({ type: "record-diagnostic", report });
@@ -260,7 +260,7 @@ it("falls back with the original report when runtime diagnostic persistence fail
   const fallback = vi.fn();
   const supervisor = new ServiceSupervisor(() => worker, () => {}, undefined, undefined, undefined, fallback);
   const ready = supervisor.start();
-  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, gpuAcceleration: true, muted: false });
   await ready;
   const report = {
     referenceId: "err_desktop_fallback",
@@ -288,9 +288,9 @@ it("shares repeated shutdown requests and ignores stale messages after retry", a
   first.emit("exit", 1);
 
   const secondStart = supervisor.start();
-  first.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
+  first.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, gpuAcceleration: true, muted: false });
   expect(supervisor.state).toBe("starting");
-  second.reply("ready", { url: "http://127.0.0.1:39188", closeToTray: false, muted: true });
+  second.reply("ready", { url: "http://127.0.0.1:39188", closeToTray: false, gpuAcceleration: false, muted: true });
   await expect(secondStart).resolves.toMatchObject({ url: "http://127.0.0.1:39188" });
 
   const firstStop = supervisor.stop();
@@ -303,7 +303,7 @@ it("shares repeated shutdown requests and ignores stale messages after retry", a
 it("ignores unknown command replies and retains the prior mute state on persistence failure", async () => {
   const { worker, supervisor } = fixture();
   const ready = supervisor.start();
-  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, gpuAcceleration: true, muted: false });
   await ready;
   const command = supervisor.setMuted(true);
   const rejected = expect(command).rejects.toThrow("Preference could not be saved");
@@ -321,7 +321,7 @@ it("cancels startup without accepting late readiness", async () => {
   const request = worker.messages[0]!;
   const cancelled = expect(start).rejects.toThrow("cancelled by shutdown");
   const stop = supervisor.stop();
-  worker.emit("message", { ...request, type: "ready", url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
+  worker.emit("message", { ...request, type: "ready", url: "http://127.0.0.1:39187", closeToTray: true, gpuAcceleration: true, muted: false });
   expect(supervisor.snapshot).toBeNull();
   worker.emit("exit", 0);
   await Promise.all([cancelled, stop]);
@@ -335,14 +335,58 @@ it("rejects malformed messages and permits explicit retry only after the owned w
   const supervisor = new ServiceSupervisor(() => ++spawns === 1 ? first : second);
   const start = supervisor.start();
   const invalid = expect(start).rejects.toThrow("invalid desktop message");
-  first.reply("ready", { url: "https://example.com", closeToTray: true, muted: false });
+  first.reply("ready", { url: "https://example.com", closeToTray: true, gpuAcceleration: true, muted: false });
   await invalid;
   await expect(supervisor.start()).rejects.toThrow("previous service");
   first.emit("exit", 1);
   const retry = supervisor.start();
-  first.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
+  first.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, gpuAcceleration: true, muted: false });
   expect(supervisor.state).toBe("starting");
-  second.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: false, muted: true });
+  second.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: false, gpuAcceleration: false, muted: true });
   expect((await retry).muted).toBe(true);
   const stop = supervisor.stop(); second.emit("exit", 0); await stop;
+});
+
+it("routes the Videos player transport: leases, validated commands and events, and silence on service loss", async () => {
+  const worker = new Worker();
+  let sink: ((event: import("@stream-jams/core/videos").DesktopVideoEvent) => void) | undefined;
+  const video = { beginOwnership: vi.fn(), refreshLease: vi.fn(), serviceLost: vi.fn(), handle: vi.fn(), onEvent: vi.fn((value: typeof sink) => { sink = value; }) };
+  const supervisor = new ServiceSupervisor(() => worker, () => {}, undefined, undefined, undefined, undefined, video);
+  // Events before a worker exists go nowhere.
+  sink!({ type: "status", available: true });
+  expect(worker.messages).toEqual([]);
+  const ready = supervisor.start();
+  const generation = worker.messages[0]!.generation as number;
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, gpuAcceleration: true, muted: false });
+  await ready;
+  expect(video.beginOwnership).toHaveBeenCalledOnce();
+  worker.emit("message", { type: "video-lease", generation, requestId: null });
+  expect(video.refreshLease).toHaveBeenCalledOnce();
+  const command = { type: "pause", purpose: "live", itemId: "a" };
+  worker.emit("message", { type: "video-command", generation, requestId: null, command });
+  expect(video.handle).toHaveBeenCalledWith(command);
+  sink!({ type: "status", available: true });
+  expect(worker.messages.at(-1)).toEqual({ type: "video-event", generation, requestId: null, event: { type: "status", available: true } });
+  const stop = supervisor.stop();
+  expect(video.serviceLost).toHaveBeenCalledOnce();
+  worker.emit("message", { type: "video-command", generation, requestId: null, command });
+  expect(video.handle).toHaveBeenCalledOnce();
+  worker.emit("message", { type: "video-command", generation, requestId: null, command: { type: "stop", purpose: "live" } });
+  expect(video.handle).toHaveBeenCalledTimes(2);
+  worker.emit("exit", 0);
+  await stop;
+});
+
+it("fails the service on a malformed video command instead of reaching the player", async () => {
+  const worker = new Worker();
+  const video = { beginOwnership: vi.fn(), refreshLease: vi.fn(), serviceLost: vi.fn(), handle: vi.fn(), onEvent: vi.fn() };
+  const supervisor = new ServiceSupervisor(() => worker, () => {}, undefined, undefined, undefined, undefined, video);
+  const ready = supervisor.start();
+  const generation = worker.messages[0]!.generation as number;
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, gpuAcceleration: true, muted: false });
+  await ready;
+  worker.emit("message", { type: "video-command", generation, requestId: null, command: { type: "load", purpose: "live", itemId: "a", source: { provider: "direct", url: "http://insecure.example.com/a.mp4" }, positionMs: 0, paused: false } });
+  expect(video.handle).not.toHaveBeenCalled();
+  expect(supervisor.state).toBe("failed");
+  expect(video.serviceLost).toHaveBeenCalled();
 });

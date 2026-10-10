@@ -2,6 +2,7 @@ import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { privateDesktopMusicArtworkUrl, type MusicAssetResolver, type OverlayComposition, type OverlayInstruction, type VisualRecipientKey } from "@stream-jams/core";
 import { OverlaySurface, type OverlayPlaybackEvent } from "../overlay/components/OverlaySurface.js";
 import { moduleAssetKey, type DesktopOverlayController } from "./desktop-overlay-controller.js";
+import type { VideoMirrorConnector } from "@stream-jams/core/videos";
 
 function scopedId(key: VisualRecipientKey, id: string): string {
   return JSON.stringify([key.surfaceId, key.moduleId, key.occurrenceId, key.generation, id]);
@@ -10,9 +11,11 @@ function scopedModuleAssetId(moduleId: string, revision: number, id: string): st
   return JSON.stringify(["module", moduleId, revision, id]);
 }
 
-export function DesktopOverlayApp({ controller, subscribe }: {
+export function DesktopOverlayApp({ controller, subscribe, videoMirror }: {
   readonly controller: DesktopOverlayController;
   readonly subscribe: (listener: () => void) => () => void;
+  /** The desktop overlay shows the Videos mirror muted; device audio comes from the desktop app's own receiver. */
+  readonly videoMirror?: VideoMirrorConnector | undefined;
 }) {
   const getSnapshot = useCallback(() => controller.getSnapshot(), [controller]);
   const snapshot = useSyncExternalStore(subscribe, getSnapshot);
@@ -72,5 +75,5 @@ export function DesktopOverlayApp({ controller, subscribe }: {
   }, [controller]);
   const preparingInstructionIds = useMemo(() => new Set(snapshot.occurrences.filter(occurrence => occurrence.preparing === true)
     .flatMap(occurrence => occurrence.instructions.map(instruction => scopedId(occurrence.key, instruction.id)))), [snapshot]);
-  return <OverlaySurface composition={composition} muted preparingInstructionIds={preparingInstructionIds} resolveAssetUrl={resolveAssetUrl} resolveMusicAsset={resolveMusicAsset} onPlaybackEvent={onPlaybackEvent} />;
+  return <OverlaySurface composition={composition} muted preparingInstructionIds={preparingInstructionIds} resolveAssetUrl={resolveAssetUrl} resolveMusicAsset={resolveMusicAsset} onPlaybackEvent={onPlaybackEvent} videoMirror={videoMirror} videoMirrorAudio={false} />;
 }

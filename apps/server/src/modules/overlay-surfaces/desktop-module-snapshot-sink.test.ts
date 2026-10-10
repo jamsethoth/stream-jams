@@ -85,3 +85,35 @@ it("refreshes unchanged paused timer access beyond one hour and removes the refr
     await sink.close(); expect(vi.getTimerCount()).toBe(0);
   } finally { await sink.close(); vi.useRealTimers(); }
 });
+
+it("shows the Videos mirror on a visible desktop layer and never a second browser-style player", async () => {
+  const syncModule = vi.fn<(sync: DesktopModuleSync) => Promise<void>>(async () => {});
+  let surfaces: SurfaceConfiguration[] = [{ ...desktop(), layers: [{ moduleId: "videos", visible: true }] } as SurfaceConfiguration];
+  let videos: OverlayModulePresentation = { kind: "videos", videos: { status: "active", itemId: "a", title: "Clip", requester: null, layout: { x: 269, y: 140, width: 1382, height: 876 }, delivery: { mode: "mirror", paused: false, obsAudio: true } } };
+  const getModuleSnapshot = vi.fn(async () => ({ moduleId: "videos", enabled: true, instructions: [], presentation: videos }));
+  const sink = new DesktopModuleSnapshotSink({ transport: { syncModule }, surfaces: { list: async () => surfaces },
+    runtime: { getModuleSnapshot: async () => ({ moduleId: "timers", enabled: true, instructions: [], presentation }) },
+    assets: { resolveTimerModule: vi.fn() }, videos: { runtime: { getModuleSnapshot } } });
+  await sink.syncVideos();
+  expect(getModuleSnapshot).toHaveBeenCalledWith(expect.objectContaining({ moduleId: "videos", purpose: "live" }));
+  expect(syncModule).toHaveBeenLastCalledWith({ moduleId: "videos", revision: 1, presentation: videos, assets: [] });
+  // Without the desktop player, browser sources play on their own; the desktop layer clears.
+  videos = { kind: "videos", videos: { status: "active", itemId: "a", title: "Clip", requester: null, layout: { x: 269, y: 140, width: 1382, height: 876 },
+    delivery: { mode: "player", source: { provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 0 }, clock: { state: "playing", positionMs: 0, atEpochMs: 1 }, obsAudio: true } } };
+  await sink.syncVideos();
+  expect(syncModule).toHaveBeenLastCalledWith({ moduleId: "videos", revision: 2, presentation: null, assets: [] });
+  const calls = syncModule.mock.calls.length;
+  await sink.syncVideos();
+  expect(syncModule).toHaveBeenCalledTimes(calls);
+  // A hidden layer never asks for the projection.
+  videos = { kind: "videos", videos: { status: "idle" } };
+  surfaces = [{ ...desktop(), layers: [{ moduleId: "videos", visible: false }] } as SurfaceConfiguration];
+  getModuleSnapshot.mockClear();
+  await sink.syncVideos();
+  expect(getModuleSnapshot).not.toHaveBeenCalled();
+  surfaces = [{ ...desktop(), layers: [{ moduleId: "videos", visible: true }] } as SurfaceConfiguration];
+  await sink.syncVideos();
+  expect(syncModule).toHaveBeenLastCalledWith(expect.objectContaining({ moduleId: "videos", presentation: videos }));
+  await sink.close();
+  expect(syncModule).toHaveBeenLastCalledWith(expect.objectContaining({ moduleId: "videos", presentation: null }));
+});

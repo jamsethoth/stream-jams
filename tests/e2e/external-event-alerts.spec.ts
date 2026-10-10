@@ -44,7 +44,7 @@ test("authors a Streamer.bot event alert that plays only allowlisted, moderated 
     await expect(row.getByText("Streamer.bot OBS · SceneChanged")).toBeVisible();
     // No Streamer.bot source subscribes to the identity, so management names the missing setup.
     await expect(row.getByRole("link", { name: "Open Event sources" })).toHaveAttribute("href", "/manage/event-sources");
-    // Video shoutouts register General/Custom with the bus, so an alert for it needs no setup.
+    // Videos registers General/Custom with the bus, so an alert for it needs no setup.
     await page.getByRole("button", { name: "Add alert", exact: true }).click();
     await dialog.getByLabel("Event type").selectOption("external_event");
     await dialog.getByLabel("Streamer.bot source").fill("General");
