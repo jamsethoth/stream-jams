@@ -2,7 +2,7 @@
 
 The **Videos** module plays requested videos from Twitch, YouTube and allowed direct-file hosts. Every request goes into a saved queue. Nothing plays until the operator starts it, unless a trusted caller sends a request with `autoplay` set. It replaces the retired **Video shoutout** module; Streamer.bot `VideoShoutout` broadcasts still work and are queued as Twitch clips.
 
-Requirements live in the [OpenSpec change](../openspec/changes/add-video-request-queue/proposal.md). The desktop mirror (one player in the desktop app, mirrored to every output) is still being built; until it lands, each browser source plays the current video itself from a shared clock (see [Playback](#playback)).
+Requirements live in the [video-request-queue capability](../openspec/specs/video-request-queue/spec.md); the [archived change](../openspec/changes/archive/2026-10-10-add-video-request-queue/proposal.md) keeps the design and tasks. While the desktop app runs, one player in the app is mirrored to every output (see [Desktop mirror](#desktop-mirror)); without it, each browser source plays the current video itself from a shared clock (see [Playback](#playback)).
 
 ## Allowed links
 

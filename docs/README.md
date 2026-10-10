@@ -40,12 +40,11 @@ Installers, signing, automatic updates, non-Windows desktop delivery, LAN mode, 
 
 The October 5, 2026 UTC reconciliation archived 21 completed changes under [the change archive](../openspec/changes/archive), using the `2026-10-05-` prefix. Before archival, canonical requirements were synchronized for automatic local-output rebinding, persistent event timers, repository error provenance, and the compact Operator panel. Other completed changes were already synchronized; newer timing, streaming, variant-removal and menu requirements were preserved rather than overwritten by older deltas. Historical acceptance limits remain with their archived records.
 
-Six changes remain active:
+Five changes remain active:
 
 | Change | Remaining work |
 | --- | --- |
 | [add-main-branch-changelog](../openspec/changes/add-main-branch-changelog/tasks.md) | Unimplemented proposal, 22 unchecked tasks; no root changelog or enforcing workflow |
-| [add-video-shoutout-overlay-module](../openspec/changes/add-video-shoutout-overlay-module/tasks.md) | Unimplemented proposal, 23 unchecked tasks; no registered video-shoutout module |
 | [add-custom-data-overlays](../openspec/changes/add-custom-data-overlays/proposal.md) | Slice 1 of 4 for data overlays: values, goals, reset groups, canvases, outputs and Operator controls; 21 unchecked tasks, awaiting approval |
 | [add-data-overlay-event-rules](../openspec/changes/add-data-overlay-event-rules/proposal.md) | Slice 2: data rules as a central event bus consumer, plus Streamer.bot globals; 19 unchecked tasks; depends on slice 1 and the bus change |
 | [add-twitch-overlay-data](../openspec/changes/add-twitch-overlay-data/proposal.md) | Slice 3: Twitch follower total and Creator Goals; 11 unchecked tasks; depends on slice 1 |

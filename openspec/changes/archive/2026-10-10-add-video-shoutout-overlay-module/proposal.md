@@ -1,5 +1,7 @@
 # Proposal: Add Video Shoutout Overlay Module
 
+> Archived on 2026-10-10 without syncing its `video-shoutout-overlay` spec: `add-video-request-queue` retired the module and replaced it with the `video-request-queue` capability.
+
 ## Why
 
 Streamers already use Streamer.bot to decide when a manual shoutout should happen and which Twitch clip to show, but Stream Jams has no dedicated browser-source surface for rendering that selected clip. A small `video-shoutout` overlay module lets Stream Jams own presentation and overlay control while leaving clip lookup, Twitch auth, chat commands, and eligibility rules in Streamer.bot.

@@ -63,6 +63,6 @@
 ## 7. Docs, Backlog And Verification
 
 - [x] 7.1 Replace `docs/video-shoutout.md` with `docs/videos.md`, covering links, Streamer.bot, REST, rewards and OBS audio.
-- [ ] 7.2 Update `docs/backlog.md` to close BL-053 and BL-057 on archive, and keep BL-058 and BL-060.
+- [x] 7.2 Update `docs/backlog.md` to close BL-053 and BL-057 on archive, and keep BL-058 and BL-060.
 - [x] 7.3 Add Playwright coverage: submit, held over-limit item, Play anyway, play all snapshot, pause and seek, and unsafe link rejection, an unknown-length item queuing and playing, and a player-reported over-limit duration stopping and holding the item, with providers stubbed.
-- [ ] 7.4 Run lint, typecheck, unit, build (including bundle budgets), Storybook and Playwright gates. Verify the rebuilt live workflow.
+- [x] 7.4 Run lint, typecheck, unit, build (including bundle budgets), Storybook and Playwright gates. Verify the rebuilt live workflow.
