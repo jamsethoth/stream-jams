@@ -48,7 +48,7 @@ export function validateVideoBusInput(input: BusEventInput): void {
   if (readMarker(payload) === null) return;
   const data = payload as Record<string, unknown>;
   if (data.purpose !== undefined && data.purpose !== "live") {
-    throw new EventBusInputRejectedError("VIDEO_TEST_RETIRED", "Videos test input was retired. Remove its purpose selector and refresh the ordinary queue before submitting.");
+    throw new EventBusInputRejectedError("VIDEO_TEST_RETIRED", "Videos test input was retired. Remove its purpose selector and refresh the ordinary queue before submitting.", "retired");
   }
 }
 

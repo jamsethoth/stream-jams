@@ -45,7 +45,11 @@ export interface EventBusDeliveryFailureReport {
 
 /** Bounded adapter rejection, safe for management errors and source diagnostics. */
 export class EventBusInputRejectedError extends Error {
-  constructor(readonly code: string, message: string) { super(message); this.name = "EventBusInputRejectedError"; }
+  /** "retired" marks input for a removed capability (HTTP 410); everything else is ordinary invalid input (422). */
+  constructor(readonly code: string, message: string, readonly reason: "invalid" | "retired" = "invalid") {
+    super(message);
+    this.name = "EventBusInputRejectedError";
+  }
 }
 
 export interface EventBusOptions {

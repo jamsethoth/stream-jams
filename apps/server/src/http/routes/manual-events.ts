@@ -14,7 +14,7 @@ export function registerManualEventRoutes(app: FastifyInstance, submit: NonNulla
     }
     try { return await submit(input.data); }
     catch (error) {
-      if (error instanceof EventBusInputRejectedError) return sendHttpError(reply, 410, { code: error.code, message: error.message });
+      if (error instanceof EventBusInputRejectedError) return sendHttpError(reply, error.reason === "retired" ? 410 : 422, { code: error.code, message: error.message });
       if (error instanceof ManualSubmissionRejectedError) return sendHttpError(reply, 422, { code: "MANUAL_SIMULATION_REJECTED", message: `${error.message} Reference ${error.referenceId}.` });
       throw error;
     }
