@@ -73,6 +73,18 @@ export const BottomToTop: Story = {
   }
 };
 
+export const WithoutShadow: Story = {
+  args: { stack: projectTimerStack({ nowEpochMs: 0, targetProfileId: "landscape", recipientKind: "browser", runs: reversedRuns, profile: {
+    ...timersOverlayModuleDefinition.defaultConfig.profiles.landscape,
+    appearance: { ...timersOverlayModuleDefinition.defaultConfig.profiles.landscape.appearance, shadow: { offsetX: 0, offsetY: 8, blur: 24, spread: 0, color: "#00000000" } } } }) },
+  decorators: [(Story) => <div style={{ width: 640, height: 313, overflow: "hidden", position: "relative", background: "#243140" }}><Story /></div>],
+  play: async ({ canvasElement }) => {
+    const card = within(canvasElement).getAllByRole("listitem")[0]!;
+    await expect(card).toHaveStyle({ left: "0px", top: "0px" });
+    await expect(getComputedStyle(card).boxShadow).toMatch(/^rgba\(0, 0, 0, 0\)/u);
+  }
+};
+
 export const RightToLeft: Story = {
   args: { stack: projectTimerStack({ nowEpochMs: 0, targetProfileId: "landscape", recipientKind: "browser", profile: reversedProfile("horizontal"), runs: reversedRuns }) },
   play: async ({ canvasElement }) => {

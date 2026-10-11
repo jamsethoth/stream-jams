@@ -46,6 +46,20 @@ describe("TimerStackEditor", () => {
       expect(latest.profiles.landscape.appearance).toEqual({ ...before, [field]: value });
     }
   });
+  it("edits the card shadow from the original default and turns it off without losing its shape", () => {
+    let latest = structuredClone(timersOverlayModuleDefinition.defaultConfig);
+    function Owner() {
+      const [value, setValue] = useState(latest);
+      return <TimerStackEditor assetApi={createTestMediaPreviewApi()} value={value} onChange={next => { latest = next; setValue(next); }} />;
+    }
+    render(<Owner />);
+    expect(screen.getByLabelText("Shadow blur (px)")).toHaveValue(24);
+    fireEvent.change(screen.getByLabelText("Shadow X (px)"), { target: { value: "6" } });
+    expect(latest.profiles.landscape.appearance.shadow).toEqual({ offsetX: 6, offsetY: 8, blur: 24, spread: 0, color: "#0000006B" });
+    fireEvent.change(screen.getByLabelText("Shadow", { selector: "select" }), { target: { value: "off" } });
+    expect(latest.profiles.landscape.appearance.shadow).toEqual({ offsetX: 6, offsetY: 8, blur: 24, spread: 0, color: "#00000000" });
+    expect(screen.getByLabelText("Shadow", { selector: "select" })).toHaveValue("off");
+  });
   it("round-trips fonts and placement, retains drafts and resets only the selected profile", async () => {
     const user = userEvent.setup();
     let latest = structuredClone(timersOverlayModuleDefinition.defaultConfig);

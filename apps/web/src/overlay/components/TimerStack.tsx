@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import { alertFontPresets, formatTimerRemaining, timerProfileDimensions, type TimerAppearance, type TimerOverlayCard, type TimerStackProjection } from "@stream-jams/core";
+import { alertFontPresets, boxShadowCss, formatTimerRemaining, timerProfileDimensions, type TimerAppearance, type TimerOverlayCard, type TimerStackProjection } from "@stream-jams/core";
 import "../overlay.css";
 
 export interface TimerStackProps {
@@ -130,7 +130,8 @@ function TimerCard({
       background: appearance.backgroundOpacity === 1 ? appearance.backgroundColor : `color-mix(in srgb, ${appearance.backgroundColor} ${appearance.backgroundOpacity * 100}%, transparent)`,
       "--timer-label-family": family(appearance.labelFont), "--timer-value-family": family(appearance.valueFont),
       "--timer-label-weight": appearance.labelFont.fontWeight, "--timer-value-weight": appearance.valueFont.fontWeight,
-      "--timer-label-color": appearance.labelFont.color, "--timer-value-color": appearance.valueFont.color
+      "--timer-label-color": appearance.labelFont.color, "--timer-value-color": appearance.valueFont.color,
+      ...(appearance.shadow === undefined ? {} : { boxShadow: boxShadowCss(appearance.shadow) })
     })
   } as CSSProperties;
   }, [appearance, card.slot, card.status, countdownMaxWidth]);

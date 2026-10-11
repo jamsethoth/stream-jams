@@ -1,8 +1,12 @@
 import type { OutputCanvas } from "../overlay-modules/output-canvas-contract.js";
 import type { OverlayElementLayout } from "../shared/schemas.js";
 import type { TimerAppearance, TimerOverflowGeometry, TimerProfile, TimerStackRegion } from "./types.js";
+import { boxShadowInsets, type BoxShadow } from "../shared/box-shadow.js";
 import { isExactLegacyTimerAppearance, timerSizeMeasurement } from "./legacy-appearance.js";
 export { timerSizeMeasurement } from "./legacy-appearance.js";
+
+/** The original card shadow (0 8px 24px rgba(0,0,0,.42)); its margin is the historical 48/40/48/56px. */
+export const defaultTimerShadow: BoxShadow = { offsetX: 0, offsetY: 8, blur: 24, spread: 0, color: "#0000006B" };
 
 export interface TimerOutputGeometry extends Omit<OutputCanvas, "configRevision"> {
   readonly slots: readonly OverlayElementLayout[];
@@ -38,7 +42,7 @@ export function resolveTimerOutputGeometry(profile: TimerProfile): TimerOutputGe
   const countdownMaxWidth = isExactLegacyTimerAppearance(a) ? "8ch" : Math.max(0,
     a.cardWidthPx - 2 * (a.inlinePaddingPx + a.borderWidthPx) - a.iconSizePx - 2 * a.gapPx - 1);
   const { overflow, footprint, stackWidth, stackHeight } = timerOverflowGeometry(a);
-  const insets = { left: 48, top: 40, right: 48, bottom: 56 };
+  const insets = boxShadowInsets(a.shadow ?? defaultTimerShadow);
   const local = Array.from({ length: a.maxVisible }, (_, index) => ({
     x: a.orientation === "horizontal" ? index * (a.cardWidthPx + a.stackGapPx) : 0,
     y: a.orientation === "vertical" ? index * (a.cardHeightPx + a.stackGapPx) : 0,

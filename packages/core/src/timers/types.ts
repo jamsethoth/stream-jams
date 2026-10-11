@@ -1,4 +1,5 @@
 import type { AlertAudioOutputs } from "../audio/types.js";
+import type { BoxShadow } from "../shared/box-shadow.js";
 import type { OverlayElementLayout, OverlayTargetProfileId } from "../shared/schemas.js";
 
 export interface TimerDefinitionSnapshot {
@@ -93,6 +94,8 @@ export interface TimerAppearance {
   readonly runningAccent: string | null;
   readonly pausedAccent: string;
   readonly completedAccent: string;
+  /** Card shadow; absent uses `defaultTimerShadow`. The browser source margin is sized from it. */
+  readonly shadow?: BoxShadow | undefined;
 }
 
 export interface TimerProfile {

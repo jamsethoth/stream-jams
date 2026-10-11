@@ -3,6 +3,7 @@ import { timerEventRulesSchema } from "./event-rules.js";
 import { timerOverflowGeometry } from "./output-geometry.js";
 import { isExactLegacyTimerAppearance } from "./legacy-appearance.js";
 import { alertAudioOutputsSchema } from "../audio/schemas.js";
+import { boxShadowSchema } from "../shared/box-shadow.js";
 import {
   isoDateTimeSchema,
   nonEmptyStringSchema,
@@ -129,7 +130,7 @@ export const timerAppearanceSchema = z.strictObject({
   gapPx: px(128), blockPaddingPx: px(128), inlinePaddingPx: px(128), cornerRadiusPx: px(256), borderWidthPx: px(16),
   borderColor: color, backgroundColor: color, backgroundOpacity: z.number().finite().min(0).max(1),
   labelFont: timerTypographySchema, valueFont: timerTypographySchema, iconSizePx: px(256),
-  runningAccent: color.nullable(), pausedAccent: color, completedAccent: color
+  runningAccent: color.nullable(), pausedAccent: color, completedAccent: color, shadow: boxShadowSchema.optional()
 }).superRefine((a, context) => {
   const innerHeight = a.cardHeightPx - 2 * (a.blockPaddingPx + a.borderWidthPx);
   const textWidth = a.cardWidthPx - 2 * (a.inlinePaddingPx + a.borderWidthPx) - a.iconSizePx - a.gapPx * 2 - a.valueFont.fontSizePx * 2.4;

@@ -19,3 +19,16 @@ Desktop placement MAY override the reverse flag for the desktop overlay only. Wh
 #### Scenario: Older configuration keeps its direction
 - **WHEN** a saved Timer configuration has no direction
 - **THEN** it validates unchanged and renders top to bottom or left to right as before
+
+### Requirement: Timer Card Shadow Is Configurable
+Each Timer profile appearance SHALL offer a card shadow with X and Y offset, blur, spread and an RGBA color, using the same shadow fields as the Music widget. A fully transparent color SHALL mean no shadow.
+
+The browser content canvas SHALL reserve a transparent margin on each side sized from the shadow, and no margin when the shadow is off. Configurations saved without a shadow SHALL keep the original card shadow and the original 48/40/48/56px margin.
+
+#### Scenario: Shadow off starts the stack at the source corner
+- **WHEN** the operator turns the Timer shadow off and saves
+- **THEN** the browser source content canvas shrinks to the stack's footprint and the first card sits at its top-left corner
+
+#### Scenario: Older configuration keeps its shadow
+- **WHEN** a saved Timer configuration has no shadow
+- **THEN** cards render with the original shadow and the browser content canvas keeps its original size

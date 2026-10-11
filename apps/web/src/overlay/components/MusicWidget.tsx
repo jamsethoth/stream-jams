@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
-import { alertFontPresets, getMusicPositionMs, musicLimits, musicWidgetProjectionSchema } from "@stream-jams/core";
+import { alertFontPresets, boxShadowCss, getMusicPositionMs, musicLimits, musicWidgetProjectionSchema } from "@stream-jams/core";
 import type { MusicAssetResolver, MusicPublicAssetReference, MusicTypography, MusicWidgetProjection } from "@stream-jams/core";
 import nativeCss from "./music-widget.css?inline";
 
@@ -143,7 +143,7 @@ function MusicContents({ projection, resolveAsset, nowEpochMs, reducedMotion }: 
     {compiled?.key !== cssKey || compiled.css === "" ? null : <style>{`@layer sj-custom { ${compiled.css} }`}</style>}
     <div className="sj-frame" style={{
       borderRadius: appearance.cornerRadiusPx, border: `${appearance.borderWidthPx}px solid ${colors.border}`,
-      boxShadow: `${appearance.shadow.offsetX}px ${appearance.shadow.offsetY}px ${appearance.shadow.blur}px ${appearance.shadow.spread}px ${appearance.shadow.color}`,
+      boxShadow: boxShadowCss(appearance.shadow),
       background: `linear-gradient(135deg, ${colors.backgroundStart}, ${colors.backgroundEnd})`,
       opacity: projection.profile.backgroundOpacity / 100
     }} />

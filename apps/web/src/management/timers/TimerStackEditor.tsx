@@ -1,5 +1,5 @@
 import { Button, NativeSelect, SegmentedControl, TextInput } from "@mantine/core";
-import { alertFontPresets, projectTimerStack, resolveTimerOutputGeometry, timerProfileDimensions, timersOverlayModuleDefinition, timersOverlayModuleConfigSchema,
+import { alertFontPresets, boxShadowLimits, boxShadowVisible, defaultTimerShadow, projectTimerStack, resolveTimerOutputGeometry, timerProfileDimensions, timersOverlayModuleDefinition, timersOverlayModuleConfigSchema,
   type OverlayTargetProfileId, type TimerAppearance, type TimerDefinition, type TimerProfile, type TimerRunState, type TimersOverlayModuleConfig } from "@stream-jams/core";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { TimerStack } from "../../overlay/components/TimerStack.js";
@@ -15,6 +15,8 @@ const numericAppearance = [
 ] as const;
 const colorAppearance = [["borderColor", "Border color"], ["backgroundColor", "Background color"],
   ["runningAccent", "Running accent"], ["pausedAccent", "Paused accent"], ["completedAccent", "Completed accent"]] as const;
+const shadowFields = [["offsetX", "Shadow X (px)", boxShadowLimits.offsetPx.min, boxShadowLimits.offsetPx.max], ["offsetY", "Shadow Y (px)", boxShadowLimits.offsetPx.min, boxShadowLimits.offsetPx.max],
+  ["blur", "Shadow blur (px)", boxShadowLimits.blurPx.min, boxShadowLimits.blurPx.max], ["spread", "Shadow spread (px)", boxShadowLimits.spreadPx.min, boxShadowLimits.spreadPx.max]] as const;
 const directionOptions = [["vertical", "Top to bottom"], ["vertical-reverse", "Bottom to top"],
   ["horizontal", "Left to right"], ["horizontal-reverse", "Right to left"]] as const;
 const previewNow = () => 0;
@@ -58,7 +60,7 @@ export function TimerStackEditor({ assetApi, definitions, value, onChange, valid
     const observer = new ResizeObserver(([entry]) => { if (entry !== undefined) setAvailableWidth(Math.min(960, Math.max(1, entry.contentRect.width))); });
     observer.observe(shell); return () => observer.disconnect();
   }, []);
-  const selected = value.profiles[profile]; const a = selected.appearance; const placement = selected.desktopPlacement;
+  const selected = value.profiles[profile]; const a = selected.appearance; const shadow = a.shadow ?? defaultTimerShadow; const placement = selected.desktopPlacement;
   const bounds = timerProfileDimensions[profile];
   const previewScale = Math.min(1, availableWidth / bounds.width, 620 / bounds.height);
   const preview = useMemo(() => {
@@ -132,6 +134,13 @@ export function TimerStackEditor({ assetApi, definitions, value, onChange, valid
       </div></details>
       <details className="timer-layout__more"><summary>Spacing and shape</summary><div className="timer-layout__controls">
         {numberFields(["stackGapPx", "gapPx", "blockPaddingPx", "inlinePaddingPx", "cornerRadiusPx", "borderWidthPx", "iconSizePx"])}
+      </div></details>
+      <details className="timer-layout__more"><summary>Shadow</summary><div className="timer-layout__controls">
+        <NativeSelect label="Shadow" value={boxShadowVisible(shadow) ? "on" : "off"} onChange={event => updateAppearance({ shadow: event.currentTarget.value === "off"
+          ? { ...shadow, color: `${shadow.color.slice(0, 7)}00` } : defaultTimerShadow })}><option value="on">On</option><option value="off">Off</option></NativeSelect>
+        {shadowFields.map(([field, label, min, max]) => <TextInput key={field} label={label} error={errorFor(`profiles.${profile}.appearance.shadow.${field}`)} data-timer-field={`profiles.${profile}.appearance.shadow.${field}`} type="number" min={min} max={max} step={1}
+          value={Number.isFinite(shadow[field]) ? shadow[field] : ""} onChange={event => updateAppearance({ shadow: { ...shadow, [field]: event.currentTarget.value === "" ? NaN : Number(event.currentTarget.value) } })} />)}
+        <TextInput label="Shadow color" error={errorFor(`profiles.${profile}.appearance.shadow.color`)} data-timer-field={`profiles.${profile}.appearance.shadow.color`} value={shadow.color} onChange={event => updateAppearance({ shadow: { ...shadow, color: event.currentTarget.value } })} />
       </div></details>
       <Button className="timer-layout__reset" variant="default" type="button" onClick={() => update(structuredClone(timersOverlayModuleDefinition.defaultConfig.profiles[profile]))}>Reset selected profile</Button>
     </fieldset>

@@ -222,7 +222,7 @@ export {
 export { overlayModulePresentationSchema } from "./overlay-modules/presentation.js";
 export { compareTimerRuns, formatTimerRemaining, projectTimerStack } from "./timers/projection.js";
 export { upgradeTimersConfig, legacyTimerAppearance, InvalidTimersConfigError } from "./timers/config-upgrade.js";
-export { resolveTimerOutputGeometry, timerOverflowGeometry } from "./timers/output-geometry.js";
+export { defaultTimerShadow, resolveTimerOutputGeometry, timerOverflowGeometry } from "./timers/output-geometry.js";
 export type { TimerOutputGeometry } from "./timers/output-geometry.js";
 export { timerAppearanceSchema, timerProfileSchema } from "./timers/schemas.js";
 export { timersOverlayModuleDefinition } from "./timers/module-definition.js";
@@ -384,6 +384,7 @@ export * from "./assets/desktop-media-asset.js";
 export * from "./timers/event-rules.js";
 export type * from "./music/types.js";
 export * from "./music/schemas.js";
+export * from "./shared/box-shadow.js";
 export * from "./music/component-layout.js";
 export { pearCertificateFingerprintSchema, pearConfigurationSchema, pearTrustedCertificateSchema, type PearConfiguration, type PearTrustedCertificate } from "./music/pear-configuration.js";
 export * from "./music/management.js";

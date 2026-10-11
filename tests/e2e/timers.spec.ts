@@ -130,6 +130,14 @@ test("stack direction reverses the live browser source while the desktop overrid
     const desktopTops = latestDesktop!.cards.map(card => card.slot.y);
     expect(desktopTops).toEqual([...desktopTops].sort((left, right) => left - right));
     expect(latestDesktop!.overflow!.y).toBeGreaterThan(Math.max(...desktopTops));
+
+    // Turning the shadow off removes the margin it needed, so the stack starts at the source corner.
+    await page.locator("summary", { hasText: "Shadow" }).click();
+    await page.getByLabel("Shadow", { exact: true }).selectOption("Off");
+    await page.getByRole("button", { name: "Save overlay layout" }).click();
+    await expect(browser.getByTestId("overlay-content-canvas")).toHaveCSS("width", "640px");
+    await expect(cards.first()).toHaveCSS("left", "0px"); await expect(cards.first()).toHaveCSS("top", "243px");
+    await expect(cards.first()).toHaveCSS("box-shadow", /^rgba\(0, 0, 0, 0\)/u);
     await browser.close();
   } finally { await fixture.close(); }
 });
