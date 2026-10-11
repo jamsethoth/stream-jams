@@ -208,8 +208,7 @@ test.describe.serial("full application visual UX acceptance", () => {
     } }));
     await page.route(`${runtime.url}/overlay-surfaces`, (route) => route.fulfill({ json: {
       surfaces: [
-        { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "missing-display", opacity: 1, layers: [{ moduleId: "alerts", visible: true }] },
-        { id: "unified-browser:default", kind: "unified-browser", overlayId: "default", layers: [{ moduleId: "screen-effects", visible: true }, { moduleId: "alerts", visible: true }] }
+        { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "missing-display", opacity: 1, layers: [{ moduleId: "screen-effects", visible: true }, { moduleId: "alerts", visible: true }] }
       ],
       desktop: { available: false, displays: [], state: "unavailable", message: "The saved display is unavailable." }
     } }));
@@ -218,7 +217,7 @@ test.describe.serial("full application visual UX acceptance", () => {
 
     const server = page.getByText("Server settings", { exact: true }).locator("..", { has: page.locator("small") }).locator("..");
     await expect(page.getByText("Audio outputs · 3 configured", { exact: true })).toBeVisible();
-    const surfacesSummary = page.getByText("Overlay surfaces · 2 configured · Needs attention", { exact: true });
+    const surfacesSummary = page.getByText("Overlay surfaces · 1 configured · Needs attention", { exact: true });
     await expect(surfacesSummary).toBeVisible();
     await expect(page.getByText("The saved display is unavailable.", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Save server settings" })).toBeHidden();

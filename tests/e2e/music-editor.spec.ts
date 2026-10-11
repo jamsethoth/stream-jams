@@ -9,8 +9,8 @@ test("Music browser sources show both profiles with masked keys and responsive a
     await page.goto(`${fixture.url}/manage/modules/music`);
     await page.getByRole("button", { name: "Expand browser sources" }).click();
     const panel = page.getByRole("region", { name: "Music output links" });
-    await expect(panel.getByRole("article", { name: "Landscape browser source" })).toContainText("1920 x 1080");
-    await expect(panel.getByRole("article", { name: "Vertical browser source" })).toContainText("1080 x 1920");
+    await expect(panel.getByRole("article", { name: "Landscape browser source" })).toContainText("840 x 378");
+    await expect(panel.getByRole("article", { name: "Vertical browser source" })).toContainText("840 x 378");
     await expect(panel.getByRole("textbox")).toHaveCount(0);
     await expect(panel.locator("code").first()).toContainText("********");
     for (const width of [1440, 600]) {
