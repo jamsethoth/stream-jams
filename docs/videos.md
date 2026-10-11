@@ -99,7 +99,7 @@ Map a reward to the ordinary queue on the Videos page. A redemption's text is us
 
 ## Browser sources and audio
 
-Videos has live and test module outputs and also appears on unified browser sources. Create a key on the Videos page or in Browser sources, and add the copied URL to OBS as a browser source. Treat the URL as a secret: it carries the overlay key.
+Videos has one ordinary browser source and one queue. Copy its URL from the Videos page into OBS and set the source dimensions to the saved width and height shown beside it. Public test and unified sources are retired. Treat the URL as a secret: it carries the overlay key.
 
 With **OBS audio** on, the browser source plays the video's sound so OBS can capture it (tick **Control audio via OBS** on the source). With it off, the browser source is muted.
 
@@ -111,7 +111,7 @@ A browser source shows nothing while idle. While a video plays, it shows the vid
 
 ### Placement
 
-The **Placement** section of the Videos page sets where the video appears and how big it is, on the same 1920 x 1080 canvas Timers and Music use. Drag the box in the preview to move it, or its corner to resize it; the box keeps its proportions while you drag. Snap to grid and Snap to alignment work as in the other editors, and the X, Y, width and height fields and arrow keys (Shift for 10 px) set exact values. The picture is the largest 16:9 frame that fits in the box with the title and requester below it, anchored to the box's bottom center; small boxes shrink the caption. **Save Videos settings** applies the placement to every Videos output at once: module and unified browser sources, the desktop overlay and the mirror. **Reset to default placement** restores the original look, centered and 72% of the canvas wide near the bottom, which is also what earlier saved settings get. The box must be at least 240 x 180 px and stay on the canvas; anything else is refused when saved and never rendered.
+The **Placement** section saves browser content width and height separately from desktop X, Y and scale. Browser content starts at the local origin and keeps its saved CSS-pixel size; a smaller OBS source clips it and extra source area stays transparent. OBS is never resized automatically. Desktop placement uses the existing scene and does not restart a healthy primary or mirror player. Save applies content dimensions to the ordinary browser source and desktop presentation while preserving separate desktop placement. Earlier saved layout measurements are upgraded without applying scale twice.
 
 ### Desktop mirror
 

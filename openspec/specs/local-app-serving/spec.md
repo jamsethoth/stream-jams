@@ -27,17 +27,19 @@ The system SHALL serve the management UI from the configured Fastify origin at `
 
 ### Requirement: Overlay Shell Served From Overlay Routes
 
-The system SHALL serve browser-source overlay shells from the configured Fastify overlay routes using built client assets.
+The system SHALL serve ordinary module browser-source overlay shells from configured Fastify routes using built client assets. Existing ordinary live module paths and exact profile-scoped authorization SHALL remain supported. Public test and unified shell routes SHALL be retired without exposing management or private desktop transports.
 
 #### Scenario: Module overlay shell loads built assets
-
-- **WHEN** a valid module overlay route is requested with a live or test overlay key
+- **WHEN** a valid ordinary module overlay route is requested with its matching module/profile key
 - **THEN** the response is HTML that loads the overlay-capable built client bundle from the local service
 
-#### Scenario: Unified overlay shell loads built assets
+#### Scenario: Removed source requests a shell
+- **WHEN** a former test or unified browser route is requested
+- **THEN** the request does not receive an authorized overlay shell, management fallback page or redirect to ordinary output
 
-- **WHEN** a valid unified overlay route is requested with a live or test overlay key
-- **THEN** the response is HTML that loads the overlay-capable built client bundle from the local service
+#### Scenario: Private desktop still receives compositions
+- **WHEN** the desktop host requests a private multi-module snapshot
+- **THEN** public unified route removal does not remove its trusted transport or registered module eligibility
 
 ### Requirement: Static Asset Serving Is Scoped
 

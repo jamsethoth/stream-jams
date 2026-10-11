@@ -1,0 +1,65 @@
+{
+  "mode": "comparable",
+  "pinnedBaselineSource": "b64b2e79c9790d899736895c7cbcb74387c2d0d5",
+  "inputHashes": {
+    "controller": "869204716D1885B2BAD80827D47A3F7F1CAA2584E5227A4010969B0704338881",
+    "fixtures": "80F818BAFE25C146286F0C053FCB184F33267822C82AAE26C73175128FF70F77",
+    "metrics": "11B6775F290BF848F0021158FDB80E8FB44D2310873F1D79A1049A7D67961278"
+  },
+  "adaptedControllerSha256": "9E31C827BF01D212BAD2FCC76E5B3C2CD4756C6755068962AE0FE3A988F1720B",
+  "outputs": [
+    [
+      "timers",
+      "landscape",
+      1920,
+      1080
+    ],
+    [
+      "timers",
+      "vertical",
+      1080,
+      1920
+    ],
+    [
+      "music",
+      "landscape",
+      1920,
+      1080
+    ]
+  ],
+  "scheduler": "unaltered real startLocalRuntime scheduler",
+  "changes": [
+    "saved Music config validation",
+    "pure Timer v2 upgrade preserving saved capacity/geometry",
+    "pure Video layout upgrade; empty saved mappings unchanged",
+    "original three full-size viewports retained",
+    "explicit pinned environment/browser checks"
+  ],
+  "unchangedLoad": {
+    "windowsMs": 10000,
+    "outputCount": 3,
+    "outputs": [
+      "timers landscape 1920x1080",
+      "timers vertical 1080x1920",
+      "music landscape 1920x1080"
+    ],
+    "timerCount": 14,
+    "visibleCapacity": 12,
+    "durationMs": 600000,
+    "eventCount": 20,
+    "eventIntervalMs": 100,
+    "songChangeCount": 5,
+    "songChangeIntervalMs": 3200,
+    "browserMode": "headless Chromium",
+    "audio": "disabled/no assets/no selected device",
+    "videoMetadata": "offline fail-fast"
+  },
+  "limits": [
+    "Node CPU includes runtime plus benchmark controller, not Chromium processes.",
+    "CDP TaskDuration is main-thread task time; JSHeapUsedSize is JS heap, not process RSS or GPU memory.",
+    "No native OBS, GPU, audio audibility or physical desktop compositor measurement.",
+    "Video decoding/frame pacing not measured; admission uses offline metadata only.",
+    "Desktop transport rendering is not measured."
+  ],
+  "note": "Shared pinned sampling/workload unchanged. Extra mixed admission and formatted clock acceptance runs afterward. Adapter allocations remain in service+controller RSS; no browser-process/native/GPU/video-decoding measurement added. Raw source diff recording removed during sanitized promotion."
+}

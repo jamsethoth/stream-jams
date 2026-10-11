@@ -6,20 +6,29 @@ Every active event source publishes into one journaled bus, and every module tha
 ## Requirements
 
 ### Requirement: All Active Event Sources Publish To One Bus
-The system SHALL publish every validated event from every active event source into one central event bus. Each bus event SHALL carry a bus ID, source registration ID, source kind, receive time, kind (`canonical` or `external`) and the existing validated normalized or external event, and SHALL NOT carry route keys, secrets or credentials.
+The system SHALL publish every validated subscribed event and explicit manually submitted event into one central journaled bus. Events SHALL carry server-assigned bus identity, event identity, receive time and truthful provenance without route keys, secrets or credentials. Subscribed canonical/external events SHALL retain their existing validated identities and source registrations. A manual variant SHALL have manual provenance, no source registration and no cross-source correlation key; its validated simulated event identity or explicit module-action target SHALL be separate from provenance. Manual SHALL NOT become a provider registration or require a connected source. Manual events SHALL use the ordinary consumers, queues and outputs, with no test destination.
 
 #### Scenario: Two sources publish together
-- **WHEN** direct Twitch and Streamer.bot are both active and each delivers a distinct valid event
-- **THEN** both events are published to the bus with their own source registration IDs
+- **WHEN** direct Twitch and Streamer.bot deliver distinct valid subscribed events
+- **THEN** both are published with their own source registration IDs
 
 #### Scenario: Invalid input is rejected at the boundary
-- **WHEN** a source delivers a payload that fails normalized or external event validation
-- **THEN** nothing is published to the bus
-- **AND** ingestion reports a rejection with a reference ID through existing diagnostics
+- **WHEN** any submission fails its typed event validation or authorization
+- **THEN** nothing is published and a bounded rejection with a reference ID is recorded
 
 #### Scenario: Custom Streamer.bot broadcast is an external bus event
-- **WHEN** a configured Streamer.bot General/Custom broadcast arrives
-- **THEN** it is published as an external bus event rather than intercepted before ingestion
+- **WHEN** a configured General/Custom broadcast arrives
+- **THEN** it is published once as an external event rather than intercepted before ingestion
+
+#### Scenario: Manual source simulation
+- **WHEN** an authorized operator submits a supported simulated source event while its provider is disconnected
+- **THEN** it enters the bus with manual provenance and the chosen event identity
+- **AND** each normal consumer independently matches it and applies its normal admission rules
+
+#### Scenario: Explicit selected-module test
+- **WHEN** the operator dispatches a saved alert/effect test or submits a video request
+- **THEN** a typed manual action enters the bus and the intended consumer uses ordinary validated admission
+- **AND** no direct parallel enqueue or separate test output is created
 
 ### Requirement: Accepted Events Are Journaled Before Delivery
 The system SHALL commit each accepted bus event to a bounded SQLite journal before any consumer receives it, and SHALL report ingestion as accepted only after that commit. The journal SHALL retain no more than 7 days or 10,000 rows, whichever is fewer, except rows still pending for a consumer within the replay age. The journal SHALL be excluded from configuration backup.
@@ -76,11 +85,15 @@ The bus SHALL journal an external event's payload only when a registered consume
 - **THEN** it is published without its payload
 
 ### Requirement: Operator Queue Shows The Delivering Source
-Each Operator queue item SHALL name the source kind that delivered its event (Twitch or Streamer.bot). Manual tests SHALL show no source, and a replayed item SHALL keep its original source.
+Operator queues SHALL show Twitch or Streamer.bot for subscribed events and truthful manual provenance for manually submitted events without claiming a provider registration. Replayed items SHALL preserve original provenance. Diagnostics SHALL distinguish manual/subscribed origin without implying separate playback destinations or exposing raw payloads.
 
 #### Scenario: Effect triggered through Streamer.bot
-- **WHEN** a Streamer.bot event admits a Screen Effect
-- **THEN** its Operator queue item says it came via Streamer.bot
+- **WHEN** a subscribed Streamer.bot event admits an effect
+- **THEN** its queue item identifies Streamer.bot
+
+#### Scenario: Manually simulated Twitch event
+- **WHEN** a manual event simulates a Twitch event type
+- **THEN** its queue item identifies manual origin rather than claiming Twitch delivered it
 
 ### Requirement: Same-Source Redelivery Is A Duplicate
 The system SHALL reject an event with the same source kind and event ID as one accepted in the last 10 minutes, including across restart.
@@ -90,7 +103,7 @@ The system SHALL reject an event with the same source kind and event ID as one a
 - **THEN** the redelivery is counted as a duplicate and not published
 
 ### Requirement: Cross-Source Duplicates Are Merged
-For Twitch-origin canonical events the system SHALL derive a correlation key from Twitch-native identity and SHALL merge an event whose key matches an event accepted from a different source within the correlation window (default 30 seconds). Each accepted event SHALL absorb at most one copy from each other source. Same-source events with different IDs and external events SHALL NOT be merged.
+For subscribed Twitch-origin canonical events the system SHALL derive a correlation key from Twitch-native identity and SHALL merge an event whose key matches an event accepted from a different source within the correlation window (default 30 seconds). Each accepted event SHALL absorb at most one copy from each other source. Same-source events with different IDs, external events and manual events SHALL NOT be merged.
 
 #### Scenario: Same follow from both sources
 - **WHEN** direct Twitch delivers a follow and Streamer.bot delivers the same follow 3 seconds later
@@ -164,3 +177,23 @@ Diagnostics SHALL list recent bus events with source, kind, type, intake outcome
 #### Scenario: Failure reference opens the bus event
 - **WHEN** a user opens Diagnostics with the reference ID of a consumer failure
 - **THEN** the bus view opens with that event selected
+### Requirement: Manual submission is bounded and cannot masquerade as provider delivery
+Manual submissions SHALL use existing management auth/origin/CSRF/rate limits or an explicitly authorized scoped automation adapter. They SHALL validate event kind, target and bounded payload before journaling. A client SHALL NOT select arbitrary recipients or forge source-registration identity. Manual identities SHALL be unique per intentional submission and duplicate redelivery SHALL be deduplicated without merging with subscribed occurrences. Existing consumer retry limits, order, replay-age expiration and failure isolation SHALL apply. Journal/schema upgrades SHALL preserve existing canonical/external events and cursors.
+
+#### Scenario: Same content is sent deliberately twice
+- **WHEN** the operator makes two intentional identical submissions
+- **THEN** two distinct events enter the normal bus
+- **AND** retransmission of one accepted submission identity does not create a third event
+
+#### Scenario: Simulation resembles a real occurrence
+- **WHEN** a manual simulation and a subscribed Twitch occurrence have otherwise matching content
+- **THEN** both remain separate because manual events do not participate in provider cross-source correlation
+
+#### Scenario: One module rejects a manual event
+- **WHEN** an event is journaled but a consumer rejects it under its normal rules
+- **THEN** the UI shows that consumer's outcome rather than claiming playback succeeded
+- **AND** other consumers retain their normal independent delivery
+
+#### Scenario: Draft preview is opened
+- **WHEN** a user only opens an editor, moves a draft or plays its local visual preview
+- **THEN** no event is published and no ordinary queue or provider is started

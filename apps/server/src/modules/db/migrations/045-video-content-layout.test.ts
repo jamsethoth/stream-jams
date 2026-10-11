@@ -26,13 +26,13 @@ describe("045 Video content migration", () => {
     });
     expect(tables.map(table => db.prepare(`SELECT * FROM ${table}`).all())).toEqual(before);
     const upgraded = fixture.upgrade();
-    expect(currentSchemaVersion).toBe(45);
+    expect(currentSchemaVersion).toBe(46);
     expect(JSON.parse(String(upgraded.connection.prepare("SELECT config_json FROM overlay_module_config WHERE module_id='videos'").get()?.config_json))).toMatchObject({
       maxLengthSeconds: 120, layout: { schemaVersion: 2, content: { width: 400, height: 300 }, desktopPlacement: { x: 1440, y: 40, scale: 1 } }
     });
 
     upgraded.runMigrations(); upgraded.runMigrations();
-    expect(upgraded.connection.prepare("SELECT COUNT(*) AS n FROM schema_migrations").get()?.n).toBe(45);
+    expect(upgraded.connection.prepare("SELECT COUNT(*) AS n FROM schema_migrations").get()?.n).toBe(currentSchemaVersion);
   });
   it("atomically blocks invalid saved layout and leaves the historical row intact", () => {
     using fixture = createPreMigrationDatabase("045-video-content-layout");

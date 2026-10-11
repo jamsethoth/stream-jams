@@ -1,0 +1,1141 @@
+{
+  "environment": {
+    "sourceHead": "b64b2e79c9790d899736895c7cbcb74387c2d0d5",
+    "trackedDiff": "",
+    "node": "v24.16.0",
+    "os": "win32 10.0.26200",
+    "cpu": "12th Gen Intel(R) Core(TM) i7-12700K",
+    "logicalCpus": 20,
+    "physicalMemoryBytes": 68447969280,
+    "browser": "153.0.8010.12"
+  },
+  "recipe": {
+    "windowsMs": 10000,
+    "outputCount": 3,
+    "outputs": [
+      "timers landscape 1920x1080",
+      "timers vertical 1080x1920",
+      "music landscape 1920x1080"
+    ],
+    "timerCount": 14,
+    "visibleCapacity": 12,
+    "durationMs": 600000,
+    "eventCount": 20,
+    "eventIntervalMs": 100,
+    "songChangeCount": 5,
+    "songChangeIntervalMs": 3200,
+    "browserMode": "headless Chromium",
+    "audio": "disabled/no assets/no selected device",
+    "videoMetadata": "offline fail-fast"
+  },
+  "phases": [
+    {
+      "name": "idle",
+      "wallMs": 10000.5999,
+      "nodeCpuUserUs": 78000,
+      "nodeCpuSystemUs": 94000,
+      "nodeCpuPercentOfOneCore": 1.7198968233895648,
+      "nodeMemory": {
+        "rss": 161841152,
+        "heapTotal": 96321536,
+        "heapUsed": 84094552,
+        "external": 4740845,
+        "arrayBuffers": 578144
+      },
+      "outputs": [
+        {
+          "name": "timers-landscape",
+          "receivedMessages": 0,
+          "receivedBytes": 0,
+          "messageRatePerSecond": 0,
+          "messageTypes": {},
+          "timerMessageIntervalsMs": [],
+          "chromiumMainThreadTaskMs": 92.444,
+          "jsHeapUsedBytes": 6558440,
+          "layoutCount": 0,
+          "recalcStyleCount": 0,
+          "raf": {
+            "count": 600,
+            "p50Ms": 16.699999999999818,
+            "p95Ms": 16.700000000000728,
+            "maxMs": 16.80000000000109,
+            "intervalsOver50Ms": 0
+          },
+          "bounds": [
+            {
+              "className": "timer-stack",
+              "x": 0,
+              "y": 0,
+              "width": 1920,
+              "height": 1080,
+              "text": ""
+            }
+          ]
+        },
+        {
+          "name": "timers-vertical",
+          "receivedMessages": 0,
+          "receivedBytes": 0,
+          "messageRatePerSecond": 0,
+          "messageTypes": {},
+          "timerMessageIntervalsMs": [],
+          "chromiumMainThreadTaskMs": 88.62100000000001,
+          "jsHeapUsedBytes": 6617524,
+          "layoutCount": 0,
+          "recalcStyleCount": 0,
+          "raf": {
+            "count": 600,
+            "p50Ms": 16.699999999999818,
+            "p95Ms": 16.799999999999727,
+            "maxMs": 16.80000000000109,
+            "intervalsOver50Ms": 0
+          },
+          "bounds": [
+            {
+              "className": "timer-stack",
+              "x": 0,
+              "y": 0,
+              "width": 1080,
+              "height": 1920,
+              "text": ""
+            }
+          ]
+        },
+        {
+          "name": "music-landscape",
+          "receivedMessages": 4,
+          "receivedBytes": 11316,
+          "messageRatePerSecond": 0.39997600543943373,
+          "messageTypes": {
+            "overlay.composition": 4
+          },
+          "timerMessageIntervalsMs": [],
+          "chromiumMainThreadTaskMs": 120.584,
+          "jsHeapUsedBytes": 6265812,
+          "layoutCount": 44,
+          "recalcStyleCount": 44,
+          "raf": {
+            "count": 600,
+            "p50Ms": 16.699999999999818,
+            "p95Ms": 16.700000000000728,
+            "maxMs": 16.80000000000109,
+            "intervalsOver50Ms": 0
+          },
+          "bounds": [
+            {
+              "className": "music-widget-host",
+              "x": 0,
+              "y": 902,
+              "width": 640,
+              "height": 178,
+              "text": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "maximum-timers",
+      "wallMs": 9999.4852,
+      "nodeCpuUserUs": 94000,
+      "nodeCpuSystemUs": 78000,
+      "nodeCpuPercentOfOneCore": 1.7200885501585623,
+      "nodeMemory": {
+        "rss": 154329088,
+        "heapTotal": 87789568,
+        "heapUsed": 83164864,
+        "external": 4897978,
+        "arrayBuffers": 734820
+      },
+      "outputs": [
+        {
+          "name": "timers-landscape",
+          "receivedMessages": 0,
+          "receivedBytes": 0,
+          "messageRatePerSecond": 0,
+          "messageTypes": {},
+          "timerMessageIntervalsMs": [],
+          "chromiumMainThreadTaskMs": 98.22199999999998,
+          "jsHeapUsedBytes": 7784932,
+          "layoutCount": 9,
+          "recalcStyleCount": 0,
+          "raf": {
+            "count": 599,
+            "p50Ms": 16.69999999999891,
+            "p95Ms": 16.799999999999272,
+            "maxMs": 16.80000000000291,
+            "intervalsOver50Ms": 0
+          },
+          "bounds": [
+            {
+              "className": "timer-stack",
+              "x": 0,
+              "y": 0,
+              "width": 1920,
+              "height": 1080,
+              "text": "Baseline timer 1 with long label9:50Baseline timer 2 with long label9:50Baseline timer 3 with long label9:50Baseline timer 4 with long label9:50Baseline timer 5 with long label9:50Baseline timer 6 with long label9:50Baseline timer 7 with long label9:50Baseline timer 8 with long label9:50Baseline timer 9 with long label9:50Baseline timer 10 with long label9:50Baseline timer 11 with long label9:50Baseline timer 12 with long label9:50+2 more"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 720,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 1 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 743.328125,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 2 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 766.65625,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 3 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 790,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 4 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 813.328125,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 5 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 836.65625,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 6 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 860,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 7 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 883.328125,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 8 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 906.65625,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 9 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 930,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 10 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 953.328125,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 11 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 976.65625,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 12 with long label9:50"
+            }
+          ]
+        },
+        {
+          "name": "timers-vertical",
+          "receivedMessages": 0,
+          "receivedBytes": 0,
+          "messageRatePerSecond": 0,
+          "messageTypes": {},
+          "timerMessageIntervalsMs": [],
+          "chromiumMainThreadTaskMs": 95.62200000000001,
+          "jsHeapUsedBytes": 7755844,
+          "layoutCount": 9,
+          "recalcStyleCount": 0,
+          "raf": {
+            "count": 599,
+            "p50Ms": 16.69999999999891,
+            "p95Ms": 16.799999999999272,
+            "maxMs": 16.80000000000291,
+            "intervalsOver50Ms": 0
+          },
+          "bounds": [
+            {
+              "className": "timer-stack",
+              "x": 0,
+              "y": 0,
+              "width": 1080,
+              "height": 1920,
+              "text": "Baseline timer 1 with long label9:50Baseline timer 2 with long label9:50Baseline timer 3 with long label9:50Baseline timer 4 with long label9:50Baseline timer 5 with long label9:50Baseline timer 6 with long label9:50Baseline timer 7 with long label9:50Baseline timer 8 with long label9:50Baseline timer 9 with long label9:50Baseline timer 10 with long label9:50Baseline timer 11 with long label9:50Baseline timer 12 with long label9:50+2 more"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1320,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 1 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1360,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 2 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1400,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 3 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1440,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 4 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1480,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 5 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1520,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 6 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1560,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 7 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1600,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 8 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1640,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 9 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1680,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 10 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1720,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 11 with long label9:50"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1760,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 12 with long label9:50"
+            }
+          ]
+        },
+        {
+          "name": "music-landscape",
+          "receivedMessages": 3,
+          "receivedBytes": 8487,
+          "messageRatePerSecond": 0.30001544479509806,
+          "messageTypes": {
+            "overlay.composition": 3
+          },
+          "timerMessageIntervalsMs": [],
+          "chromiumMainThreadTaskMs": 101.69900000000001,
+          "jsHeapUsedBytes": 7880872,
+          "layoutCount": 43,
+          "recalcStyleCount": 43,
+          "raf": {
+            "count": 599,
+            "p50Ms": 16.69999999999891,
+            "p95Ms": 16.700000000000728,
+            "maxMs": 16.80000000000291,
+            "intervalsOver50Ms": 0
+          },
+          "bounds": [
+            {
+              "className": "music-widget-host",
+              "x": 0,
+              "y": 902,
+              "width": 640,
+              "height": 178,
+              "text": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "track-text-changes",
+      "wallMs": 16005.641699999996,
+      "nodeCpuUserUs": 32000,
+      "nodeCpuSystemUs": 15000,
+      "nodeCpuPercentOfOneCore": 0.2936464584234696,
+      "nodeMemory": {
+        "rss": 154963968,
+        "heapTotal": 88838144,
+        "heapUsed": 85179456,
+        "external": 5152127,
+        "arrayBuffers": 988547
+      },
+      "outputs": [
+        {
+          "name": "timers-landscape",
+          "receivedMessages": 0,
+          "receivedBytes": 0,
+          "messageRatePerSecond": 0,
+          "messageTypes": {},
+          "timerMessageIntervalsMs": [],
+          "chromiumMainThreadTaskMs": 166.59799999999996,
+          "jsHeapUsedBytes": 5757372,
+          "layoutCount": 16,
+          "recalcStyleCount": 0,
+          "raf": {
+            "count": 961,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.799999999995634,
+            "maxMs": 16.80000000000291,
+            "intervalsOver50Ms": 0
+          },
+          "bounds": [
+            {
+              "className": "timer-stack",
+              "x": 0,
+              "y": 0,
+              "width": 1920,
+              "height": 1080,
+              "text": "Baseline timer 1 with long label9:34Baseline timer 2 with long label9:34Baseline timer 3 with long label9:34Baseline timer 4 with long label9:34Baseline timer 5 with long label9:34Baseline timer 6 with long label9:34Baseline timer 7 with long label9:34Baseline timer 8 with long label9:34Baseline timer 9 with long label9:34Baseline timer 10 with long label9:34Baseline timer 11 with long label9:34Baseline timer 12 with long label9:34+2 more"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 720,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 1 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 743.328125,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 2 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 766.65625,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 3 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 790,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 4 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 813.328125,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 5 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 836.65625,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 6 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 860,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 7 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 883.328125,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 8 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 906.65625,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 9 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 930,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 10 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 953.328125,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 11 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 976.65625,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 12 with long label9:34"
+            }
+          ]
+        },
+        {
+          "name": "timers-vertical",
+          "receivedMessages": 0,
+          "receivedBytes": 0,
+          "messageRatePerSecond": 0,
+          "messageTypes": {},
+          "timerMessageIntervalsMs": [],
+          "chromiumMainThreadTaskMs": 161.69,
+          "jsHeapUsedBytes": 5666544,
+          "layoutCount": 16,
+          "recalcStyleCount": 0,
+          "raf": {
+            "count": 961,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.700000000004366,
+            "maxMs": 16.80000000000291,
+            "intervalsOver50Ms": 0
+          },
+          "bounds": [
+            {
+              "className": "timer-stack",
+              "x": 0,
+              "y": 0,
+              "width": 1080,
+              "height": 1920,
+              "text": "Baseline timer 1 with long label9:34Baseline timer 2 with long label9:34Baseline timer 3 with long label9:34Baseline timer 4 with long label9:34Baseline timer 5 with long label9:34Baseline timer 6 with long label9:34Baseline timer 7 with long label9:34Baseline timer 8 with long label9:34Baseline timer 9 with long label9:34Baseline timer 10 with long label9:34Baseline timer 11 with long label9:34Baseline timer 12 with long label9:34+2 more"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1320,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 1 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1360,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 2 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1400,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 3 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1440,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 4 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1480,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 5 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1520,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 6 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1560,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 7 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1600,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 8 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1640,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 9 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1680,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 10 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1720,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 11 with long label9:34"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1760,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 12 with long label9:34"
+            }
+          ]
+        },
+        {
+          "name": "music-landscape",
+          "receivedMessages": 5,
+          "receivedBytes": 14101,
+          "messageRatePerSecond": 0.31238984938666975,
+          "messageTypes": {
+            "overlay.composition": 5
+          },
+          "timerMessageIntervalsMs": [],
+          "chromiumMainThreadTaskMs": 174.07,
+          "jsHeapUsedBytes": 5927928,
+          "layoutCount": 74,
+          "recalcStyleCount": 74,
+          "raf": {
+            "count": 961,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.799999999995634,
+            "maxMs": 16.80000000000291,
+            "intervalsOver50Ms": 0
+          },
+          "bounds": [
+            {
+              "className": "music-widget-host",
+              "x": 0,
+              "y": 902,
+              "width": 640,
+              "height": 178,
+              "text": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "event-admission",
+      "wallMs": 9998.671499999997,
+      "nodeCpuUserUs": 188000,
+      "nodeCpuSystemUs": 375000,
+      "nodeCpuPercentOfOneCore": 5.630748044877764,
+      "nodeMemory": {
+        "rss": 161714176,
+        "heapTotal": 94343168,
+        "heapUsed": 84525576,
+        "external": 5294928,
+        "arrayBuffers": 1132184
+      },
+      "outputs": [
+        {
+          "name": "timers-landscape",
+          "receivedMessages": 20,
+          "receivedBytes": 85100,
+          "messageRatePerSecond": 2.0002657353029356,
+          "messageTypes": {
+            "overlay.composition": 20
+          },
+          "timerMessageIntervalsMs": [],
+          "chromiumMainThreadTaskMs": 108.50899999999997,
+          "jsHeapUsedBytes": 6259416,
+          "layoutCount": 14,
+          "recalcStyleCount": 1,
+          "raf": {
+            "count": 600,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.700000000004366,
+            "maxMs": 16.80000000000291,
+            "intervalsOver50Ms": 0
+          },
+          "bounds": [
+            {
+              "className": "timer-stack",
+              "x": 0,
+              "y": 0,
+              "width": 1920,
+              "height": 1080,
+              "text": "Baseline timer 2 with long label9:24Baseline timer 3 with long label9:24Baseline timer 4 with long label9:24Baseline timer 5 with long label9:24Baseline timer 6 with long label9:24Baseline timer 7 with long label9:24Baseline timer 8 with long label9:24Baseline timer 9 with long label9:24Baseline timer 10 with long label9:24Baseline timer 11 with long label9:24Baseline timer 12 with long label9:24Baseline timer 13 with long label9:24+2 more"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 720,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 2 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 743.328125,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 3 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 766.65625,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 4 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 790,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 5 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 813.328125,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 6 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 836.65625,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 7 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 860,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 8 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 883.328125,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 9 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 906.65625,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 10 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 930,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 11 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 953.328125,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 12 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 64,
+              "y": 976.65625,
+              "width": 640,
+              "height": 23.328125,
+              "text": "Baseline timer 13 with long label9:24"
+            }
+          ]
+        },
+        {
+          "name": "timers-vertical",
+          "receivedMessages": 20,
+          "receivedBytes": 79240,
+          "messageRatePerSecond": 2.0002657353029356,
+          "messageTypes": {
+            "overlay.composition": 20
+          },
+          "timerMessageIntervalsMs": [],
+          "chromiumMainThreadTaskMs": 104.24499999999992,
+          "jsHeapUsedBytes": 6186636,
+          "layoutCount": 14,
+          "recalcStyleCount": 1,
+          "raf": {
+            "count": 600,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.799999999995634,
+            "maxMs": 16.80000000000291,
+            "intervalsOver50Ms": 0
+          },
+          "bounds": [
+            {
+              "className": "timer-stack",
+              "x": 0,
+              "y": 0,
+              "width": 1080,
+              "height": 1920,
+              "text": "Baseline timer 2 with long label9:24Baseline timer 3 with long label9:24Baseline timer 4 with long label9:24Baseline timer 5 with long label9:24Baseline timer 6 with long label9:24Baseline timer 7 with long label9:24Baseline timer 8 with long label9:24Baseline timer 9 with long label9:24Baseline timer 10 with long label9:24Baseline timer 11 with long label9:24Baseline timer 12 with long label9:24Baseline timer 13 with long label9:24+2 more"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1320,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 2 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1360,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 3 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1400,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 4 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1440,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 5 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1480,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 6 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1520,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 7 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1560,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 8 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1600,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 9 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1640,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 10 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1680,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 11 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1720,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 12 with long label9:24"
+            },
+            {
+              "className": "timer-stack__card timer-stack__card--running",
+              "x": 48,
+              "y": 1760,
+              "width": 984,
+              "height": 40,
+              "text": "Baseline timer 13 with long label9:24"
+            }
+          ]
+        },
+        {
+          "name": "music-landscape",
+          "receivedMessages": 4,
+          "receivedBytes": 11284,
+          "messageRatePerSecond": 0.40005314706058714,
+          "messageTypes": {
+            "overlay.composition": 4
+          },
+          "timerMessageIntervalsMs": [],
+          "chromiumMainThreadTaskMs": 93.866,
+          "jsHeapUsedBytes": 5789372,
+          "layoutCount": 44,
+          "recalcStyleCount": 44,
+          "raf": {
+            "count": 600,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.700000000004366,
+            "maxMs": 16.80000000000291,
+            "intervalsOver50Ms": 0
+          },
+          "bounds": [
+            {
+              "className": "music-widget-host",
+              "x": 0,
+              "y": 902,
+              "width": 640,
+              "height": 178,
+              "text": ""
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "admission": {
+    "normalizedEventLatenciesMs": [
+      101.25630000000092,
+      93.4716999999946,
+      93.40439999999944,
+      92.9887000000017,
+      88.3295999999973,
+      91.86939999999595,
+      94.75280000000203,
+      89.280399999996,
+      89.25140000000101,
+      92.36019999999553,
+      89.1846000000005,
+      96.90179999999964,
+      94.60469999999623,
+      112.01759999999922,
+      93.60640000000421,
+      91.01689999999508,
+      90.2905000000028,
+      1484.907299999999,
+      87.11739999999554,
+      88.43549999999959
+    ],
+    "statuses": [
+      "accepted",
+      "duplicate",
+      "accepted",
+      "duplicate",
+      "accepted",
+      "duplicate",
+      "accepted",
+      "duplicate",
+      "accepted",
+      "duplicate",
+      "accepted",
+      "duplicate",
+      "accepted",
+      "duplicate",
+      "accepted",
+      "duplicate",
+      "accepted",
+      "duplicate",
+      "accepted",
+      "duplicate",
+      "accepted",
+      "duplicate",
+      "accepted",
+      "duplicate",
+      "accepted",
+      "duplicate",
+      "accepted",
+      "duplicate",
+      "accepted",
+      "duplicate",
+      "accepted",
+      "duplicate",
+      "accepted",
+      "duplicate",
+      "accepted",
+      "duplicate",
+      "accepted",
+      "duplicate",
+      "accepted",
+      "duplicate"
+    ],
+    "note": "In-process real event ingestion and duplicate delivery, not future manual bus HTTP admission.",
+    "video": {
+      "httpLatenciesMs": [
+        13.994700000002922,
+        11.180900000006659,
+        9.858100000004924,
+        9.72729999999865,
+        9.302400000000489
+      ],
+      "statuses": [
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ],
+      "queueItemCount": 5,
+      "responseKeys": [
+        "purpose",
+        "revision",
+        "queuePaused",
+        "runRemaining",
+        "gapEndsAtEpochMs",
+        "serverTimeEpochMs",
+        "mirror",
+        "items",
+        "recent",
+        "current"
+      ],
+      "note": "Five deliberate requests; metadata denied before outbound traffic. No video playback."
+    }
+  },
+  "limitations": [
+    "Node CPU includes runtime plus benchmark controller, not Chromium processes.",
+    "CDP TaskDuration is main-thread task time; JSHeapUsedSize is JS heap, not process RSS or GPU memory.",
+    "No native OBS, GPU, audio audibility or physical desktop compositor measurement.",
+    "Video decoding/frame pacing not measured; admission uses offline metadata only.",
+    "Desktop transport rendering is not measured."
+  ],
+  "network": {
+    "blockedBrowserRequests": 0,
+    "offlineVideoMetadataCalls": 5
+  }
+}

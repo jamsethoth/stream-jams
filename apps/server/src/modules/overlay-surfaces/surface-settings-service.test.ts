@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 import type { DesktopOverlayStatus, Logger, SurfaceConfiguration } from "@stream-jams/core";
 import { SurfaceSettingsService } from "./surface-settings-service.js";
 
-it("validates desktop and public unified saves against their independent module memberships", async () => {
+it("validates independent desktop membership while rejecting every retired public unified save", async () => {
   let saved: SurfaceConfiguration[] = [
     { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, displayLabel: null,
       autoFollowDisplayName: false, opacity: 1, layers: [{ moduleId: "desktop-only", visible: false }] },
@@ -22,8 +22,9 @@ it("validates desktop and public unified saves against their independent module 
     .rejects.toMatchObject({ statusCode: 400 });
   await expect(service.save("unified-browser:output", { ...saved[1], layers: [{ moduleId: "desktop-only", visible: true }] }))
     .rejects.toMatchObject({ statusCode: 400 });
-  const unifiedResult = await service.save("unified-browser:output", { ...saved[1], layers: [{ moduleId: "browser-only", visible: true }] });
-  expect(unifiedResult.surfaces[1]?.layers).toEqual([{ moduleId: "browser-only", visible: true }]);
+  await expect(service.save("unified-browser:output", { ...saved[1], layers: [{ moduleId: "browser-only", visible: true }] }))
+    .rejects.toMatchObject({ statusCode: 400 });
+  expect(saved[1]?.layers).toEqual([{ moduleId: "browser-only", visible: false }]);
 });
 
 function fixture() {
@@ -236,12 +237,13 @@ it("reports CLI as unavailable and never substitutes a desktop host", async () =
   await expect(service.retry()).rejects.toThrow();
 });
 
-it("does not report a browser-layer broadcast failure as a desktop host failure", async () => {
+it("rejects retired browser settings before persistence, broadcast or desktop host access", async () => {
   const { surfaces, host, changed } = fixture();
   const unified: SurfaceConfiguration = { id: "unified-browser:default", kind: "unified-browser", overlayId: "default", layers: [{ moduleId: "alerts", visible: true }] };
   surfaces.list.mockResolvedValue([unified]);
   changed.mockRejectedValueOnce(new Error("socket unavailable"));
   const service = new SurfaceSettingsService({ surfaces, host, changed, moduleIds: () => ["alerts"], runMutation: work => work() });
-  await expect(service.save(unified.id, unified)).rejects.toThrow(/saved.*browser/i);
+  await expect(service.save(unified.id, unified)).rejects.toMatchObject({ statusCode: 400 });
+  expect(surfaces.save).not.toHaveBeenCalled(); expect(changed).not.toHaveBeenCalled(); expect(host.configure).not.toHaveBeenCalled();
   expect((await service.load()).desktop.state).toBe("disabled");
 });

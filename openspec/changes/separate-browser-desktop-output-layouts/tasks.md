@@ -82,9 +82,9 @@ Specification approved 2026-10-10; implementation is authorized and in progress.
 
 ## 11. S11 — Integrated acceptance and delivery (depends on S10 and all preceding slices)
 
-- [ ] 11.1 Complete the five-module/profile/recipient/manual-event/upgrade/restore acceptance matrix using disposable state.
-- [ ] 11.2 Record comparable baseline/candidate performance and compact-viewport measurements, including workload/environment and any unresolved regressions.
-- [ ] 11.3 Verify no extra primary/encoder, per-frame geometry, provider churn or unbounded memory; report native OBS/desktop acceptance separately and block unperformed required gates explicitly.
-- [ ] 11.4 Run final applicable lint/typecheck/unit/build/Storybook/Playwright/OpenSpec gates and classify any failures accurately.
-- [ ] 11.5 Complete one independent whole-change review under repository reviewer instructions, resolve findings and rerun affected checks.
-- [ ] 11.6 Reconcile all requirements, sync completed canonical specs, update setup/API documentation and remove BL-068 only after implementation/spec sync; retain explicit evidence and any delivery blockers.
+- [x] 11.1 Complete the five-module/profile/recipient/manual-event/upgrade/restore acceptance matrix using disposable state.
+- [x] 11.2 Record comparable baseline/candidate performance and compact-viewport measurements, including workload/environment and any unresolved regressions.
+- [x] 11.3 Verify no extra primary/encoder, per-frame geometry, provider churn or unbounded memory; report native OBS/desktop acceptance separately and block unperformed required gates explicitly.
+- [x] 11.4 Run final applicable lint/typecheck/unit/build/Storybook/Playwright/OpenSpec gates and classify any failures accurately.
+- [x] 11.5 Complete one independent whole-change review under repository reviewer instructions, resolve findings and rerun affected checks.
+- [x] 11.6 Reconcile all requirements, sync completed canonical specs, update setup/API documentation and remove BL-068 only after implementation/spec sync; retain explicit evidence and any delivery blockers.

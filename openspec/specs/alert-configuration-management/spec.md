@@ -92,7 +92,7 @@ The system SHALL persist new default alerts and first-run starter alerts as disa
 
 ### Requirement: Alert Test Workflow Uses Real Matching Path
 
-The system SHALL provide separate editor Preview and Test draft workflows: Preview renders the selected draft alert locally from sample data, while Test draft sends normalized test playback through the same downstream browser and device delivery paths used after real event matching. Alert inventory SHALL provide a corresponding Test saved workflow for the saved alert document. Saved visual targets SHALL come from enabled and reviewed profiles on that document; availability SHALL be checked per destination rather than by alert-set profile state or a required browser connection.
+The system SHALL provide separate editor Preview and Test draft workflows: Preview renders the selected draft alert locally from sample data, while Test draft publishes a validated typed manual event through the central bus and ordinary admission/browser/device paths. Draft payloads and media references are validated before journaling; manual provenance is separate from normal output identity. Alert inventory SHALL provide a corresponding Test saved workflow for the saved alert document. Saved visual targets SHALL come from enabled and reviewed profiles on that document; availability SHALL be checked per destination rather than by alert-set profile state or a required browser connection.
 
 #### Scenario: Preview works without provider or overlay connection
 
@@ -104,10 +104,10 @@ The system SHALL provide separate editor Preview and Test draft workflows: Previ
 #### Scenario: Test alert reaches connected selected output
 
 - **WHEN** a management user sends a test for a connected valid enabled and reviewed target profile
-- **THEN** the system enqueues normalized test playback for the selected alert and output
+- **THEN** the bus consumer admits normalized manual playback for the selected alert and ordinary output
 - **AND** configured audio and TTS are included by default unless the user explicitly disables them for the editor session
 - **AND** explicit audio follows the alert's output selection, including any available selected device routes
-- **AND** logs and history distinguish the item as test data
+- **AND** logs and history distinguish the item as manually submitted data
 
 #### Scenario: Completed test playback leaves the overlay
 

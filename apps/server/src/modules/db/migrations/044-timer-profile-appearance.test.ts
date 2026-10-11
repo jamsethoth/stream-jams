@@ -21,11 +21,11 @@ describe("044 Timer profile appearance migration", () => {
     db.exec("INSERT INTO timer_definitions VALUES ('retained', 'Retained', 60000, NULL, NULL, NULL, 1, 'old', 'old', '[]'); INSERT INTO timer_run_recovery VALUES ('retained', '{\"generation\":\"preserved\",\"remainingMs\":12345}'); INSERT INTO timer_automation_credential VALUES (1, '012345678901234567890123456789', 'old', NULL, NULL)");
     const unchanged = ["timer_definitions", "timer_run_recovery", "overlay_keys", "timer_automation_credential"].map(table => db.prepare(`SELECT * FROM ${table}`).all());
     const upgraded = fixture.upgrade();
-    expect(currentSchemaVersion).toBe(45);
+    expect(currentSchemaVersion).toBe(46);
     expect(JSON.parse(String(upgraded.connection.prepare("SELECT config_json FROM overlay_module_config WHERE module_id='timers'").get()?.config_json))).toEqual(upgradeTimersConfig(config));
     expect(["timer_definitions", "timer_run_recovery", "overlay_keys", "timer_automation_credential"].map(table => upgraded.connection.prepare(`SELECT * FROM ${table}`).all())).toEqual(unchanged);
     upgraded.runMigrations(); upgraded.runMigrations();
-    expect(upgraded.connection.prepare("SELECT COUNT(*) AS n FROM schema_migrations").get()?.n).toBe(45);
+    expect(upgraded.connection.prepare("SELECT COUNT(*) AS n FROM schema_migrations").get()?.n).toBe(currentSchemaVersion);
   });
   it.each(["legacy-geometry", "customized-cramped"])("rolls back invalid saved compound geometry (%s) and does not record the migration", kind => {
     using fixture = createPreMigrationDatabase("044-timer-profile-appearance");

@@ -78,7 +78,6 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 | BL-061 | Data overlay event rules as a central event bus consumer, plus Streamer.bot global values | Planned | P2 | BL-055 and the central event bus (implemented) | [OpenSpec change](../openspec/changes/add-data-overlay-event-rules/proposal.md); [consumer contract](engineering/event-bus-consumers.md) |
 | BL-062 | Twitch follower total and Creator Goals data sources | Planned | P2 | BL-055 | [OpenSpec change](../openspec/changes/add-twitch-overlay-data/proposal.md); follows the active goal of a type by default |
 | BL-063 | Data overlay canvas templates and starters | Planned | P2 | BL-055 | [OpenSpec change](../openspec/changes/add-data-overlay-templates/proposal.md) |
-| BL-068 | Independent browser content canvases and desktop placement | In progress | P1 | Ordered slice implementation and verification | Approved spec: manual bus events and one ordinary queue/output, removal of test/unified sources, independent content canvases and Timer profile appearance. [OpenSpec change](../openspec/changes/separate-browser-desktop-output-layouts/proposal.md); [ordered agent implementation slices](superpowers/plans/2026-10-10-browser-desktop-output-layouts.md). |
 
 ## Known Issues
 

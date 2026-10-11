@@ -103,7 +103,7 @@ The system SHALL provide Problems, Events, and Raw logs diagnostics views over s
 #### Scenario: Normalized event opens detail
 
 - **WHEN** a user selects an event from the sortable and filterable Events table
-- **THEN** Diagnostics shows normalized event-source, event-type, outcome, timing, test/live state, and linked alert/playback details without exposing raw provider payloads
+- **THEN** Diagnostics shows normalized event-source, event-type, outcome, timing, manual/subscribed provenance, and linked alert/playback details without exposing raw provider payloads
 
 #### Scenario: Reference ID search locates evidence
 

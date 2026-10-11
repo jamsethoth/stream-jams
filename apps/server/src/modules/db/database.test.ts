@@ -59,7 +59,8 @@ const expectedMigrations = [
   "043-video-bus-admission",
   "044-timer-profile-appearance",
   "045-video-content-layout",
-  "046-single-video-queue"
+  "046-single-video-queue",
+  "047-retire-public-overlays"
 ] as const;
 
 const expectedTables = [

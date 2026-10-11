@@ -1,0 +1,13 @@
+{
+  "sourceId": "music-landscape",
+  "moduleId": "music",
+  "profile": "landscape",
+  "nativeWidth": 640,
+  "nativeHeight": 178,
+  "settingsWidth": 640,
+  "settingsHeight": 178,
+  "muted": true,
+  "monitoring": 0,
+  "shutdown": false,
+  "rerouteAudio": true
+}

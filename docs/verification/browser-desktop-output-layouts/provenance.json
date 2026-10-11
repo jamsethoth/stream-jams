@@ -1,0 +1,43 @@
+{
+  "baselineSource": "b64b2e79c9790d899736895c7cbcb74387c2d0d5",
+  "originalControllerSha256": "3F679BFF69D09520D773281800DC1E4B9DF5020141671F26C13E81078BB7EEBB",
+  "promotedControllerSha256": "869204716D1885B2BAD80827D47A3F7F1CAA2584E5227A4010969B0704338881",
+  "originalFixtureSha256": "80F818BAFE25C146286F0C053FCB184F33267822C82AAE26C73175128FF70F77",
+  "originalMetricsSha256": "11B6775F290BF848F0021158FDB80E8FB44D2310873F1D79A1049A7D67961278",
+  "promotionChanges": [
+    "Removed raw git diff capture; no workload or sampler changes.",
+    "Pinned fixture and metrics copied byte for byte.",
+    "Candidate adapter validates current Music/Timer/Video shapes using production upgraders.",
+    "Explicit standard Node imports/browser callback globals and explanatory malformed-frame comment for lint; sampling behavior unchanged."
+  ],
+  "limitations": [
+    "No baseline native OBS/GPU/audio/video decoding/frame pacing metrics exist.",
+    "Node CPU/RSS include service and benchmark controller.",
+    "CDP task time and JS heap are not browser process CPU/RSS.",
+    "Single short run cannot establish a numerical speedup."
+  ],
+  "candidate": {
+    "productionSourceHead": "395d16e3",
+    "workingTree": "S11 test/scripts/docs/spec-only additions; parent acceptance/commit pending",
+    "node": "v24.16.0",
+    "browser": "153.0.8010.12",
+    "os": "win32 10.0.26200",
+    "packageSha256": "C82A6563359FBD93E412673B65441FEFAA78D0C7B396A9F98EC673D141B5A2A3",
+    "compiledManifest": "compiled-current-sha256.json",
+    "compiledRoots": [
+      "apps/server/dist",
+      "apps/web/dist",
+      "packages/core/dist",
+      "packages/test-support/dist"
+    ],
+    "files": {
+      "docs/verification/browser-desktop-output-layouts/compiled-current-sha256.json": "1B1C3D9111EBE1F607AEEEFD30099F023DF72D61D3A57F92EA7CEDF668343E1C",
+      "docs/verification/browser-desktop-output-layouts/comparable/metrics.json": "8E3603535F4E783C5929BFAC43071FE1BE5B983D31C7E344FC38C31591809E98",
+      "docs/verification/browser-desktop-output-layouts/compact/metrics.json": "A100E982327CA6FE2461C0B8A10009888FA876EC92C2589C70332C7ACCC2B7DD",
+      "docs/verification/browser-desktop-output-layouts/performance-summary.json": "555FD28257E3C1CFB25945BDE7A9BD88261BF16F781D30B0C3A122495AF2CB22",
+      "docs/verification/browser-desktop-output-layouts/native-evidence.json": "E3A4F45FA56FF575101AC895A21940A54646069DF5AAA1141E8279E824860719",
+      "docs/verification/browser-desktop-output-layouts/obs/asserted-coverage.json": "376734F7D4BB7781958AE2BBA95126355161B1B68C93245562CA5F9FCC22EDA3",
+      "scripts/browser-desktop-output-benchmark.mjs": "C4702C1B24A2450502C9453A5D657B09C1EC7CE16403E533F9F4BC91FE327F61"
+    }
+  }
+}

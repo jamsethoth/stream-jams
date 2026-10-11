@@ -43,6 +43,15 @@ The system SHALL reject overlay media reads when the route key is invalid, revok
 - **WHEN** an authorized overlay requests an asset ID that does not exist
 - **THEN** the server returns a not-found response without leaking storage implementation details
 
+#### Scenario: Retired output tries another media endpoint
+- **WHEN** a test or unified output key is presented to asset, artwork, font, range-read or composition routes
+- **THEN** the request is rejected without returning media bytes, redirects or storage paths
+- **AND** presenting that key to an ordinary module path cannot widen its identity
+
+#### Scenario: Ordinary profile retains media access
+- **WHEN** an existing ordinary module/profile key requests its authorized media after upgrade
+- **THEN** existing scoped asset versions, streaming/range semantics and redaction remain intact
+
 ### Requirement: Overlay Client Uses Server Media URL Contract
 
 The overlay client SHALL resolve visual and audio asset IDs to the server-supported overlay media URL contract.

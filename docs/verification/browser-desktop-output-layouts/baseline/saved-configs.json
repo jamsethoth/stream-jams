@@ -1,0 +1,318 @@
+{
+  "timers": {
+    "profiles": {
+      "landscape": {
+        "layout": {
+          "x": 64,
+          "y": 720,
+          "width": 640,
+          "height": 280,
+          "zIndex": 0
+        },
+        "orientation": "vertical",
+        "maxVisible": 12
+      },
+      "vertical": {
+        "layout": {
+          "x": 48,
+          "y": 1320,
+          "width": 984,
+          "height": 480,
+          "zIndex": 0
+        },
+        "orientation": "vertical",
+        "maxVisible": 12
+      }
+    }
+  },
+  "music": {
+    "version": 1,
+    "desktopPlacement": {
+      "full": null,
+      "compact": null
+    },
+    "desktopScale": {
+      "full": 1,
+      "compact": 1
+    },
+    "profiles": {
+      "landscape": {
+        "initialView": "full",
+        "theme": "dark",
+        "alignment": "bottom-left",
+        "backgroundOpacity": 84,
+        "idleMode": "none",
+        "idleAfterSeconds": 30,
+        "views": {
+          "full": {
+            "widthPx": 640,
+            "heightPx": 178,
+            "artworkSizePx": 144,
+            "paddingXPx": 16,
+            "paddingYPx": 16,
+            "gapPx": 22,
+            "cornerRadiusPx": 8,
+            "borderWidthPx": 1,
+            "colors": {
+              "backgroundStart": "#0C0D10FF",
+              "backgroundEnd": "#16181DFF",
+              "title": "#F7F7F5FF",
+              "details": "#B7B8BDFF",
+              "artworkPlaceholder": "#FFFFFF14",
+              "border": "#FFFFFF24",
+              "progressFill": "#AEB4BFFF",
+              "progressTrack": "#FFFFFF2E"
+            },
+            "shadow": {
+              "offsetX": 0,
+              "offsetY": 18,
+              "blur": 50,
+              "spread": 0,
+              "color": "#00000047"
+            },
+            "titleFont": {
+              "fontPreset": "system-sans",
+              "italic": false,
+              "underline": false,
+              "letterSpacingPx": 0,
+              "fontAssetId": null,
+              "fontSizePx": 30,
+              "fontWeight": 800
+            },
+            "detailsFont": {
+              "fontPreset": "system-sans",
+              "italic": false,
+              "underline": false,
+              "letterSpacingPx": 0,
+              "fontAssetId": null,
+              "fontSizePx": 17,
+              "fontWeight": 600
+            },
+            "contentInsets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            },
+            "branding": {
+              "assetId": null,
+              "fit": "contain",
+              "xPercent": 50,
+              "yPercent": 50,
+              "opacity": 100
+            },
+            "componentLayout": null
+          },
+          "compact": {
+            "widthPx": 480,
+            "heightPx": 118,
+            "artworkSizePx": 0,
+            "paddingXPx": 18,
+            "paddingYPx": 14,
+            "gapPx": 22,
+            "cornerRadiusPx": 8,
+            "borderWidthPx": 1,
+            "colors": {
+              "backgroundStart": "#0C0D10FF",
+              "backgroundEnd": "#16181DFF",
+              "title": "#F7F7F5FF",
+              "details": "#B7B8BDFF",
+              "artworkPlaceholder": "#FFFFFF14",
+              "border": "#FFFFFF24",
+              "progressFill": "#AEB4BFFF",
+              "progressTrack": "#FFFFFF2E"
+            },
+            "shadow": {
+              "offsetX": 0,
+              "offsetY": 18,
+              "blur": 50,
+              "spread": 0,
+              "color": "#00000047"
+            },
+            "titleFont": {
+              "fontPreset": "system-sans",
+              "italic": false,
+              "underline": false,
+              "letterSpacingPx": 0,
+              "fontAssetId": null,
+              "fontSizePx": 22,
+              "fontWeight": 800
+            },
+            "detailsFont": {
+              "fontPreset": "system-sans",
+              "italic": false,
+              "underline": false,
+              "letterSpacingPx": 0,
+              "fontAssetId": null,
+              "fontSizePx": 14,
+              "fontWeight": 600
+            },
+            "contentInsets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            },
+            "branding": {
+              "assetId": null,
+              "fit": "contain",
+              "xPercent": 50,
+              "yPercent": 50,
+              "opacity": 100
+            },
+            "componentLayout": null
+          }
+        }
+      },
+      "vertical": {
+        "initialView": "full",
+        "theme": "dark",
+        "alignment": "bottom-left",
+        "backgroundOpacity": 84,
+        "idleMode": "none",
+        "idleAfterSeconds": 30,
+        "views": {
+          "full": {
+            "widthPx": 640,
+            "heightPx": 178,
+            "artworkSizePx": 144,
+            "paddingXPx": 16,
+            "paddingYPx": 16,
+            "gapPx": 22,
+            "cornerRadiusPx": 8,
+            "borderWidthPx": 1,
+            "colors": {
+              "backgroundStart": "#0C0D10FF",
+              "backgroundEnd": "#16181DFF",
+              "title": "#F7F7F5FF",
+              "details": "#B7B8BDFF",
+              "artworkPlaceholder": "#FFFFFF14",
+              "border": "#FFFFFF24",
+              "progressFill": "#AEB4BFFF",
+              "progressTrack": "#FFFFFF2E"
+            },
+            "shadow": {
+              "offsetX": 0,
+              "offsetY": 18,
+              "blur": 50,
+              "spread": 0,
+              "color": "#00000047"
+            },
+            "titleFont": {
+              "fontPreset": "system-sans",
+              "italic": false,
+              "underline": false,
+              "letterSpacingPx": 0,
+              "fontAssetId": null,
+              "fontSizePx": 30,
+              "fontWeight": 800
+            },
+            "detailsFont": {
+              "fontPreset": "system-sans",
+              "italic": false,
+              "underline": false,
+              "letterSpacingPx": 0,
+              "fontAssetId": null,
+              "fontSizePx": 17,
+              "fontWeight": 600
+            },
+            "contentInsets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            },
+            "branding": {
+              "assetId": null,
+              "fit": "contain",
+              "xPercent": 50,
+              "yPercent": 50,
+              "opacity": 100
+            },
+            "componentLayout": null
+          },
+          "compact": {
+            "widthPx": 480,
+            "heightPx": 118,
+            "artworkSizePx": 0,
+            "paddingXPx": 18,
+            "paddingYPx": 14,
+            "gapPx": 22,
+            "cornerRadiusPx": 8,
+            "borderWidthPx": 1,
+            "colors": {
+              "backgroundStart": "#0C0D10FF",
+              "backgroundEnd": "#16181DFF",
+              "title": "#F7F7F5FF",
+              "details": "#B7B8BDFF",
+              "artworkPlaceholder": "#FFFFFF14",
+              "border": "#FFFFFF24",
+              "progressFill": "#AEB4BFFF",
+              "progressTrack": "#FFFFFF2E"
+            },
+            "shadow": {
+              "offsetX": 0,
+              "offsetY": 18,
+              "blur": 50,
+              "spread": 0,
+              "color": "#00000047"
+            },
+            "titleFont": {
+              "fontPreset": "system-sans",
+              "italic": false,
+              "underline": false,
+              "letterSpacingPx": 0,
+              "fontAssetId": null,
+              "fontSizePx": 22,
+              "fontWeight": 800
+            },
+            "detailsFont": {
+              "fontPreset": "system-sans",
+              "italic": false,
+              "underline": false,
+              "letterSpacingPx": 0,
+              "fontAssetId": null,
+              "fontSizePx": 14,
+              "fontWeight": 600
+            },
+            "contentInsets": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            },
+            "branding": {
+              "assetId": null,
+              "fit": "contain",
+              "xPercent": 50,
+              "yPercent": 50,
+              "opacity": 100
+            },
+            "componentLayout": null
+          }
+        }
+      }
+    },
+    "css": {
+      "source": "",
+      "enabled": false,
+      "styleContractVersion": 1
+    }
+  },
+  "videos": {
+    "maxLengthSeconds": 120,
+    "gapSeconds": 3,
+    "allowedDirectHosts": [],
+    "obsAudio": true,
+    "audioDeviceIds": [],
+    "audioDeviceDelaysMs": {},
+    "streamerBotAutoplay": true,
+    "rewardMappings": [],
+    "layout": {
+      "x": 269,
+      "y": 140,
+      "width": 1382,
+      "height": 876
+    }
+  }
+}

@@ -76,7 +76,7 @@ Management and Operator spacing sits on a 4px grid that favours multiples of 8. 
 
 ## Overlay Safe Area
 
-- Treat the overlay as a `100vw` by `100vh` transparent canvas.
+- Scene overlays use a `100vw` by `100vh` transparent host with scene fit. Music, Timers and Videos use an authoritative saved content canvas at 1:1 CSS pixels; larger hosts stay transparent outside it and smaller hosts clip it.
 - Prefer a 16:9 design target for preview stories.
 - Keep critical text and visual elements away from the outer edge of the canvas.
 - Avoid visible debug chrome on production overlay routes.

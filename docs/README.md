@@ -12,6 +12,7 @@ Use this map to distinguish current behavior, pending work, and historical evide
 | What Music behavior is required? | [Canonical Music source](../openspec/specs/music-source-providers/spec.md) and [widget/output](../openspec/specs/music-widget-overlay/spec.md) capabilities; [scenario trace](verification/music-widget-scenarios.md) records automated and physical evidence |
 | How do I queue and play requested videos (Twitch, YouTube, Streamer.bot, rewards, REST)? | [Videos](videos.md); [mirror feasibility check](verification/video-mirror-feasibility.md) |
 | How do native integrations pair and control timers/queues? | [Local automation API v1](automation-api.md) |
+| How do ordinary browser canvases differ from desktop placement, and what verifies retired sources? | [Output layout verification and exact requirement trace](verification/browser-desktop-output-layouts.md); [legacy credential inventory/revocation](mvp-runbook.md#retired-sources-and-hidden-legacy-credentials) |
 | How does a module consume stream events? | [Event bus consumers](engineering/event-bus-consumers.md) |
 
 | What product boundaries are intentional? | [Product plan](product-plan.md); its MVP sections describe the first delivery boundary, and later sections describe approved additions |
@@ -40,10 +41,11 @@ Installers, signing, automatic updates, non-Windows desktop delivery, LAN mode, 
 
 The October 5, 2026 UTC reconciliation archived 21 completed changes under [the change archive](../openspec/changes/archive), using the `2026-10-05-` prefix. Before archival, canonical requirements were synchronized for automatic local-output rebinding, persistent event timers, repository error provenance, and the compact Operator panel. Other completed changes were already synchronized; newer timing, streaming, variant-removal and menu requirements were preserved rather than overwritten by older deltas. Historical acceptance limits remain with their archived records.
 
-Five changes remain active:
+Six changes remain active:
 
 | Change | Remaining work |
 | --- | --- |
+| [separate-browser-desktop-output-layouts](../openspec/changes/separate-browser-desktop-output-layouts/tasks.md) | Implementation and canonical sync delivered in ordered slices; final integration gates and parent acceptance/review are recorded in [verification](verification/browser-desktop-output-layouts.md). Archival remains separately authorized. |
 | [add-main-branch-changelog](../openspec/changes/add-main-branch-changelog/tasks.md) | Unimplemented proposal, 22 unchecked tasks; no root changelog or enforcing workflow |
 | [add-custom-data-overlays](../openspec/changes/add-custom-data-overlays/proposal.md) | Slice 1 of 4 for data overlays: values, goals, reset groups, canvases, outputs and Operator controls; 21 unchecked tasks, awaiting approval |
 | [add-data-overlay-event-rules](../openspec/changes/add-data-overlay-event-rules/proposal.md) | Slice 2: data rules as a central event bus consumer, plus Streamer.bot globals; 19 unchecked tasks; depends on slice 1 and the bus change |

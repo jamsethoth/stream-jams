@@ -27,7 +27,7 @@ describe("overlay module routes", () => {
         defaultEnabled: true,
         renderer: {
           entryPoint: "overlay/modules/alerts",
-          supportsDesktopComposition: true, supportedOutputs: ["module", "unified"]
+          supportsDesktopComposition: true, supportedOutputs: ["module"]
         }
       }),
       expect.objectContaining({
@@ -36,7 +36,7 @@ describe("overlay module routes", () => {
         defaultEnabled: false,
         renderer: {
           entryPoint: "overlay/modules/screen-effects",
-          supportsDesktopComposition: true, supportedOutputs: ["module", "unified"]
+          supportsDesktopComposition: true, supportedOutputs: ["module"]
         }
       }),
       expect.objectContaining({
@@ -45,7 +45,7 @@ describe("overlay module routes", () => {
         defaultEnabled: false,
         renderer: {
           entryPoint: "overlay/modules/timers",
-          supportsDesktopComposition: true, supportedOutputs: ["module", "unified"]
+          supportsDesktopComposition: true, supportedOutputs: ["module"]
         }
       }),
       expect.objectContaining({
@@ -54,7 +54,7 @@ describe("overlay module routes", () => {
         defaultEnabled: false,
         renderer: {
           entryPoint: "overlay/modules/music",
-          supportsDesktopComposition: true, supportedOutputs: ["module", "unified"]
+          supportsDesktopComposition: true, supportedOutputs: ["module"]
         }
       }),
       expect.objectContaining({
@@ -63,7 +63,7 @@ describe("overlay module routes", () => {
         defaultEnabled: true,
         renderer: {
           entryPoint: "overlay/modules/videos",
-          supportsDesktopComposition: true, supportedOutputs: ["module", "unified"]
+          supportsDesktopComposition: true, supportedOutputs: ["module"]
         }
       })
     ]);
