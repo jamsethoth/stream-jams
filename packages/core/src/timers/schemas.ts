@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { timerEventRulesSchema } from "./event-rules.js";
 import { timerOverflowGeometry } from "./output-geometry.js";
+import { isExactLegacyTimerAppearance } from "./legacy-appearance.js";
 import { alertAudioOutputsSchema } from "../audio/schemas.js";
 import {
   isoDateTimeSchema,
@@ -133,7 +134,9 @@ export const timerAppearanceSchema = z.strictObject({
   const innerHeight = a.cardHeightPx - 2 * (a.blockPaddingPx + a.borderWidthPx);
   const textWidth = a.cardWidthPx - 2 * (a.inlinePaddingPx + a.borderWidthPx) - a.iconSizePx - a.gapPx * 2 - a.valueFont.fontSizePx * 2.4;
   if (innerHeight < Math.max(a.iconSizePx, a.labelFont.fontSizePx, a.valueFont.fontSizePx) || textWidth < 1) {
-    context.addIssue({ code: "custom", message: "Card dimensions must fit icon, padding and countdown text", path: ["cardWidthPx"] });
+    if (!isExactLegacyTimerAppearance(a)) {
+      context.addIssue({ code: "custom", message: "Card dimensions must fit icon, padding and countdown text", path: ["cardWidthPx"] });
+    }
   }
 }) satisfies z.ZodType<TimerAppearance>;
 export const timerProfileSchema = z.strictObject({ appearance: timerAppearanceSchema,
@@ -175,7 +178,8 @@ export const timerStackProjectionSchema = z.object({
   region: timerStackRegionSchema,
   cards: z.array(timerOverlayCardSchema),
   overflowCount: nonNegativeIntegerSchema,
-  appearance: timerAppearanceSchema.optional(), overflow: timerOverflowSchema.optional(), renderScale: z.number().finite().positive().max(10).optional()
+  appearance: timerAppearanceSchema.optional(), overflow: timerOverflowSchema.optional(), renderScale: z.number().finite().positive().max(10).optional(),
+  countdownMaxWidth: z.union([z.literal("8ch"), z.number().finite().min(0).max(1920)]).optional()
 }).strict().superRefine((projection, context) => {
   if (projection.cards.length > projection.region.maxVisible) {
     context.addIssue({ code: "custom", path: ["cards"], message: "Timer card count exceeds visible capacity" });

@@ -39,7 +39,8 @@ export function projectTimerStack(input: {
     region,
     cards: visible.map((run, index) => toCard(run, slots[index]!)),
     overflowCount: Math.max(0, runs.length - visible.length),
-    ...(appearance === undefined ? {} : { appearance, overflow: desktop ? geometry!.desktopOverflow : geometry!.overflow, renderScale: desktop ? profile!.desktopPlacement.scale : 1 })
+    ...(appearance === undefined ? {} : { appearance, countdownMaxWidth: geometry!.countdownMaxWidth,
+      overflow: desktop ? geometry!.desktopOverflow : geometry!.overflow, renderScale: desktop ? profile!.desktopPlacement.scale : 1 })
   };
 }
 

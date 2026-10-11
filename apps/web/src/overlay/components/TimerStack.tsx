@@ -72,6 +72,7 @@ export function TimerStack({ stack, resolveAssetUrl, now = systemNow }: TimerSta
             nowEpochMs={nowEpochMs}
             resolveAssetUrl={resolveAssetUrl}
             appearance={stack.appearance}
+            countdownMaxWidth={stack.countdownMaxWidth}
           />
         ))}
       </div>
@@ -92,12 +93,14 @@ function TimerCard({
   card,
   nowEpochMs,
   resolveAssetUrl,
-  appearance
+  appearance,
+  countdownMaxWidth
 }: {
   readonly card: TimerOverlayCard;
   readonly nowEpochMs: number;
   readonly resolveAssetUrl: (assetId: string, version?: string) => string | null;
   readonly appearance: TimerAppearance | undefined;
+  readonly countdownMaxWidth: TimerStackProjection["countdownMaxWidth"];
 }) {
   const remainingMs = card.status === "running"
     ? Math.max(0, card.endsAtEpochMs - nowEpochMs)
@@ -115,7 +118,8 @@ function TimerCard({
     "--timer-icon-size": `${iconSize}px`,
     "--timer-label-size": `${labelSize}px`,
     "--timer-value-size": `${valueSize}px`,
-    "--timer-value-max-width": `${Math.max(0, card.slot.width - 2 * ((appearance?.inlinePaddingPx ?? scaleMeasurement(card.slot, .14, .04, 6, 24)) + (appearance?.borderWidthPx ?? 2)) - iconSize - 2 * (appearance?.gapPx ?? scaleMeasurement(card.slot, .12, .025, 4, 18)) - 1)}px`,
+    "--timer-value-max-width": countdownMaxWidth === "8ch" ? "8ch" : `${countdownMaxWidth ?? Math.max(0, card.slot.width - 2 * ((appearance?.inlinePaddingPx ?? scaleMeasurement(card.slot, .14, .04, 6, 24)) + (appearance?.borderWidthPx ?? 2)) - iconSize - 2 * (appearance?.gapPx ?? scaleMeasurement(card.slot, .12, .025, 4, 18)) - 1)}px`,
+    "--timer-value-width": countdownMaxWidth === "8ch" ? "max-content" : "auto",
     height: `${card.slot.height}px`,
     left: `${card.slot.x}px`,
     top: `${card.slot.y}px`,
@@ -129,7 +133,7 @@ function TimerCard({
       "--timer-label-color": appearance.labelFont.color, "--timer-value-color": appearance.valueFont.color
     })
   } as CSSProperties;
-  }, [appearance, card.slot, card.status]);
+  }, [appearance, card.slot, card.status, countdownMaxWidth]);
   return (
     <div
       aria-label={`${card.label}, ${card.status}, ${value}`}
@@ -142,7 +146,8 @@ function TimerCard({
         ? <DefaultTimerIcon />
         : <TimerIcon version={card.iconVersion} assetId={card.iconAssetId} label={card.label} resolveAssetUrl={resolveAssetUrl} />}
       <span className="timer-stack__label" title={card.label}>{card.label}</span>
-      <time className="timer-stack__value" data-testid={`timer-value-${card.definitionId}`}>{value}</time>
+      <time className="timer-stack__value" data-testid={`timer-value-${card.definitionId}`}
+        style={countdownMaxWidth === "8ch" && value.length <= 8 ? { overflow: "visible" } : undefined}>{value}</time>
     </div>
   );
 }

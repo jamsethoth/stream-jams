@@ -131,6 +131,8 @@ export interface TimerStackProjection {
   readonly appearance?: TimerAppearance | undefined;
   readonly overflow?: TimerOverflowGeometry | undefined;
   readonly renderScale?: number | undefined;
+  /** Cached intrinsic legacy clock allowance or customized content budget in pixels. */
+  readonly countdownMaxWidth?: number | "8ch" | undefined;
 }
 
 /** Compatibility alias; presentation ownership lives with overlay modules. */

@@ -45,6 +45,18 @@ function completed(id: string) {
 }
 
 describe("timer projection", () => {
+  it("caches identical intrinsic legacy countdown sizing for both recipients and bounds customization", () => {
+    const profile = core.timersOverlayModuleDefinition.defaultConfig.profiles.landscape;
+    const geometry = core.resolveTimerOutputGeometry(profile);
+    expect(geometry).toMatchObject({ countdownMaxWidth: "8ch" });
+    for (const recipientKind of ["browser", "desktop"] as const) {
+      const stack = core.projectTimerStack({ nowEpochMs: 0, targetProfileId: "landscape", profile, geometry, recipientKind, runs: [] });
+      expect(stack).toMatchObject({ countdownMaxWidth: "8ch" });
+      expect(core.timerStackProjectionSchema.parse(stack)).toEqual(stack);
+    }
+    const customized = { ...profile, appearance: { ...profile.appearance, backgroundColor: "#123456" } };
+    expect(core.resolveTimerOutputGeometry(customized)).toMatchObject({ countdownMaxWidth: 565 });
+  });
   it("formats positive countdowns by ceiling to M:SS and H:MM:SS", () => {
     const { formatTimerRemaining } = api();
 

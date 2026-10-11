@@ -110,6 +110,7 @@ body.overlay-shell {
 }
 
 .timer-stack__value {
+  width: var(--timer-value-width, auto);
   max-width: var(--timer-value-max-width);
   overflow: hidden;
   text-overflow: ellipsis;

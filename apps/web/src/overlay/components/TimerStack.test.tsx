@@ -30,6 +30,16 @@ function stack(overrides: Partial<TimerStackProjection> = {}): TimerStackProject
 }
 
 describe("TimerStack", () => {
+  it("consumes cached intrinsic legacy countdown width without recognizing configuration in React", () => {
+    const profile = timersOverlayModuleDefinition.defaultConfig.profiles.landscape;
+    const projected = projectTimerStack({ nowEpochMs: 0, targetProfileId: "landscape", profile, runs: [{ status: "paused", definitionId: "saved", generation: "same", remainingMs: 600000,
+      snapshot: { id: "saved", label: "Saved", durationMs: 600000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: false, deviceRouteIds: [] } } }] });
+    const { rerender } = render(<TimerStack stack={projected} resolveAssetUrl={() => null} />);
+    expect(screen.getByRole("listitem").style.getPropertyValue("--timer-value-max-width")).toBe("8ch");
+    expect(screen.getByText("10:00")).toHaveStyle({ overflow: "visible" });
+    rerender(<TimerStack stack={{ ...projected, cards: [{ ...projected.cards[0]!, status: "paused", remainingMs: Number.MAX_SAFE_INTEGER }] }} resolveAssetUrl={() => null} />);
+    expect(screen.getByTestId("timer-value-saved").style.overflow).toBe("");
+  });
   it("renders saved profile typography, background opacity, state accents and a fixed bounded badge", () => {
     const profile = timersOverlayModuleDefinition.defaultConfig.profiles.landscape;
     const appearance = { ...profile.appearance, backgroundColor: "#112233", backgroundOpacity: .4, labelFont: { ...profile.appearance.labelFont, color: "#AABBCC", fontWeight: 500 as const }, pausedAccent: "#123456" };

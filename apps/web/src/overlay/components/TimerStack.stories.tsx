@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { projectTimerStack, timersOverlayModuleDefinition, type TimerStackProjection } from "@stream-jams/core";
+import { projectTimerStack, timersOverlayModuleDefinition, upgradeTimersConfig, type TimerStackProjection } from "@stream-jams/core";
 import { expect, within } from "storybook/test";
 import { TimerStack } from "./TimerStack.js";
 
@@ -20,6 +20,25 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+export const CrampedLegacyCountdowns: Story = {
+  args: { stack: projectTimerStack({ nowEpochMs: 0, targetProfileId: "landscape", recipientKind: "browser",
+    profile: upgradeTimersConfig({ profiles: {
+      landscape: { layout: { x: 1319, y: 779, width: 601, height: 301, zIndex: 0 }, orientation: "horizontal", maxVisible: 12 },
+      vertical: { layout: { x: 48, y: 1320, width: 984, height: 480, zIndex: 0 }, orientation: "vertical", maxVisible: 12 }
+    } }).profiles.landscape,
+    runs: [10000, 600000, 45296000, Number.MAX_SAFE_INTEGER].map((remainingMs, index) => ({ status: "paused" as const, definitionId: `cramped-${index}`, generation: `same-${index}`, remainingMs,
+      snapshot: { id: `cramped-${index}`, label: "Cramped saved timer", durationMs: remainingMs, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: false, deviceRouteIds: [] } } })) }) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText("0:10")).toBeVisible();
+    await expect(canvas.getByText("10:00")).toBeVisible();
+    await expect(canvas.getByText("12:34:56")).toBeVisible();
+    const extreme = canvas.getByTestId("timer-value-cramped-3");
+    await expect(getComputedStyle(extreme).textOverflow).toBe("ellipsis");
+    await expect(extreme.scrollWidth).toBeGreaterThan(extreme.clientWidth);
+  }
+};
 
 export const SavedContentAppearance: Story = {
   args: { stack: projectTimerStack({ nowEpochMs: 0, targetProfileId: "landscape", recipientKind: "browser", profile: timersOverlayModuleDefinition.defaultConfig.profiles.landscape,

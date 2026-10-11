@@ -1,6 +1,8 @@
 import type { OutputCanvas } from "../overlay-modules/output-canvas-contract.js";
 import type { OverlayElementLayout } from "../shared/schemas.js";
 import type { TimerAppearance, TimerOverflowGeometry, TimerProfile, TimerStackRegion } from "./types.js";
+import { isExactLegacyTimerAppearance, timerSizeMeasurement } from "./legacy-appearance.js";
+export { timerSizeMeasurement } from "./legacy-appearance.js";
 
 export interface TimerOutputGeometry extends Omit<OutputCanvas, "configRevision"> {
   readonly slots: readonly OverlayElementLayout[];
@@ -11,10 +13,7 @@ export interface TimerOutputGeometry extends Omit<OutputCanvas, "configRevision"
   readonly desktopRegion: TimerStackRegion;
   readonly desktopSlots: readonly OverlayElementLayout[];
   readonly desktopOverflow: TimerOverflowGeometry;
-}
-
-export function timerSizeMeasurement(width: number, height: number, hr: number, wr: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, Math.round(Math.min(height * hr, width * wr))));
+  readonly countdownMaxWidth: number | "8ch";
 }
 
 export function timerOverflowGeometry(appearance: Pick<TimerAppearance, "cardWidthPx" | "cardHeightPx" | "orientation" | "maxVisible" | "stackGapPx">) {
@@ -35,6 +34,9 @@ export function timerOverflowGeometry(appearance: Pick<TimerAppearance, "cardWid
 /** Configured slots plus a permanent badge reserve. Shadow extent follows the existing 0 8px 24px CSS. */
 export function resolveTimerOutputGeometry(profile: TimerProfile): TimerOutputGeometry {
   const a = profile.appearance;
+  // Saved-config cache owns this recognition; projections reuse it on every countdown tick.
+  const countdownMaxWidth = isExactLegacyTimerAppearance(a) ? "8ch" : Math.max(0,
+    a.cardWidthPx - 2 * (a.inlinePaddingPx + a.borderWidthPx) - a.iconSizePx - 2 * a.gapPx - 1);
   const { overflow, footprint, stackWidth, stackHeight } = timerOverflowGeometry(a);
   const insets = { left: 48, top: 40, right: 48, bottom: 56 };
   const slots = Array.from({ length: a.maxVisible }, (_, index) => ({
@@ -44,7 +46,7 @@ export function resolveTimerOutputGeometry(profile: TimerProfile): TimerOutputGe
   }));
   return { schemaVersion: 1, kind: "content", width: Math.ceil(footprint.width + insets.left + insets.right),
     height: Math.ceil(footprint.height + insets.top + insets.bottom), origin: { x: 0, y: 0 }, insets, slots,
-    overflow: { ...overflow, x: overflow.x + insets.left, y: overflow.y + insets.top }, footprint,
+    overflow: { ...overflow, x: overflow.x + insets.left, y: overflow.y + insets.top }, footprint, countdownMaxWidth,
     browserRegion: { layout: { x: insets.left, y: insets.top, width: stackWidth, height: stackHeight, zIndex: 0 }, orientation: a.orientation, maxVisible: a.maxVisible },
     desktopRegion: { layout: { x: profile.desktopPlacement.x, y: profile.desktopPlacement.y, width: stackWidth, height: stackHeight, zIndex: profile.desktopPlacement.zIndex }, orientation: a.orientation, maxVisible: a.maxVisible },
     desktopSlots: slots.map(slot => ({ ...slot, x: slot.x - insets.left + profile.desktopPlacement.x, y: slot.y - insets.top + profile.desktopPlacement.y, zIndex: profile.desktopPlacement.zIndex })),

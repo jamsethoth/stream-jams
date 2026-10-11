@@ -9,8 +9,9 @@ const defaultBudgets = {
   bootstrap: 100 * 1024,
   // S07 measured Timer appearance validation/rendering: +2290 overlay gzip bytes over S06.
   // S09 reviewed 154.04 KiB current/frozen Videos validation and single-queue DTO guards.
-  overlay: 154.25 * 1024,
-  operator: 191 * 1024,
+  // Legacy Timer compatibility adds shared exact-style validation and cached countdown sizing.
+  overlay: 154.75 * 1024,
+  operator: 191.25 * 1024,
   management: 250 * 1024
 };
 const routeSources = {

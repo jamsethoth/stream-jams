@@ -79,11 +79,15 @@ describe("ConfigurationBackupService", () => {
       expect(target.snapshotRepository.captureRestorePoint()).toEqual(unchanged);
     } finally { source.database.close(); target.database.close(); }
   });
-  it("preflights and round-trips legacy Timer appearance once, blocks invalid geometry and verifies original checksums", async () => {
+  it.each(["original", "pinned12", "narrow-horizontal"])("preflights and round-trips legacy Timer appearance (%s), blocks invalid geometry and verifies original checksums", async kind => {
     const source = createRealService(); const target = createRealService();
     try {
-      const legacy = { profiles: { landscape: { layout: { x: 1320, y: 780, width: 600, height: 300, zIndex: 2 }, orientation: "horizontal", maxVisible: 3 },
-        vertical: { layout: { x: 48, y: 1320, width: 984, height: 480, zIndex: 0 }, orientation: "vertical", maxVisible: 4 } } };
+      const legacy = { profiles: { landscape: kind === "original"
+        ? { layout: { x: 1320, y: 780, width: 600, height: 300, zIndex: 2 }, orientation: "horizontal", maxVisible: 3 }
+        : kind === "pinned12"
+        ? { layout: { x: 64, y: 720, width: 640, height: 280, zIndex: 0 }, orientation: "vertical", maxVisible: 12 }
+        : { layout: { x: 1319, y: 779, width: 601, height: 301, zIndex: 2 }, orientation: "horizontal", maxVisible: 12 },
+        vertical: { layout: { x: 48, y: 1320, width: 984, height: 480, zIndex: 0 }, orientation: "vertical", maxVisible: kind === "original" ? 4 : 12 } } };
       source.database.connection.prepare("INSERT INTO overlay_module_config VALUES ('timers', 1, ?, '2026-10-11T00:00:00.000Z')").run(JSON.stringify(timersOverlayModuleDefinition.defaultConfig));
       const archive = await source.service.exportArchive(); archive.manifest.schemaVersion = currentSchemaVersion - 1;
       const row = archive.configuration.tables.overlay_module_config!.find(row => row.module_id === "timers")!;
@@ -106,6 +110,16 @@ describe("ConfigurationBackupService", () => {
       invalid.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(invalid.configuration);
       expect((await target.service.preflight(invalid)).state).toBe("invalid");
       expect(target.snapshotRepository.captureRestorePoint()).toEqual(unchanged);
+      if (kind !== "original") {
+        const customized = structuredClone(exported);
+        const row = customized.configuration.tables.overlay_module_config!.find(row => row.module_id === "timers")!;
+        row.config_json = JSON.stringify({ ...expected, profiles: { ...expected.profiles, landscape: { ...expected.profiles.landscape, appearance: { ...expected.profiles.landscape.appearance, borderColor: "#123456" } } } });
+        customized.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(customized.configuration);
+        const preflight = await target.service.preflight(customized);
+        expect(preflight.state).toBe("invalid");
+        await expect(target.service.restore({ archive: customized, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true })).rejects.toThrow();
+        expect(target.snapshotRepository.captureRestorePoint()).toEqual(unchanged);
+      }
     } finally { source.database.close(); target.database.close(); }
   });
   it("identifies local device bindings as excluded from portable backups", async () => {
