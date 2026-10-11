@@ -55,8 +55,9 @@ test("saved Timer appearance owns stable browser pixels independently of desktop
       expect((await compositionAt(output.url)).canvas.width).toBe(output.canvas.width);
     }
     expect(await json("/timers/state")).toEqual(states);
-    await page.getByRole("radiogroup", { name: "Timer profile" }).getByText("Vertical", { exact: true }).click(); await page.getByLabel("Label font", { exact: true }).selectOption("serif");
-    await page.getByLabel("Background opacity").fill(".4"); await page.getByLabel("Maximum shown").fill("3");
+    await page.getByRole("radiogroup", { name: "Timer profile" }).getByText("Vertical", { exact: true }).click();
+    await page.getByText("Text style", { exact: true }).click(); await page.getByLabel("Label font", { exact: true }).selectOption("serif");
+    await page.getByText("Colors", { exact: true }).click(); await page.getByLabel("Background opacity").fill(".4"); await page.getByLabel("Maximum shown").fill("3");
     await page.getByLabel("Card width (px)").fill("300");
     await page.getByRole("button", { name: "Save overlay layout" }).click(); await expect(page.getByText("Timer overlay layout saved.")).toBeVisible();
     const updated = timersOverlayModuleConfigSchema.parse((await json("/overlay-modules/timers/config")).config);

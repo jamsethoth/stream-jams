@@ -189,6 +189,14 @@ it("switches to the invalid profile and focuses its associated field without sav
   expect(screen.getByRole("radio", { name: "Vertical" })).toBeChecked();
   expect(screen.getByLabelText("X", { exact: true })).toHaveFocus();
   expect(values.api.saveModuleConfig).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("X", { exact: true }), { target: { value: "0" } });
+  const spacing = screen.getByText("Spacing and shape").closest("details");
+  expect(spacing).not.toHaveAttribute("open");
+  fireEvent.change(screen.getByLabelText("Corner radius (px)"), { target: { value: "999" } });
+  await user.click(screen.getByRole("button", { name: "Save overlay layout" }));
+  expect(spacing).toHaveAttribute("open");
+  expect(screen.getByLabelText("Corner radius (px)")).toHaveFocus();
+  expect(values.api.saveModuleConfig).not.toHaveBeenCalled();
 });
 
 it("retains correction input after a failed request and permits an explicit retry", async () => {

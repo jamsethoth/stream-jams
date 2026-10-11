@@ -67,7 +67,7 @@ describe("TimerStackEditor", () => {
     expect(latest.profiles.landscape.appearance).toMatchObject({ orientation: "horizontal", reverse: true });
     await user.selectOptions(screen.getByLabelText("Desktop direction"), "Left to right");
     expect(latest.profiles.landscape.desktopPlacement.reverse).toBe(false);
-    await user.selectOptions(screen.getByLabelText("Desktop direction"), "Same as browser source");
+    await user.selectOptions(screen.getByLabelText("Desktop direction"), "Same as browser");
     expect(latest.profiles.landscape.desktopPlacement.reverse).toBeUndefined();
     await user.selectOptions(screen.getByLabelText("Stack direction"), "Left to right");
     expect(latest.profiles.landscape.appearance).toMatchObject({ orientation: "horizontal", reverse: false });
