@@ -278,6 +278,24 @@ describe("OverlayOutputManagementService", () => {
     expect(await service.listLegacyKeys()).toEqual([]);
     expect((await service.listOutputs("http://127.0.0.1")).find(output => output.keyId === ordinary?.id)?.url).toContain("ovl_ordinary");
   });
+
+  it("treats re-revoking an already-revoked key as a no-op without re-firing recipient or secret cleanup", async () => {
+    const secrets = new InMemorySecretStore();
+    const revokedEvents: string[] = [];
+    const { service, repository } = createService([], secrets, { onKeyRevoked: id => { revokedEvents.push(id); } });
+    const legacyRef = createOverlayRouteKeySecretRef("legacy");
+    await repository.create({ id: "legacy", overlayId: "default", moduleId: "timers", purpose: "live", scope: "module", targetProfileId: null,
+      keyHash: "sha256:legacy", routeKeySecretRef: legacyRef, createdAt: "2026-06-16T12:00:00.000Z" });
+    const deleted: unknown[] = [];
+    secrets.deleteSecret = async ref => { deleted.push(ref); };
+    const first = await service.revokeKey("legacy");
+    const second = await service.revokeKey("legacy");
+    expect(second?.revokedAt).toBe(first?.revokedAt);
+    expect(revokedEvents).toEqual(["legacy"]);
+    expect(deleted).toEqual([legacyRef]);
+    expect(await service.revokeKey("missing")).toBeNull();
+    expect(revokedEvents).toEqual(["legacy"]);
+  });
 });
 
 function createService(

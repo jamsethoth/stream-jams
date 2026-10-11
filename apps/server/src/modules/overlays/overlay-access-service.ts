@@ -161,6 +161,10 @@ export class LocalOverlayAccessService implements OverlayAccessService {
     if (record === null) {
       return null;
     }
+    // Idempotent: the original revocation time is authoritative and is never overwritten.
+    if (record.revokedAt !== null) {
+      return record;
+    }
 
     return this.#repository.update({
       ...record,

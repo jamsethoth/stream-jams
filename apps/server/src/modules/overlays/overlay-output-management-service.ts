@@ -114,6 +114,10 @@ export class OverlayOutputManagementService {
   }
 
   async revokeKey(keyId: string): Promise<OverlayAccessKey | null> {
+    const existing = await this.#overlayKeyRepository.findById(keyId);
+    if (existing === null) return null;
+    // Re-revoking is a no-op: no new time, recipient recheck, or secret cleanup (startup retries failed cleanup).
+    if (existing.revokedAt !== null) return existing;
     const revoked = await this.#overlayAccessService.revokeKey(keyId);
     if (revoked === null) return null;
     this.#options.onKeyRevoked?.(keyId);

@@ -1,6 +1,6 @@
 import { HistoricalOverlayKeyFixture } from "../../http/test-support/historical-overlay-key-fixture.js";
 import type { CreateOverlayKeyInput, OverlayAccessKeyRepository } from "@stream-jams/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { InMemoryOverlayAccessKeyRepository } from "./overlay-access-service.js";
 
 const now = new Date("2026-05-29T12:00:00.000Z");
@@ -193,6 +193,18 @@ describe("LocalOverlayAccessService", () => {
         rawKey: created.rawKey
       })
     ).resolves.toEqual({ authorized: false, reason: "revoked" });
+  });
+
+  it("keeps the original revocation time when an already-revoked key is revoked again", async () => {
+    const repository = new InMemoryOverlayAccessKeyRepository();
+    const service = createService(repository, ["ovl_twiceRevoked"]);
+    const created = await service.seedHistoricalKey({ overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module" });
+    const first = await service.revokeKey(created.record.id);
+    await repository.update({ ...first!, revokedAt: "2026-05-01T00:00:00.000Z" });
+    const update = vi.spyOn(repository, "update");
+    await expect(service.revokeKey(created.record.id)).resolves.toMatchObject({ revokedAt: "2026-05-01T00:00:00.000Z" });
+    expect(update).not.toHaveBeenCalled();
+    await expect(service.revokeKey("missing")).resolves.toBeNull();
   });
 
   it("verifies an exact hash without loading historical overlay candidates", async () => {
