@@ -7,7 +7,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { dirname, join, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
-import { alertEditorDocumentSchema, compatibilityAlertTextStyle, compatibilityAlertTextBoxStyle, createDefaultTextWarp, overlayCompositionSchema, type MusicModuleConfig, type TimersOverlayModuleConfig, type VideosModuleConfig, type OverlayClientView } from "@stream-jams/core";
+import { alertEditorDocumentSchema, compatibilityAlertTextStyle, compatibilityAlertTextBoxStyle, createDefaultTextWarp, overlayCompositionSchema, type EventBusActivityView, type MusicModuleConfig, type TimersOverlayModuleConfig, type VideosModuleConfig, type OverlayClientView } from "@stream-jams/core";
 import { expect, test } from "@playwright/test";
 import { createProviderSecurityRuntimeFixture } from "../../apps/server/src/test-support/provider-security-runtime-fixture.js";
 import { createPreMigrationDatabase } from "../../apps/server/src/test-support/pre-migration-database.js";
@@ -195,7 +195,7 @@ test("actual portable OBS keeps ordinary module geometry local, retired sources 
         const error = await readFile(join(coord, "error.txt"), "utf8").catch(() => null);
         if (error !== null) throw new Error(error);
         return access(join(coord, `command-${id}.json`)).then(() => true, () => false);
-      }, { timeout: 15000 }).toBe(true);
+      }, { timeout: 15000, intervals: [100] }).toBe(true);
     };
     const capture = async (phase: string) => {
       const images: string[] = [];
@@ -204,7 +204,8 @@ test("actual portable OBS keeps ordinary module geometry local, retired sources 
       // native color sources; do not infer transparency from decoded PNG alpha.
       for (const matte of ["black", "white"] as const) {
         const id = await request("capture", `${phase}-${matte}`, matte);
-        await expect.poll(() => access(join(coord, `capture-${id}.json`)).then(() => true, () => false), { timeout: 15000 }).toBe(true);
+        // Lua answers within a few 100 ms ticks; the default poll backoff would add up to a second per matte.
+        await expect.poll(() => access(join(coord, `capture-${id}.json`)).then(() => true, () => false), { timeout: 15000, intervals: [100] }).toBe(true);
         const receipt = JSON.parse(await readFile(join(coord, `capture-${id}.json`), "utf8")) as ObsReceipt;
         expect(receipt).toMatchObject({ sourceId: selected.id, moduleId: selected.moduleId, profile: selected.profile,
           nativeWidth: viewport.width, nativeHeight: viewport.height, settingsWidth: viewport.width, settingsHeight: viewport.height,
@@ -284,21 +285,25 @@ test("actual portable OBS keeps ordinary module geometry local, retired sources 
     const timer = await api("/timers", "POST", { label: "Owned paused Timer", durationMs: 120000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: true, deviceRouteIds: [] } }) as { id: string };
     await api(`/timers/${timer.id}/start`, "POST"); await api(`/timers/${timer.id}/pause`, "POST");
     const pausedBefore = await api("/timers/state");
-    const notice = async () => {
-      // Reissue the five-second production notice for each synthetic capture, keeping the queue empty.
-      // Bus delivery is asynchronous and the notice expires after five seconds, so a slow delivery or an expiry
-      // before observation reissues a fresh notice. A dropped command still fails at once: every fresh journal
-      // row must be admitted (or still pending) by the Videos consumer, never reported as no-match or failed.
-      for (let attempt = 1; ; attempt++) {
-        const receipt = await api("/management/events/manual", "POST", { action: { kind: "simulate-external", identity: { providerKind: "streamerbot", sourceKey: "General", eventType: "Custom" }, payload: { source: "StreamJams", type: "VideoRequest", action: "no-clip", displayName: "Owned OBS fixture" } } }) as { busId: string; consumers: Array<{ consumerId: string; outcome: string }> };
-        expect(["admitted", "pending"], `Videos consumer outcome for fresh no-clip ${receipt.busId}`).toContain(receipt.consumers.find(consumer => consumer.consumerId === "videos")?.outcome);
-        try {
-          await expect.poll(async () => (await composition(selected)).modules[0]?.presentation, { timeout: 5000 }).toMatchObject({ kind: "videos", videos: { status: "notice" } });
-          return;
-        } catch (error) { if (attempt >= 3) throw error; }
-      }
+    // The production no-clip notice lasts five seconds, shorter than a delivery plus two native OBS captures on the
+    // CI software renderer. Keep it continuously current while a Video source is measured: reissue it every two
+    // seconds, so each capture sees the same visible notice whatever the bus latency, then prove every reissued
+    // journal row was admitted by the Videos consumer (never no-match or failed).
+    const noticePayload = { action: { kind: "simulate-external", identity: { providerKind: "streamerbot", sourceKey: "General", eventType: "Custom" }, payload: { source: "StreamJams", type: "VideoRequest", action: "no-clip", displayName: "Owned OBS fixture" } } };
+    let noticeError: unknown; let noticesIssued = 0;
+    const issueNotice = async () => {
+      const receipt = await api("/management/events/manual", "POST", noticePayload) as { busId: string; consumers: Array<{ consumerId: string; outcome: string }> };
+      expect(["admitted", "pending"], `Videos consumer outcome for fresh no-clip ${receipt.busId}`).toContain(receipt.consumers.find(consumer => consumer.consumerId === "videos")?.outcome);
+      noticesIssued++;
     };
-    const snapshot = async (phase: string) => { if (selected.moduleId === "videos") await notice(); return capture(phase); };
+    const startNotices = async () => {
+      let active = true;
+      await issueNotice();
+      await expect.poll(async () => (await composition(selected)).modules[0]?.presentation, { timeout: 15000 }).toMatchObject({ kind: "videos", videos: { status: "notice" } });
+      const loop = (async () => { while (active) { await delay(2000); if (active) await issueNotice(); } })().catch((error: unknown) => { noticeError = error; });
+      return () => { active = false; return loop; };
+    };
+    const snapshot = async (phase: string) => { if (noticeError !== undefined) throw noticeError; return capture(phase); };
     const stable = async (phase: string) => {
       let previous = await snapshot(phase);
       await expect.poll(async () => {
@@ -343,6 +348,7 @@ test("actual portable OBS keeps ordinary module geometry local, retired sources 
     };
     for (const source of contentSources) {
       selected = source; await command("select", `${source.id}-active`); await waitConnected(source);
+      const stopNotices = source.moduleId === "videos" ? await startNotices() : undefined;
       const baseline = await stable(`${source.id}-active`);
       expect(baseline.anchorCovered, "Content renders at its browser-local anchor").toBe(true);
       expect(baseline.outsidePixels).toBe(0);
@@ -385,6 +391,13 @@ test("actual portable OBS keeps ordinary module geometry local, retired sources 
       await command("reconnect", `${source.id}-reconnect`);
       await expect.poll(async () => { const ids = await connectedIds(source); return ids.length === 1 && ids[0] !== priorConnection; }, { timeout: 20000 }).toBe(true);
       expect((await stable(`${source.id}-reconnect`)).contentHash).toBe(resizedPixels.contentHash);
+      if (stopNotices !== undefined) {
+        await stopNotices(); if (noticeError !== undefined) throw noticeError;
+        await expect.poll(async () => {
+          const notices = (await api("/management/diagnostics/event-bus") as EventBusActivityView).events.filter(event => event.kind === "manual" && event.eventType === "simulate-external");
+          return { count: notices.length, videos: [...new Set(notices.map(event => event.consumers.find(consumer => consumer.consumerId === "videos")?.outcome))] };
+        }, { timeout: 10000, message: "Every reissued no-clip journal row is admitted by the Videos consumer" }).toEqual({ count: noticesIssued, videos: ["admitted"] });
+      }
       const config = source.moduleId === "music" ? music : source.moduleId === "timers" ? timers : videos;
       await api(`/overlay-modules/${source.moduleId}/config`, "PUT", { enabled: false, config });
       await expect.poll(async () => (await capture(`${source.id}-disabled`)).coveredPixels, { timeout: 15000 }).toBe(0);
