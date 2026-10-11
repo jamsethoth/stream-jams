@@ -66,9 +66,9 @@ export class MusicRuntimeCoordinator {
   getLiveSnapshot(): MusicSnapshot | null {
     return this.#status.state === "connected" && !this.#status.stale ? this.#snapshot : null;
   }
-  getProjection(targetProfileId: OverlayTargetProfileId): MusicWidgetProjection | null {
+  getProjection(targetProfileId: OverlayTargetProfileId, savedConfig?: MusicModuleConfig): MusicWidgetProjection | null {
     if (this.#config === null) return null;
-    return projectMusicWidget(this.#snapshot, this.#status, this.#config, targetProfileId, this.#appearanceStartedAtEpochMs, this.#now());
+    return projectMusicWidget(this.#snapshot, this.#status, savedConfig ?? this.#config, targetProfileId, this.#appearanceStartedAtEpochMs, this.#now());
   }
   getArtworkPolicy(owner: Pick<MusicSnapshot, "providerId" | "generation">): MusicArtworkPolicy | null {
     if (this.#generation !== owner.generation || this.#snapshot?.providerId !== owner.providerId) return null;

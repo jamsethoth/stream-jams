@@ -82,7 +82,7 @@ Browser, desktop and local-device work SHALL carry globally unique occurrence id
 - **AND** the active alert's healthy device/browser audio and visuals continue
 
 #### Scenario: Visual module layer is hidden
-- **WHEN** an effect is hidden on a unified browser surface while its Browser Source audio remains selected
+- **WHEN** an effect is hidden on the desktop surface while its ordinary Browser Source audio remains selected
 - **THEN** its selected audio can continue through that recipient without a visible effect layer
 
 #### Scenario: Shared audio renderer must be destroyed

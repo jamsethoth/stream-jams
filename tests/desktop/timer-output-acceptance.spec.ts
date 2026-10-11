@@ -76,13 +76,13 @@ test("@hardware packaged browser and hidden desktop agree through Timer transiti
     const moduleConfig = await api<{ enabled: boolean; config: unknown }>("/overlay-modules/timers/config");
     await api("/overlay-modules/timers/config", "PUT", { enabled: true, config: moduleConfig.config });
     const output = await api<{ url: string }>("/management/overlay-outputs/keys", "POST", {
-      overlayId: "default", moduleId: null, purpose: "live", scope: "unified"
+      overlayId: "default", moduleId: "timers", purpose: "live", scope: "module", targetProfileId: "landscape"
     });
     await page.goto(output.url);
     await expect(page.getByTestId("overlay-root")).toBeVisible();
     const define = (label: string, durationMs: number) => api<TimerDefinition>("/timers", "POST", {
       label, durationMs, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null,
-      outputs: { browserSource: false, deviceRouteIds: [] }
+      outputs: { browserSource: true, deviceRouteIds: [] }
     });
     const [longTimer, shortTimer] = await Promise.all([define("Long mitts timer", 120_000), define("Short reward timer", 3_000)]);
     await api(`/timers/${longTimer.id}/start`, "POST");

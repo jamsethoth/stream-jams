@@ -1,4 +1,4 @@
-import type { OverlayPurpose, VideoControlSupport, VideoSource } from "@stream-jams/core";
+import type { VideoQueuePurpose, VideoControlSupport, VideoSource } from "@stream-jams/core";
 import {
   buildVideoPlayerUrl, desktopVideoCommandSchema, videoMirrorReceiverSignalSchema,
   type DesktopVideoCommand, type DesktopVideoEvent, type VideoMirrorPublisherSignal, type VideoMirrorReceiverSignal
@@ -20,7 +20,7 @@ export interface TwitchFrameState {
   readonly durationMs?: number | null | undefined;
 }
 
-/** One long-lived hidden player window per purpose. Providers are swapped inside it; it never navigates. */
+/** One long-lived ordinary hidden player window. Providers are swapped inside it; it never navigates. */
 export interface VideoPlayerPort {
   load(): Promise<void>;
   /** Starts frame capture with a user gesture supplied by the main process. */
@@ -39,8 +39,8 @@ export interface VideoDeviceOutputPort {
 }
 
 export interface VideoPlayerHostDependencies {
-  readonly createPlayer: (purpose: OverlayPurpose, callbacks: VideoPortCallbacks) => VideoPlayerPort;
-  readonly createDeviceOutput: (purpose: OverlayPurpose, callbacks: VideoPortCallbacks) => VideoDeviceOutputPort;
+  readonly createPlayer: (purpose: VideoQueuePurpose, callbacks: VideoPortCallbacks) => VideoPlayerPort;
+  readonly createDeviceOutput: (purpose: VideoQueuePurpose, callbacks: VideoPortCallbacks) => VideoDeviceOutputPort;
   /** The local service origin the player page is served from; Twitch and YouTube check it. */
   readonly playerOrigin: () => string;
   readonly diagnose?: ((input: DesktopDiagnosticInput) => void) | undefined;
@@ -64,7 +64,7 @@ interface Item {
   controls: VideoControlSupport | null;
 }
 interface Session {
-  readonly purpose: OverlayPurpose;
+  readonly purpose: VideoQueuePurpose;
   generation: number;
   port: VideoPlayerPort | null;
   ready: Promise<boolean> | null;
@@ -81,7 +81,7 @@ const loadTimeoutMs = 10_000;
 /** A Twitch frame whose `<video>` cannot be found by then plays with play and stop only. */
 export const twitchDetectionMs = 6_000;
 const leaseTimeoutMs = 10_000;
-const purposes = ["live", "test"] as const;
+const purposes = ["live"] as const;
 
 /**
  * Main-process owner of the Videos primary players (OpenSpec add-video-request-queue 5.1-5.3, 5.5).
@@ -89,10 +89,10 @@ const purposes = ["live", "test"] as const;
  * Losing the service, a renderer or the app ends every player's sound.
  */
 export class VideoPlayerHost {
-  readonly #sessions = new Map<OverlayPurpose, Session>(purposes.map(purpose => [purpose, {
+  readonly #sessions = new Map<VideoQueuePurpose, Session>(purposes.map(purpose => [purpose, {
     purpose, generation: 0, port: null, ready: null, live: false, item: null, output: { muted: false, devices: [] }, device: null, twitchTimer: null, twitchBusy: false
   }]));
-  readonly #desktopReceivers = new Map<string, { readonly purpose: OverlayPurpose; readonly deliver: (signal: VideoMirrorPublisherSignal) => void }>();
+  readonly #desktopReceivers = new Map<string, { readonly purpose: VideoQueuePurpose; readonly deliver: (signal: VideoMirrorPublisherSignal) => void }>();
   #sink: (event: DesktopVideoEvent) => void = () => undefined;
   #owned = false;
   #announced = false;
@@ -159,7 +159,7 @@ export class VideoPlayerHost {
   }
 
   /** A receiver inside the desktop app (the desktop overlay layer) joins one purpose's mirror. */
-  attachDesktopReceiver(receiverId: `desktop:${string}`, purpose: OverlayPurpose, deliver: (signal: VideoMirrorPublisherSignal) => void): DesktopMirrorReceiver {
+  attachDesktopReceiver(receiverId: `desktop:${string}`, purpose: VideoQueuePurpose, deliver: (signal: VideoMirrorPublisherSignal) => void): DesktopMirrorReceiver {
     if (receiverId === devicesReceiverId) throw new Error("Reserved mirror receiver id");
     const entry = { purpose, deliver };
     this.#desktopReceivers.set(receiverId, entry);
@@ -421,7 +421,7 @@ export class VideoPlayerHost {
     catch (error) { this.#diagnose("desktop.video.event-failed", "A video player event could not reach the local service.", error); }
   }
 
-  #session(purpose: OverlayPurpose): Session { return this.#sessions.get(purpose)!; }
+  #session(purpose: VideoQueuePurpose): Session { return this.#sessions.get(purpose)!; }
 
   #startLease(): void {
     this.#leaseAt = this.#now();

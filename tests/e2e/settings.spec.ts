@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { mockManagementShell } from "./e2e-helpers.js";
 import type { SurfaceConfigurationUpdate, SurfaceSettingsView } from "@stream-jams/core";
 
-test("overlay surfaces keep independent drafts and apply only explicit saves", async ({ page }, testInfo) => {
+test("desktop surface drafts apply only explicit saves and retired surfaces stay hidden", async ({ page }, testInfo) => {
   await mockManagementShell(page);
   await mockSettingsSummary(page);
   await page.route("**/config/server", route => route.fulfill({ json: { host: "127.0.0.1", port: 39187 } }));
@@ -16,7 +16,7 @@ test("overlay surfaces keep independent drafts and apply only explicit saves", a
     expect(route.request().method()).toBe("PUT");
     expect(route.request().headers()["x-stream-jams-csrf"]).toBe("csrf_e2e");
     const config = route.request().postDataJSON() as SurfaceConfigurationUpdate;
-    writes.push(config); view = { ...view, surfaces: view.surfaces.map(saved => saved.id === config.id ? (config.kind === "desktop" ? { ...config, displayLabel: view.desktop.displays.find(display => display.id === config.displayId)?.label ?? null } : config) : saved),
+    writes.push(config); view = { ...view, surfaces: view.surfaces.map(saved => saved.id === config.id ? { ...config, displayLabel: view.desktop.displays.find(display => display.id === config.displayId)?.label ?? null } : saved),
       desktop: config.kind === "desktop" ? { ...view.desktop, state: config.enabled ? "ready" : "disabled" } : view.desktop };
     await route.fulfill({ json: view });
   });
@@ -29,26 +29,61 @@ test("overlay surfaces keep independent drafts and apply only explicit saves", a
   await page.getByLabel("Enable desktop overlay").check();
   await page.getByRole("checkbox", { name: "Show alerts on Desktop overlay" }).check();
   await page.getByRole("button", { name: "Move Screen Effects up on Desktop overlay" }).click();
-  await page.getByRole("checkbox", { name: "Show alerts on Unified browser: default" }).uncheck();
+  await expect(page.getByRole("checkbox", { name: "Show alerts on Unified browser: default" })).toHaveCount(0);
   expect(writes).toEqual([]);
   await page.getByRole("button", { name: "Save Desktop overlay" }).click();
   await expect(page.getByRole("button", { name: "Save Desktop overlay" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Save Unified browser: default" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Save Unified browser: default" })).toHaveCount(0);
   expect(writes).toHaveLength(1);
   expect(writes[0]).toMatchObject({ enabled: true, displayId: "portrait", autoFollowDisplayName: true, layers: [{ moduleId: "screen-effects", visible: false }, { moduleId: "alerts", visible: true }] });
   expect(writes[0]).not.toHaveProperty("displayLabel");
-  await page.getByRole("button", { name: "Save Unified browser: default" }).click();
   await expect(page.getByRole("button", { name: "Save Unified browser: default" })).toHaveCount(0);
   await page.reload();
   await expect(page.getByLabel("Enable desktop overlay")).toBeChecked();
   await expect(page.getByRole("button", { name: "Move Screen Effects up on Desktop overlay" })).toBeDisabled();
-  await expect(page.getByRole("checkbox", { name: "Show alerts on Unified browser: default" })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Show alerts on Desktop overlay" })).toBeChecked();
   await page.getByRole("region", { name: "Overlay surfaces" }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath("overlay-settings-desktop.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByLabel("Desktop display")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   await page.screenshot({ path: testInfo.outputPath("overlay-settings-narrow.png"), fullPage: true });
+  expect(errors).toEqual([]);
+});
+
+test("retired OBS source attempts show one dismissible Settings banner until a newer attempt", async ({ page }) => {
+  await mockManagementShell(page);
+  await mockSettingsSummary(page);
+  await page.route("**/config/server", route => route.fulfill({ json: { host: "127.0.0.1", port: 39187 } }));
+  const base: SurfaceSettingsView = { surfaces: [
+    { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, displayLabel: null, autoFollowDisplayName: false, opacity: 1, layers: [{ moduleId: "alerts", visible: false }] }
+  ], desktop: { available: true, displays: [], state: "disabled", message: null }, desktopBindingState: "not-needed" };
+  let attempts: { kind: string; lastSeenAt: string; count: number }[] = [];
+  await page.route("**/overlay-surfaces", route => route.fulfill({ json: { ...base, retiredOutputAttempts: attempts } }));
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  const banner = page.getByRole("region", { name: "An old test or unified OBS source is still connecting." });
+
+  const surfacesLoaded = () => page.waitForResponse(response => new URL(response.url()).pathname === "/overlay-surfaces");
+  await Promise.all([surfacesLoaded(), page.goto("/manage/settings")]);
+  await expect(page.locator("#overlay-surfaces")).toBeAttached();
+  await expect(banner).toHaveCount(0);
+
+  attempts = [{ kind: "unified", lastSeenAt: "2026-10-11T12:00:00.000Z", count: 3 }];
+  await page.reload();
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText("Replace it with the new per-module source URL and size shown below.");
+  await expect(banner.getByRole("link", { name: "Timers sources" })).toHaveAttribute("href", "/manage/modules/timers#browser-sources");
+  await banner.getByRole("button", { name: "Dismiss" }).click();
+  await expect(banner).toHaveCount(0);
+  await Promise.all([surfacesLoaded(), page.reload()]);
+  await expect(page.locator("#overlay-surfaces form")).toBeAttached();
+  await expect(banner).toHaveCount(0);
+
+  attempts = [{ kind: "unified", lastSeenAt: "2026-10-11T12:10:00.000Z", count: 4 }];
+  await page.reload();
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText("4 attempts");
   expect(errors).toEqual([]);
 });
 

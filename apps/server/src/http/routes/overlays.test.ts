@@ -1,3 +1,5 @@
+import { HistoricalOverlayKeyFixture } from "../test-support/historical-overlay-key-fixture.js";
+import { sceneOutputCanvas } from "@stream-jams/core";
 import type {
   ModuleOutputRequest,
   OverlayComposition,
@@ -8,39 +10,43 @@ import type {
 } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
 import { createOverlayRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
-import { LocalOverlayAccessService } from "../../modules/overlays/overlay-access-service.js";
 import { OverlayGateway } from "../../websocket/overlay-gateway.js";
+import { RetiredOutputAttemptTracker } from "../../modules/overlays/retired-output-attempts.js";
 
 describe("overlay routes", () => {
-  it("requires exact Music output purpose and profile keys for both browser routes", async () => {
+  it("requires exact ordinary Music profile keys and denies historical retired routes", async () => {
     const access = createAccessService(["ovl_musicLive", "ovl_musicTest", "ovl_unified"]);
     const live = await access.createKey({ overlayId: "default", moduleId: "music", purpose: "live", scope: "module", targetProfileId: "vertical" });
-    const test = await access.createKey({ overlayId: "default", moduleId: "music", purpose: "test", scope: "module", targetProfileId: "landscape" });
-    const unified = await access.createKey({ overlayId: "default", moduleId: null, purpose: "live", scope: "unified" });
+    const test = await access.seedHistoricalKey({ overlayId: "default", moduleId: "music", purpose: "test", scope: "module", targetProfileId: "landscape" });
+    const unified = await access.seedHistoricalKey({ overlayId: "default", moduleId: null, purpose: "live", scope: "unified" });
     const compositions = new RecordingOverlayCompositionService();
     const app = createServerApp({ metadata: { appName: "stream-jams", version: "1.2.3" }, overlayAccessService: access,
       overlayCompositionService: compositions, overlayModuleRegistry: createRegistry(["music"]), webShellRenderer: createTestWebShellRenderer() });
     try {
       expect((await app.inject({ url: `/overlay/modules/music/live/${live.rawKey}/composition?profile=vertical` })).statusCode).toBe(200);
-      expect((await app.inject({ url: `/overlay/modules/music/test/${test.rawKey}/composition?profile=landscape` })).statusCode).toBe(200);
-      expect((await app.inject({ url: `/overlay/unified/live/${unified.rawKey}/composition` })).statusCode).toBe(200);
+      expect((await app.inject({ url: `/overlay/modules/music/test/${test.rawKey}/composition?profile=landscape` })).statusCode).toBe(401);
+      expect((await app.inject({ url: `/overlay/unified/live/${unified.rawKey}/composition` })).statusCode).toBe(401);
       for (const url of [`/overlay/modules/music/test/${live.rawKey}/composition?profile=vertical`,
         `/overlay/modules/music/live/${test.rawKey}/composition?profile=landscape`,
         `/overlay/modules/music/live/${live.rawKey}/composition?profile=landscape`,
         `/overlay/unified/test/${unified.rawKey}/composition`]) {
         expect((await app.inject({ url })).statusCode).toBe(401);
       }
+      // Public URL input cannot select a trusted desktop recipient or inject a saved capture.
+      for (const selector of ["recipientKind=desktop", "savedConfig=forged"]) {
+        expect((await app.inject({ url: `/overlay/modules/music/live/${live.rawKey}/composition?profile=vertical&${selector}` })).statusCode).toBe(401);
+      }
       await access.revokeKey(live.record.id);
       expect((await app.inject({ url: `/overlay/modules/music/live/${live.rawKey}/composition?profile=vertical` })).statusCode).toBe(401);
-      expect(compositions.moduleRequests.map(request => [request.purpose, request.targetProfileId])).toEqual([["live", "vertical"], ["test", "landscape"]]);
+      expect(compositions.moduleRequests.map(request => [request.purpose, request.targetProfileId])).toEqual([["live", "vertical"]]);
     } finally { await app.close(); }
   });
   it("authorizes Videos browser sources through the existing module route keys only", async () => {
-    const access = createAccessService(["ovl_videosLive", "ovl_videosTest", "ovl_alertsLive", "ovl_unified"]);
+    const access = createAccessService(["ovl_videosLive", "ovl_alertsLive", "ovl_unified"]);
     const live = await access.createKey({ overlayId: "default", moduleId: "videos", purpose: "live", scope: "module" });
-    const test = await access.createKey({ overlayId: "default", moduleId: "videos", purpose: "test", scope: "module" });
-    const alerts = await access.createKey({ overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module" });
-    const unified = await access.createKey({ overlayId: "default", moduleId: null, purpose: "live", scope: "unified" });
+    await expect(access.createKey({ overlayId: "default", moduleId: "videos", purpose: "test", scope: "module" })).rejects.toThrow(/retired/u);
+    const alerts = await access.seedHistoricalKey({ overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module" });
+    const unified = await access.seedHistoricalKey({ overlayId: "default", moduleId: null, purpose: "live", scope: "unified" });
     const compositions = new RecordingOverlayCompositionService();
     const app = createServerApp({ metadata: { appName: "stream-jams", version: "1.2.3" }, overlayAccessService: access,
       overlayCompositionService: compositions, overlayModuleRegistry: createRegistry(["alerts", "videos"]), webShellRenderer: createTestWebShellRenderer() });
@@ -49,7 +55,6 @@ describe("overlay routes", () => {
       expect(shell.statusCode).toBe(200);
       expect(shell.body).not.toContain(live.rawKey);
       expect((await app.inject({ url: `/overlay/modules/videos/live/${live.rawKey}/composition` })).statusCode).toBe(200);
-      expect((await app.inject({ url: `/overlay/modules/videos/test/${test.rawKey}/composition` })).statusCode).toBe(200);
       for (const url of [
         "/overlay/modules/videos/live",
         `/overlay/modules/videos/test/${live.rawKey}/composition`,
@@ -63,13 +68,13 @@ describe("overlay routes", () => {
       await access.revokeKey(live.record.id);
       expect((await app.inject({ url: `/overlay/modules/videos/live/${live.rawKey}/composition` })).statusCode).toBe(401);
 
-      expect((await app.inject({ url: `/overlay/unified/live/${unified.rawKey}/composition` })).statusCode).toBe(200);
-      expect(compositions.unifiedRequests.map(request => request.enabledModuleIds)).toEqual([["alerts", "videos"]]);
+      expect((await app.inject({ url: `/overlay/unified/live/${unified.rawKey}/composition` })).statusCode).toBe(401);
+      expect(compositions.unifiedRequests).toEqual([]);
     } finally { await app.close(); }
   });
   it("serves a module overlay shell and composition through a module route key", async () => {
     const overlayAccessService = createAccessService(["ovl_moduleLive"]);
-    const created = await overlayAccessService.createKey({
+    const created = await overlayAccessService.seedHistoricalKey({
       overlayId: "default",
       moduleId: "alerts",
       purpose: "live",
@@ -103,7 +108,7 @@ describe("overlay routes", () => {
     expect(shell.body).not.toContain("/src/main.tsx");
     expect(shell.body).not.toContain(created.rawKey);
     expect(composition.statusCode).toBe(200);
-    expect(composition.json()).toEqual({
+    expect(composition.json()).toEqual({ runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
       overlayId: "default",
       purpose: "live",
       scope: "module",
@@ -163,9 +168,9 @@ describe("overlay routes", () => {
     expect(landscape.statusCode).toBe(401);
   });
 
-  it("serves a unified test composition through a unified route key", async () => {
+  it("rejects historical unified composition and keeps navigation blank and transparent", async () => {
     const overlayAccessService = createAccessService(["ovl_unifiedTest"]);
-    const created = await overlayAccessService.createKey({
+    const created = await overlayAccessService.seedHistoricalKey({
       overlayId: "default",
       moduleId: null,
       purpose: "test",
@@ -188,38 +193,57 @@ describe("overlay routes", () => {
       url: `/overlay/unified/test/${created.rawKey}/composition`
     });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
-      overlayId: "default",
-      purpose: "test",
-      scope: "unified",
-      modules: [
-        {
-          moduleId: "alerts",
-          enabled: true,
-          instructions: []
-        },
-        {
-          moduleId: "music",
-          enabled: true,
-          instructions: []
-        }
-      ]
-    });
-    expect(compositionService.unifiedRequests).toEqual([
-      {
-        overlayId: "default",
-        purpose: "test",
-        enabledModuleIds: ["alerts", "music"]
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({ error: { code: "OVERLAY_ROUTE_KEY_UNAUTHORIZED" } });
+    expect(compositionService.unifiedRequests).toEqual([]);
+    for (const url of ["/overlay/unified/live", `/overlay/unified/test/${created.rawKey}`]) {
+      const shell = await app.inject({ url });
+      expect(shell.statusCode).toBe(401);
+      expect(shell.headers["content-type"]).toContain("text/html");
+      expect(shell.body).toContain("background:transparent");
+      expect(shell.body).not.toMatch(/script|root|management|ovl_/u);
+    }
+  });
+
+  it("counts retired test/unified URL use by kind only while responses stay transparent and fail closed", async () => {
+    const access = createAccessService(["ovl_liveKey", "ovl_retiredTest", "ovl_retiredUnified"]);
+    const live = await access.createKey({ overlayId: "default", moduleId: "music", purpose: "live", scope: "module", targetProfileId: "vertical" });
+    const test = await access.seedHistoricalKey({ overlayId: "default", moduleId: "music", purpose: "test", scope: "module", targetProfileId: "landscape" });
+    const unified = await access.seedHistoricalKey({ overlayId: "default", moduleId: null, purpose: "live", scope: "unified" });
+    const tracker = new RetiredOutputAttemptTracker(() => new Date("2026-10-11T12:00:00.000Z"));
+    const overlayGateway = new OverlayGateway({ overlayAccessService: access, generateClientId: () => "client-retired", clock: () => new Date("2026-10-11T12:00:00.000Z") });
+    const app = createServerApp({ metadata: { appName: "stream-jams", version: "1.2.3" }, overlayAccessService: access, overlayGateway,
+      overlayCompositionService: new RecordingOverlayCompositionService(), overlayModuleRegistry: createRegistry(["music"]), webShellRenderer: createTestWebShellRenderer(),
+      recordRetiredOutputAttempt: kind => tracker.record(kind) });
+    try {
+      expect((await app.inject({ url: `/overlay/modules/music/live/${live.rawKey}/composition?profile=vertical` })).statusCode).toBe(200);
+      expect((await app.inject({ url: "/overlay/modules/music/live" })).statusCode).toBe(401);
+      expect(tracker.list()).toEqual([]);
+      const shell = await app.inject({ url: `/overlay/modules/music/test/${test.rawKey}?profile=landscape` });
+      expect(shell.statusCode).toBe(401);
+      expect(shell.body).toContain("background:transparent");
+      expect((await app.inject({ url: `/overlay/modules/music/test/${test.rawKey}/composition?profile=landscape` })).statusCode).toBe(401);
+      expect((await app.inject({ url: "/overlay/modules/music/test" })).statusCode).toBe(401);
+      for (const url of [`/overlay/unified/live/${unified.rawKey}`, "/overlay/unified/test", `/overlay/unified/live/${unified.rawKey}/composition`]) {
+        expect((await app.inject({ url })).statusCode).toBe(401);
       }
-    ]);
-    expect(JSON.stringify(response.json())).not.toContain("management");
-    expect(JSON.stringify(response.json())).not.toContain("rawProviderPayload");
+      await app.ready();
+      const closed = new Promise<number>(resolve => {
+        void app.injectWS(`/overlay/ws/unified/live/${unified.rawKey}`, {}, { onInit(webSocket) { webSocket.once("close", code => resolve(code)); } });
+      });
+      expect(await closed).not.toBe(1000);
+      expect(overlayGateway.clients).toEqual([]);
+      expect(tracker.list()).toEqual([
+        { kind: "module-test", lastSeenAt: "2026-10-11T12:00:00.000Z", count: 3 },
+        { kind: "unified", lastSeenAt: "2026-10-11T12:00:00.000Z", count: 4 }
+      ]);
+      expect(JSON.stringify(tracker.list())).not.toMatch(/ovl_|music|overlay\//u);
+    } finally { await app.close(); }
   });
 
   it("registers authenticated WebSocket overlay clients", async () => {
     const overlayAccessService = createAccessService(["ovl_moduleLive"]);
-    const created = await overlayAccessService.createKey({
+    const created = await overlayAccessService.seedHistoricalKey({
       overlayId: "default",
       moduleId: "alerts",
       purpose: "live",
@@ -285,13 +309,13 @@ describe("overlay routes", () => {
 
   it("rejects missing, wrong-purpose, and wrong-scope route keys", async () => {
     const overlayAccessService = createAccessService(["ovl_moduleLive", "ovl_unifiedLive"]);
-    const moduleKey = await overlayAccessService.createKey({
+    const moduleKey = await overlayAccessService.seedHistoricalKey({
       overlayId: "default",
       moduleId: "alerts",
       purpose: "live",
       scope: "module"
     });
-    const unifiedKey = await overlayAccessService.createKey({
+    const unifiedKey = await overlayAccessService.seedHistoricalKey({
       overlayId: "default",
       moduleId: null,
       purpose: "live",
@@ -322,11 +346,9 @@ describe("overlay routes", () => {
     });
 
     expect(missing.statusCode).toBe(401);
-    expect(missing.json()).toMatchObject({
-      error: {
-        code: "OVERLAY_ROUTE_KEY_REQUIRED"
-      }
-    });
+    expect(missing.headers["content-type"]).toContain("text/html");
+    expect(missing.body).toContain("background:transparent");
+    expect(missing.body).not.toContain("script");
     expect(wrongPurpose.statusCode).toBe(401);
     expect(wrongPurpose.json()).toMatchObject({
       error: {
@@ -342,10 +364,10 @@ describe("overlay routes", () => {
   });
 });
 
-function createAccessService(rawKeys: readonly string[]): LocalOverlayAccessService {
+function createAccessService(rawKeys: readonly string[]): HistoricalOverlayKeyFixture {
   let rawKeyIndex = 0;
   let id = 0;
-  return new LocalOverlayAccessService({
+  return new HistoricalOverlayKeyFixture({
     clock: () => new Date("2026-05-30T12:00:00.000Z"),
     generateId: () => {
       id += 1;
@@ -370,7 +392,7 @@ function createRegistry(moduleIds: readonly string[]): Pick<OverlayModuleRegistr
         (id) =>
           ({
             id,
-            renderer: { entryPoint: `overlay/modules/${id}`, supportedOutputs: ["module", "unified"] }
+            renderer: { entryPoint: `overlay/modules/${id}`, supportsDesktopComposition: true, supportedOutputs: ["module", "unified"] }
           }) as unknown as OverlayModuleDefinition
       );
     }
@@ -394,7 +416,7 @@ class RecordingOverlayCompositionService implements OverlayCompositionService {
 
   async resolveModuleOutput(request: ModuleOutputRequest): Promise<OverlayComposition> {
     this.moduleRequests.push(request);
-    return {
+    return { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
       overlayId: request.overlayId,
       purpose: request.purpose,
       scope: "module",
@@ -411,7 +433,7 @@ class RecordingOverlayCompositionService implements OverlayCompositionService {
 
   async resolveUnifiedOutput(request: UnifiedOutputRequest): Promise<OverlayComposition> {
     this.unifiedRequests.push(request);
-    return {
+    return { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
       overlayId: request.overlayId,
       purpose: request.purpose,
       scope: "unified",

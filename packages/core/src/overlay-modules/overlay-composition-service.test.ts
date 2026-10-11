@@ -15,6 +15,9 @@ import {
 } from "./overlay-composition-service.js";
 import type { OverlayModuleSnapshot } from "./types.js";
 import type { SurfaceConfiguration } from "./surface-configuration.js";
+import { createDefaultVideosModuleConfig } from "../videos/schemas.js";
+import { browserVideosLayout } from "../videos/layout.js";
+import type { VideosModuleConfig } from "../videos/types.js";
 
 const now = new Date("2026-05-30T04:00:00.000Z");
 
@@ -101,6 +104,7 @@ describe("overlay composition service", () => {
     surfaces[0]!.layers.reverse();
     expect(await service.resolveUnifiedOutput(request)).toEqual(composition);
     disabled.add("second");
+    service.committedModuleConfig({ moduleId: "second", enabled: false, config: {}, updatedAt: now.toISOString() });
     expect((await service.resolveUnifiedOutput(request)).modules.map(module => module.moduleId)).toEqual(["alerts"]);
   });
 
@@ -115,7 +119,7 @@ describe("overlay composition service", () => {
 
     const composition = await compositionService.resolveModuleOutput(request);
 
-    expect(composition).toEqual({
+    expect(composition).toMatchObject({
       overlayId: "overlay-main",
       purpose: "test",
       scope: "module",
@@ -128,7 +132,7 @@ describe("overlay composition service", () => {
       ]
     });
     expect(overlayCompositionSchema.safeParse(composition).success).toBe(true);
-    expect(runtime.requests).toEqual([{ ...request, scope: "module" }]);
+    expect(runtime.requests).toMatchObject([{ ...request, scope: "module", recipientKind: "browser" }]);
   });
 
   it("carries the target profile through module composition and runtime requests", async () => {
@@ -145,7 +149,7 @@ describe("overlay composition service", () => {
     expect(composition).toMatchObject({
       targetProfileId: "vertical"
     });
-    expect(runtime.requests).toEqual([
+    expect(runtime.requests).toMatchObject([
       {
         moduleId: "alerts",
         overlayId: "overlay-main",
@@ -167,7 +171,7 @@ describe("overlay composition service", () => {
       purpose: "live"
     });
 
-    expect(composition).toEqual({
+    expect(composition).toMatchObject({
       overlayId: "overlay-main",
       purpose: "live",
       scope: "module",
@@ -187,7 +191,7 @@ describe("overlay composition service", () => {
 
     const composition = await compositionService.resolveUnifiedOutput(request);
 
-    expect(composition).toEqual({
+    expect(composition).toMatchObject({
       overlayId: "overlay-main",
       purpose: "live",
       scope: "unified",
@@ -271,4 +275,92 @@ describe("overlay composition service", () => {
       })
     ).rejects.toBeInstanceOf(InvalidOverlayModuleSnapshotError);
   });
+});
+
+
+describe("authoritative output configuration", () => {
+  it("keeps captured Video projection and dimensions together after a late response, disabled output and reconnect", async () => {
+    let finish!: () => void; let entered!: () => void; let first = true;
+    const blocked = new Promise<void>(resolve => { finish = resolve; });
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const { compositionService, configService } = createCompositionService({ getModuleSnapshot: async request => {
+      if (first) { first = false; entered(); await blocked; }
+      const config = request.savedConfig!.config as VideosModuleConfig;
+      return { moduleId: request.moduleId, enabled: true, instructions: [], presentation: { kind: "videos", videos: {
+        status: "active", itemId: "stable-video", title: null, requester: null, layout: browserVideosLayout(config.layout),
+        delivery: { mode: "player", source: { provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 0 }, clock: { state: "paused", positionMs: 7000, atEpochMs: 1 }, obsAudio: false }
+      } } };
+    } });
+    await configService.setModuleEnabled("videos", true);
+    const request = { moduleId: "videos", overlayId: "default", purpose: "live" as const };
+    const old = compositionService.resolveModuleOutput(request); await started;
+    const config = { ...createDefaultVideosModuleConfig(), layout: { schemaVersion: 2 as const, content: { width: 640, height: 460 }, desktopPlacement: { x: 1200, y: 600, scale: 0.5 } } };
+    await configService.saveModuleConfig({ moduleId: "videos", enabled: true, config });
+    const current = await compositionService.resolveModuleOutput(request); finish();
+    expect(await old).toEqual(current);
+    expect(current.canvas).toMatchObject({ kind: "content", width: 640, height: 460 });
+    expect(current.modules[0]?.presentation).toMatchObject({ kind: "videos", videos: { itemId: "stable-video", layout: { ...config.layout, desktopPlacement: { x: 0, y: 0, scale: 1 } }, delivery: { clock: { state: "paused", positionMs: 7000, atEpochMs: 1 } } } });
+    await configService.setModuleEnabled("videos", false);
+    const disabled = await compositionService.resolveModuleOutput(request); expect(disabled.modules).toEqual([]);
+    compositionService.resetConfigurationCache();
+    const reconnected = await compositionService.resolveModuleOutput(request);
+    expect(reconnected.canvas).toMatchObject({ width: 640, height: 460 }); expect(reconnected.canvas.configRevision).toBeGreaterThan(disabled.canvas.configRevision);
+    expect(reconnected.runtimeId).toBe(current.runtimeId);
+  });
+  it("empty_disabled_snapshot_has_canvas", async () => {
+    const { compositionService, configService } = createCompositionService({ getModuleSnapshot: async request => ({ moduleId: request.moduleId, enabled: true, instructions: [] }) });
+    await configService.setModuleEnabled("alerts", false);
+    const result = await compositionService.resolveModuleOutput({ moduleId: "alerts", overlayId: "default", purpose: "live", targetProfileId: "vertical" });
+    expect(result.modules).toEqual([]);
+    expect(result.canvas).toMatchObject({ schemaVersion: 1, kind: "scene", width: 1080, height: 1920, configRevision: 1 });
+    expect(result.runtimeId).toEqual(expect.any(String));
+  });
+
+  it("late_old_config_cannot_replace_new_geometry", async () => {
+    let finish!: () => void;
+    let first = true;
+    const blocked = new Promise<void>(resolve => { finish = resolve; });
+    const { compositionService, configService } = createCompositionService({ getModuleSnapshot: async request => {
+      if (first) { first = false; await blocked; }
+      const config = request.savedConfig!.config as { canvas: { width: number; height: number } };
+      return { moduleId: request.moduleId, enabled: true, instructions: [{ ...createInstruction(request),
+        text: { text: "Stable occurrence", layout: { x: 0, y: 0, width: config.canvas.width, height: config.canvas.height, zIndex: 0 } } }] };
+    } });
+    const request = { moduleId: "alerts", overlayId: "default", purpose: "live" as const };
+    const old = compositionService.resolveModuleOutput(request);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await configService.saveModuleConfig({ moduleId: "alerts", enabled: true, config: { canvas: { width: 1280, height: 720 } } });
+    const current = await compositionService.resolveModuleOutput(request);
+    finish();
+    const completed = await old;
+    expect(completed.canvas).toEqual(current.canvas);
+    expect(completed.modules[0]?.instructions[0]?.text?.layout).toMatchObject({ width: current.canvas.width, height: current.canvas.height });
+    expect(completed.modules[0]?.instructions[0]?.id).toBe(current.modules[0]?.instructions[0]?.id);
+    expect(current.canvas).toMatchObject({ width: 1280, height: 720, configRevision: 1 });
+  });
+
+  it("reload invalidates captures monotonically and failed saves preserve geometry", async () => {
+    const registry = createDefaultOverlayModuleRegistry();
+    const repository = new InMemoryOverlayModuleConfigRepository();
+    const configService = new DefaultOverlayModuleConfigService({ registry, repository });
+    const compositionService = new DefaultOverlayCompositionService({ configService, runtime: { getModuleSnapshot: async request => ({ moduleId: request.moduleId, enabled: true, instructions: [] }) } });
+    const request = { moduleId: "alerts", overlayId: "default", purpose: "live" as const };
+    const before = await compositionService.resolveModuleOutput(request);
+    await expect(configService.saveModuleConfig({ moduleId: "alerts", enabled: true, config: { canvas: { width: 0, height: 1 } } })).rejects.toThrow();
+    expect((await compositionService.resolveModuleOutput(request)).canvas).toEqual(before.canvas);
+    await repository.saveModuleConfig({ moduleId: "alerts", enabled: true, config: { canvas: { width: 800, height: 600 } }, updatedAt: now.toISOString() });
+    compositionService.resetConfigurationCache();
+    const after = await compositionService.resolveModuleOutput(request);
+    expect(after.runtimeId).toBe(before.runtimeId);
+    expect(after.canvas).toMatchObject({ width: 800, height: 600, configRevision: 1 });
+  });
+});
+
+it("bounds capture retries under repeated committed replacements", async () => {
+  let reads = 0;
+  const config = { moduleId: "alerts", enabled: true, config: { canvas: { width: 800, height: 600 } }, updatedAt: now.toISOString() };
+  const service = new DefaultOverlayCompositionService({ configService: { getModuleConfig: async () => { reads++; service.resetConfigurationCache(); return config; } },
+    runtime: { getModuleSnapshot: async () => ({ moduleId: "alerts", enabled: true, instructions: [] }) } });
+  await expect(service.resolveUnifiedOutput({ overlayId: "default", purpose: "live", enabledModuleIds: ["alerts"] })).rejects.toThrow("changed repeatedly");
+  expect(reads).toBe(4);
 });

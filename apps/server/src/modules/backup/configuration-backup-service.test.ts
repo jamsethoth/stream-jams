@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import {
   appConfigSchema,
+  timersOverlayModuleDefinition,
+  upgradeTimersConfig,
+  createDefaultVideosModuleConfig,
   configurationBackupLimits,
   type AlertEditorDocument,
   type AlertRule,
@@ -45,6 +48,112 @@ const asset: AssetRecord = {
 };
 
 describe("ConfigurationBackupService", () => {
+  it("discloses and removes surface-only retired metadata, omits recognized legacy profileless outputs, and blocks malformed ordinary metadata", async () => {
+    const source = createRealService(); const generated: unknown[] = [];
+    const target = createRealService({ regenerateOutput: async (output, origin) => { generated.push(output); return { label: "ordinary", url: `${origin}/ordinary` }; } });
+    try {
+      const archive = await source.service.exportArchive(); archive.manifest.schemaVersion = 45;
+      archive.configuration.tables.overlay_surfaces = [{ id: "unified-browser:default", kind: "unified-browser", configuration_json: JSON.stringify({ id: "unified-browser:default", kind: "unified-browser", overlayId: "default", layers: [] }), updated_at: "2026-10-11T00:00:00Z" }];
+      archive.configuration.overlayOutputs = [];
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      const surfaceOnly = await target.service.preflight(archive);
+      expect(surfaceOnly.state).toBe("valid");
+      expect(surfaceOnly.warnings.some(warning => /retired/iu.test(warning.summary))).toBe(true);
+      archive.configuration.overlayOutputs = [
+        { overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId: null },
+        { overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId: "vertical" },
+        { overlayId: "default", scope: "module", moduleId: "music", purpose: "test", targetProfileId: "landscape" },
+        { overlayId: "default", scope: "unified", moduleId: null, purpose: "live", targetProfileId: null }
+      ];
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      for (let repeat = 0; repeat < 2; repeat++) {
+        const preflight = await target.service.preflight(archive);
+        expect(preflight.state).toBe("valid");
+        expect(preflight.warnings.some(warning => /profileless/iu.test(warning.summary + warning.cause))).toBe(true);
+        await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
+        expect(target.database.connection.prepare("SELECT * FROM overlay_surfaces WHERE kind='unified-browser'").all()).toEqual([]);
+      }
+      expect(generated).toEqual([archive.configuration.overlayOutputs[1], archive.configuration.overlayOutputs[1]]);
+      archive.manifest.schemaVersion = 46;
+      archive.configuration.overlayOutputs = [{ overlayId: "default", scope: "module", moduleId: "videos", purpose: "live", targetProfileId: "vertical" }];
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      expect((await target.service.preflight(archive)).state).toBe("invalid");
+    } finally { source.database.close(); target.database.close(); }
+  });
+  it("normalizes legacy Videos before typed preflight and repeated restore, rejects invalid geometry without mutation", async () => {
+    const source = createRealService(); const target = createRealService();
+    try {
+      source.database.connection.prepare("INSERT INTO overlay_module_config VALUES ('videos', 1, ?, '2026-10-11T00:00:00.000Z')").run(JSON.stringify(createDefaultVideosModuleConfig()));
+      const archive = await source.service.exportArchive(); archive.manifest.schemaVersion = 43;
+      const row = archive.configuration.tables.overlay_module_config!.find(row => row.module_id === "videos")!;
+      row.config_json = JSON.stringify({ ...createDefaultVideosModuleConfig(), gapSeconds: 9, rewardMappings: [{ rewardId: "old-test-reward", purpose: "test" }], layout: { x: 1440, y: 40, width: 400, height: 300 } });
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      const before = target.snapshotRepository.captureRestorePoint();
+      expect((await target.service.preflight(archive)).state).toBe("valid"); expect(target.snapshotRepository.captureRestorePoint()).toEqual(before);
+      expect((await target.service.preflight(archive)).warnings).toContainEqual(expect.objectContaining({ summary: "Videos reward mappings will use the ordinary queue" }));
+      const expected = { ...createDefaultVideosModuleConfig(), gapSeconds: 9, rewardMappings: [{ rewardId: "old-test-reward", reviewRequired: true }], layout: { schemaVersion: 2, content: { width: 400, height: 300 }, desktopPlacement: { x: 1440, y: 40, scale: 1 } } };
+      const saved = () => JSON.parse(String(target.database.connection.prepare("SELECT config_json FROM overlay_module_config WHERE module_id='videos'").get()?.config_json));
+      for (let repetition = 0; repetition < 2; repetition++) {
+        const preflight = await target.service.preflight(archive);
+        await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true }); expect(saved()).toEqual(expected);
+      }
+      const current = await target.service.exportArchive();
+      expect(current.manifest.schemaVersion).toBe(46); expect(JSON.stringify(current)).not.toMatch(/video_bus_admissions|video_requests|video_queue_state/u);
+      await target.service.restore({ archive: current, archiveId: (await target.service.preflight(current)).archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true }); expect(saved()).toEqual(expected);
+      const invalid = structuredClone(archive);
+      invalid.configuration.tables.overlay_module_config![0]!.config_json = JSON.stringify({ ...expected, layout: { ...expected.layout, desktopPlacement: { x: 1800, y: 0, scale: 1 } } });
+      const unchanged = target.snapshotRepository.captureRestorePoint();
+      expect((await target.service.preflight(invalid)).blockers.some(error => error.summary.includes("checksum"))).toBe(true);
+      invalid.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(invalid.configuration);
+      const preflight = await target.service.preflight(invalid);
+      expect(preflight.state).toBe("invalid"); expect(preflight.blockers.some(error => error.cause?.includes("Videos"))).toBe(true);
+      await expect(target.service.restore({ archive: invalid, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true })).rejects.toThrow();
+      expect(target.snapshotRepository.captureRestorePoint()).toEqual(unchanged);
+    } finally { source.database.close(); target.database.close(); }
+  });
+  it.each(["original", "pinned12", "narrow-horizontal"])("preflights and round-trips legacy Timer appearance (%s), blocks invalid geometry and verifies original checksums", async kind => {
+    const source = createRealService(); const target = createRealService();
+    try {
+      const legacy = { profiles: { landscape: kind === "original"
+        ? { layout: { x: 1320, y: 780, width: 600, height: 300, zIndex: 2 }, orientation: "horizontal", maxVisible: 3 }
+        : kind === "pinned12"
+        ? { layout: { x: 64, y: 720, width: 640, height: 280, zIndex: 0 }, orientation: "vertical", maxVisible: 12 }
+        : { layout: { x: 1319, y: 779, width: 601, height: 301, zIndex: 2 }, orientation: "horizontal", maxVisible: 12 },
+        vertical: { layout: { x: 48, y: 1320, width: 984, height: 480, zIndex: 0 }, orientation: "vertical", maxVisible: kind === "original" ? 4 : 12 } } };
+      source.database.connection.prepare("INSERT INTO overlay_module_config VALUES ('timers', 1, ?, '2026-10-11T00:00:00.000Z')").run(JSON.stringify(timersOverlayModuleDefinition.defaultConfig));
+      const archive = await source.service.exportArchive(); archive.manifest.schemaVersion = currentSchemaVersion - 1;
+      const row = archive.configuration.tables.overlay_module_config!.find(row => row.module_id === "timers")!;
+      row.config_json = JSON.stringify(legacy);
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      const expected = upgradeTimersConfig(legacy);
+      const before = target.snapshotRepository.captureRestorePoint();
+      expect((await target.service.preflight(archive)).state).toBe("valid");
+      expect(target.snapshotRepository.captureRestorePoint()).toEqual(before);
+      await target.service.restore({ archive, archiveId: (await target.service.preflight(archive)).archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
+      const config = () => JSON.parse(String(target.database.connection.prepare("SELECT config_json FROM overlay_module_config WHERE module_id='timers'").get()?.config_json));
+      expect(config()).toEqual(expected);
+      const exported = await target.service.exportArchive();
+      expect(JSON.stringify(exported)).not.toContain("timer_run_recovery");
+      await target.service.restore({ archive: exported, archiveId: (await target.service.preflight(exported)).archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true }); expect(config()).toEqual(expected);
+      await target.service.restore({ archive, archiveId: (await target.service.preflight(archive)).archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true }); expect(config()).toEqual(expected);
+      const invalid = structuredClone(archive); invalid.configuration.tables.overlay_module_config![0]!.config_json = JSON.stringify({ schemaVersion: 2, profiles: {} });
+      const unchanged = target.snapshotRepository.captureRestorePoint();
+      expect((await target.service.preflight(invalid)).blockers.some(error => error.summary.includes("checksum"))).toBe(true);
+      invalid.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(invalid.configuration);
+      expect((await target.service.preflight(invalid)).state).toBe("invalid");
+      expect(target.snapshotRepository.captureRestorePoint()).toEqual(unchanged);
+      if (kind !== "original") {
+        const customized = structuredClone(exported);
+        const row = customized.configuration.tables.overlay_module_config!.find(row => row.module_id === "timers")!;
+        row.config_json = JSON.stringify({ ...expected, profiles: { ...expected.profiles, landscape: { ...expected.profiles.landscape, appearance: { ...expected.profiles.landscape.appearance, borderColor: "#123456" } } } });
+        customized.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(customized.configuration);
+        const preflight = await target.service.preflight(customized);
+        expect(preflight.state).toBe("invalid");
+        await expect(target.service.restore({ archive: customized, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true })).rejects.toThrow();
+        expect(target.snapshotRepository.captureRestorePoint()).toEqual(unchanged);
+      }
+    } finally { source.database.close(); target.database.close(); }
+  });
   it("identifies local device bindings as excluded from portable backups", async () => {
     const { service } = createService();
 
@@ -656,6 +765,45 @@ describe("ConfigurationBackupService", () => {
     expect(steps).toEqual(["replace", "config", "reload", "durations"]);
   });
 
+  it.each([
+    ["replacement throws", { replace: () => { throw new Error("replace failed"); } }],
+    ["config update throws", { updateConfig: async (): Promise<AppConfig> => { throw new Error("config failed"); } }],
+    ["runtime reload throws every time", { reloadRuntimeConfiguration: () => { throw new Error("reload failed"); } }]
+  ] as const)("re-derives overlay access after retiring recipients when %s", async (_name, failure) => {
+    let access: "open" | "retired" = "open";
+    const restores: string[] = [];
+    const { service } = createService({
+      ...failure,
+      retireOverlayRecipients: () => { access = "retired"; },
+      restoreOverlayRecipients: () => { access = "open"; restores.push("restored"); }
+    });
+    const archive = await service.exportArchive();
+    const preflight = await service.preflight(archive);
+    await expect(service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true }))
+      .rejects.toMatchObject({ code: "RESTORE_FAILED" });
+    expect(access).toBe("open");
+    expect(restores).toEqual(["restored"]);
+  });
+
+  it("reports an overlay access rollback failure instead of hiding it, and re-derives access after success", async () => {
+    const failing = createService({
+      replace: () => { throw new Error("replace failed"); },
+      restoreOverlayRecipients: () => { throw new Error("policy unavailable"); }
+    });
+    const archive = await failing.service.exportArchive();
+    const preflight = await failing.service.preflight(archive);
+    await expect(failing.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true }))
+      .rejects.toMatchObject({ code: "RESTORE_FAILED", actionableError: { cause: expect.stringMatching(/Overlay access rollback failed: policy unavailable/u) } });
+
+    const steps: string[] = [];
+    const succeeding = createService({ retireOverlayRecipients: () => steps.push("retire"), restoreOverlayRecipients: () => steps.push("restore") });
+    const okArchive = await succeeding.service.exportArchive();
+    const okPreflight = await succeeding.service.preflight(okArchive);
+    await expect(succeeding.service.restore({ archive: okArchive, archiveId: okPreflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true }))
+      .resolves.toMatchObject({ state: "completed" });
+    expect(steps).toEqual(["retire", "restore"]);
+  });
+
   it("restores the previous app config when runtime reload fails after the restored config is written", async () => {
     let persistedConfig = appConfig;
     const updateConfig = vi.fn(async (patch: AppConfigUpdate): Promise<AppConfig> => {
@@ -942,6 +1090,8 @@ function createService(overrides: {
   readonly reloadRuntimeConfiguration?: () => void;
   readonly replaceAssetDurations?: (records: readonly AssetRecord[]) => void;
   readonly validate?: ConfigurationSnapshotRepository["validate"];
+  readonly retireOverlayRecipients?: () => void;
+  readonly restoreOverlayRecipients?: () => void;
 } = {}) {
   const replace = overrides.replace ?? replacementMock();
   const options: ConfigurationBackupServiceOptions = {
@@ -989,12 +1139,15 @@ function createService(overrides: {
       findConnectedAccountId: overrides.findConnectedTwitchAccountId ?? (async () => null),
       deleteTokenSecrets: overrides.deleteTokenSecrets ?? (async () => undefined)
     },
-    ...(overrides.reloadRuntimeConfiguration === undefined ? {} : { reloadRuntimeConfiguration: overrides.reloadRuntimeConfiguration })
+    ...(overrides.reloadRuntimeConfiguration === undefined ? {} : { reloadRuntimeConfiguration: overrides.reloadRuntimeConfiguration }),
+    ...(overrides.retireOverlayRecipients === undefined ? {} : { retireOverlayRecipients: overrides.retireOverlayRecipients }),
+    ...(overrides.restoreOverlayRecipients === undefined ? {} : { restoreOverlayRecipients: overrides.restoreOverlayRecipients })
   };
   return { service: new ConfigurationBackupService(options), replace };
 }
 
 function createRealService(overrides: {
+  readonly regenerateOutput?: ConfigurationBackupServiceOptions["regenerateOutput"];
   readonly database?: StreamJamsDatabase;
   readonly initialPolicy?: ModerationSettings;
   readonly updateConfig?: ConfigurationBackupServiceOptions["configStore"]["updateConfig"];
@@ -1034,7 +1187,7 @@ function createRealService(overrides: {
     getRuntime: async () => ({ intakeActive: false, playbackActive: false, queuedPlaybackCount: 0 }),
     getAvailableBytes: async () => 1_000_000,
     safetyBackupStore: { write: overrides.writeSafetyBackup ?? (async () => "C:/safe/pre-restore.streamjams-backup") },
-    regenerateOutput: async (_output, origin) => ({ label: "Landscape live", url: `${origin}/new-key` }),
+    regenerateOutput: overrides.regenerateOutput ?? (async (_output, origin) => ({ label: "Landscape live", url: `${origin}/new-key` })),
     ...(overrides.reloadRuntimeConfiguration === undefined ? {} : { reloadRuntimeConfiguration: overrides.reloadRuntimeConfiguration }),
     ...(overrides.runExclusive === undefined ? {} : { runExclusive: overrides.runExclusive })
   };

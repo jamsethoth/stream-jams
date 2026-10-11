@@ -5,21 +5,33 @@ import type { VideosLayout } from "./types.js";
  * management editor, its preview and every overlay share one geometry without zod.
  */
 
-/** Every Videos output places the box on this canvas, the same one Timers and Music use for landscape. */
+/** Desktop placement uses this scene; ordinary browser sources use their saved local content dimensions. */
 export const videosCanvas = { width: 1920, height: 1080 } as const;
 export const videosLayoutLimits = { minWidth: 240, minHeight: 180 } as const;
 
 /** Matches the look before placement existed: centered, 72% wide, 6% above the bottom edge. */
 export function createDefaultVideosLayout(): VideosLayout {
-  return { x: 269, y: 140, width: 1382, height: 876 };
+  return { schemaVersion: 2, content: { width: 1382, height: 876 }, desktopPlacement: { x: 269, y: 140, scale: 1 } };
 }
 
-/** Exactly x, y, width and height in whole pixels, at least the minimum size, and entirely on the canvas. */
+/** Bounded integer content dimensions and finite positive scale whose footprint stays in the scene. */
 export function isValidVideosLayout(value: unknown): value is VideosLayout {
-  if (typeof value !== "object" || value === null || Object.keys(value).length !== 4) return false;
-  const { x, y, width, height } = value as Partial<Record<keyof VideosLayout, unknown>>;
-  return Number.isInteger(x) && Number.isInteger(y) && Number.isInteger(width) && Number.isInteger(height)
-    && (x as number) >= 0 && (y as number) >= 0
-    && (width as number) >= videosLayoutLimits.minWidth && (height as number) >= videosLayoutLimits.minHeight
-    && (x as number) + (width as number) <= videosCanvas.width && (y as number) + (height as number) <= videosCanvas.height;
+  if (typeof value !== "object" || value === null || Object.keys(value).length !== 3) return false;
+  const layout = value as Partial<VideosLayout>;
+  if (layout.schemaVersion !== 2 || typeof layout.content !== "object" || layout.content === null
+    || typeof layout.desktopPlacement !== "object" || layout.desktopPlacement === null
+    || Object.keys(layout.content).length !== 2 || Object.keys(layout.desktopPlacement).length !== 3) return false;
+  const { width, height } = layout.content;
+  const { x, y, scale } = layout.desktopPlacement;
+  return Number.isSafeInteger(width) && Number.isSafeInteger(height)
+    && width >= videosLayoutLimits.minWidth && height >= videosLayoutLimits.minHeight
+    && width <= videosCanvas.width && height <= videosCanvas.height
+    && Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(scale)
+    && x >= 0 && y >= 0 && scale > 0
+    && x + width * scale <= videosCanvas.width && y + height * scale <= videosCanvas.height;
+}
+
+/** The trusted browser projection never inherits scene placement or scale. */
+export function browserVideosLayout(layout: VideosLayout): VideosLayout {
+  return { schemaVersion: 2, content: { ...layout.content }, desktopPlacement: { x: 0, y: 0, scale: 1 } };
 }

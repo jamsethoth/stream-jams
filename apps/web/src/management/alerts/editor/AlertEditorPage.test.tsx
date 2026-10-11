@@ -487,7 +487,7 @@ describe("AlertEditorPage", () => {
     expect(pause).toHaveBeenCalledTimes(2);
   });
 
-  it("does not start a pending soundtrack fetch after preview unmount", async () => {
+  it("local_preview_never_publishes and does not start a pending soundtrack fetch after preview unmount", async () => {
     const play = vi.fn(async () => undefined);
     vi.stubGlobal("Audio", class { volume = 1; play = play; pause = vi.fn(); });
     let finish!: (descriptor: import("@stream-jams/core").MediaPreviewDescriptor) => void;

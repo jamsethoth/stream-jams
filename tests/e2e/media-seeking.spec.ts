@@ -21,13 +21,14 @@ for (const extension of ["mp4", "webm"]) {
     const address = await app.listen({ host: "127.0.0.1", port: 0 });
     try {
       expect((await app.inject("/health")).statusCode).toBe(200);
+      expect((await app.inject({ url: "/overlay/unified/live/fixture/assets/clip", headers: { range: "bytes=0-15" } })).statusCode).toBe(401);
       await page.goto("/");
       const statuses: number[] = [];
       page.on("response", response => { if (response.url().startsWith(address + "/overlay/")) statuses.push(response.status()); });
       const prepared = await page.evaluate(async ({ address, modulePath }) => {
         const { prepareTimedMedia } = await import(modulePath);
         const result: number[] = [];
-        for (const path of ["/overlay/modules/alerts/live/fixture/assets/clip", "/overlay/unified/live/fixture/assets/clip"]) {
+        for (const path of ["/overlay/modules/alerts/live/fixture/assets/clip?profile=landscape", "/overlay/modules/alerts/live/fixture/assets/clip?profile=vertical"]) {
           const video = document.createElement("video"); video.muted = true; video.preload = "metadata";
           document.body.append(video);
           try {

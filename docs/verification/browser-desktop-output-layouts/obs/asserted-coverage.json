@@ -1,0 +1,373 @@
+{
+  "kind": "asserted-coverage summary, not complete raw observations",
+  "gate": "S11-obs-matte-final.log:1/1 passed,3.7min",
+  "capture": "Actual OBS32.2.2 native scene RGB PNGs over owned black/white Color Sources, cropped to selected real browser viewport. Coverage requires departure from either empty matte. No numeric alpha reconstruction claim.",
+  "retained": "Selected real Music native black/white PNGs and actual source geometry receipts under obs/. Body-only geometryEvidence attachment was not persisted by list reporter; exact per-phase counts/hashes were not retained after successful owned profile cleanup. Values below are the assertions verified by the passing gate, not fabricated raw samples.",
+  "ordinary": [
+    {
+      "moduleId": "music",
+      "profile": "landscape",
+      "initialNativeAndSettingsSize": {
+        "width": 640,
+        "height": 178
+      },
+      "newNativeAndSettingsSizeAfterExplicitResize": {
+        "width": 560,
+        "height": 178
+      },
+      "phases": {
+        "idle": {
+          "coveredPixels": 0
+        },
+        "active": {
+          "coveredPixelsGreaterThan": 100,
+          "localAnchorCovered": true,
+          "outsidePixels": 0
+        },
+        "desktopSave": {
+          "pairedContentHashEqualsActive": true,
+          "sameConnectedClient": true,
+          "sameCanvasDimensions": true,
+          "revisionAdvanced": true
+        },
+        "extraViewport": {
+          "width": 720,
+          "height": 238,
+          "outsidePixels": 0,
+          "pairedContentHashEqualsActive": true
+        },
+        "smallerViewport": {
+          "width": 576,
+          "height": 146,
+          "pairedContentHashEqualsOriginalTopLeftCrop": true
+        },
+        "contentSaveBeforeObsUpdate": {
+          "nativeAndSettingsSizeUnchanged": true,
+          "canvasSizeIsNewRecommended": true,
+          "outsidePixels": 0
+        },
+        "explicitObsResize": {
+          "sizeIsNewRecommended": true
+        },
+        "reconnect": {
+          "newConnectedClient": true,
+          "pairedContentHashEqualsBeforeReconnect": true
+        },
+        "disabledAndDisabledReconnect": {
+          "coveredPixels": 0,
+          "savedCanvasSizePreserved": true
+        }
+      }
+    },
+    {
+      "moduleId": "music",
+      "profile": "vertical",
+      "initialNativeAndSettingsSize": {
+        "width": 640,
+        "height": 178
+      },
+      "newNativeAndSettingsSizeAfterExplicitResize": {
+        "width": 560,
+        "height": 178
+      },
+      "phases": {
+        "idle": {
+          "coveredPixels": 0
+        },
+        "active": {
+          "coveredPixelsGreaterThan": 100,
+          "localAnchorCovered": true,
+          "outsidePixels": 0
+        },
+        "desktopSave": {
+          "pairedContentHashEqualsActive": true,
+          "sameConnectedClient": true,
+          "sameCanvasDimensions": true,
+          "revisionAdvanced": true
+        },
+        "extraViewport": {
+          "width": 720,
+          "height": 238,
+          "outsidePixels": 0,
+          "pairedContentHashEqualsActive": true
+        },
+        "smallerViewport": {
+          "width": 576,
+          "height": 146,
+          "pairedContentHashEqualsOriginalTopLeftCrop": true
+        },
+        "contentSaveBeforeObsUpdate": {
+          "nativeAndSettingsSizeUnchanged": true,
+          "canvasSizeIsNewRecommended": true,
+          "outsidePixels": 0
+        },
+        "explicitObsResize": {
+          "sizeIsNewRecommended": true
+        },
+        "reconnect": {
+          "newConnectedClient": true,
+          "pairedContentHashEqualsBeforeReconnect": true
+        },
+        "disabledAndDisabledReconnect": {
+          "coveredPixels": 0,
+          "savedCanvasSizePreserved": true
+        }
+      }
+    },
+    {
+      "moduleId": "timers",
+      "profile": "landscape",
+      "initialNativeAndSettingsSize": {
+        "width": 416,
+        "height": 213
+      },
+      "newNativeAndSettingsSizeAfterExplicitResize": {
+        "width": 456,
+        "height": 213
+      },
+      "phases": {
+        "idle": {
+          "coveredPixels": 0
+        },
+        "active": {
+          "coveredPixelsGreaterThan": 100,
+          "localAnchorCovered": true,
+          "outsidePixels": 0
+        },
+        "desktopSave": {
+          "pairedContentHashEqualsActive": true,
+          "sameConnectedClient": true,
+          "sameCanvasDimensions": true,
+          "revisionAdvanced": true
+        },
+        "extraViewport": {
+          "width": 496,
+          "height": 273,
+          "outsidePixels": 0,
+          "pairedContentHashEqualsActive": true
+        },
+        "smallerViewport": {
+          "width": 352,
+          "height": 181,
+          "pairedContentHashEqualsOriginalTopLeftCrop": true
+        },
+        "contentSaveBeforeObsUpdate": {
+          "nativeAndSettingsSizeUnchanged": true,
+          "canvasSizeIsNewRecommended": true,
+          "outsidePixels": 0
+        },
+        "explicitObsResize": {
+          "sizeIsNewRecommended": true
+        },
+        "reconnect": {
+          "newConnectedClient": true,
+          "pairedContentHashEqualsBeforeReconnect": true
+        },
+        "disabledAndDisabledReconnect": {
+          "coveredPixels": 0,
+          "savedCanvasSizePreserved": true
+        }
+      }
+    },
+    {
+      "moduleId": "timers",
+      "profile": "vertical",
+      "initialNativeAndSettingsSize": {
+        "width": 416,
+        "height": 213
+      },
+      "newNativeAndSettingsSizeAfterExplicitResize": {
+        "width": 456,
+        "height": 213
+      },
+      "phases": {
+        "idle": {
+          "coveredPixels": 0
+        },
+        "active": {
+          "coveredPixelsGreaterThan": 100,
+          "localAnchorCovered": true,
+          "outsidePixels": 0
+        },
+        "desktopSave": {
+          "pairedContentHashEqualsActive": true,
+          "sameConnectedClient": true,
+          "sameCanvasDimensions": true,
+          "revisionAdvanced": true
+        },
+        "extraViewport": {
+          "width": 496,
+          "height": 273,
+          "outsidePixels": 0,
+          "pairedContentHashEqualsActive": true
+        },
+        "smallerViewport": {
+          "width": 352,
+          "height": 181,
+          "pairedContentHashEqualsOriginalTopLeftCrop": true
+        },
+        "contentSaveBeforeObsUpdate": {
+          "nativeAndSettingsSizeUnchanged": true,
+          "canvasSizeIsNewRecommended": true,
+          "outsidePixels": 0
+        },
+        "explicitObsResize": {
+          "sizeIsNewRecommended": true
+        },
+        "reconnect": {
+          "newConnectedClient": true,
+          "pairedContentHashEqualsBeforeReconnect": true
+        },
+        "disabledAndDisabledReconnect": {
+          "coveredPixels": 0,
+          "savedCanvasSizePreserved": true
+        }
+      }
+    },
+    {
+      "moduleId": "videos",
+      "profile": "",
+      "initialNativeAndSettingsSize": {
+        "width": 640,
+        "height": 460
+      },
+      "newNativeAndSettingsSizeAfterExplicitResize": {
+        "width": 480,
+        "height": 320
+      },
+      "phases": {
+        "idle": {
+          "coveredPixels": 0
+        },
+        "active": {
+          "coveredPixelsGreaterThan": 100,
+          "localAnchorCovered": true,
+          "outsidePixels": 0
+        },
+        "desktopSave": {
+          "pairedContentHashEqualsActive": true,
+          "sameConnectedClient": true,
+          "sameCanvasDimensions": true,
+          "revisionAdvanced": true
+        },
+        "extraViewport": {
+          "width": 720,
+          "height": 520,
+          "outsidePixels": 0,
+          "pairedContentHashEqualsActive": true
+        },
+        "smallerViewport": {
+          "width": 576,
+          "height": 428,
+          "pairedContentHashEqualsOriginalTopLeftCrop": true
+        },
+        "contentSaveBeforeObsUpdate": {
+          "nativeAndSettingsSizeUnchanged": true,
+          "canvasSizeIsNewRecommended": true,
+          "outsidePixels": 0
+        },
+        "explicitObsResize": {
+          "sizeIsNewRecommended": true
+        },
+        "reconnect": {
+          "newConnectedClient": true,
+          "pairedContentHashEqualsBeforeReconnect": true
+        },
+        "disabledAndDisabledReconnect": {
+          "coveredPixels": 0,
+          "savedCanvasSizePreserved": true
+        }
+      }
+    }
+  ],
+  "retired": [
+    {
+      "identity": "retired-music",
+      "nativeAndSettingsSize": {
+        "width": 640,
+        "height": 460
+      },
+      "completedActualObsShellStatus": 401,
+      "redirected": false,
+      "threeBlankSamplesCoveredPixels": 0,
+      "reconnectCompletedActualObsShellStatus": 401,
+      "reconnectCoveredPixels": 0,
+      "compositionStatus": 401,
+      "connectedRetiredClients": 0
+    },
+    {
+      "identity": "retired-timers",
+      "nativeAndSettingsSize": {
+        "width": 640,
+        "height": 460
+      },
+      "completedActualObsShellStatus": 401,
+      "redirected": false,
+      "threeBlankSamplesCoveredPixels": 0,
+      "reconnectCompletedActualObsShellStatus": 401,
+      "reconnectCoveredPixels": 0,
+      "compositionStatus": 401,
+      "connectedRetiredClients": 0
+    },
+    {
+      "identity": "retired-videos",
+      "nativeAndSettingsSize": {
+        "width": 640,
+        "height": 460
+      },
+      "completedActualObsShellStatus": 401,
+      "redirected": false,
+      "threeBlankSamplesCoveredPixels": 0,
+      "reconnectCompletedActualObsShellStatus": 401,
+      "reconnectCoveredPixels": 0,
+      "compositionStatus": 401,
+      "connectedRetiredClients": 0
+    },
+    {
+      "identity": "retired-unified-live",
+      "nativeAndSettingsSize": {
+        "width": 640,
+        "height": 460
+      },
+      "completedActualObsShellStatus": 401,
+      "redirected": false,
+      "threeBlankSamplesCoveredPixels": 0,
+      "reconnectCompletedActualObsShellStatus": 401,
+      "reconnectCoveredPixels": 0,
+      "compositionStatus": 401,
+      "connectedRetiredClients": 0
+    },
+    {
+      "identity": "retired-unified-test",
+      "nativeAndSettingsSize": {
+        "width": 640,
+        "height": 460
+      },
+      "completedActualObsShellStatus": 401,
+      "redirected": false,
+      "threeBlankSamplesCoveredPixels": 0,
+      "reconnectCompletedActualObsShellStatus": 401,
+      "reconnectCoveredPixels": 0,
+      "compositionStatus": 401,
+      "connectedRetiredClients": 0
+    }
+  ],
+  "nativeFlags": {
+    "muted": true,
+    "monitoring": 0,
+    "shutdown": false,
+    "rerouteAudio": true
+  },
+  "limits": [
+    "Video uses no-clip notice, not OBS provider playback; active Video is covered by browser and workspace-native mirror.",
+    "No original user profile touched; no audible monitoring, foreground input, GPU/encoder/cadence metrics."
+  ],
+  "preservation": {
+    "pausedTimerStateExact": true,
+    "videoQueueItems": 0,
+    "videoCurrent": null,
+    "scopedUploadedWarpedFontPinkPixelsGreaterThan": 100,
+    "noOwnedObsTcpListeners": true,
+    "ownedPortableExitAndCleanup": true
+  }
+}

@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { ManagementHttpError } from "../management-http-client.js";
 import { renderManagement as render } from "../../test-support/render-management.js";
 import { createTestMediaPreviewApi } from "../../test-support/media-preview-fixture.js";
@@ -31,11 +32,11 @@ function harness(state: TimerRunState | null = null) {
     rotateAutomationCredential: vi.fn(async () => ({ configured: true, createdAt: definition.createdAt, rotatedAt: null, token: `tmr_${"x".repeat(32)}` })),
     revokeAutomationCredential: vi.fn(async () => {}),
     listBrowserSources: vi.fn(async () => [
-      { id: "module:timers:landscape:live", label: "Timers Landscape Live", purpose: "live" as const, overlayId: "default", scope: "module" as const,
+      { canvas: sceneOutputCanvas(0, 1920, 1080), id: "module:timers:landscape:live", label: "Timers Landscape Live", purpose: "live" as const, overlayId: "default", scope: "module" as const,
         moduleId: "timers" as const, targetProfileId: "landscape" as const, enabled: true, keyId: "key-landscape",
         url: "http://127.0.0.1/overlay/modules/timers/live/secret?profile=landscape", status: "available" as const,
         connectionState: "connected" as const, lastConnectedAt: "2026-09-29T01:05:00.000Z" },
-      { id: "module:timers:vertical:live", label: "Timers Vertical Live", purpose: "live" as const, overlayId: "default", scope: "module" as const,
+      { canvas: sceneOutputCanvas(0, 1080, 1920), id: "module:timers:vertical:live", label: "Timers Vertical Live", purpose: "live" as const, overlayId: "default", scope: "module" as const,
         moduleId: "timers" as const, targetProfileId: "vertical" as const, enabled: true, keyId: null, url: null, status: "create-required" as const,
         connectionState: "never-connected" as const, lastConnectedAt: null }
     ]),
@@ -169,6 +170,27 @@ it("keeps invalid timer definition and layout correction inline without issuing 
   expect(values.api.saveModuleConfig).not.toHaveBeenCalled();
 });
 
+it("switches to the invalid profile and focuses its associated field without saving or issuing timer commands", async () => {
+  const user = userEvent.setup(); const values = harness();
+  render(<TimersPage api={values.api} assetApi={{} as AssetApi} audioApi={values.audioApi} managementApi={{} as AssetLibraryManagementApi} />);
+  await screen.findByText("Timer stack");
+  await user.click(screen.getByRole("radio", { name: "Vertical" }));
+  fireEvent.change(screen.getByLabelText("Maximum shown"), { target: { value: "99" } });
+  await user.click(screen.getByRole("radio", { name: "Landscape" }));
+  await user.click(screen.getByRole("button", { name: "Save overlay layout" }));
+  expect(screen.getByRole("radio", { name: "Vertical" })).toBeChecked();
+  expect(screen.getByLabelText("Maximum shown")).toHaveFocus();
+  expect(screen.getByLabelText("Maximum shown")).toHaveAttribute("aria-invalid", "true");
+  expect(values.api.saveModuleConfig).not.toHaveBeenCalled(); expect(values.api.command).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("Maximum shown"), { target: { value: "4" } });
+  fireEvent.change(screen.getByLabelText("X", { exact: true }), { target: { value: "1079" } });
+  await user.click(screen.getByRole("radio", { name: "Landscape" }));
+  await user.click(screen.getByRole("button", { name: "Save overlay layout" }));
+  expect(screen.getByRole("radio", { name: "Vertical" })).toBeChecked();
+  expect(screen.getByLabelText("X", { exact: true })).toHaveFocus();
+  expect(values.api.saveModuleConfig).not.toHaveBeenCalled();
+});
+
 it("retains correction input after a failed request and permits an explicit retry", async () => {
   const user = userEvent.setup();
   const values = harness({ status: "paused", definitionId: "mitts", generation: "g1", snapshot: definition, remainingMs: 60000 });
@@ -293,6 +315,8 @@ it("edits both profile layouts and reveals a one-time automation credential", as
   const user = userEvent.setup(); const { api } = renderPage(); await screen.findByText("Timer stack");
   screen.getByRole("button", { name: "Move timer region" }).focus(); await user.keyboard("{ArrowRight}");
   await user.click(screen.getByRole("radio", { name: "Vertical" })); await user.selectOptions(screen.getByLabelText("Orientation"), "horizontal");
+  fireEvent.change(screen.getByLabelText("Card width (px)"), { target: { value: "260" } });
+  fireEvent.change(screen.getByLabelText("Desktop scale"), { target: { value: ".5" } });
   await user.click(screen.getByRole("button", { name: "Save overlay layout" })); await waitFor(() => expect(api.saveModuleConfig).toHaveBeenCalled());
   await user.click(screen.getByRole("button", { name: "Create credential" }));
   expect(await screen.findByDisplayValue(/^tmr_/)).toBeInTheDocument(); expect(screen.getByText(/will not be shown again/i)).toBeInTheDocument();
@@ -311,4 +335,21 @@ it("shows explicit timer module enablement and confirms disabling it", async () 
   await waitFor(() => expect(setModuleEnabled).toHaveBeenCalledWith(false));
   expect(screen.getByText("Module disabled")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Enable Timers module" })).toBeInTheDocument();
+});
+
+it("refreshes authoritative dimensions after saving and clears a prior source refresh error", async () => {
+  const user = userEvent.setup();
+  const { api } = renderPage();
+  await screen.findByText("Timer stack");
+  const sources = await api.listBrowserSources();
+  vi.mocked(api.listBrowserSources).mockRejectedValueOnce(new Error("Disposable service refresh failed"));
+  await user.click(screen.getByRole("button", { name: "Save overlay layout" }));
+  expect(await screen.findByText("Timer layout saved; source dimensions could not be refreshed")).toBeInTheDocument();
+  vi.mocked(api.listBrowserSources).mockResolvedValueOnce(sources.map(source => ({ ...source, canvas: sceneOutputCanvas(1, 777, 211) })));
+  await user.click(screen.getByRole("button", { name: "Save overlay layout" }));
+  await waitFor(() => expect(screen.queryByText("Timer layout saved; source dimensions could not be refreshed")).not.toBeInTheDocument());
+  const panel = screen.getByRole("region", { name: "Browser sources" });
+  const expand = within(panel).queryByRole("button", { name: "Expand browser sources" });
+  if (expand !== null) await user.click(expand);
+  expect(within(panel).getByRole("article", { name: "Landscape browser source" })).toHaveTextContent("777 x 211");
 });

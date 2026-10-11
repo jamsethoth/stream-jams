@@ -35,13 +35,15 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
   const customCssActive = projection?.css.enabled === true && projection.css.source.trim() !== "";
   const displayed = projection?.profile.views[projection.view] ?? appearance;
   const bounds = { width: displayed.widthPx, height: displayed.heightPx };
+  const canvas = projection?.contentCanvas ?? bounds;
+  const anchor = projection?.contentCanvas === undefined ? { x: 0, y: 0 } : projection.layout;
   const target = targetProfileDefinitions.find(profile => profile.id === projection?.targetProfileId);
   const maxWidth = Math.min(musicLimits.widthPx.max, target?.width ?? musicLimits.widthPx.max);
   const maxHeight = Math.min(musicLimits.heightPx.max, target?.height ?? musicLimits.heightPx.max);
-  const scale = Math.min(1, Math.max(0.5, availableWidth / bounds.width));
+  const scale = Math.min(1, availableWidth / canvas.width);
   const preview = projection === null ? null : {
     ...projection,
-    layout: { ...projection.layout, x: 0, y: 0 },
+    layout: { ...projection.layout, x: anchor.x, y: anchor.y },
     profile: { ...projection.profile, views: { ...projection.profile.views, [projection.view]: displayed } }
   };
 
@@ -66,7 +68,7 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
     event.preventDefault(); event.stopPropagation(); event.currentTarget.focus();
     event.currentTarget.setPointerCapture(event.pointerId);
     widgetGesture.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY,
-      factor: bounds.width / Math.max(1, stageRef.current?.getBoundingClientRect().width ?? bounds.width * scale), appearance };
+      factor: canvas.width / Math.max(1, stageRef.current?.getBoundingClientRect().width ?? canvas.width * scale), appearance };
   };
   const moveWidgetResize = (event: PointerEvent<HTMLButtonElement>) => {
     const active = widgetGesture.current;
@@ -135,8 +137,8 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
   const moveGesture = (event: PointerEvent<HTMLButtonElement>) => {
     const active = gesture.current;
     if (active === null || active.pointerId !== event.pointerId) return;
-    const stageWidth = stageRef.current?.getBoundingClientRect().width ?? bounds.width * scale;
-    const factor = bounds.width / Math.max(1, stageWidth);
+    const stageWidth = stageRef.current?.getBoundingClientRect().width ?? canvas.width * scale;
+    const factor = canvas.width / Math.max(1, stageWidth);
     const dx = Math.round((event.clientX - active.clientX) * factor);
     const dy = Math.round((event.clientY - active.clientY) * factor);
     const raw = active.mode === "move"
@@ -201,15 +203,15 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
     </div>
     {customCssActive ? <p className="music-layout-editor__warning" role="status">Custom CSS can override component positions. Disable custom CSS to edit native component layout.</p> : null}
     <div className="music-layout-editor__viewport" ref={shellRef}>
-      {preview === null ? <p role="status">Preview is unavailable.</p> : <div className="music-layout-editor__stage" ref={stageRef} style={{ width: bounds.width * scale, height: bounds.height * scale }}>
-        <div className="music-layout-editor__scaled" style={{ width: bounds.width, height: bounds.height, transform: `scale(${scale})` }}>
+      {preview === null ? <p role="status">Preview is unavailable.</p> : <div className="music-layout-editor__stage" ref={stageRef} style={{ width: canvas.width * scale, height: canvas.height * scale }}>
+        <div className="music-layout-editor__scaled" style={{ width: canvas.width, height: canvas.height, transform: `scale(${scale})` }}>
           <MusicWidget projection={preview} resolveAsset={resolveAsset} nowEpochMs={preview.clockReferenceEpochMs} reducedMotion={editing} />
         </div>
-        {editing && !customCssActive ? <><div aria-hidden="true" className="music-layout-editor__widget-outline" /><button aria-label="Resize overall widget" className="music-layout-editor__resize music-layout-editor__widget-resize" onPointerDown={beginWidgetResize} onPointerMove={moveWidgetResize} onPointerUp={event => { if (widgetGesture.current?.pointerId === event.pointerId) widgetGesture.current = null; }} onPointerCancel={cancelWidgetResize} onLostPointerCapture={cancelWidgetResize} onKeyDown={widgetKeys} type="button" /></> : null}
+        {editing && !customCssActive ? <><div aria-hidden="true" className="music-layout-editor__widget-outline" style={{ left: anchor.x * scale, top: anchor.y * scale, width: bounds.width * scale, height: bounds.height * scale, right: "auto", bottom: "auto" }} /><button aria-label="Resize overall widget" className="music-layout-editor__resize music-layout-editor__widget-resize" style={{ left: (anchor.x + bounds.width) * scale - 5, top: (anchor.y + bounds.height) * scale - 5, right: "auto", bottom: "auto" }} onPointerDown={beginWidgetResize} onPointerMove={moveWidgetResize} onPointerUp={event => { if (widgetGesture.current?.pointerId === event.pointerId) widgetGesture.current = null; }} onPointerCancel={cancelWidgetResize} onLostPointerCapture={cancelWidgetResize} onKeyDown={widgetKeys} type="button" /></> : null}
         {editing && !customCssActive && appearance.componentLayout !== null ? musicComponentRoles.map(role => {
           const rect = appearance.componentLayout![role];
           return <div className={`music-layout-editor__box${selected === role ? " is-selected" : ""}`} key={role}
-            style={{ left: rect.x * scale, top: rect.y * scale, width: rect.width * scale, height: rect.height * scale }}>
+            style={{ left: (anchor.x + rect.x) * scale, top: (anchor.y + rect.y) * scale, width: rect.width * scale, height: rect.height * scale }}>
             <button aria-label={`Move ${labels[role]}`} aria-pressed={selected === role} className="music-layout-editor__move" onClick={() => selectComponent(role)}
               onKeyDown={event => keyAdjust(role, "move", event)} onLostPointerCapture={cancelGesture} onPointerCancel={cancelGesture}
               onPointerDown={event => beginGesture(role, "move", event)} onPointerMove={moveGesture} onPointerUp={endGesture} type="button" />
@@ -220,7 +222,7 @@ export function MusicLayoutEditor({ projection, resolveAsset, appearance, onChan
         }) : null}
         {editing && gesture.current !== null ? guides.map((guide, index) => <div aria-hidden="true" className={`music-layout-editor__guide music-layout-editor__guide--${guide.axis}`}
           data-snap-axis={guide.axis} data-snap-position={guide.position} key={`${guide.axis}:${guide.position}:${index}`}
-          style={guide.axis === "x" ? { left: guide.position * scale } : { top: guide.position * scale }} />) : null}
+          style={guide.axis === "x" ? { left: (anchor.x + guide.position) * scale } : { top: (anchor.y + guide.position) * scale }} />) : null}
       </div>}
     </div>
     {editing && !customCssActive ? <div className="music-layout-editor__inspector">

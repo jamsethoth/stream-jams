@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -230,7 +231,7 @@ describe("web shell routes", () => {
       overlayId: "default",
       moduleId: "alerts",
       purpose: "live",
-      scope: "module"
+      scope: "module", targetProfileId: "landscape"
     });
     const app = createWebShellOverlayRouteTestApp({
       metadata: {
@@ -249,7 +250,7 @@ describe("web shell routes", () => {
     });
     const overlay = await app.inject({
       method: "GET",
-      url: `/overlay/modules/alerts/live/${created.rawKey}`
+      url: `/overlay/modules/alerts/live/${created.rawKey}?profile=landscape`
     });
 
     expect(management.statusCode).toBe(200);
@@ -355,7 +356,7 @@ function createRegistry(moduleIds: readonly string[]): Pick<OverlayModuleRegistr
 
 class NoopOverlayCompositionService implements OverlayCompositionService {
   async resolveModuleOutput(request: ModuleOutputRequest): Promise<OverlayComposition> {
-    return {
+    return { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
       overlayId: request.overlayId,
       purpose: request.purpose,
       scope: "module",
@@ -364,7 +365,7 @@ class NoopOverlayCompositionService implements OverlayCompositionService {
   }
 
   async resolveUnifiedOutput(request: UnifiedOutputRequest): Promise<OverlayComposition> {
-    return {
+    return { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
       overlayId: request.overlayId,
       purpose: request.purpose,
       scope: "unified",

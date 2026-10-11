@@ -76,8 +76,7 @@ export const surfaceConfigurationUpdateSchema = z.discriminatedUnion("kind", [
   z.object({
     ...desktopSurfaceFields,
     autoFollowDisplayName: z.boolean().default(false)
-  }).strict(),
-  unifiedSurfaceSchema
+  }).strict()
 ]).superRefine(validateSurfaceUpdateIdentity);
 
 export type SurfaceLayer = z.infer<typeof surfaceLayerSchema>;

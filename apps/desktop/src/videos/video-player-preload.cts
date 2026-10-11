@@ -3,7 +3,7 @@ import { VIDEO_PLAYER_COMMAND_CHANNEL, VIDEO_PLAYER_REPORT_CHANNEL, videoPlayerC
 
 // Exposed only to the player page itself, never to a provider frame.
 if (process.isMainFrame && location.protocol === "http:" && location.hostname === "127.0.0.1" &&
-  /^\/__stream-jams\/video-player\/(?:live|test)$/u.test(location.pathname) && location.search === "") {
+  /^\/__stream-jams\/video-player\/live$/u.test(location.pathname) && location.search === "") {
   contextBridge.exposeInMainWorld("streamJamsVideoPlayer", Object.freeze({
     onCommand(callback: (command: VideoPlayerCommand) => void) {
       const listener = (_event: unknown, candidate: unknown) => {

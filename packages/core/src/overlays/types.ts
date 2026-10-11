@@ -36,6 +36,7 @@ export interface OverlayOutputDescriptor {
 }
 
 export interface OverlayOutputView extends OverlayOutputDescriptor {
+  readonly canvas?: import("../overlay-modules/output-canvas.js").OutputCanvas;
   readonly id: string;
   readonly label: string;
   readonly enabled: boolean;
@@ -66,6 +67,8 @@ export interface OverlayClientView extends OverlayOutputDescriptor {
 }
 
 export interface OverlayComposition {
+  readonly runtimeId: string;
+  readonly canvas: import("../overlay-modules/output-canvas.js").OutputCanvas;
   readonly overlayId: string;
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;

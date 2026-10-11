@@ -1,32 +1,23 @@
-import { z } from "zod";
-import type { OverlayPurpose, VideoRequestItem, VideoSubmissionChannel, VideosModuleConfig } from "@stream-jams/core";
-import { isAllowedVideoSource, parseVideoLink, videoMaximumLinkLength, videoRequesterSchema, videoTitleSchema } from "@stream-jams/core/videos";
+import type { VideoQueuePurpose, VideoRequestAdmissionResult, VideoRequestItem, VideoSubmissionChannel, VideosModuleConfig } from "@stream-jams/core";
+import { isAllowedVideoSource, parseVideoLink } from "@stream-jams/core/videos";
 import { VideoQueueCommandError, type VideoQueueService } from "./video-queue-service.js";
+import type { VideoBusAdmissionRepository, VideoBusIdentity } from "./video-bus-admission-repository.js";
+import type { AutomationScope } from "../automation/automation-credential-service.js";
 
-/** Longest duration a submitter may declare; the configured limit decides whether it plays. */
-const maximumDeclaredDurationSeconds = 24 * 60 * 60;
+export { videoRequestInputSchema } from "@stream-jams/core/videos";
+import { videoRequestInputSchema } from "@stream-jams/core/videos";
+export type { VideoRequestInput } from "@stream-jams/core/videos";
 
-export const videoRequestInputSchema = z.object({
-  link: z.string().trim().min(1).max(videoMaximumLinkLength),
-  title: videoTitleSchema.optional(),
-  requester: videoRequesterSchema.optional(),
-  durationSeconds: z.number().finite().positive().max(maximumDeclaredDurationSeconds).optional(),
-  autoplay: z.boolean().optional()
-}).strict();
-
-export type VideoRequestInput = z.infer<typeof videoRequestInputSchema>;
-
-export type VideoRequestRejection = "module-disabled" | "invalid-request" | "invalid-link" | "unsafe-link" | "unsupported-source" | "queue-full";
-
-export type VideoRequestResult =
-  | { readonly status: "accepted"; readonly item: VideoRequestItem }
-  | { readonly status: "rejected"; readonly reason: VideoRequestRejection; readonly fields: readonly string[] };
+export type { VideoRequestRejection } from "@stream-jams/core";
+import type { VideoRequestRejection } from "@stream-jams/core";
+export type VideoRequestResult = VideoRequestAdmissionResult;
 
 export type VideoRequeueResult =
   | { readonly status: "accepted"; readonly item: VideoRequestItem }
   | { readonly status: "rejected"; readonly reason: Extract<VideoRequestRejection, "module-disabled" | "unsupported-source"> };
 
 export interface VideoRequestIntakeOptions {
+  readonly admissions?: VideoBusAdmissionRepository;
   readonly queue: Pick<VideoQueueService, "submit" | "recentItem" | "requeue">;
   readonly getConfig: () => Promise<VideosModuleConfig> | VideosModuleConfig;
   readonly isModuleEnabled: () => Promise<boolean> | boolean;
@@ -34,13 +25,19 @@ export interface VideoRequestIntakeOptions {
    * Called once for every request this intake queues, after the queue accepted it, so provider
    * details can be looked up without delaying the submitter. It must not throw or block.
    */
-  readonly onQueued?: ((purpose: OverlayPurpose, item: VideoRequestItem) => void) | undefined;
+  readonly onQueued?: ((purpose: VideoQueuePurpose, item: VideoRequestItem) => void) | undefined;
 }
 
 export interface VideoRequestContext {
+  readonly scopes?: readonly AutomationScope[];
+  readonly busIdentity?: VideoBusIdentity;
+  /** Provider policy is independent from truthful submitted-via provenance for manual simulations. */
+  readonly policy?: "streamerbot" | "channel-points";
   readonly via: VideoSubmissionChannel;
   /** Whether this caller may start playback immediately with `autoplay: true`. */
   readonly mayAutoplay: boolean;
+  /** Accepted requests arrive held for operator review (for example, review-required reward mappings). */
+  readonly reviewRequired?: boolean;
 }
 
 /**
@@ -50,18 +47,36 @@ export interface VideoRequestContext {
 export class VideoRequestIntake {
   constructor(private readonly options: VideoRequestIntakeOptions) {}
 
-  async submit(purpose: OverlayPurpose, input: unknown, context: VideoRequestContext): Promise<VideoRequestResult> {
-    if (!(await this.options.isModuleEnabled())) return { status: "rejected", reason: "module-disabled", fields: [] };
+  /** Redelivery returns the committed snapshot even when the original payload is now retired. */
+  findAdmission(identity: VideoBusIdentity): VideoRequestResult | null {
+    const receipt = this.options.admissions?.find(identity.busId);
+    if (receipt !== null && receipt !== undefined && receipt.eventId !== identity.eventId) throw new Error("Video admission identity does not match its durable receipt.");
+    return receipt?.result ?? null;
+  }
+
+  async submit(purpose: VideoQueuePurpose, input: unknown, context: VideoRequestContext): Promise<VideoRequestResult> {
+    const identity = context.busIdentity;
+    if (identity !== undefined && this.options.admissions === undefined) throw new Error("Durable video admission is unavailable.");
+    this.options.admissions?.prune();
+    const receipt = identity === undefined ? null : this.findAdmission(identity);
+    if (receipt !== null) return receipt;
+    const reject = (reason: VideoRequestRejection, fields: readonly string[]): VideoRequestResult => {
+      const result = { status: "rejected", reason, fields } as const;
+      if (identity !== undefined) this.options.admissions?.record(identity, result);
+      return result;
+    };
+    if (!(await this.options.isModuleEnabled())) return reject("module-disabled", []);
     const parsed = videoRequestInputSchema.safeParse(input);
     if (!parsed.success) {
-      return { status: "rejected", reason: "invalid-request", fields: [...new Set(parsed.error.issues.map(issue => String(issue.path[0] ?? "request")))] };
+      return reject("invalid-request", [...new Set(parsed.error.issues.map(issue => String(issue.path[0] ?? "request")))]);
     }
     const config = await this.options.getConfig();
     const link = parseVideoLink(parsed.data.link, { allowedDirectHosts: config.allowedDirectHosts });
-    if (link.status === "rejected") return { status: "rejected", reason: link.reason, fields: ["link"] };
+    if (link.status === "rejected") return reject(link.reason, ["link"]);
     // Channel point viewers never start playback; bots only when the operator allows it.
-    const autoplay = parsed.data.autoplay === true && context.mayAutoplay && context.via !== "channel-points" &&
-      (context.via !== "streamerbot" || config.streamerBotAutoplay);
+    const policy = context.policy ?? context.via;
+    const autoplay = parsed.data.autoplay === true && context.mayAutoplay && policy !== "channel-points" &&
+      (policy !== "streamerbot" || config.streamerBotAutoplay);
     try {
       const item = this.options.queue.submit(purpose, {
         source: link.source,
@@ -69,12 +84,13 @@ export class VideoRequestIntake {
         requester: parsed.data.requester ?? null,
         durationMs: parsed.data.durationSeconds === undefined ? null : Math.ceil(parsed.data.durationSeconds * 1000),
         autoplay,
-        via: context.via
-      });
+        via: context.via,
+        ...(context.reviewRequired === true ? { reviewRequired: true } : {})
+      }, identity);
       this.options.onQueued?.(purpose, item);
       return { status: "accepted", item };
     } catch (error) {
-      if (error instanceof VideoQueueCommandError && error.code === "queue-full") return { status: "rejected", reason: "queue-full", fields: [] };
+      if (error instanceof VideoQueueCommandError && error.code === "queue-full") return reject("queue-full", []);
       throw error;
     }
   }
@@ -84,7 +100,7 @@ export class VideoRequestIntake {
    * the module must be on and the link must still pass the current allowlist. Revision conflicts,
    * a missing Recent item and a full queue throw from the queue service.
    */
-  async requeue(purpose: OverlayPurpose, expectedRevision: number, itemId: string, via: VideoSubmissionChannel): Promise<VideoRequeueResult> {
+  async requeue(purpose: VideoQueuePurpose, expectedRevision: number, itemId: string, via: VideoSubmissionChannel): Promise<VideoRequeueResult> {
     const { queue } = this.options;
     if (!(await this.options.isModuleEnabled())) return { status: "rejected", reason: "module-disabled" };
     const config = await this.options.getConfig();

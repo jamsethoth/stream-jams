@@ -1,4 +1,5 @@
-import type { OverlayPurpose } from "../shared/schemas.js";
+/** The sole ordinary Videos session; public submissions cannot select it. */
+export type VideoQueuePurpose = "live";
 
 export type VideoProvider = "youtube" | "twitch-clip" | "twitch-vod" | "direct";
 
@@ -15,9 +16,20 @@ export type VideoRequestStatus = "queued" | "held" | "playing" | "paused" | "pla
 
 export type VideoHoldReason = "over-limit" | "unknown-length";
 
+export type VideoRequestRejection = "module-disabled" | "invalid-request" | "invalid-link" | "unsafe-link" | "unsupported-source" | "queue-full";
+export type VideoRequestAdmissionResult =
+  | { readonly status: "accepted"; readonly item: VideoRequestItem }
+  | { readonly status: "rejected"; readonly reason: VideoRequestRejection; readonly fields: readonly string[] };
+export interface VideoSubmissionPending { readonly status: "pending"; readonly busId: string; readonly eventId: string }
+export type VideoSubmissionResult =
+  | (VideoRequestAdmissionResult & { readonly busId?: string; readonly eventId?: string })
+  | VideoSubmissionPending
+  | { readonly status: "unavailable"; readonly busId: string; readonly eventId: string; readonly outcome: "failed" | "expired" | "no-match"; readonly referenceId: string | null };
+
 export interface VideoRequestItem {
   readonly id: string;
-  readonly purpose: OverlayPurpose;
+  readonly reviewRequired: boolean;
+  readonly migrationProvenance: { readonly kind: "test-queue-consolidation"; readonly originalPurpose: "test"; readonly originalStatus: VideoRequestStatus } | null;
   readonly source: VideoSource;
   /** The title given with the submission. It wins over `providerTitle` and is the only title shown on stream. */
   readonly title: string | null;
@@ -56,15 +68,18 @@ export interface VideoMetadata {
 
 export interface VideoRewardMapping {
   readonly rewardId: string;
-  readonly purpose: OverlayPurpose;
+  /**
+   * Redemptions arrive held for operator review instead of joining the queue. Set for mappings that targeted the
+   * retired test queue; validated configuration always carries it (default false), so absent means false.
+   */
+  readonly reviewRequired?: boolean;
 }
 
-/** The Videos box on the 1920x1080 canvas: picture and caption, in whole canvas pixels. */
+/** Stable local picture/caption content, with independent desktop scene placement. */
 export interface VideosLayout {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
+  readonly schemaVersion: 2;
+  readonly content: { readonly width: number; readonly height: number };
+  readonly desktopPlacement: { readonly x: number; readonly y: number; readonly scale: number };
 }
 
 export interface VideosModuleConfig {
@@ -77,7 +92,7 @@ export interface VideosModuleConfig {
   readonly audioDeviceDelaysMs: Readonly<Record<string, number>>;
   readonly streamerBotAutoplay: boolean;
   readonly rewardMappings: readonly VideoRewardMapping[];
-  /** Where every output (browser sources, desktop overlay, mirror) places the video. */
+  /** Browser content size and desktop-only placement. Layer order remains with the desktop surface. */
   readonly layout: VideosLayout;
 }
 
@@ -118,7 +133,6 @@ export type VideosProjection =
 
 /** Queue state as returned to management, operator and automation clients. */
 export interface VideoQueueResponse {
-  readonly purpose: OverlayPurpose;
   readonly revision: number;
   readonly queuePaused: boolean;
   readonly runRemaining: number;

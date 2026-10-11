@@ -10,10 +10,15 @@ import {
   type EventBusConsumerRegistration,
   type ExternalEventIdentity,
   type IngestProviderId,
+  type BusEventSourceKind,
+  type ManualBusEvent,
+  type ManualSubmissionReceipt,
+  type ManualSubmissionChannel,
   type NormalizedStreamEvent
 } from "@stream-jams/core";
+import { busEventSchema } from "@stream-jams/core/event-bus";
 import type { EventSink, EventSinkDuplicate, EventSinkOutcome } from "./event-ingestion-service.js";
-import type { EventBusJournalRepository } from "./sqlite-event-bus-journal-repository.js";
+import type { EventBusJournalRepository, EventBusAppendResult } from "./sqlite-event-bus-journal-repository.js";
 
 /** A module that receives every bus event in journal order through its own persisted cursor. */
 export type EventBusConsumer = EventBusConsumerRegistration;
@@ -38,7 +43,18 @@ export interface EventBusDeliveryFailureReport {
   readonly error: unknown;
 }
 
+/** Bounded adapter rejection, safe for management errors and source diagnostics. */
+export class EventBusInputRejectedError extends Error {
+  /** "retired" marks input for a removed capability (HTTP 410); everything else is ordinary invalid input (422). */
+  constructor(readonly code: string, message: string, readonly reason: "invalid" | "retired" = "invalid") {
+    super(message);
+    this.name = "EventBusInputRejectedError";
+  }
+}
+
 export interface EventBusOptions {
+  /** Reject retired adapter input before journal admission or consumer startup. */
+  readonly validateInput?: ((input: BusEventInput) => void) | undefined;
   readonly journal: EventBusJournalRepository;
   readonly consumers: readonly EventBusConsumer[];
   readonly generateReferenceId: () => string;
@@ -52,6 +68,10 @@ export interface EventBusOptions {
   readonly duplicateWindowMs?: number | undefined;
   readonly correlationWindowMs?: number | undefined;
   readonly batchSize?: number | undefined;
+  /** Manual receipt outcome wait only; publication is already durable. Defaults to 100ms, at most 1000ms. */
+  readonly manualOutcomeWaitMs?: number | undefined;
+  /** Lets the runtime owner include detached manual delivery in its existing shutdown work tracker. */
+  readonly onManualDeliveryWork?: ((work: Promise<void>) => void) | undefined;
   readonly retentionMs?: number | undefined;
   readonly retentionRows?: number | undefined;
   readonly onDeliveryFailure?: ((failure: EventBusDeliveryFailureReport) => void | Promise<void>) | undefined;
@@ -75,6 +95,7 @@ const pruneIntervalMs = 60 * 60_000;
  * accepted events independently, in order, at least once.
  */
 export class EventBus implements EventSink {
+  readonly #validateInput: EventBusOptions["validateInput"];
   readonly #journal: EventBusJournalRepository;
   readonly #workers: readonly ConsumerWorker[];
   readonly #generateBusId: () => string;
@@ -84,12 +105,17 @@ export class EventBus implements EventSink {
   readonly #correlationWindowMs: number;
   readonly #retentionMs: number;
   readonly #retentionRows: number;
+  readonly #manualOutcomeWaitMs: number;
+  readonly #onManualDeliveryWork: EventBusOptions["onManualDeliveryWork"];
+  readonly #manualDeliveries = new Map<string, Promise<void>>();
+  readonly #manualDeliveryRequested = new Set<string>();
   readonly #onWorkerError: EventBusOptions["onWorkerError"];
   readonly #externalPayloads: readonly ExternalEventIdentity[];
   #started = false;
   #lastPrunedAtMs = Number.NEGATIVE_INFINITY;
 
   constructor(options: EventBusOptions) {
+    this.#validateInput = options.validateInput;
     const ids = new Set(options.consumers.map((consumer) => consumer.id));
     if (ids.size !== options.consumers.length) throw new Error("Event bus consumer IDs must be unique");
     this.#journal = options.journal;
@@ -100,6 +126,9 @@ export class EventBus implements EventSink {
     this.#correlationWindowMs = options.correlationWindowMs ?? defaultCorrelationWindowMs;
     this.#retentionMs = options.retentionMs ?? defaultRetentionMs;
     this.#retentionRows = options.retentionRows ?? defaultRetentionRows;
+    const manualWaitMs = options.manualOutcomeWaitMs ?? 100;
+    this.#manualOutcomeWaitMs = Number.isFinite(manualWaitMs) ? Math.max(0, Math.min(1_000, manualWaitMs)) : 100;
+    this.#onManualDeliveryWork = options.onManualDeliveryWork;
     this.#onWorkerError = options.onWorkerError;
     this.#externalPayloads = uniqueIdentities(options.consumers.flatMap((consumer) => consumer.externalPayloads ?? []));
     const shared: WorkerDependencies = {
@@ -190,6 +219,15 @@ export class EventBus implements EventSink {
    * A copy another source already delivered is merged into that event and not delivered again.
    */
   async publish(input: BusEventInput): Promise<EventSinkOutcome> {
+    const appended = await this.#append(input);
+    if (appended.status !== "appended") return { status: appended.status };
+    await this.drain();
+    this.#pruneHourly();
+    return { status: "accepted" };
+  }
+
+  async #append(input: BusEventInput): Promise<EventBusAppendResult> {
+    this.#validateInput?.(input);
     await this.start();
     const receivedAtMs = Date.parse(input.receivedAt);
     const appended = this.#journal.append(input, this.#generateBusId(), {
@@ -200,21 +238,70 @@ export class EventBus implements EventSink {
       receivedAt: input.receivedAt,
       sourceKind: input.sourceKind,
       kind: input.kind,
+      ...(input.kind === "manual" ? { submissionChannel: input.submission.channel } : {}),
       eventType: busEventTypeLabel(input),
       outcome: appended.status === "appended" ? "accepted" : appended.status,
       sequence: appended.status === "appended" ? appended.event.sequence : appended.status === "merged" ? appended.sequence : null,
       referenceId: null
     });
-    if (appended.status !== "appended") return { status: appended.status };
-    await this.drain();
+    return appended;
+  }
+
+  /** Trusted adapters assign manual identity once; redelivery preserves that accepted identity. */
+  async publishManual(input: Omit<ManualBusEvent, "sequence" | "busId">): Promise<ManualSubmissionReceipt> {
+    busEventSchema.parse({ ...input, sequence: 1, busId: "manual-validation" });
+    const result = await this.#append(input);
+    const event = result.status === "appended" ? result.event : this.#journal.findByEventId("manual", input.eventId);
+    if (event === null || result.status === "merged") throw new Error("Manual journal identity is unavailable");
+    if (result.status === "appended") {
+      for (const worker of this.#workers) this.#wakeManualConsumer(worker);
+      // Poll the bounded journal outcome view instead of retaining one callback per submission on a blocked consumer.
+      const deadlineMs = Date.now() + this.#manualOutcomeWaitMs;
+      while (this.#journal.consumerOutcomes(event.sequence).some(outcome => outcome.outcome === "pending") && Date.now() < deadlineMs) {
+        await new Promise<void>(resolve => setTimeout(resolve, Math.min(5, Math.max(0, deadlineMs - Date.now()))));
+      }
+    }
+    const receipt: ManualSubmissionReceipt = { status: result.status === "duplicate" ? "duplicate" : "accepted", busId: event.busId, eventId: event.eventId, consumers: this.#journal.consumerOutcomes(event.sequence) };
     this.#pruneHourly();
-    return { status: "accepted" };
+    return receipt;
+  }
+
+  #wakeManualConsumer(worker: ConsumerWorker): void {
+    this.#manualDeliveryRequested.add(worker.id);
+    if (this.#manualDeliveries.has(worker.id)) return;
+    const work = Promise.resolve().then(async () => {
+      let completed = false;
+      try {
+        do {
+          this.#manualDeliveryRequested.delete(worker.id);
+          await worker.drain();
+        } while (this.#manualDeliveryRequested.has(worker.id) || (this.#journal.getCursor(worker.id) ?? 0) < this.#journal.headSequence());
+        completed = true;
+      } catch (error) {
+        try { await this.#onWorkerError?.(worker.id, error); }
+        // error-provenance: allow cleanup -- acceptance is durable; a reporter failure cannot reject accepted manual work or become an unhandled promise
+        catch { /* Per-consumer results remain pending. */ }
+      } finally {
+        this.#manualDeliveries.delete(worker.id);
+        // A submission can arrive between the final cursor check and completion; do not lose its wakeup.
+        if (completed && this.#manualDeliveryRequested.has(worker.id)) this.#wakeManualConsumer(worker);
+        else this.#manualDeliveryRequested.delete(worker.id);
+      }
+    });
+    this.#manualDeliveries.set(worker.id, work);
+    this.#onManualDeliveryWork?.(work);
+  }
+
+  /** Waits for existing manual delivery tasks; runtime shutdown uses its normal work tracker. */
+  async waitForManualDelivery(): Promise<void> {
+    while (this.#manualDeliveries.size > 0) await Promise.all(this.#manualDeliveries.values());
   }
 
   /** Records input a source delivered that failed validation before it could be published. */
-  recordRejected(sourceKind: IngestProviderId, referenceId: string): void {
+  recordRejected(sourceKind: BusEventSourceKind, referenceId: string, submissionChannel?: ManualSubmissionChannel): void {
     this.#journal.recordIntake({
-      receivedAt: this.#now().toISOString(), sourceKind, kind: null, eventType: null, outcome: "rejected", sequence: null, referenceId
+      receivedAt: this.#now().toISOString(), sourceKind, kind: null, eventType: null, outcome: "rejected", sequence: null, referenceId,
+      ...(sourceKind === "manual" && submissionChannel !== undefined ? { submissionChannel } : {})
     });
   }
 
@@ -228,7 +315,10 @@ export class EventBus implements EventSink {
 
   /** Waits until every consumer has handled every journaled event it can currently read. */
   async drain(): Promise<void> {
-    const results = await Promise.allSettled(this.#workers.map((worker) => worker.drain()));
+    const throughSequence = this.#journal.headSequence();
+    const results = await Promise.allSettled(this.#workers.map(async worker => {
+      do { await worker.drain(); } while ((this.#journal.getCursor(worker.id) ?? 0) < throughSequence);
+    }));
     for (const [index, result] of results.entries()) {
       if (result.status === "rejected") {
         await this.#onWorkerError?.(this.#workers[index]!.id, result.reason);
@@ -268,6 +358,7 @@ class ConsumerWorker {
   /** Rows up to here were journaled before this run started, so they are replays that can expire. */
   #replayThrough = 0;
   #tail: Promise<void> = Promise.resolve();
+  #drainRun: Promise<void> | null = null;
 
   constructor(consumer: EventBusConsumer, dependencies: WorkerDependencies) {
     this.#consumer = consumer;
@@ -287,7 +378,11 @@ class ConsumerWorker {
 
   /** Serializes drains so each consumer handles events one at a time in journal order. */
   drain(): Promise<void> {
-    return this.#serialize(() => this.#drainAvailable());
+    if (this.#drainRun !== null) return this.#drainRun;
+    const run = this.#serialize(() => this.#drainAvailable());
+    this.#drainRun = run;
+    void run.then(() => { this.#drainRun = null; }, () => { this.#drainRun = null; });
+    return run;
   }
 
   expireThrough(sequence: number): Promise<void> {
@@ -394,6 +489,7 @@ class ConsumerWorker {
 /** A bounded, payload-free label for Diagnostics: the canonical type, or the external source and type. */
 function busEventTypeLabel(input: BusEventInput): string | null {
   if (input.kind === "canonical") return input.event.type;
+  if (input.kind === "manual") return input.action.kind === "simulate-canonical" ? input.action.event.type : input.action.kind;
   const trigger = input.effectTriggers.find((candidate) => candidate.kind === "streamerbot-event");
   return trigger === undefined ? null : `${trigger.sourceKey} · ${trigger.eventType}`;
 }

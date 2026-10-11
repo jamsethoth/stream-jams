@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { OverlayPurpose, VideoHoldReason, VideoMetadata, VideoRecentItem, VideoRequestItem, VideoSource, VideoSubmissionChannel, VideosModuleConfig } from "@stream-jams/core";
+import type { VideoQueuePurpose, VideoHoldReason, VideoMetadata, VideoRecentItem, VideoRequestItem, VideoSource, VideoSubmissionChannel, VideosModuleConfig } from "@stream-jams/core";
 import { videoClockPositionMs } from "@stream-jams/core/videos";
 import { VideoQueueConflictError, type VideoQueueChange, type VideoQueueRepository, type VideoQueueRun, type VideoQueueSnapshot } from "./video-queue-repository.js";
+import { acceptedVideoReceipt, type VideoBusIdentity } from "./video-bus-admission-repository.js";
 
 export const videoQueueMaximumItems = 500;
 /** A player that has not reported started by then is marked failed. */
@@ -20,8 +21,8 @@ export interface VideoCurrentPlayback {
   readonly seekGeneration: number;
 }
 
-/** Finished requests kept per purpose across restarts. */
-export const videoFinishedHistoryLimit = 100;
+/** Combined finished history kept across restarts. */
+export const videoFinishedHistoryLimit = 200;
 
 export interface VideoQueueView extends VideoQueueSnapshot {
   readonly current: VideoCurrentPlayback | null;
@@ -37,6 +38,8 @@ export interface VideoSubmission {
   readonly durationMs: number | null;
   readonly autoplay: boolean;
   readonly via: VideoSubmissionChannel;
+  /** Arrive held for explicit operator review (never autoplay), like migrated test-queue requests. */
+  readonly reviewRequired?: boolean;
 }
 
 export type VideoQueueCommand =
@@ -48,6 +51,7 @@ export type VideoQueueCommand =
   | { readonly kind: "stop" }
   | { readonly kind: "clear" }
   | { readonly kind: "remove"; readonly itemId: string }
+  | { readonly kind: "play"; readonly itemId: string }
   | { readonly kind: "play-anyway"; readonly itemId: string }
   | { readonly kind: "reorder"; readonly itemIds: readonly string[] };
 
@@ -57,7 +61,7 @@ export type VideoItemCommand =
   | { readonly kind: "seek"; readonly positionMs: number };
 
 export class VideoQueueCommandError extends Error {
-  constructor(readonly code: "queue-full" | "not-found" | "not-playing" | "invalid-order" | "item-mismatch", message: string) {
+  constructor(readonly code: "queue-full" | "not-found" | "not-playing" | "invalid-order" | "item-mismatch" | "review-required", message: string) {
     super(message);
     this.name = "VideoQueueCommandError";
   }
@@ -86,10 +90,10 @@ interface PurposeState {
   noticeTimer: unknown;
 }
 
-type Listener = (purpose: OverlayPurpose, view: VideoQueueView) => void;
+type Listener = (purpose: VideoQueuePurpose, view: VideoQueueView) => void;
 
 /**
- * Authoritative Videos queue per purpose. Queue membership, order and status are
+ * Authoritative ordinary Videos queue. Queue membership, order and status are
  * persisted; the current item's clock lives in memory and is rebuilt as idle on
  * restart, when interrupted items return to the queue head.
  */
@@ -99,7 +103,7 @@ export class VideoQueueService {
   private readonly now: () => number;
   private readonly scheduler: VideoQueueScheduler;
   private readonly createId: () => string;
-  private readonly states = new Map<OverlayPurpose, PurposeState>();
+  private readonly states = new Map<VideoQueuePurpose, PurposeState>();
   private readonly listeners = new Set<Listener>();
   private disposed = false;
 
@@ -110,16 +114,16 @@ export class VideoQueueService {
     this.scheduler = options.scheduler ?? { setTimeout: (callback, delayMs) => setTimeout(callback, delayMs), clearTimeout: handle => clearTimeout(handle as NodeJS.Timeout) };
     this.createId = options.createId ?? randomUUID;
     this.repository.recoverInterruptedPlayback(new Date(this.now()).toISOString());
-    // Finished rows only feed Recent and Failed recently; keep a bounded history per purpose.
+    // Finished rows only feed Recent and Failed recently; keep the combined bounded history.
     this.repository.pruneFinished(videoFinishedHistoryLimit);
-    for (const purpose of ["live", "test"] as const) {
+    for (const purpose of ["live"] as const) {
       this.states.set(purpose, { snapshot: this.repository.load(purpose), current: null, gapEndsAtEpochMs: null, notice: null, playbackTimer: null, gapTimer: null, noticeTimer: null });
     }
     // Older builds held unknown-length items; re-applying the limit queues them again.
     this.reevaluateLimits();
   }
 
-  view(purpose: OverlayPurpose): VideoQueueView {
+  view(purpose: VideoQueuePurpose): VideoQueueView {
     const state = this.state(purpose);
     return { ...state.snapshot, current: state.current, gapEndsAtEpochMs: state.gapEndsAtEpochMs, notice: state.notice };
   }
@@ -129,10 +133,10 @@ export class VideoQueueService {
     return () => this.listeners.delete(listener);
   }
 
-  submit(purpose: OverlayPurpose, submission: VideoSubmission): VideoRequestItem {
+  submit(purpose: VideoQueuePurpose, submission: VideoSubmission, identity?: VideoBusIdentity): VideoRequestItem {
     const state = this.state(purpose);
     const item = this.newItem(purpose, submission);
-    this.commit(purpose, state.snapshot.revision, { upsert: [item] });
+    this.commit(purpose, state.snapshot.revision, { upsert: [item], ...(identity === undefined ? {} : { admission: acceptedVideoReceipt(identity, item) }) });
     if (item.autoplay && item.status === "queued" && this.isIdle(state) && !state.snapshot.queuePaused) {
       this.startRun(purpose, { mode: "next", remainingIds: [item.id] });
     } else {
@@ -141,7 +145,7 @@ export class VideoQueueService {
     return item;
   }
 
-  command(purpose: OverlayPurpose, expectedRevision: number, command: VideoQueueCommand): VideoQueueView {
+  command(purpose: VideoQueuePurpose, expectedRevision: number, command: VideoQueueCommand): VideoQueueView {
     const state = this.state(purpose);
     const { snapshot } = state;
     switch (command.kind) {
@@ -184,16 +188,26 @@ export class VideoQueueService {
       }
       case "clear": {
         const waiting = snapshot.items.filter(item => item.status === "queued" || item.status === "held");
-        this.commit(purpose, expectedRevision, { upsert: waiting.map(item => ({ ...item, status: "removed", holdReason: null })), run: snapshot.run === null ? null : { ...snapshot.run, remainingIds: [] } });
+        this.commit(purpose, expectedRevision, { upsert: waiting.map(item => ({ ...item, status: "removed", reviewRequired: false, holdReason: null })), run: snapshot.run === null ? null : { ...snapshot.run, remainingIds: [] } });
         break;
       }
       case "remove": {
         const item = this.waitingItem(snapshot, command.itemId);
-        this.commit(purpose, expectedRevision, { upsert: [{ ...item, status: "removed", holdReason: null }], run: withoutRunItem(snapshot.run, item.id) });
+        this.commit(purpose, expectedRevision, { upsert: [{ ...item, status: "removed", reviewRequired: false, holdReason: null }], run: withoutRunItem(snapshot.run, item.id) });
+        break;
+      }
+      case "play": {
+        const item = this.waitingItem(snapshot, command.itemId);
+        const hold = this.holdReason(item.durationMs, item.limitOverridden);
+        const released = { ...item, reviewRequired: false, status: hold === null ? "queued" as const : "held" as const, holdReason: hold };
+        this.commit(purpose, expectedRevision, { upsert: [released] }, true);
+        if (released.status === "queued" && this.isIdle(state)) this.startRun(purpose, { mode: "next", remainingIds: [item.id] });
+        else this.emit(purpose);
         break;
       }
       case "play-anyway": {
         const item = this.waitingItem(snapshot, command.itemId);
+        if (item.reviewRequired) throw new VideoQueueCommandError("review-required", "Review this video with Play before overriding its length hold.");
         const released = { ...item, status: "queued" as const, holdReason: null, limitOverridden: true };
         if (this.isIdle(state)) {
           this.commit(purpose, expectedRevision, { upsert: [released] }, true);
@@ -225,7 +239,7 @@ export class VideoQueueService {
    * attributed to `via` and never autoplayed. The length limit applies again, so an
    * over-limit video waits held. Guarded by the queue revision like other commands.
    */
-  requeue(purpose: OverlayPurpose, expectedRevision: number, itemId: string, via: VideoSubmissionChannel): VideoRequestItem {
+  requeue(purpose: VideoQueuePurpose, expectedRevision: number, itemId: string, via: VideoSubmissionChannel): VideoRequestItem {
     const state = this.state(purpose);
     this.requireRevision(state.snapshot, expectedRevision);
     const recent = this.recentItem(purpose, itemId);
@@ -237,14 +251,14 @@ export class VideoQueueService {
   }
 
   /** A played or failed item still listed in Recent for this purpose. */
-  recentItem(purpose: OverlayPurpose, itemId: string): VideoRecentItem {
+  recentItem(purpose: VideoQueuePurpose, itemId: string): VideoRecentItem {
     const item = this.state(purpose).snapshot.recent.find(candidate => candidate.id === itemId);
     if (item === undefined) throw new VideoQueueCommandError("not-found", "That video is no longer in Recent.");
     return item;
   }
 
   /** Pause, resume or seek the current item. Guarded by item id, not queue revision. */
-  control(purpose: OverlayPurpose, expectedItemId: string, command: VideoItemCommand): VideoQueueView {
+  control(purpose: VideoQueuePurpose, expectedItemId: string, command: VideoItemCommand): VideoQueueView {
     const state = this.state(purpose);
     const current = state.current;
     if (current === null || current.item.id !== expectedItemId) throw new VideoQueueCommandError("item-mismatch", "That video is no longer playing.");
@@ -328,7 +342,7 @@ export class VideoQueueService {
    * when a player reports it, holding a waiting item as over the limit or cutting the current one.
    * Returns false when the item is no longer in the queue, so nothing changes.
    */
-  applyMetadata(purpose: OverlayPurpose, itemId: string, metadata: VideoMetadata): boolean {
+  applyMetadata(purpose: VideoQueuePurpose, itemId: string, metadata: VideoMetadata): boolean {
     if (this.disposed) return false;
     const state = this.state(purpose);
     const item = state.snapshot.items.find(candidate => candidate.id === itemId);
@@ -354,7 +368,7 @@ export class VideoQueueService {
     let next: VideoRequestItem = { ...described, durationMs: known };
     if (waiting && !item.limitOverridden) {
       const hold = this.holdReason(known, false);
-      next = { ...next, status: hold === null ? "queued" : "held", holdReason: hold };
+      next = { ...next, status: hold === null && !item.reviewRequired ? "queued" : "held", holdReason: hold };
     }
     // A held item drops out of the run; the run skips anything not queued when it gets there.
     this.commit(purpose, state.snapshot.revision, { upsert: [next] });
@@ -362,7 +376,7 @@ export class VideoQueueService {
   }
 
   /** Shows the bounded "no clip" notice for legacy Streamer.bot shoutouts. */
-  showNotice(purpose: OverlayPurpose, displayName: string | null): void {
+  showNotice(purpose: VideoQueuePurpose, displayName: string | null): void {
     const state = this.state(purpose);
     if (state.noticeTimer !== null) this.scheduler.clearTimeout(state.noticeTimer);
     const id = `video-notice:${this.createId()}`;
@@ -376,13 +390,13 @@ export class VideoQueueService {
 
   /** Re-applies the length limit to waiting items after the configuration changes. */
   reevaluateLimits(): void {
-    for (const purpose of ["live", "test"] as const) {
+    for (const purpose of ["live"] as const) {
       const { snapshot } = this.state(purpose);
       const changed = snapshot.items.flatMap(item => {
         if (item.limitOverridden || (item.status !== "queued" && item.status !== "held")) return [];
         const hold = this.holdReason(item.durationMs, false);
         if (hold === item.holdReason) return [];
-        return [{ ...item, status: hold === null ? "queued" as const : "held" as const, holdReason: hold }];
+        return [{ ...item, status: hold === null && !item.reviewRequired ? "queued" as const : "held" as const, holdReason: hold }];
       });
       if (changed.length > 0) this.commit(purpose, snapshot.revision, { upsert: changed });
     }
@@ -398,19 +412,19 @@ export class VideoQueueService {
     this.listeners.clear();
   }
 
-  private startRun(purpose: OverlayPurpose, run: VideoQueueRun): void {
+  private startRun(purpose: VideoQueuePurpose, run: VideoQueueRun): void {
     const state = this.state(purpose);
     this.commit(purpose, state.snapshot.revision, { run }, true);
     this.advance(purpose);
   }
 
   /** Starts the next run item if nothing plays, no gap is pending and the queue is not paused. */
-  private advance(purpose: OverlayPurpose): void {
+  private advance(purpose: VideoQueuePurpose): void {
     const state = this.state(purpose);
     if (this.disposed || !this.isIdle(state)) return;
     const run = state.snapshot.run;
     if (run === null || state.snapshot.queuePaused) { this.emit(purpose); return; }
-    const waiting = new Map(state.snapshot.items.filter(item => item.status === "queued").map(item => [item.id, item]));
+    const waiting = new Map(state.snapshot.items.filter(item => item.status === "queued" && !item.reviewRequired).map(item => [item.id, item]));
     const remaining = run.remainingIds.filter(id => waiting.has(id));
     const nextId = remaining[0];
     if (nextId === undefined) {
@@ -433,7 +447,7 @@ export class VideoQueueService {
    * Ends the current item and continues the run. `over-limit` returns the item to
    * the queue as held at its original position instead of marking it finished.
    */
-  private finish(purpose: OverlayPurpose, itemId: string, outcome: "played" | "failed" | "over-limit"): void {
+  private finish(purpose: VideoQueuePurpose, itemId: string, outcome: "played" | "failed" | "over-limit"): void {
     const state = this.state(purpose);
     const current = state.current;
     if (current === null || current.item.id !== itemId) return;
@@ -457,7 +471,7 @@ export class VideoQueueService {
     this.emit(purpose);
   }
 
-  private scheduleEnd(purpose: OverlayPurpose): void {
+  private scheduleEnd(purpose: VideoQueuePurpose): void {
     const state = this.state(purpose);
     const current = state.current;
     this.clearPlaybackTimer(state);
@@ -475,7 +489,7 @@ export class VideoQueueService {
    * length that turns out to be over the limit, and was not released with Play
    * anyway, is cut: playback ends and it returns to the queue held as over-limit.
    */
-  private learnDuration(purpose: OverlayPurpose, durationMs: number | null): "unchanged" | "learned" | "cut" {
+  private learnDuration(purpose: VideoQueuePurpose, durationMs: number | null): "unchanged" | "learned" | "cut" {
     const state = this.state(purpose);
     const current = state.current;
     if (current === null || durationMs === null || !Number.isFinite(durationMs) || durationMs <= 0) return "unchanged";
@@ -492,13 +506,13 @@ export class VideoQueueService {
     return "learned";
   }
 
-  private persistItem(purpose: OverlayPurpose, item: VideoRequestItem, silent = false): void {
+  private persistItem(purpose: VideoQueuePurpose, item: VideoRequestItem, silent = false): void {
     const state = this.state(purpose);
     if (state.current?.item.id === item.id) state.current = { ...state.current, item };
     this.commit(purpose, state.snapshot.revision, { upsert: [item] }, silent);
   }
 
-  private commit(purpose: OverlayPurpose, expectedRevision: number, change: VideoQueueChange, silent = false): void {
+  private commit(purpose: VideoQueuePurpose, expectedRevision: number, change: VideoQueueChange, silent = false): void {
     const state = this.state(purpose);
     state.snapshot = this.repository.commit(purpose, expectedRevision, change);
     if (!silent) this.emit(purpose);
@@ -513,13 +527,15 @@ export class VideoQueueService {
     return durationMs > this.getConfig().maxLengthSeconds * 1000 ? "over-limit" : null;
   }
 
-  private newItem(purpose: OverlayPurpose, submission: VideoSubmission): VideoRequestItem {
+  private newItem(purpose: VideoQueuePurpose, submission: VideoSubmission): VideoRequestItem {
     const { snapshot } = this.state(purpose);
     if (snapshot.items.length >= videoQueueMaximumItems) throw new VideoQueueCommandError("queue-full", "The video queue is full.");
     const hold = this.holdReason(submission.durationMs, false);
+    const reviewRequired = submission.reviewRequired === true;
     return {
       id: `video:${this.createId()}`,
-      purpose,
+      reviewRequired,
+      migrationProvenance: null,
       source: submission.source,
       title: submission.title,
       providerTitle: null,
@@ -527,10 +543,10 @@ export class VideoQueueService {
       requester: submission.requester,
       submittedVia: submission.via,
       durationMs: submission.durationMs,
-      status: hold === null ? "queued" : "held",
+      status: hold === null && !reviewRequired ? "queued" : "held",
       holdReason: hold,
       limitOverridden: false,
-      autoplay: submission.autoplay,
+      autoplay: submission.autoplay && !reviewRequired,
       position: nextPosition(snapshot),
       createdAt: new Date(this.now()).toISOString()
     };
@@ -547,7 +563,7 @@ export class VideoQueueService {
     if (snapshot.revision !== expectedRevision) throw new VideoQueueConflictError();
   }
 
-  private findCurrent(itemId: string): [OverlayPurpose, PurposeState, VideoCurrentPlayback] | null {
+  private findCurrent(itemId: string): [VideoQueuePurpose, PurposeState, VideoCurrentPlayback] | null {
     for (const [purpose, state] of this.states) {
       if (state.current?.item.id === itemId) return [purpose, state, state.current];
     }
@@ -569,13 +585,13 @@ export class VideoQueueService {
     state.gapEndsAtEpochMs = null;
   }
 
-  private state(purpose: OverlayPurpose): PurposeState {
+  private state(purpose: VideoQueuePurpose): PurposeState {
     const state = this.states.get(purpose);
     if (state === undefined) throw new Error(`Unknown video queue purpose ${purpose}`);
     return state;
   }
 
-  private emit(purpose: OverlayPurpose): void {
+  private emit(purpose: VideoQueuePurpose): void {
     if (this.disposed) return;
     const view = this.view(purpose);
     for (const listener of this.listeners) listener(purpose, view);
@@ -587,7 +603,7 @@ function validDurationMs(durationMs: number | null): number | null {
 }
 
 function playable(items: readonly VideoRequestItem[]): VideoRequestItem[] {
-  return items.filter(item => item.status === "queued");
+  return items.filter(item => item.status === "queued" && !item.reviewRequired);
 }
 
 function nextPosition(snapshot: VideoQueueSnapshot): number {

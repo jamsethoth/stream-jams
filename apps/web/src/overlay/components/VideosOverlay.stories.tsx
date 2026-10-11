@@ -23,7 +23,7 @@ function active(source: VideoSource, overrides: Partial<Extract<VideosProjection
 const meta = {
   title: "Overlay/Videos",
   component: VideosOverlay,
-  tags: ["videos"],
+  tags: ["videos", "video-content"],
   parameters: { layout: "fullscreen" },
   args: { resolvePlayerUrl: localPlayer },
   // Outputs place the box on the 1920 x 1080 canvas, scaled to the viewport here as the desktop overlay does.
@@ -67,12 +67,35 @@ export const DirectFile: Story = {
 
 /** A small picture-in-picture box in the top right corner keeps a 16:9 picture with a smaller caption. */
 export const CustomPlacement: Story = {
-  args: { projection: active({ provider: "twitch-clip", clipSlug: "StorybookClip" }, { layout: { x: 1400, y: 40, width: 480, height: 330 } }) },
+  args: { projection: active({ provider: "twitch-clip", clipSlug: "StorybookClip" }, { layout: { schemaVersion: 2, content: { width: 480, height: 330 }, desktopPlacement: { x: 1400, y: 40, scale: 1 } } }) },
   play: async ({ canvasElement }) => {
     const box = within(canvasElement).getByTestId("video-overlay");
     await expect(box).toHaveStyle({ left: "1400px", top: "40px", width: "480px", height: "330px" });
     await expect(box.querySelector(".video-overlay__frame")).toHaveStyle({ width: "480px", height: "270px" });
     await expect(within(canvasElement).getByText("Requested by Friendly Streamer")).toBeVisible();
+  }
+};
+
+/** Minimum content still reserves two caption lines and fits a 16:9 picture. */
+export const MinimumContent: Story = {
+  args: { projection: active({ provider: "twitch-clip", clipSlug: "StorybookClip" }, { layout: { schemaVersion: 2, content: { width: 240, height: 180 }, desktopPlacement: { x: 0, y: 0, scale: 1 } } }) },
+  play: async ({ canvasElement }) => {
+    const box = within(canvasElement).getByTestId("video-overlay");
+    await expect(box).toHaveStyle({ width: "240px", height: "180px", left: "0px", top: "0px" });
+    const picture = box.querySelector<HTMLElement>(".video-overlay__frame")!;
+    const pictureStyle = getComputedStyle(picture);
+    await expect(Number.parseFloat(pictureStyle.width)).toBeCloseTo(131 * 16 / 9, 1);
+    await expect(Number.parseFloat(pictureStyle.height)).toBe(131);
+    await expect(Number.parseFloat(pictureStyle.width)).toBeLessThanOrEqual(240);
+    await expect(within(canvasElement).getByText("Requested by Friendly Streamer")).toBeVisible();
+  }
+};
+
+export const NoCaption: Story = {
+  args: { projection: active({ provider: "direct", url: "https://media.example.com/highlight.mp4" }, { title: null, requester: null }) },
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).getByTestId("video-overlay")).toHaveStyle({ width: "1382px", height: "876px" });
+    await expect(canvasElement.querySelector(".video-overlay__context")).toBeNull();
   }
 };
 

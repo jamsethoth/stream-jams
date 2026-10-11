@@ -7,6 +7,7 @@ import {
   UnknownOverlayModuleError
 } from "./module-config-service.js";
 import type { OverlayModuleConfig } from "./types.js";
+import { upgradeTimersConfig } from "../timers/config-upgrade.js";
 
 const now = new Date("2026-05-30T03:00:00.000Z");
 const later = new Date("2026-05-30T03:05:00.000Z");
@@ -46,8 +47,8 @@ describe("overlay module config service", () => {
       enabled: false,
       config: {
         profiles: {
-          landscape: { orientation: "vertical", maxVisible: 4 },
-          vertical: { orientation: "vertical", maxVisible: 4 }
+          landscape: { appearance: { orientation: "vertical", maxVisible: 4 } },
+          vertical: { appearance: { orientation: "vertical", maxVisible: 4 } }
         }
       }
     });
@@ -58,12 +59,10 @@ describe("overlay module config service", () => {
     const saved = await service.saveModuleConfig({
       moduleId: "timers",
       enabled: true,
-      config: {
-        profiles: {
-          landscape: { layout: { x: 0, y: 0, width: 400, height: 200, zIndex: 1 }, orientation: "horizontal", maxVisible: 3 },
-          vertical: { layout: { x: 0, y: 0, width: 300, height: 600, zIndex: 1 }, orientation: "vertical", maxVisible: 5 }
-        }
-      }
+      config: upgradeTimersConfig({ profiles: {
+        landscape: { layout: { x: 0, y: 0, width: 400, height: 200, zIndex: 1 }, orientation: "horizontal", maxVisible: 3 },
+        vertical: { layout: { x: 0, y: 0, width: 300, height: 600, zIndex: 1 }, orientation: "vertical", maxVisible: 5 }
+      } })
     });
 
     await expect(service.saveModuleConfig({

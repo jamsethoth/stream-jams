@@ -15,6 +15,7 @@ import {
 import type { TimerAdjustment } from "@stream-jams/core";
 import type { TimerRunRepository } from "./sqlite-timer-run-repository.js";
 import { snapshotTimerDefinition, TimerDefinitionNotFoundError, type TimerActivityProbe } from "./timer-management-service.js";
+import { resolveTimerOutputGeometry, type TimerOutputGeometry, type TimersOverlayModuleConfig } from "@stream-jams/core";
 
 import type { LocalMediaService } from "../assets/local-media-service.js";
 
@@ -61,6 +62,7 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
   readonly #onRecoveryError: ((error: unknown) => void) | undefined;
   #checkpoint: { cancel(): void } | null = null;
   #recoveryDirty = false;
+  #visualConfig: { raw: unknown; config: TimersOverlayModuleConfig; geometry: Record<"landscape" | "vertical", TimerOutputGeometry> } | undefined;
   readonly #media: LocalMediaService | undefined;
   readonly #entries = new Map<string, RuntimeEntry>();
   readonly #listeners = new Set<(revision: number) => void>();
@@ -338,10 +340,14 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
   }
 
   async getModuleSnapshot(request: OverlayModuleSnapshotRequest): Promise<OverlayModuleSnapshot> {
-    const saved = await this.#config.getModuleConfig("timers");
-    const config = timersOverlayModuleConfigSchema.parse(saved.config);
-    const targetProfileId = request.targetProfileId ?? "landscape";
-    const projection = projectTimerStack({ nowEpochMs: this.#clock.now(), targetProfileId, region: config.profiles[targetProfileId], runs: this.listStates() });
+    const saved = request.savedConfig ?? await this.#config.getModuleConfig("timers");
+    if (this.#visualConfig === undefined || this.#visualConfig.raw !== saved.config) {
+      const config = timersOverlayModuleConfigSchema.parse(saved.config);
+      this.#visualConfig = { raw: saved.config, config, geometry: { landscape: resolveTimerOutputGeometry(config.profiles.landscape), vertical: resolveTimerOutputGeometry(config.profiles.vertical) } };
+    }
+    const targetProfileId = request.recipientKind === "desktop" ? "landscape" : request.targetProfileId ?? "landscape";
+    const projection = projectTimerStack({ nowEpochMs: this.#clock.now(), targetProfileId, profile: this.#visualConfig.config.profiles[targetProfileId],
+      geometry: this.#visualConfig.geometry[targetProfileId], recipientKind: request.recipientKind, runs: this.listStates() });
     const cards = projection.cards.map(card => {
       if (this.#media === undefined || card.iconAssetId === null) return card;
       if (this.#entries.get(card.definitionId)?.iconAvailable === false) return { ...card, iconAssetId: null };

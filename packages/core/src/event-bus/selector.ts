@@ -69,18 +69,23 @@ const conditionEvaluator = new DefaultAlertConditionEvaluator();
 
 /** The only matcher for selectors. Consumers decide what to do with a match. */
 export function matchSelector(selector: EventTriggerSelector, event: BusEvent): boolean {
-  if (selector.sources !== "any" && !selector.sources.includes(event.sourceKind)) return false;
+  const canonical = canonicalEventForSelector(event);
+  const selectorSource = event.kind === "manual"
+    ? canonical?.ingestProvider ?? (event.action.kind === "simulate-external" ? "streamerbot" : null)
+    : event.sourceKind;
+  if (selectorSource === null || (selector.sources !== "any" && !selector.sources.includes(selectorSource))) return false;
   const { match } = selector;
   switch (match.kind) {
     case "canonical":
-      return event.kind === "canonical"
-        && event.event.type === match.type
-        && selector.conditions.every((condition) => conditionEvaluator.evaluate(condition, event.event));
+      return canonical !== null
+        && canonical.type === match.type
+        && selector.conditions.every((condition) => conditionEvaluator.evaluate(condition, canonical));
     case "twitch-reward":
       return event.effectTriggers.some((trigger) => trigger.kind === "twitch-reward"
         && trigger.broadcasterId === match.broadcasterId
         && trigger.rewardId === match.rewardId);
     case "external":
+      if (event.kind === "manual" && event.action.kind === "simulate-external") return event.action.identity.providerKind === match.providerKind && event.action.identity.sourceKey === match.sourceKey && event.action.identity.eventType === match.eventType;
       return event.effectTriggers.some((trigger) => trigger.kind === "streamerbot-event"
         && trigger.sourceKey === match.sourceKey
         && trigger.eventType === match.eventType);
@@ -101,4 +106,9 @@ export function eventTriggerSelectorIdentity(selector: EventTriggerSelector): st
   return selector.sources === "any" && selector.conditions.length === 0
     ? base
     : `${base}|${JSON.stringify([selector.sources, selector.conditions])}`;
+}
+
+/** Extracts simulated selector data without changing truthful bus provenance. */
+export function canonicalEventForSelector(event: BusEvent) {
+  return event.kind === "canonical" ? event.event : event.kind === "manual" && event.action.kind === "simulate-canonical" ? event.action.event : null;
 }

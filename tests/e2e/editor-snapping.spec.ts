@@ -2,6 +2,9 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { compatibilityAlertTextBoxStyle, compatibilityAlertTextStyle, type AlertEditorDocument, type MusicModuleConfig } from "../../packages/core/dist/index.js";
 import { startMusicTestRuntime } from "./music-test-runtime.js";
 
+/** Default Music content canvas: 640 px widget plus its shadow insets on both sides. */
+const musicContentCanvasWidth = 840;
+
 async function dragTo(page: Page, handle: Locator, surface: Locator, canvasWidth: number, currentX: number, nextX: number, release = true) {
   await handle.scrollIntoViewIfNeeded();
   const box = (await handle.boundingBox())!;
@@ -29,19 +32,19 @@ test("Music snaps independently to grid and component alignment with exact keybo
     const move = page.getByRole("button", { name: "Move Title", exact: true });
     const surface = page.locator(".music-layout-editor__stage");
     const field = page.getByLabel("Title X (px)");
-    await dragTo(page, move, surface, 640, 100, 204, false);
+    await dragTo(page, move, surface, musicContentCanvasWidth, 100, 204, false);
     await expect(field).toHaveValue("207");
     await expect(page.locator(".music-layout-editor__guide").first()).toBeVisible();
     await page.mouse.up();
     await expect(page.locator(".music-layout-editor__guide")).toHaveCount(0);
     await alignment.uncheck();
-    await dragTo(page, move, surface, 640, 207, 113);
+    await dragTo(page, move, surface, musicContentCanvasWidth, 207, 113);
     await expect(field).toHaveValue("110");
     await grid.uncheck();
-    await dragTo(page, move, surface, 640, 110, 113);
+    await dragTo(page, move, surface, musicContentCanvasWidth, 110, 113);
     await expect(field).toHaveValue("113");
     await alignment.check();
-    await dragTo(page, page.getByRole("button", { name: "Resize Title", exact: true }), surface, 640, 213, 205);
+    await dragTo(page, page.getByRole("button", { name: "Resize Title", exact: true }), surface, musicContentCanvasWidth, 213, 205);
     await expect(page.getByLabel("Title width (px)")).toHaveValue("94");
     await expect(field).toHaveValue("113");
     await grid.check(); await alignment.check();

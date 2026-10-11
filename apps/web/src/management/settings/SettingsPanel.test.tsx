@@ -109,11 +109,11 @@ describe("SettingsPanel", () => {
   it("saves both server and surface drafts through the shared navigation guard", async () => {
     const user = userEvent.setup();
     const managementApi = createManagementApi();
-    const value = { surfaces: [{ id: "unified-browser:default", kind: "unified-browser" as const, overlayId: "default", layers: [{ moduleId: "alerts", visible: true }] }], desktop: { available: false, displays: [], state: "unavailable" as const, message: null }, desktopBindingState: "not-needed" as const };
-    const surfaceApi: SurfaceSettingsApi = { load: async () => value, save: vi.fn(async surface => ({ ...value, surfaces: [surface] })), retry: vi.fn() };
+    const value: import("@stream-jams/core").SurfaceSettingsView = { surfaces: [{ id: "desktop:primary", kind: "desktop" as const, enabled: false, displayId: null, displayLabel: null, autoFollowDisplayName: false, opacity: 1, layers: [{ moduleId: "alerts", visible: true }] }], desktop: { available: true, displays: [], state: "disabled" as const, message: null }, desktopBindingState: "not-needed" as const };
+    const surfaceApi: SurfaceSettingsApi = { load: async () => value, save: vi.fn(async surface => ({ ...value, surfaces: [{ ...surface, displayLabel: null }] })), retry: vi.fn() };
     window.history.replaceState(null, "", "/manage/settings");
     render(<DirtyNavigationProvider><SettingsNavigationHarness audioApi={createAudioApi()} managementApi={managementApi} surfaceApi={surfaceApi} /></DirtyNavigationProvider>);
-    await user.click(await screen.findByRole("checkbox", { name: "Show Alerts on Unified browser: default" }));
+    await user.click(await screen.findByRole("checkbox", { name: "Show Alerts on Desktop overlay" }));
     const port = screen.getByLabelText("Port");
     await user.clear(port); await user.type(port, "40123");
     await user.click(screen.getByRole("button", { name: "Go home" }));
@@ -419,12 +419,12 @@ describe("SettingsPanel", () => {
     const user = userEvent.setup();
     window.history.replaceState(null, "", "/manage/settings");
     const surfaceApi: SurfaceSettingsApi = {
-      load: async () => ({ surfaces: [{ id: "unified-browser:default", kind: "unified-browser", overlayId: "default", layers: [{ moduleId: "alerts", visible: true }] }], desktop: { available: false, displays: [], state: "unavailable", message: null }, desktopBindingState: "not-needed" }),
+      load: async () => ({ surfaces: [{ id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, displayLabel: null, autoFollowDisplayName: false, opacity: 1, layers: [{ moduleId: "alerts", visible: true }] }], desktop: { available: true, displays: [], state: "disabled", message: null }, desktopBindingState: "not-needed" }),
       save: vi.fn(async () => { throw new ManagementHttpError("Surface settings could not be written", "SURFACE_SAVE_FAILED", "ref-disposable-surface", "Check the saved surface, then retry."); }), retry: vi.fn()
     };
     render(<DirtyNavigationProvider><SettingsNavigationHarness audioApi={createAudioApi()} surfaceApi={surfaceApi} managementApi={createManagementApi()} /></DirtyNavigationProvider>);
     await openDisclosure(user, /^Overlay surfaces ·/);
-    const visible = await screen.findByRole("checkbox", { name: "Show Alerts on Unified browser: default" });
+    const visible = await screen.findByRole("checkbox", { name: "Show Alerts on Desktop overlay" });
     await user.click(visible);
     await user.click(screen.getByRole("button", { name: "Go home" }));
     const dialog = within(await screen.findByRole("dialog", { name: "Leave with unsaved changes?" }));

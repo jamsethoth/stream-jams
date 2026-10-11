@@ -12,6 +12,7 @@ import {
   TwitchEventNormalizationError
 } from "../twitch/twitch-event-normalizer.js";
 import { createNormalizedEffectTriggers } from "../screen-effects/effect-trigger-adapter.js";
+import { EventBusInputRejectedError } from "./event-bus.js";
 
 export type EventIngestionResult =
   | { readonly status: "accepted"; readonly event: NormalizedStreamEvent }
@@ -153,7 +154,7 @@ export class EventIngestionService {
     } catch (error) {
       return this.#reject({
         code: "EVENT_INGESTION_FAILED",
-        message: "Streamer.bot effect trigger ingestion failed",
+        message: error instanceof EventBusInputRejectedError ? error.message : "Streamer.bot effect trigger ingestion failed",
         ingestProvider: "streamerbot",
         exception: error
       });

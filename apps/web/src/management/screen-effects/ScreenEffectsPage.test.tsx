@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { ManagementHttpError } from "../management-http-client.js";
 import { renderManagement as render } from "../../test-support/render-management.js";
 import { createStoryEffectSets } from "../../stories/screen-effect-set-fixtures.js";
@@ -125,7 +126,7 @@ describe("ScreenEffectsPage", () => {
     await waitFor(() => expect(within(menu).getByRole("menuitem", { name: "Copy Confetti" })).toHaveFocus());
   });
 
-  it("shows each browser-source purpose once", async () => {
+  it("shows the ordinary source once and hides retired test metadata", async () => {
     render(<ScreenEffectsPage
       api={api({ includeTestSource: true, status: "create-required", url: null })}
       onEdit={vi.fn()}
@@ -134,12 +135,11 @@ describe("ScreenEffectsPage", () => {
     const browserSources = await screen.findByRole("region", { name: "Browser sources" });
     await userEvent.click(screen.getByRole("button", { name: "Expand browser sources" }));
     const liveSource = within(browserSources).getByRole("article", { name: "Screen Effects Live browser source" });
-    const testSource = within(browserSources).getByRole("article", { name: "Screen Effects Test browser source" });
+    const testSource = within(browserSources).queryByRole("article", { name: "Screen Effects Test browser source" });
 
     expect(liveSource).not.toBeNull();
-    expect(testSource).not.toBeNull();
+    expect(testSource).toBeNull();
     expect(within(liveSource!).getByText("create required")).toBeInTheDocument();
-    expect(within(testSource!).getByText("create required")).toBeInTheDocument();
   });
 
   it("opens a local new draft and confirms live enable changes", async () => {
@@ -214,7 +214,7 @@ function api(options: {
   readonly url?: string | null;
 } = {}): ScreenEffectsApi {
   const document = effect();
-  const source = {
+  const source = { canvas: sceneOutputCanvas(0, 1920, 1080),
     id: "source-one",
     label: "Screen Effects Live",
     purpose: "live" as const,

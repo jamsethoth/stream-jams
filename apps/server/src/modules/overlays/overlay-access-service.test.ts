@@ -1,21 +1,22 @@
+import { HistoricalOverlayKeyFixture } from "../../http/test-support/historical-overlay-key-fixture.js";
 import type { CreateOverlayKeyInput, OverlayAccessKeyRepository } from "@stream-jams/core";
-import { describe, expect, it } from "vitest";
-import { InMemoryOverlayAccessKeyRepository, LocalOverlayAccessService } from "./overlay-access-service.js";
+import { describe, expect, it, vi } from "vitest";
+import { InMemoryOverlayAccessKeyRepository } from "./overlay-access-service.js";
 
 const now = new Date("2026-05-29T12:00:00.000Z");
 
 describe("LocalOverlayAccessService", () => {
-  it("creates live and test overlay keys with hash-only storage", async () => {
+  it("keeps historical live and test overlay keys readable with hash-only storage", async () => {
     const repository = new InMemoryOverlayAccessKeyRepository();
     const service = createService(repository, ["ovl_liveRawKey", "ovl_testRawKey"]);
 
-    const live = await service.createKey({
+    const live = await service.seedHistoricalKey({
       overlayId: "default",
       moduleId: "alerts",
       purpose: "live",
       scope: "module"
     });
-    const test = await service.createKey({
+    const test = await service.seedHistoricalKey({
       overlayId: "default",
       moduleId: "alerts",
       purpose: "test",
@@ -44,13 +45,13 @@ describe("LocalOverlayAccessService", () => {
 
   it("authorizes only matching output metadata and raw route key", async () => {
     const service = createService(new InMemoryOverlayAccessKeyRepository(), ["ovl_moduleRawKey", "ovl_unifiedRawKey"]);
-    const moduleKey = await service.createKey({
+    const moduleKey = await service.seedHistoricalKey({
       overlayId: "default",
       moduleId: "alerts",
       purpose: "test",
       scope: "module"
     });
-    const unifiedKey = await service.createKey({
+    const unifiedKey = await service.seedHistoricalKey({
       overlayId: "default",
       moduleId: null,
       purpose: "test",
@@ -61,13 +62,13 @@ describe("LocalOverlayAccessService", () => {
       service.verifyRouteAccess({
         overlayId: "default",
         moduleId: "alerts",
-        purpose: "test",
+        purpose: "live",
         scope: "module",
         rawKey: moduleKey.rawKey
       })
     ).resolves.toEqual({
-      authorized: true,
-      record: moduleKey.record
+      authorized: false,
+      reason: "purpose-mismatch"
     });
     await expect(
       service.verifyRouteAccess({
@@ -91,7 +92,7 @@ describe("LocalOverlayAccessService", () => {
       service.verifyRouteAccess({
         overlayId: "default",
         moduleId: "alerts",
-        purpose: "test",
+        purpose: "live",
         scope: "module",
         rawKey: unifiedKey.rawKey
       })
@@ -100,20 +101,20 @@ describe("LocalOverlayAccessService", () => {
       service.verifyRouteAccess({
         overlayId: "default",
         moduleId: "music",
-        purpose: "test",
+        purpose: "live",
         scope: "module",
         rawKey: moduleKey.rawKey
       })
-    ).resolves.toEqual({ authorized: false, reason: "module-mismatch" });
+    ).resolves.toEqual({ authorized: false, reason: "purpose-mismatch" });
     await expect(
       service.verifyRouteAccess({
         overlayId: "default",
         moduleId: "alerts",
-        purpose: "test",
+        purpose: "live",
         scope: "module",
         rawKey: "ovl_wrongRawKey"
       })
-    ).resolves.toEqual({ authorized: false, reason: "key-mismatch" });
+    ).resolves.toEqual({ authorized: false, reason: "not-found" });
   });
 
   it("scopes module keys independently by target profile while preserving legacy keys", async () => {
@@ -133,7 +134,7 @@ describe("LocalOverlayAccessService", () => {
       scope: "module",
       targetProfileId: "vertical"
     });
-    const legacy = await service.createKey({
+    const legacy = await service.seedHistoricalKey({
       overlayId: "default",
       moduleId: "alerts",
       purpose: "live",
@@ -174,7 +175,7 @@ describe("LocalOverlayAccessService", () => {
   it("denies revoked keys even when route metadata and raw key match", async () => {
     const repository = new InMemoryOverlayAccessKeyRepository();
     const service = createService(repository, ["ovl_revokedRawKey"]);
-    const created = await service.createKey({
+    const created = await service.seedHistoricalKey({
       overlayId: "default",
       moduleId: "alerts",
       purpose: "live",
@@ -194,10 +195,22 @@ describe("LocalOverlayAccessService", () => {
     ).resolves.toEqual({ authorized: false, reason: "revoked" });
   });
 
+  it("keeps the original revocation time when an already-revoked key is revoked again", async () => {
+    const repository = new InMemoryOverlayAccessKeyRepository();
+    const service = createService(repository, ["ovl_twiceRevoked"]);
+    const created = await service.seedHistoricalKey({ overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module" });
+    const first = await service.revokeKey(created.record.id);
+    await repository.update({ ...first!, revokedAt: "2026-05-01T00:00:00.000Z" });
+    const update = vi.spyOn(repository, "update");
+    await expect(service.revokeKey(created.record.id)).resolves.toMatchObject({ revokedAt: "2026-05-01T00:00:00.000Z" });
+    expect(update).not.toHaveBeenCalled();
+    await expect(service.revokeKey("missing")).resolves.toBeNull();
+  });
+
   it("verifies an exact hash without loading historical overlay candidates", async () => {
     const repository = new ExactLookupOverlayRepository();
     const service = createService(repository, ["ovl_exactRawKey"]);
-    const created = await service.createKey({
+    const created = await service.seedHistoricalKey({
       overlayId: "default",
       moduleId: "alerts",
       purpose: "live",
@@ -218,10 +231,10 @@ describe("LocalOverlayAccessService", () => {
   });
 });
 
-function createService(repository: InMemoryOverlayAccessKeyRepository, rawKeys: string[]): LocalOverlayAccessService {
+function createService(repository: InMemoryOverlayAccessKeyRepository, rawKeys: string[]): HistoricalOverlayKeyFixture {
   let id = 0;
   let rawKeyIndex = 0;
-  return new LocalOverlayAccessService({
+  return new HistoricalOverlayKeyFixture({
     repository,
     clock: () => now,
     generateId: () => {

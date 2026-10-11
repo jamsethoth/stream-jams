@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { InMemorySecretStore } from "@stream-jams/test-support";
 import { WebSocket } from "ws";
+import type { DesktopOverlayTransport } from "@stream-jams/core";
 import type { DesktopVideoTransport } from "@stream-jams/core/videos";
 import { createDefaultAppConfig } from "../config/default-config.js";
 import { FileConfigStore } from "../config/file-config-store.js";
@@ -15,6 +16,7 @@ export function createProviderSocket(url: string) { return new WebSocket(url); }
 const offlineVideoMetadataFetch: typeof fetch = async () => { throw new TypeError("Video detail lookups are offline in this fixture"); };
 
 export async function createProviderSecurityRuntimeFixture(options: {
+  readonly desktopOverlayTransport?: DesktopOverlayTransport;
   readonly desktopVideoTransport?: DesktopVideoTransport;
   readonly videoMetadataFetch?: typeof fetch;
 } = {}) {
@@ -35,6 +37,7 @@ export async function createProviderSecurityRuntimeFixture(options: {
     await configStore.updateConfig({ server: { host: "127.0.0.1", port: address.port } });
     runtime = await startLocalRuntime({ homeDirectory, configStore, secretStore, environment: {}, webBuildDirectory: resolve("apps/web/dist"), scheduleRecurring: () => 1, cancelRecurring: () => {},
       videoMetadataFetch: options.videoMetadataFetch ?? offlineVideoMetadataFetch,
+      ...(options.desktopOverlayTransport === undefined ? {} : { desktopOverlayTransport: options.desktopOverlayTransport }),
       ...(options.desktopVideoTransport === undefined ? {} : { desktopVideoTransport: options.desktopVideoTransport }) });
     const sessionResponse = await fetch(`${runtime.url}/auth/management/sessions`, { method: "POST" });
     if (sessionResponse.status !== 201) throw new Error(`Session bootstrap failed: ${sessionResponse.status}`);

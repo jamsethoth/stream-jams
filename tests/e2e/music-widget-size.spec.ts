@@ -14,7 +14,7 @@ test("Music widget outer resize snaps, cancels, and saves independently per view
     const height = page.getByLabel("Preview widget height (px)");
     await handle.scrollIntoViewIfNeeded();
     const box = (await handle.boundingBox())!;
-    const scale = (await page.locator(".music-layout-editor__stage").boundingBox())!.width / 640;
+    const scale = (await page.locator(".music-layout-editor__stage").boundingBox())!.width / 840; // default 640 px widget plus shadow insets
     await page.mouse.move(box.x + 7, box.y + 7); await page.mouse.down();
     await page.mouse.move(box.x + 7 + 83 * scale, box.y + 7 + 25 * scale, { steps: 5 });
     await expect(width).toHaveValue("720"); await expect(height).toHaveValue("200");

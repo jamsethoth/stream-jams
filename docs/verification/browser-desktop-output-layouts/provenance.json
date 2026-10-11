@@ -1,0 +1,98 @@
+{
+  "baselineSource": "b64b2e79c9790d899736895c7cbcb74387c2d0d5",
+  "originalControllerSha256": "3F679BFF69D09520D773281800DC1E4B9DF5020141671F26C13E81078BB7EEBB",
+  "promotedControllerSha256": "4C6D31A9314C7E081588790E6894F9C401787BCA24C058015B1D0936A6DFE39E",
+  "originalFixtureSha256": "80F818BAFE25C146286F0C053FCB184F33267822C82AAE26C73175128FF70F77",
+  "originalMetricsSha256": "11B6775F290BF848F0021158FDB80E8FB44D2310873F1D79A1049A7D67961278",
+  "promotionChanges": [
+    "Removed raw git diff capture; no workload or sampler changes.",
+    "Pinned fixture and metrics copied byte for byte.",
+    "Candidate adapter validates current Music/Timer/Video shapes using production upgraders.",
+    "Explicit standard Node imports/browser callback globals and explanatory malformed-frame comment for lint; sampling behavior unchanged."
+  ],
+  "limitations": [
+    "No baseline native OBS/GPU/audio/video decoding/frame pacing metrics exist.",
+    "Node CPU/RSS include service and benchmark controller.",
+    "CDP task time and JS heap are not browser process CPU/RSS.",
+    "Single short run cannot establish a numerical speedup."
+  ],
+  "candidate": {
+    "productionSourceHead": "395d16e3",
+    "workingTree": "S11 test/scripts/docs/spec-only additions; parent acceptance/commit pending",
+    "node": "v24.16.0",
+    "browser": "153.0.8010.12",
+    "os": "win32 10.0.26200",
+    "packageSha256": "C82A6563359FBD93E412673B65441FEFAA78D0C7B396A9F98EC673D141B5A2A3",
+    "compiledManifest": "compiled-current-sha256.json",
+    "compiledRoots": [
+      "apps/server/dist",
+      "apps/web/dist",
+      "packages/core/dist",
+      "packages/test-support/dist"
+    ],
+    "files": {
+      "docs/verification/browser-desktop-output-layouts/compiled-current-sha256.json": "7FAD218EB55F56109357B00FA46DF4969AFCDD0DB1FCA894AA9809A768DE58B4",
+      "docs/verification/browser-desktop-output-layouts/comparable/metrics.json": "8E3603535F4E783C5929BFAC43071FE1BE5B983D31C7E344FC38C31591809E98",
+      "docs/verification/browser-desktop-output-layouts/compact/metrics.json": "A100E982327CA6FE2461C0B8A10009888FA876EC92C2589C70332C7ACCC2B7DD",
+      "docs/verification/browser-desktop-output-layouts/performance-summary.json": "3D1B955DD4A087E0DA54EDE091EE1BA4E2C2DF5BA15C5D81C95488809D8628AA",
+      "docs/verification/browser-desktop-output-layouts/native-evidence.json": "9B8E67E962A7F93AE17477F5ADA97089924EB4895B838DB03C9A7E3F759ED1E8",
+      "docs/verification/browser-desktop-output-layouts/obs/asserted-coverage.json": "942546837228BAEF1395A831A83FA14F4CC6649D14595517147EFB4B0C20C2BD",
+      "scripts/browser-desktop-output-benchmark.mjs": "7553053AD443B427EC363C571FA73442CF64BE565AE8A6D8AF37866DA1F5BF5C"
+    },
+    "capturedWorkingFileSha256": {
+      "docs/verification/browser-desktop-output-layouts/compiled-current-sha256.json": "1B1C3D9111EBE1F607AEEEFD30099F023DF72D61D3A57F92EA7CEDF668343E1C",
+      "docs/verification/browser-desktop-output-layouts/comparable/metrics.json": "8E3603535F4E783C5929BFAC43071FE1BE5B983D31C7E344FC38C31591809E98",
+      "docs/verification/browser-desktop-output-layouts/compact/metrics.json": "A100E982327CA6FE2461C0B8A10009888FA876EC92C2589C70332C7ACCC2B7DD",
+      "docs/verification/browser-desktop-output-layouts/performance-summary.json": "555FD28257E3C1CFB25945BDE7A9BD88261BF16F781D30B0C3A122495AF2CB22",
+      "docs/verification/browser-desktop-output-layouts/native-evidence.json": "E3A4F45FA56FF575101AC895A21940A54646069DF5AAA1141E8279E824860719",
+      "docs/verification/browser-desktop-output-layouts/obs/asserted-coverage.json": "376734F7D4BB7781958AE2BBA95126355161B1B68C93245562CA5F9FCC22EDA3",
+      "scripts/browser-desktop-output-benchmark.mjs": "C4702C1B24A2450502C9453A5D657B09C1EC7CE16403E533F9F4BC91FE327F61"
+    },
+    "fileHashScope": "files records canonical distributed LF bytes; capturedWorkingFileSha256 retains pre-normalization S11 working evidence/tool bytes.",
+    "compiledEntryHashScope": "compiled-current-sha256.json entries describe actual built artifact bytes captured during S11, not tracked source LF blobs. Entry values remain unchanged."
+  },
+  "executedPromotedControllerSha256": "869204716D1885B2BAD80827D47A3F7F1CAA2584E5227A4010969B0704338881",
+  "promotedControllerHashScope": "Canonical distributed LF bytes per repository .gitattributes; executed CRLF working bytes are recorded separately.",
+  "lineEndingCorrection": {
+    "acceptedS11Commit": "418b42f7",
+    "originalBaselineArtifactsUntouched": true,
+    "originalControllerHistoricalHashUnchanged": true,
+    "originalCompiledManifestWorkingSha256": "A7C69ACE547ED31BBD6DD880AA214B3D2663E84CCDB2BCD4CFC0A0F1B93F1EC2",
+    "distributedBaselineCompiledManifestSha256": "6B2327600B20D245C3AF5AD5E97AD6975C0459E8D97D678720871B127765E3B2",
+    "historicalAdapterManifests": "comparable/compact inputHashes and adaptedControllerSha256 retain actual executed CRLF-controller inputs, not distributed LF controller hashes.",
+    "measurementAndWorkloadChange": false,
+    "preChecksumEditLfNormalizationSnapshots": [
+      {
+        "path": "scripts/browser-desktop-output-benchmark-controller.mjs",
+        "workingSha256": "869204716D1885B2BAD80827D47A3F7F1CAA2584E5227A4010969B0704338881",
+        "normalizedLfSha256BeforeChecksumEdit": "4C6D31A9314C7E081588790E6894F9C401787BCA24C058015B1D0936A6DFE39E"
+      },
+      {
+        "path": "scripts/browser-desktop-output-benchmark.mjs",
+        "workingSha256": "C4702C1B24A2450502C9453A5D657B09C1EC7CE16403E533F9F4BC91FE327F61",
+        "normalizedLfSha256BeforeChecksumEdit": "C059751F6462CD8D2590173A5D137B5283DAF8875D5B7F2FAF0B56E52C3119FA"
+      },
+      {
+        "path": "docs/verification/browser-desktop-output-layouts/compiled-current-sha256.json",
+        "workingSha256": "1B1C3D9111EBE1F607AEEEFD30099F023DF72D61D3A57F92EA7CEDF668343E1C",
+        "normalizedLfSha256BeforeChecksumEdit": "7FAD218EB55F56109357B00FA46DF4969AFCDD0DB1FCA894AA9809A768DE58B4"
+      },
+      {
+        "path": "docs/verification/browser-desktop-output-layouts/native-evidence.json",
+        "workingSha256": "E3A4F45FA56FF575101AC895A21940A54646069DF5AAA1141E8279E824860719",
+        "normalizedLfSha256BeforeChecksumEdit": "9B8E67E962A7F93AE17477F5ADA97089924EB4895B838DB03C9A7E3F759ED1E8"
+      },
+      {
+        "path": "docs/verification/browser-desktop-output-layouts/obs/asserted-coverage.json",
+        "workingSha256": "376734F7D4BB7781958AE2BBA95126355161B1B68C93245562CA5F9FCC22EDA3",
+        "normalizedLfSha256BeforeChecksumEdit": "942546837228BAEF1395A831A83FA14F4CC6649D14595517147EFB4B0C20C2BD"
+      },
+      {
+        "path": "docs/verification/browser-desktop-output-layouts/performance-summary.json",
+        "workingSha256": "555FD28257E3C1CFB25945BDE7A9BD88261BF16F781D30B0C3A122495AF2CB22",
+        "normalizedLfSha256BeforeChecksumEdit": "3D1B955DD4A087E0DA54EDE091EE1BA4E2C2DF5BA15C5D81C95488809D8628AA"
+      }
+    ],
+    "snapshotScope": "These snapshots describe line-ending conversion before the adapter controller-checksum literal edit. Final distributed hashes are candidate.files; the adapter final hash therefore differs from its normalization-only snapshot."
+  }
+}

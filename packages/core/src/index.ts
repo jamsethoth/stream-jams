@@ -201,7 +201,7 @@ export { twitchCorrelationKey } from "./event-bus/correlation.js";
 export { eventBusActivityViewSchema, eventBusSettingsSchema, externalEventPayloadMaxBytes, externalEventPayloadSchema } from "./event-bus/schemas.js";
 export type { EventBusActivityView, EventBusSettings } from "./event-bus/schemas.js";
 export type { EventTriggerMatch, EventTriggerSelector } from "./event-bus/selector.js";
-export { eventTriggerMatchSchema, eventTriggerSelectorIdentity, eventTriggerSelectorSchema, matchSelector } from "./event-bus/selector.js";
+export { canonicalEventForSelector, eventTriggerMatchSchema, eventTriggerSelectorIdentity, eventTriggerSelectorSchema, matchSelector } from "./event-bus/selector.js";
 
 export type * from "./overlay-modules/types.js";
 export type { OverlayModulePresentation } from "./overlay-modules/presentation.js";
@@ -221,6 +221,10 @@ export {
 } from "./timers/schemas.js";
 export { overlayModulePresentationSchema } from "./overlay-modules/presentation.js";
 export { compareTimerRuns, formatTimerRemaining, projectTimerStack } from "./timers/projection.js";
+export { upgradeTimersConfig, legacyTimerAppearance, InvalidTimersConfigError } from "./timers/config-upgrade.js";
+export { resolveTimerOutputGeometry, timerOverflowGeometry } from "./timers/output-geometry.js";
+export type { TimerOutputGeometry } from "./timers/output-geometry.js";
+export { timerAppearanceSchema, timerProfileSchema } from "./timers/schemas.js";
 export { timersOverlayModuleDefinition } from "./timers/module-definition.js";
 export { surfaceLayerSchema, surfaceLayersSchema, surfaceConfigurationSchema, surfaceConfigurationUpdateSchema, reconcileSurfaceLayers, validateSurfaceOrder } from "./overlay-modules/surface-configuration.js";
 export type { SurfaceLayer, SurfaceConfiguration, SurfaceConfigurationUpdate, SurfaceRepository } from "./overlay-modules/surface-configuration.js";
@@ -236,12 +240,12 @@ export type { TimedMediaElement } from "./audio/prepare-timed-media.js";
 export { desktopModuleSyncSchema, desktopVisualInstructionSchema, desktopVisualAssetSchema, desktopVisualBatchSchema, desktopVisualCommandSchema, desktopVisualReplySchema, desktopVisualRendererRequestSchema, desktopVisualRendererReplySchema, privateDesktopVisualBatchSchema, privateDesktopModuleSyncSchema, privateDesktopVisualCommandSchema, privateDesktopMusicArtworkUrl, visualMediaType } from "./overlays/desktop-visual-transport.js";
 export type { DesktopModuleSync, DesktopVisualBatch, DesktopVisualAsset, DesktopVisualCommand, DesktopVisualReply, PrivateDesktopVisualBatch, PrivateDesktopModuleSync, PrivateDesktopMusicArtwork, PrivateDesktopVisualCommand, DesktopOverlayTransport, DesktopVisualRendererRequest, DesktopVisualRendererReply } from "./overlays/desktop-visual-transport.js";
 export { VisualRecipientLedger } from "./overlays/visual-recipient-ledger.js";
-export { selectedDesktopDisplaySchema, desktopOverlayDiagnosticSchema, desktopOverlayStatusSchema, surfaceSettingsViewSchema } from "./overlays/desktop-overlay-status.js";
-export type { SelectedDesktopDisplay, DesktopOverlayDiagnostic, DesktopOverlayStatus, SurfaceSettingsView, DesktopBindingState } from "./overlays/desktop-overlay-status.js";
+export { selectedDesktopDisplaySchema, desktopOverlayDiagnosticSchema, desktopOverlayStatusSchema, retiredOutputAttemptSchema, surfaceSettingsViewSchema } from "./overlays/desktop-overlay-status.js";
+export type { SelectedDesktopDisplay, DesktopOverlayDiagnostic, DesktopOverlayStatus, RetiredOutputAttempt, SurfaceSettingsView, DesktopBindingState } from "./overlays/desktop-overlay-status.js";
 export type { AlertsOverlayModuleConfig } from "./overlay-modules/module-definition.js";
 export { alertsOverlayModuleConfigSchema, alertsOverlayModuleDefinition } from "./overlay-modules/module-definition.js";
 export type { OverlayModuleRegistry } from "./overlay-modules/module-registry.js";
-export { StaticOverlayModuleRegistry, createDefaultOverlayModuleRegistry, listUnifiedOverlayModuleIds } from "./overlay-modules/module-registry.js";
+export { StaticOverlayModuleRegistry, createDefaultOverlayModuleRegistry, listUnifiedOverlayModuleIds, listDesktopOverlayModuleIds } from "./overlay-modules/module-registry.js";
 export type { OverlayModuleConfigRepository, OverlayModuleConfigService, SaveOverlayModuleConfigInput } from "./overlay-modules/module-config-service.js";
 export { DefaultOverlayModuleConfigService, InMemoryOverlayModuleConfigRepository, InvalidOverlayModuleConfigError, UnknownOverlayModuleError } from "./overlay-modules/module-config-service.js";
 export type { OverlayCompositionService, OverlayModuleRuntime, OverlayModuleSnapshotRequest } from "./overlay-modules/overlay-composition-service.js";
@@ -385,13 +389,22 @@ export { pearCertificateFingerprintSchema, pearConfigurationSchema, pearTrustedC
 export * from "./music/management.js";
 export * from "./music/module-definition.js";
 export * from "./music/projection.js";
+export * from "./music/output-geometry.js";
 export * from "./music/asset-references.js";
 export type * from "./videos/types.js";
 export * from "./videos/schemas.js";
 export * from "./videos/layout.js";
+export * from "./videos/config-upgrade.js";
 export * from "./videos/placement-geometry.js";
 export { videosModuleDefinition } from "./videos/module-definition.js";
 
 export * from "./management/local-websocket-connection.js";
 export { moduleMuteStateSchema } from "./playback/schemas.js";
 export { defaultModuleMuteState, type ModuleMuteState, type MutablePlaybackModuleId } from "./playback/types.js";
+
+export { manualEventSubmissionSchema, manualEventActionSchema, manualEventActionMaxBytes } from "./event-bus/manual-submission.js";
+export type * from "./event-bus/manual-submission.js";
+
+export { outputCanvasSchema, sceneOutputCanvas, moduleOutputCanvas, type OutputCanvas } from "./overlay-modules/output-canvas.js";
+export { classifyRetiredOverlayOutput, isOrdinaryOverlayOutput } from "./overlays/public-output.js";
+export type { RetiredOverlayOutputKind } from "./overlays/public-output.js";

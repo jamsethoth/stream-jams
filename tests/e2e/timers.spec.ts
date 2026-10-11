@@ -1,14 +1,95 @@
+import { sceneOutputCanvas, upgradeTimersConfig, timersOverlayModuleConfigSchema, overlayCompositionSchema, type DesktopOverlayTransport, type SurfaceSettingsView, type TimerDefinition, type TimerStackProjection } from "@stream-jams/core";
+import { createProviderSecurityRuntimeFixture } from "../../apps/server/src/test-support/provider-security-runtime-fixture.js";
 import { mockMediaPreviews } from "./media-preview-fixtures.js";
 import { expect, test } from "@playwright/test";
 import { installOverlayWebSocketMock, mockManagementShell } from "./e2e-helpers.js";
 
 const timestamp = "2026-09-29T00:00:00.000Z";
-const defaultLayout = {
+
+test("saved Timer appearance owns stable browser pixels independently of desktop and runtime count", async ({ page, context }) => {
+  test.setTimeout(90000);
+  let latestDesktop: TimerStackProjection | null = null;
+  const currentDesktop = (): TimerStackProjection | null => latestDesktop;
+  const transport: DesktopOverlayTransport = { configure: async () => {}, prepare: async () => "ready", start: async () => {}, stop: async () => {}, retry: async () => {}, close: async () => {},
+    getStatus: async () => ({ available: true, state: "ready", message: null, displays: [{ id: "monitor", label: "Timer test monitor", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }] }),
+    syncModule: async sync => { if (sync.moduleId === "timers") latestDesktop = sync.presentation?.kind === "timer-stack" ? sync.presentation.stack : null; } };
+  const fixture = await createProviderSecurityRuntimeFixture({ desktopOverlayTransport: transport });
+  const json = async (path: string, method = "GET", body?: unknown) => { const response = await fixture.request(path, method, body); expect(response.ok).toBe(true); return response.json(); };
+  const compositionAt = async (url: string) => { const endpoint = new URL(url); endpoint.pathname += "/composition"; const response = await fetch(endpoint); expect(response.ok).toBe(true); return overlayCompositionSchema.parse(await response.json()); };
+  try {
+    await fixture.start();
+    const saved = timersOverlayModuleConfigSchema.parse((await json("/overlay-modules/timers/config")).config);
+    await json("/overlay-modules/timers/config", "PUT", { enabled: true, config: saved });
+    const surfaces = await json("/overlay-surfaces") as SurfaceSettingsView;
+    const desktop = surfaces.surfaces.find(surface => surface.kind === "desktop")!;
+    await json(`/overlay-surfaces/${encodeURIComponent(desktop.id)}`, "PUT", { id: desktop.id, kind: "desktop", enabled: true, displayId: "monitor", autoFollowDisplayName: false, opacity: 1, layers: desktop.layers.map(layer => layer.moduleId === "timers" ? { ...layer, visible: true } : layer) });
+    const definitions: TimerDefinition[] = [];
+    for (let index = 0; index < 6; index++) {
+      const definition = await json("/timers", "POST", { label: index === 0 ? "Timer with a very long label that must never escape its bounded card" : `Timer ${index}`, durationMs: index === 0 ? Number.MAX_SAFE_INTEGER - Date.now() - 10000 : 120000,
+        iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: false, deviceRouteIds: [] } }) as TimerDefinition;
+      definitions.push(definition); await json(`/timers/${definition.id}/start`, "POST"); await json(`/timers/${definition.id}/pause`, "POST");
+    }
+    const states = await json("/timers/state");
+    const browsers = [];
+    for (const profile of ["landscape", "vertical"] as const) {
+      const { url } = await json("/management/overlay-outputs/keys", "POST", { overlayId: "default", moduleId: "timers", purpose: "live", scope: "module", targetProfileId: profile }) as { url: string };
+      const browser = await context.newPage();
+      let connected = false; browser.on("websocket", socket => socket.on("framereceived", frame => { if (typeof frame.payload === "string" && frame.payload.includes('"overlay.connected"')) connected = true; }));
+      await browser.goto(url); await expect.poll(() => connected).toBe(true);
+      await expect(browser.getByRole("listitem")).toHaveCount(4);
+      await expect(browser.getByText("+2 more")).toHaveCSS("font-variant-numeric", "tabular-nums");
+      await expect(browser.getByRole("listitem").first()).toHaveCSS("left", "48px");
+      const envelope = await compositionAt(url);
+      expect(envelope.canvas).toMatchObject({ kind: "content", origin: { x: 0, y: 0 }, width: profile === "landscape" ? 736 : 1080, height: profile === "landscape" ? 409 : 631 });
+      browsers.push({ browser, profile, url, canvas: envelope.canvas, pixels: await browser.getByTestId("overlay-content-canvas").screenshot({ omitBackground: true, animations: "disabled" }) });
+    }
+    await page.goto(`${fixture.runtime.url}/manage/modules/timers`);
+    await page.getByLabel("X", { exact: true }).fill("100"); await page.getByLabel("Y", { exact: true }).fill("100");
+    await page.getByLabel("Desktop scale").fill(".8"); await page.getByLabel("Z order").fill("9");
+    await page.getByRole("button", { name: "Save overlay layout" }).click();
+    await expect(page.getByText("Timer overlay layout saved.")).toBeVisible();
+    await expect.poll(() => currentDesktop()?.region.layout.x).toBe(100);
+    expect(currentDesktop()?.renderScale).toBe(.8); expect(currentDesktop()?.targetProfileId).toBe("landscape");
+    for (const output of browsers) {
+      expect((await output.browser.getByTestId("overlay-content-canvas").screenshot({ omitBackground: true, animations: "disabled" })).equals(output.pixels)).toBe(true);
+      expect((await compositionAt(output.url)).canvas.width).toBe(output.canvas.width);
+    }
+    expect(await json("/timers/state")).toEqual(states);
+    await page.getByRole("radiogroup", { name: "Timer profile" }).getByText("Vertical", { exact: true }).click(); await page.getByLabel("Label font", { exact: true }).selectOption("serif");
+    await page.getByLabel("Background opacity").fill(".4"); await page.getByLabel("Maximum shown").fill("3");
+    await page.getByLabel("Card width (px)").fill("300");
+    await page.getByRole("button", { name: "Save overlay layout" }).click(); await expect(page.getByText("Timer overlay layout saved.")).toBeVisible();
+    const updated = timersOverlayModuleConfigSchema.parse((await json("/overlay-modules/timers/config")).config);
+    expect(updated.profiles.landscape.appearance).toEqual(saved.profiles.landscape.appearance);
+    expect(updated.profiles.vertical.appearance.labelFont.legacyFamily).toBeUndefined();
+    const vertical = browsers[1]!; await expect(vertical.browser.getByRole("listitem")).toHaveCount(3);
+    await expect(vertical.browser.getByTestId("overlay-content-canvas")).toHaveCSS("height", "500px");
+    await expect(vertical.browser.getByTestId("overlay-content-canvas")).toHaveCSS("width", "396px");
+    const renderedBackground = await vertical.browser.getByRole("listitem").first().evaluate(element => ({ background: getComputedStyle(element).backgroundColor, opacity: getComputedStyle(element).opacity }));
+    expect(renderedBackground.background).toMatch(/(?:\/ 0\.4|, 0\.4)\)$/u);
+    expect(renderedBackground.opacity).toBe("1");
+    const afterCapacity = await compositionAt(vertical.url);
+    for (const definition of definitions.slice(1)) await json(`/timers/${definition.id}/stop`, "POST");
+    await expect(vertical.browser.getByRole("listitem")).toHaveCount(1);
+    expect((await compositionAt(vertical.url)).canvas).toEqual(afterCapacity.canvas);
+    const bounds = await vertical.browser.getByRole("listitem").first().evaluate(element => { const card = element.getBoundingClientRect(); const value = element.querySelector("time")!.getBoundingClientRect(); return { cardRight: card.right, valueRight: value.right, overflow: element.querySelector("time")!.scrollWidth > element.querySelector("time")!.clientWidth }; });
+    expect(bounds.valueRight).toBeLessThanOrEqual(bounds.cardRight); expect(bounds.overflow).toBe(true);
+    for (const definition of definitions) await json(`/timers/${definition.id}/stop`, "POST");
+    await json("/overlay-modules/timers/enabled", "PATCH", { enabled: false });
+    await vertical.browser.reload(); await expect(vertical.browser.getByRole("listitem")).toHaveCount(0);
+    await expect(vertical.browser.getByTestId("overlay-content-canvas")).toHaveCSS("height", "500px");
+    const beforeInvalid = await compositionAt(vertical.url);
+    const invalid = await fixture.request("/overlay-modules/timers/config", "PUT", { enabled: false, config: { ...updated, profiles: { ...updated.profiles, vertical: { ...updated.profiles.vertical, appearance: { ...updated.profiles.vertical.appearance, inlinePaddingPx: 500 } } } } });
+    expect(invalid.status).toBe(400); expect((await compositionAt(vertical.url)).canvas).toEqual(beforeInvalid.canvas);
+    for (const output of browsers) await output.browser.close();
+  } finally { await fixture.close(); }
+});
+const defaultLayout = upgradeTimersConfig({
   profiles: {
     landscape: { layout: { x: 32, y: 32, width: 720, height: 360, zIndex: 20 }, orientation: "vertical", maxVisible: 3 },
     vertical: { layout: { x: 24, y: 48, width: 600, height: 420, zIndex: 20 }, orientation: "vertical", maxVisible: 2 }
   }
-};
+});
 
 test("authors, lays out, reloads, and controls a reusable Timer", async ({ page }) => {
   await mockManagementShell(page);
@@ -114,19 +195,17 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
   expect(centerOffset).toBeLessThanOrEqual(1);
   await expect(previewCards.first().locator(".timer-stack__label")).not.toHaveCSS("line-height", "normal");
   const overflowBadge = timerPreview.getByText("+2 more");
-  await page.getByLabel("HEIGHT").fill("180");
+  await page.getByLabel("Label size (px)").fill("20");
   const compactFontSize = await previewCards.first().locator(".timer-stack__label").evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize));
   const compactOverflowFontSize = await overflowBadge.evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize));
-  await page.getByLabel("HEIGHT").fill("480");
+  await page.getByLabel("Label size (px)").fill("29");
   const roomyFontSize = await previewCards.first().locator(".timer-stack__label").evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize));
   const roomyOverflowFontSize = await overflowBadge.evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize));
   expect(roomyFontSize).toBeGreaterThan(compactFontSize);
-  expect(roomyOverflowFontSize).toBeGreaterThan(compactOverflowFontSize);
-  expect(compactOverflowFontSize).toBe(compactFontSize);
-  expect(roomyOverflowFontSize).toBe(roomyFontSize);
-  await page.getByLabel("WIDTH").fill("360");
+  expect(roomyOverflowFontSize).toBe(compactOverflowFontSize);
+  await page.getByLabel("Card width (px)").fill("360");
   expect(await longExample.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
-  await page.getByLabel("WIDTH").fill("1600");
+  await page.getByLabel("Card width (px)").fill("1600");
   expect(await longExample.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(false);
   const browserSources = page.getByRole("region", { name: "Browser sources" });
   await expect(browserSources.getByText("1 ready")).toBeVisible();
@@ -180,14 +259,15 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
 
   await page.getByRole("radiogroup", { name: "Timer profile" }).getByText("Landscape", { exact: true }).click();
   await expect(page.getByRole("radio", { name: "Landscape" })).toBeChecked();
+  await page.getByLabel("Card width (px)").fill("300");
   await page.getByLabel("Orientation").selectOption("horizontal");
   await page.getByLabel("Maximum shown").fill("4");
   await page.getByRole("radiogroup", { name: "Timer profile" }).getByText("Vertical", { exact: true }).click();
   await expect(page.getByRole("radio", { name: "Vertical" })).toBeChecked();
   await page.getByLabel("Maximum shown").fill("2");
   await page.getByRole("button", { name: "Save overlay layout" }).click();
-  expect(layout.profiles.landscape).toMatchObject({ orientation: "horizontal", maxVisible: 4 });
-  expect(layout.profiles.vertical).toMatchObject({ maxVisible: 2 });
+  expect(layout.profiles.landscape.appearance).toMatchObject({ orientation: "horizontal", maxVisible: 4 });
+  expect(layout.profiles.vertical.appearance).toMatchObject({ maxVisible: 2 });
 
   await page.getByRole("button", { name: "Start", exact: true }).first().click();
   await page.getByRole("button", { name: /Cat paws reward/u }).first().click();
@@ -279,7 +359,7 @@ function asset(id: string, displayName: string, mediaType: "image" | "audio", mi
 
 function composition(now: number) {
   const slot = (x: number) => ({ x, y: 40, width: 300, height: 120, zIndex: 20 });
-  return { overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", modules: [{
+  return { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(), overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", modules: [{
     moduleId: "timers", enabled: true, instructions: [], presentation: { kind: "timer-stack", stack: {
       targetProfileId: "landscape", region: { layout: { x: 40, y: 40, width: 900, height: 120, zIndex: 20 }, orientation: "horizontal", maxVisible: 3 },
       cards: [

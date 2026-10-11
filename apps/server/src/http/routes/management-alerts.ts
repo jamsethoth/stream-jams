@@ -14,6 +14,9 @@ import {
   alertSetOverviewSchema,
   alertVariationAuthoringContextSchema,
   alertVariationCreateInputSchema,
+  manualEventSubmissionSchema,
+  type ManualEventAction,
+  type AlertEditorTestResult,
   managedAlertMutationInputSchema,
   type AlertEditorErrorReportInput,
   type AlertEditorErrorReportResult
@@ -57,6 +60,7 @@ type AlertEditorCommands = Pick<
 >;
 
 export interface ManagementAlertRouteDependencies {
+  readonly sendSavedAlertTest?: (action: Extract<ManualEventAction, { kind: "alert-saved-test" }>) => Promise<AlertEditorTestResult>;
   readonly alertSets: AlertSetCommands;
   readonly alertEditor: AlertEditorCommands;
   readonly reportClientError: (
@@ -321,7 +325,7 @@ export function registerManagementAlertRoutes(
 
   app.post("/management/alerts/:alertId/editor/test", { preHandler }, async (request, reply) => {
     const alertId = readParam(request.params, "alertId");
-    const input = alertEditorTestRequestSchema.safeParse(request.body);
+    const input = alertEditorTestRequestSchema.strict().safeParse(request.body);
     if (!input.success) {
       return recordAlertEditorError(
         reply,
@@ -354,4 +358,16 @@ export function registerManagementAlertRoutes(
       alertEditorErrorReportInputSchema.parse(request.body)
     ))
   );
+  if (dependencies.sendSavedAlertTest !== undefined) {
+    app.post("/management/alerts/:alertId/editor/test-saved", { preHandler }, async (request, reply) => {
+      const alertId = readParam(request.params, "alertId");
+      const body = request.body !== null && typeof request.body === "object" ? request.body : {};
+      const input = manualEventSubmissionSchema.safeParse({ action: { ...body, kind: "alert-saved-test", alertId } });
+      if (!input.success || input.data.action.kind !== "alert-saved-test" || "alertId" in body || "kind" in body) {
+        return recordAlertEditorError(reply, errorContext(alertId, null, "The saved alert test was not sent", "Review the target profile and sample data."), 400, "INVALID_ALERT_EDITOR_TEST", "Choose a valid saved alert target and bounded sample data.");
+      }
+      try { return alertEditorTestResultSchema.parse(await dependencies.sendSavedAlertTest!(input.data.action)); }
+      catch (error) { return sendAlertEditorCommandError(reply, error, errorContext(alertId, null, "The saved alert test was not sent", "Review outputs and Diagnostics before submitting a new test.")); }
+    });
+  }
 }

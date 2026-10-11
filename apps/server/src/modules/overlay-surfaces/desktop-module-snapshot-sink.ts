@@ -62,7 +62,7 @@ export class DesktopModuleSnapshotSink {
       await this.dependencies.transport.syncModule({ moduleId: "music", revision: ++this.#musicRevision, presentation: null, assets: [], artwork: null });
     };
     if (!visible) { await clear(); return; }
-    const snapshot = await music.runtime.getModuleSnapshot({ moduleId: "music", overlayId: "desktop:primary", purpose: "live", scope: "unified", targetProfileId: "landscape" });
+    const snapshot = await music.runtime.getModuleSnapshot({ recipientKind: "desktop", moduleId: "music", overlayId: "desktop:primary", purpose: "live", scope: "unified", targetProfileId: "landscape" });
     if (obsolete()) return;
     if (!snapshot.enabled || snapshot.presentation?.kind !== "music-widget") { await clear(); return; }
     const resolved = await music.assets.resolveMusicModule(snapshot.presentation);
@@ -152,7 +152,7 @@ export class DesktopModuleSnapshotSink {
     if (obsolete()) return;
     const visible = surface?.kind === "desktop" && surface.enabled && surface.displayId !== null &&
       surface.layers.some(layer => layer.moduleId === "videos" && layer.visible);
-    const snapshot = visible ? await videos.runtime.getModuleSnapshot({
+    const snapshot = visible ? await videos.runtime.getModuleSnapshot({ recipientKind: "desktop",
       moduleId: "videos", overlayId: "desktop:primary", purpose: "live", scope: "unified", targetProfileId: "landscape"
     }) : null;
     if (obsolete()) return;
@@ -174,7 +174,7 @@ export class DesktopModuleSnapshotSink {
       await this.dependencies.transport.syncModule({ moduleId: "timers", revision, presentation: null, assets: [] });
       return;
     }
-    const snapshot = await this.dependencies.runtime.getModuleSnapshot({
+    const snapshot = await this.dependencies.runtime.getModuleSnapshot({ recipientKind: "desktop",
       moduleId: "timers", overlayId: "desktop:primary", purpose: "live", scope: "unified", targetProfileId: "landscape"
     });
     if (this.#closed || revision !== this.#revision) return;

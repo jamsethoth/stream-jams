@@ -452,3 +452,16 @@
 .screen-effect-event-trigger > .mantine-Button-root {
   justify-self: start;
 }
+
+.screen-effect-editor__live-test-hint {
+  color: var(--color-warning);
+  flex-basis: 100%;
+  font-size: var(--font-size-xs);
+  text-align: end;
+}
+
+.screen-effect-editor__live-test-warning {
+  background: var(--color-warning-soft);
+  border-inline-start: 3px solid var(--color-warning);
+  padding: 8px 12px;
+}

@@ -1,13 +1,13 @@
 import { expect, test } from "@playwright/test";
 import { emptyComposition, installOverlayWebSocketMock, sendOverlayPlayback, textInstruction } from "./e2e-helpers.js";
 
-test("test overlay ignores live provider playback events", async ({ page }) => {
+test("ordinary overlay ignores retired test playback events", async ({ page }) => {
   await installOverlayWebSocketMock(page);
-  await page.route("**/overlay/modules/alerts/test/ovl_test/composition", async (route) => {
+  await page.route("**/overlay/modules/alerts/live/ovl_test/composition", async (route) => {
     await route.fulfill({
       contentType: "application/json",
       json: emptyComposition({
-        purpose: "test",
+        purpose: "live",
         scope: "module",
         modules: [
           {
@@ -20,10 +20,10 @@ test("test overlay ignores live provider playback events", async ({ page }) => {
     });
   });
 
-  await page.goto("/overlay/modules/alerts/test/ovl_test");
+  await page.goto("/overlay/modules/alerts/live/ovl_test");
   await sendOverlayPlayback(page, textInstruction({
     id: "live-event-for-test-overlay",
-    purpose: "live",
+    purpose: "test",
     scope: "module",
     text: "Live event should stay out"
   }));

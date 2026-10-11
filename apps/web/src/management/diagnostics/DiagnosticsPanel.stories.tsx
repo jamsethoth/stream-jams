@@ -51,6 +51,19 @@ export const EventIntake: Story = {
   }
 };
 
+export const ManualEventIntake: Story = {
+  args: { managementApi: createStoryManagementApi({ getDiagnosticsWorkspace: async () => diagnosticsWorkspace(), getEventBusActivity: async () => ({ events: [{ id: 5, receivedAt: "2026-10-10T12:00:00.000Z", sourceKind: "manual", kind: "manual", submissionChannel: "operator", eventType: "video-request", outcome: "accepted", referenceId: null, consumers: [{ consumerId: "videos", outcome: "pending", referenceId: null }] }] }) }) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: /Event intake/ }));
+    await expect(canvas.getByRole("table")).toHaveTextContent("Manual");
+    const detail = canvas.getByLabelText("Bus event detail");
+    await expect(detail).toHaveTextContent("Manual action");
+    await expect(detail).toHaveTextContent("Submitted fromOperator");
+    await expect(detail).toHaveTextContent("Pending");
+  }
+};
+
 export const EventIntakeFromReference: Story = {
   args: { ...EventIntake.args, initialReferenceId: "ref-bus-effects" },
   play: async ({ canvasElement }) => {

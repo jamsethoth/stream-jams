@@ -29,6 +29,9 @@ export function registerOverlayOutputManagementRoutes(
   app.get("/management/overlay-outputs", { preHandler }, async (request) =>
     dependencies.overlayOutputManagementService.listOutputs(originFor(request))
   );
+  app.get("/management/overlay-outputs/legacy-keys", { preHandler }, () =>
+    dependencies.overlayOutputManagementService.listLegacyKeys()
+  );
 
   app.post("/management/overlay-outputs/keys", { preHandler }, async (request, reply) => {
     const input = parseOutputInput(request.body);
@@ -68,7 +71,7 @@ export function registerOverlayOutputManagementRoutes(
     return reply.status(204).send();
   });
 
-  app.get("/management/overlay-clients", { preHandler }, async () => dependencies.overlayGateway.clientStates);
+  app.get("/management/overlay-clients", { preHandler }, async () => dependencies.overlayGateway.clientStates.filter(client => client.scope === "module" && client.purpose === "live"));
 }
 
 function parseOutputInput(body: unknown): CreateOverlayKeyInput | null {

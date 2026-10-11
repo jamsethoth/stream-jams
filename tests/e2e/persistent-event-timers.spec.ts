@@ -3,6 +3,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expect, test } from "@playwright/test";
+import { timersOverlayModuleConfigSchema } from "../../packages/core/dist/index.js";
 import { InMemorySecretStore } from "../../packages/test-support/dist/index.js";
 import { createDefaultAppConfig } from "../../apps/server/dist/config/default-config.js";
 import { FileConfigStore } from "../../apps/server/dist/config/file-config-store.js";
@@ -20,6 +21,14 @@ test("retains a subathon paused and applies saved event rules and live manual co
   const config = { ...createDefaultAppConfig(root), server: { host: "127.0.0.1" as const, port } };
   const options = { homeDirectory: root, webBuildDirectory: resolve("apps/web/dist"), configStore: new FileConfigStore({ configFilePath: join(root, "config.json"), defaultConfig: config }), environment: {}, secretStore: new InMemorySecretStore() };
   let runtime: StartedLocalRuntime | undefined;
+  const readAppearance = async () => {
+    const auth = await page.request.post(`${runtime!.url}/auth/management/sessions`);
+    expect(auth.ok()).toBe(true);
+    const activeSession = await auth.json() as { id: string };
+    const result = await page.request.get(`${runtime!.url}/overlay-modules/timers/config`, { headers: { authorization: `Bearer ${activeSession.id}` } });
+    expect(result.ok()).toBe(true);
+    return timersOverlayModuleConfigSchema.parse((await result.json()).config);
+  };
   try {
     runtime = await startLocalRuntime(options);
     await page.goto(`${runtime.url}/manage/modules/timers`);
@@ -77,10 +86,20 @@ test("retains a subathon paused and applies saved event rules and live manual co
     await expect(overlayValue).toHaveText("5:30");
     await applyCorrection("set", "300");
     await expect(overlayValue).toHaveText("5:00");
+    await edit.getByRole("button", { name: "Cancel" }).click();
+    const preservedRun = runtime.composition.timerRuntimeCoordinator.getState(definition.id);
+    await page.getByRole("radiogroup", { name: "Timer profile" }).getByText("Vertical", { exact: true }).click();
+    await page.getByLabel("Label font", { exact: true }).selectOption("serif");
+    await page.getByLabel("Label color").fill("#123456");
+    await page.getByRole("button", { name: "Save overlay layout" }).click();
+    await expect(page.getByText("Timer overlay layout saved.")).toBeVisible();
+    expect(runtime.composition.timerRuntimeCoordinator.getState(definition.id)).toEqual(preservedRun);
+    const appearanceBeforeRestart = await readAppearance();
     await page.screenshot({ path: testInfo.outputPath("timer-editor.png") });
     await runtime.composition.timerRuntimeCoordinator.resume(definition.id);
     await runtime.close();
     runtime = await startLocalRuntime(options);
+    expect(await readAppearance()).toEqual(appearanceBeforeRestart);
     const recovered = runtime.composition.timerRuntimeCoordinator.getState(definition.id);
     expect(recovered?.status).toBe("paused");
     if (recovered?.status !== "paused") throw new Error("Expected paused recovery");

@@ -6,7 +6,7 @@ The Videos module plays viewer, operator and automation video requests from allo
 ## Requirements
 
 ### Requirement: Videos Module Exposes Browser-Source And Desktop Outputs
-The system SHALL register a built-in `videos` overlay module with live and test module browser-source outputs on the existing route-key model, and SHALL render it on the desktop overlay when the operator enables it.
+The system SHALL register a built-in `videos` overlay module with one ordinary live module browser-source output on the existing route-key model, and SHALL render it on the desktop overlay when the operator enables it.
 
 #### Scenario: Browser source loads with a valid key
 - **WHEN** a browser source loads `/overlay/modules/videos/live/:overlayKey` with a valid live key
@@ -21,23 +21,32 @@ The system SHALL register a built-in `videos` overlay module with live and test 
 - **THEN** the existing overlay authorization rejects it and grants no management access
 
 ### Requirement: Requests Are Always Queued And Persisted
-Every accepted submission SHALL be stored in a persisted queue for its purpose, and SHALL NOT start playback unless an operator action starts it or the submission carries an allowed `autoplay` flag.
+Every accepted video submission SHALL enter one ordinary persisted queue through the validated bus-consumer intake. Manual tests SHALL differ by provenance only, not destination. Acceptance SHALL not imply immediate playback: ordinary operator actions, allowed autoplay and length/queue rules SHALL still govern it. There SHALL be no separate test queue, test player or output-purpose selector.
+
+#### Scenario: Manual video request
+- **WHEN** an authorized operator submits a video as a manual event
+- **THEN** it is journaled once and admitted through the Videos consumer into the same queue as subscribed requests
+- **AND** it waits unless ordinary autoplay or an explicit play action permits playback
+
+#### Scenario: Subscribed request
+- **WHEN** a provider event already on the bus matches a video request
+- **THEN** the Videos consumer admits it without republishing the event or enqueuing it twice
+
+#### Scenario: Channel point autoplay request
+- **WHEN** a channel point submission asks for autoplay
+- **THEN** existing channel-point policy keeps it queued without autoplay
+
+#### Scenario: Restart
+- **WHEN** the application restarts with queued or active ordinary items
+- **THEN** queue order is preserved, active playback returns to the queue head and nothing starts until the existing explicit playback action
 
 #### Scenario: Plain submission waits
 - **WHEN** a valid request arrives without `autoplay`
 - **THEN** it is appended to the queue and nothing starts playing
 
 #### Scenario: Allowed autoplay submission
-- **WHEN** a valid request with `autoplay: true` arrives from a source allowed to autoplay, nothing is playing, and the queue is not paused
+- **WHEN** a valid request with `autoplay: true` arrives from a source allowed to autoplay, nothing is playing, the queue is not paused, and the item has no unresolved length or migration review hold
 - **THEN** it starts playing
-
-#### Scenario: Channel point request asks for autoplay
-- **WHEN** a channel point submission includes an autoplay request
-- **THEN** it is queued without autoplay
-
-#### Scenario: Restart
-- **WHEN** the app restarts with items queued and one playing
-- **THEN** all items remain in order, the playing item returns to the queue head as queued, and nothing plays until started
 
 ### Requirement: Operator Controls Queue Consumption
 The system SHALL provide play next, play all now, pause and resume the queue, skip, stop, remove, reorder and clear. Each control SHALL be guarded by the observed queue revision.
@@ -59,7 +68,7 @@ The system SHALL provide play next, play all now, pause and resume the queue, sk
 - **THEN** it fails with a conflict and changes nothing
 
 ### Requirement: Maximum Length Holds Items For Manual Override
-The system SHALL hold items whose known duration exceeds the configured maximum length, SHALL queue items of unknown duration normally, and SHALL let the operator play a held item explicitly. When a player or the provider lookup reports a duration over the limit for an item queued with an unknown duration that the operator has not released with Play anyway, the system SHALL hold it as over the limit, stopping it first if it is playing. A duration reported for an item whose length was already known SHALL NOT replace it.
+The system SHALL hold items whose known duration exceeds the configured maximum length, SHALL queue items of unknown duration normally unless an independent migrated review hold applies, and SHALL let the operator play a held item explicitly. When a player or the provider lookup reports a duration over the limit for an item queued with an unknown duration that the operator has not released with Play anyway, the system SHALL hold it as over the limit, stopping it first if it is playing. A duration reported for an item whose length was already known SHALL NOT replace it.
 
 #### Scenario: Over-limit item
 - **WHEN** an item longer than the maximum length is submitted
@@ -67,10 +76,10 @@ The system SHALL hold items whose known duration exceeds the configured maximum 
 
 #### Scenario: Item exactly at the limit
 - **WHEN** an item whose length equals the maximum length is submitted
-- **THEN** it is queued, not held
+- **THEN** it has no length hold, while any independent migrated review hold remains
 
 #### Scenario: Unknown-length item
-- **WHEN** an item without a known length is submitted
+- **WHEN** an ordinary item without a known length is submitted without a migrated review hold
 - **THEN** it is queued with its length shown as unknown, and play next, play all and autoplay can play it
 
 #### Scenario: Player reports an unknown-length item over the limit
@@ -79,23 +88,24 @@ The system SHALL hold items whose known duration exceeds the configured maximum 
 
 #### Scenario: Provider reports a waiting item over the limit
 - **WHEN** the Twitch lookup reports a length over the maximum length for a waiting item queued with an unknown length
-- **THEN** the item is held as over the limit at its position, play next and play all skip it, and Play anyway still releases it
+- **THEN** the item is held as over the limit at its position, play next and play all skip it, and Play anyway releases only the length hold after any migrated review hold has been explicitly released
 
 #### Scenario: Provider reports the current item over the limit
 - **WHEN** the Twitch lookup reports a length over the maximum length for the loading, playing or paused item, which was queued with an unknown length and not released with Play anyway
 - **THEN** the system stops and holds it exactly as when the player reports that length
 
 #### Scenario: Play anyway
-- **WHEN** the operator chooses Play anyway on a held item
+- **WHEN** the operator chooses Play anyway on an item held only for excessive length
 - **THEN** that item plays to its natural end without changing the limit, and a duration it reports never stops it
+- **AND** a migrated review hold is released only by an explicit item Play action; review release does not itself override an independent length hold
 
 #### Scenario: Legacy unknown-length holds
 - **WHEN** the service starts with items an older version held for an unknown length
-- **THEN** those items become queued in their existing positions
+- **THEN** those obsolete unknown-length holds clear in their existing positions without releasing any independent migrated review hold
 
 #### Scenario: Limit changes
 - **WHEN** the operator raises the limit above a held item's length
-- **THEN** the item becomes queued in its existing position
+- **THEN** the length hold clears in its existing position, while any independent migrated review hold remains
 
 ### Requirement: Only Allowlisted Providers Are Accepted
 The system SHALL accept only Twitch clips and VODs, YouTube videos and Shorts, and HTTPS direct `.mp4` or `.webm` files from operator-listed hosts. The system SHALL build embed URLs itself and SHALL reject credentials, non-default ports, unknown hosts and malformed ids.
@@ -131,6 +141,7 @@ Management, operator, scoped automation REST, Streamer.bot custom events and map
 - **WHEN** a channel point redemption arrives for a mapped reward and its user input is a supported link
 - **THEN** an item is queued with the redeemer as requester
 - **AND** an unsupported or empty input is rejected with a bounded diagnostic and nothing is queued
+- **AND** a mapping marked review-required (default false) admits the item held for explicit review without autoplay
 
 ### Requirement: One Primary Player Is Mirrored To Every Output
 When the desktop app is running, the system SHALL play each item in one primary player hosted by the desktop app, and SHALL mirror its frames and audio to the desktop overlay and module browser sources over local WebRTC, so every output shows the same content.
@@ -193,19 +204,30 @@ Overlay outputs SHALL render only validated items, SHALL load no third-party scr
 - **THEN** the item is marked failed, the next item in an active run starts after the gap, and the operator UI shows the failure
 
 ### Requirement: Operators Place The Video On The Canvas
-The system SHALL let the operator position and resize the Videos box (the picture and its title and requester caption) on the 1920 x 1080 landscape canvas from the Videos page, with a live preview, the shared editor snapping and exact numeric and keyboard edits. The saved placement SHALL apply identically to module and unified browser sources, the desktop overlay and the mirror receiver. Settings saved before placement existed SHALL use a default equal to the earlier fixed look. A placement that is not whole pixels, is smaller than 240 x 180 or leaves the canvas SHALL be rejected by the server and SHALL make every output fail closed.
+The system SHALL separate Videos content geometry from desktop placement. Operators SHALL configure a stable video-and-caption content box and independently position/scale it on the 1920 x 1080 desktop scene with a live preview, shared editor snapping, exact numeric and keyboard edits. The browser SHALL use a top-left local content canvas with no desktop position/scale. The existing largest-fitting 16:9 frame and fixed two-line title/requester reserve SHALL be preserved, including no-clip notices. Content dimensions SHALL retain the current minimum of 240 x 180 and maximum scene dimensions; desktop placement SHALL validate the scaled footprint within its scene. Invalid geometry SHALL be rejected before save and fail transparent if received at runtime.
 
 #### Scenario: Move the video to a corner
-- **WHEN** the operator drags or types a new box on the Videos page and saves the settings
-- **THEN** the playing video on every output moves to that box without a reload, showing the largest 16:9 picture that fits above the caption
+- **WHEN** the operator drags or types a new desktop position and saves
+- **THEN** desktop output moves without a reload, provider reload or seek
+- **AND** browser geometry and advertised dimensions do not change
+
+#### Scenario: Resize desktop presentation
+- **WHEN** the operator changes desktop-only scale
+- **THEN** the desktop picture and caption scale together and the browser content stays unchanged
+
+#### Scenario: Change content size
+- **WHEN** the operator saves content dimensions
+- **THEN** browser canvas dimensions update atomically with content geometry and management shows the required OBS width/height
+- **AND** the current primary player and mirrored item retain their identity and playback position
 
 #### Scenario: Earlier settings
-- **WHEN** Videos settings saved before placement existed are loaded
-- **THEN** the default box is used, matching the earlier centered look, and saving keeps the other settings unchanged
+- **WHEN** legacy saved Videos placement is migrated
+- **THEN** its width/height seed content dimensions, its x/y seed desktop position and desktop scale starts at one
+- **AND** settings that predate placement use the existing default box while unrelated settings remain unchanged
 
 #### Scenario: Invalid placement
-- **WHEN** a placement off the canvas or below the minimum size is submitted or reaches an output
-- **THEN** the server refuses to save it, the page shows a correction instead of saving, and outputs render nothing and report the item's failure
+- **WHEN** off-scene scaled placement or invalid content dimensions are submitted or received
+- **THEN** the server refuses the save, management shows a correction and runtime output fails transparent with the existing failure-report contract
 
 ### Requirement: Management And Operator Surfaces
 The system SHALL provide a Videos management page and Operator UI queue tools covering the controls in this specification. Queue rows SHALL show the request's title (the submitted title, else the provider title, else the link) with its channel and length, and SHALL omit details that are unknown.
@@ -224,7 +246,7 @@ The system SHALL provide a Videos management page and Operator UI queue tools co
 
 #### Scenario: Replay a recent video from the Operator UI
 - **WHEN** a video in the queue being viewed has played (including skipped or stopped) or failed
-- **THEN** the Operator UI lists it under Recent, newest first and limited to the 10 newest finished videos of that purpose, with title, channel when known, requester, link host, how it was requested, outcome and finish time, in the same list layout as the Alerts and Screen Effects Recent list, and removed or cleared videos are not listed
+- **THEN** the Operator UI lists it under Recent, newest first and limited to the 10 newest finished videos in the sole ordinary queue, with title, channel when known, requester, link host, how it was requested, outcome and finish time, in the same list layout as the Alerts and Screen Effects Recent list, and removed or cleared videos are not listed
 - **AND** choosing Replay, guarded by the observed queue revision, adds the same source to the end of that queue as a new operator-submitted request that waits for Play next or Play all now and never starts on its own, with the current length limit applied
 
 #### Scenario: Replay refused
@@ -253,3 +275,27 @@ After a request is queued through any submission path or replayed, the system SH
 #### Scenario: Replay
 - **WHEN** a Recent video with provider details is replayed
 - **THEN** the new request carries the same details without a new lookup
+### Requirement: Video queue consolidation preserves data without replay
+Upgrade SHALL preserve live queue ordering and migrate legacy pending/active test items to held-for-review ordinary entries with autoplay false, preserving identities, metadata and source order. Historical test entries SHALL remain history with provenance, not a second queue. Migration SHALL clear obsolete test player/run state and invalidate stale revisions/receivers. Invalid capacity or identity conflicts SHALL block migration rather than discard items. All pending schema migrations SHALL commit as one transaction, so a blocked upgrade leaves the database at its prior version that the previous app still opens; the refusal SHALL name the single retained rollback copy, which retries replace rather than accumulate. Former test reward mappings SHALL become review-required mappings whose redemptions arrive held for explicit review. Legacy test API routes/payloads SHALL fail with migration guidance; an explicit `purpose=live` SHALL be accepted and ignored; existing live API spellings SHALL address the sole ordinary queue.
+
+#### Scenario: Upgrade has a pending test video
+- **WHEN** old test items are migrated
+- **THEN** they appear after existing ordinary items held for explicit review and do not autoplay or join an existing play-all run
+
+#### Scenario: Upgrade is refused
+- **WHEN** a pending migration refuses the upgrade (for example, over 500 active requests)
+- **THEN** no pending migration is recorded, the previous app opens the database unchanged, and the error names the rollback copy
+
+#### Scenario: Old caller uses the test endpoint
+- **WHEN** a client calls a retired test route or submits a legacy test-purpose payload
+- **THEN** it receives an explicit migration error without sending content to ordinary output
+
+#### Scenario: Manual and subscribed videos coexist
+- **WHEN** both types of requests are admitted
+- **THEN** the single queue's normal priority/order and playback controls govern both
+- **AND** every connected ordinary recipient observes the same item and primary mirror session
+
+#### Scenario: Admission is interrupted
+- **WHEN** the process fails between video queue insertion and bus acknowledgement
+- **THEN** persisted submission identity or an atomic admission/checkpoint prevents a second queue insertion on redelivery
+- **AND** acceptance receipts distinguish journal admission from module rejection

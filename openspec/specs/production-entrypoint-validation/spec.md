@@ -31,7 +31,7 @@ The system SHALL verify that server-served management and overlay shell routes a
 
 #### Scenario: Overlay route smoke succeeds
 
-- **WHEN** the production app smoke test requests a valid overlay route with a test key
+- **WHEN** the production app smoke test requests a valid ordinary module overlay route with its matching module/profile key
 - **THEN** the response is successful HTML for the overlay app shell
 
 ### Requirement: Runtime Wiring Regressions Are Detected
@@ -41,7 +41,7 @@ The system SHALL include Fastify-inject smoke checks that fail when the medium c
 #### Scenario: Medium adapter set is checked
 
 - **WHEN** the production-entrypoint smoke suite runs
-- **THEN** it verifies health, `/manage`, module and unified overlay shells, built static assets, overlay WebSocket registration, diagnostics, playback, overlay modules, and Twitch runtime status using deterministic local doubles
+- **THEN** it verifies health, `/manage`, ordinary module overlay shells, rejection of retired test/unified routes, private desktop compositions, built static assets, overlay WebSocket registration, diagnostics, playback, overlay modules, and Twitch runtime status using deterministic local doubles
 
 #### Scenario: Durable module config wiring is checked
 

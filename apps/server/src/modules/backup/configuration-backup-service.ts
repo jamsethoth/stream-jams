@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import {
   appConfigSchema,
+  isOrdinaryOverlayOutput,
+  upgradeTimersConfig,
+  upgradeVideosLayout, upgradeVideosRewardMappings,
   configurationBackupLimits,
   configurationBackupArchiveSchema,
   currentConfigurationBackupArchiveVersion,
@@ -64,6 +67,9 @@ export interface ConfigurationBackupServiceOptions {
   readonly safetyBackupStore: { write(archive: ConfigurationBackupArchive): Promise<string> };
   readonly regenerateOutput: (output: ConfigurationBackupOutput, origin: string) => Promise<{ readonly label: string; readonly url: string }>;
   readonly reloadRuntimeConfiguration?: () => void | Promise<void>;
+  readonly retireOverlayRecipients?: () => void;
+  /** Re-derives overlay recipient access from the current database; called on every path after retirement. */
+  readonly restoreOverlayRecipients?: () => void;
   readonly assetDurationCatalog?: { replace(records: readonly AssetRecord[]): void };
   readonly twitchCredentials?: {
     findConnectedAccountId(): Promise<string | null>;
@@ -276,6 +282,18 @@ export class ConfigurationBackupService {
     const archive = parsed.data;
     const blockers: ActionableManagementError[] = [];
     const warnings: ActionableManagementError[] = [];
+    if (archive.configuration.overlayOutputs.some(output => output.purpose === "test" || output.scope === "unified")
+      || archive.configuration.tables.overlay_surfaces?.some(row => row.kind === "unified-browser")) warnings.push(warning("Browser outputs were retired", "Test and unified sources and surfaces will not be restored.", "Remove old test/unified sources in OBS and add the per-module Browser Sources with their displayed dimensions."));
+    if (archive.manifest.schemaVersion < 46 && archive.configuration.overlayOutputs.some(output => isOrdinaryOverlayOutput(output, true) && !isOrdinaryOverlayOutput(output))) warnings.push(warning("Legacy profileless sources will not be restored", "Portable restore does not create new legacy source credentials.", "Create the module's Landscape or Vertical source in management and update OBS."));
+    if (archive.configuration.tables.overlay_module_config?.some(row => {
+      if (row.module_id !== "videos" || typeof row.config_json !== "string") return false;
+      try {
+        const config = JSON.parse(row.config_json) as { rewardMappings?: unknown };
+        return Array.isArray(config.rewardMappings) && config.rewardMappings.some(mapping => typeof mapping === "object" && mapping !== null && mapping.purpose === "test");
+      }
+      // error-provenance: allow expected -- malformed configuration is blocked by typed preflight below; this probe only adds upgrade disclosure
+      catch { return false; }
+    })) warnings.push(warning("Videos reward mappings will use the ordinary queue", "Saved test reward mappings are restored as review-required mappings whose redemptions arrive held.", "Review Videos reward mappings and queued requests before playback."));
     const supportedLegacyUpgrade = isSupportedLegacySchema(
       this.#options.schemaVersion,
       archive.manifest.schemaVersion
@@ -475,6 +493,7 @@ export class ConfigurationBackupService {
     let appConfigUpdated = false;
     let musicSuspended = false;
     let musicIdentityChanged = false;
+    let recipientsRetired = false;
     try {
       for (const asset of request.archive.assets) {
         const bytes = Buffer.from(asset.dataBase64, "base64");
@@ -517,6 +536,8 @@ export class ConfigurationBackupService {
         musicSuspended = true;
         await this.#options.musicRestore.suspend();
       }
+      recipientsRetired = true;
+      this.#options.retireOverlayRecipients?.();
       this.#options.snapshotRepository.replace({ tables: upgradedConfiguration.tables, assets: stagedAssets });
       await this.#options.configStore.updateConfig({
         desktop: restoredConfig.desktop,
@@ -574,6 +595,11 @@ export class ConfigurationBackupService {
         try { await this.#options.musicRestore.resume(); }
         catch (error) { rollbackFailures.push(`Music runtime rollback failed: ${errorMessage(error)}`); }
       }
+      // Never leave every overlay locked out until restart: access follows the rolled-back keys.
+      if (recipientsRetired) {
+        try { this.#options.restoreOverlayRecipients?.(); }
+        catch (error) { rollbackFailures.push(`Overlay access rollback failed: ${errorMessage(error)}`); }
+      }
       const cleanupFailures = settledFailures(
         await Promise.allSettled(stagedAssets.map((record) => this.#options.assetStore.delete(record.storagePath)))
       );
@@ -593,6 +619,8 @@ export class ConfigurationBackupService {
       );
     }
 
+    // Success also re-derives access from the restored keys, independent of runtime reload wiring.
+    this.#options.restoreOverlayRecipients?.();
     const regeneratedOutputs: { label: string; url: string }[] = [];
     const warnings = [...preflight.warnings];
     const oldAssetCleanupFailures = this.#options.deferRetiredAssetCleanup === true ? [] : settledFailures(await Promise.allSettled(
@@ -639,7 +667,7 @@ export class ConfigurationBackupService {
       });
     }
     const restoredOrigin = `http://${restoredConfig.server.host}:${restoredConfig.server.port}`;
-    for (const output of request.archive.configuration.overlayOutputs) {
+    for (const output of upgradeLegacyConfiguration(request.archive.configuration, request.archive.manifest.schemaVersion).overlayOutputs) {
       try {
         regeneratedOutputs.push(await this.#options.regenerateOutput(output, restoredOrigin));
       } catch (cause) {
@@ -712,6 +740,8 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   if (currentSchemaVersion === 39) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 38;
   // Schema 40 adds provider details to the runtime Videos queue, which backups never contain.
   if (currentSchemaVersion === 40) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 39;
+  // Manual bus/admission are runtime-only; counts 43/44 add typed Timer/Video upgrades (IDs 044/045).
+  if (currentSchemaVersion >= 41 && currentSchemaVersion <= 46) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion < currentSchemaVersion;
   if (currentSchemaVersion === 28) return [19, 20, 21, 22, 23, 24, 25, 26, 27].includes(archiveSchemaVersion);
   return false;
 }
@@ -720,7 +750,30 @@ function upgradeLegacyConfiguration(
   configuration: BackupConfiguration,
   schemaVersion: number
 ): BackupConfiguration {
+  configuration = { ...configuration,
+    overlayOutputs: configuration.overlayOutputs.filter(output => output.purpose !== "test" && output.scope !== "unified"
+      && !(schemaVersion < 46 && isOrdinaryOverlayOutput(output, true) && !isOrdinaryOverlayOutput(output))),
+    tables: { ...configuration.tables, ...(configuration.tables.overlay_surfaces === undefined ? {} : {
+      overlay_surfaces: configuration.tables.overlay_surfaces.filter(row => row.kind !== "unified-browser")
+    }) }
+  };
   let tables = configuration.tables;
+  if (tables.overlay_module_config !== undefined) {
+    tables = { ...tables, overlay_module_config: tables.overlay_module_config.map(row => {
+      if (row.module_id === "videos") {
+        try {
+          const raw = JSON.parse(String(row.config_json)) as Record<string, unknown>;
+          return { ...row, config_json: JSON.stringify({ ...raw, layout: upgradeVideosLayout(raw.layout), rewardMappings: upgradeVideosRewardMappings(raw.rewardMappings) }) };
+        }
+        // error-provenance: allow expected -- typed preflight reports invalid Videos before mutation
+        catch { return row; }
+      }
+      if (row.module_id !== "timers") return row;
+      try { return { ...row, config_json: JSON.stringify(upgradeTimersConfig(JSON.parse(String(row.config_json)) as unknown)) }; }
+      // error-provenance: allow expected -- preserve invalid rows so typed preflight reports a blocker before any mutation
+      catch { return row; }
+    }) };
+  }
   if (schemaVersion < 25 && tables.screen_effect_variants !== undefined) {
     tables = {
       ...tables,

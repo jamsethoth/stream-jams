@@ -14,6 +14,7 @@ export interface OverlayModuleConfigRepository {
 }
 
 export interface OverlayModuleConfigService {
+  subscribeSaved?(listener: (config: OverlayModuleConfig) => void): () => void;
   getModuleConfig(moduleId: string): Promise<OverlayModuleConfig>;
   saveModuleConfig(input: SaveOverlayModuleConfigInput): Promise<OverlayModuleConfig>;
   setModuleEnabled(moduleId: string, enabled: boolean): Promise<OverlayModuleConfig>;
@@ -40,6 +41,7 @@ export interface OverlayModuleConfigServiceDependencies {
 }
 
 export class DefaultOverlayModuleConfigService implements OverlayModuleConfigService {
+  readonly #savedListeners = new Set<(config: OverlayModuleConfig) => void>();
   readonly #registry: OverlayModuleRegistry;
   readonly #repository: OverlayModuleConfigRepository;
   readonly #clock: () => Date;
@@ -48,6 +50,11 @@ export class DefaultOverlayModuleConfigService implements OverlayModuleConfigSer
     this.#registry = dependencies.registry;
     this.#repository = dependencies.repository;
     this.#clock = dependencies.clock ?? (() => new Date());
+  }
+
+  subscribeSaved(listener: (config: OverlayModuleConfig) => void): () => void {
+    this.#savedListeners.add(listener);
+    return () => { this.#savedListeners.delete(listener); };
   }
 
   async getModuleConfig(moduleId: string): Promise<OverlayModuleConfig> {
@@ -76,6 +83,7 @@ export class DefaultOverlayModuleConfigService implements OverlayModuleConfigSer
     });
 
     await this.#repository.saveModuleConfig(config);
+    for (const listener of this.#savedListeners) listener(config);
     return config;
   }
 
@@ -88,6 +96,7 @@ export class DefaultOverlayModuleConfigService implements OverlayModuleConfigSer
     });
 
     await this.#repository.saveModuleConfig(nextConfig);
+    for (const listener of this.#savedListeners) listener(nextConfig);
     return nextConfig;
   }
 

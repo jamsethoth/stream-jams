@@ -315,7 +315,7 @@ function BusEventsView(props: { readonly available: boolean; readonly events: re
   </section><DetailPane label="Bus event detail">{props.selected === null ? <EmptyState title="No bus event selected" detail="Select a bus event to see what each module did with it." /> : <>
     <StatusBadge label={capitalize(props.selected.outcome)} tone={intakeTone(props.selected.outcome)} /><h3>{busEventLabel(props.selected)}</h3>
     <p>{intakeDescription(props.selected.outcome)}</p>
-    <dl className="diagnostics-workspace__facts"><div><dt>Source</dt><dd>{sourceLabel(props.selected.sourceKind)}</dd></div><div><dt>Kind</dt><dd>{props.selected.kind === null ? "Not published" : props.selected.kind === "canonical" ? "Stream event" : "Streamer.bot event"}</dd></div><div><dt>Received</dt><dd><time dateTime={props.selected.receivedAt}>{formatDateTime(props.selected.receivedAt)}</time></dd></div><div><dt>Reference ID</dt><dd>{props.selected.referenceId ?? "Not available"}</dd></div></dl>
+    <dl className="diagnostics-workspace__facts"><div><dt>Source</dt><dd>{sourceLabel(props.selected.sourceKind)}</dd></div><div><dt>Kind</dt><dd>{props.selected.kind === null ? "Not published" : props.selected.kind === "manual" ? "Manual action" : props.selected.kind === "canonical" ? "Stream event" : "Streamer.bot event"}</dd></div>{props.selected.submissionChannel !== undefined && <div><dt>Submitted from</dt><dd>{capitalize(props.selected.submissionChannel)}</dd></div>}<div><dt>Received</dt><dd><time dateTime={props.selected.receivedAt}>{formatDateTime(props.selected.receivedAt)}</time></dd></div><div><dt>Reference ID</dt><dd>{props.selected.referenceId ?? "Not available"}</dd></div></dl>
     {props.selected.consumers.length === 0 ? null : <><h4>Modules</h4><ul aria-label="Module outcomes" className="diagnostics-bus-consumers">{props.selected.consumers.map((consumer) => <li key={consumer.consumerId}><span>{consumerLabel(consumer.consumerId)}</span><StatusBadge label={consumerOutcomeLabel(consumer.outcome)} tone={consumerTone(consumer.outcome)} />{consumer.referenceId === null ? null : <code>{consumer.referenceId}</code>}</li>)}</ul></>}
   </>}</DetailPane></>;
 }
@@ -387,7 +387,7 @@ function busEventLabel(event: BusEventView): string {
 }
 
 function sourceLabel(sourceKind: BusEventView["sourceKind"]): string {
-  return sourceKind === "twitch" ? "Twitch" : "Streamer.bot";
+  return sourceKind === "manual" ? "Manual" : sourceKind === "twitch" ? "Twitch" : "Streamer.bot";
 }
 
 function consumerLabel(consumerId: string): string {

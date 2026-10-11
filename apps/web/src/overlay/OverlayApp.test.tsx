@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import type { OverlayComposition, OverlayInstruction } from "@stream-jams/core";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -12,6 +13,25 @@ afterEach(() => {
 });
 
 describe("OverlaySurface", () => {
+  it("anchors content at 1:1 CSS pixels while larger viewports are transparent and smaller viewports clip", () => {
+    const instruction = createInstruction("content", { text: "Fixed canvas" });
+    const composition = { ...createComposition([instruction]), targetProfileId: "vertical" as const,
+      canvas: { ...sceneOutputCanvas(4, 640, 180), kind: "content" as const, origin: { x: 12, y: 8 } } };
+    const view = render(<OverlaySurface composition={composition} resolveAssetUrl={() => ""} />);
+    const canvas = screen.getByTestId("overlay-content-canvas");
+    expect(canvas).toHaveStyle({ width: "640px", height: "180px", left: "0px", top: "0px", overflow: "hidden" });
+    expect(canvas.style.transform).toBe("");
+    expect(screen.queryByTestId("overlay-profile-canvas")).toBeNull();
+    const media = screen.getByTestId("overlay-text-content");
+    for (const width of [1920, 300]) {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+      fireEvent(window, new Event("resize"));
+      view.rerender(<OverlaySurface composition={{ ...composition, canvas: { ...composition.canvas, configRevision: 5 } }} resolveAssetUrl={() => ""} />);
+      expect(screen.getByTestId("overlay-content-canvas")).toHaveStyle({ width: "640px", height: "180px" });
+      expect(screen.getByTestId("overlay-text-content")).toBe(media);
+    }
+  });
+
   it("renders image, gif, video, text, and audio instruction shapes with overlay layout", async () => {
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
     vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
@@ -92,7 +112,7 @@ describe("OverlaySurface", () => {
   it("does not render instructions for disabled module snapshots", () => {
     render(
       <OverlaySurface
-        composition={{
+        composition={{ runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
           overlayId: "default",
           purpose: "test",
           scope: "module",
@@ -149,29 +169,33 @@ describe("OverlaySurface", () => {
 });
 
 describe("OverlayApp transport integration", () => {
-  it("preserves streamed playback across timer compositions, but honors stop and module disable", async () => {
-    AppFakeWebSocket.instances.length = 0;
+  it("keeps retired unified navigation transparent before transport opens", () => {
     window.history.replaceState(null, "", "/overlay/unified/live/ovl_fixture");
-    vi.stubGlobal("WebSocket", AppFakeWebSocket);
-    const snapshot: OverlayComposition = { overlayId: "default", purpose: "live", scope: "unified", modules: ["alerts", "screen-effects", "timers"].map(moduleId => ({ moduleId, enabled: true, instructions: [] })) };
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => snapshot }));
     render(<OverlayApp />);
-    await act(async () => { AppFakeWebSocket.instances[0]!.emitOpen(); AppFakeWebSocket.instances[0]!.emitMessage({ type: "overlay.playback.audio-state", muted: false }); });
-    const socket = AppFakeWebSocket.instances[0]!;
-    for (const moduleId of ["alerts", "screen-effects", "timers"]) {
-      act(() => socket.emitMessage({ type: "overlay.playback", instruction: { ...createInstruction(moduleId, { text: `Playing ${moduleId}` }), moduleId, purpose: "live", scope: "unified" } }));
-    }
-    expect(await screen.findByText("Playing alerts")).toBeVisible();
-    act(() => socket.emitMessage({ type: "overlay.composition", composition: snapshot }));
-    for (const moduleId of ["alerts", "screen-effects", "timers"]) expect(screen.getByText(`Playing ${moduleId}`)).toBeVisible();
-    act(() => socket.emitMessage({ type: "overlay.playback.stop", instructionIds: ["alerts"] }));
-    act(() => socket.emitMessage({ type: "overlay.composition", composition: snapshot }));
-    expect(screen.queryByText("Playing alerts")).toBeNull();
-    act(() => socket.emitMessage({ type: "overlay.composition", composition: { ...snapshot, modules: snapshot.modules.map(module => ({ ...module, enabled: false })) } }));
-    expect(screen.queryByText("Playing screen-effects")).toBeNull();
-    act(() => socket.emitMessage({ type: "overlay.composition", composition: snapshot }));
-    expect(screen.queryByText("Playing screen-effects")).toBeNull();
+    expect(screen.getByTestId("overlay-root")).toBeEmptyDOMElement();
+    expect(document.body.textContent).not.toContain("Playing");
   });
+
+  it("ignores surface layer updates on module sources without resetting visible playback", async () => {
+    AppFakeWebSocket.instances.length = 0;
+    window.history.replaceState(null, "", "/overlay/modules/alerts/live/ovl_live?profile=landscape");
+    vi.stubGlobal("WebSocket", AppFakeWebSocket);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ ...createComposition([createInstruction("layered-instruction", { text: "Still visible" })]), targetProfileId: "landscape" })
+    }));
+    render(<OverlayApp />);
+    await act(async () => {
+      AppFakeWebSocket.instances[0]!.emitOpen();
+      AppFakeWebSocket.instances[0]!.emitMessage({ type: "overlay.playback.audio-state", muted: false });
+      await Promise.resolve();
+    });
+    expect(await screen.findByText("Still visible")).toBeInTheDocument();
+    act(() => AppFakeWebSocket.instances[0]!.emitMessage({ type: "overlay.surface-layers", layers: [{ moduleId: "alerts", visible: false }] }));
+    expect(screen.getByText("Still visible")).toBeInTheDocument();
+    expect(AppFakeWebSocket.instances).toHaveLength(1);
+  });
+
   it("rebootstraps and completes fresh prepared playback after the real client socket reconnects", async () => {
     AppFakeWebSocket.instances.length = 0;
     window.history.replaceState(null, "", "/overlay/modules/alerts/live/ovl_live?profile=landscape");
@@ -225,7 +249,7 @@ describe("OverlayApp transport integration", () => {
 });
 
 function createComposition(instructions: readonly OverlayInstruction[]): OverlayComposition {
-  return {
+  return { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
     overlayId: "default",
     purpose: "test",
     scope: "module",

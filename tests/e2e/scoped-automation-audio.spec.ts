@@ -21,6 +21,7 @@ test("v1 mute reaches concurrent browser modules, future playback and reconnect 
   await new Promise<void>((done, reject) => listener.close(error => error ? reject(error) : done()));
   const config = { ...createDefaultAppConfig(root), server: { host: "127.0.0.1" as const, port: address.port } };
   const runtime = await startLocalRuntime({ homeDirectory: root, webBuildDirectory: resolve("apps/web/dist"), configStore: new FileConfigStore({ configFilePath: join(root, "config.json"), defaultConfig: config }), environment: {}, secretStore: new InMemorySecretStore() });
+  const modulePages = { alerts: page, "screen-effects": await page.context().newPage(), timers: await page.context().newPage() };
   const reports: unknown[] = []; page.on("websocket", socket => { socket.on("framesent", frame => { const value = JSON.parse(String(frame.payload)) as { type: string; instructionId?: string }; reports.push({ direction: "sent", type: value.type, instructionId: value.instructionId }); }); socket.on("framereceived", frame => { const value = JSON.parse(String(frame.payload)) as { type: string; instruction?: { moduleId: string; scope: string } }; reports.push({ direction: "received", type: value.type, moduleId: value.instruction?.moduleId, scope: value.instruction?.scope }); }); });
   try {
     const session = await (await request.post(`${runtime.url}/auth/management/sessions`)).json() as { id: string; csrfToken: string };
@@ -36,9 +37,11 @@ test("v1 mute reaches concurrent browser modules, future playback and reconnect 
     await mkdir(join(config.storage.assetDirectory, "audio"), { recursive: true });
     await writeFile(join(config.storage.assetDirectory, "audio/silence.wav"), wav);
     runtime.composition.database.connection.prepare("INSERT INTO asset_metadata VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run("silence", "silence.wav", "audio", "audio/wav", wav.length, `sha256:${createHash("sha256").update(wav).digest("hex")}`, "audio/silence.wav", 30_000);
-    const output = await management("/management/overlay-outputs/keys", { overlayId: "default", moduleId: null, purpose: "live", scope: "unified" }) as { url: string };
-    await page.goto(output.url);
-    await expect(page.getByTestId("overlay-root")).toBeVisible();
+    for (const moduleId of ["alerts", "screen-effects", "timers"] as const) {
+      const output = await management("/management/overlay-outputs/keys", { overlayId: "default", moduleId, purpose: "live", scope: "module", targetProfileId: moduleId === "screen-effects" ? null : "landscape" }) as { url: string };
+      await modulePages[moduleId].goto(output.url);
+      await expect(modulePages[moduleId].getByTestId("overlay-root")).toBeVisible();
+    }
     const scopes = ["playback:read", "playback:mute:alerts", "playback:mute:screen-effects"];
     const verifier = "b".repeat(43);
     const pairingResponse = await request.post(`${runtime.url}/automation/v1/pairings`, { data: { clientName: "Browser mute acceptance", scopes, codeChallenge: createHash("sha256").update(verifier).digest("base64url") } });
@@ -62,12 +65,12 @@ test("v1 mute reaches concurrent browser modules, future playback and reconnect 
       const id = `alert-${++sequence}`;
       await runtime.composition.localMediaService.runAdmission(async () => {
         await runtime.composition.localMediaService.captureAdmission(["silence"]);
-        runtime.composition.playbackCoordinator.enqueueResolvedTest({ sourceEvent: { id, providerId: "twitch", sourcePlatform: "twitch", ingestProvider: "twitch", occurredAt: new Date().toISOString(), type: "follow", amount: null, actor: { id: "viewer", displayName: "Viewer" }, message: null, metadata: {} }, alerts: [{ id, sourceEventId: id, ruleId: "fixture", variantId: "sound", overlayInstruction: { id, overlayId: "default", moduleId: "alerts", purpose: "live", scope: "unified", visual: null, audio: { assetId: "silence", volume: 1 }, text: { text: id, layout: { x: 0, y: 0, width: 200, height: 50, zIndex: 1 } }, tts: null, durationMs: 30_000 } }] });
+        runtime.composition.playbackCoordinator.enqueueResolvedTest({ sourceEvent: { id, providerId: "twitch", sourcePlatform: "twitch", ingestProvider: "twitch", occurredAt: new Date().toISOString(), type: "follow", amount: null, actor: { id: "viewer", displayName: "Viewer" }, message: null, metadata: {} }, alerts: [{ id, sourceEventId: id, ruleId: "fixture", variantId: "sound", overlayInstruction: { id, overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", targetProfileId: "landscape", visual: null, audio: { assetId: "silence", volume: 1 }, text: { text: id, layout: { x: 0, y: 0, width: 200, height: 50, zIndex: 1 } }, tts: null, durationMs: 30_000 } }] });
       });
       await management("/screen-effects/audio-effect/test", { variantId: "sound", confirmLiveImpact: true });
       await runtime.composition.timerRuntimeCoordinator.start(timer.id);
     };
-    const audio = (id: string) => page.getByTestId(`overlay-module-${id}`).locator("audio");
+    const audio = (id: "alerts" | "screen-effects" | "timers") => modulePages[id].getByTestId(`overlay-module-${id}`).locator("audio");
     const assertMutes = async (alerts: boolean, effects: boolean) => {
       for (const [id, muted] of [["alerts", alerts], ["screen-effects", effects], ["timers", false]] as const) {
         await expect(audio(id)).toHaveCount(1);
@@ -77,10 +80,10 @@ test("v1 mute reaches concurrent browser modules, future playback and reconnect 
     };
     await startAll();
     await assertMutes(false, false);
-    for (const id of ["alerts", "screen-effects", "timers"]) await audio(id).evaluate((element: HTMLAudioElement) => { element.dataset.acceptanceIdentity = "original"; });
+    for (const id of ["alerts", "screen-effects", "timers"] as const) await audio(id).evaluate((element: HTMLAudioElement) => { element.dataset.acceptanceIdentity = "original"; });
     await runtime.composition.timerRuntimeCoordinator.adjust(timer.id, { action: "set", amountMs: 45_000 });
-    await expect(page.getByTestId(`timer-value-${timer.id}`)).toHaveText("0:45");
-    for (const id of ["alerts", "screen-effects", "timers"]) await expect(audio(id)).toHaveAttribute("data-acceptance-identity", "original");
+    await expect(modulePages.timers.getByTestId(`timer-value-${timer.id}`)).toHaveText("0:45");
+    for (const id of ["alerts", "screen-effects", "timers"] as const) await expect(audio(id)).toHaveAttribute("data-acceptance-identity", "original");
     await toggle(["alerts"]); await assertMutes(true, false);
     await toggle(["alerts", "screen-effects"]); await assertMutes(true, true);
     await toggle(["alerts", "screen-effects"]); await assertMutes(false, false);
@@ -89,11 +92,17 @@ test("v1 mute reaches concurrent browser modules, future playback and reconnect 
     await runtime.composition.playbackCoordinator.skipCurrent();
     const currentEffect = runtime.composition.playbackOperationsService.getSnapshot().current.find(row => row.moduleId === "screen-effects")!; await runtime.composition.effectPlaybackCoordinator.skip(currentEffect.occurrenceId);
     await runtime.composition.timerRuntimeCoordinator.stop(timer.id);
-    await page.reload();
+    // Transient effects reach only outputs connected at prepare, so wait until each reloaded output has
+    // reconnected (its composition is fetched after the socket opens) before starting new playback.
+    await Promise.all(Object.values(modulePages).map(async outputPage => {
+      const reconnected = outputPage.waitForResponse(response => response.url().includes("/composition") && response.ok());
+      await outputPage.reload();
+      await reconnected;
+    }));
     await expect(page.getByTestId("overlay-root")).toBeVisible();
     await startAll();
     await assertMutes(false, true);
-  } catch (error) { await testInfo.attach("output-state", { body: JSON.stringify({ reports, currentModules: runtime.composition.playbackOperationsService.getSnapshot().current.map(row => row.moduleId) }), contentType: "application/json" }); throw error; } finally { await page.close(); await runtime.close(); await rm(root, { recursive: true, force: true }); }
+  } catch (error) { await testInfo.attach("output-state", { body: JSON.stringify({ reports, currentModules: runtime.composition.playbackOperationsService.getSnapshot().current.map(row => row.moduleId) }), contentType: "application/json" }); throw error; } finally { await Promise.all(Object.values(modulePages).map(outputPage => outputPage.close())); await runtime.close(); await rm(root, { recursive: true, force: true }); }
 });
 
 function silentWav(seconds: number): Buffer {

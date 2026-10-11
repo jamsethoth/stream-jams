@@ -39,6 +39,14 @@ export const effectBindingSchema = z.object({
 
 export const effectTriggerSchema = z.discriminatedUnion("kind", [
   z.object({
+    kind: z.literal("manual-external"),
+    eventId: boundedIdentityTextSchema,
+    occurredAt: isoDateTimeSchema,
+    sourceKey: boundedIdentityTextSchema,
+    eventType: boundedIdentityTextSchema,
+    summary: triggerSummarySchema
+  }).strict(),
+  z.object({
     kind: z.literal("twitch-reward"),
     eventId: boundedIdentityTextSchema,
     occurredAt: isoDateTimeSchema,

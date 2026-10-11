@@ -6,6 +6,7 @@ import { expect, test } from "@playwright/test";
 import { InMemorySecretStore } from "../../packages/test-support/dist/index.js";
 import { createDefaultAppConfig } from "../../apps/server/dist/config/default-config.js";
 import { FileConfigStore } from "../../apps/server/dist/config/file-config-store.js";
+import { SqliteEventBusJournalRepository } from "../../apps/server/dist/modules/events/sqlite-event-bus-journal-repository.js";
 import { startLocalRuntime, type StartedLocalRuntime } from "../../apps/server/dist/runtime/start-local-runtime.js";
 
 test("shows bus intake and module outcomes in Diagnostics and saves the replay age in Settings", async ({ page, request }) => {
@@ -25,13 +26,27 @@ test("shows bus intake and module outcomes in Diagnostics and saves the replay a
     expect((await runtime.composition.eventIngestionService.ingestEffectTriggers("sb-scene", [{ ...trigger, eventId: "sb-scene" }])).status).toBe("accepted");
     expect((await runtime.composition.eventIngestionService.ingestEffectTriggers("sb-scene", [{ ...trigger, eventId: "sb-scene" }])).status).toBe("duplicate");
 
+    // Fixture the additive manual journal contract without switching public dispatch handlers in S02.
+    const journal = new SqliteEventBusJournalRepository(runtime.composition.database.connection);
+    const receivedAt = new Date().toISOString();
+    const manual = journal.append({ kind: "manual", sourceKind: "manual", sourceRegistrationId: null, correlationKey: null, eventId: "manual-diagnostics", receivedAt, effectTriggers: [], submission: { channel: "operator", mayAutoplay: true }, action: { kind: "video-request", request: { link: "https://youtu.be/dQw4w9WgXcQ", requester: "Private sample viewer" } } }, "manual-diagnostics-bus", { duplicateSinceMs: 0, correlationSinceMs: 0 });
+    if (manual.status !== "appended") throw new Error("Expected isolated manual fixture");
+    journal.recordIntake({ receivedAt, sourceKind: "manual", kind: "manual", eventType: "video-request", outcome: "accepted", sequence: manual.event.sequence, referenceId: null, submissionChannel: "operator" });
+
     await page.goto(`${url}/manage/diagnostics`);
     await page.getByRole("tab", { name: /Event intake/u }).click();
     const rows = page.getByRole("table").getByRole("row");
-    await expect(rows).toHaveCount(3);
-    await expect(rows.nth(1)).toContainText("Duplicate");
-    await expect(rows.nth(2)).toContainText("Accepted");
-    await rows.nth(2).getByRole("button", { name: "OBS · SceneChanged" }).click();
+    await expect(rows).toHaveCount(4);
+    await expect(rows.nth(1)).toContainText("Manual");
+    await rows.nth(1).getByRole("button", { name: "video-request", exact: true }).click();
+    await expect(page.getByLabel("Bus event detail")).toContainText("Manual action");
+    await expect(page.getByLabel("Bus event detail")).toContainText("Submitted fromOperator");
+    await expect(page.getByLabel("Bus event detail")).not.toContainText("Private sample viewer");
+    await expect(page.getByLabel("Bus event detail")).not.toContainText("youtu");
+    await expect(page.getByLabel("Bus event detail")).toContainText("Pending");
+    await expect(rows.nth(2)).toContainText("Duplicate");
+    await expect(rows.nth(3)).toContainText("Accepted");
+    await rows.nth(3).getByRole("button", { name: "OBS · SceneChanged" }).click();
     const outcomes = page.getByLabel("Bus event detail").getByRole("list", { name: "Module outcomes" });
     await expect(outcomes.getByRole("listitem")).toHaveCount(4);
     await expect(outcomes).toContainText("Alerts");

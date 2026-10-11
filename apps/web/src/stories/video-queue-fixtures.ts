@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import type { VideoQueueResponse } from "@stream-jams/core";
 import type { VideoQueueApi, VideoQueueItem, VideoRecentItem, VideosApi } from "../management/videos/videos-api.js";
 
@@ -5,7 +6,7 @@ const createdAt = "2026-10-08T18:00:00.000Z";
 
 export function videoItem(id: string, overrides: Partial<VideoQueueItem> = {}): VideoQueueItem {
   return {
-    id, purpose: "live", source: { provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 0 }, title: `Video ${id}`, providerTitle: null, channelName: null, requester: "viewer_one",
+    id, reviewRequired: false, migrationProvenance: null, source: { provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 0 }, title: `Video ${id}`, providerTitle: null, channelName: null, requester: "viewer_one",
     submittedVia: "streamerbot", durationMs: 95_000, status: "queued", holdReason: null, limitOverridden: false, autoplay: false,
     position: 1, createdAt, link: `https://youtu.be/${id}`, ...overrides
   };
@@ -16,7 +17,7 @@ export function recentVideo(id: string, overrides: Partial<VideoRecentItem> = {}
 }
 
 export function videoQueue(overrides: Partial<VideoQueueResponse> = {}): VideoQueueResponse {
-  return { purpose: "live", revision: 4, queuePaused: false, runRemaining: 0, gapEndsAtEpochMs: null, serverTimeEpochMs: Date.now(), mirror: { available: true }, items: [], recent: [], current: null, ...overrides };
+  return { revision: 4, queuePaused: false, runRemaining: 0, gapEndsAtEpochMs: null, serverTimeEpochMs: Date.now(), mirror: { available: true }, items: [], recent: [], current: null, ...overrides };
 }
 
 export const queuedVideos = (): VideoQueueResponse => videoQueue({ items: [
@@ -83,7 +84,8 @@ export const twitchClipPlaying = (): VideoQueueResponse => {
 export function createStaticVideoQueueApi(queue: VideoQueueResponse, overrides: Partial<VideoQueueApi> = {}): VideoQueueApi {
   return {
     getQueue: async () => queue,
-    submit: async (_purpose, input) => videoItem("added", { link: input.link, title: input.title ?? null, submittedVia: "management" }),
+    submission: async () => { throw new Error("Video submission outcome is unavailable."); },
+    submit: async (input) => videoItem("added", { link: input.link, title: input.title ?? null, submittedVia: "management" }),
     command: async () => queue,
     control: async () => queue,
     requeue: async () => queue,
@@ -95,13 +97,12 @@ export function createStaticVideosApi(queue: VideoQueueResponse, overrides: Part
   return {
     ...createStaticVideoQueueApi(queue),
     getModuleConfig: async () => ({ enabled: true, config: { maxLengthSeconds: 120, gapSeconds: 3, allowedDirectHosts: ["videos.example.com"], obsAudio: true,
-      audioDeviceIds: ["stream"], audioDeviceDelaysMs: { stream: 120 }, streamerBotAutoplay: true, rewardMappings: [{ rewardId: "reward-video", purpose: "live" }],
-      layout: { x: 269, y: 140, width: 1382, height: 876 } } }),
+      audioDeviceIds: ["stream"], audioDeviceDelaysMs: { stream: 120 }, streamerBotAutoplay: true, rewardMappings: [{ rewardId: "reward-video" }],
+      layout: { schemaVersion: 2, content: { width: 1382, height: 876 }, desktopPlacement: { x: 269, y: 140, scale: 1 } } } }),
     saveModuleConfig: async (enabled, config) => ({ enabled, config }),
     setModuleEnabled: async enabled => enabled,
     listBrowserSources: async () => [
-      { id: "module:videos:live", label: "Videos Live", purpose: "live", overlayId: "default", enabled: true, url: "http://127.0.0.1:39187/overlay/modules/videos/live/story-placeholder", status: "available" },
-      { id: "module:videos:test", label: "Videos Test", purpose: "test", overlayId: "default", enabled: true, url: null, status: "create-required" }
+      { canvas: { ...sceneOutputCanvas(0, 1382, 876), kind: "content" }, id: "module:videos:live", label: "Videos Live", purpose: "live", overlayId: "default", enabled: true, url: "http://127.0.0.1:39187/overlay/modules/videos/live/story-placeholder", status: "available" },
     ],
     createBrowserSource: async () => {},
     regenerateBrowserSource: async () => {},

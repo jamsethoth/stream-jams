@@ -32,6 +32,11 @@ const defaultPlayerLoadTimeoutMs = 12_000;
 /** Outputs further than this from the shared clock jump to it; smaller drift is left alone. */
 export const videoDriftToleranceMs = 750;
 const driftCheckIntervalMs = 1_000;
+/**
+ * Content size or desktop scale must settle this long before the mirror re-reads its picture request,
+ * so a dragged or typed geometry change renegotiates at most once (the receiver adds its own upgrade delay).
+ */
+export const videoMirrorGeometryRefreshDelayMs = 750;
 
 export function VideosOverlay({ projection, onPlaybackEvent, resolvePlayerUrl = passThrough, playerLoadTimeoutMs = defaultPlayerLoadTimeoutMs, now = Date.now,
   mirror, muted = false, mirrorAudio = true, createMirrorPeerConnection }: VideosOverlayProps) {
@@ -114,7 +119,9 @@ interface MirrorReceiverProps {
  * Shows the desktop primary player's stream. Stays transparent until frames arrive and
  * whenever the mirror is unavailable; reconnects on its own and releases the connection on unmount.
  * It asks only for what it plays: sound only while audible, and a picture no larger than its
- * frame in device pixels. Needing more later (unmuted, a bigger box) reconnects once; needing less does not.
+ * frame in device pixels. Sound upgrades renegotiate after the receiver's short delay. Content size and
+ * desktop scale changes refresh the request once they settle, so a picture that needs more pixels
+ * reconnects once; moves and smaller pictures keep the healthy peer and its stream.
  */
 function MirrorReceiver({ connector, context, layout, muted, paused, createPeerConnection }: MirrorReceiverProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -125,8 +132,16 @@ function MirrorReceiver({ connector, context, layout, muted, paused, createPeerC
   useEffect(() => {
     latest.current = { muted, layout };
     if (videoRef.current !== null) videoRef.current.muted = muted;
-    receiverRef.current?.refresh();
   }, [muted, layout]);
+  // Sound upgrades use the receiver's bounded refresh directly.
+  useEffect(() => { receiverRef.current?.refresh(); }, [muted]);
+  // Size changes are debounced first; refresh reconnects only when the request grew.
+  const { width: contentWidth, height: contentHeight } = layout.content;
+  const desktopScale = layout.desktopPlacement.scale;
+  useEffect(() => {
+    const timer = window.setTimeout(() => receiverRef.current?.refresh(), videoMirrorGeometryRefreshDelayMs);
+    return () => window.clearTimeout(timer);
+  }, [contentWidth, contentHeight, desktopScale]);
   useEffect(() => {
     const receiver = startVideoMirrorReceiver({
       connector,
@@ -136,7 +151,7 @@ function MirrorReceiver({ connector, context, layout, muted, paused, createPeerC
         const { frame } = videosPlacementGeometry(box);
         // The canvas is scaled to the output; measure the box to get device pixels.
         const width = videoRef.current?.closest(".video-overlay")?.getBoundingClientRect().width ?? 0;
-        const scale = (width / box.width || 1) * devicePixelRatio;
+        const scale = (width / box.content.width || box.desktopPlacement.scale) * devicePixelRatio;
         return { media: latest.current.muted ? "video" : "both", ...videoMirrorPictureSize(frame.width * scale, frame.height * scale) };
       },
       onState: setState,
@@ -248,22 +263,22 @@ function createReporter(itemId: string, setStarted: (started: boolean) => void, 
 }
 
 /** Stream Jams' own `<video>` for allowlisted direct files: follows the shared clock exactly. */
-function DirectPlayer({ clock, muted, now, playerUrl, reportRef }: PlayerFrameProps & { readonly reportRef: Reporter }) {
+function DirectPlayer({ clock: { state, positionMs, atEpochMs }, muted, now, playerUrl, reportRef }: PlayerFrameProps & { readonly reportRef: Reporter }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const video = videoRef.current;
     if (video === null) return;
     const sync = () => {
-      const targetSeconds = videoClockPositionMs(clock, now()) / 1000;
+      const targetSeconds = videoClockPositionMs({ state, positionMs, atEpochMs }, now()) / 1000;
       if (Number.isFinite(video.duration) && Math.abs(video.currentTime - targetSeconds) * 1000 > videoDriftToleranceMs) video.currentTime = targetSeconds;
-      if (clock.state === "paused") video.pause();
+      if (state === "paused") video.pause();
       else if (video.paused && !video.ended) void video.play().catch((error: unknown) => reportRef.current.failed("The video could not start.", error));
     };
     sync();
     video.addEventListener("loadedmetadata", sync);
     const interval = window.setInterval(sync, driftCheckIntervalMs);
     return () => { video.removeEventListener("loadedmetadata", sync); window.clearInterval(interval); };
-  }, [clock, now, reportRef]);
+  }, [state, positionMs, atEpochMs, now, reportRef]);
   return (
     <video
       className="video-overlay__player"
@@ -285,7 +300,7 @@ function DirectPlayer({ clock, muted, now, playerUrl, reportRef }: PlayerFramePr
  * Provider iframe. YouTube is steered through its postMessage API (no provider script runs in
  * this page). Twitch exposes no control here, so it plays from its start offset until the queue ends it.
  */
-function EmbeddedPlayer({ clock, now, playerUrl, reportRef, source }: PlayerFrameProps & { readonly reportRef: Reporter }) {
+function EmbeddedPlayer({ clock: { state, positionMs, atEpochMs }, now, playerUrl, reportRef, source }: PlayerFrameProps & { readonly reportRef: Reporter }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [loaded, setLoaded] = useState(false);
   const playerTimeRef = useRef<number | null>(null);
@@ -313,15 +328,15 @@ function EmbeddedPlayer({ clock, now, playerUrl, reportRef, source }: PlayerFram
     const command = (func: string, args: readonly unknown[] = []) => post({ event: "command", func, args, id: 1, channel: "widget" });
     post({ event: "listening", id: 1, channel: "widget" });
     const sync = () => {
-      const targetSeconds = videoClockPositionMs(clock, now()) / 1000;
+      const targetSeconds = videoClockPositionMs({ state, positionMs, atEpochMs }, now()) / 1000;
       const current = playerTimeRef.current;
       if (current === null || Math.abs(current - targetSeconds) * 1000 > videoDriftToleranceMs) command("seekTo", [targetSeconds, true]);
-      command(clock.state === "paused" ? "pauseVideo" : "playVideo");
+      command(state === "paused" ? "pauseVideo" : "playVideo");
     };
     sync();
     const interval = window.setInterval(sync, driftCheckIntervalMs);
     return () => window.clearInterval(interval);
-  }, [clock, controllable, loaded, now, origin]);
+  }, [state, positionMs, atEpochMs, controllable, loaded, now, origin]);
 
   return (
     <iframe

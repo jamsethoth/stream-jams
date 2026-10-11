@@ -1,12 +1,14 @@
 import { expect, test } from "@playwright/test";
 import { resolve } from "node:path";
 
+const sceneCanvas = { schemaVersion: 1, kind: "scene", width: 1920, height: 1080, origin: { x: 0, y: 0 }, insets: { top: 0, right: 0, bottom: 0, left: 0 }, configRevision: 0 };
+
 test("browser prepares real media silently, retains it at start, and recovers after a failed occurrence", async ({ page }) => {
   const base = { overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", targetProfileId: "landscape" };
   const instruction = { ...base, id: "prepared-video", visual: { assetId: "clip", mediaType: "video", layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 } }, audio: null, text: null, tts: null, durationMs: 1200 };
   const reports: { type: string; instructionId: string }[] = [];
   let send: (message: object) => void = () => { throw new Error("Socket not connected"); };
-  await page.route("**/composition**", route => route.fulfill({ json: { ...base, modules: [{ moduleId: "alerts", enabled: true, instructions: [] }] } }));
+  await page.route("**/composition**", route => route.fulfill({ json: { ...base, runtimeId: "fixture-runtime", canvas: sceneCanvas, modules: [{ moduleId: "alerts", enabled: true, instructions: [] }] } }));
   await page.route("**/assets/clip**", route => route.fulfill({ path: resolve("tests/fixtures/media/neutral-trackless.webm"), contentType: "video/webm" }));
   await page.route("**/assets/broken**", route => route.fulfill({ status: 404 }));
   await page.routeWebSocket("**/overlay/ws/**", socket => {
@@ -43,7 +45,7 @@ test("post-start media stall fails transparent with timing evidence and permits 
   const instruction = { ...base, id: "stalled-video", visual: { assetId: "clip", mediaType: "video", layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 } }, audio: null, text: null, tts: null, durationMs: 10000 };
   const reports: Array<{ type: string; instructionId: string; diagnostics?: { preparationDurationMs?: number; scheduledStartEpochMs?: number; actualStartEpochMs?: number; terminalOutcome: string; completionReason?: string } }> = [];
   let send: (message: object) => void = () => { throw new Error("Socket not connected"); };
-  await page.route("**/composition**", route => route.fulfill({ json: { ...base, modules: [{ moduleId: "alerts", enabled: true, instructions: [] }] } }));
+  await page.route("**/composition**", route => route.fulfill({ json: { ...base, runtimeId: "fixture-runtime", canvas: sceneCanvas, modules: [{ moduleId: "alerts", enabled: true, instructions: [] }] } }));
   await page.route("**/assets/clip**", route => route.fulfill({ path: resolve("tests/fixtures/media/neutral-trackless.webm"), contentType: "video/webm" }));
   await page.routeWebSocket("**/overlay/ws/**", socket => {
     send = message => socket.send(JSON.stringify(message));

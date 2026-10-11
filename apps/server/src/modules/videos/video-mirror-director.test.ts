@@ -136,17 +136,16 @@ describe("VideoMirrorDirector", () => {
   it("follows the global mute and resolves device routes like alert audio", async () => {
     const { director, transport, setMuted } = setup({ available: true, config: { audioDeviceIds: ["route-a", "route-b"], audioDeviceDelaysMs: { "route-b": 40 } },
       devices: [{ routeId: "route-a", deviceId: "device-a" }, { routeId: "route-b", deviceId: "device-a" }] });
-    await vi.waitFor(() => expect(transport.sent.filter(command => command.type === "set-output")).toHaveLength(2));
+    await vi.waitFor(() => expect(transport.sent.filter(command => command.type === "set-output")).toHaveLength(1));
     setMuted(true);
     director.refreshOutput();
-    await vi.waitFor(() => expect(transport.sent.at(-1)).toEqual({ type: "set-output", purpose: "test", muted: true, devices: [{ deviceId: "device-a", delayMs: 40 }] }));
+    await vi.waitFor(() => expect(transport.sent.at(-1)).toEqual({ type: "set-output", purpose: "live", muted: true, devices: [{ deviceId: "device-a", delayMs: 40 }] }));
   });
 
   it("fails closed for devices when destinations cannot be resolved", async () => {
     const { transport, errors } = setup({ available: true, config: { audioDeviceIds: ["route-a"] }, devices: new Error("audio unavailable") });
     await vi.waitFor(() => expect(transport.sent.filter(command => command.type === "set-output")).toEqual([
-      { type: "set-output", purpose: "live", muted: false, devices: [] },
-      { type: "set-output", purpose: "test", muted: false, devices: [] }
+      { type: "set-output", purpose: "live", muted: false, devices: [] }
     ]));
     expect(errors).toEqual(["Video device audio destinations could not be resolved."]);
   });

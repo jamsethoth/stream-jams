@@ -14,7 +14,7 @@ import { LocalManagementSessionService } from "../../modules/auth/management-ses
 import { createInMemoryStreamJamsDatabase, type StreamJamsDatabase } from "../../modules/db/database.js";
 import { createLocalManagementRateLimitPreHandler, LocalManagementRateLimiter } from "../middleware/local-management-rate-limit.js";
 import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
-import type { AlertTestPlaybackCoordinator } from "./alerts.js";
+import type { AlertRuleRouteDependencies } from "./alerts.js";
 
 describe("alert rule routes", () => {
   it("creates, lists, updates, toggles, and deletes alert rules", async () => {
@@ -277,47 +277,30 @@ describe("alert rule routes", () => {
     });
   });
 
-  it("runs local sample test alerts through the playback coordinator", async () => {
+  it("publishes legacy sample tests once and omits client event identity", async () => {
     using database = createInMemoryStreamJamsDatabase();
-    const enqueueEvent = vi.fn(async () => ({
-      status: "queued" as const,
-      snapshot: {
-        current: null,
-        queued: [],
-        recent: [],
-        paused: false,
-        muted: false,
-        doNotDisturb: false
-      },
-      matchedRuleIds: ["rule_1"],
-      enqueuedAlertIds: ["resolved_alert_1"]
-    }));
-    const { app, authHeaders } = await createAppWithAlerts(database, {
-      alertTestPlaybackCoordinator: {
-        enqueueEvent
-      }
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/alerts/test",
-      headers: authHeaders,
-      payload: createSampleCheerEvent()
-    });
-
+    const submitAlertSimulation = vi.fn(async () => ({ status: "accepted" as const, busId: "bus", eventId: "manual", consumers: [{ consumerId: "alerts", outcome: "admitted" as const, referenceId: null }] }));
+    const { app, authHeaders } = await createAppWithAlerts(database, { submitAlertSimulation });
+    const response = await app.inject({ method: "POST", url: "/alerts/test", headers: authHeaders, payload: createSampleCheerEvent() });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
-      status: "queued",
-      matchedRuleIds: ["rule_1"],
-      enqueuedAlertIds: ["resolved_alert_1"]
-    });
-    expect(enqueueEvent).toHaveBeenCalledWith(expect.objectContaining({
-      id: "test_cheer_1",
-      type: "cheer",
-      metadata: {
-        sample: true
-      }
-    }));
+    expect(response.json()).toEqual({ status: "accepted", busId: "bus", eventId: "manual", consumers: [{ consumerId: "alerts", outcome: "admitted", referenceId: null }] });
+    expect(submitAlertSimulation).toHaveBeenCalledOnce();
+    expect(submitAlertSimulation).toHaveBeenCalledWith({ action: { kind: "simulate-canonical", event: expect.objectContaining({ type: "cheer", metadata: { sample: true } }) } });
+    expect(submitAlertSimulation.mock.calls[0]).not.toHaveProperty("0.action.event.id");
+  });
+
+  it("protects legacy simulation and rejects forged targets before publication", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const submitAlertSimulation = vi.fn(async () => ({ status: "accepted" as const, busId: "bus", eventId: "manual", consumers: [] }));
+    const { app, authHeaders } = await createAppWithAlerts(database, { submitAlertSimulation });
+    const request = { method: "POST" as const, url: "/alerts/test", payload: createSampleCheerEvent() };
+    expect((await app.inject(request)).statusCode).toBe(401);
+    expect((await app.inject({ ...request, headers: { authorization: authHeaders.authorization! } })).statusCode).toBe(403);
+    expect((await app.inject({ ...request, headers: { ...authHeaders, origin: "https://untrusted.example" } })).statusCode).toBe(403);
+    for (const forged of [{ recipients: ["desktop"] }, { sourceRegistrationId: "forged" }]) {
+      expect((await app.inject({ ...request, headers: authHeaders, payload: { ...request.payload, ...forged } })).statusCode).toBe(400);
+    }
+    expect(submitAlertSimulation).not.toHaveBeenCalled();
   });
 
   it("rejects missing management sessions before listing alert rules", async () => {
@@ -341,7 +324,7 @@ describe("alert rule routes", () => {
 async function createAppWithAlerts(
   database: StreamJamsDatabase,
   options: {
-    readonly alertTestPlaybackCoordinator?: AlertTestPlaybackCoordinator;
+    readonly submitAlertSimulation?: AlertRuleRouteDependencies["submitAlertSimulation"];
   } = {}
 ) {
   const alertService = createAlertService(database);
@@ -362,9 +345,9 @@ async function createAppWithAlerts(
       version: "1.2.3"
     },
     alertService,
-    ...(options.alertTestPlaybackCoordinator === undefined
+    ...(options.submitAlertSimulation === undefined
       ? {}
-      : { alertTestPlaybackCoordinator: options.alertTestPlaybackCoordinator }),
+      : { submitAlertSimulation: options.submitAlertSimulation }),
     managementAuthPreHandler: createTestManagementSecurity(managementSessionService),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter })
   });

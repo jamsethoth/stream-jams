@@ -115,7 +115,7 @@ Add one or more trusted triggers. A stream event trigger plays the effect for an
 
 Every enabled variant participates in one weighted pool. Use **New variant** for a blank disabled variant or **Copy variant** to clone the selection. **Remove variant** changes only the draft after confirmation and supports Undo; the last variant and the only enabled variant cannot be removed. Save persists removal. Queue priority orders waiting effects without interrupting the current effect. Per-effect cooldown is owned by the triggering event; the optional module cooldown remains available.
 
-For OBS, copy the Screen Effects module Browser Source from its inventory setup panel or include the module in a unified surface. For the Windows overlay, open **Settings → Overlay surfaces**, show `screen-effects` on the explicitly bound desktop surface, place it in the desired topmost-first order, and save. Visual membership is independent from Browser Source or named-device audio; do not add both a module-specific and unified browser source with audio enabled unless duplicate audio is intentional.
+For OBS, copy the single ordinary Screen Effects Browser Source from its inventory setup panel. For the Windows overlay, open **Settings → Overlay surfaces**, show `screen-effects` on the explicitly bound desktop surface, place it in the desired topmost-first order, and save. Visual membership is independent from Browser Source or named-device audio; avoid duplicate ordinary browser sources with audio enabled unless duplicate audio is intentional.
 
 Use `/operator` during a stream. Alerts and Screen Effects may appear under **Now playing** simultaneously. Pending and recent rows identify their owning module, and skip, remove, replay, clear and module-pause actions affect only that owner. Global Pause, Mute and Do Not Disturb remain shared. Definitions and safety settings survive restart, but current, pending and recent occurrences do not replay.
 
@@ -271,3 +271,9 @@ for package in *.deb; do dpkg-deb -x "$package" /tmp/playwright-deps/extract; do
 cd /path/to/stream-jams
 env LD_LIBRARY_PATH=/tmp/playwright-deps/extract/usr/lib/x86_64-linux-gnu pnpm test:e2e
 ```
+
+## Retired sources and hidden legacy credentials
+
+Public test and unified outputs reject access and cannot be issued or copied. Existing profileless Alerts, Music or Timer ordinary credentials retain their exact historical scope during local upgrade, but stay hidden from normal source choices; adding a profile does not widen their authority. Portable backup regenerates only the eight ordinary choices and clears desktop display/follow consent.
+
+To inventory hidden credentials, create a local management session with `POST /auth/management/sessions` and retain its bearer ID and CSRF token only in memory. Authenticated `GET /management/overlay-outputs/legacy-keys` returns `keyId`, `moduleId` and `createdAt`, without raw keys or URLs. Revoke an unwanted row with `DELETE /management/overlay-outputs/keys/<URL-encoded-keyId>`, supplying the session bearer header, `x-stream-jams-csrf` and same-origin `Origin`. Success is204: persistent revocation is authoritative before secret cleanup and closes/rejects the affected connected or racing recipient. Unrelated ordinary credentials remain valid. Cleanup diagnostics are bounded; restart retries durable cleanup without restoring access. Never put credentials in logs or copied support reports.

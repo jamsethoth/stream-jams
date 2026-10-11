@@ -1,6 +1,6 @@
 import {
   moduleOverlayPath,
-  unifiedOverlayPath,
+  isOrdinaryOverlayOutput,
   type CreateOverlayKeyInput,
   type OverlayAccessKey,
   type OverlayAccessKeyRepository,
@@ -9,17 +9,19 @@ import {
   type OverlayModuleRegistry,
   type OverlayOutputKeyResult,
   type OverlayOutputView,
-  type OverlayPurpose,
   type OverlayTargetProfileId,
   type SecretRef,
   type SecretStore
 } from "@stream-jams/core";
 
 const defaultOverlayId = "default";
-const purposes = ["live", "test"] as const satisfies readonly OverlayPurpose[];
 const alertTargetProfileIds = ["landscape", "vertical"] as const satisfies readonly OverlayTargetProfileId[];
 
 export interface OverlayOutputManagementServiceOptions {
+  readonly listLegacyKeys?: () => Promise<readonly OverlayAccessKey[]>;
+  readonly onKeyRevoked?: (keyId: string) => void;
+  readonly onCleanupFailure?: () => Promise<void>;
+  readonly getCanvas?: (moduleId: string, profile: OverlayTargetProfileId | null | undefined) => Promise<import("@stream-jams/core").OutputCanvas>;
   readonly overlayAccessService: Pick<OverlayAccessService, "createKey" | "revokeKey">;
   readonly overlayKeyRepository: Pick<OverlayAccessKeyRepository, "findByOutput" | "findById">;
   readonly overlayModuleRegistry: Pick<OverlayModuleRegistry, "getModule" | "listModules">;
@@ -28,6 +30,8 @@ export interface OverlayOutputManagementServiceOptions {
 }
 
 export class OverlayOutputManagementService {
+  readonly #options: OverlayOutputManagementServiceOptions;
+  readonly #getCanvas: OverlayOutputManagementServiceOptions["getCanvas"];
   readonly #overlayAccessService: Pick<OverlayAccessService, "createKey" | "revokeKey">;
   readonly #overlayKeyRepository: Pick<OverlayAccessKeyRepository, "findByOutput" | "findById">;
   readonly #overlayModuleRegistry: Pick<OverlayModuleRegistry, "getModule" | "listModules">;
@@ -35,6 +39,8 @@ export class OverlayOutputManagementService {
   readonly #secretStore: Pick<SecretStore, "setSecret" | "getSecret" | "deleteSecret">;
 
   constructor(options: OverlayOutputManagementServiceOptions) {
+    this.#options = options;
+    this.#getCanvas = options.getCanvas;
     this.#overlayAccessService = options.overlayAccessService;
     this.#overlayKeyRepository = options.overlayKeyRepository;
     this.#overlayModuleRegistry = options.overlayModuleRegistry;
@@ -52,42 +58,28 @@ export class OverlayOutputManagementService {
       const config = await this.#overlayModuleConfigService.getModuleConfig(moduleDefinition.id);
       const targetProfileIds: readonly (OverlayTargetProfileId | null)[] =
         moduleDefinition.id === "alerts" || moduleDefinition.id === "timers" || moduleDefinition.id === "music"
-          ? [null, ...alertTargetProfileIds]
+          ? alertTargetProfileIds
           : [null];
       for (const targetProfileId of targetProfileIds) {
-        for (const purpose of purposes) {
-          const input = {
-            overlayId: defaultOverlayId,
-            scope: "module" as const,
-            moduleId: moduleDefinition.id,
-            purpose,
-            targetProfileId
-          };
-          outputs.push(
-            await this.#toOutputView(input, this.#labelFor(input), config.enabled, origin)
-          );
-        }
+        const input = {
+          overlayId: defaultOverlayId,
+          scope: "module" as const,
+          moduleId: moduleDefinition.id,
+          purpose: "live" as const,
+          targetProfileId
+        };
+        if (!isOrdinaryOverlayOutput(input)) continue;
+        outputs.push(await this.#toOutputView(input, this.#labelFor(input), config.enabled, origin));
       }
     }
 
-    for (const purpose of purposes) {
-      outputs.push(
-        await this.#toOutputView(
-          {
-            overlayId: defaultOverlayId,
-            scope: "unified",
-            moduleId: null,
-            purpose,
-            targetProfileId: null
-          },
-          `Unified ${capitalize(purpose)}`,
-          true,
-          origin
-        )
-      );
-    }
-
     return outputs;
+  }
+
+  async listLegacyKeys() {
+    return (await this.#options.listLegacyKeys?.() ?? []).filter(key =>
+      isOrdinaryOverlayOutput(key, true) && !isOrdinaryOverlayOutput(key) && key.revokedAt === null
+    ).map(key => ({ keyId: key.id, moduleId: key.moduleId, createdAt: key.createdAt }));
   }
 
   async createKey(input: CreateOverlayKeyInput, origin: string): Promise<OverlayOutputKeyResult> {
@@ -96,10 +88,7 @@ export class OverlayOutputManagementService {
     try {
       await this.#storeRouteKey(created.record, created.rawKey);
     } catch (error) {
-      await this.#overlayAccessService.revokeKey(created.record.id);
-      if (created.record.routeKeySecretRef !== null) {
-        await this.#secretStore.deleteSecret(created.record.routeKeySecretRef);
-      }
+      await this.revokeKey(created.record.id);
       throw error;
     }
 
@@ -115,10 +104,7 @@ export class OverlayOutputManagementService {
     const currentKeys = await this.#overlayKeyRepository.findByOutput(input);
     const replacement = await this.createKey(input, origin);
     for (const key of currentKeys.filter((candidate) => candidate.revokedAt === null)) {
-      await this.#overlayAccessService.revokeKey(key.id);
-      if (key.routeKeySecretRef !== null) {
-        await this.#secretStore.deleteSecret(key.routeKeySecretRef);
-      }
+      await this.revokeKey(key.id);
     }
 
     return {
@@ -129,11 +115,19 @@ export class OverlayOutputManagementService {
 
   async revokeKey(keyId: string): Promise<OverlayAccessKey | null> {
     const existing = await this.#overlayKeyRepository.findById(keyId);
-    if (existing?.routeKeySecretRef !== null && existing?.routeKeySecretRef !== undefined) {
-      await this.#secretStore.deleteSecret(existing.routeKeySecretRef);
+    if (existing === null) return null;
+    // Re-revoking is a no-op: no new time, recipient recheck, or secret cleanup (startup retries failed cleanup).
+    if (existing.revokedAt !== null) return existing;
+    const revoked = await this.#overlayAccessService.revokeKey(keyId);
+    if (revoked === null) return null;
+    this.#options.onKeyRevoked?.(keyId);
+    const ref = revoked.routeKeySecretRef;
+    if (ref?.namespace === "overlay" && ref.accountId === keyId && ref.name === "route-key") {
+      try { await this.#secretStore.deleteSecret(ref); }
+      // error-provenance: allow cleanup -- database authority is already revoked; keyring cleanup cannot reactivate it
+      catch { await this.#options.onCleanupFailure?.(); }
     }
-
-    return this.#overlayAccessService.revokeKey(keyId);
+    return revoked;
   }
 
   async #toOutputView(
@@ -142,10 +136,12 @@ export class OverlayOutputManagementService {
     enabled: boolean,
     origin: string
   ): Promise<OverlayOutputView> {
+    const canvas = input.moduleId === null ? undefined : await this.#getCanvas?.(input.moduleId, input.targetProfileId);
     const activeKey = (await this.#overlayKeyRepository.findByOutput(input)).find((key) => key.revokedAt === null);
     if (activeKey === undefined) {
       return {
         ...input,
+        ...(canvas === undefined ? {} : { canvas }),
         id: outputId(input),
         label,
         enabled,
@@ -158,6 +154,7 @@ export class OverlayOutputManagementService {
     const rawKey = await this.#readRouteKey(activeKey.routeKeySecretRef);
     return {
       ...input,
+      ...(canvas === undefined ? {} : { canvas }),
       id: outputId(input),
       label,
       enabled,
@@ -168,15 +165,9 @@ export class OverlayOutputManagementService {
   }
 
   #assertKnownOutput(input: CreateOverlayKeyInput): void {
-    if (input.scope === "module") {
-      const moduleDefinition = input.moduleId === null ? null : this.#overlayModuleRegistry.getModule(input.moduleId);
-      if (moduleDefinition === null || !moduleDefinition.renderer.supportedOutputs.includes("module")) {
-        throw new UnknownOverlayOutputError(input);
-      }
-      return;
-    }
-
-    if (input.moduleId !== null || (input.targetProfileId ?? null) !== null) {
+    if (!isOrdinaryOverlayOutput(input)) throw new UnknownOverlayOutputError(input);
+    const moduleDefinition = input.moduleId === null ? null : this.#overlayModuleRegistry.getModule(input.moduleId);
+    if (moduleDefinition === null || !moduleDefinition.renderer.supportedOutputs.includes("module")) {
       throw new UnknownOverlayOutputError(input);
     }
   }
@@ -194,23 +185,17 @@ export class OverlayOutputManagementService {
   }
 
   #urlFor(input: CreateOverlayKeyInput, rawKey: string, origin: string): string {
-    const path =
-      input.scope === "module"
-        ? moduleOverlayPath({
-            moduleId: input.moduleId ?? "",
-            purpose: input.purpose,
-            overlayKey: rawKey,
-            ...(input.targetProfileId === undefined ? {} : { targetProfileId: input.targetProfileId })
-          })
-        : unifiedOverlayPath({ purpose: input.purpose, overlayKey: rawKey });
+    if (input.moduleId === null) throw new UnknownOverlayOutputError(input);
+    const path = moduleOverlayPath({
+      moduleId: input.moduleId,
+      purpose: input.purpose,
+      overlayKey: rawKey,
+      ...(input.targetProfileId === undefined ? {} : { targetProfileId: input.targetProfileId })
+    });
     return `${origin}${path}`;
   }
 
   #labelFor(input: CreateOverlayKeyInput): string {
-    if (input.scope === "unified") {
-      return `Unified ${capitalize(input.purpose)}`;
-    }
-
     const moduleDefinition = input.moduleId === null ? null : this.#overlayModuleRegistry.getModule(input.moduleId);
     const profileLabel = input.targetProfileId === null || input.targetProfileId === undefined
       ? ""
@@ -244,10 +229,6 @@ export function createOverlayRouteKeySecretRef(keyId: string): SecretRef {
 }
 
 function outputId(input: CreateOverlayKeyInput): string {
-  if (input.scope === "unified") {
-    return `unified:${input.purpose}`;
-  }
-
   return input.targetProfileId === null || input.targetProfileId === undefined
     ? `module:${input.moduleId}:${input.purpose}`
     : `module:${input.moduleId}:${input.targetProfileId}:${input.purpose}`;

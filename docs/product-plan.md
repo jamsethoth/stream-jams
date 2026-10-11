@@ -49,8 +49,8 @@ Example local routes:
 
 ```text
 http://127.0.0.1:39187/manage
-http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_<unguessable-key>
-http://127.0.0.1:39187/overlay/unified/live/ovl_<unguessable-key>
+http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_<unguessable-key>?profile=landscape
+http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_<unguessable-key>?profile=vertical
 ```
 
 The app must support a configurable port. The selected port is stored in non-secret local config. On startup, if the configured port is unavailable, the app should show a clear error and suggest available alternatives.
@@ -63,8 +63,8 @@ Overlay URLs should use unguessable route keys instead of visible query-string t
 
 Rules:
 
-- Each module/profile or unified live overlay has its own key.
-- Module-specific and unified overlay URLs must have separately scoped keys.
+- Each ordinary module/profile overlay has its own key.
+- Ordinary keys authorize their exact module/profile only; public test and unified outputs are retired.
 - Overlay keys must not grant access to management/configuration APIs.
 - Overlay keys can be regenerated from the management UI.
 - Overlay keys must be redacted from logs and diagnostic exports.
@@ -129,22 +129,22 @@ Core concepts:
 Module rules:
 
 - Every overlay module can be enabled or disabled independently.
-- A disabled module must not render in module-specific or unified overlay outputs.
+- A disabled module must not render in ordinary browser or private desktop outputs.
 - Each module must expose a wizard/form-driven configuration flow in the management UI.
 - Each module must define its own service boundary and avoid coupling module logic into shared HTTP handlers or React shell components.
-- Modules may provide separate live and test outputs.
-- A unified overlay should compose enabled modules through normalized render instructions rather than importing module internals directly.
+- Manual test sends use ordinary outputs with explicit manual provenance.
+- The trusted private desktop surface composes enabled modules through normalized render instructions.
 
 MVP module scope:
 
 - Implement the overlay module platform foundation.
 - Implement the Alerts module.
 - Do not implement a music widget in MVP, but keep the module interfaces compatible with a future `stream-jams-music-widget` integration.
-- Support exactly one configurable canvas per module in the MVP. The module canvas controls placement for that module's overlay elements, and the configured canvas can be exposed through live and test browser-source variants.
+- Support exactly one configurable canvas per module in the MVP. The module canvas controls placement for that module's overlay elements, and ordinary browser-source setup exposes its saved dimensions independently of desktop placement.
 
 The approved post-MVP Screen Effects follow-on implements the second usable overlay module. Operators can author disabled-by-default local media effects with trusted Twitch reward or configured Streamer.bot bindings, queue priority, unified weighted variants, and independent browser, desktop and named-device destinations. Triggering event configuration owns per-effect rate limiting; Screen Effects retains module-level safety controls. Screen Effects owns a sequential bounded queue that can run concurrently with Alerts; the Operator surface merges their state for display and module-qualified controls without merging their schedulers. Definitions and safety settings persist, while active, pending and recent occurrences never replay automatically after restart. See the [Screen Effects specification](../openspec/specs/screen-effects/spec.md), [multi-module operations specification](../openspec/specs/multi-module-playback-operations/spec.md), and [runbook](mvp-runbook.md#screen-effects).
 
-The approved Timers follow-on implements reusable server-authoritative countdown definitions with optional icon and start/end cues, one active generation per definition, pause/resume/stop/restart controls, independent Landscape and Vertical stack presentation, browser/unified/desktop visuals, explicit browser and named-device audio, Operator controls, and a dedicated loopback bearer API for generic Stream Deck actions. Definitions and layout persist; active runs and automation access do not survive backup restore, and active runs do not survive process restart. See the [Timers guide](timers.md) and the active [Timers change](../openspec/changes/archive/2026-10-05-add-timer-overlay-module).
+The approved Timers follow-on implements reusable server-authoritative countdown definitions with optional icon and start/end cues, one active generation per definition, pause/resume/stop/restart controls, independent Landscape and Vertical stack presentation, ordinary browser and private desktop visuals, explicit browser and named-device audio, Operator controls, and a dedicated loopback bearer API for generic Stream Deck actions. Definitions and layout persist; active runs and automation access do not survive backup restore. Process restart restores active runs paused from their last successful checkpoint without deducting offline time or replaying cues. See the [Timers guide](timers.md) and the [archived Timers change](../openspec/changes/archive/2026-10-05-add-timer-overlay-module).
 
 ## Twitch MVP Scope
 
@@ -497,8 +497,8 @@ The canonical post-MVP list, current priorities, dependency triggers, rejected d
 - No OBS WebSocket or native OBS plugin features are planned for the MVP.
 - Alerts are the first overlay module, not the only long-term overlay feature.
 - The MVP includes the module platform foundation but only implements the Alerts module.
-- The post-MVP Screen Effects module uses module-specific, unified and opt-in desktop surfaces while retaining an independent queue.
-- Future modules may use separate module-specific overlay URLs or participate in unified overlay URLs.
+- The post-MVP Screen Effects module uses ordinary module and opt-in desktop surfaces while retaining an independent queue.
+- Future modules may use ordinary module overlay URLs or participate in the trusted private desktop surface.
 - Exactly one alert set is active at a time; overlapping active sets are not planned without a new product decision.
 - All matching active alerts play sequentially for a single event.
 - Speaker.bot is the first target TTS provider.

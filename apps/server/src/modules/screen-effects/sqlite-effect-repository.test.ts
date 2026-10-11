@@ -16,6 +16,7 @@ import { SqliteAssetRepository } from "../assets/sqlite-asset-repository.js";
 import { SqliteAudioOutputRouteRepository } from "../audio/sqlite-audio-output-route-repository.js";
 import { SqliteEffectRepository } from "./sqlite-effect-repository.js";
 import { SqliteEffectSetRepository } from "./sqlite-effect-set-repository.js";
+import { createPreMigrationDatabase } from "../../test-support/pre-migration-database.js";
 
 const route = {
   id: "route-headphones",
@@ -102,21 +103,16 @@ describe("SqliteEffectRepository", () => {
   });
 
   it("upgrades populated pre-set data without changing document identities or flags", async () => {
-    using database = createInMemoryStreamJamsDatabase();
-    await seedReferences(database.connection);
-    database.connection.exec(`DROP TABLE video_requests; DROP TABLE video_queue_state; DELETE FROM schema_migrations WHERE id = '041-video-request-metadata'; DELETE FROM schema_migrations WHERE id = '040-video-request-queue';
-      DROP TRIGGER screen_effect_assign_set;
-      DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements;
-      DROP TABLE screen_effect_set_memberships; DROP TABLE screen_effect_sets;
-      DROP TABLE event_bus_settings; DROP TABLE event_bus_intake_log; DROP TABLE event_bus_consumer_outcomes; DELETE FROM schema_migrations WHERE id = '039-event-bus-outcomes'; ALTER TABLE alert_rules DROP COLUMN external_identity_json; DELETE FROM schema_migrations WHERE id = '038-external-alert-identity'; DELETE FROM schema_migrations WHERE id = '037-event-trigger-selectors'; DROP INDEX provider_registrations_one_active_event_source_kind; DROP INDEX provider_registrations_one_active_capability; CREATE UNIQUE INDEX provider_registrations_one_active_capability ON provider_registrations (capability) WHERE active = 1; DELETE FROM schema_migrations WHERE id = '036-event-source-active-per-kind'; DROP TABLE event_bus_correlation_merges; DELETE FROM schema_migrations WHERE id = '035-event-bus-correlation'; DROP TABLE event_bus_delivery_failures; DROP TABLE event_bus_consumer_cursors; DROP TABLE event_bus_journal; DELETE FROM schema_migrations WHERE id = '034-event-bus-journal'; 
-      DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; DROP TABLE timer_run_recovery; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;
-      ALTER TABLE asset_metadata DROP COLUMN duration_ms;
-      ALTER TABLE audio_output_routes DROP COLUMN auto_follow_device_name;
-      DELETE FROM schema_migrations WHERE id IN ('023-screen-effect-sets', '024-asset-duration-metadata', '025-remove-screen-effect-animations', '026-automatic-output-rebinding', '027-remove-alert-set-profile-state', '028-timer-overlay-module', '029-asset-retirements', '030-persistent-event-timers', '032-music-source-providers');`);
-    const effects = new SqliteEffectRepository(database.connection);
+    using fixture = createPreMigrationDatabase("023-screen-effect-sets");
+    fixture.connection.prepare("INSERT INTO asset_metadata (id,original_file_name,media_type,mime_type,size_bytes,checksum,storage_path) VALUES ('asset-tone','tone.wav','audio','audio/wav',4,'sha256:test-tone','assets/asset-tone.wav')").run();
+    fixture.connection.prepare("INSERT INTO audio_output_routes (id,name,device_id,device_label) VALUES (?,?,?,?)").run(route.id, route.name, route.deviceId, route.deviceLabel);
     const original = { ...effectDocument(), enabled: true };
-    await effects.save(original);
-    database.runMigrations();
+    await new SqliteEffectRepository(fixture.connection).save({ ...original, bindings: [] });
+    const binding = original.bindings[0]!;
+    fixture.connection.prepare("INSERT INTO screen_effect_bindings (id,effect_id,position,kind,canonical_identity,document_json) VALUES (?,?,0,'twitch-reward',?,?)")
+      .run(binding.id, original.id, 'twitch-reward:["broadcaster-1","reward-1"]', JSON.stringify({ id: binding.id, kind: "twitch-reward", broadcasterId: "broadcaster-1", rewardId: "reward-1" }));
+    const database = fixture.upgrade();
+    const effects = new SqliteEffectRepository(database.connection);
     expect(await effects.find(original.id)).toEqual(original);
     expect(await effects.listActive()).toEqual([original]);
     expect(await new SqliteEffectSetRepository(database.connection, effects).list()).toEqual([

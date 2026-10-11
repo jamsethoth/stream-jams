@@ -3,7 +3,7 @@ import { DestructiveConfirmationDialog } from "../foundation/DestructiveConfirma
 import { Button, Checkbox, NativeSelect, TextInput, Tooltip } from "@mantine/core";
 import { DisclosureIcon, ModulePageLayout, ModuleControls, SectionHeading } from "../foundation/ModulePageLayout.js";
 import { BrowserSourceRow } from "../foundation/BrowserSourceRow.js";
-import { BrowserSourcesPanel } from "../foundation/BrowserSourcesPanel.js";
+import { BrowserSourceSetupNotice, BrowserSourcesPanel, browserSourceSizesShown } from "../foundation/BrowserSourcesPanel.js";
 import {
   alertStarterTemplates,
   type ActionableManagementError,
@@ -61,7 +61,7 @@ export type AlertSetsPageApi = Pick<
   | "setOverlayModuleEnabled"
   | "deleteAlertSet"
   | "getAlertEditorDocument"
-  | "sendAlertEditorTest"
+  | "sendSavedAlertTest"
   | "createOverlayOutputKey"
   | "regenerateOverlayOutputKey"
 >;
@@ -89,10 +89,7 @@ interface AlertMutationDialogState {
   readonly alert: AlertInventoryRow;
 }
 
-const targetProfileDimensions: Record<TargetProfileId, Readonly<{ width: number; height: number }>> = {
-  landscape: { width: 1920, height: 1080 },
-  vertical: { width: 1080, height: 1920 }
-};
+
 
 export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: AlertSetsPageProps) {
   const [sets, setSets] = useState<readonly AlertSetOverview[]>([]);
@@ -648,13 +645,8 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
       const document = preparedDocument ?? await managementApi.getAlertEditorDocument(alert.id);
       const sample = document.samplePayloads.find((candidate) => candidate.kind === "built-in");
       if (sample === undefined) throw new Error("The saved alert has no built-in sample payload.");
-      const result = await managementApi.sendAlertEditorTest(alert.id, {
-        document,
-        targetProfileId,
-        samplePayload: sample.payload,
-        includeAudio: true,
-        includeTts: true
-      });
+      const testRequest = { targetProfileId, samplePayload: sample.payload, includeAudio: true, includeTts: true };
+      const result = await managementApi.sendSavedAlertTest(alert.id, testRequest);
       setNotice(alertTestNotice(result));
     } catch (cause) {
       setError(toActionableError(
@@ -997,7 +989,7 @@ function AlertInventory({
 }) {
   return (
     <section aria-labelledby="alert-inventory-heading" className="alert-sets-page__inventory">
-      <div className="alert-sets-page__section-heading"><div><h3 id="alert-inventory-heading">Alerts</h3><p>{filtered.matchingAlertCount} of {filtered.totalAlertCount} shown</p></div><Button disabled={busy} id="alert-inventory-add" onClick={onAdd} type="button">Add alert</Button></div>
+      <div className="alert-sets-page__section-heading"><div><h3 id="alert-inventory-heading">Alerts</h3><p>{filtered.matchingAlertCount} of {filtered.totalAlertCount} shown</p><p className="alert-sets-page__live-test-note" id="alert-live-test-note">Test saved plays on your live sources and OBS, including audio and TTS.</p></div><Button disabled={busy} id="alert-inventory-add" onClick={onAdd} type="button">Add alert</Button></div>
       <div className="alert-sets-page__filters">
         <TextInput label="Search" aria-label="Search" onChange={(event) => onQuery(event.currentTarget.value)} placeholder="Name, event, or provider" type="search" value={query} />
         <NativeSelect label="Event" onChange={(event) => onEventFilter(event.currentTarget.value)} value={eventFilter}><option value="all">All events</option>{eventTypes.map((eventType) => <option key={eventType} value={eventType}>{formatEventType(eventType)}</option>)}</NativeSelect>
@@ -1157,7 +1149,7 @@ function AlertRowsTable({
             const warningCount = alertIssues.filter((issue) => issue.severity === "warning").length;
             const testMenuOpen = testMenuAlertId === alert.id;
             // Shown as the Test saved tooltip (hover and focus) and description instead of a line under every row.
-            const testSummary = `Saved input · Browser ${alert.targetProfileIds.map(formatProfile).join(", ") || "none"}${alert.targetProfileIds.includes("landscape") ? " · Desktop Landscape when ready" : ""} · Selected device outputs · Audio and TTS included`;
+            const testSummary = `Plays on your live sources and OBS · Saved input · Browser ${alert.targetProfileIds.map(formatProfile).join(", ") || "none"}${alert.targetProfileIds.includes("landscape") ? " · Desktop Landscape when ready" : ""} · Selected device outputs · Audio and TTS included`;
             const summary = summarizeAlertInventoryRow(alert, siblings, fullGroup.known, rewardTitles);
             return (
               <tr className={alert.kind === "variation" ? "alert-sets-page__variation-row" : undefined} key={alert.id}>
@@ -1194,7 +1186,7 @@ function AlertRowsTable({
                     />
                   </div>
                   <small className="alert-sets-page__test-summary sr-only" id={`alert-test-summary-${alert.id}`}>{testSummary}</small>
-                  {testMenuOpen ? <div aria-label={`Choose test profile for ${alert.name}`} className="alert-sets-page__test-profiles" role="group">{testMenuProfileIds.map((targetProfileId) => <Button aria-label={`Send ${alert.name} saved test to ${formatProfile(targetProfileId)}`} variant="default" size="xs" key={targetProfileId} onClick={() => onTestProfile(alert, targetProfileId)} type="button">{formatProfile(targetProfileId)}</Button>)}</div> : null}
+                  {testMenuOpen ? <div aria-label={`Choose test profile for ${alert.name}`} className="alert-sets-page__test-profiles" role="group"><small className="alert-sets-page__live-test-note">Plays on your live sources and OBS</small>{testMenuProfileIds.map((targetProfileId) => <Button aria-label={`Send ${alert.name} saved test to ${formatProfile(targetProfileId)}`} variant="default" size="xs" key={targetProfileId} onClick={() => onTestProfile(alert, targetProfileId)} type="button">{formatProfile(targetProfileId)}</Button>)}</div> : null}
                 </td>
               </tr>
             );
@@ -1235,6 +1227,7 @@ function BrowserSources({
 
   return (
     <BrowserSourcesPanel id="browser-sources" detailsId="browser-source-details" expanded={expanded} onToggle={onToggle} readyCount={readyCount} needsSetupCount={needsSetupCount} refreshFailed={refreshError !== null}>
+      <BrowserSourceSetupNotice sizesShown={browserSourceSizesShown(sources)} />
       <p className={`alert-sets-page__status-freshness${refreshError === null ? "" : " alert-sets-page__status-freshness--stale"}`} role="status">
         {refreshError === null
           ? statusUpdatedAt === null ? "Connection status has not loaded." : `Connection status updated ${formatDateTime(statusUpdatedAt)}`
@@ -1244,7 +1237,7 @@ function BrowserSources({
       <div className="alert-sets-page__source-list">
         {sources.map((source) => {
           const label = formatProfile(source.targetProfileId);
-          const dimensions = targetProfileDimensions[source.targetProfileId];
+          const dimensions = source.canvas;
           const revealed = revealedSourceIds.has(source.id);
           const ready = source.copyableUrlStatus === "available";
           const listenerStatus = source.connectionState === "connected"
@@ -1253,7 +1246,7 @@ function BrowserSources({
               ? "Not listening. No connection recorded."
               : `Not listening. Last seen ${formatDateTime(source.lastConnectedAt)}`;
           return (
-            <BrowserSourceRow key={source.id} label={label} ready={ready} telemetry={listenerStatus} metadata={<strong><bdi dir="ltr">{dimensions.width} x {dimensions.height}</bdi></strong>} guidance={<>Add a Browser source in OBS at {dimensions.width} x {dimensions.height}, then paste this URL.</>} url={source.url === null ? <p className="browser-source-row__missing">Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source`} readOnly value={source.url} /> : <code>{maskRouteKey(source.url)}</code>} actions={<>
+            <BrowserSourceRow key={source.id} label={label} ready={ready} telemetry={listenerStatus} canvas={dimensions} guidance={dimensions === undefined ? undefined : <>Add a Browser source in OBS at {dimensions.width} x {dimensions.height}, then paste this URL.</>} url={source.url === null ? <p className="browser-source-row__missing">Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source`} readOnly value={source.url} /> : <code>{maskRouteKey(source.url)}</code>} actions={<>
 
                 {source.copyableUrlStatus === "create-required" ? <Button disabled={busy} onClick={() => onCreate(source)} type="button">Create URL</Button> : null}
                 {source.url === null ? null : <><Button aria-label={`${revealed ? "Hide" : "Reveal"} ${label} URL`} variant="default" onClick={() => onToggleReveal(source)} type="button">{revealed ? "Hide" : "Reveal"}</Button><Button aria-label={`Copy ${label} URL`} variant="default" onClick={() => onCopy(source)} type="button">Copy</Button></>}

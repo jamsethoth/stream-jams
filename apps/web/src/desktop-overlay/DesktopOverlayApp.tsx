@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
-import { privateDesktopMusicArtworkUrl, type MusicAssetResolver, type OverlayComposition, type OverlayInstruction, type VisualRecipientKey } from "@stream-jams/core";
+import { sceneOutputCanvas, privateDesktopMusicArtworkUrl, type MusicAssetResolver, type OverlayComposition, type OverlayInstruction, type VisualRecipientKey } from "@stream-jams/core";
 import { OverlaySurface, type OverlayPlaybackEvent } from "../overlay/components/OverlaySurface.js";
 import { moduleAssetKey, type DesktopOverlayController } from "./desktop-overlay-controller.js";
 import type { VideoMirrorConnector } from "@stream-jams/core/videos";
@@ -20,6 +20,7 @@ export function DesktopOverlayApp({ controller, subscribe, videoMirror }: {
   const getSnapshot = useCallback(() => controller.getSnapshot(), [controller]);
   const snapshot = useSyncExternalStore(subscribe, getSnapshot);
   const composition = useMemo<OverlayComposition>(() => ({
+    runtimeId: "private-desktop", canvas: sceneOutputCanvas(),
     overlayId: "desktop:primary", purpose: "live", scope: "unified", targetProfileId: "landscape",
     modules: snapshot.config.layers.map((layer, index) => {
       const persistent = snapshot.modules.find(module => module.moduleId === layer.moduleId);

@@ -24,16 +24,62 @@ const direct: VideoSource = { provider: "direct", url: "https://media.example.co
 
 function active(source: VideoSource, overrides: { clock?: { state: "playing" | "paused"; positionMs: number; atEpochMs: number }; obsAudio?: boolean; itemId?: string; layout?: VideosLayout } = {}): VideosProjection {
   return {
-    status: "active", itemId: overrides.itemId ?? "item-1", title: "The big play", requester: "Viewer", layout: overrides.layout ?? { x: 269, y: 140, width: 1382, height: 876 },
+    status: "active", itemId: overrides.itemId ?? "item-1", title: "The big play", requester: "Viewer", layout: overrides.layout ?? { schemaVersion: 2 as const, content: { width: 1382, height: 876 }, desktopPlacement: { x: 269, y: 140, scale: 1 } },
     delivery: { mode: "player", source, clock: overrides.clock ?? { state: "playing", positionMs: 0, atEpochMs: 1_000 }, obsAudio: overrides.obsAudio ?? true }
   };
 }
 
 describe("VideosOverlay", () => {
+  it("keeps minimum content and picture size through absent/two-line captions and portrait media metadata", () => {
+    const layout = { schemaVersion: 2 as const, content: { width: 240, height: 180 }, desktopPlacement: { x: 0, y: 0, scale: 1 } };
+    const projection = active(direct, { layout });
+    if (projection.status !== "active") throw new Error("Fixture requires active video");
+    const { rerender } = render(<VideosOverlay projection={projection} />);
+    const box = screen.getByTestId("video-overlay");
+    const frame = box.querySelector<HTMLElement>(".video-overlay__frame")!;
+    const width = frame.style.width; const height = frame.style.height;
+    const video = screen.getByTestId<HTMLVideoElement>("video-overlay-direct");
+    Object.defineProperties(video, { videoWidth: { value: 1080 }, videoHeight: { value: 1920 } });
+    fireEvent.loadedMetadata(video);
+    expect(box).toHaveStyle({ width: "240px", height: "180px" });
+    expect(frame.style.width).toBe(width); expect(frame.style.height).toBe(height);
+    rerender(<VideosOverlay projection={{ ...projection, title: null, requester: null }} />);
+    expect(screen.getByTestId("video-overlay-direct")).toBe(video);
+    expect(frame.style.width).toBe(width); expect(frame.style.height).toBe(height);
+    expect(box.querySelector(".video-overlay__context")).toBeNull();
+    rerender(<VideosOverlay projection={{ status: "notice", noticeId: "notice", notice: "no-clip", displayName: "Viewer", layout }} />);
+    expect(screen.getByTestId("video-overlay")).toHaveStyle({ width: "240px", height: "180px" });
+  });
+  it("keeps the provider iframe and sends no new seek on geometry-only snapshots with cloned clocks", () => {
+    const now = () => 1000;
+    const projection = active(youtube);
+    const { rerender } = render(<VideosOverlay now={now} projection={projection} />);
+    const frame = screen.getByTitle<HTMLIFrameElement>("Video player");
+    const posted = vi.spyOn(frame.contentWindow!, "postMessage").mockImplementation(() => undefined);
+    fireEvent.load(frame); expect(posted).toHaveBeenCalledTimes(3); posted.mockClear();
+    const changed = { ...projection, layout: { schemaVersion: 2 as const, content: { width: 640, height: 460 }, desktopPlacement: { x: 400, y: 300, scale: 0.5 } } };
+    rerender(<VideosOverlay now={now} projection={structuredClone(changed)} />);
+    expect(screen.getByTitle("Video player")).toBe(frame); expect(posted).not.toHaveBeenCalled();
+    expect(frame.closest(".video-overlay")).toHaveStyle({ width: "640px", height: "460px", transform: "scale(0.5)" });
+  });
+  it("preserves a direct media element and position through geometry saves, still applying a semantic playback change", () => {
+    const now = () => 1000;
+    const projection = active(direct, { clock: { state: "paused", positionMs: 7000, atEpochMs: 1000 } });
+    const { rerender } = render(<VideosOverlay now={now} projection={projection} />);
+    const video = screen.getByTestId<HTMLVideoElement>("video-overlay-direct");
+    Object.defineProperty(video, "duration", { value: 30 }); video.currentTime = 7; pause.mockClear(); play.mockClear();
+    const changed = { ...projection, layout: { schemaVersion: 2 as const, content: { width: 240, height: 180 }, desktopPlacement: { x: 0, y: 0, scale: 1 } } };
+    rerender(<VideosOverlay now={now} projection={structuredClone(changed)} />);
+    expect(screen.getByTestId("video-overlay-direct")).toBe(video); expect(video.currentTime).toBe(7);
+    expect(play).not.toHaveBeenCalled(); expect(pause).not.toHaveBeenCalled();
+    if (changed.status !== "active" || changed.delivery.mode !== "player") throw new Error("Fixture requires a player");
+    rerender(<VideosOverlay now={now} projection={{ ...changed, delivery: { ...changed.delivery, clock: { state: "playing", positionMs: 7000, atEpochMs: 1000 } } }} />);
+    expect(play).toHaveBeenCalledTimes(1);
+  });
   it("renders nothing while idle or mirrored", () => {
     const { container, rerender } = render(<VideosOverlay projection={{ status: "idle" }} />);
     expect(container).toBeEmptyDOMElement();
-    rerender(<VideosOverlay projection={{ status: "active", itemId: "item-1", title: null, requester: null, layout: { x: 269, y: 140, width: 1382, height: 876 }, delivery: { mode: "mirror", paused: false, obsAudio: true } }} />);
+    rerender(<VideosOverlay projection={{ status: "active", itemId: "item-1", title: null, requester: null, layout: { schemaVersion: 2 as const, content: { width: 1382, height: 876 }, desktopPlacement: { x: 269, y: 140, scale: 1 } }, delivery: { mode: "mirror", paused: false, obsAudio: true } }} />);
     expect(container).toBeEmptyDOMElement();
   });
 
@@ -49,7 +95,7 @@ describe("VideosOverlay", () => {
   });
 
   it("places the picture and caption in the saved box, the same for every delivery", () => {
-    const layout = { x: 1400, y: 40, width: 480, height: 320 };
+    const layout = { schemaVersion: 2 as const, content: { width: 480, height: 320 }, desktopPlacement: { x: 1400, y: 40, scale: 1 } };
     const { rerender } = render(<VideosOverlay projection={active(clip, { layout })} />);
     const box = screen.getByTestId("video-overlay");
     expect(box).toHaveStyle({ left: "1400px", top: "40px", width: "480px", height: "320px" });
@@ -63,15 +109,15 @@ describe("VideosOverlay", () => {
 
   it("fails closed on a box that leaves the canvas", () => {
     const events = vi.fn();
-    const { container } = render(<VideosOverlay onPlaybackEvent={events} projection={active(clip, { layout: { x: 1700, y: 0, width: 480, height: 320 } })} />);
+    const { container } = render(<VideosOverlay onPlaybackEvent={events} projection={active(clip, { layout: { schemaVersion: 2 as const, content: { width: 480, height: 320 }, desktopPlacement: { x: 1700, y: 0, scale: 1 } } })} />);
     expect(container).toBeEmptyDOMElement();
     expect(events).toHaveBeenCalledWith(expect.objectContaining({ instructionId: "video:item-1", status: "failed" }));
-    const notice = render(<VideosOverlay projection={{ status: "notice", noticeId: "n1", notice: "no-clip", displayName: null, layout: { x: 0, y: 0, width: 100, height: 100 } }} />);
+    const notice = render(<VideosOverlay projection={{ status: "notice", noticeId: "n1", notice: "no-clip", displayName: null, layout: { schemaVersion: 2 as const, content: { width: 100, height: 100 }, desktopPlacement: { x: 0, y: 0, scale: 1 } } }} />);
     expect(notice.container).toBeEmptyDOMElement();
   });
 
   it("shows the no-clip notice", () => {
-    render(<VideosOverlay projection={{ status: "notice", noticeId: "n1", notice: "no-clip", displayName: "Quiet Friend", layout: { x: 269, y: 140, width: 1382, height: 876 } }} />);
+    render(<VideosOverlay projection={{ status: "notice", noticeId: "n1", notice: "no-clip", displayName: "Quiet Friend", layout: { schemaVersion: 2 as const, content: { width: 1382, height: 876 }, desktopPlacement: { x: 269, y: 140, scale: 1 } } }} />);
     expect(screen.getByRole("status")).toHaveTextContent("Quiet FriendNo clip to show right now");
   });
 

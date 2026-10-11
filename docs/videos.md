@@ -25,11 +25,13 @@ Links must use HTTPS and carry no login, port or `#` fragment. Anything else is 
 - **Skip** ends the current video. During a gap it starts the next one immediately. **Stop** ends playback and the run. **Clear** removes everything waiting.
 - Items can be removed or reordered while they wait.
 
-The Operator Console lists the queue's **Recent** videos below the waiting list, like the Alerts and Screen Effects Recent list: the 10 newest videos that finished in the live or test queue being viewed, newest first, each with its title (or link), requester, source, link host, how it was requested, whether it **Played** or **Failed**, and when it finished. Skipped and stopped videos count as played; removed and cleared videos are left out. **Replay** works like Alerts' Replay: it adds the same video to the end of the queue as a new request from the Operator, and it waits there for Play next or Play all now; it never starts on its own. The usual rules apply again: the module must be on, the link must still be allowed (a direct file whose host was removed is refused), the queue must have room, and a video over the current length limit waits held. Like other queue commands it carries the queue revision, so a replay against a changed queue is refused with "The queue changed; try again." The Videos page keeps its **Failed recently** list.
+The Operator Console lists the queue's **Recent** videos below the waiting list, like the Alerts and Screen Effects Recent list: the 10 newest videos that finished in the ordinary queue, newest first, each with its title (or link), requester, source, link host, how it was requested, whether it **Played** or **Failed**, and when it finished. Skipped and stopped videos count as played; removed and cleared videos are left out. **Replay** works like Alerts' Replay: it adds the same video to the end of the queue as a new request from the Operator, and it waits there for Play next or Play all now; it never starts on its own. The usual rules apply again: the module must be on, the link must still be allowed (a direct file whose host was removed is refused), the queue must have room, and a video over the current length limit waits held. Like other queue commands it carries the queue revision, so a replay against a changed queue is refused with "The queue changed; try again." The Videos page keeps its **Failed recently** list.
 
 Videos whose known length is over **Maximum length** are held in the queue as **Over the length limit**. **Play anyway** plays a held video once, ignoring the limit, and that playback is never cut. Raising the limit releases held videos that now fit.
 
 Requests can carry the length (`durationSeconds`, or `duration` in the retired shoutout payload). A video without a length is queued normally, shows "Length unknown", and plays with Play next, Play all now or autoplay like any other video. When the player reports its real length and it is over the limit, the queue stops it at once, puts it back in the queue held as Over the length limit at its original place (it is not counted as played or failed), and continues as if it had been skipped: the gap, the Play all run and Pause queue apply as usual. The desktop player reports the length; without the desktop app, browser sources playing YouTube or direct files report it as soon as their player knows it, so the video may show for a moment before it is stopped. Twitch players on browser sources report no length; with a Twitch account connected, the length comes from Twitch instead (see [Video details](#video-details)). YouTube length lookup before playback is BL-058 in the [backlog](backlog.md). Videos held for an unknown length by an older version are queued again on the next start.
+
+Videos has one ordinary queue and one desktop primary player. An upgrade appends old actionable test requests held for review, with autoplay off, preserving IDs and completed/failed history. **Play** on that item releases review; a real length hold still needs **Play anyway**. Play all, autoplay, metadata updates and limit changes cannot release review. The combined capacity is 500 including the current item; retained completed/failed/removed history is bounded at 200. File-backed upgrades first create one committed WAL-aware rollback database (`<database>.pre046.sqlite`, replaced on retry and kept after success) beside the source database; failure stops the upgrade. Pending migrations commit together, so a refused upgrade leaves the database usable by the previous app and the error names the rollback copy. Former test reward mappings become review-required mappings: their redemptions arrive held for review.
 
 The queue is saved. After a restart, a video that was playing or paused goes back to the head of the queue and waits; nothing replays on its own.
 
@@ -50,20 +52,21 @@ A title given with the request always wins and is the only title shown on stream
 | Management and operator pages | The operator, with the Play buttons |
 | Local automation API | Installations granted `videos:control` |
 | Streamer.bot broadcast | Only when **Streamer.bot autoplay** is on (default) and the payload sets `autoplay: true` |
-| Channel point rewards | Never; redemptions always queue |
+| Channel point rewards | Never; redemptions always queue (held for review when the mapping is review-required) |
 
 ### Local automation API
 
-Pair an installation as described in the [automation API](automation-api.md) and request the Videos scopes: `videos:read`, `videos:submit` and `videos:control` (submit and control need read). All routes take `Authorization: Bearer <installation token>`, reject browser `Origin` headers and unknown fields, and use `purpose` `live` or `test`.
+Pair an installation as described in the [automation API](automation-api.md) and request the Videos scopes: `videos:read`, `videos:submit` and `videos:control` (submit and control need read). All routes take `Authorization: Bearer <installation token>`, reject browser `Origin` headers and unknown fields, and address the ordinary queue under `/videos/live`.
 
 | Route | Scope | Body |
 | --- | --- | --- |
-| `GET /automation/v1/videos/:purpose` | `videos:read` | none |
-| `POST /automation/v1/videos/:purpose/requests` | `videos:submit` | `link`, optional `title` (≤200), `requester` (≤64), `durationSeconds`, `autoplay` (honored only with `videos:control`) |
-| `POST /automation/v1/videos/:purpose/commands` | `videos:control` | `expectedRevision` and `command`: `play-next`, `play-all`, `pause-queue`, `resume-queue`, `skip`, `stop`, `clear`, `remove` + `itemId`, `play-anyway` + `itemId`, `reorder` + `itemIds` |
-| `POST /automation/v1/videos/:purpose/current/:action` | `videos:control` | `pause`, `resume` or `seek`, with `expectedItemId` and, for seek, `positionMs` |
+| `GET /automation/v1/videos/live` | `videos:read` | none |
+| `GET /automation/v1/videos/live/submissions/:busId` | `videos:read` | none; read the committed admission outcome without submitting again |
+| `POST /automation/v1/videos/live/requests` | `videos:submit` | `link`, optional `title` (≤200), `requester` (≤64), `durationSeconds`, `autoplay` (honored only with `videos:control`) |
+| `POST /automation/v1/videos/live/commands` | `videos:control` | `expectedRevision` and `command`: `play-next`, `play-all`, `pause-queue`, `resume-queue`, `skip`, `stop`, `clear`, `remove` + `itemId`, `play` + `itemId`, `play-anyway` + `itemId`, `reorder` + `itemIds` |
+| `POST /automation/v1/videos/live/current/:action` | `videos:control` | `pause`, `resume` or `seek`, with `expectedItemId` and, for seek, `positionMs` |
 
-The state response has `revision`, `queuePaused`, `runRemaining`, `gapEndsAtEpochMs`, `serverTimeEpochMs`, the `items` with their status, readable `link`, and looked-up `providerTitle` and `channelName` (null until known), `recent` (the 10 newest played or failed items, newest first, with `finishedAt`), and `current` with phase, position, duration and which controls work. A request returns 201 with the queued item, or 422, 409 (module off) or 429 (queue full) with `VIDEO_REQUEST_REJECTED` and a `reason`. A stale `expectedRevision` returns 409 `VIDEO_QUEUE_CONFLICT`: refresh, then decide again. Never retry a command automatically.
+The state response has `revision`, `queuePaused`, `runRemaining`, `gapEndsAtEpochMs`, `serverTimeEpochMs`, the `items` with their status, readable `link`, and looked-up `providerTitle` and `channelName` (null until known), `recent` (the 10 newest played or failed items, newest first, with `finishedAt`), and `current` with phase, position, duration and which controls work. A completed request returns 201 with the admitted item, or 422, 409 (module off) or 429 (queue full) with `VIDEO_REQUEST_REJECTED` and a `reason`. Live requests enter the manual event bus and include `busId`/`eventId`; a bounded wait may instead return 202 `{status:"pending",busId,eventId}` with no item. Use the read-only submission route to check its late result (200 accepted, 202 pending, original rejection, or explicit unavailable/not-found). The management counterpart is `/videos/live/submissions/:busId`. See the [manual event API](engineering/manual-event-management-api.md#video-requests-and-durable-admission) for persistence and retention. Never repeat an uncertain request automatically. A stale `expectedRevision` returns 409 `VIDEO_QUEUE_CONFLICT`: refresh, then decide again. Never retry a command automatically. Legacy test routes and submission-purpose selectors other than `live` return 410 `VIDEO_TEST_RETIRED` without journal admission; `purpose=live` is accepted and ignored. Play anyway on an item still under review returns 409 with reason `review-required`. Items include `reviewRequired` and nullable `migrationProvenance`; refresh after upgrade before issuing guarded commands.
 
 ### Streamer.bot
 
@@ -72,7 +75,7 @@ Stream Jams listens to Streamer.bot's `General` / `Custom` WebSocket event when 
 | Field | Required | Rule |
 | --- | --- | --- |
 | `action` | No | `play` (default) queues the link; `clear` stops the current video |
-| `purpose` | No | `live` (default) or `test` |
+| `purpose` | Retired selector | Omit it. `live` is accepted and ignored; `test` is rejected before journal admission. |
 | `link` | For `play` | An allowed link |
 | `title`, `requester` | No | Up to 200 and 64 characters |
 | `durationSeconds` | No | Length in seconds; over the limit, the request is held for Play anyway. Without it the request queues and is checked when the player reports its length |
@@ -92,11 +95,11 @@ The retired `VideoShoutout` payload is still accepted: `clipId` becomes a Twitch
 
 ### Channel point rewards
 
-Map a reward to a purpose on the Videos page. A redemption's text is used as the link and the viewer's name as the requester. Redemptions always queue and never autoplay. A redemption with no valid link is logged and skipped; refunds stay with Twitch or Streamer.bot.
+Map a reward to the ordinary queue on the Videos page. A redemption's text is used as the link and the viewer's name as the requester. Redemptions always queue and never autoplay. A mapping upgraded from the retired test queue is review-required (`reviewRequired: true`): its redemptions arrive held until the operator presses **Play**. A redemption with no valid link is logged and skipped; refunds stay with Twitch or Streamer.bot.
 
 ## Browser sources and audio
 
-Videos has live and test module outputs and also appears on unified browser sources. Create a key on the Videos page or in Browser sources, and add the copied URL to OBS as a browser source. Treat the URL as a secret: it carries the overlay key.
+Videos has one ordinary browser source and one queue. Copy its URL from the Videos page into OBS and set the source dimensions to the saved width and height shown beside it. Public test and unified sources are retired. Treat the URL as a secret: it carries the overlay key.
 
 With **OBS audio** on, the browser source plays the video's sound so OBS can capture it (tick **Control audio via OBS** on the source). With it off, the browser source is muted.
 
@@ -108,7 +111,7 @@ A browser source shows nothing while idle. While a video plays, it shows the vid
 
 ### Placement
 
-The **Placement** section of the Videos page sets where the video appears and how big it is, on the same 1920 x 1080 canvas Timers and Music use. Drag the box in the preview to move it, or its corner to resize it; the box keeps its proportions while you drag. Snap to grid and Snap to alignment work as in the other editors, and the X, Y, width and height fields and arrow keys (Shift for 10 px) set exact values. The picture is the largest 16:9 frame that fits in the box with the title and requester below it, anchored to the box's bottom center; small boxes shrink the caption. **Save Videos settings** applies the placement to every Videos output at once: module and unified browser sources, the desktop overlay and the mirror. **Reset to default placement** restores the original look, centered and 72% of the canvas wide near the bottom, which is also what earlier saved settings get. The box must be at least 240 x 180 px and stay on the canvas; anything else is refused when saved and never rendered.
+The **Placement** section saves browser content width and height separately from desktop X, Y and scale. Browser content starts at the local origin and keeps its saved CSS-pixel size; a smaller OBS source clips it and extra source area stays transparent. OBS is never resized automatically. Desktop placement uses the existing scene and does not restart a healthy primary or mirror player. Save applies content dimensions to the ordinary browser source and desktop presentation while preserving separate desktop placement. Earlier saved layout measurements are upgraded without applying scale twice.
 
 ### Desktop mirror
 

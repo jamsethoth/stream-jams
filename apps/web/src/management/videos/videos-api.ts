@@ -1,4 +1,5 @@
-import type { OverlayPurpose, VideoQueueResponse, VideosModuleConfig } from "@stream-jams/core";
+import { isValidVideosLayout, outputCanvasSchema, type OutputCanvas } from "@stream-jams/core";
+import type { VideoQueueResponse, VideoSubmissionPending, VideosModuleConfig } from "@stream-jams/core";
 import { createManagementHttpClient, ManagementHttpError, type HttpManagementClientOptions } from "../management-http-client.js";
 
 // Only types come from the Videos contract: its schemas stay out of the management and operator bundles.
@@ -8,7 +9,7 @@ export type VideoQueueItem = VideoQueueResponse["items"][number];
 export type VideoRecentItem = VideoQueueResponse["recent"][number];
 export type VideoQueueCommand =
   | { readonly kind: "play-next" | "play-all" | "pause-queue" | "resume-queue" | "skip" | "stop" | "clear" }
-  | { readonly kind: "remove" | "play-anyway"; readonly itemId: string }
+  | { readonly kind: "remove" | "play" | "play-anyway"; readonly itemId: string }
   | { readonly kind: "reorder"; readonly itemIds: readonly string[] };
 export type VideoCurrentAction = "pause" | "resume" | "seek";
 export type VideoSubmitter = "management" | "operator";
@@ -19,18 +20,20 @@ export interface VideoRequestInput {
 }
 
 export interface VideoQueueApi {
-  getQueue(purpose: OverlayPurpose): Promise<VideoQueueResponse>;
-  submit(purpose: OverlayPurpose, input: VideoRequestInput): Promise<VideoQueueItem>;
-  command(purpose: OverlayPurpose, expectedRevision: number, command: VideoQueueCommand): Promise<VideoQueueResponse>;
-  control(purpose: OverlayPurpose, action: VideoCurrentAction, expectedItemId: string, positionMs?: number): Promise<VideoQueueResponse>;
+  getQueue(): Promise<VideoQueueResponse>;
+  submit(input: VideoRequestInput): Promise<VideoQueueItem | VideoSubmissionPending>;
+  submission(busId: string): Promise<VideoQueueItem | VideoSubmissionPending>;
+  command(expectedRevision: number, command: VideoQueueCommand): Promise<VideoQueueResponse>;
+  control(action: VideoCurrentAction, expectedItemId: string, positionMs?: number): Promise<VideoQueueResponse>;
   /** Queues a Recent item's video again as a new request; it waits like any other request. */
-  requeue(purpose: OverlayPurpose, expectedRevision: number, itemId: string): Promise<VideoQueueResponse>;
+  requeue(expectedRevision: number, itemId: string): Promise<VideoQueueResponse>;
 }
 
 export interface VideosBrowserSource {
+  readonly canvas?: OutputCanvas;
   readonly id: string;
   readonly label: string;
-  readonly purpose: OverlayPurpose;
+  readonly purpose: "live";
   readonly overlayId: string;
   readonly enabled: boolean;
   readonly url: string | null;
@@ -57,24 +60,25 @@ export function isVideoQueueConflict(error: unknown): boolean {
 
 export function createHttpVideosApi(options: HttpManagementClientOptions & { readonly from?: VideoSubmitter } = {}): VideosApi {
   const client = createManagementHttpClient(options);
-  const path = (purpose: OverlayPurpose) => `/videos/${purpose === "test" ? "test" : "live"}`;
+  const path = "/videos/live";
   return {
-    async getQueue(purpose) { return parseQueue(await client.getJson(path(purpose), "Unable to load the video queue.")); },
-    async submit(purpose, input) {
+    async getQueue() { return parseQueue(await client.getJson(path, "Unable to load the video queue.")); },
+    async submit(input) {
       const body = { link: input.link, ...(input.title === undefined || input.title.trim() === "" ? {} : { title: input.title.trim() }) };
-      const response = await client.postJson<unknown>(`${path(purpose)}/requests?from=${options.from ?? "management"}`, body, "Unable to add the video.");
-      const item = typeof response === "object" && response !== null && "item" in response ? response.item : null;
-      if (!isQueueItem(item, false)) throw new TypeError("The video request returned an invalid response.");
-      return item as VideoQueueItem;
+      const response = await client.postJson<unknown>(`${path}/requests?from=${options.from ?? "management"}`, body, "Unable to add the video.");
+      return parseSubmission(response);
     },
-    async command(purpose, expectedRevision, command) {
-      return parseQueue(await client.postJson(`${path(purpose)}/commands`, { expectedRevision, command }, "Unable to update the video queue."));
+    async submission(busId) {
+      return parseSubmission(await client.getJson(`/videos/live/submissions/${encodeURIComponent(busId)}`, "Unable to confirm the video submission. Check the queue and Diagnostics before submitting again."));
     },
-    async control(purpose, action, expectedItemId, positionMs) {
-      return parseQueue(await client.postJson(`${path(purpose)}/current/${action}`, { expectedItemId, ...(positionMs === undefined ? {} : { positionMs }) }, `Unable to ${action} the video.`));
+    async command(expectedRevision, command) {
+      return parseQueue(await client.postJson(`${path}/commands`, { expectedRevision, command }, "Unable to update the video queue."));
     },
-    async requeue(purpose, expectedRevision, itemId) {
-      return parseQueue(await client.postJson(`${path(purpose)}/recent/requeue?from=${options.from ?? "management"}`, { expectedRevision, itemId }, "Unable to replay the video."));
+    async control(action, expectedItemId, positionMs) {
+      return parseQueue(await client.postJson(`${path}/current/${action}`, { expectedItemId, ...(positionMs === undefined ? {} : { positionMs }) }, `Unable to ${action} the video.`));
+    },
+    async requeue(expectedRevision, itemId) {
+      return parseQueue(await client.postJson(`${path}/recent/requeue?from=${options.from ?? "management"}`, { expectedRevision, itemId }, "Unable to replay the video."));
     },
     async getModuleConfig() { return parseModuleState(await client.getJson("/overlay-modules/videos/config", "Unable to load Videos settings.")); },
     async saveModuleConfig(enabled, config) {
@@ -99,12 +103,22 @@ export function createHttpVideosApi(options: HttpManagementClientOptions & { rea
 
 const statuses = ["queued", "held", "playing", "paused", "played", "failed", "removed"];
 
+function parseSubmission(response: unknown): VideoQueueItem | VideoSubmissionPending {
+  if (isRecord(response) && response.status === "pending") {
+    if (typeof response.busId !== "string" || response.busId.length === 0 || response.busId.length > 512 || typeof response.eventId !== "string" || response.eventId.length === 0 || response.eventId.length > 512 || "item" in response) throw new TypeError("The pending video submission returned an invalid identity.");
+    return { status: "pending", busId: response.busId, eventId: response.eventId };
+  }
+  const item = isRecord(response) ? response.item : null;
+  if (!isQueueItem(item, false)) throw new TypeError("The video request returned an invalid response.");
+  return item as VideoQueueItem;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
 function isQueueItem(value: unknown, requireLink: boolean): boolean {
-  return isRecord(value) && typeof value.id === "string" && statuses.includes(String(value.status))
+  return isRecord(value) && typeof value.id === "string" && typeof value.reviewRequired === "boolean" && statuses.includes(String(value.status))
     && (value.title === null || typeof value.title === "string") && (value.requester === null || typeof value.requester === "string")
     && (value.providerTitle === null || typeof value.providerTitle === "string") && (value.channelName === null || typeof value.channelName === "string")
     && (value.durationMs === null || typeof value.durationMs === "number")
@@ -120,7 +134,7 @@ function isRecentItem(value: unknown): boolean {
 
 function parseQueue(value: unknown): VideoQueueResponse {
   const current = isRecord(value) ? value.current : undefined;
-  if (!isRecord(value) || (value.purpose !== "live" && value.purpose !== "test") || typeof value.revision !== "number"
+  if (!isRecord(value) || typeof value.revision !== "number"
     || typeof value.queuePaused !== "boolean" || typeof value.serverTimeEpochMs !== "number"
     || !Array.isArray(value.items) || !value.items.every(item => isQueueItem(item, true))
     || !Array.isArray(value.recent) || !value.recent.every(isRecentItem)
@@ -140,7 +154,7 @@ function parseModuleState(value: unknown): VideosModuleState {
   }
   const layout = value.config.layout;
   // Placement is rendered and saved as-is, so a missing or partial box fails closed.
-  if (!isRecord(layout) || !["x", "y", "width", "height"].every(key => typeof layout[key] === "number")) {
+    if (!isValidVideosLayout(layout)) {
     throw new TypeError("Videos settings returned an invalid response. Reload and retry.");
   }
   const delays = value.config.audioDeviceDelaysMs;
@@ -152,10 +166,10 @@ function parseModuleState(value: unknown): VideosModuleState {
 
 function parseBrowserSource(value: unknown): readonly VideosBrowserSource[] {
   if (!isRecord(value) || value.scope !== "module" || value.moduleId !== "videos" || value.targetProfileId !== null) return [];
-  if (typeof value.id !== "string" || typeof value.label !== "string" || (value.purpose !== "live" && value.purpose !== "test")
+  if (typeof value.id !== "string" || typeof value.label !== "string" || value.purpose !== "live"
     || typeof value.overlayId !== "string" || typeof value.enabled !== "boolean" || (value.url !== null && typeof value.url !== "string")
     || !["available", "create-required", "regenerate-required"].includes(String(value.copyableUrlStatus))) return [];
-  return [{ id: value.id, label: value.label, purpose: value.purpose, overlayId: value.overlayId, enabled: value.enabled,
+  return [{ ...(value.canvas === undefined ? {} : { canvas: outputCanvasSchema.parse(value.canvas) }), id: value.id, label: value.label, purpose: value.purpose, overlayId: value.overlayId, enabled: value.enabled,
     url: value.url as string | null, status: value.copyableUrlStatus as VideosBrowserSource["status"] }];
 }
 

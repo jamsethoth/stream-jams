@@ -1,8 +1,9 @@
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
-import type { OverlayPurpose, VideoRecentItem, VideoRequestItem } from "@stream-jams/core";
+import type { VideoQueuePurpose, VideoRecentItem, VideoRequestItem } from "@stream-jams/core";
 import { videoChannelNameSchema, videoRequesterSchema, videoSourceSchema, videoTitleSchema } from "@stream-jams/core/videos";
 import { runInTransaction } from "../db/database.js";
+import { SqliteVideoBusAdmissionRepository, type VideoBusAdmissionReceipt } from "./video-bus-admission-repository.js";
 
 /** An active play-all run: the ids snapshotted when the operator chose Play all now. */
 export interface VideoQueueRun {
@@ -11,7 +12,7 @@ export interface VideoQueueRun {
 }
 
 export interface VideoQueueSnapshot {
-  readonly purpose: OverlayPurpose;
+  readonly purpose: VideoQueuePurpose;
   readonly revision: number;
   readonly queuePaused: boolean;
   readonly run: VideoQueueRun | null;
@@ -24,6 +25,7 @@ export interface VideoQueueSnapshot {
 }
 
 export interface VideoQueueChange {
+  readonly admission?: VideoBusAdmissionReceipt;
   readonly upsert?: readonly VideoRequestItem[];
   readonly queuePaused?: boolean;
   readonly run?: VideoQueueRun | null;
@@ -37,14 +39,16 @@ export class VideoQueueConflictError extends Error {
 }
 
 export interface VideoQueueRepository {
-  load(purpose: OverlayPurpose): VideoQueueSnapshot;
+  load(purpose: VideoQueuePurpose): VideoQueueSnapshot;
   /** Applies a change atomically if the revision still matches, returning the new snapshot. */
-  commit(purpose: OverlayPurpose, expectedRevision: number, change: VideoQueueChange): VideoQueueSnapshot;
+  commit(purpose: VideoQueuePurpose, expectedRevision: number, change: VideoQueueChange): VideoQueueSnapshot;
   /** Returns interrupted playing or paused items to the queue head. Called once at startup. */
   recoverInterruptedPlayback(nowIso: string): void;
-  /** Deletes finished rows beyond the newest `keep` per purpose. */
+  /** Deletes finished rows beyond the newest `keep` ordinary records. */
   pruneFinished(keep: number): void;
 }
+
+const videoMigrationProvenanceSchema = z.strictObject({ kind: z.literal("test-queue-consolidation"), originalPurpose: z.literal("test"), originalStatus: z.enum(["queued", "held", "playing", "paused", "played", "failed", "removed"]) });
 
 const activeStatuses = ["queued", "held", "playing", "paused"] as const;
 /** How many failed items a snapshot carries for review. */
@@ -55,7 +59,7 @@ const runSchema = z.object({ mode: z.enum(["next", "all"]), remainingIds: z.arra
 
 const rowSchema = z.object({
   id: z.string(),
-  purpose: z.enum(["live", "test"]),
+  purpose: z.enum(["live"]),
   source_json: z.string(),
   title: z.string().nullable(),
   provider_title: z.string().nullable(),
@@ -65,6 +69,8 @@ const rowSchema = z.object({
   duration_ms: z.number().int().positive().nullable(),
   status: z.enum(["queued", "held", "playing", "paused", "played", "failed", "removed"]),
   // "unknown-length" rows come from older builds; the service queues them again at startup.
+  review_required: z.number().int().min(0).max(1),
+  migration_provenance_json: z.string().nullable(),
   hold_reason: z.enum(["over-limit", "unknown-length"]).nullable(),
   limit_overridden: z.number().int(),
   autoplay: z.number().int(),
@@ -76,7 +82,7 @@ const rowSchema = z.object({
 export class SqliteVideoQueueRepository implements VideoQueueRepository {
   constructor(private readonly connection: DatabaseSync, private readonly now: () => string = () => new Date().toISOString()) {}
 
-  load(purpose: OverlayPurpose): VideoQueueSnapshot {
+  load(purpose: VideoQueuePurpose): VideoQueueSnapshot {
     const state = this.connection.prepare("SELECT revision, queue_paused, run_json FROM video_queue_state WHERE purpose = ?").get(purpose);
     if (state === undefined) throw new Error(`Video queue state for ${purpose} is missing.`);
     const rows = this.connection.prepare(
@@ -100,7 +106,7 @@ export class SqliteVideoQueueRepository implements VideoQueueRepository {
     };
   }
 
-  commit(purpose: OverlayPurpose, expectedRevision: number, change: VideoQueueChange): VideoQueueSnapshot {
+  commit(purpose: VideoQueuePurpose, expectedRevision: number, change: VideoQueueChange): VideoQueueSnapshot {
     return runInTransaction(this.connection, () => {
       const updated = this.connection.prepare("UPDATE video_queue_state SET revision = revision + 1 WHERE purpose = ? AND revision = ?").run(purpose, expectedRevision);
       if (Number(updated.changes) !== 1) throw new VideoQueueConflictError();
@@ -112,32 +118,33 @@ export class SqliteVideoQueueRepository implements VideoQueueRepository {
           .run(change.run === null ? null : JSON.stringify(runSchema.parse(change.run)), purpose);
       }
       const upsert = this.connection.prepare(`
-INSERT INTO video_requests (id, purpose, source_json, title, provider_title, channel_name, requester, submitted_via, duration_ms, status, hold_reason, limit_overridden, autoplay, position, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO video_requests (id, purpose, source_json, title, provider_title, channel_name, requester, submitted_via, duration_ms, status, hold_reason, limit_overridden, autoplay, position, created_at, updated_at, review_required, migration_provenance_json)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
   duration_ms = excluded.duration_ms, status = excluded.status, hold_reason = excluded.hold_reason,
+  review_required = excluded.review_required, migration_provenance_json = excluded.migration_provenance_json,
   limit_overridden = excluded.limit_overridden, autoplay = excluded.autoplay, position = excluded.position,
   title = excluded.title, provider_title = excluded.provider_title, channel_name = excluded.channel_name, updated_at = excluded.updated_at
 WHERE video_requests.purpose = excluded.purpose`);
       for (const item of change.upsert ?? []) {
-        if (item.purpose !== purpose) throw new Error("Video request purpose does not match the queue.");
         upsert.run(
-          item.id, item.purpose, JSON.stringify(videoSourceSchema.parse(item.source)),
+          item.id, purpose, JSON.stringify(videoSourceSchema.parse(item.source)),
           item.title === null ? null : videoTitleSchema.parse(item.title),
           item.providerTitle === null ? null : videoTitleSchema.parse(item.providerTitle),
           item.channelName === null ? null : videoChannelNameSchema.parse(item.channelName),
           item.requester === null ? null : videoRequesterSchema.parse(item.requester),
           item.submittedVia, item.durationMs, item.status, item.holdReason,
-          item.limitOverridden ? 1 : 0, item.autoplay ? 1 : 0, item.position, item.createdAt, this.now()
+          item.limitOverridden ? 1 : 0, item.autoplay ? 1 : 0, item.position, item.createdAt, this.now(), item.reviewRequired ? 1 : 0, item.migrationProvenance === null ? null : JSON.stringify(item.migrationProvenance)
         );
       }
+      if (change.admission !== undefined) new SqliteVideoBusAdmissionRepository(this.connection, () => Date.parse(this.now())).record(change.admission, change.admission.result);
       return this.load(purpose);
     });
   }
 
   recoverInterruptedPlayback(nowIso: string): void {
     runInTransaction(this.connection, () => {
-      for (const purpose of ["live", "test"] as const) {
+      for (const purpose of ["live"] as const) {
         const interrupted = this.connection.prepare("SELECT id FROM video_requests WHERE purpose = ? AND status IN ('playing', 'paused') ORDER BY position").all(purpose);
         if (interrupted.length === 0) continue;
         const head = this.connection.prepare("SELECT MIN(position) AS head FROM video_requests WHERE purpose = ? AND status IN ('queued', 'held')").get(purpose);
@@ -156,7 +163,7 @@ WHERE video_requests.purpose = excluded.purpose`);
 DELETE FROM video_requests WHERE purpose = ? AND status IN ('played', 'failed', 'removed') AND id NOT IN (
   SELECT id FROM video_requests WHERE purpose = ? AND status IN ('played', 'failed', 'removed') ORDER BY updated_at DESC, rowid DESC LIMIT ?
 )`);
-    runInTransaction(this.connection, () => { for (const purpose of ["live", "test"] as const) prune.run(purpose, purpose, keep); });
+    runInTransaction(this.connection, () => { for (const purpose of ["live"] as const) prune.run(purpose, purpose, keep); });
   }
 }
 
@@ -169,7 +176,8 @@ function toRecentItem(row: z.infer<typeof rowSchema>): VideoRecentItem {
 function toItem(row: z.infer<typeof rowSchema>): VideoRequestItem {
   return {
     id: row.id,
-    purpose: row.purpose,
+    reviewRequired: row.review_required === 1,
+    migrationProvenance: row.migration_provenance_json === null ? null : videoMigrationProvenanceSchema.parse(JSON.parse(row.migration_provenance_json)),
     source: videoSourceSchema.parse(JSON.parse(row.source_json)),
     title: row.title,
     providerTitle: row.provider_title,

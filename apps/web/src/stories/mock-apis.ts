@@ -202,6 +202,9 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async saveAlertEditorDocument(_alertId, document) {
       return document;
     },
+    async sendSavedAlertTest(_alertId, request) {
+      return { status: "queued", targetProfileId: request.targetProfileId, referenceId: "ref-story-saved-test", test: true, deliveredDestinations: [], unavailableDestinations: [] };
+    },
     async sendAlertEditorTest(_alertId, request) {
       return { status: "queued", targetProfileId: request.targetProfileId, referenceId: "ref-story-test", test: true, deliveredDestinations: [], unavailableDestinations: [] };
     },

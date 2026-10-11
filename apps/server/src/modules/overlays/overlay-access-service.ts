@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { isOrdinaryOverlayOutput } from "@stream-jams/core";
 import type {
   CreateOverlayKeyInput,
   CreatedOverlayAccessKey,
@@ -103,6 +104,7 @@ export class LocalOverlayAccessService implements OverlayAccessService {
   }
 
   async verifyRouteAccess(request: OverlayRouteAccessRequest): Promise<OverlayAccessVerification> {
+    if (!isOrdinaryOverlayOutput(request, true)) return { authorized: false, reason: "scope-mismatch" };
     const requestedKeyHash = hashOverlayRouteKey(request.rawKey);
     const hashMatch = await this.#repository.findByHash(requestedKeyHash);
 
@@ -159,6 +161,10 @@ export class LocalOverlayAccessService implements OverlayAccessService {
     if (record === null) {
       return null;
     }
+    // Idempotent: the original revocation time is authoritative and is never overwritten.
+    if (record.revokedAt !== null) {
+      return record;
+    }
 
     return this.#repository.update({
       ...record,
@@ -180,24 +186,5 @@ export function hashOverlayRouteKey(rawKey: string): string {
 }
 
 function assertValidScopeInput(input: CreateOverlayKeyInput): void {
-  if (input.scope === "module" && input.moduleId === null) {
-    throw new Error("Module overlay keys require a module id");
-  }
-
-  if (input.scope === "unified" && input.moduleId !== null) {
-    throw new Error("Unified overlay keys cannot include a module id");
-  }
-
-  if (input.scope === "unified" && input.targetProfileId !== null && input.targetProfileId !== undefined) {
-    throw new Error("Unified overlay keys cannot include a target profile");
-  }
-
-  if (
-    input.targetProfileId !== null &&
-    input.targetProfileId !== undefined &&
-    input.targetProfileId !== "landscape" &&
-    input.targetProfileId !== "vertical"
-  ) {
-    throw new Error("Overlay target profile must be landscape or vertical");
-  }
+  if (!isOrdinaryOverlayOutput(input)) throw new Error("Overlay output retired or unsupported. Use an ordinary module profile source from management.");
 }

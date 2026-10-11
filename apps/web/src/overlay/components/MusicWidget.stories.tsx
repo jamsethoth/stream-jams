@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fireEvent, waitFor } from "storybook/test";
-import { createDefaultMusicModuleConfig, projectMusicWidget, type MusicAssetResolver, type MusicModuleConfig, type MusicSnapshot } from "@stream-jams/core";
+import { applyMusicContentGeometry, createDefaultMusicModuleConfig, projectMusicWidget, resolveMusicOutputGeometry, type MusicAssetResolver, type MusicModuleConfig, type MusicSnapshot } from "@stream-jams/core";
 import { MusicWidget } from "./MusicWidget.js";
 
 const now = Date.now();
@@ -12,15 +12,21 @@ const localAsset: MusicAssetResolver = {
   resolveArtwork: () => "/storybook-assets/tiny-image.png"
 };
 function projection(config: MusicModuleConfig = createDefaultMusicModuleConfig(), snapshot = observation) {
-  return projectMusicWidget(snapshot, { state: "connected", stale: false, diagnosticReference: null }, config, "landscape", now, now)!;
+  return applyMusicContentGeometry(projectMusicWidget(snapshot, { state: "connected", stale: false, diagnosticReference: null }, config, "landscape", now, now)!, resolveMusicOutputGeometry(config, "landscape"));
 }
-const meta = { title: "Overlay/Music widget", component: MusicWidget, tags: ["music-widget"], parameters: { layout: "fullscreen" },
+const meta = { title: "Overlay/Music widget", component: MusicWidget, tags: ["music-widget", "music-content-canvas"], parameters: { layout: "fullscreen" },
   decorators: [(Story) => <div style={{ width: 1920, height: 1080, background: "#343b4a" }}><Story /></div>]
 } satisfies Meta<typeof MusicWidget>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const PlayingFull: Story = { args: { projection: projection(), resolveAsset: localAsset, nowEpochMs: now } };
+export const PlayingFull: Story = { args: { projection: projection(), resolveAsset: localAsset, nowEpochMs: now }, play: async ({ canvasElement }) => {
+  const canvas = canvasElement.querySelector<HTMLElement>('[data-testid="music-content-canvas"]')!;
+  const host = canvasElement.querySelector<HTMLElement>(".music-widget-host")!;
+  await expect(canvas.style.width).toBe("840px"); await expect(canvas.style.height).toBe("378px");
+  await expect(host.style.left).toBe("100px"); await expect(host.style.top).toBe("82px");
+  await expect(getComputedStyle(host).overflow).toBe("visible");
+} };
 
 export const ArtworkRecoversAfterTemporaryFailure: Story = {
   args: { projection: projection(createDefaultMusicModuleConfig(), { ...observation, track: { ...track, artworkRef: "story-artwork" } }), resolveAsset: localAsset, nowEpochMs: now },
@@ -70,3 +76,14 @@ const corrupt = projection();
 corrupt.css = { source: ".sj-title{background:url(https://example.invalid/image)}", enabled: true, styleContractVersion: 1 };
 export const InvalidSavedCssFallsBack: Story = { args: { projection: corrupt, resolveAsset: localAsset, nowEpochMs: now } };
 export const ClearedOutput: Story = { args: { projection: null, resolveAsset: localAsset, nowEpochMs: now } };
+
+const overflowing = projection();
+overflowing.css = { enabled: true, styleContractVersion: 1, source: ".sj-content { width: 1900px; transform: translate(-100px, -82px); overflow: visible; }" };
+export const CustomOverflowStaysInsideCanvas: Story = { args: { projection: overflowing, resolveAsset: localAsset, nowEpochMs: now }, play: async ({ canvasElement }) => {
+  const host = canvasElement.querySelector<HTMLElement>(".music-widget-host")!;
+  await waitFor(() => expect(host.shadowRoot?.textContent).toContain("translate(-100px,-82px)"));
+  const canvas = canvasElement.querySelector<HTMLElement>('[data-testid="music-content-canvas"]')!;
+  await expect(getComputedStyle(canvas).overflow).toBe("hidden");
+  await expect(canvas.getBoundingClientRect().width).toBe(overflowing.contentCanvas!.width);
+  await expect(host.style.left).toBe("100px");
+} };

@@ -671,6 +671,7 @@ function createManagementApi(): ManagementApi {
       throw new Error("not called");
     }),
     saveAlertEditorDocument: vi.fn(async (_alertId, document) => document),
+    sendSavedAlertTest: vi.fn(async (_alertId, request) => ({ status: "queued" as const, targetProfileId: request.targetProfileId, referenceId: "ref-saved-test", test: true as const, deliveredDestinations: [], unavailableDestinations: [] })),
     sendAlertEditorTest: vi.fn(async (_alertId, request) => ({
       status: "queued" as const,
       targetProfileId: request.targetProfileId,
@@ -739,33 +740,33 @@ function createManagementApi(): ManagementApi {
     })),
     createOverlayOutputKey: vi.fn(async () => ({
       keyId: "overlay-key-created",
-      url: "http://127.0.0.1:39187/overlay/unified/test/ovl_created",
+      url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_created",
       output: {
-        id: "unified-test",
-        label: "Unified test",
-        purpose: "test" as const,
-        scope: "unified" as const,
-        moduleId: null,
+        id: "alerts-live-landscape",
+        label: "Alerts Landscape",
+        purpose: "live" as const,
+        scope: "module" as const,
+        moduleId: "alerts", targetProfileId: "landscape" as const,
         overlayId: "default",
         enabled: true,
         keyId: "overlay-key-created",
-        url: "http://127.0.0.1:39187/overlay/unified/test/ovl_created",
+        url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_created",
         copyableUrlStatus: "available" as const
       }
     })),
     regenerateOverlayOutputKey: vi.fn(async () => ({
       keyId: "overlay-key-regenerated",
-      url: "http://127.0.0.1:39187/overlay/unified/test/ovl_regenerated",
+      url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_regenerated",
       output: {
-        id: "unified-test",
-        label: "Unified test",
-        purpose: "test" as const,
-        scope: "unified" as const,
-        moduleId: null,
+        id: "alerts-live-landscape",
+        label: "Alerts Landscape",
+        purpose: "live" as const,
+        scope: "module" as const,
+        moduleId: "alerts", targetProfileId: "landscape" as const,
         overlayId: "default",
         enabled: true,
         keyId: "overlay-key-regenerated",
-        url: "http://127.0.0.1:39187/overlay/unified/test/ovl_regenerated",
+        url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_regenerated",
         copyableUrlStatus: "available" as const
       }
     })),

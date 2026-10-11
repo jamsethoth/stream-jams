@@ -7,8 +7,13 @@ import { gzipSync } from "node:zlib";
 const defaultBuildDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "../apps/web/dist");
 const defaultBudgets = {
   bootstrap: 100 * 1024,
-  overlay: 151 * 1024,
-  operator: 190 * 1024,
+  // Output separation added Timer appearance/legacy sizing, Video content geometry and mirror
+  // refresh (~4.4 KiB overlay, ~4.5 KiB operator gzip over 151/190). The web build now treats
+  // @stream-jams/core as side-effect free (apps/web/vite.config.ts), which drops unused core
+  // schema modules and recovers more than that: measured 148.04 KiB overlay, 182.21 KiB operator.
+  // Budgets keep about 1 KiB headroom; do not raise them without a measured justification.
+  overlay: 149 * 1024,
+  operator: 183.25 * 1024,
   management: 250 * 1024
 };
 const routeSources = {

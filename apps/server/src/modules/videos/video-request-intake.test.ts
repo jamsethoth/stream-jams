@@ -6,7 +6,11 @@ import { createStreamerBotVideoIntake, type VideoIntakeDiagnostic } from "./stre
 import { VideoRequestIntake } from "./video-request-intake.js";
 import { createInMemoryStreamJamsDatabase, type StreamJamsDatabase } from "../db/database.js";
 import { SqliteVideoQueueRepository, VideoQueueConflictError } from "./video-queue-repository.js";
+import { SqliteVideoBusAdmissionRepository } from "./video-bus-admission-repository.js";
 import { VideoQueueCommandError, VideoQueueService, type VideoSubmission } from "./video-queue-service.js";
+
+const intakeDatabases: StreamJamsDatabase[] = [];
+afterEach(() => { for (const database of intakeDatabases.splice(0)) database.close(); });
 
 function setup(overrides: Partial<VideosModuleConfig> = {}, options: { enabled?: boolean; full?: boolean; onQueued?: (purpose: string, item: VideoRequestItem) => void } = {}) {
   const submissions: VideoSubmission[] = [];
@@ -18,13 +22,15 @@ function setup(overrides: Partial<VideosModuleConfig> = {}, options: { enabled?:
       if (options.full === true) throw new VideoQueueCommandError("queue-full", "full");
       submissions.push(submission);
       return {
-        id: `id${submissions.length}`, purpose, source: submission.source, title: submission.title, providerTitle: null, channelName: null, requester: submission.requester,
+        id: `id${submissions.length}`, reviewRequired: false, migrationProvenance: null, source: submission.source, title: submission.title, providerTitle: null, channelName: null, requester: submission.requester,
         submittedVia: submission.via, durationMs: submission.durationMs, status: "queued", holdReason: null, limitOverridden: false,
         autoplay: submission.autoplay, position: submissions.length, createdAt: new Date(0).toISOString()
       } satisfies VideoRequestItem;
     }
   };
-  const intake = new VideoRequestIntake({ queue, getConfig: () => config, isModuleEnabled: () => options.enabled ?? true, onQueued: options.onQueued });
+  const database = createInMemoryStreamJamsDatabase();
+  intakeDatabases.push(database);
+  const intake = new VideoRequestIntake({ queue, admissions: new SqliteVideoBusAdmissionRepository(database.connection), getConfig: () => config, isModuleEnabled: () => options.enabled ?? true, onQueued: options.onQueued });
   return { intake, submissions, config };
 }
 
@@ -41,11 +47,11 @@ describe("VideoRequestIntake", () => {
   it("announces each accepted request once for a provider lookup, after the queue accepted it, and never a rejected one", async () => {
     const announced: string[] = [];
     const { intake } = setup({}, { onQueued: (purpose, item) => announced.push(`${purpose}:${item.id}`) });
-    const accepted = await intake.submit("test", { link: youtube }, { via: "streamerbot", mayAutoplay: false });
-    await intake.submit("test", { link: "not a link" }, { via: "streamerbot", mayAutoplay: false });
-    await intake.submit("test", { title: "no link" }, { via: "streamerbot", mayAutoplay: false });
+    const accepted = await intake.submit("live", { link: youtube }, { via: "streamerbot", mayAutoplay: false });
+    await intake.submit("live", { link: "not a link" }, { via: "streamerbot", mayAutoplay: false });
+    await intake.submit("live", { title: "no link" }, { via: "streamerbot", mayAutoplay: false });
     expect(accepted.status).toBe("accepted");
-    expect(announced).toEqual(["test:id1"]);
+    expect(announced).toEqual(["live:id1"]);
 
     const full: string[] = [];
     const rejected = setup({}, { full: true, onQueued: (_purpose, item) => full.push(item.id) });
@@ -101,9 +107,11 @@ describe("VideoRequestIntake", () => {
   });
 });
 
+let providerSequence = 0;
 function envelope(payload: Record<string, unknown> | undefined, sourceKey = "General", eventType = "Custom") {
-  const eventId = "sb-video";
-  return { ...externalBusEvent([{ kind: "streamerbot-event", eventId, occurredAt: "2026-10-07T00:00:00.000Z", providerId: "provider-streamerbot", sourceKey, eventType, summary: "Custom", userName: "" }]), ...(payload === undefined ? {} : { payload }) };
+  const sequence = ++providerSequence;
+  const eventId = `sb-video-${sequence}`;
+  return { ...externalBusEvent([{ kind: "streamerbot-event", eventId, occurredAt: "2026-10-07T00:00:00.000Z", providerId: "provider-streamerbot", sourceKey, eventType, summary: "Custom", userName: "" }]), sequence, ...(payload === undefined ? {} : { payload }) };
 }
 
 function streamerBotSetup(overrides: Partial<VideosModuleConfig> = {}, options: { enabled?: boolean } = {}) {
@@ -125,6 +133,19 @@ function streamerBotSetup(overrides: Partial<VideosModuleConfig> = {}, options: 
 }
 
 describe("Streamer.bot video intake", () => {
+  it("old clear and no-clip redelivery cannot change newer playback", async () => {
+    const { handle, commands, notices, setPlaying } = streamerBotSetup();
+    setPlaying(true);
+    const clear = envelope({ source: "StreamJams", type: "VideoRequest", action: "clear" });
+    expect(await handle(clear)).toBe("admitted");
+    setPlaying(true); // a newer video now owns playback
+    expect(await handle(clear)).toBe("no-match");
+    expect(commands).toHaveLength(1);
+    const notice = envelope({ source: "StreamJams", type: "VideoRequest", action: "no-clip", displayName: "Friend" });
+    expect(await handle(notice)).toBe("admitted");
+    expect(await handle(notice)).toBe("no-match");
+    expect(notices).toEqual(["Friend"]);
+  });
   it("ignores events without a Videos marker", async () => {
     const { handle, submissions } = streamerBotSetup();
     expect(await handle(envelope({ source: "StreamJams", type: "Other", link: youtube }))).toBe("no-match");
@@ -137,9 +158,9 @@ describe("Streamer.bot video intake", () => {
 
   it("queues VideoRequest payloads and honors explicit autoplay", async () => {
     const { handle, submissions, diagnostics } = streamerBotSetup();
-    expect(await handle(envelope({ source: "StreamJams", type: "VideoRequest", purpose: "test", link: youtube, requester: "Mod", autoplay: true }))).toBe("admitted");
+    expect(await handle(envelope({ source: "StreamJams", type: "VideoRequest", link: youtube, requester: "Mod", autoplay: true }))).toBe("admitted");
     expect(submissions[0]).toMatchObject({ via: "streamerbot", requester: "Mod", autoplay: true });
-    expect(diagnostics[0]?.metadata).toMatchObject({ purpose: "test", legacy: false, autoplay: true });
+    expect(diagnostics[0]?.metadata).toMatchObject({ purpose: "live", legacy: false, autoplay: true });
     expect(JSON.stringify(diagnostics)).not.toContain("dQw4w9WgXcQ");
   });
 
@@ -160,7 +181,7 @@ describe("Streamer.bot video intake", () => {
     expect(await handle(envelope({ source: "StreamJams", type: "VideoRequest", link: "https://evil.example/private.mp4" }))).toBe("failed");
     expect(await handle(envelope({ source: "StreamJams", type: "VideoRequest", purpose: "staging", link: youtube }))).toBe("failed");
     expect(submissions).toHaveLength(0);
-    expect(diagnostics.map(entry => entry.metadata.reason)).toEqual(["unsupported-source", "invalid-request"]);
+    expect(diagnostics.map(entry => entry.metadata.reason)).toEqual(["unsupported-source", "retired-video-test-or-invalid-request"]);
     expect(JSON.stringify(diagnostics)).not.toContain("private");
   });
 
@@ -190,7 +211,7 @@ describe("channel point video intake", () => {
   }) as unknown as NormalizedStreamEvent;
 
   it("queues mapped rewards without autoplay and ignores others", async () => {
-    const base = setup({ rewardMappings: [{ rewardId: "reward-1", purpose: "live" }] });
+    const base = setup({ rewardMappings: [{ rewardId: "reward-1" }] });
     const diagnostics: VideoIntakeDiagnostic[] = [];
     const handler = createChannelPointVideoIntake({ intake: base.intake, getConfig: () => base.config, onDiagnostic: entry => { diagnostics.push(entry); } });
     expect(await handler.handleEvent(redemption("reward-2", youtube))).toBe("no-match");
@@ -200,6 +221,29 @@ describe("channel point video intake", () => {
     expect(base.submissions[0]).toMatchObject({ via: "channel-points", requester: "Viewer", autoplay: false });
     expect(await handler.handleEvent(redemption("reward-1", "   "))).toBe("failed");
     expect(diagnostics.at(-1)).toMatchObject({ level: "warn", metadata: { reason: "invalid-request", fields: ["link"] } });
+  });
+
+  it("admits redemptions of review-required mappings held for review on the real queue, never playable unreviewed", async () => {
+    const database = createInMemoryStreamJamsDatabase();
+    intakeDatabases.push(database);
+    const config: VideosModuleConfig = { ...createDefaultVideosModuleConfig(), rewardMappings: [{ rewardId: "former-test", reviewRequired: true }, { rewardId: "ordinary", reviewRequired: false }] };
+    const queue = new VideoQueueService({ repository: new SqliteVideoQueueRepository(database.connection), getConfig: () => config, scheduler: { setTimeout: () => null, clearTimeout: () => {} } });
+    const intake = new VideoRequestIntake({ queue, getConfig: () => config, isModuleEnabled: () => true });
+    const diagnostics: VideoIntakeDiagnostic[] = [];
+    const handler = createChannelPointVideoIntake({ intake, getConfig: () => config, onDiagnostic: entry => { diagnostics.push(entry); } });
+    expect(await handler.handleEvent(redemption("former-test", youtube))).toBe("admitted");
+    expect(await handler.handleEvent(redemption("ordinary", youtube))).toBe("admitted");
+    const [held, ordinary] = queue.view("live").items;
+    expect(held).toMatchObject({ status: "held", reviewRequired: true, holdReason: null, autoplay: false, migrationProvenance: null });
+    expect(ordinary).toMatchObject({ status: "queued", reviewRequired: false });
+    expect(diagnostics[0]).toMatchObject({ level: "info", metadata: { status: "held", reviewRequired: true } });
+    // Bulk playback skips the review item; only explicit Play releases it.
+    queue.command("live", queue.view("live").revision, { kind: "play-next" });
+    expect(queue.view("live").current?.item.id).toBe(ordinary!.id);
+    queue.command("live", queue.view("live").revision, { kind: "stop" });
+    queue.command("live", queue.view("live").revision, { kind: "play", itemId: held!.id });
+    expect(queue.view("live").current?.item).toMatchObject({ id: held!.id, reviewRequired: false });
+    queue.dispose();
   });
 });
 

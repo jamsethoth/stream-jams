@@ -367,6 +367,12 @@
   padding-top: 8px;
 }
 
+.alert-sets-page__live-test-note {
+  color: var(--color-warning);
+  font-size: var(--font-size-xs);
+  margin: 4px 0 0;
+}
+
 .alert-sets-page__test-summary {
   color: var(--color-text-muted);
   display: block;

@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, renameSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync, type StatementResultingChanges } from "node:sqlite";
 import { initialSchemaMigration } from "./migrations/001-initial-schema.js";
@@ -43,9 +43,23 @@ import { eventBusOutcomesMigration } from "./migrations/039-event-bus-outcomes.j
 import { videoRequestQueueMigration } from "./migrations/040-video-request-queue.js";
 import { videoRequestMetadataMigration } from "./migrations/041-video-request-metadata.js";
 
+import { manualEventBusMigration } from "./migrations/042-manual-event-bus.js";
+import { videoBusAdmissionMigration } from "./migrations/043-video-bus-admission.js";
+import { timerProfileAppearanceMigration } from "./migrations/044-timer-profile-appearance.js";
+import { videoContentLayoutMigration } from "./migrations/045-video-content-layout.js";
+import { singleVideoQueueMigration } from "./migrations/046-single-video-queue.js";
+import { retirePublicOverlaysMigration } from "./migrations/047-retire-public-overlays.js";
+
 export interface StreamJamsMigration {
   readonly id: string;
   readonly sql: string;
+  readonly apply?: (connection: DatabaseSync) => void;
+}
+
+/** Caller owns the transaction and applied-record insertion; historical SQL remains unchanged. */
+export function applyStreamJamsMigration(connection: DatabaseSync, migration: StreamJamsMigration): void {
+  connection.exec(migration.sql);
+  migration.apply?.(connection);
 }
 
 export interface StreamJamsDatabase extends Disposable {
@@ -54,7 +68,7 @@ export interface StreamJamsDatabase extends Disposable {
   close(): void;
 }
 
-const migrations = [
+export const streamJamsMigrations = Object.freeze([
   initialSchemaMigration,
   alertVariantSelectionMigration,
   twitchAccountsMigration,
@@ -94,10 +108,23 @@ const migrations = [
   externalAlertIdentityMigration,
   eventBusOutcomesMigration,
   videoRequestQueueMigration,
-  videoRequestMetadataMigration
-] satisfies readonly StreamJamsMigration[];
+  videoRequestMetadataMigration,
+  manualEventBusMigration,
+  videoBusAdmissionMigration,
+  timerProfileAppearanceMigration,
+  videoContentLayoutMigration,
+  singleVideoQueueMigration,
+  retirePublicOverlaysMigration
+] satisfies readonly StreamJamsMigration[]);
+
+const migrations = streamJamsMigrations;
 
 export const currentSchemaVersion = migrations.length;
+
+/** The single retained pre-046 rollback copy for a database file. */
+export function rollbackSnapshotPathFor(databasePath: string): string {
+  return `${databasePath}.pre046.sqlite`;
+}
 
 export function openStreamJamsDatabase(databasePath: string): StreamJamsDatabase {
   mkdirSync(dirname(databasePath), { recursive: true });
@@ -154,7 +181,7 @@ function createStreamJamsDatabase(databasePath: string): StreamJamsDatabase {
   });
   connection.exec("PRAGMA foreign_keys = ON");
 
-  const database = new NodeSqliteStreamJamsDatabase(connection);
+  const database = new NodeSqliteStreamJamsDatabase(connection, databasePath);
   try {
     database.runMigrations();
     return database;
@@ -167,11 +194,18 @@ function createStreamJamsDatabase(databasePath: string): StreamJamsDatabase {
 class NodeSqliteStreamJamsDatabase implements StreamJamsDatabase {
   readonly connection: DatabaseSync;
 
-  constructor(connection: DatabaseSync) {
+  constructor(connection: DatabaseSync, private readonly databasePath: string) {
     this.connection = connection;
   }
 
   runMigrations(): void {
+    let rollbackSnapshotPath: string | null = null;
+    if (this.databasePath !== ":memory:"
+      && this.connection.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='video_requests'").get() !== undefined
+      && (this.connection.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'").get() === undefined
+        || this.connection.prepare("SELECT 1 FROM schema_migrations WHERE id=?").get(singleVideoQueueMigration.id) === undefined)) {
+      rollbackSnapshotPath = this.writeRollbackSnapshot();
+    }
     this.connection.exec(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
         id TEXT PRIMARY KEY NOT NULL,
@@ -192,11 +226,41 @@ class NodeSqliteStreamJamsDatabase implements StreamJamsDatabase {
     }
     reconcilePreMergeVideosHistory(this.connection);
     const appliedCount = validateMigrationHistory(this.connection);
-    for (const migration of migrations.slice(appliedCount)) {
+    const pending = migrations.slice(appliedCount);
+    if (pending.length === 0) return;
+    // Every migration is transaction-safe (no PRAGMA, VACUUM or transaction control), so the whole pending batch
+    // commits atomically. A refusal leaves the exact prior schema version that the previous app still accepts.
+    try {
       runInTransaction(this.connection, () => {
-        this.connection.exec(migration.sql);
-        insertMigrationRecord(this.connection, migration.id);
+        for (const migration of pending) {
+          applyStreamJamsMigration(this.connection, migration);
+          insertMigrationRecord(this.connection, migration.id);
+        }
       });
+    } catch (cause) {
+      if (rollbackSnapshotPath === null) throw cause;
+      const message = cause instanceof Error ? cause.message : String(cause);
+      throw new Error(`${message} No upgrade changes were saved; the database remains at its previous version. Rollback copy: ${rollbackSnapshotPath}`, { cause });
+    }
+  }
+
+  /**
+   * One deterministic rollback copy per database: retries replace it atomically instead of accumulating copies, and it
+   * is retained after a successful upgrade. VACUUM INTO captures committed WAL pages into an independent database.
+   */
+  private writeRollbackSnapshot(): string {
+    const snapshotPath = rollbackSnapshotPathFor(this.databasePath);
+    const temporaryPath = `${snapshotPath}.partial`;
+    try {
+      rmSync(temporaryPath, { force: true });
+      this.connection.prepare("VACUUM INTO ?").run(temporaryPath);
+      renameSync(temporaryPath, snapshotPath);
+      return snapshotPath;
+    } catch (cause) {
+      try { rmSync(temporaryPath, { force: true }); }
+      // error-provenance: allow cleanup -- a leftover partial copy is replaced on retry; the snapshot failure is reported
+      catch { /* keep the original snapshot failure */ }
+      throw new Error("Videos upgrade could not create its required rollback database. Check free space and permissions beside the database, then retry; consolidation has not started.", { cause });
     }
   }
 

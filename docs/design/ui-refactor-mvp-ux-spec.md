@@ -609,21 +609,7 @@ Timeline/keyframe editing is backlog.
 - Audio and TTS muted by default.
 - Optional `Play audio` / `Play TTS`.
 
-`Test draft`:
-
-- Uses normalized alert playback pipeline after selecting test target.
-- Requires connected browser-source client for selected target profile.
-- Disabled or blocked with clear next steps when no output is connected.
-- Targets selected alert and selected target profile by default.
-- Secondary action menu can send to landscape, vertical, or both connected outputs.
-- Includes audio and TTS by default when alert uses them.
-- Provides `Include audio` and `Include TTS` toggles for current editor session.
-- Marks events as test in logs/history.
-- A compact summary identifies draft input, selected browser profile, human-readable selected device destinations, and included audio/TTS.
-
-Full provider-event simulation through all enabled flows is Diagnostics/backlog.
-
-Screen Effects uses its separate saved-variant delivery contract: `Test saved…` lists live destinations and requires explicit confirmation before queueing. It does not imply alert-draft semantics.
+`Test draft` publishes one explicit manual bus occurrence from the current draft and selected sample payload. It uses the normalized playback pipeline and selected ordinary profile, browser, desktop and saved device destinations. Audio-only device delivery is supported without requiring a browser. The result identifies independent destination acceptance or rejection and actionable unavailable-output correction; it never fabricates provider provenance. `Include audio` and `Include TTS` remain session controls. Local Preview never publishes, journals or reaches devices. Saved Alert and Effect tests use their saved documents and the same manual provenance; manual/source simulations use existing authorized APIs. No new Diagnostics simulation UI is implied.
 
 Preview controls:
 

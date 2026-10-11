@@ -2,9 +2,9 @@ import { DestructiveConfirmationDialog } from "../foundation/DestructiveConfirma
 import { Button, NativeSelect } from "@mantine/core";
 import { ModulePageLayout, ModuleControls, ModuleSection, DisclosureSection } from "../foundation/ModulePageLayout.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
-import { BrowserSourcesPanel } from "../foundation/BrowserSourcesPanel.js";
+import { BrowserSourceSetupNotice, BrowserSourcesPanel, browserSourceSizesShown } from "../foundation/BrowserSourcesPanel.js";
 import { BrowserSourceRow } from "../foundation/BrowserSourceRow.js";
-import { createMusicViewAppearance, fitMusicComponentLayout, musicModuleConfigSchema, musicPublicAssetReferenceSchema, projectMusicWidget, type AssetLibraryItem, type MusicAssetResolver, type MusicCssConfig, type MusicModuleConfig, type MusicProfileConfig, type MusicSnapshot, type OverlayOutputView } from "@stream-jams/core";
+import { applyMusicContentGeometry, createMusicViewAppearance, fitMusicComponentLayout, musicModuleConfigSchema, musicPublicAssetReferenceSchema, projectMusicWidget, resolveMusicOutputGeometry, type AssetLibraryItem, type MusicAssetResolver, type MusicCssConfig, type MusicModuleConfig, type MusicProfileConfig, type MusicSnapshot, type OverlayOutputView } from "@stream-jams/core";
 import type { MusicCssValidationResult } from "@stream-jams/core/music-style-policy";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AssetPicker } from "../assets/AssetPicker.js";
@@ -124,6 +124,12 @@ export function MusicPage({ api, assetApi, surfaceApi }: { readonly api: MusicPa
       if (!mounted.current) return true;
       setSaved(result);
       if (draftRevision.current === revision) { setDraft(result.config); setEnabled(result.enabled); }
+      try {
+        const availableOutputs = await api.listMusicOutputs();
+        if (mounted.current) setOutputs(availableOutputs);
+      } catch (cause) {
+        if (mounted.current) setError(actionableError(cause, "Music appearance saved; source dimensions could not be refreshed", "Reopen Music to load the saved OBS dimensions."));
+      }
       const stillCurrent = draftRevision.current === revision;
       setNotice({ tone: "success", message: stillCurrent ? "Music appearance saved." : "Earlier Music appearance saved. Newer edits remain unsaved." });
       return stillCurrent;
@@ -167,7 +173,7 @@ export function MusicPage({ api, assetApi, surfaceApi }: { readonly api: MusicPa
     const previewConfig = { ...draft, profiles: { ...draft.profiles, [profileId]: { ...draft.profiles[profileId], initialView: view, idleMode: "none" as const } }, css: { ...lastValidCss, enabled: draft.css.enabled && lastValidCss.source !== "" } };
     const result = projectMusicWidget(previewSnapshot, { state: "connected", stale: false, diagnosticReference: null }, previewConfig, profileId, previewTime, previewTime);
     if (result === null) return null;
-    return { ...result, assets: Object.values(descriptors).map(descriptor => musicPublicAssetReferenceSchema.safeParse(descriptor.snapshot)).filter(candidate => candidate.success).map(candidate => candidate.data) };
+    return { ...applyMusicContentGeometry(result, resolveMusicOutputGeometry(previewConfig, profileId)), assets: Object.values(descriptors).map(descriptor => musicPublicAssetReferenceSchema.safeParse(descriptor.snapshot)).filter(candidate => candidate.success).map(candidate => candidate.data) };
   }, [draft, lastValidCss, profileId, view, descriptors, previewSnapshot, previewTime]);
   const artworkUrl = live.artworkUrl;
   const resolver: MusicAssetResolver = useMemo(() => ({ resolveAsset: asset => descriptors[asset.assetId]?.url ?? null, resolveArtwork: () => artworkUrl }), [descriptors, artworkUrl]);
@@ -192,10 +198,10 @@ export function MusicPage({ api, assetApi, surfaceApi }: { readonly api: MusicPa
     catch (cause) { setError(actionableError(cause, "Unable to copy Music output URL", "Reveal the URL and copy it manually, or allow clipboard access and retry.")); }
   }
 
-  const sourceRows = (purpose: "live" | "test") => outputs.filter(output => output.purpose === purpose).map(output => {
-    const label = `${output.targetProfileId === "landscape" ? "Landscape" : "Vertical"}${purpose === "test" ? " test" : ""}`;
+  const sourceRows = () => outputs.filter(output => output.purpose === "live").map(output => {
+    const label = output.targetProfileId === "landscape" ? "Landscape" : "Vertical";
     const revealed = revealedOutputs.has(output.id);
-    return <BrowserSourceRow key={output.id} label={label} ready={output.copyableUrlStatus === "available"} metadata={<strong><bdi dir="ltr">{output.targetProfileId === "landscape" ? "1920 x 1080" : "1080 x 1920"}</bdi></strong>} guidance={<>Add a Browser Source in OBS at {output.targetProfileId === "landscape" ? "1920 x 1080" : "1080 x 1920"}, then paste this URL.</>} telemetry={purpose === "live" ? "Live output" : "Test output"} url={output.url === null ? <p className="browser-source-row__missing">Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source URL`} readOnly value={output.url} /> : <code>{output.url.replace(/(\/(?:live|test)\/)[^?]+/u, "$1********")}</code>} actions={<>
+    return <BrowserSourceRow key={output.id} label={label} ready={output.copyableUrlStatus === "available"} canvas={output.canvas} guidance={output.canvas === undefined ? undefined : <>Add a Browser Source in OBS at {output.canvas.width} x {output.canvas.height}, then paste this URL. Position it in OBS. Saved visual size changes require updating these dimensions; desktop placement does not.</>} telemetry="Live output" url={output.url === null ? <p className="browser-source-row__missing">Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source URL`} readOnly value={output.url} /> : <code>{output.url.replace(/(\/(?:live|test)\/)[^?]+/u, "$1********")}</code>} actions={<>
       {output.copyableUrlStatus === "create-required" ? <Button variant="default" disabled={busy} onClick={() => void createOutput(output)} type="button">Create {label} URL</Button> : null}
       {output.url === null ? null : <><Button aria-label={`${revealed ? "Hide" : "Reveal"} ${label} URL`} variant="default" onClick={() => setRevealedOutputs(current => { const next = new Set(current); if (revealed) next.delete(output.id); else next.add(output.id); return next; })} type="button">{revealed ? "Hide" : "Reveal"}</Button><Button aria-label={`Copy ${label} URL`} variant="default" onClick={() => void copyOutput(output.url!)} type="button">Copy</Button></>}
       {output.copyableUrlStatus === "create-required" ? null : <Button aria-label={`Regenerate ${label} URL`} color="red" variant="light" disabled={busy} onClick={() => { setConfirmationError(null); setRegenerateOutput(output); }} type="button">Regenerate</Button>}
@@ -205,8 +211,8 @@ export function MusicPage({ api, assetApi, surfaceApi }: { readonly api: MusicPa
   if (loading) return <p role="status">Loading Music appearance…</p>;
   if (draft === null || profile === null || appearance === null) return <div><p role="alert">Music appearance could not be loaded.</p>{error === null ? null : <ManagementErrorBanner error={error} />}</div>;
   return <ModulePageLayout className="music-editor" controls={<ModuleControls status={<StatusBadge label={enabled ? "Module enabled" : "Module disabled"} tone={enabled ? "positive" : "neutral"} />} description="Saved module enablement is separate from source connection and preview."><Button variant="default" disabled={busy} onClick={() => { setConfirmationError(null); setModuleConfirmation(!enabled); }}>{enabled ? "Disable Music module" : "Enable Music module"}</Button></ModuleControls>} outputs={    <BrowserSourcesPanel id="music-output-links" label="Music output links" detailsId="music-browser-sources" expanded={sourcesOpen} onToggle={() => setSourcesOpen(current => !current)} readyCount={outputs.filter(output => output.purpose === "live" && output.copyableUrlStatus === "available").length} needsSetupCount={outputs.filter(output => output.purpose === "live" && output.copyableUrlStatus !== "available").length}>
-      <div className="music-browser-sources__list">{sourceRows("live")}</div>
-      {outputs.some(output => output.purpose === "test") ? <details><summary>Test browser sources</summary><div className="music-browser-sources__list">{sourceRows("test")}</div></details> : null}
+      <BrowserSourceSetupNotice sizesShown={browserSourceSizesShown(outputs.filter(output => output.purpose === "live"))} />
+      <div className="music-browser-sources__list">{sourceRows()}</div>
       {outputs.length === 0 ? <p role="status">No Music outputs were returned. Check the local service and reload this page.</p> : null}
     </BrowserSourcesPanel>} secondary={<>    <DisclosureSection id="music-desktop-overlay-placement" detailsId="music-desktop-overlay-placement-details" title="Desktop overlay placement" expanded={desktopOpen} onToggle={() => setDesktopOpen(current => !current)} summary={draft.desktopPlacement.full === null && draft.desktopPlacement.compact === null ? "Uses alignment" : "Custom desktop position"}>
       <Suspense fallback={<p role="status">Loading desktop placement…</p>}><MusicDesktopPlacement config={draft} snapshot={previewSnapshot} now={previewTime} resolveAsset={resolver} surfaceApi={surfaceApi} onChange={next => updateDraft(() => next)} /></Suspense>
@@ -215,7 +221,6 @@ export function MusicPage({ api, assetApi, surfaceApi }: { readonly api: MusicPa
 <div className="music-editor__grid">
       <NativeSelect label="Initial view" value={profile.initialView} onChange={event => changeProfile({ ...profile, initialView: event.currentTarget.value as typeof profile.initialView })}><option value="full">Full</option><option value="compact">Compact</option></NativeSelect>
       <NativeSelect label="Theme" value={profile.theme} onChange={event => changeProfile({ ...profile, theme: event.currentTarget.value as typeof profile.theme })}><option value="dark">Dark</option><option value="light">Light</option></NativeSelect>
-      <NativeSelect label="Alignment" value={profile.alignment} onChange={event => changeProfile({ ...profile, alignment: event.currentTarget.value as typeof profile.alignment })}>{["top-left", "top-center", "top-right", "center-left", "center-right", "bottom-left", "bottom-center", "bottom-right"].map(item => <option key={item} value={item}>{item.charAt(0).toUpperCase() + item.slice(1).replace("-", " ")}</option>)}</NativeSelect>
       <NativeSelect label="Idle behavior" value={profile.idleMode} onChange={event => changeProfile({ ...profile, idleMode: event.currentTarget.value as typeof profile.idleMode })}><option value="none">Keep current view</option><option value="hide">Hide</option><option value="compact">Switch to compact</option></NativeSelect>
       <MusicNumberFieldBridge label="Idle after (seconds)" value={profile.idleAfterSeconds} min={1} max={600} onCommit={idleAfterSeconds => changeProfile({ ...profile, idleAfterSeconds })} />
       <MusicNumberFieldBridge label="Background opacity (%)" value={profile.backgroundOpacity} min={0} max={100} onCommit={backgroundOpacity => changeProfile({ ...profile, backgroundOpacity })} />

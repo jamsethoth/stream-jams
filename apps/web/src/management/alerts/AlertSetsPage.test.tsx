@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { renderManagement as render } from "../../test-support/render-management.js";
 import {
   compatibilityAlertTextBoxStyle,
@@ -196,7 +197,7 @@ describe("AlertSetsPage", () => {
     const saved = editorDocument();
     saved.targetProfiles = saved.targetProfiles.map((profile) => ({ ...profile, enabled: true, reviewState: "ready" as const }));
     const getAlertEditorDocument = vi.fn(async () => saved);
-    const sendAlertEditorTest = vi.fn(async (_alertId, request) => ({
+    const sendSavedAlertTest = vi.fn(async (_alertId, request) => ({
       status: "queued" as const,
       targetProfileId: request.targetProfileId,
       referenceId: "ref-inline-test",
@@ -208,19 +209,19 @@ describe("AlertSetsPage", () => {
       listAlertSets: vi.fn(async () => [source.overview]),
       getAlertSet: vi.fn(async () => source),
       getAlertEditorDocument,
-      sendAlertEditorTest
+      sendSavedAlertTest
     })} onEditAlert={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: "Test saved New follower" }));
     await user.click(await screen.findByRole("button", { name: "Send New follower saved test to Vertical" }));
 
-    await waitFor(() => expect(sendAlertEditorTest).toHaveBeenCalledWith("alert-follow", {
-      document: saved,
+    await waitFor(() => expect(sendSavedAlertTest).toHaveBeenCalledWith("alert-follow", {
       targetProfileId: "vertical",
       samplePayload: { userName: "James" },
       includeAudio: true,
       includeTts: true
     }));
+    expect(sendSavedAlertTest.mock.calls[0]?.[1]).not.toHaveProperty("document");
     expect(getAlertEditorDocument).toHaveBeenCalledWith("alert-follow");
     expect(screen.getByText("Test queued on Vertical. Reference ref-inline-test.").closest(".management-toast")).toHaveClass("management-toast--success");
   });
@@ -233,6 +234,16 @@ describe("AlertSetsPage", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent(/Saved input · Browser/u);
   });
 
+  it("warns visibly and accessibly that Test saved plays on live sources", async () => {
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({ getAlertSet: vi.fn(async () => detail()) })} onEditAlert={vi.fn()} />);
+    const button = await screen.findByRole("button", { name: "Test saved New follower" });
+    expect(screen.getByText("Test saved plays on your live sources and OBS, including audio and TTS.")).toBeVisible();
+    expect(button).toHaveAccessibleDescription(/^Plays on your live sources and OBS · .*Audio and TTS included$/u);
+    while (document.activeElement !== button) await user.tab();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(/^Plays on your live sources and OBS/u);
+  });
+
   it("keeps the saved Landscape profile selected when only the desktop overlay is available", async () => {
     const source = detail();
     source.browserSources = source.browserSources.map((entry) => entry.targetProfileId === "landscape"
@@ -242,7 +253,7 @@ describe("AlertSetsPage", () => {
     saved.targetProfiles = saved.targetProfiles.map((profile) => profile.id === "landscape"
       ? profile
       : { ...profile, enabled: false, reviewState: "needs-review" as const });
-    const sendAlertEditorTest = vi.fn(async (_alertId, request) => ({
+    const sendSavedAlertTest = vi.fn(async (_alertId, request) => ({
       status: "queued" as const,
       targetProfileId: request.targetProfileId,
       referenceId: "ref-desktop-test",
@@ -254,13 +265,12 @@ describe("AlertSetsPage", () => {
     render(<AlertSetsPage managementApi={alertSetsApi({
       getAlertSet: vi.fn(async () => source),
       getAlertEditorDocument: vi.fn(async () => saved),
-      sendAlertEditorTest
+      sendSavedAlertTest
     })} onEditAlert={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: "Test saved New follower" }));
 
-    await waitFor(() => expect(sendAlertEditorTest).toHaveBeenCalledWith("alert-follow", expect.objectContaining({
-      document: saved,
+    await waitFor(() => expect(sendSavedAlertTest).toHaveBeenCalledWith("alert-follow", expect.objectContaining({
       targetProfileId: "landscape"
     })));
     // The routing summary is the Test saved button's tooltip and accessible description.
@@ -294,6 +304,7 @@ describe("AlertSetsPage", () => {
 
     const dialog = screen.getByRole("dialog", { name: "Sample message for New follower" });
     expect(dialog).toHaveTextContent("sample text, not the rendered alert design");
+    expect(api.sendSavedAlertTest).not.toHaveBeenCalled();
     expect(api.sendAlertEditorTest).not.toHaveBeenCalled();
   });
 
@@ -306,18 +317,20 @@ describe("AlertSetsPage", () => {
     const api = alertSetsApi({ getAlertSet: vi.fn(async () => source), getAlertEditorDocument: vi.fn(async () => saved) });
     render(<AlertSetsPage managementApi={api} onEditAlert={vi.fn()} />);
     await userEvent.click(await screen.findByRole("button", { name: "Test saved New follower" }));
-    await waitFor(() => expect(api.sendAlertEditorTest).toHaveBeenCalledWith("alert-follow", expect.objectContaining({ document: saved, targetProfileId: null, includeAudio: true, includeTts: true })));
+    await waitFor(() => expect(api.sendSavedAlertTest).toHaveBeenCalledWith("alert-follow", expect.objectContaining({ targetProfileId: null, includeAudio: true, includeTts: true })));
+    expect(vi.mocked(api.sendSavedAlertTest).mock.calls[0]?.[1]).not.toHaveProperty("document");
+    expect(api.sendAlertEditorTest).not.toHaveBeenCalled();
   });
 
   it("links a failed inline alert test to the server Diagnostics record", async () => {
-    const sendAlertEditorTest = vi.fn(async () => {
+    const sendSavedAlertTest = vi.fn(async () => {
       throw new Error(
         "Finish reviewing and enable the landscape profile before sending it to an output. "
         + "(ALERT_EDITOR_TEST_BLOCKED, err_inline_test_blocked)"
       );
     });
     const user = userEvent.setup();
-    render(<AlertSetsPage managementApi={alertSetsApi({ sendAlertEditorTest })} onEditAlert={vi.fn()} />);
+    render(<AlertSetsPage managementApi={alertSetsApi({ sendSavedAlertTest })} onEditAlert={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: "Test saved New follower" }));
     await user.click(await screen.findByRole("button", { name: "Send New follower saved test to Landscape" }));
@@ -1190,6 +1203,7 @@ type AlertSetsApi = Pick<
   | "setManagedAlertEnabled"
   | "deleteAlertSet"
   | "getAlertEditorDocument"
+  | "sendSavedAlertTest"
   | "sendAlertEditorTest"
   | "createOverlayOutputKey"
   | "regenerateOverlayOutputKey"
@@ -1222,7 +1236,8 @@ function alertSetsApi(overrides: Partial<AlertSetsApi> = {}): AlertSetsApi {
     })),
     deleteAlertSet: vi.fn(async () => undefined),
     getAlertEditorDocument: vi.fn(async () => editorDocument()),
-    sendAlertEditorTest: vi.fn(async (_alertId, request) => ({ status: "queued" as const, targetProfileId: request.targetProfileId, referenceId: "ref-inline-test", test: true as const, deliveredDestinations: [], unavailableDestinations: [] })),
+    sendAlertEditorTest: vi.fn(),
+    sendSavedAlertTest: vi.fn(async (_alertId, request) => ({ status: "queued" as const, targetProfileId: request.targetProfileId, referenceId: "ref-inline-test", test: true as const, deliveredDestinations: [], unavailableDestinations: [] })),
     createOverlayOutputKey: vi.fn(async () => ({
       keyId: "key-created",
       url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_created?profile=landscape",
@@ -1251,7 +1266,7 @@ function detail(): AlertSetDetail {
     browserSources: [
       {
         id: "module:alerts:landscape:live",
-        targetProfileId: "landscape",
+        canvas: sceneOutputCanvas(), targetProfileId: "landscape",
         purpose: "live",
         connectionState: "connected",
         lastConnectedAt: "2026-07-15T05:00:00.000Z",
@@ -1261,7 +1276,7 @@ function detail(): AlertSetDetail {
       },
       {
         id: "module:alerts:vertical:live",
-        targetProfileId: "vertical",
+        canvas: sceneOutputCanvas(0, 1080, 1920), targetProfileId: "vertical",
         purpose: "live",
         connectionState: "never-connected",
         lastConnectedAt: null,
@@ -1359,7 +1374,7 @@ function impact(): AlertSetActivationImpact {
 }
 
 function output(targetProfileId: "landscape" | "vertical", purpose: "live") {
-  return {
+  return { canvas: sceneOutputCanvas(0, targetProfileId === "vertical" ? 1080 : 1920, targetProfileId === "vertical" ? 1920 : 1080),
     id: `module:alerts:${targetProfileId}:${purpose}`,
     label: `Alerts ${targetProfileId} ${purpose}`,
     purpose,

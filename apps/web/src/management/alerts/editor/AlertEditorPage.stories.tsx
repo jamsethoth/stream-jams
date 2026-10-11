@@ -815,6 +815,7 @@ export const InvalidSample: Story = {
 };
 
 export const OptionalPreviewMedia: Story = {
+  tags: ["manual-event-delivery"],
   args: {
     managementApi: createStoryManagementApi({
       getAlertEditorDocument: async () => ({
@@ -1260,7 +1261,20 @@ export const PotentialOverlapWarning: Story = {
   }
 };
 
+export const ManualDeliveryPending: Story = {
+  tags: ["manual-event-delivery"],
+  args: { managementApi: createStoryManagementApi({ getAlertEditorDocument: async () => document, getAlertSet: async () => alertSetDetail(), sendAlertEditorTest: async () => ({ status: "pending", targetProfileId: "landscape", referenceId: "bus-pending", busId: "bus-pending", eventId: "manual-pending", test: true, deliveredDestinations: [], unavailableDestinations: [] }) }) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Test draft" }));
+    await expect(await canvas.findByText(/Manual event accepted; delivery is pending/u)).toBeVisible();
+    await expect(canvas.getByText(/do not resend while its outcome is unknown/u)).toBeVisible();
+    await expect(canvas.queryByText(/Test queued on/u)).not.toBeInTheDocument();
+  }
+};
+
 export const DeliveryFailure: Story = {
+  tags: ["manual-event-delivery"],
   args: {
     managementApi: createStoryManagementApi({
       getAlertEditorDocument: async () => document,

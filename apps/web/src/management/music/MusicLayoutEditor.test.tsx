@@ -1,7 +1,7 @@
 import { renderManagement as render } from "../../test-support/render-management.js";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { createDefaultMusicModuleConfig, projectMusicWidget, type MusicAppearance, type MusicComponentLayout, type MusicSnapshot } from "@stream-jams/core";
+import { applyMusicContentGeometry, createDefaultMusicModuleConfig, projectMusicWidget, resolveMusicOutputGeometry, type MusicAppearance, type MusicComponentLayout, type MusicSnapshot } from "@stream-jams/core";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MusicLayoutEditor } from "./MusicLayoutEditor.js";
@@ -24,12 +24,13 @@ function mockLayoutGeometry() {
   Object.defineProperty(HTMLElement.prototype, "setPointerCapture", { configurable: true, value: vi.fn() });
 }
 
-function Fixture({ css = false }: { readonly css?: boolean }) {
+function Fixture({ css = false, content = false }: { readonly css?: boolean; readonly content?: boolean }) {
   const [appearance, setAppearance] = useState<MusicAppearance>(() => createDefaultMusicModuleConfig().profiles.landscape.views.full);
   const config = createDefaultMusicModuleConfig();
   config.profiles.landscape.views.full = appearance;
   if (css) config.css = { source: ".sj-title { left: 0 !important; }", enabled: true, styleContractVersion: 1 };
-  const projection = projectMusicWidget(snapshot, { state: "connected", stale: false, diagnosticReference: null }, config, "landscape", now, now);
+  const scene = projectMusicWidget(snapshot, { state: "connected", stale: false, diagnosticReference: null }, config, "landscape", now, now);
+  const projection = !content || scene === null ? scene : applyMusicContentGeometry(scene, resolveMusicOutputGeometry(config, "landscape"));
   return <><MusicLayoutEditor appearance={appearance} onChange={setAppearance} projection={projection} resolveAsset={resolver} />
     <output data-testid="saved-layout">{JSON.stringify(appearance.componentLayout)}</output></>;
 }
@@ -40,6 +41,25 @@ describe("MusicLayoutEditor", () => {
     cleanup(); vi.restoreAllMocks();
     if (pointerCapture === undefined) Reflect.deleteProperty(HTMLElement.prototype, "setPointerCapture");
     else Object.defineProperty(HTMLElement.prototype, "setPointerCapture", pointerCapture);
+  });
+
+  it("scales the complete content canvas and keeps numeric component geometry local to the inset widget", async () => {
+    mockLayoutGeometry();
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1000);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains("music-layout-editor__stage")) return box(0, 0, 840, 378);
+      const original = Object.entries(boxes).find(([name]) => this.classList.contains(name))?.[1];
+      return original === undefined ? box(0, 0, 0, 0) : box(original.x + 100, original.y + 82, original.width, original.height);
+    });
+    const view = render(<Fixture content />);
+    await userEvent.click(screen.getByRole("button", { name: "Edit layout" }));
+    expect(screen.getByLabelText("Title X (px)")).toHaveValue(182);
+    expect(screen.getByLabelText("Title Y (px)")).toHaveValue(24);
+    const titleBox = view.container.querySelector<HTMLElement>(".music-layout-editor__box.is-selected")!;
+    expect(titleBox.style.left).toBe("282px"); expect(titleBox.style.top).toBe("106px");
+    fireEvent.keyDown(screen.getByRole("button", { name: "Move Title" }), { key: "ArrowRight" });
+    expect(screen.getByLabelText("Title X (px)")).toHaveValue(183);
+    expect(titleBox.style.left).toBe("283px");
   });
 
   it("seeds exact rendered boxes, mirrors pointer and keyboard edits in numeric fields, cancels and resets", async () => {
