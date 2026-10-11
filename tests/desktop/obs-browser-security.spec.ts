@@ -203,10 +203,16 @@ test("actual portable OBS keeps ordinary module geometry local, retired sources 
       // OBS frontend PNGs are RGB. Observe the actual browser over black and white
       // native color sources; do not infer transparency from decoded PNG alpha.
       for (const matte of ["black", "white"] as const) {
-        const id = await request("capture", `${phase}-${matte}`, matte);
-        // Lua answers within a few 100 ms ticks; the default poll backoff would add up to a second per matte.
-        await expect.poll(() => access(join(coord, `capture-${id}.json`)).then(() => true, () => false), { timeout: 15000, intervals: [100] }).toBe(true);
-        const receipt = JSON.parse(await readFile(join(coord, `capture-${id}.json`), "utf8")) as ObsReceipt;
+        // OBS applies a resized source's native size on a later frame than its settings; recapture until it has.
+        let receipt: ObsReceipt;
+        for (const deadline = Date.now() + 15000; ;) {
+          const id = await request("capture", `${phase}-${matte}`, matte);
+          // Lua answers within a few 100 ms ticks; the default poll backoff would add up to a second per matte.
+          await expect.poll(() => access(join(coord, `capture-${id}.json`)).then(() => true, () => false), { timeout: 15000, intervals: [100] }).toBe(true);
+          receipt = JSON.parse(await readFile(join(coord, `capture-${id}.json`), "utf8")) as ObsReceipt;
+          if ((receipt.nativeWidth === viewport.width && receipt.nativeHeight === viewport.height) || Date.now() > deadline) break;
+          await delay(100);
+        }
         expect(receipt).toMatchObject({ sourceId: selected.id, moduleId: selected.moduleId, profile: selected.profile,
           nativeWidth: viewport.width, nativeHeight: viewport.height, settingsWidth: viewport.width, settingsHeight: viewport.height,
           muted: true, monitoring: 0, shutdown: false, rerouteAudio: true });
