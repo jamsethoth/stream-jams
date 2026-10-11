@@ -41,7 +41,11 @@ export const videosModuleConfigSchema = /* @__PURE__ */ videosConfigFields.exten
   { message: "Delays are only allowed for selected devices", path: ["audioDeviceDelaysMs"] });
 
 export const currentVideosModuleConfigSchema = /* @__PURE__ */ videosConfigFields.extend({
-  rewardMappings: z.array(z.strictObject({ rewardId: z.string().trim().min(1).max(128) })).max(videosMaximumRewardMappings)
+  rewardMappings: z.array(z.strictObject({
+    rewardId: z.string().trim().min(1).max(128),
+    // Former test-queue mappings keep sending redemptions to operator review.
+    reviewRequired: z.boolean().default(false)
+  })).max(videosMaximumRewardMappings)
     .refine(mappings => new Set(mappings.map(mapping => mapping.rewardId)).size === mappings.length, "Rewards must be unique")
 }).refine(config => Object.keys(config.audioDeviceDelaysMs).every(id => config.audioDeviceIds.includes(id)),
   { message: "Delays are only allowed for selected devices", path: ["audioDeviceDelaysMs"] }) satisfies z.ZodType<VideosModuleConfig>;

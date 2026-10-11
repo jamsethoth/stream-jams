@@ -291,7 +291,7 @@ export class ConfigurationBackupService {
       }
       // error-provenance: allow expected -- malformed configuration is blocked by typed preflight below; this probe only adds upgrade disclosure
       catch { return false; }
-    })) warnings.push(warning("Videos reward mappings will use the ordinary queue", "Saved test reward mappings are normalized during restore.", "Review Videos reward mappings and queued requests before playback."));
+    })) warnings.push(warning("Videos reward mappings will use the ordinary queue", "Saved test reward mappings are restored as review-required mappings whose redemptions arrive held.", "Review Videos reward mappings and queued requests before playback."));
     const supportedLegacyUpgrade = isSupportedLegacySchema(
       this.#options.schemaVersion,
       archive.manifest.schemaVersion

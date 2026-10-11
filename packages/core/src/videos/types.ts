@@ -68,6 +68,11 @@ export interface VideoMetadata {
 
 export interface VideoRewardMapping {
   readonly rewardId: string;
+  /**
+   * Redemptions arrive held for operator review instead of joining the queue. Set for mappings that targeted the
+   * retired test queue; validated configuration always carries it (default false), so absent means false.
+   */
+  readonly reviewRequired?: boolean;
 }
 
 /** Stable local picture/caption content, with independent desktop scene placement. */

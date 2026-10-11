@@ -91,7 +91,7 @@ describe("ConfigurationBackupService", () => {
       const before = target.snapshotRepository.captureRestorePoint();
       expect((await target.service.preflight(archive)).state).toBe("valid"); expect(target.snapshotRepository.captureRestorePoint()).toEqual(before);
       expect((await target.service.preflight(archive)).warnings).toContainEqual(expect.objectContaining({ summary: "Videos reward mappings will use the ordinary queue" }));
-      const expected = { ...createDefaultVideosModuleConfig(), gapSeconds: 9, rewardMappings: [{ rewardId: "old-test-reward" }], layout: { schemaVersion: 2, content: { width: 400, height: 300 }, desktopPlacement: { x: 1440, y: 40, scale: 1 } } };
+      const expected = { ...createDefaultVideosModuleConfig(), gapSeconds: 9, rewardMappings: [{ rewardId: "old-test-reward", reviewRequired: true }], layout: { schemaVersion: 2, content: { width: 400, height: 300 }, desktopPlacement: { x: 1440, y: 40, scale: 1 } } };
       const saved = () => JSON.parse(String(target.database.connection.prepare("SELECT config_json FROM overlay_module_config WHERE module_id='videos'").get()?.config_json));
       for (let repetition = 0; repetition < 2; repetition++) {
         const preflight = await target.service.preflight(archive);

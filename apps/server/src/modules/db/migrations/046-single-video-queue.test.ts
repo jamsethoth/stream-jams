@@ -23,7 +23,7 @@ describe("single Video queue upgrade", () => {
     const item = { id: "accepted", purpose: "test", source: { provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 0 }, title: "Accepted title", providerTitle: null, channelName: null,
       requester: null, submittedVia: "management", durationMs: 30000, status: "queued", holdReason: null, limitOverridden: false, autoplay: true, position: 0, createdAt: "2026-10-11T00:00:00.000Z" };
     fixture.connection.prepare("INSERT INTO video_bus_admissions VALUES ('old-bus','old-event','accepted',?,1)").run(JSON.stringify({ status: "accepted", item }));
-    fixture.connection.prepare("INSERT INTO overlay_module_config VALUES ('videos',1,?,'old')").run(JSON.stringify({ ...createDefaultVideosModuleConfig(), rewardMappings: [{ rewardId: "test-reward", purpose: "test" }] }));
+    fixture.connection.prepare("INSERT INTO overlay_module_config VALUES ('videos',1,?,'old')").run(JSON.stringify({ ...createDefaultVideosModuleConfig(), rewardMappings: [{ rewardId: "test-reward", purpose: "test" }, { rewardId: "live-reward", purpose: "live" }] }));
     for (const [id, moduleId, scope] of [["ordinary", "videos", "module"], ["retired", "videos", "module"], ["unified", null, "unified"]] as const) {
       fixture.connection.prepare("INSERT INTO overlay_keys (id,overlay_id,module_id,purpose,scope,key_hash,created_at,revoked_at,target_profile_id) VALUES (?,'default',?,?,?,?,'old',NULL,NULL)")
         .run(id, moduleId, id === "ordinary" ? "live" : "test", scope, id.padEnd(64, "a"));
@@ -39,7 +39,7 @@ describe("single Video queue upgrade", () => {
     const accepted = Object.fromEntries(Object.entries(item).filter(([key]) => key !== "purpose"));
     expect(receipt).toEqual({ status: "accepted", item: { ...accepted, reviewRequired: false, migrationProvenance: null } });
     expect(db.connection.prepare("SELECT title,status,review_required,duration_ms FROM video_requests").get()).toEqual({ title: "Current title", status: "held", review_required: 1, duration_ms: 60000 });
-    expect(JSON.parse(String(db.connection.prepare("SELECT config_json FROM overlay_module_config").get()?.config_json)).rewardMappings).toEqual([{ rewardId: "test-reward" }]);
+    expect(JSON.parse(String(db.connection.prepare("SELECT config_json FROM overlay_module_config").get()?.config_json)).rewardMappings).toEqual([{ rewardId: "test-reward", reviewRequired: true }, { rewardId: "live-reward", reviewRequired: false }]);
     expect(db.connection.prepare("SELECT id FROM overlay_keys WHERE revoked_at IS NULL ORDER BY id").all().map(row => row.id)).toEqual(["ordinary"]);
   });
 

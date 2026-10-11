@@ -24,6 +24,6 @@ export function upgradeVideosRewardMappings(raw: unknown): unknown {
   return raw.map(value => {
     if (typeof value !== "object" || value === null || !("purpose" in value)) return value;
     const legacy = z.strictObject({ rewardId: z.string().trim().min(1).max(128), purpose: z.enum(["live", "test"]) }).parse(value);
-    return { rewardId: legacy.rewardId };
+    return { rewardId: legacy.rewardId, reviewRequired: legacy.purpose === "test" };
   });
 }

@@ -36,6 +36,8 @@ export interface VideoRequestContext {
   readonly via: VideoSubmissionChannel;
   /** Whether this caller may start playback immediately with `autoplay: true`. */
   readonly mayAutoplay: boolean;
+  /** Accepted requests arrive held for operator review (for example, review-required reward mappings). */
+  readonly reviewRequired?: boolean;
 }
 
 /**
@@ -82,7 +84,8 @@ export class VideoRequestIntake {
         requester: parsed.data.requester ?? null,
         durationMs: parsed.data.durationSeconds === undefined ? null : Math.ceil(parsed.data.durationSeconds * 1000),
         autoplay,
-        via: context.via
+        via: context.via,
+        ...(context.reviewRequired === true ? { reviewRequired: true } : {})
       }, identity);
       this.options.onQueued?.(purpose, item);
       return { status: "accepted", item };

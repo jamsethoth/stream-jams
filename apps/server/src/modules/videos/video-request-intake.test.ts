@@ -222,6 +222,29 @@ describe("channel point video intake", () => {
     expect(await handler.handleEvent(redemption("reward-1", "   "))).toBe("failed");
     expect(diagnostics.at(-1)).toMatchObject({ level: "warn", metadata: { reason: "invalid-request", fields: ["link"] } });
   });
+
+  it("admits redemptions of review-required mappings held for review on the real queue, never playable unreviewed", async () => {
+    const database = createInMemoryStreamJamsDatabase();
+    intakeDatabases.push(database);
+    const config: VideosModuleConfig = { ...createDefaultVideosModuleConfig(), rewardMappings: [{ rewardId: "former-test", reviewRequired: true }, { rewardId: "ordinary", reviewRequired: false }] };
+    const queue = new VideoQueueService({ repository: new SqliteVideoQueueRepository(database.connection), getConfig: () => config, scheduler: { setTimeout: () => null, clearTimeout: () => {} } });
+    const intake = new VideoRequestIntake({ queue, getConfig: () => config, isModuleEnabled: () => true });
+    const diagnostics: VideoIntakeDiagnostic[] = [];
+    const handler = createChannelPointVideoIntake({ intake, getConfig: () => config, onDiagnostic: entry => { diagnostics.push(entry); } });
+    expect(await handler.handleEvent(redemption("former-test", youtube))).toBe("admitted");
+    expect(await handler.handleEvent(redemption("ordinary", youtube))).toBe("admitted");
+    const [held, ordinary] = queue.view("live").items;
+    expect(held).toMatchObject({ status: "held", reviewRequired: true, holdReason: null, autoplay: false, migrationProvenance: null });
+    expect(ordinary).toMatchObject({ status: "queued", reviewRequired: false });
+    expect(diagnostics[0]).toMatchObject({ level: "info", metadata: { status: "held", reviewRequired: true } });
+    // Bulk playback skips the review item; only explicit Play releases it.
+    queue.command("live", queue.view("live").revision, { kind: "play-next" });
+    expect(queue.view("live").current?.item.id).toBe(ordinary!.id);
+    queue.command("live", queue.view("live").revision, { kind: "stop" });
+    queue.command("live", queue.view("live").revision, { kind: "play", itemId: held!.id });
+    expect(queue.view("live").current?.item).toMatchObject({ id: held!.id, reviewRequired: false });
+    queue.dispose();
+  });
 });
 
 describe("VideoRequestIntake replay", () => {

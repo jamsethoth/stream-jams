@@ -38,6 +38,8 @@ export interface VideoSubmission {
   readonly durationMs: number | null;
   readonly autoplay: boolean;
   readonly via: VideoSubmissionChannel;
+  /** Arrive held for explicit operator review (never autoplay), like migrated test-queue requests. */
+  readonly reviewRequired?: boolean;
 }
 
 export type VideoQueueCommand =
@@ -529,9 +531,10 @@ export class VideoQueueService {
     const { snapshot } = this.state(purpose);
     if (snapshot.items.length >= videoQueueMaximumItems) throw new VideoQueueCommandError("queue-full", "The video queue is full.");
     const hold = this.holdReason(submission.durationMs, false);
+    const reviewRequired = submission.reviewRequired === true;
     return {
       id: `video:${this.createId()}`,
-      reviewRequired: false,
+      reviewRequired,
       migrationProvenance: null,
       source: submission.source,
       title: submission.title,
@@ -540,10 +543,10 @@ export class VideoQueueService {
       requester: submission.requester,
       submittedVia: submission.via,
       durationMs: submission.durationMs,
-      status: hold === null ? "queued" : "held",
+      status: hold === null && !reviewRequired ? "queued" : "held",
       holdReason: hold,
       limitOverridden: false,
-      autoplay: submission.autoplay,
+      autoplay: submission.autoplay && !reviewRequired,
       position: nextPosition(snapshot),
       createdAt: new Date(this.now()).toISOString()
     };

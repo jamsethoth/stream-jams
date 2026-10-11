@@ -16,7 +16,7 @@ export const singleVideoQueueMigration: StreamJamsMigration = {
       const raw = JSON.parse(String(configRow.config_json)) as Record<string, unknown>;
       const current = currentVideosModuleConfigSchema.safeParse(raw);
       const legacy = current.success ? null : videosModuleConfigSchema.parse(raw);
-      upgradedConfig = JSON.stringify(current.success ? current.data : currentVideosModuleConfigSchema.parse({ ...legacy, rewardMappings: legacy!.rewardMappings.map(({ rewardId }) => ({ rewardId })) }));
+      upgradedConfig = JSON.stringify(current.success ? current.data : currentVideosModuleConfigSchema.parse({ ...legacy, rewardMappings: legacy!.rewardMappings.map(({ rewardId, purpose }) => ({ rewardId, reviewRequired: purpose === "test" })) }));
     }
     const receipts = db.prepare("SELECT bus_id,result_json FROM video_bus_admissions").all().map(row => {
       if (Buffer.byteLength(String(row.result_json), "utf8") > 16384) throw new Error("Videos upgrade found an oversized admission receipt. Repair the source database before retrying.");
