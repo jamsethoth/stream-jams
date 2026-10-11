@@ -32,6 +32,11 @@ const defaultPlayerLoadTimeoutMs = 12_000;
 /** Outputs further than this from the shared clock jump to it; smaller drift is left alone. */
 export const videoDriftToleranceMs = 750;
 const driftCheckIntervalMs = 1_000;
+/**
+ * Content size or desktop scale must settle this long before the mirror re-reads its picture request,
+ * so a dragged or typed geometry change renegotiates at most once (the receiver adds its own upgrade delay).
+ */
+export const videoMirrorGeometryRefreshDelayMs = 750;
 
 export function VideosOverlay({ projection, onPlaybackEvent, resolvePlayerUrl = passThrough, playerLoadTimeoutMs = defaultPlayerLoadTimeoutMs, now = Date.now,
   mirror, muted = false, mirrorAudio = true, createMirrorPeerConnection }: VideosOverlayProps) {
@@ -114,8 +119,9 @@ interface MirrorReceiverProps {
  * Shows the desktop primary player's stream. Stays transparent until frames arrive and
  * whenever the mirror is unavailable; reconnects on its own and releases the connection on unmount.
  * It asks only for what it plays: sound only while audible, and a picture no larger than its
- * frame in device pixels. Sound upgrades and connection failures can renegotiate; geometry changes
- * preserve a healthy peer and use current dimensions only when a genuine reconnect occurs.
+ * frame in device pixels. Sound upgrades renegotiate after the receiver's short delay. Content size and
+ * desktop scale changes refresh the request once they settle, so a picture that needs more pixels
+ * reconnects once; moves and smaller pictures keep the healthy peer and its stream.
  */
 function MirrorReceiver({ connector, context, layout, muted, paused, createPeerConnection }: MirrorReceiverProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -127,9 +133,15 @@ function MirrorReceiver({ connector, context, layout, muted, paused, createPeerC
     latest.current = { muted, layout };
     if (videoRef.current !== null) videoRef.current.muted = muted;
   }, [muted, layout]);
-  // Geometry changes are presentation-only. A healthy peer keeps its negotiated picture size until
-  // a genuine reconnect; sound upgrades retain the existing bounded receiver refresh policy.
+  // Sound upgrades use the receiver's bounded refresh directly.
   useEffect(() => { receiverRef.current?.refresh(); }, [muted]);
+  // Size changes are debounced first; refresh reconnects only when the request grew.
+  const { width: contentWidth, height: contentHeight } = layout.content;
+  const desktopScale = layout.desktopPlacement.scale;
+  useEffect(() => {
+    const timer = window.setTimeout(() => receiverRef.current?.refresh(), videoMirrorGeometryRefreshDelayMs);
+    return () => window.clearTimeout(timer);
+  }, [contentWidth, contentHeight, desktopScale]);
   useEffect(() => {
     const receiver = startVideoMirrorReceiver({
       connector,
