@@ -68,6 +68,8 @@ export interface ConfigurationBackupServiceOptions {
   readonly regenerateOutput: (output: ConfigurationBackupOutput, origin: string) => Promise<{ readonly label: string; readonly url: string }>;
   readonly reloadRuntimeConfiguration?: () => void | Promise<void>;
   readonly retireOverlayRecipients?: () => void;
+  /** Re-derives overlay recipient access from the current database; called on every path after retirement. */
+  readonly restoreOverlayRecipients?: () => void;
   readonly assetDurationCatalog?: { replace(records: readonly AssetRecord[]): void };
   readonly twitchCredentials?: {
     findConnectedAccountId(): Promise<string | null>;
@@ -491,6 +493,7 @@ export class ConfigurationBackupService {
     let appConfigUpdated = false;
     let musicSuspended = false;
     let musicIdentityChanged = false;
+    let recipientsRetired = false;
     try {
       for (const asset of request.archive.assets) {
         const bytes = Buffer.from(asset.dataBase64, "base64");
@@ -533,6 +536,7 @@ export class ConfigurationBackupService {
         musicSuspended = true;
         await this.#options.musicRestore.suspend();
       }
+      recipientsRetired = true;
       this.#options.retireOverlayRecipients?.();
       this.#options.snapshotRepository.replace({ tables: upgradedConfiguration.tables, assets: stagedAssets });
       await this.#options.configStore.updateConfig({
@@ -591,6 +595,11 @@ export class ConfigurationBackupService {
         try { await this.#options.musicRestore.resume(); }
         catch (error) { rollbackFailures.push(`Music runtime rollback failed: ${errorMessage(error)}`); }
       }
+      // Never leave every overlay locked out until restart: access follows the rolled-back keys.
+      if (recipientsRetired) {
+        try { this.#options.restoreOverlayRecipients?.(); }
+        catch (error) { rollbackFailures.push(`Overlay access rollback failed: ${errorMessage(error)}`); }
+      }
       const cleanupFailures = settledFailures(
         await Promise.allSettled(stagedAssets.map((record) => this.#options.assetStore.delete(record.storagePath)))
       );
@@ -610,6 +619,8 @@ export class ConfigurationBackupService {
       );
     }
 
+    // Success also re-derives access from the restored keys, independent of runtime reload wiring.
+    this.#options.restoreOverlayRecipients?.();
     const regeneratedOutputs: { label: string; url: string }[] = [];
     const warnings = [...preflight.warnings];
     const oldAssetCleanupFailures = this.#options.deferRetiredAssetCleanup === true ? [] : settledFailures(await Promise.allSettled(

@@ -1559,6 +1559,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       deleteOldSecret: ref => secretStore.deleteSecret(ref)
     },
     retireOverlayRecipients: () => overlayGateway.setRecipientPolicy(() => false),
+    restoreOverlayRecipients: refreshRecipientPolicy,
     runExclusive: (work) => maintenanceGate.runMaintenance(() => localMediaService.maintenance(work))
   });
   const managementOverviewService = new ManagementOverviewService({

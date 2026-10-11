@@ -765,6 +765,45 @@ describe("ConfigurationBackupService", () => {
     expect(steps).toEqual(["replace", "config", "reload", "durations"]);
   });
 
+  it.each([
+    ["replacement throws", { replace: () => { throw new Error("replace failed"); } }],
+    ["config update throws", { updateConfig: async (): Promise<AppConfig> => { throw new Error("config failed"); } }],
+    ["runtime reload throws every time", { reloadRuntimeConfiguration: () => { throw new Error("reload failed"); } }]
+  ] as const)("re-derives overlay access after retiring recipients when %s", async (_name, failure) => {
+    let access: "open" | "retired" = "open";
+    const restores: string[] = [];
+    const { service } = createService({
+      ...failure,
+      retireOverlayRecipients: () => { access = "retired"; },
+      restoreOverlayRecipients: () => { access = "open"; restores.push("restored"); }
+    });
+    const archive = await service.exportArchive();
+    const preflight = await service.preflight(archive);
+    await expect(service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true }))
+      .rejects.toMatchObject({ code: "RESTORE_FAILED" });
+    expect(access).toBe("open");
+    expect(restores).toEqual(["restored"]);
+  });
+
+  it("reports an overlay access rollback failure instead of hiding it, and re-derives access after success", async () => {
+    const failing = createService({
+      replace: () => { throw new Error("replace failed"); },
+      restoreOverlayRecipients: () => { throw new Error("policy unavailable"); }
+    });
+    const archive = await failing.service.exportArchive();
+    const preflight = await failing.service.preflight(archive);
+    await expect(failing.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true }))
+      .rejects.toMatchObject({ code: "RESTORE_FAILED", actionableError: { cause: expect.stringMatching(/Overlay access rollback failed: policy unavailable/u) } });
+
+    const steps: string[] = [];
+    const succeeding = createService({ retireOverlayRecipients: () => steps.push("retire"), restoreOverlayRecipients: () => steps.push("restore") });
+    const okArchive = await succeeding.service.exportArchive();
+    const okPreflight = await succeeding.service.preflight(okArchive);
+    await expect(succeeding.service.restore({ archive: okArchive, archiveId: okPreflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true }))
+      .resolves.toMatchObject({ state: "completed" });
+    expect(steps).toEqual(["retire", "restore"]);
+  });
+
   it("restores the previous app config when runtime reload fails after the restored config is written", async () => {
     let persistedConfig = appConfig;
     const updateConfig = vi.fn(async (patch: AppConfigUpdate): Promise<AppConfig> => {
@@ -1051,6 +1090,8 @@ function createService(overrides: {
   readonly reloadRuntimeConfiguration?: () => void;
   readonly replaceAssetDurations?: (records: readonly AssetRecord[]) => void;
   readonly validate?: ConfigurationSnapshotRepository["validate"];
+  readonly retireOverlayRecipients?: () => void;
+  readonly restoreOverlayRecipients?: () => void;
 } = {}) {
   const replace = overrides.replace ?? replacementMock();
   const options: ConfigurationBackupServiceOptions = {
@@ -1098,7 +1139,9 @@ function createService(overrides: {
       findConnectedAccountId: overrides.findConnectedTwitchAccountId ?? (async () => null),
       deleteTokenSecrets: overrides.deleteTokenSecrets ?? (async () => undefined)
     },
-    ...(overrides.reloadRuntimeConfiguration === undefined ? {} : { reloadRuntimeConfiguration: overrides.reloadRuntimeConfiguration })
+    ...(overrides.reloadRuntimeConfiguration === undefined ? {} : { reloadRuntimeConfiguration: overrides.reloadRuntimeConfiguration }),
+    ...(overrides.retireOverlayRecipients === undefined ? {} : { retireOverlayRecipients: overrides.retireOverlayRecipients }),
+    ...(overrides.restoreOverlayRecipients === undefined ? {} : { restoreOverlayRecipients: overrides.restoreOverlayRecipients })
   };
   return { service: new ConfigurationBackupService(options), replace };
 }
