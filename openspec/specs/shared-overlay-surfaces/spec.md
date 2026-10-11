@@ -137,6 +137,11 @@ Each desktop surface SHALL persist its own ordered list of registered module IDs
 - **THEN** public unified-browser surface rows are removed and cannot be recreated by defaults, registry discovery or management updates
 - **AND** desktop row identity, module order, visibility, opacity, local display binding and automatic-follow consent remain intact
 
+#### Scenario: Old retired URL is still in use
+- **WHEN** an HTTP request or WebSocket upgrade targets a retired module-test or unified overlay route
+- **THEN** the response stays fail-closed and transparent
+- **AND** the authenticated surfaces view reports `retiredOutputAttempts` with only the retired kind, count and last-seen time since start, never key material
+
 #### Scenario: Desktop module capability is independent
 - **WHEN** the registry no longer advertises a public unified browser output
 - **THEN** desktop membership derives from an explicit private/shared-rendering capability and retains all previously eligible modules

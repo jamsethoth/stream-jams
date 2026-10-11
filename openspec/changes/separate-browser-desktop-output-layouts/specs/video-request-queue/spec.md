@@ -64,11 +64,15 @@ Every accepted video submission SHALL enter one ordinary persisted queue through
 ## ADDED Requirements
 
 ### Requirement: Video queue consolidation preserves data without replay
-Upgrade SHALL preserve live queue ordering and migrate legacy pending/active test items to held-for-review ordinary entries with autoplay false, preserving identities, metadata and source order. Historical test entries SHALL remain history with provenance, not a second queue. Migration SHALL clear obsolete test player/run state and invalidate stale revisions/receivers. Invalid capacity or identity conflicts SHALL block migration rather than discard items. Legacy test API routes/payloads SHALL fail with migration guidance; existing live API spellings SHALL address the sole ordinary queue.
+Upgrade SHALL preserve live queue ordering and migrate legacy pending/active test items to held-for-review ordinary entries with autoplay false, preserving identities, metadata and source order. Historical test entries SHALL remain history with provenance, not a second queue. Migration SHALL clear obsolete test player/run state and invalidate stale revisions/receivers. Invalid capacity or identity conflicts SHALL block migration rather than discard items. All pending schema migrations SHALL commit as one transaction, so a blocked upgrade leaves the database at its prior version that the previous app still opens; the refusal SHALL name the single retained rollback copy, which retries replace rather than accumulate. Former test reward mappings SHALL become review-required mappings whose redemptions arrive held for explicit review. Legacy test API routes/payloads SHALL fail with migration guidance; an explicit `purpose=live` SHALL be accepted and ignored; existing live API spellings SHALL address the sole ordinary queue.
 
 #### Scenario: Upgrade has a pending test video
 - **WHEN** old test items are migrated
 - **THEN** they appear after existing ordinary items held for explicit review and do not autoplay or join an existing play-all run
+
+#### Scenario: Upgrade is refused
+- **WHEN** a pending migration refuses the upgrade (for example, over 500 active requests)
+- **THEN** no pending migration is recorded, the previous app opens the database unchanged, and the error names the rollback copy
 
 #### Scenario: Old caller uses the test endpoint
 - **WHEN** a client calls a retired test route or submits a legacy test-purpose payload

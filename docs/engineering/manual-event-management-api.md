@@ -29,7 +29,7 @@ Both return `AlertEditorTestResult`. A completed `queued` result retains existin
 
 Existing `POST /screen-effects/:effectId/test` uses the selected saved variant and retains its live-impact confirmation contract. It now publishes one typed effect-test action and returns the existing admission outcome with `busId` / `eventId`; `status: "pending"` identifies unfinished admission without an occurrence ID or queued claim. Existing disabled-module, asset, output and queue-capacity outcomes remain unchanged.
 
-Malformed or forged input returns 400. Reference validation rejected before publication returns actionable 422 with a diagnostic reference; Alert delivery unavailability retains its existing 409 correction. Revalidation failures during consumer admission preserve existing route error feedback and the journal's failed outcome. Authentication, origin and CSRF failures retain their existing 401/403 responses.
+Malformed or forged input returns 400. Reference validation rejected before publication returns actionable 422 with a diagnostic reference; adapter input rejection returns 422, or 410 only for retired-purpose input such as a Videos `purpose: "test"` payload; Alert delivery unavailability retains its existing 409 correction. Revalidation failures during consumer admission preserve existing route error feedback and the journal's failed outcome. Authentication, origin and CSRF failures retain their existing 401/403 responses.
 
 The response-detail store is bounded to 128 entries and lazily removes entries older than 60 seconds. It holds only short-lived completed HTTP feedback. The journal owns admission outcomes, cursors and restart/replay; this store adds no retry or replay mechanism.
 
