@@ -1,6 +1,6 @@
 # Implementation ledger
 
-Detailed scope, file owners, interfaces, test cases, delivery graph and gates: [agent implementation plan](../../../docs/superpowers/plans/2026-10-10-browser-desktop-output-layouts.md).
+Detailed scope, file owners, interfaces, test cases, delivery graph and gates: [agent implementation plan](../../../../docs/superpowers/plans/2026-10-10-browser-desktop-output-layouts.md).
 
 Specification approved 2026-10-10; implementation is authorized and in progress. These checkboxes are the authoritative progress ledger. A slice completes only with the evidence required by its plan section. Default delivery order is S01 through S11; dependencies below define the permissible alternatives.
 
