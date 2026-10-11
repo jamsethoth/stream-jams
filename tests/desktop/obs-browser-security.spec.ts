@@ -125,13 +125,13 @@ test("actual portable OBS keeps ordinary module geometry local, retired sources 
       expect(new URL(result.url).origin).toBe(runtimeOrigin.origin);
       return { id: targetProfileId === null ? moduleId : `${moduleId}-${targetProfileId}`, moduleId, profile: targetProfileId ?? "", url: result.url, ...dimensions };
     };
-    // Independently specified dimensions: Music max saved view; Timer slots/badge + shadow reserve; Video saved box.
+    // Independently specified dimensions: Music max saved view; Timer slots/badge from the source corner; Video saved box.
     const sources: ObsSource[] = [
       { id: "alerts", moduleId: "alerts", profile: "landscape", url: key.url, width: 1920, height: 1080 },
       await ordinary("music", "landscape", { width: 640, height: 178 }),
       await ordinary("music", "vertical", { width: 640, height: 178 }),
-      await ordinary("timers", "landscape", { width: 416, height: 213 }),
-      await ordinary("timers", "vertical", { width: 416, height: 213 }),
+      await ordinary("timers", "landscape", { width: 320, height: 117 }),
+      await ordinary("timers", "vertical", { width: 320, height: 117 }),
       await ordinary("videos", null, { width: 640, height: 460 }),
       ...retired.map(output => ({ id: output.id, moduleId: output.moduleId ?? "unified", profile: output.profile ?? "", width: 640, height: 460,
         url: `${runtime.runtime.url}/overlay/${output.scope === "unified" ? "unified" : `modules/${output.moduleId}`}/${output.purpose}/ovl_owned_${output.id}${output.profile === null ? "" : `?profile=${output.profile}`}` }))
@@ -256,7 +256,7 @@ test("actual portable OBS keeps ordinary module geometry local, retired sources 
           const digest = await crypto.subtle.digest("SHA-256", data);
           return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
         };
-        const probe = moduleId === "timers" ? { x: 68, y: 60 } : moduleId === "videos" ? { x: Math.floor(width / 2), y: height - 12 } : { x: 20, y: 20 };
+        const probe = moduleId === "timers" ? { x: 20, y: 20 } : moduleId === "videos" ? { x: Math.floor(width / 2), y: height - 12 } : { x: 20, y: 20 };
         return { ...viewport, pink, coveredPixels, outsidePixels,
           bounds: coveredPixels === 0 ? null : { left, top, right, bottom },
           anchorCovered: probe.x < viewport.width && probe.y < viewport.height && covered((probe.y * viewport.width + probe.x) * 4),
@@ -350,7 +350,7 @@ test("actual portable OBS keeps ordinary module geometry local, retired sources 
         timers = { ...timers, profiles: { ...timers.profiles, [profile]: { ...timers.profiles[profile],
           appearance: { ...timers.profiles[profile].appearance, cardWidthPx: 360 } } } };
         await api("/overlay-modules/timers/config", "PUT", { enabled: true, config: timers });
-        return { width: 456, height: 213 };
+        return { width: 360, height: 117 };
       }
       videos = { ...videos, layout: { ...videos.layout, content: { width: 480, height: 320 } } };
       await api("/overlay-modules/videos/config", "PUT", { enabled: true, config: videos });
@@ -375,7 +375,7 @@ test("actual portable OBS keeps ordinary module geometry local, retired sources 
         expect(presentation).toMatchObject({ kind: "music-widget", widget: { layout: { x: 0, y: 0 } } });
         if (presentation?.kind === "music-widget") expect(presentation.widget.renderScale ?? 1).toBe(1);
       }
-      else if (source.moduleId === "timers") expect(presentation).toMatchObject({ kind: "timer-stack", stack: { region: { layout: { x: 48, y: 40 } } } });
+      else if (source.moduleId === "timers") expect(presentation).toMatchObject({ kind: "timer-stack", stack: { region: { layout: { x: 0, y: 0 } } } });
       else expect(presentation).toMatchObject({ kind: "videos", videos: { layout: { desktopPlacement: { x: 0, y: 0, scale: 1 } } } });
       expect((await stable(`${source.id}-desktop-save`)).contentHash).toBe(baseline.contentHash);
       expect(await connectedIds(source), "Saving desktop placement keeps the existing ordinary recipient").toEqual([clientBefore]);
