@@ -240,8 +240,8 @@ export type { TimedMediaElement } from "./audio/prepare-timed-media.js";
 export { desktopModuleSyncSchema, desktopVisualInstructionSchema, desktopVisualAssetSchema, desktopVisualBatchSchema, desktopVisualCommandSchema, desktopVisualReplySchema, desktopVisualRendererRequestSchema, desktopVisualRendererReplySchema, privateDesktopVisualBatchSchema, privateDesktopModuleSyncSchema, privateDesktopVisualCommandSchema, privateDesktopMusicArtworkUrl, visualMediaType } from "./overlays/desktop-visual-transport.js";
 export type { DesktopModuleSync, DesktopVisualBatch, DesktopVisualAsset, DesktopVisualCommand, DesktopVisualReply, PrivateDesktopVisualBatch, PrivateDesktopModuleSync, PrivateDesktopMusicArtwork, PrivateDesktopVisualCommand, DesktopOverlayTransport, DesktopVisualRendererRequest, DesktopVisualRendererReply } from "./overlays/desktop-visual-transport.js";
 export { VisualRecipientLedger } from "./overlays/visual-recipient-ledger.js";
-export { selectedDesktopDisplaySchema, desktopOverlayDiagnosticSchema, desktopOverlayStatusSchema, surfaceSettingsViewSchema } from "./overlays/desktop-overlay-status.js";
-export type { SelectedDesktopDisplay, DesktopOverlayDiagnostic, DesktopOverlayStatus, SurfaceSettingsView, DesktopBindingState } from "./overlays/desktop-overlay-status.js";
+export { selectedDesktopDisplaySchema, desktopOverlayDiagnosticSchema, desktopOverlayStatusSchema, retiredOutputAttemptSchema, surfaceSettingsViewSchema } from "./overlays/desktop-overlay-status.js";
+export type { SelectedDesktopDisplay, DesktopOverlayDiagnostic, DesktopOverlayStatus, RetiredOutputAttempt, SurfaceSettingsView, DesktopBindingState } from "./overlays/desktop-overlay-status.js";
 export type { AlertsOverlayModuleConfig } from "./overlay-modules/module-definition.js";
 export { alertsOverlayModuleConfigSchema, alertsOverlayModuleDefinition } from "./overlay-modules/module-definition.js";
 export type { OverlayModuleRegistry } from "./overlay-modules/module-registry.js";
@@ -406,4 +406,5 @@ export { manualEventSubmissionSchema, manualEventActionSchema, manualEventAction
 export type * from "./event-bus/manual-submission.js";
 
 export { outputCanvasSchema, sceneOutputCanvas, moduleOutputCanvas, type OutputCanvas } from "./overlay-modules/output-canvas.js";
-export { isOrdinaryOverlayOutput } from "./overlays/public-output.js";
+export { classifyRetiredOverlayOutput, isOrdinaryOverlayOutput } from "./overlays/public-output.js";
+export type { RetiredOverlayOutputKind } from "./overlays/public-output.js";

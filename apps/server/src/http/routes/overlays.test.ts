@@ -11,6 +11,7 @@ import type {
 import { describe, expect, it } from "vitest";
 import { createOverlayRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { OverlayGateway } from "../../websocket/overlay-gateway.js";
+import { RetiredOutputAttemptTracker } from "../../modules/overlays/retired-output-attempts.js";
 
 describe("overlay routes", () => {
   it("requires exact ordinary Music profile keys and denies historical retired routes", async () => {
@@ -202,6 +203,42 @@ describe("overlay routes", () => {
       expect(shell.body).toContain("background:transparent");
       expect(shell.body).not.toMatch(/script|root|management|ovl_/u);
     }
+  });
+
+  it("counts retired test/unified URL use by kind only while responses stay transparent and fail closed", async () => {
+    const access = createAccessService(["ovl_liveKey", "ovl_retiredTest", "ovl_retiredUnified"]);
+    const live = await access.createKey({ overlayId: "default", moduleId: "music", purpose: "live", scope: "module", targetProfileId: "vertical" });
+    const test = await access.seedHistoricalKey({ overlayId: "default", moduleId: "music", purpose: "test", scope: "module", targetProfileId: "landscape" });
+    const unified = await access.seedHistoricalKey({ overlayId: "default", moduleId: null, purpose: "live", scope: "unified" });
+    const tracker = new RetiredOutputAttemptTracker(() => new Date("2026-10-11T12:00:00.000Z"));
+    const overlayGateway = new OverlayGateway({ overlayAccessService: access, generateClientId: () => "client-retired", clock: () => new Date("2026-10-11T12:00:00.000Z") });
+    const app = createServerApp({ metadata: { appName: "stream-jams", version: "1.2.3" }, overlayAccessService: access, overlayGateway,
+      overlayCompositionService: new RecordingOverlayCompositionService(), overlayModuleRegistry: createRegistry(["music"]), webShellRenderer: createTestWebShellRenderer(),
+      recordRetiredOutputAttempt: kind => tracker.record(kind) });
+    try {
+      expect((await app.inject({ url: `/overlay/modules/music/live/${live.rawKey}/composition?profile=vertical` })).statusCode).toBe(200);
+      expect((await app.inject({ url: "/overlay/modules/music/live" })).statusCode).toBe(401);
+      expect(tracker.list()).toEqual([]);
+      const shell = await app.inject({ url: `/overlay/modules/music/test/${test.rawKey}?profile=landscape` });
+      expect(shell.statusCode).toBe(401);
+      expect(shell.body).toContain("background:transparent");
+      expect((await app.inject({ url: `/overlay/modules/music/test/${test.rawKey}/composition?profile=landscape` })).statusCode).toBe(401);
+      expect((await app.inject({ url: "/overlay/modules/music/test" })).statusCode).toBe(401);
+      for (const url of [`/overlay/unified/live/${unified.rawKey}`, "/overlay/unified/test", `/overlay/unified/live/${unified.rawKey}/composition`]) {
+        expect((await app.inject({ url })).statusCode).toBe(401);
+      }
+      await app.ready();
+      const closed = new Promise<number>(resolve => {
+        void app.injectWS(`/overlay/ws/unified/live/${unified.rawKey}`, {}, { onInit(webSocket) { webSocket.once("close", code => resolve(code)); } });
+      });
+      expect(await closed).not.toBe(1000);
+      expect(overlayGateway.clients).toEqual([]);
+      expect(tracker.list()).toEqual([
+        { kind: "module-test", lastSeenAt: "2026-10-11T12:00:00.000Z", count: 3 },
+        { kind: "unified", lastSeenAt: "2026-10-11T12:00:00.000Z", count: 4 }
+      ]);
+      expect(JSON.stringify(tracker.list())).not.toMatch(/ovl_|music|overlay\//u);
+    } finally { await app.close(); }
   });
 
   it("registers authenticated WebSocket overlay clients", async () => {

@@ -1,5 +1,6 @@
 import { AutomationControlService } from "../modules/automation/automation-control-service.js";
 import { cleanupRetiredOutputSecrets } from "../modules/overlays/retired-output-secrets.js";
+import { RetiredOutputAttemptTracker } from "../modules/overlays/retired-output-attempts.js";
 import { isOrdinaryOverlayOutput } from "@stream-jams/core";
 import { AutomationCredentialService } from "../modules/automation/automation-credential-service.js";
 import { SqliteAutomationGrantRepository } from "../modules/automation/sqlite-automation-grant-repository.js";
@@ -630,6 +631,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     modulePaused: initialEffectModuleSettings.paused
   });
   const maintenanceGate = new RuntimeMaintenanceGate();
+  const retiredOutputAttempts = new RetiredOutputAttemptTracker();
   function refreshRecipientPolicy(): void {
     overlayGateway.setRecipientPolicy(client => {
       const row = overlayKeyRepository.findActiveRecipientIdentity(client.keyId);
@@ -1785,6 +1787,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   }
   const surfaceSettingsService = new SurfaceSettingsService({
     surfaces: surfaceRepository,
+    retiredOutputAttempts: () => retiredOutputAttempts.list(),
     ...(options.desktopOverlayTransport === undefined ? {} : { host: {
       configure: config => desktopVisualSink!.configure(config),
       retry: () => options.desktopOverlayTransport!.retry(),
@@ -1936,6 +1939,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     overlayCompositionService,
     overlayOutputManagementService,
     overlayGateway,
+    recordRetiredOutputAttempt: kind => retiredOutputAttempts.record(kind),
     alertService,
     submitAlertSimulation: input => maintenanceGate.runIntake(() => manualEventService.submit(input, { channel: "management" })),
     assetRepository,

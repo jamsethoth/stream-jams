@@ -1,6 +1,8 @@
 import fastifyWebsocket from "@fastify/websocket";
 import {
+  classifyRetiredOverlayOutput,
   overlayCompositionSchema,
+  type RetiredOverlayOutputKind,
   type OverlayAccessService,
   type OverlayCompositionService,
   type OverlayModuleRegistry,
@@ -25,19 +27,26 @@ export interface OverlayRouteDependencies {
   readonly overlayModuleRegistry: Pick<OverlayModuleRegistry, "listModules">;
   readonly webShellRenderer: Pick<WebShellRenderer, "renderOverlayShell">;
   readonly overlayGateway?: OverlayGateway;
+  /** Bounded, redacted visibility for old test/unified URLs; never changes the fail-closed response. */
+  readonly recordRetiredOutputAttempt?: ((kind: RetiredOverlayOutputKind) => void) | undefined;
 }
 
 export function registerOverlayRoutes(app: FastifyInstance, dependencies: OverlayRouteDependencies): void {
+  const record = dependencies.recordRetiredOutputAttempt;
+  const retiredModule = { classifyRetiredRoute: classifyRetiredModuleRoute, onRetiredOutput: record };
   const shellPreHandler = createOverlayAuthPreHandler({
-    overlayAccessService: dependencies.overlayAccessService, resolveAccessRequest: resolveModuleOverlayAccessRequest, shell: true
+    overlayAccessService: dependencies.overlayAccessService, resolveAccessRequest: resolveModuleOverlayAccessRequest, shell: true, ...retiredModule
   });
   const modulePreHandler = createOverlayAuthPreHandler({
     overlayAccessService: dependencies.overlayAccessService,
-    resolveAccessRequest: resolveModuleOverlayAccessRequest
+    resolveAccessRequest: resolveModuleOverlayAccessRequest,
+    ...retiredModule
   });
   const unifiedPreHandler = createOverlayAuthPreHandler({
     overlayAccessService: dependencies.overlayAccessService,
-    resolveAccessRequest: resolveUnifiedOverlayAccessRequest
+    resolveAccessRequest: resolveUnifiedOverlayAccessRequest,
+    classifyRetiredRoute: () => "unified",
+    onRetiredOutput: record
   });
 
   app.get("/overlay/modules/:moduleId/:purpose", { preHandler: shellPreHandler }, async (_request, reply) =>
@@ -68,8 +77,8 @@ export function registerOverlayRoutes(app: FastifyInstance, dependencies: Overla
   );
 
   // Retired navigation gets no executable shell or visible diagnostic document.
-  app.get("/overlay/unified/:purpose", async (_request, reply) => sendTransparentOverlayRejection(reply));
-  app.get("/overlay/unified/:purpose/:overlayKey", async (_request, reply) => sendTransparentOverlayRejection(reply));
+  app.get("/overlay/unified/:purpose", async (_request, reply) => { record?.("unified"); return sendTransparentOverlayRejection(reply); });
+  app.get("/overlay/unified/:purpose/:overlayKey", async (_request, reply) => { record?.("unified"); return sendTransparentOverlayRejection(reply); });
   app.get(
     "/overlay/unified/:purpose/:overlayKey/composition",
     { preHandler: unifiedPreHandler },
@@ -78,15 +87,22 @@ export function registerOverlayRoutes(app: FastifyInstance, dependencies: Overla
 
   if (dependencies.overlayGateway !== undefined) {
     app.register(fastifyWebsocket);
-    app.register(async (webSocketApp) => registerOverlayWebSocketRoutes(webSocketApp, dependencies.overlayGateway!));
+    app.register(async (webSocketApp) => registerOverlayWebSocketRoutes(webSocketApp, dependencies.overlayGateway!, record));
   }
 }
 
-function registerOverlayWebSocketRoutes(app: FastifyInstance, overlayGateway: OverlayGateway): void {
+function classifyRetiredModuleRoute(request: FastifyRequest): RetiredOverlayOutputKind | null {
+  return classifyRetiredOverlayOutput({ scope: "module", purpose: readModuleOverlayParams(request.params).purpose });
+}
+
+function registerOverlayWebSocketRoutes(app: FastifyInstance, overlayGateway: OverlayGateway, record: OverlayRouteDependencies["recordRetiredOutputAttempt"]): void {
   app.get("/overlay/ws/modules/:moduleId/:purpose/:overlayKey", { websocket: true }, (socket, request) => {
+    const retired = classifyRetiredModuleRoute(request);
+    if (retired !== null) record?.(retired);
     registerWebSocketClient(overlayGateway, socket, resolveModuleOverlayAccessRequest(request), readUserAgent(request));
   });
   app.get("/overlay/ws/unified/:purpose/:overlayKey", { websocket: true }, (socket, request) => {
+    record?.("unified");
     registerWebSocketClient(overlayGateway, socket, resolveUnifiedOverlayAccessRequest(request), readUserAgent(request));
   });
 }

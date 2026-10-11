@@ -12,3 +12,12 @@ export function isOrdinaryOverlayOutput(input: {
   }
   return (input.moduleId === "videos" || input.moduleId === "screen-effects") && profile === null;
 }
+
+/** Retired public output families whose old URLs still reach the local service. */
+export type RetiredOverlayOutputKind = "module-test" | "unified";
+
+/** Classifies a request for a retired test or unified output; ordinary or merely malformed requests return null. */
+export function classifyRetiredOverlayOutput(input: { readonly scope: unknown; readonly purpose: unknown }): RetiredOverlayOutputKind | null {
+  if (input.scope === "unified") return "unified";
+  return input.purpose === "test" ? "module-test" : null;
+}

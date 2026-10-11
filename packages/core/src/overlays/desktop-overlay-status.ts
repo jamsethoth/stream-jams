@@ -35,10 +35,19 @@ export const desktopOverlayStatusSchema = z.object({
   diagnostic: desktopOverlayDiagnosticSchema.nullable().optional()
 }).strict();
 export type DesktopOverlayStatus = z.infer<typeof desktopOverlayStatusSchema>;
+/** Redacted, bounded evidence that an old test/unified URL is still in use: no key, path or client identity. */
+export const retiredOutputAttemptSchema = z.object({
+  kind: z.enum(["module-test", "unified"]),
+  lastSeenAt: z.iso.datetime(),
+  count: z.number().int().positive().safe()
+}).strict();
+export type RetiredOutputAttempt = z.infer<typeof retiredOutputAttemptSchema>;
 export const surfaceSettingsViewSchema = z.object({
   surfaces: z.array(surfaceConfigurationSchema),
   desktop: desktopOverlayStatusSchema,
-  desktopBindingState: z.enum(["not-needed", "disabled", "no-match", "ambiguous", "rebound"]).default("not-needed")
+  desktopBindingState: z.enum(["not-needed", "disabled", "no-match", "ambiguous", "rebound"]).default("not-needed"),
+  /** Since this app process started; one row per retired kind at most. Omitted by older servers. */
+  retiredOutputAttempts: z.array(retiredOutputAttemptSchema).max(2).optional()
 }).strict();
 export type SurfaceSettingsView = z.infer<typeof surfaceSettingsViewSchema>;
 export type DesktopBindingState = AutomaticBindingState;

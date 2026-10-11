@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { desktopOverlayStatusSchema, findExactUniqueLabelMatch, surfaceConfigurationSchema, surfaceConfigurationUpdateSchema,
   surfaceSettingsViewSchema, validateSurfaceOrder, type AutomaticBindingState, type DesktopOverlayStatus,
-  type DesktopOverlayTransport, type Logger, type SurfaceConfiguration, type SurfaceRepository, type SurfaceSettingsView } from "@stream-jams/core";
+  type DesktopOverlayTransport, type Logger, type RetiredOutputAttempt, type SurfaceConfiguration, type SurfaceRepository, type SurfaceSettingsView } from "@stream-jams/core";
 
 export class SurfaceSettingsError extends Error {
   constructor(readonly statusCode: number, readonly code: string, message: string, options?: ErrorOptions) { super(message, options); }
@@ -15,6 +15,8 @@ export interface SurfaceSettingsServiceDependencies {
   runMutation<T>(work: () => Promise<T>): Promise<T>;
   logger?: Logger;
   generateReferenceId?: () => string;
+  /** Redacted counts of old test/unified URL use since start, shown so operators can replace OBS sources. */
+  retiredOutputAttempts?: () => readonly RetiredOutputAttempt[];
 }
 
 export class SurfaceSettingsService {
@@ -42,7 +44,8 @@ export class SurfaceSettingsService {
     return surfaceSettingsViewSchema.parse({
       surfaces,
       desktop: this.#applicationFailure === null ? desktop : { ...desktop, state: "failed", message: this.#applicationFailure },
-      desktopBindingState: this.#desktopBindingState
+      desktopBindingState: this.#desktopBindingState,
+      retiredOutputAttempts: this.dependencies.retiredOutputAttempts?.() ?? []
     });
   }
 

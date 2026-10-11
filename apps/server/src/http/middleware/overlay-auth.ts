@@ -2,7 +2,8 @@ import { isOrdinaryOverlayOutput } from "@stream-jams/core";
 import type {
   OverlayAccessService,
   OverlayRouteAccessRequest,
-  OverlayTargetProfileId
+  OverlayTargetProfileId,
+  RetiredOverlayOutputKind
 } from "@stream-jams/core";
 import type { FastifyRequest, preHandlerHookHandler } from "fastify";
 import { sendHttpError } from "../errors.js";
@@ -11,6 +12,10 @@ export interface OverlayAuthPreHandlerOptions {
   readonly overlayAccessService: Pick<OverlayAccessService, "verifyRouteAccess">;
   readonly resolveAccessRequest: (request: FastifyRequest) => OverlayRouteAccessRequest | null;
   readonly shell?: boolean;
+  /** Names the retired test/unified family a request's route targets, whether or not its key is valid. */
+  readonly classifyRetiredRoute?: (request: FastifyRequest) => RetiredOverlayOutputKind | null;
+  /** Records only the bounded retired kind; the response stays fail-closed and transparent. */
+  readonly onRetiredOutput?: ((kind: RetiredOverlayOutputKind) => void) | undefined;
 }
 
 export function sendTransparentOverlayRejection(reply: import("fastify").FastifyReply) {
@@ -21,6 +26,8 @@ export function sendTransparentOverlayRejection(reply: import("fastify").Fastify
 
 export function createOverlayAuthPreHandler(options: OverlayAuthPreHandlerOptions): preHandlerHookHandler {
   return async (request, reply) => {
+    const retired = options.classifyRetiredRoute?.(request) ?? null;
+    if (retired !== null) options.onRetiredOutput?.(retired);
     const accessRequest = options.resolveAccessRequest(request);
     if (accessRequest === null || accessRequest.rawKey.trim() === "") {
       if (options.shell) return sendTransparentOverlayRejection(reply);

@@ -247,3 +247,15 @@ it("rejects retired browser settings before persistence, broadcast or desktop ho
   expect(surfaces.save).not.toHaveBeenCalled(); expect(changed).not.toHaveBeenCalled(); expect(host.configure).not.toHaveBeenCalled();
   expect((await service.load()).desktop.state).toBe("disabled");
 });
+
+it("exposes redacted retired output attempts in the authenticated surfaces view and an empty list without a tracker", async () => {
+  const { surfaces } = fixture();
+  const attempts = [{ kind: "unified" as const, lastSeenAt: "2026-10-11T12:00:00.000Z", count: 2 }];
+  const service = new SurfaceSettingsService({ surfaces, moduleIds: () => ["alerts"], changed: async () => {}, runMutation: async work => work(), retiredOutputAttempts: () => attempts });
+  expect((await service.load()).retiredOutputAttempts).toEqual(attempts);
+  const without = new SurfaceSettingsService({ surfaces, moduleIds: () => ["alerts"], changed: async () => {}, runMutation: async work => work() });
+  expect((await without.load()).retiredOutputAttempts).toEqual([]);
+  const invalid = new SurfaceSettingsService({ surfaces, moduleIds: () => ["alerts"], changed: async () => {}, runMutation: async work => work(),
+    retiredOutputAttempts: () => [{ kind: "unified", lastSeenAt: "2026-10-11T12:00:00.000Z", count: 1, keyId: "leak" } as never] });
+  await expect(invalid.load()).rejects.toThrow();
+});
