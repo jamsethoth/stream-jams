@@ -7,7 +7,7 @@ A trigger loses its source only when no remaining registration can deliver it:
 | Trigger | Delivered by |
 | --- | --- |
 | Selector with `sources: ["twitch"]` | a Twitch registration |
-| Selector with `sources: ["streamerbot"]`, any `external` match, Videos Streamer.bot intake | a Streamer.bot registration |
+| Selector with `sources: ["streamerbot"]`, any `external` match, alert rule with an `ingestProvider` condition, Videos Streamer.bot intake | a Streamer.bot registration |
 | Selector with `sources: "any"` (canonical or Twitch reward), alert rules by event type | any event source |
 
 Deleting a source suspends only triggers whose row above has no other registration left. Deleting one of two Streamer.bot registrations suspends nothing.
@@ -21,6 +21,10 @@ Each unit that owns a trigger gets a persisted `sourceSuspension` (`{ reason: "s
 - Videos: on each reward mapping and on the Streamer.bot intake setting.
 
 Matching skips suspended triggers. The marker is cleared only by the user (re-enable, or editing the trigger).
+
+## Confirmation
+
+Delete follows the UX spec's confirmation pattern (`docs/design/ui-refactor-mvp-ux-spec.md`, Confirmation Pattern): action, affected triggers, consequence ("Source removed") and recovery (re-enable once a delivering source exists). Deleting the source in use, or one whose deletion suspends triggers, needs typed confirmation, matching "deleting an in-use asset"; other deletes use normal confirmation. A failed edit or replace validation stays in the dialog with a reference ID, as provider setup does.
 
 ## Edit
 

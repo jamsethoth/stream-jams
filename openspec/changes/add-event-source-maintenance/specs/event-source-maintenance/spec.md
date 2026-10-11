@@ -20,6 +20,10 @@ Management SHALL show which triggers would lose their only delivering source bef
 - **THEN** Streamer.bot-only triggers are suspended and shown as "Source removed"
 - **AND** triggers with `any` source keep running while another event source remains
 
+#### Scenario: Deleting the source in use
+- **WHEN** the user deletes the active source, or a source whose deletion would suspend triggers
+- **THEN** the confirmation lists the affected triggers, the consequence and the recovery path, and requires typed confirmation
+
 #### Scenario: Deleting one of two sources of a kind
 - **WHEN** another registration of the same kind remains
 - **THEN** no trigger is suspended

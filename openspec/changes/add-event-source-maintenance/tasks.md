@@ -11,7 +11,7 @@
 
 ## 2. Management
 
-- [ ] 2.1 Edit and Delete actions on event sources, with the removal impact confirmation.
+- [ ] 2.1 Edit and Delete actions on event sources, with the removal impact confirmation (typed when the source is in use or triggers would be suspended).
 - [ ] 2.2 Replace action reusing the setup dialog, with the replace impact step.
 - [ ] 2.3 Suspended-trigger list with one-click re-enable once a delivering source exists.
 - [ ] 2.4 "Reward unavailable" with the reward picker in Screen Effects, timers and Videos.

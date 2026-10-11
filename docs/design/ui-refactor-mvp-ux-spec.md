@@ -218,6 +218,9 @@ Provider activation:
 - Deactivating the active event source may leave no event source active. Its registration, settings, and alert mappings remain saved.
 - Deactivation stops routing new events and disconnects that source's live runtime while preserving registration, settings, and last validation state.
 - TTS providers retain the active-provider switching flow; deactivation is not exposed in the TTS provider list.
+- Event-source details expose `Edit`, `Replace` and `Delete` ([add-event-source-maintenance](../../openspec/changes/add-event-source-maintenance/proposal.md)). `Edit` reuses the setup wizard's validation; a failed validation stays in the dialog with the error, next step and reference ID, and nothing is saved.
+- `Delete` uses the confirmation pattern: the source name, the triggers that would be suspended, that they show `Source removed`, and that re-enabling is offered once a delivering source is registered again. Deleting the source in use, or one whose deletion would suspend triggers, requires typed confirmation; other deletes use normal confirmation.
+- `Replace` reuses the setup wizard for the same kind and shows what will keep matching and what will not before the confirmation step.
 
 Event-source rows do not show a setup state because provider setup must validate before registration and partial registrations are not persisted in MVP.
 Event-source rows show:
