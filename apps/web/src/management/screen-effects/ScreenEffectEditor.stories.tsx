@@ -296,6 +296,7 @@ export const LiveTestConfirmation: Story = {
     await expect(dialog).toHaveTextContent("OBS Browser Source visual");
     await expect(dialog).toHaveTextContent("OBS Browser Source audio");
     await expect(dialog).toHaveTextContent("Private headphones");
+    await expect(dialog).toHaveTextContent("Plays on your live sources and OBS.");
   }
 };
 

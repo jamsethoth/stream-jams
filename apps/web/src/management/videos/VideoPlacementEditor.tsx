@@ -1,15 +1,27 @@
 import { Button, Checkbox, TextInput } from "@mantine/core";
 import { createDefaultVideosLayout, isValidVideosLayout, videosCanvas, videosLayoutLimits, type VideosLayout } from "@stream-jams/core";
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type KeyboardEvent, type PointerEvent, type Ref } from "react";
 import { VideoBox, VideoCaption, videoFrameStyle } from "../../overlay/components/OverlaySurface.js";
 import { snapEditorRect, type SnapGuide } from "../editor/snapping.js";
 import "./video-placement.css";
+
+export interface VideoPlacementEditorHandle {
+  /** Moves focus to the first number field whose visible draft is invalid and shows its correction. */
+  focusFirstInvalid(): void;
+}
 
 export interface VideoPlacementEditorProps {
   readonly value: VideosLayout;
   readonly onChange: (layout: VideosLayout) => void;
   readonly disabled?: boolean | undefined;
+  /** Reports whether any number field holds an invalid draft that was not committed into `value`. */
+  readonly onInvalidDraftChange?: ((invalid: boolean) => void) | undefined;
+  readonly ref?: Ref<VideoPlacementEditorHandle> | undefined;
 }
+
+type FieldId = "width" | "height" | "x" | "y" | "scale";
+const fieldOrder: readonly FieldId[] = ["width", "height", "x", "y", "scale"];
+interface FieldRegistration { readonly invalid: boolean; readonly reveal: () => void }
 
 type Gesture = { readonly pointerId: number; readonly mode: "move" | "resize"; readonly clientX: number; readonly clientY: number; readonly factor: number; readonly start: VideosLayout };
 
@@ -35,8 +47,20 @@ function scaleLayout(start: VideosLayout, scale: number): VideosLayout {
  * Places the Videos box on the 1920 x 1080 canvas with the shared editor snapping. Edits change the
  * page draft only; Save Videos settings applies them to browser sources, the desktop overlay and the mirror.
  */
-export function VideoPlacementEditor({ value, onChange, disabled = false }: VideoPlacementEditorProps) {
+export function VideoPlacementEditor({ value, onChange, disabled = false, onInvalidDraftChange, ref }: VideoPlacementEditorProps) {
   const viewport = useRef<HTMLDivElement>(null);
+  const fields = useRef(new Map<FieldId, FieldRegistration>());
+  const reportedInvalid = useRef(false);
+  const invalidListener = useRef(onInvalidDraftChange);
+  useEffect(() => { invalidListener.current = onInvalidDraftChange; }, [onInvalidDraftChange]);
+  const register = useCallback((id: FieldId, registration: FieldRegistration | null) => {
+    if (registration === null) fields.current.delete(id); else fields.current.set(id, registration);
+    const invalid = [...fields.current.values()].some(field => field.invalid);
+    if (invalid !== reportedInvalid.current) { reportedInvalid.current = invalid; invalidListener.current?.(invalid); }
+  }, []);
+  useImperativeHandle(ref, () => ({
+    focusFirstInvalid() { fieldOrder.map(id => fields.current.get(id)).find(field => field?.invalid)?.reveal(); }
+  }), []);
   const gesture = useRef<Gesture | null>(null);
   const [availableWidth, setAvailableWidth] = useState(800);
   const [grid, setGrid] = useState(true);
@@ -141,14 +165,14 @@ export function VideoPlacementEditor({ value, onChange, disabled = false }: Vide
     </div>
     <fieldset className="video-placement__fields" disabled={disabled}>
       <legend>Browser content size (CSS pixels)</legend>
-      <PlacementNumberField label="Video content width (px)" value={value.content.width} min={minWidth} max={bounds.width} whole onCommit={width => onChange({ ...value, content: { ...value.content, width } })} />
-      <PlacementNumberField label="Video content height (px)" value={value.content.height} min={minHeight} max={bounds.height} whole onCommit={height => onChange({ ...value, content: { ...value.content, height } })} />
+      <PlacementNumberField id="width" register={register} label="Video content width (px)" value={value.content.width} min={minWidth} max={bounds.width} whole onCommit={width => onChange({ ...value, content: { ...value.content, width } })} />
+      <PlacementNumberField id="height" register={register} label="Video content height (px)" value={value.content.height} min={minHeight} max={bounds.height} whole onCommit={height => onChange({ ...value, content: { ...value.content, height } })} />
     </fieldset>
     <fieldset className="video-placement__fields" disabled={disabled}>
       <legend>Desktop placement (1920 x 1080 scene)</legend>
-      <PlacementNumberField label="Desktop Video X (px)" value={value.desktopPlacement.x} min={0} max={Math.max(0, bounds.width - box.width)} onCommit={x => onChange(moveLayout(value, x, box.y))} />
-      <PlacementNumberField label="Desktop Video Y (px)" value={value.desktopPlacement.y} min={0} max={Math.max(0, bounds.height - box.height)} onCommit={y => onChange(moveLayout(value, box.x, y))} />
-      <PlacementNumberField label="Desktop Video scale" value={value.desktopPlacement.scale} min={Number.EPSILON} max={Math.min((bounds.width - box.x) / value.content.width, (bounds.height - box.y) / value.content.height)}
+      <PlacementNumberField id="x" register={register} label="Desktop Video X (px)" value={value.desktopPlacement.x} min={0} max={Math.max(0, bounds.width - box.width)} onCommit={x => onChange(moveLayout(value, x, box.y))} />
+      <PlacementNumberField id="y" register={register} label="Desktop Video Y (px)" value={value.desktopPlacement.y} min={0} max={Math.max(0, bounds.height - box.height)} onCommit={y => onChange(moveLayout(value, box.x, y))} />
+      <PlacementNumberField id="scale" register={register} label="Desktop Video scale" value={value.desktopPlacement.scale} min={Number.EPSILON} max={Math.min((bounds.width - box.x) / value.content.width, (bounds.height - box.y) / value.content.height)}
         onCommit={next => onChange({ ...value, desktopPlacement: { ...value.desktopPlacement, scale: next } })} />
     </fieldset>
     {isValidVideosLayout(value) ? null : <p className="videos-settings__error" role="alert">Keep content between 240 x 180 and 1920 x 1080 px, and reduce desktop scale or move the box to fit the scene before saving.</p>}
@@ -169,15 +193,24 @@ export function VideoPlacementEditor({ value, onChange, disabled = false }: Vide
  * Whole-pixel field that commits on blur or Enter, as the Music placement fields do; an out-of-range
  * draft shows its correction and is never applied. Kept local so this lazy page adds no shared chunk.
  */
-function PlacementNumberField({ label, value, min, max, whole = false, onCommit }: { readonly label: string; readonly value: number; readonly min: number; readonly max: number; readonly whole?: boolean; readonly onCommit: (value: number) => void }) {
+function PlacementNumberField({ id, register, label, value, min, max, whole = false, onCommit }: {
+  readonly id: FieldId; readonly register: (id: FieldId, registration: FieldRegistration | null) => void;
+  readonly label: string; readonly value: number; readonly min: number; readonly max: number; readonly whole?: boolean; readonly onCommit: (value: number) => void;
+}) {
   const [draft, setDraft] = useState(String(value));
   const [error, setError] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
   useEffect(() => { setDraft(String(value)); setError(false); }, [value]);
+  const next = Number(draft);
+  const invalid = draft.trim() === "" || !Number.isFinite(next) || (whole && !Number.isInteger(next)) || next < min || next > max;
+  useEffect(() => {
+    register(id, { invalid, reveal: () => { setError(true); input.current?.focus(); } });
+  }, [id, invalid, register]);
+  useEffect(() => () => register(id, null), [id, register]);
   const commit = () => {
-    const next = Number(draft);
-    if (draft.trim() === "" || !Number.isFinite(next) || (whole && !Number.isInteger(next)) || next < min || next > max) { setError(true); return; }
+    if (invalid) { setError(true); return; }
     setError(false); onCommit(next);
   };
-  return <TextInput label={label} error={error ? `Enter ${whole ? "a whole number" : "a number"} from ${min} to ${max}.` : false} errorProps={{ role: "alert" }} max={max} min={min} required withAsterisk={false} step={whole ? 1 : "any"} type="number" value={draft}
+  return <TextInput ref={input} label={label} error={error ? `Enter ${whole ? "a whole number" : "a number"} from ${min} to ${max}.` : false} errorProps={{ role: "alert" }} max={max} min={min} required withAsterisk={false} step={whole ? 1 : "any"} type="number" value={draft}
     onBlur={commit} onChange={event => { setDraft(event.currentTarget.value); setError(false); }} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); } }} />;
 }

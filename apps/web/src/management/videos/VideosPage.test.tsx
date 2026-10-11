@@ -1,4 +1,4 @@
-import { cleanup, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createStoryAudioApi } from "../../stories/audio-fixtures.js";
@@ -114,6 +114,17 @@ describe("VideosPage", () => {
     await user.click(screen.getByRole("button", { name: "Save Videos settings" }));
     expect(width).toHaveValue(100); expect(width).toHaveAccessibleDescription("Enter a whole number from 240 to 1920.");
     expect(save).not.toHaveBeenCalled(); expect(screen.queryByText("Videos settings saved. They apply to later requests and runs.")).toBeNull();
+  });
+
+  it("refuses a keyboard submit while a placement draft is invalid and focuses that field", async () => {
+    const api = createStaticVideosApi(queuedVideos()); const save = vi.spyOn(api, "saveModuleConfig");
+    renderManagement(<VideosPage api={api} audioApi={createStoryAudioApi()} managementApi={managementApi()} />);
+    const x = await screen.findByLabelText("Desktop Video X (px)");
+    fireEvent.change(x, { target: { value: "-5" } });
+    fireEvent.submit(screen.getByRole("button", { name: "Save Videos settings" }).closest("form")!);
+    expect(x).toHaveFocus();
+    expect(await screen.findByText(/^Enter a number from 0 to/u)).toBeVisible();
+    expect(save).not.toHaveBeenCalled();
   });
 
   it("keeps an off-canvas saved placement from being saved again", async () => {

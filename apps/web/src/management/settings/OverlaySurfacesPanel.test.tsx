@@ -1,7 +1,7 @@
 import { renderManagement as render } from "../../test-support/render-management.js";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SurfaceSettingsView } from "@stream-jams/core";
 import { OverlaySurfacesPanel } from "./OverlaySurfacesPanel.js";
 import type { SurfaceSettingsApi } from "./overlay-surfaces-api.js";
@@ -155,4 +155,63 @@ it("pauses polling while hidden, refreshes on visibility, and stops after unmoun
   visibility.mockReturnValue("hidden"); await act(() => vi.advanceTimersByTimeAsync(10000)); expect(api.load).toHaveBeenCalledOnce();
   visibility.mockReturnValue("visible"); await act(async () => { document.dispatchEvent(new Event("visibilitychange")); }); expect(api.load).toHaveBeenCalledTimes(2);
   mounted.unmount(); await act(() => vi.advanceTimersByTimeAsync(10000)); expect(api.load).toHaveBeenCalledTimes(2); expect(vi.getTimerCount()).toBe(0);
+});
+
+describe("retired output attempts", () => {
+  const attempt = { kind: "unified" as const, lastSeenAt: "2026-10-11T12:00:00.000Z", count: 4 };
+  const banner = () => screen.queryByRole("region", { name: "An old test or unified OBS source is still connecting." });
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it("stays hidden when the service omits or empties retired attempts", async () => {
+    const empty = harness(); const onSummaryChange = vi.fn();
+    render(<OverlaySurfacesPanel api={empty.api} onSummaryChange={onSummaryChange} />);
+    await screen.findByRole("form", { name: "Desktop overlay" });
+    expect(banner()).toBeNull();
+    expect(screen.queryByText(/test or unified/u)).toBeNull();
+    cleanup();
+    const listed = harness(); listed.api.load.mockImplementation(async () => ({ ...structuredClone(listed.view), retiredOutputAttempts: [] }));
+    render(<OverlaySurfacesPanel api={listed.api} onSummaryChange={onSummaryChange} />);
+    await screen.findByRole("form", { name: "Desktop overlay" });
+    expect(banner()).toBeNull();
+    expect(onSummaryChange).toHaveBeenLastCalledWith({ count: 1, state: "ready" });
+  });
+
+  it("shows one dismissible banner with per-module links and returns when a newer attempt arrives", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const state = harness(); let attempts = [attempt];
+    state.api.load.mockImplementation(async () => ({ ...structuredClone(state.view), retiredOutputAttempts: attempts }));
+    const onSummaryChange = vi.fn(); const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<OverlaySurfacesPanel api={state.api} onSummaryChange={onSummaryChange} />);
+    const region = await screen.findByRole("region", { name: "An old test or unified OBS source is still connecting." });
+    expect(region).toHaveTextContent("Replace it with the new per-module source URL and size shown below.");
+    expect(region).toHaveTextContent("Old unified source · 4 attempts");
+    expect(within(region).getByRole("link", { name: "Music sources" })).toHaveAttribute("href", "/manage/modules/music#browser-sources");
+    expect(onSummaryChange).toHaveBeenLastCalledWith({ count: 1, state: "attention" });
+    await user.click(within(region).getByRole("button", { name: "Dismiss" }));
+    expect(banner()).toBeNull();
+    expect(onSummaryChange).toHaveBeenLastCalledWith({ count: 1, state: "ready" });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(banner()).toBeNull();
+    attempts = [{ ...attempt, lastSeenAt: "2026-10-11T12:05:00.000Z", count: 5 }];
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(await screen.findByRole("region", { name: "An old test or unified OBS source is still connecting." })).toHaveTextContent("5 attempts");
+  });
+
+  it("keeps a dismissal across remounts when storage is available and still renders when storage throws", async () => {
+    const state = harness();
+    state.api.load.mockImplementation(async () => ({ ...structuredClone(state.view), retiredOutputAttempts: [attempt] }));
+    const user = userEvent.setup();
+    const first = render(<OverlaySurfacesPanel api={state.api} />);
+    await user.click(within(await screen.findByRole("region", { name: "An old test or unified OBS source is still connecting." })).getByRole("button", { name: "Dismiss" }));
+    first.unmount();
+    render(<OverlaySurfacesPanel api={state.api} />);
+    await screen.findByRole("form", { name: "Desktop overlay" });
+    expect(banner()).toBeNull();
+    cleanup(); window.localStorage.clear();
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
+    render(<OverlaySurfacesPanel api={state.api} />);
+    await user.click(within(await screen.findByRole("region", { name: "An old test or unified OBS source is still connecting." })).getByRole("button", { name: "Dismiss" }));
+    expect(banner()).toBeNull();
+  });
 });

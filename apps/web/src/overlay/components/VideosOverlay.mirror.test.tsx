@@ -1,8 +1,8 @@
-import type { VideosProjection } from "@stream-jams/core";
-import { videoMirrorUpgradeDelayMs, type VideoMirrorConnector, type VideoMirrorPublisherSignal, type VideoMirrorReceiverSignal } from "@stream-jams/core/videos";
+import { videosPlacementGeometry, type VideosProjection } from "@stream-jams/core";
+import { videoMirrorPictureSize, videoMirrorUpgradeDelayMs, type VideoMirrorConnector, type VideoMirrorPublisherSignal, type VideoMirrorReceiverSignal } from "@stream-jams/core/videos";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { VideosOverlay } from "./VideosOverlay.js";
+import { VideosOverlay, videoMirrorGeometryRefreshDelayMs } from "./VideosOverlay.js";
 
 class FakePeer {
   connectionState: RTCPeerConnectionState = "new";
@@ -139,7 +139,7 @@ describe("VideosOverlay mirror mode", () => {
     expect(screen.getByTestId<HTMLVideoElement>("video-overlay-mirror").muted).toBe(true);
   });
 
-  it("keeps the healthy peer, track and media element through move, scale, content and viewport changes", async () => {
+  it("keeps the healthy peer through moves, smaller pictures and viewport changes", async () => {
     vi.useFakeTimers();
     const { value, sent, deliver } = connector();
     const peers: FakePeer[] = [];
@@ -149,15 +149,44 @@ describe("VideosOverlay mirror mode", () => {
     await connect(peers, deliver);
     const video = screen.getByTestId<HTMLVideoElement>("video-overlay-mirror"); const stream = video.srcObject;
     rerender(<VideosOverlay createMirrorPeerConnection={create} mirror={value} projection={mirrored(false, true, { ...small, content: { width: 600, height: 400 } })} />);
-    act(() => { vi.advanceTimersByTime(videoMirrorUpgradeDelayMs); });
-    expect(sent.filter(signal => signal.type === "hello")).toHaveLength(1);
-    rerender(<VideosOverlay createMirrorPeerConnection={create} mirror={value} projection={mirrored()} />);
-    rerender(<VideosOverlay createMirrorPeerConnection={create} mirror={value} projection={mirrored(false, true, { ...small, desktopPlacement: { x: 0, y: 0, scale: 2 } })} />);
+    act(() => { vi.advanceTimersByTime(videoMirrorGeometryRefreshDelayMs + videoMirrorUpgradeDelayMs); });
+    rerender(<VideosOverlay createMirrorPeerConnection={create} mirror={value} projection={mirrored(false, true, { ...small, content: { width: 600, height: 400 }, desktopPlacement: { x: 0, y: 0, scale: 1 } })} />);
     act(() => { window.dispatchEvent(new Event("resize")); });
-    act(() => { vi.advanceTimersByTime(videoMirrorUpgradeDelayMs); });
+    act(() => { vi.advanceTimersByTime(videoMirrorGeometryRefreshDelayMs + videoMirrorUpgradeDelayMs); });
     expect(sent.filter(signal => signal.type === "hello").map(signal => signal.type === "hello" ? signal.maxWidth : null)).toEqual([640]);
     expect(peers).toHaveLength(1); expect(peers[0]!.closed).toBe(false);
     expect(screen.getByTestId("video-overlay-mirror")).toBe(video); expect(video.srcObject).toBe(stream);
+  });
+
+  it("refreshes the negotiated picture once after content size or desktop scale grows and settles", async () => {
+    vi.useFakeTimers();
+    const { value, sent, deliver } = connector();
+    const peers: FakePeer[] = [];
+    const create = () => { const peer = new FakePeer(); peers.push(peer); return peer as unknown as RTCPeerConnection; };
+    const small = { schemaVersion: 2 as const, content: { width: 640, height: 460 }, desktopPlacement: { x: 40, y: 40, scale: 1 } };
+    const hellos = () => sent.filter(signal => signal.type === "hello");
+    const { rerender } = render(<VideosOverlay createMirrorPeerConnection={create} mirror={value} projection={mirrored(false, true, small)} />);
+    await connect(peers, deliver);
+    // A dragged scale handle produces many intermediate layouts; only the settled one is negotiated.
+    for (const scale of [1.1, 1.25, 1.5, 1.75, 2]) {
+      rerender(<VideosOverlay createMirrorPeerConnection={create} mirror={value} projection={mirrored(false, true, { ...small, desktopPlacement: { ...small.desktopPlacement, scale } })} />);
+      act(() => { vi.advanceTimersByTime(videoMirrorGeometryRefreshDelayMs / 2); });
+    }
+    expect(hellos()).toHaveLength(1);
+    act(() => { vi.advanceTimersByTime(videoMirrorGeometryRefreshDelayMs + videoMirrorUpgradeDelayMs); });
+    const scaledFrame = videosPlacementGeometry({ ...small, desktopPlacement: { ...small.desktopPlacement, scale: 2 } }).frame;
+    expect(hellos()).toEqual([
+      expect.objectContaining({ connection: 1, maxWidth: 640 }),
+      { type: "hello", connection: 2, media: "both", ...videoMirrorPictureSize(scaledFrame.width * 2, scaledFrame.height * 2) }
+    ]);
+    expect(peers[0]!.closed).toBe(true);
+    await act(async () => { deliver({ type: "offer", connection: 2, sdp: "offer-sdp" }); await Promise.resolve(); });
+    const larger = { schemaVersion: 2 as const, content: { width: 1920, height: 1080 }, desktopPlacement: { x: 0, y: 0, scale: 1 } };
+    rerender(<VideosOverlay createMirrorPeerConnection={create} mirror={value} projection={mirrored(false, true, larger)} />);
+    act(() => { vi.advanceTimersByTime(videoMirrorGeometryRefreshDelayMs + videoMirrorUpgradeDelayMs); });
+    const largerFrame = videosPlacementGeometry(larger).frame;
+    expect(hellos().at(-1)).toEqual({ type: "hello", connection: 3, media: "both", ...videoMirrorPictureSize(largerFrame.width, largerFrame.height) });
+    expect(hellos()).toHaveLength(3);
   });
 
   it("reports unavailable and stays hidden when the desktop player is not ready", () => {

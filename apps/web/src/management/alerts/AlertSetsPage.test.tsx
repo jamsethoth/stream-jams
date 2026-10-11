@@ -234,6 +234,16 @@ describe("AlertSetsPage", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent(/Saved input · Browser/u);
   });
 
+  it("warns visibly and accessibly that Test saved plays on live sources", async () => {
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({ getAlertSet: vi.fn(async () => detail()) })} onEditAlert={vi.fn()} />);
+    const button = await screen.findByRole("button", { name: "Test saved New follower" });
+    expect(screen.getByText("Test saved plays on your live sources and OBS, including audio and TTS.")).toBeVisible();
+    expect(button).toHaveAccessibleDescription(/^Plays on your live sources and OBS · .*Audio and TTS included$/u);
+    while (document.activeElement !== button) await user.tab();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(/^Plays on your live sources and OBS/u);
+  });
+
   it("keeps the saved Landscape profile selected when only the desktop overlay is available", async () => {
     const source = detail();
     source.browserSources = source.browserSources.map((entry) => entry.targetProfileId === "landscape"

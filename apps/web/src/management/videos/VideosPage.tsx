@@ -5,14 +5,14 @@ import type { OperatorItemCardProps } from "../../operator/OperatorItemCard.js";
 import type { AudioApi } from "../audio/audio-api.js";
 import { actionableError } from "../foundation/actionable-error.js";
 import { BrowserSourceRow } from "../foundation/BrowserSourceRow.js";
-import { BrowserSourcesPanel } from "../foundation/BrowserSourcesPanel.js";
+import { BrowserSourceSetupNotice, BrowserSourcesPanel, browserSourceSizesShown } from "../foundation/BrowserSourcesPanel.js";
 import { DestructiveConfirmationDialog } from "../foundation/DestructiveConfirmationDialog.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import { MaskedValue } from "../foundation/MaskedValue.js";
 import { ModuleControls, ModulePageLayout, ModuleSection } from "../foundation/ModulePageLayout.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
-import { VideoPlacementEditor } from "./VideoPlacementEditor.js";
+import { VideoPlacementEditor, type VideoPlacementEditorHandle } from "./VideoPlacementEditor.js";
 import { VideoQueuePanel } from "./VideoQueuePanel.js";
 import { createHttpVideosApi, type VideoQueueApi, type VideosApi, type VideosBrowserSource } from "./videos-api.js";
 
@@ -60,6 +60,8 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
   const [routes, setRoutes] = useState<readonly AudioRouteStatus[]>([]);
   const [routesError, setRoutesError] = useState(false);
   const [sources, setSources] = useState<readonly VideosBrowserSource[]>([]);
+  const [placementDraftInvalid, setPlacementDraftInvalid] = useState(false);
+  const placementEditor = useRef<VideoPlacementEditorHandle>(null);
   const [sourcesExpanded, setSourcesExpanded] = useState(window.location.hash === "#browser-sources");
   const [catalog, setCatalog] = useState<RewardCatalog>({ status: "loading" });
   const [loadError, setLoadError] = useState<ActionableManagementError | null>(null);
@@ -119,9 +121,7 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
     if (draft === null || enabled === null) return;
     // Placement number fields preserve raw invalid drafts without committing them into config.
     // Do not report a successful save of the old committed value while such a draft is visible.
-    const invalidGeometryField = Array.from(event.currentTarget.querySelectorAll<HTMLInputElement>("#video-placement input[type='number']"))
-      .find(input => !input.checkValidity());
-    if (invalidGeometryField !== undefined) { invalidGeometryField.reportValidity(); invalidGeometryField.focus(); return; }
+    if (placementDraftInvalid) { placementEditor.current?.focusFirstInvalid(); return; }
     const errors: FieldErrors = {};
     const maxLength = Number(draft.maxLengthSeconds);
     const gap = Number(draft.gapSeconds);
@@ -204,8 +204,9 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
             ? <><strong>Mirroring unavailable:</strong> desktop app not running. Each Browser Source plays the current video in its own player, following the queue clock.</>
             : <><strong>Mirror status:</strong> unknown until the queue loads.</>}</p>
         <BrowserSourcesPanel id="browser-sources" detailsId="videos-sources-content" expanded={sourcesExpanded} onToggle={() => setSourcesExpanded(value => !value)}
-        readyCount={sources.filter(source => source.status === "available").length} needsSetupCount={sources.filter(source => source.status !== "available").length} description="Ordinary module browser source.">
-        <p>Add the Videos URL as an OBS Browser Source with the saved width and height shown below. Position it in OBS; desktop placement affects only the desktop overlay.
+        readyCount={sources.filter(source => source.status === "available").length} needsSetupCount={sources.filter(source => source.status !== "available").length} description="One live URL for this module.">
+        <BrowserSourceSetupNotice sizesShown={browserSourceSizesShown(sources)} />
+        <p>Position the Videos source in OBS; desktop placement affects only the desktop overlay.
           To show videos on the desktop overlay, turn on Videos in <a href="/manage/settings#overlay-surfaces">Overlay surfaces</a>.</p>
         {sources.length === 0 ? <p>No Videos Browser Source output is registered.</p> : sources.map(source => <BrowserSourceRow key={source.id} label={source.label} canvas={source.canvas} ready={source.status === "available"}
           telemetry={source.status === "available" ? "URL available" : source.status.replace("-", " ")} metadata={<span>Module source · {source.purpose === "live" ? "Live" : "Test"}</span>}
@@ -218,7 +219,7 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
       secondary={draft === null ? (loadError === null ? <p className="management-empty" role="status">Loading Videos settings…</p> : null) : <form className="videos-settings" onSubmit={save} noValidate>
         <ModuleSection title="Placement" label="Video placement" id="video-placement"
           description="Content size controls browser dimensions. Desktop position and scale are independent. Changes apply after Save Videos settings.">
-          <VideoPlacementEditor value={draft.layout} disabled={busy} onChange={layout => { setDraft(current => current === null ? current : { ...current, layout }); setFieldErrors(current => withField(current, "layout", null)); }} />
+          <VideoPlacementEditor ref={placementEditor} onInvalidDraftChange={setPlacementDraftInvalid} value={draft.layout} disabled={busy} onChange={layout => { setDraft(current => current === null ? current : { ...current, layout }); setFieldErrors(current => withField(current, "layout", null)); }} />
           {fieldErrors.layout === undefined ? null : <p className="videos-settings__error" role="alert">{fieldErrors.layout}</p>}
         </ModuleSection>
         <ModuleSection title="Limits and audio" label="Limits and audio" description="Videos longer than the limit, or of unknown length, wait as held until you choose Play anyway.">
@@ -263,7 +264,7 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
           </fieldset>
           <fieldset className="videos-settings__fieldset">
             <legend>Channel point rewards</legend>
-            <p className="module-section-description">Mapped rewards queue the viewer's link in the ordinary Videos queue and never autoplay. Former test mappings now use this queue; review them after upgrading.</p>
+            <p className="module-section-description">Mapped rewards queue the viewer's link in the live Videos queue and never autoplay. Former test mappings now use this queue; review them after upgrading.</p>
             {draft.rewardMappings.length === 0 ? <p className="management-empty">No rewards are mapped.</p> : <ul className="videos-settings__list" aria-label="Mapped rewards">
               {draft.rewardMappings.map(mapping => { const name = rewardTitle(mapping.rewardId) ?? mapping.rewardId; return <li key={mapping.rewardId}>
                 <span>{name}</span>

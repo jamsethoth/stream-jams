@@ -13,7 +13,6 @@ export function BrowserSourceRow({ label, ready, metadata, canvas, telemetry, gu
     {canvas === undefined ? null : <div className="browser-source-row__dimensions"><strong><bdi dir="ltr">{canvas.width} x {canvas.height}</bdi></strong></div>}
     {metadata == null ? null : <div className="browser-source-row__dimensions">{metadata}</div>}
     {guidance == null ? null : <p className="browser-source-row__guidance">{guidance}</p>}
-    <p className="browser-source-row__guidance">Use this ordinary module source in OBS. Remove old test or unified sources. Set OBS width and height to the dimensions shown here; saved size changes require updating OBS manually.</p>
     <div className="browser-source-row__url">{url}</div>
     <div className="browser-source-row__actions">{actions}</div>
   </article>;

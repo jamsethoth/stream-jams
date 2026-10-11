@@ -1,10 +1,10 @@
 import { createDefaultVideosLayout, type VideosLayout } from "@stream-jams/core";
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
+import { createRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderManagement as render } from "../../test-support/render-management.js";
-import { VideoPlacementEditor } from "./VideoPlacementEditor.js";
+import { VideoPlacementEditor, type VideoPlacementEditorHandle } from "./VideoPlacementEditor.js";
 
 function Fixture({ initial = createDefaultVideosLayout(), disabled = false }: { readonly initial?: VideosLayout; readonly disabled?: boolean }) {
   const [layout, setLayout] = useState(initial);
@@ -22,6 +22,27 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("VideoPlacementEditor", () => {
+  it("reports a typed invalid-draft flag and focuses the first invalid field on request", async () => {
+    const user = userEvent.setup();
+    const onInvalidDraftChange = vi.fn();
+    const handle = createRef<VideoPlacementEditorHandle>();
+    render(<VideoPlacementEditor ref={handle} value={createDefaultVideosLayout()} onChange={vi.fn()} onInvalidDraftChange={onInvalidDraftChange} />);
+    expect(onInvalidDraftChange).not.toHaveBeenCalled();
+    const height = screen.getByLabelText("Video content height (px)");
+    const y = screen.getByLabelText("Desktop Video Y (px)");
+    fireEvent.change(y, { target: { value: "" } });
+    expect(onInvalidDraftChange).toHaveBeenLastCalledWith(true);
+    fireEvent.change(height, { target: { value: "12.5" } });
+    expect(onInvalidDraftChange).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Reset desktop placement" }));
+    act(() => handle.current!.focusFirstInvalid());
+    expect(height).toHaveFocus();
+    expect(height).toHaveAccessibleDescription("Enter a whole number from 180 to 1080.");
+    fireEvent.change(height, { target: { value: String(createDefaultVideosLayout().content.height) } });
+    fireEvent.change(y, { target: { value: "0" } });
+    expect(onInvalidDraftChange).toHaveBeenLastCalledWith(false);
+  });
+
   it("resets placement to a valid footprint for full-scene content without altering content", async () => {
     const user = userEvent.setup();
     render(<Fixture initial={{ schemaVersion: 2, content: { width: 1920, height: 1080 }, desktopPlacement: { x: 0, y: 0, scale: 1 } }} />);

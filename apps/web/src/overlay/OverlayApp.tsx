@@ -91,9 +91,8 @@ export function OverlayApp() {
           setMuted(message.muted);
           setModuleMutes(message.moduleMutes);
         } else if (message.type === "surface-layers") {
-          if (route.scope !== "unified") return;
-          if (!compositionReceivedRef.current) queueMutation(message);
-          else setComposition(current => current === null ? null : applySurfaceLayers(current, message.layers));
+          // Module browser sources have no surface layers; ignore without resetting the composition.
+          return;
         } else if (message.type === "stop") {
           for (const id of message.instructionIds) preparedIdsRef.current.delete(id);
           setPreparingIds(new Set(preparedIdsRef.current));
@@ -173,30 +172,15 @@ export function OverlayApp() {
   );
 }
 
-type OverlayMutation = Extract<OverlayClientMessage, { readonly type: "playback" | "prepare" | "stop" | "surface-layers" }>;
+type OverlayMutation = Extract<OverlayClientMessage, { readonly type: "playback" | "prepare" | "stop" }>;
 
 function applyMutation(
   composition: OverlayComposition,
   mutation: OverlayMutation
 ): OverlayComposition {
-  if (mutation.type === "surface-layers") return applySurfaceLayers(composition, mutation.layers);
   return mutation.type === "playback" || mutation.type === "prepare"
     ? appendInstruction(composition, mutation.instruction)
     : removeInstructions(composition, mutation.instructionIds) ?? composition;
-}
-
-function applySurfaceLayers(composition: OverlayComposition, layers: Extract<OverlayClientMessage, { type: "surface-layers" }>["layers"]): OverlayComposition {
-  if (composition.scope !== "unified") return composition;
-  const existing = new Map(composition.modules.map(module => [module.moduleId, module]));
-  const modules: OverlayModuleSnapshot[] = layers.map((layer, index) => ({
-    ...(existing.get(layer.moduleId) ?? { moduleId: layer.moduleId, enabled: true, instructions: [] }),
-    surfaceLayer: { visible: layer.visible, zIndex: layers.length - index }
-  }));
-  // Removed registry rows retain their audio/completion owner until its normal end.
-  for (const module of composition.modules) {
-    if (!layers.some(layer => layer.moduleId === module.moduleId)) modules.push({ ...module, surfaceLayer: { visible: false, zIndex: 0 } });
-  }
-  return { ...composition, modules };
 }
 
 function appendInstruction(

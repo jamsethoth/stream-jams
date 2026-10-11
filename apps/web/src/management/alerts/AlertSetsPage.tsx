@@ -3,7 +3,7 @@ import { DestructiveConfirmationDialog } from "../foundation/DestructiveConfirma
 import { Button, Checkbox, NativeSelect, TextInput, Tooltip } from "@mantine/core";
 import { DisclosureIcon, ModulePageLayout, ModuleControls, SectionHeading } from "../foundation/ModulePageLayout.js";
 import { BrowserSourceRow } from "../foundation/BrowserSourceRow.js";
-import { BrowserSourcesPanel } from "../foundation/BrowserSourcesPanel.js";
+import { BrowserSourceSetupNotice, BrowserSourcesPanel, browserSourceSizesShown } from "../foundation/BrowserSourcesPanel.js";
 import {
   alertStarterTemplates,
   type ActionableManagementError,
@@ -989,7 +989,7 @@ function AlertInventory({
 }) {
   return (
     <section aria-labelledby="alert-inventory-heading" className="alert-sets-page__inventory">
-      <div className="alert-sets-page__section-heading"><div><h3 id="alert-inventory-heading">Alerts</h3><p>{filtered.matchingAlertCount} of {filtered.totalAlertCount} shown</p></div><Button disabled={busy} id="alert-inventory-add" onClick={onAdd} type="button">Add alert</Button></div>
+      <div className="alert-sets-page__section-heading"><div><h3 id="alert-inventory-heading">Alerts</h3><p>{filtered.matchingAlertCount} of {filtered.totalAlertCount} shown</p><p className="alert-sets-page__live-test-note" id="alert-live-test-note">Test saved plays on your live sources and OBS, including audio and TTS.</p></div><Button disabled={busy} id="alert-inventory-add" onClick={onAdd} type="button">Add alert</Button></div>
       <div className="alert-sets-page__filters">
         <TextInput label="Search" aria-label="Search" onChange={(event) => onQuery(event.currentTarget.value)} placeholder="Name, event, or provider" type="search" value={query} />
         <NativeSelect label="Event" onChange={(event) => onEventFilter(event.currentTarget.value)} value={eventFilter}><option value="all">All events</option>{eventTypes.map((eventType) => <option key={eventType} value={eventType}>{formatEventType(eventType)}</option>)}</NativeSelect>
@@ -1149,7 +1149,7 @@ function AlertRowsTable({
             const warningCount = alertIssues.filter((issue) => issue.severity === "warning").length;
             const testMenuOpen = testMenuAlertId === alert.id;
             // Shown as the Test saved tooltip (hover and focus) and description instead of a line under every row.
-            const testSummary = `Saved input · Browser ${alert.targetProfileIds.map(formatProfile).join(", ") || "none"}${alert.targetProfileIds.includes("landscape") ? " · Desktop Landscape when ready" : ""} · Selected device outputs · Audio and TTS included`;
+            const testSummary = `Plays on your live sources and OBS · Saved input · Browser ${alert.targetProfileIds.map(formatProfile).join(", ") || "none"}${alert.targetProfileIds.includes("landscape") ? " · Desktop Landscape when ready" : ""} · Selected device outputs · Audio and TTS included`;
             const summary = summarizeAlertInventoryRow(alert, siblings, fullGroup.known, rewardTitles);
             return (
               <tr className={alert.kind === "variation" ? "alert-sets-page__variation-row" : undefined} key={alert.id}>
@@ -1186,7 +1186,7 @@ function AlertRowsTable({
                     />
                   </div>
                   <small className="alert-sets-page__test-summary sr-only" id={`alert-test-summary-${alert.id}`}>{testSummary}</small>
-                  {testMenuOpen ? <div aria-label={`Choose test profile for ${alert.name}`} className="alert-sets-page__test-profiles" role="group">{testMenuProfileIds.map((targetProfileId) => <Button aria-label={`Send ${alert.name} saved test to ${formatProfile(targetProfileId)}`} variant="default" size="xs" key={targetProfileId} onClick={() => onTestProfile(alert, targetProfileId)} type="button">{formatProfile(targetProfileId)}</Button>)}</div> : null}
+                  {testMenuOpen ? <div aria-label={`Choose test profile for ${alert.name}`} className="alert-sets-page__test-profiles" role="group"><small className="alert-sets-page__live-test-note">Plays on your live sources and OBS</small>{testMenuProfileIds.map((targetProfileId) => <Button aria-label={`Send ${alert.name} saved test to ${formatProfile(targetProfileId)}`} variant="default" size="xs" key={targetProfileId} onClick={() => onTestProfile(alert, targetProfileId)} type="button">{formatProfile(targetProfileId)}</Button>)}</div> : null}
                 </td>
               </tr>
             );
@@ -1227,6 +1227,7 @@ function BrowserSources({
 
   return (
     <BrowserSourcesPanel id="browser-sources" detailsId="browser-source-details" expanded={expanded} onToggle={onToggle} readyCount={readyCount} needsSetupCount={needsSetupCount} refreshFailed={refreshError !== null}>
+      <BrowserSourceSetupNotice sizesShown={browserSourceSizesShown(sources)} />
       <p className={`alert-sets-page__status-freshness${refreshError === null ? "" : " alert-sets-page__status-freshness--stale"}`} role="status">
         {refreshError === null
           ? statusUpdatedAt === null ? "Connection status has not loaded." : `Connection status updated ${formatDateTime(statusUpdatedAt)}`

@@ -51,6 +51,42 @@ test("desktop surface drafts apply only explicit saves and retired surfaces stay
   expect(errors).toEqual([]);
 });
 
+test("retired OBS source attempts show one dismissible Settings banner until a newer attempt", async ({ page }) => {
+  await mockManagementShell(page);
+  await mockSettingsSummary(page);
+  await page.route("**/config/server", route => route.fulfill({ json: { host: "127.0.0.1", port: 39187 } }));
+  const base: SurfaceSettingsView = { surfaces: [
+    { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, displayLabel: null, autoFollowDisplayName: false, opacity: 1, layers: [{ moduleId: "alerts", visible: false }] }
+  ], desktop: { available: true, displays: [], state: "disabled", message: null }, desktopBindingState: "not-needed" };
+  let attempts: { kind: string; lastSeenAt: string; count: number }[] = [];
+  await page.route("**/overlay-surfaces", route => route.fulfill({ json: { ...base, retiredOutputAttempts: attempts } }));
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  const banner = page.getByRole("region", { name: "An old test or unified OBS source is still connecting." });
+
+  const surfacesLoaded = () => page.waitForResponse(response => new URL(response.url()).pathname === "/overlay-surfaces");
+  await Promise.all([surfacesLoaded(), page.goto("/manage/settings")]);
+  await expect(page.locator("#overlay-surfaces")).toBeAttached();
+  await expect(banner).toHaveCount(0);
+
+  attempts = [{ kind: "unified", lastSeenAt: "2026-10-11T12:00:00.000Z", count: 3 }];
+  await page.reload();
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText("Replace it with the new per-module source URL and size shown below.");
+  await expect(banner.getByRole("link", { name: "Timers sources" })).toHaveAttribute("href", "/manage/modules/timers#browser-sources");
+  await banner.getByRole("button", { name: "Dismiss" }).click();
+  await expect(banner).toHaveCount(0);
+  await Promise.all([surfacesLoaded(), page.reload()]);
+  await expect(page.locator("#overlay-surfaces form")).toBeAttached();
+  await expect(banner).toHaveCount(0);
+
+  attempts = [{ kind: "unified", lastSeenAt: "2026-10-11T12:10:00.000Z", count: 4 }];
+  await page.reload();
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText("4 attempts");
+  expect(errors).toEqual([]);
+});
+
 test("settings persists server port changes and rejects invalid ports", async ({ page }) => {
   await mockManagementShell(page);
   await mockSettingsSummary(page);

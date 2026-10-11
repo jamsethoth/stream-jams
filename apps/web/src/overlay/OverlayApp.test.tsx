@@ -176,6 +176,26 @@ describe("OverlayApp transport integration", () => {
     expect(document.body.textContent).not.toContain("Playing");
   });
 
+  it("ignores surface layer updates on module sources without resetting visible playback", async () => {
+    AppFakeWebSocket.instances.length = 0;
+    window.history.replaceState(null, "", "/overlay/modules/alerts/live/ovl_live?profile=landscape");
+    vi.stubGlobal("WebSocket", AppFakeWebSocket);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ ...createComposition([createInstruction("layered-instruction", { text: "Still visible" })]), targetProfileId: "landscape" })
+    }));
+    render(<OverlayApp />);
+    await act(async () => {
+      AppFakeWebSocket.instances[0]!.emitOpen();
+      AppFakeWebSocket.instances[0]!.emitMessage({ type: "overlay.playback.audio-state", muted: false });
+      await Promise.resolve();
+    });
+    expect(await screen.findByText("Still visible")).toBeInTheDocument();
+    act(() => AppFakeWebSocket.instances[0]!.emitMessage({ type: "overlay.surface-layers", layers: [{ moduleId: "alerts", visible: false }] }));
+    expect(screen.getByText("Still visible")).toBeInTheDocument();
+    expect(AppFakeWebSocket.instances).toHaveLength(1);
+  });
+
   it("rebootstraps and completes fresh prepared playback after the real client socket reconnects", async () => {
     AppFakeWebSocket.instances.length = 0;
     window.history.replaceState(null, "", "/overlay/modules/alerts/live/ovl_live?profile=landscape");
