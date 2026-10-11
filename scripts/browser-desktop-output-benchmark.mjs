@@ -40,7 +40,7 @@ const controllerBytes = await readFile(resolve(repositoryRoot, 'scripts/browser-
 const fixtureBytes = await readFile(resolve(evidenceRoot, 'saved-configs.json'));
 const metricsBytes = await readFile(resolve(evidenceRoot, 'metrics.json'));
 const expected = {
-  controller: '869204716D1885B2BAD80827D47A3F7F1CAA2584E5227A4010969B0704338881',
+  controller: '4C6D31A9314C7E081588790E6894F9C401787BCA24C058015B1D0936A6DFE39E',
   fixtures: '80F818BAFE25C146286F0C053FCB184F33267822C82AAE26C73175128FF70F77',
   metrics: '11B6775F290BF848F0021158FDB80E8FB44D2310873F1D79A1049A7D67961278'
 };
