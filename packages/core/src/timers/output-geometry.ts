@@ -38,7 +38,8 @@ export function resolveTimerOutputGeometry(profile: TimerProfile): TimerOutputGe
   const countdownMaxWidth = isExactLegacyTimerAppearance(a) ? "8ch" : Math.max(0,
     a.cardWidthPx - 2 * (a.inlinePaddingPx + a.borderWidthPx) - a.iconSizePx - 2 * a.gapPx - 1);
   const { overflow, footprint, stackWidth, stackHeight } = timerOverflowGeometry(a);
-  const insets = { left: 48, top: 40, right: 48, bottom: 56 };
+  // No margin: the stack starts at the source corner (Jams, 2026-10-11); the card shadow is clipped at the source edges.
+  const insets = { left: 0, top: 0, right: 0, bottom: 0 };
   const local = Array.from({ length: a.maxVisible }, (_, index) => ({
     x: a.orientation === "horizontal" ? index * (a.cardWidthPx + a.stackGapPx) : 0,
     y: a.orientation === "vertical" ? index * (a.cardHeightPx + a.stackGapPx) : 0,

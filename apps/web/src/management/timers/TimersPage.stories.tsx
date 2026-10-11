@@ -101,7 +101,7 @@ export const BrowserSourceSetup: Story = { play: async ({ canvasElement }) => {
   await userEvent.click(await canvas.findByRole("button", { name: "Expand browser sources" }));
   const landscape = canvas.getByRole("article", { name: "Landscape browser source" });
   await expect(within(landscape).getByText("Listening now")).toBeVisible();
-  for (const dimensions of within(landscape).getAllByText("736 x 409")) {
+  for (const dimensions of within(landscape).getAllByText("640 x 313")) {
     await expect(dimensions).toBeVisible();
     await expect(dimensions).toHaveAttribute("dir", "ltr");
   }

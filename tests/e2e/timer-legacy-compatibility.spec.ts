@@ -60,8 +60,8 @@ for (const recipientKind of ["browser", "desktop"] as const) {
       const scale = recipientKind === "browser" ? 1 : Math.min(1,
         (1920 - region.layout.x) / (region.orientation === "vertical" ? Math.max(region.layout.width, badgeW) : region.layout.width + offset + badgeW),
         (1080 - region.layout.y) / (region.orientation === "vertical" ? region.layout.height + offset + badgeH : Math.max(region.layout.height, badgeH)));
-      const x = recipientKind === "browser" ? 48 : region.layout.x;
-      const y = recipientKind === "browser" ? 40 : region.layout.y;
+      const x = recipientKind === "browser" ? 0 : region.layout.x;
+      const y = recipientKind === "browser" ? 0 : region.layout.y;
       const html = clocks.map((_, index) => `<div class="frozen-card" data-frozen="${index}" style="left:${x + (region.orientation === "horizontal" ? region.layout.width * index / 12 : 0)}px;top:${y + (region.orientation === "vertical" ? region.layout.height * index / 12 : 0)}px;width:${w}px;height:${h}px;--radius:${size(.12,.03,4,16)}px;--gap:${size(.12,.025,4,18)}px;--block:${size(.1,.025,4,16)}px;--inline:${size(.14,.04,6,24)}px;--icon:${size(.48,.16,16,64)}px;--label:${size(.24,.08,10,42)}px;--value:${size(.29,.12,12,56)}px">
         <svg class="frozen-icon" viewBox="0 0 64 64"><circle cx="32" cy="34" fill="none" r="23" stroke="currentColor" stroke-width="6"></circle><path d="M24 5h16M32 11v7M49 17l5 5M32 34V22M32 34l10 6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="6"></path></svg>
         <span class="frozen-label">Frozen label</span><time class="frozen-value">${["0:10", "10:00", "12:34:56"][index]}</time></div>`).join("");

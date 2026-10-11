@@ -91,7 +91,7 @@ describe("TimerRuntimeCoordinator", () => {
     const request = { moduleId: "timers", overlayId: "default", purpose: "live" as const, scope: "module" as const, targetProfileId: "vertical" as const, savedConfig: saved };
     const browser = await coordinator.getModuleSnapshot({ ...request, recipientKind: "browser" });
     const desktop = await coordinator.getModuleSnapshot({ ...request, recipientKind: "desktop" });
-    expect(browser.presentation).toMatchObject({ kind: "timer-stack", stack: { targetProfileId: "vertical", renderScale: 1, cards: [{ slot: { x: 48, y: 40, width: 984, height: 120 } }] } });
+    expect(browser.presentation).toMatchObject({ kind: "timer-stack", stack: { targetProfileId: "vertical", renderScale: 1, cards: [{ slot: { x: 0, y: 0, width: 984, height: 120 } }] } });
     expect(desktop.presentation).toMatchObject({ kind: "timer-stack", stack: { targetProfileId: "landscape", cards: [{ slot: { x: 64, y: 720, width: 640, height: 70 } }] } });
     expect(coordinator.getState("a")).toEqual(before);
     await coordinator.close();

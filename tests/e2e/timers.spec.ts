@@ -38,9 +38,9 @@ test("saved Timer appearance owns stable browser pixels independently of desktop
       await browser.goto(url); await expect.poll(() => connected).toBe(true);
       await expect(browser.getByRole("listitem")).toHaveCount(4);
       await expect(browser.getByText("+2 more")).toHaveCSS("font-variant-numeric", "tabular-nums");
-      await expect(browser.getByRole("listitem").first()).toHaveCSS("left", "48px");
+      await expect(browser.getByRole("listitem").first()).toHaveCSS("left", "0px");
       const envelope = await compositionAt(url);
-      expect(envelope.canvas).toMatchObject({ kind: "content", origin: { x: 0, y: 0 }, width: profile === "landscape" ? 736 : 1080, height: profile === "landscape" ? 409 : 631 });
+      expect(envelope.canvas).toMatchObject({ kind: "content", origin: { x: 0, y: 0 }, width: profile === "landscape" ? 640 : 984, height: profile === "landscape" ? 313 : 535 });
       browsers.push({ browser, profile, url, canvas: envelope.canvas, pixels: await browser.getByTestId("overlay-content-canvas").screenshot({ omitBackground: true, animations: "disabled" }) });
     }
     await page.goto(`${fixture.runtime.url}/manage/modules/timers`);
@@ -64,8 +64,8 @@ test("saved Timer appearance owns stable browser pixels independently of desktop
     expect(updated.profiles.landscape.appearance).toEqual(saved.profiles.landscape.appearance);
     expect(updated.profiles.vertical.appearance.labelFont.legacyFamily).toBeUndefined();
     const vertical = browsers[1]!; await expect(vertical.browser.getByRole("listitem")).toHaveCount(3);
-    await expect(vertical.browser.getByTestId("overlay-content-canvas")).toHaveCSS("height", "500px");
-    await expect(vertical.browser.getByTestId("overlay-content-canvas")).toHaveCSS("width", "396px");
+    await expect(vertical.browser.getByTestId("overlay-content-canvas")).toHaveCSS("height", "404px");
+    await expect(vertical.browser.getByTestId("overlay-content-canvas")).toHaveCSS("width", "300px");
     const renderedBackground = await vertical.browser.getByRole("listitem").first().evaluate(element => ({ background: getComputedStyle(element).backgroundColor, opacity: getComputedStyle(element).opacity }));
     expect(renderedBackground.background).toMatch(/(?:\/ 0\.4|, 0\.4)\)$/u);
     expect(renderedBackground.opacity).toBe("1");
@@ -78,7 +78,7 @@ test("saved Timer appearance owns stable browser pixels independently of desktop
     for (const definition of definitions) await json(`/timers/${definition.id}/stop`, "POST");
     await json("/overlay-modules/timers/enabled", "PATCH", { enabled: false });
     await vertical.browser.reload(); await expect(vertical.browser.getByRole("listitem")).toHaveCount(0);
-    await expect(vertical.browser.getByTestId("overlay-content-canvas")).toHaveCSS("height", "500px");
+    await expect(vertical.browser.getByTestId("overlay-content-canvas")).toHaveCSS("height", "404px");
     const beforeInvalid = await compositionAt(vertical.url);
     const invalid = await fixture.request("/overlay-modules/timers/config", "PUT", { enabled: false, config: { ...updated, profiles: { ...updated.profiles, vertical: { ...updated.profiles.vertical, appearance: { ...updated.profiles.vertical.appearance, inlinePaddingPx: 500 } } } } });
     expect(invalid.status).toBe(400); expect((await compositionAt(vertical.url)).canvas).toEqual(beforeInvalid.canvas);
@@ -120,7 +120,7 @@ test("stack direction reverses the live browser source while the desktop overrid
       .toMatchObject({ appearance: { orientation: "vertical", reverse: true }, desktopPlacement: { reverse: false } });
 
     // Soonest timer is lowest, the rest step upward, and the badge sits above them in the unchanged canvas.
-    await expect(cards.first()).toHaveAccessibleName(/^Timer 0,/u); await expect(cards.first()).toHaveCSS("top", "283px");
+    await expect(cards.first()).toHaveAccessibleName(/^Timer 0,/u); await expect(cards.first()).toHaveCSS("top", "243px");
     const tops = await cards.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().top));
     expect(tops).toEqual([...tops].sort((left, right) => right - left));
     const badge = await browser.getByText("+2 more").boundingBox();

@@ -15,21 +15,21 @@ describe("Timer output geometry", () => {
         const desktop = projectTimerStack({ nowEpochMs: 0, targetProfileId: "landscape", profile, geometry, runs, recipientKind: "desktop" });
         const browser = projectTimerStack({ nowEpochMs: 0, targetProfileId: "landscape", profile, geometry, runs, recipientKind: "browser" });
         expect(desktop.renderScale).toBe(orientation === "vertical" ? 300 / 346 : 600 / 747);
-        expect(browser.renderScale).toBe(1); expect(browser.region.layout).toMatchObject({ x: 48, y: 40, zIndex: 0 });
+        expect(browser.renderScale).toBe(1); expect(browser.region.layout).toMatchObject({ x: 0, y: 0, zIndex: 0 });
         if (count) expect(desktop.cards[0]?.slot).toMatchObject({ x: 1320, y: 780, zIndex: 20 });
       }
     }
   });
-  it("browser content is independent of placement, has shadow reserve and rounds only the envelope", () => {
+  it("browser content is independent of placement, starts at the source corner and rounds only the envelope", () => {
     const profile = timersOverlayModuleDefinition.defaultConfig.profiles.landscape;
     const geometry = resolveTimerOutputGeometry(profile);
-    expect(geometry).toMatchObject({ width: 736, height: 409, origin: { x: 0, y: 0 }, insets: { left: 48, top: 40, right: 48, bottom: 56 } });
+    expect(geometry).toMatchObject({ width: 640, height: 313, origin: { x: 0, y: 0 }, insets: { left: 0, top: 0, right: 0, bottom: 0 } });
     const moved = { ...profile, desktopPlacement: { x: 10, y: 20, zIndex: 2, scale: .5 } };
     expect(projectTimerStack({ nowEpochMs: 0, targetProfileId: "landscape", profile, runs: [run], recipientKind: "browser" }))
       .toEqual(projectTimerStack({ nowEpochMs: 0, targetProfileId: "landscape", profile: moved, runs: [run], recipientKind: "browser" }));
     const fractional = resolveTimerOutputGeometry({ ...moved, appearance: { ...moved.appearance, cardHeightPx: 70.33333333333333 } });
     expect(fractional.slots[1]?.height).toBe(70.33333333333333);
-    expect(fractional.height).toBe(Math.ceil(fractional.footprint.height + 96));
+    expect(fractional.height).toBe(Math.ceil(fractional.footprint.height));
   });
   it("validates compound profile footprint and all appearance fields independently", () => {
     const original = timersOverlayModuleDefinition.defaultConfig;

@@ -50,7 +50,7 @@ export const SavedContentAppearance: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getAllByRole("listitem")).toHaveLength(4);
     await expect(getComputedStyle(canvas.getByText("+2 more")).fontVariantNumeric).toBe("tabular-nums");
-    await expect(canvas.getAllByRole("listitem")[0]).toHaveStyle({ left: "48px", top: "40px", width: "640px", height: "70px" });
+    await expect(canvas.getAllByRole("listitem")[0]).toHaveStyle({ left: "0px", top: "0px", width: "640px", height: "70px" });
   }
 };
 
@@ -68,8 +68,8 @@ export const BottomToTop: Story = {
     const canvas = within(canvasElement);
     const cards = canvas.getAllByRole("listitem");
     await expect(cards[0]).toHaveAccessibleName(/^Timer 1,/u);
-    await expect(cards[0]).toHaveStyle({ top: "283px" });
-    await expect(canvas.getByText("+2 more")).toHaveStyle({ top: "40px" });
+    await expect(cards[0]).toHaveStyle({ top: "243px" });
+    await expect(canvas.getByText("+2 more")).toHaveStyle({ top: "0px" });
   }
 };
 
@@ -80,7 +80,7 @@ export const RightToLeft: Story = {
     const cards = canvas.getAllByRole("listitem");
     await expect(cards[0]).toHaveAccessibleName(/^Timer 1,/u);
     await expect(Number.parseFloat(cards[0]!.style.left)).toBeGreaterThan(Number.parseFloat(cards[2]!.style.left));
-    await expect(canvas.getByText("+3 more")).toHaveStyle({ left: "48px" });
+    await expect(canvas.getByText("+3 more")).toHaveStyle({ left: "0px" });
   }
 };
 
