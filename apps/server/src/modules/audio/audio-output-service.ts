@@ -162,6 +162,8 @@ export class AudioOutputService {
 
   async reconcileBindings(): Promise<void> {
     const snapshots = structuredClone(this.listRoutes());
+    // Enumeration spins up the desktop audio renderer; with nothing to rebind it only delays startup.
+    if (snapshots.length === 0) return;
     const capability = await this.getDevices();
     if (!capability.available) return;
     await this.#reconcileWithCapability(capability, snapshots);

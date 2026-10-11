@@ -9,13 +9,14 @@ export function observeGuardReady({ ipcMain, BrowserWindow }: Pick<typeof import
     observed.shutdownGuard!.ready = true;
     observed.shutdownGuard!.dispose();
   };
-  const navigation = (_event: Electron.Event, url: string, inPlace: boolean, mainFrame: boolean) => {
-    if (mainFrame && !inPlace && url.startsWith(`${origin}/manage`)) navigated = true;
+  // Commit, not start: the outgoing document can still register between navigation start and commit.
+  const navigation = (_event: Electron.Event, url: string) => {
+    if (url.startsWith(`${origin}/manage`)) navigated = true;
   };
   observed.shutdownGuard = { ready: false, dispose: () => {
     ipcMain.removeListener("desktop:guard-ready", listener);
-    window.webContents.removeListener("did-start-navigation", navigation);
+    window.webContents.removeListener("did-navigate", navigation);
   } };
-  if (!navigated) window.webContents.on("did-start-navigation", navigation);
+  if (!navigated) window.webContents.on("did-navigate", navigation);
   ipcMain.on("desktop:guard-ready", listener);
 }

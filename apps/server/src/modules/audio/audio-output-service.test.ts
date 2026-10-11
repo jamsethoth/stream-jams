@@ -210,6 +210,12 @@ it("reconciles only an opted-in unique exact label and reports other outcomes", 
   expect(f.routes.findById(optedOut.id)?.deviceId).toBe("a");
 });
 
+it("skips device enumeration when no route needs reconciling", async () => {
+  using f = fixture();
+  await f.service.reconcileBindings();
+  expect(f.host.listOutputDevices).not.toHaveBeenCalled();
+});
+
 it("does not overwrite a same-label manual rebind or resurrect deletion while reconciliation is pending", async () => {
   using f = fixture();
   const manual = await f.service.createRoute({ name: "Manual", deviceId: "a", autoFollowDeviceName: true });
