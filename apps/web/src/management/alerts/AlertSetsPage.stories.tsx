@@ -34,6 +34,7 @@ export const ActiveSet: Story = {
     await expect(alertSets).not.toContainElement(browserSources);
     await expect(within(selectedSet).getByRole("button", { name: "Collapse Default" })).toHaveAttribute("aria-expanded", "true");
     await within(selectedSet).findByRole("button", { name: "Test saved New follower" });
+    await expect(within(selectedSet).getByText("Test saved plays on your live sources and OBS, including audio and TTS.")).toBeVisible();
     await expect(within(selectedSet).getAllByText(/Desktop Landscape when ready/u)[0]).toBeVisible();
     const showUnused = within(selectedSet).getByRole("checkbox", { name: "Show unused event types" });
     await expect(showUnused).not.toBeChecked();

@@ -118,6 +118,18 @@ describe("ScreenEffectEditor", () => {
     expect(api.update).toHaveBeenCalledExactlyOnceWith(saved.id, expect.objectContaining({ name: "Reviewed draft" }), true);
   });
 
+  it("warns that the saved test plays on live sources before and inside its review", async () => {
+    const saved = enabledEffect(true);
+    const user = userEvent.setup();
+    renderEditor({ api: effectApi(saved), create: false, document: saved });
+    const trigger = await screen.findByRole("button", { name: "Test saved…" });
+    expect(trigger).toHaveAccessibleDescription("Test saved plays on your live sources and OBS.");
+    expect(screen.getByText("Test saved plays on your live sources and OBS.")).toBeVisible();
+    await user.click(trigger);
+    const dialog = within(await screen.findByRole("dialog", { name: "Test saved Screen Effect?" }));
+    expect(dialog.getByRole("note")).toHaveTextContent("Plays on your live sources and OBS. Viewers will see and hear this test, including its audio.");
+  });
+
   it("locks explicit live-test cancellation while its single request remains pending", async () => {
     const saved = enabledEffect(true);
     let resolve!: (value: Awaited<ReturnType<ScreenEffectsApi["test"]>>) => void;
