@@ -71,7 +71,7 @@ test("@hardware hidden muted streaming survives slow preparation, recipient fail
     const document = await api<AlertEditorDocument>(`/management/alerts/${rule.id}/editor`);
     async function queue(durationMs = 1000, routeIds = routes.map(route => route.id)) {
       const draft = { ...document, durationMode: "custom", durationMs, outputs: { browserSource: false, deviceRouteIds: routeIds }, layers: [{ id: "recovery-video", type: "video", name: "Silent recovery", assetId: asset.id, visible: true, order: 0, playEmbeddedAudio: true, audioVolume: 0, animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 100, delayMs: 0, easing: "ease-out" } }] };
-      expect((await api<{ status: string }>(`/management/alerts/${rule.id}/editor/test`, "POST", { document: draft, targetProfileId: null, includeAudio: true, includeTts: false, samplePayload: document.samplePayloads[0]!.payload })).status).toBe("queued");
+      expect(["queued", "pending"]).toContain((await api<{ status: string }>(`/management/alerts/${rule.id}/editor/test`, "POST", { document: draft, targetProfileId: null, includeAudio: true, includeTts: false, samplePayload: document.samplePayloads[0]!.payload })).status);
     }
     let player = await windowByUrl(desktop, "stream-jams-audio://player/");
     await instrumentRecoveryPlayer(player, selected[1]!.deviceId, selected[0]!.deviceId);

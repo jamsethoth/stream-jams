@@ -135,7 +135,7 @@ test("@hardware native audio stalls after advancing onset, detaches only its lay
     async function queue(durationMs: number, includeStalled: boolean) {
       const layers = [ ...(includeStalled ? [{ id: "stalled", assetId: stalledAsset }] : []), { id: "healthy", assetId: healthyAsset } ].map((layer, order) => ({ ...layer, type: "audio", name: layer.id, visible: true, order, volume: 0, animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 0, delayMs: 0, easing: "ease-out" } }));
       const draft = { ...document, durationMode: "custom", durationMs, outputs: { browserSource: false, deviceRouteIds: [route.id] }, layers };
-      expect((await api<{ status: string }>(`/management/alerts/${rule.id}/editor/test`, "POST", { document: draft, targetProfileId: null, includeAudio: true, includeTts: false, samplePayload: document.samplePayloads[0]!.payload })).status).toBe("queued");
+      expect(["queued", "pending"]).toContain((await api<{ status: string }>(`/management/alerts/${rule.id}/editor/test`, "POST", { document: draft, targetProfileId: null, includeAudio: true, includeTts: false, samplePayload: document.samplePayloads[0]!.payload })).status);
     }
     await queue(15000, true);
     await expect.poll(() => nativeSamples(nativePlayer).then(samples => samples.length === 2 && samples.every(sample => sample.time > 0.1)), { timeout: 15000 }).toBe(true);

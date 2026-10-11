@@ -171,7 +171,8 @@ async function probeProductionSoundtrack(player: Page, port: number, bytes: Uint
   const response = await api<{ status: string }>(`/management/alerts/${rule.id}/editor/test`, "POST", {
     document: draft, targetProfileId: null, includeAudio: true, includeTts: false, samplePayload: document.samplePayloads[0]!.payload
   });
-  expect(response.status).toBe("queued");
+  // Manual tests go through the event bus: a "pending" receipt is valid and delivery is awaited below.
+  expect(["queued", "pending"]).toContain(response.status);
   type AudioSample = { currentTime: number; muted: boolean; volume: number; sinkId: string; error: number | null };
   let samples: AudioSample[] = [];
   await expect.poll(async () => {
