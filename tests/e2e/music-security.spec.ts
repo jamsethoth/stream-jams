@@ -92,7 +92,7 @@ test("uploaded branding uses authorized output URLs and backup restores appearan
     branded.css = { source: await readFile(resolve("docs/examples/music-branding.css"), "utf8"), enabled: true, styleContractVersion: 1 };
     await fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: branded });
     const live = await fixture.request<{ url: string }>("/management/overlay-outputs/keys", "POST", { overlayId: "default", moduleId: "music", scope: "module", purpose: "live", targetProfileId: "landscape" });
-    const unified = await fixture.request<{ url: string }>("/management/overlay-outputs/keys", "POST", { overlayId: "default", moduleId: null, scope: "unified", purpose: "live", targetProfileId: null });
+    const ordinary = await fixture.request<{ url: string }>("/management/overlay-outputs/keys", "POST", { overlayId: "default", moduleId: "music", scope: "module", purpose: "live", targetProfileId: "landscape" });
     await page.goto(`${fixture.url}/manage/modules/music`);
     const preview = page.getByRole("region", { name: "Music preview" }).getByTestId("music-widget");
     await expect(preview.locator(".sj-brand-image")).toBeVisible();
@@ -120,9 +120,9 @@ test("uploaded branding uses authorized output URLs and backup restores appearan
     expect(privateUrl).toMatch(/\/overlay\/.*\/assets\//u);
     const denied = await context.request.get(`${fixture.url}/assets/${asset.id}`);
     expect(denied.status()).toBeGreaterThanOrEqual(400);
-    const unifiedPage = await context.newPage(); await unifiedPage.goto(unified.url);
-    await expect(unifiedPage.getByTestId("music-widget").locator(".sj-brand-image")).toBeVisible();
-    await expect(unifiedPage.getByTestId("music-widget").locator(".sj-progress-track")).toHaveCSS("position", "absolute");
+    const ordinaryPage = await context.newPage(); await ordinaryPage.goto(ordinary.url);
+    await expect(ordinaryPage.getByTestId("music-widget").locator(".sj-brand-image")).toBeVisible();
+    await expect(ordinaryPage.getByTestId("music-widget").locator(".sj-progress-track")).toHaveCSS("position", "absolute");
     const changed = structuredClone(branded);
     changed.profiles.landscape.views.full.branding.fit = "cover";
     changed.profiles.landscape.views.full.branding.xPercent = 10;
@@ -152,14 +152,14 @@ test("uploaded branding uses authorized output URLs and backup restores appearan
     changed.profiles.landscape.idleAfterSeconds = 1;
     await fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: changed });
     await expect(page.getByTestId("music-widget")).toHaveCount(0, { timeout: 10_000 });
-    await expect(unifiedPage.getByTestId("music-widget")).toHaveCount(0);
+    await expect(ordinaryPage.getByTestId("music-widget")).toHaveCount(0);
     changed.profiles.landscape.idleMode = "none";
     await fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: changed });
     fixture.pear.setSong({ status: 200, body: { videoId: "brand-recovery", title: "Recovered Brand", artist: "Fixture", songDuration: 60, elapsedSeconds: 0 } });
     await expect(page.getByTestId("music-widget").locator(".sj-title")).toContainText("Recovered Brand", { timeout: 10_000 });
     fixture.pear.setSong({ status: 204 });
     await expect(page.getByTestId("music-widget")).toHaveCount(0, { timeout: 10_000 });
-    await expect(unifiedPage.getByTestId("music-widget")).toHaveCount(0);
+    await expect(ordinaryPage.getByTestId("music-widget")).toHaveCount(0);
     // Backup preflight requires the standard starter alert set to have been initialized.
     await fixture.request("/management/alert-sets");
     const archive = await fixture.request<Record<string, unknown>>("/management/settings/backup");
@@ -173,6 +173,6 @@ test("uploaded branding uses authorized output URLs and backup restores appearan
     expect(restored.config.profiles.vertical.views.compact.branding.assetId).toBe(asset.id);
     expect(restored.enabled).toBe(true);
     await expect.poll(() => fixture.runtime.composition.musicRuntimeCoordinator.getProjection("landscape")).toBeNull();
-    await unifiedPage.close();
+    await ordinaryPage.close();
   } finally { await fixture.close(); }
 });

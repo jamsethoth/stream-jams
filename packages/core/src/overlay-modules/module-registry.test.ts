@@ -42,7 +42,7 @@ describe("overlay module registry", () => {
   it("keeps public unified inventory independent of private desktop capability", () => {
     const registry = new StaticOverlayModuleRegistry([
       { ...customModule, renderer: { ...customModule.renderer, supportsDesktopComposition: true } },
-      { ...alertsOverlayModuleDefinition, renderer: { ...alertsOverlayModuleDefinition.renderer, supportsDesktopComposition: false } }
+      { ...alertsOverlayModuleDefinition, renderer: { ...alertsOverlayModuleDefinition.renderer, supportsDesktopComposition: false, supportedOutputs: ["module", "unified"] } }
     ]);
     expect(listDesktopOverlayModuleIds(registry)).toEqual(["custom"]);
     expect(listUnifiedOverlayModuleIds(registry)).toEqual(["alerts"]);
@@ -64,24 +64,25 @@ describe("overlay module registry", () => {
     expect(registry.getModule("timers")).toMatchObject({
       id: "timers",
       defaultEnabled: false,
-      renderer: { supportedOutputs: ["module", "unified"] }
+      renderer: { supportedOutputs: ["module"], supportsDesktopComposition: true }
     });
     expect(alertsOverlayModuleDefinition.wizard.steps.map((step) => step.id)).toEqual(["alerts-canvas"]);
     expect(screenEffectsOverlayModuleDefinition).toMatchObject({
       defaultEnabled: false,
-      renderer: { supportedOutputs: ["module", "unified"] }
+      renderer: { supportedOutputs: ["module"], supportsDesktopComposition: true }
     });
   });
 
-  it("registers Videos for module-specific and unified outputs and retires Video shoutout", () => {
+  it("registers Videos for ordinary browser and private desktop outputs and retires Video shoutout", () => {
     const registry = createDefaultOverlayModuleRegistry();
 
     expect(registry.getModule("videos")).toMatchObject({
       id: "videos",
-      renderer: { supportedOutputs: ["module", "unified"] }
+      renderer: { supportedOutputs: ["module"], supportsDesktopComposition: true }
     });
     expect(registry.getModule("video-shoutout")).toBeNull();
-    expect(listUnifiedOverlayModuleIds(registry)).toEqual(["alerts", "screen-effects", "timers", "music", "videos"]);
+    expect(listUnifiedOverlayModuleIds(registry)).toEqual([]);
+    expect(listDesktopOverlayModuleIds(registry)).toEqual(["alerts", "screen-effects", "timers", "music", "videos"]);
   });
 
   it("returns null for unknown module ids", () => {

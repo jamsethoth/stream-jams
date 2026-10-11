@@ -1,14 +1,21 @@
 import { expect, test } from "@playwright/test";
 import { overlayCompositionSchema, type OverlayOutputView } from "@stream-jams/core";
 import { createProviderSecurityRuntimeFixture } from "../../apps/server/src/test-support/provider-security-runtime-fixture.js";
+import { createPreMigrationDatabase } from "../../apps/server/src/test-support/pre-migration-database.js";
+import { createHash } from "node:crypto";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 
 test("saved canvas refresh is authoritative while empty/disabled and reconnect uses current metadata", async ({ page }) => {
   const fixture = await createProviderSecurityRuntimeFixture();
   try {
+    using old = createPreMigrationDatabase("047-retire-public-overlays");
+    const rawKey = "ovl_historical_canvas_fixture";
+    old.connection.prepare("INSERT INTO overlay_keys (id,overlay_id,module_id,purpose,scope,key_hash,created_at) VALUES ('legacy-canvas','default','alerts','live','module',?,'2026-10-11T00:00:00Z')").run(`sha256:${createHash("sha256").update(rawKey).digest("hex")}`);
+    await mkdir(join(fixture.homeDirectory, ".stream-jams", "data"), { recursive: true });
+    old.connection.prepare("VACUUM INTO ?").run(join(fixture.homeDirectory, ".stream-jams", "data", "stream-jams.sqlite"));
     await fixture.start();
-    const outputResponse = await fixture.request("/management/overlay-outputs/keys", "POST", { overlayId: "default", moduleId: "alerts", targetProfileId: null, purpose: "live", scope: "module" });
-    expect(outputResponse.status).toBe(200);
-    const { url } = await outputResponse.json() as { url: string };
+    const url = `${fixture.runtime.url}/overlay/modules/alerts/live/${rawKey}`;
     const frames: unknown[] = [];
     page.on("websocket", socket => socket.on("framereceived", frame => { if (typeof frame.payload === "string") frames.push(JSON.parse(frame.payload)); }));
     const before = overlayCompositionSchema.parse(await (await fetch(`${url}/composition`)).json());
@@ -25,7 +32,8 @@ test("saved canvas refresh is authoritative while empty/disabled and reconnect u
     await expect.poll(() => frames.some(frame => typeof frame === "object" && frame !== null && "composition" in frame &&
       overlayCompositionSchema.parse(frame.composition).canvas.configRevision === current.canvas.configRevision)).toBe(true);
     expect((await (await fixture.request("/management/overlay-outputs")).json() as OverlayOutputView[])
-      .find(output => output.moduleId === "alerts" && output.targetProfileId === null && output.purpose === "live")?.canvas).toEqual(current.canvas);
+      .some(output => output.keyId === "legacy-canvas")).toBe(false);
+    expect(await (await fixture.request("/management/overlay-outputs/legacy-keys")).json()).toEqual([{ keyId: "legacy-canvas", moduleId: "alerts", createdAt: "2026-10-11T00:00:00Z" }]);
     await page.reload();
     await expect(page.getByTestId("overlay-root")).toBeVisible();
     expect(overlayCompositionSchema.parse(await (await fetch(`${url}/composition`)).json()).canvas).toEqual(current.canvas);

@@ -133,7 +133,8 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
     {loading && view === null ? <p role="status">Loading overlay surfaces…</p> : null}
     {refreshError === null ? null : <div><ManagementErrorBanner error={refreshError} /><Button type="button" disabled={busy} onClick={() => { setLoading(true); setReload(value => value + 1); }}>Refresh overlay settings</Button>{view === null ? null : <p>Showing last known status; it may be stale.</p>}</div>}
     {view !== null && view.surfaces.length === 0 ? <p>No overlay surfaces are configured.</p> : null}
-    {view?.surfaces.map(saved => {
+    <p>Public test and unified browser sources have been retired. Use the ordinary source links on each module page and update the dimensions in OBS. Desktop layers remain independent.</p>
+    {view?.surfaces.filter(surface => surface.kind === "desktop").map(saved => {
       const draft = model.drafts.get(saved.id) ?? saved; const name = title(draft); const changed = !same(draft, saved);
       const unavailable = draft.kind === "desktop" && !view.desktop.available;
       const invalid = !surfaceConfigurationSchema.safeParse(draft).success;
@@ -181,6 +182,7 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
 });
 
 function mergeView(current: Model, view: SurfaceSettingsView, savedId?: string): Model {
+  view = { ...view, surfaces: view.surfaces.filter(surface => surface.kind === "desktop") };
   const drafts = new Map<string, SurfaceConfiguration>();
   for (const surface of view.surfaces) {
     const draft = current.drafts.get(surface.id); const saved = current.view?.surfaces.find(value => value.id === surface.id);
@@ -190,7 +192,7 @@ function mergeView(current: Model, view: SurfaceSettingsView, savedId?: string):
 }
 function same(a: SurfaceConfiguration | undefined, b: SurfaceConfiguration | undefined): boolean { return JSON.stringify(a) === JSON.stringify(b); }
 function toUpdate(value: SurfaceConfiguration): SurfaceConfigurationUpdate {
-  if (value.kind === "unified-browser") return surfaceConfigurationUpdateSchema.parse(value);
+  if (value.kind !== "desktop") throw new Error("Public unified surfaces were retired.");
   return surfaceConfigurationUpdateSchema.parse({
     id: value.id,
     kind: value.kind,

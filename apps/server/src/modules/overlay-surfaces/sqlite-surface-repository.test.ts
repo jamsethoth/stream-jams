@@ -53,8 +53,7 @@ it("desktop_membership_does_not_depend_on_public_unified_support", async () => {
   const surfaces = await repository.list();
   const desktop = surfaces.find(surface => surface.kind === "desktop")!;
   expect(desktop.layers).toEqual([{ moduleId: "desktop-only", visible: false }]);
-  expect(surfaces.find(surface => surface.kind === "unified-browser")?.layers)
-    .toEqual([{ moduleId: "browser-only", visible: true }]);
+  expect(surfaces.some(surface => surface.kind === "unified-browser")).toBe(false);
   await repository.save({ ...desktop, layers: [{ moduleId: "desktop-only", visible: true }] });
   await expect(repository.save({ ...desktop, layers: [{ moduleId: "browser-only", visible: true }] })).rejects.toThrow();
   expect((await repository.list()).find(surface => surface.kind === "desktop")?.layers)
@@ -119,18 +118,20 @@ it("normalizes legacy desktop JSON without losing its selected ID or presentatio
   }]);
 });
 
-it("preserves existing unified paint order and appends later modules hidden", async () => {
+it("preserves private desktop paint order and appends later modules hidden", async () => {
   using db = createInMemoryStreamJamsDatabase();
   db.connection.exec(`INSERT INTO overlay_keys
     (id, overlay_id, module_id, scope, purpose, key_hash, created_at, revoked_at)
     VALUES ('key', 'output', NULL, 'unified', 'live', 'hash', '2026-09-09T00:00:00.000Z', NULL)`);
   const two = new StaticOverlayModuleRegistry([alertsOverlayModuleDefinition, { ...alertsOverlayModuleDefinition, id: "second" }]);
   const repository = new SqliteSurfaceRepository(db.connection, two);
-  expect((await repository.list()).find(row => row.kind === "unified-browser")?.layers).toEqual([
+  const desktop = (await repository.list()).find(row => row.kind === "desktop")!;
+  await repository.save({ ...desktop, layers: [{ moduleId: "second", visible: true }, { moduleId: "alerts", visible: true }] });
+  expect((await repository.list()).find(row => row.kind === "desktop")?.layers).toEqual([
     { moduleId: "second", visible: true }, { moduleId: "alerts", visible: true }
   ]);
   const three = new StaticOverlayModuleRegistry([...two.listModules(), { ...alertsOverlayModuleDefinition, id: "third" }]);
-  expect((await new SqliteSurfaceRepository(db.connection, three).list()).find(row => row.kind === "unified-browser")?.layers).toEqual([
+  expect((await new SqliteSurfaceRepository(db.connection, three).list()).find(row => row.kind === "desktop")?.layers).toEqual([
     { moduleId: "second", visible: true }, { moduleId: "alerts", visible: true }, { moduleId: "third", visible: false }
   ]);
 });

@@ -16,7 +16,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const BrowserSources: Story = { tags: ["music-content-canvas"],
+export const BrowserSources: Story = { tags: ["music-content-canvas", "public-output-retirement"],
   args: { api: createStoryManagementApi({ listMusicOutputs: async () => (["landscape", "vertical"] as const).map(targetProfileId => ({ canvas: moduleOutputCanvas({ moduleId: "music", enabled: true, config: createDefaultMusicModuleConfig(), updatedAt: "2026-10-11T00:00:00Z" }, targetProfileId, "browser", 0), id: targetProfileId, overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId, label: targetProfileId, enabled: true, keyId: null, url: null, copyableUrlStatus: "create-required" })) }) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);

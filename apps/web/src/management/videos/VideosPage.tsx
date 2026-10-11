@@ -204,7 +204,7 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
             ? <><strong>Mirroring unavailable:</strong> desktop app not running. Each Browser Source plays the current video in its own player, following the queue clock.</>
             : <><strong>Mirror status:</strong> unknown until the queue loads.</>}</p>
         <BrowserSourcesPanel id="browser-sources" detailsId="videos-sources-content" expanded={sourcesExpanded} onToggle={() => setSourcesExpanded(value => !value)}
-        readyCount={sources.filter(source => source.status === "available").length} needsSetupCount={sources.filter(source => source.status !== "available").length} description="Module live and test outputs.">
+        readyCount={sources.filter(source => source.status === "available").length} needsSetupCount={sources.filter(source => source.status !== "available").length} description="Ordinary module browser source.">
         <p>Add the Videos URL as an OBS Browser Source with the saved width and height shown below. Position it in OBS; desktop placement affects only the desktop overlay.
           To show videos on the desktop overlay, turn on Videos in <a href="/manage/settings#overlay-surfaces">Overlay surfaces</a>.</p>
         {sources.length === 0 ? <p>No Videos Browser Source output is registered.</p> : sources.map(source => <BrowserSourceRow key={source.id} label={source.label} canvas={source.canvas} ready={source.status === "available"}

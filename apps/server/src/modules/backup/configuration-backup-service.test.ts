@@ -48,6 +48,38 @@ const asset: AssetRecord = {
 };
 
 describe("ConfigurationBackupService", () => {
+  it("discloses and removes surface-only retired metadata, omits recognized legacy profileless outputs, and blocks malformed ordinary metadata", async () => {
+    const source = createRealService(); const generated: unknown[] = [];
+    const target = createRealService({ regenerateOutput: async (output, origin) => { generated.push(output); return { label: "ordinary", url: `${origin}/ordinary` }; } });
+    try {
+      const archive = await source.service.exportArchive(); archive.manifest.schemaVersion = 45;
+      archive.configuration.tables.overlay_surfaces = [{ id: "unified-browser:default", kind: "unified-browser", configuration_json: JSON.stringify({ id: "unified-browser:default", kind: "unified-browser", overlayId: "default", layers: [] }), updated_at: "2026-10-11T00:00:00Z" }];
+      archive.configuration.overlayOutputs = [];
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      const surfaceOnly = await target.service.preflight(archive);
+      expect(surfaceOnly.state).toBe("valid");
+      expect(surfaceOnly.warnings.some(warning => /retired/iu.test(warning.summary))).toBe(true);
+      archive.configuration.overlayOutputs = [
+        { overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId: null },
+        { overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId: "vertical" },
+        { overlayId: "default", scope: "module", moduleId: "music", purpose: "test", targetProfileId: "landscape" },
+        { overlayId: "default", scope: "unified", moduleId: null, purpose: "live", targetProfileId: null }
+      ];
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      for (let repeat = 0; repeat < 2; repeat++) {
+        const preflight = await target.service.preflight(archive);
+        expect(preflight.state).toBe("valid");
+        expect(preflight.warnings.some(warning => /profileless/iu.test(warning.summary + warning.cause))).toBe(true);
+        await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
+        expect(target.database.connection.prepare("SELECT * FROM overlay_surfaces WHERE kind='unified-browser'").all()).toEqual([]);
+      }
+      expect(generated).toEqual([archive.configuration.overlayOutputs[1], archive.configuration.overlayOutputs[1]]);
+      archive.manifest.schemaVersion = 46;
+      archive.configuration.overlayOutputs = [{ overlayId: "default", scope: "module", moduleId: "videos", purpose: "live", targetProfileId: "vertical" }];
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      expect((await target.service.preflight(archive)).state).toBe("invalid");
+    } finally { source.database.close(); target.database.close(); }
+  });
   it("normalizes legacy Videos before typed preflight and repeated restore, rejects invalid geometry without mutation", async () => {
     const source = createRealService(); const target = createRealService();
     try {
@@ -66,7 +98,7 @@ describe("ConfigurationBackupService", () => {
         await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true }); expect(saved()).toEqual(expected);
       }
       const current = await target.service.exportArchive();
-      expect(current.manifest.schemaVersion).toBe(45); expect(JSON.stringify(current)).not.toMatch(/video_bus_admissions|video_requests|video_queue_state/u);
+      expect(current.manifest.schemaVersion).toBe(46); expect(JSON.stringify(current)).not.toMatch(/video_bus_admissions|video_requests|video_queue_state/u);
       await target.service.restore({ archive: current, archiveId: (await target.service.preflight(current)).archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true }); expect(saved()).toEqual(expected);
       const invalid = structuredClone(archive);
       invalid.configuration.tables.overlay_module_config![0]!.config_json = JSON.stringify({ ...expected, layout: { ...expected.layout, desktopPlacement: { x: 1800, y: 0, scale: 1 } } });
@@ -1072,6 +1104,7 @@ function createService(overrides: {
 }
 
 function createRealService(overrides: {
+  readonly regenerateOutput?: ConfigurationBackupServiceOptions["regenerateOutput"];
   readonly database?: StreamJamsDatabase;
   readonly initialPolicy?: ModerationSettings;
   readonly updateConfig?: ConfigurationBackupServiceOptions["configStore"]["updateConfig"];
@@ -1111,7 +1144,7 @@ function createRealService(overrides: {
     getRuntime: async () => ({ intakeActive: false, playbackActive: false, queuedPlaybackCount: 0 }),
     getAvailableBytes: async () => 1_000_000,
     safetyBackupStore: { write: overrides.writeSafetyBackup ?? (async () => "C:/safe/pre-restore.streamjams-backup") },
-    regenerateOutput: async (_output, origin) => ({ label: "Landscape live", url: `${origin}/new-key` }),
+    regenerateOutput: overrides.regenerateOutput ?? (async (_output, origin) => ({ label: "Landscape live", url: `${origin}/new-key` })),
     ...(overrides.reloadRuntimeConfiguration === undefined ? {} : { reloadRuntimeConfiguration: overrides.reloadRuntimeConfiguration }),
     ...(overrides.runExclusive === undefined ? {} : { runExclusive: overrides.runExclusive })
   };

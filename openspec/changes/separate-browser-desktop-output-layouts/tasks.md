@@ -73,12 +73,12 @@ Specification approved 2026-10-10; implementation is authorized and in progress.
 
 ## 10. S10 — Remaining public output retirement (depends on S01, S03, S06, S07 and S09)
 
-- [ ] 10.1 Add complete shell/composition/WebSocket/media/artwork authorization matrix for retired, ordinary, wrong-profile and private recipients.
-- [ ] 10.2 Remove remaining test/unified inventory/key operations/Settings controls, revoke keys and remove only public unified surfaces without breaking desktop composition.
-- [ ] 10.3 Normalize legacy output/surface metadata before restore validation/key generation; preserve ordinary compatibility and local-versus-portable desktop binding rules.
-- [ ] 10.4 Test repeated import/restart, socket/lease retirement, invalid records and failed restore rollback without queue/timer restart.
-- [ ] 10.5 Update source dimensions/migration guidance and production smoke coverage; verify dynamic Alerts/Effects and cross-module timing/audio independence.
-- [ ] 10.6 Run security/backup/routes/UI and rebuilt browser checks; record evidence and commit the atomic retirement.
+- [x] 10.1 Add complete shell/composition/WebSocket/media/artwork authorization matrix for retired, ordinary, wrong-profile and private recipients.
+- [x] 10.2 Remove remaining test/unified inventory/key operations/Settings controls, revoke keys and remove only public unified surfaces without breaking desktop composition.
+- [x] 10.3 Normalize legacy output/surface metadata before restore validation/key generation; preserve ordinary compatibility and local-versus-portable desktop binding rules.
+- [x] 10.4 Test repeated import/restart, socket/lease retirement, invalid records and failed restore rollback without queue/timer restart.
+- [x] 10.5 Update source dimensions/migration guidance and production smoke coverage; verify dynamic Alerts/Effects and cross-module timing/audio independence.
+- [x] 10.6 Run security/backup/routes/UI and rebuilt browser checks; record evidence and commit the atomic retirement.
 
 ## 11. S11 — Integrated acceptance and delivery (depends on S10 and all preceding slices)
 

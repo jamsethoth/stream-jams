@@ -231,7 +231,7 @@ describe("web shell routes", () => {
       overlayId: "default",
       moduleId: "alerts",
       purpose: "live",
-      scope: "module"
+      scope: "module", targetProfileId: "landscape"
     });
     const app = createWebShellOverlayRouteTestApp({
       metadata: {
@@ -250,7 +250,7 @@ describe("web shell routes", () => {
     });
     const overlay = await app.inject({
       method: "GET",
-      url: `/overlay/modules/alerts/live/${created.rawKey}`
+      url: `/overlay/modules/alerts/live/${created.rawKey}?profile=landscape`
     });
 
     expect(management.statusCode).toBe(200);

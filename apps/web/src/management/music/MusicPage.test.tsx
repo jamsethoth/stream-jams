@@ -215,7 +215,7 @@ describe("Music appearance", () => {
     expect(screen.getByLabelText("Custom CSS")).toHaveValue("");
   });
 
-  it("retains CSS and branding during theme reset and exposes live/test output links", async () => {
+  it("retains CSS and branding during theme reset and excludes retired output links", async () => {
     const user = userEvent.setup();
     const config = createDefaultMusicModuleConfig();
     config.css = { ...config.css, source: ".sj-title { color: red; }", enabled: true };
@@ -231,9 +231,9 @@ describe("Music appearance", () => {
     expect(screen.queryByRole("textbox", { name: "Landscape browser source URL" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Reveal Landscape URL" }));
     expect(screen.getByRole("textbox", { name: "Landscape browser source URL" })).toHaveValue("http://127.0.0.1:39187/overlay/modules/music/live/example");
-    await user.click(screen.getByText("Test browser sources"));
-    await user.click(screen.getByRole("button", { name: "Reveal Landscape test URL" }));
-    expect(screen.getByRole("textbox", { name: "Landscape test browser source URL" })).toHaveValue("http://127.0.0.1:39187/overlay/modules/music/test/example");
+    expect(screen.queryByText("Test browser sources")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reveal Landscape test URL" })).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue("http://127.0.0.1:39187/overlay/modules/music/test/example")).not.toBeInTheDocument();
   });
 
   it("creates the selected profile output link through the existing output service", async () => {

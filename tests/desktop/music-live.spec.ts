@@ -114,14 +114,14 @@ test("packaged Music crosses the preload boundary with desktop scaling", async (
     const preview = management.getByRole("region", { name: "Music preview" }).getByTestId("music-widget");
     await expect(preview.locator(".sj-brand-image")).toHaveCSS("opacity", "0.35");
     await expect(preview.locator(".sj-progress-track")).toHaveCSS("position", "absolute");
-    for (const targetProfileId of ["landscape", "vertical", null] as const) {
-      const scope = targetProfileId === null ? "unified" : "module";
+    for (const targetProfileId of ["landscape", "vertical"] as const) {
+      const scope = "module";
       const key = await api<{ url: string }>("/management/overlay-outputs/keys", "POST", {
-        overlayId: "default", moduleId: scope === "module" ? "music" : null, scope,
+        overlayId: "default", moduleId: "music", scope,
         purpose: "live", targetProfileId
       });
       await management.goto(key.url);
-      if (targetProfileId !== null) {
+      {
         const geometry = resolveMusicOutputGeometry(settings.config, targetProfileId);
         await expect(management.getByTestId("overlay-content-canvas")).toHaveCSS("width", `${geometry.width}px`);
         await expect(management.getByTestId("overlay-content-canvas")).toHaveCSS("height", `${geometry.height}px`);

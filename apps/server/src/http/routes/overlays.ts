@@ -1,6 +1,5 @@
 import fastifyWebsocket from "@fastify/websocket";
 import {
-  listUnifiedOverlayModuleIds,
   overlayCompositionSchema,
   type OverlayAccessService,
   type OverlayCompositionService,
@@ -11,6 +10,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
 import {
   createOverlayAuthPreHandler,
+  sendTransparentOverlayRejection,
   parseOverlayTargetProfileQuery
 } from "../middleware/overlay-auth.js";
 import type { OverlayGateway, OverlayGatewaySocket } from "../../websocket/overlay-gateway.js";
@@ -28,6 +28,9 @@ export interface OverlayRouteDependencies {
 }
 
 export function registerOverlayRoutes(app: FastifyInstance, dependencies: OverlayRouteDependencies): void {
+  const shellPreHandler = createOverlayAuthPreHandler({
+    overlayAccessService: dependencies.overlayAccessService, resolveAccessRequest: resolveModuleOverlayAccessRequest, shell: true
+  });
   const modulePreHandler = createOverlayAuthPreHandler({
     overlayAccessService: dependencies.overlayAccessService,
     resolveAccessRequest: resolveModuleOverlayAccessRequest
@@ -37,10 +40,10 @@ export function registerOverlayRoutes(app: FastifyInstance, dependencies: Overla
     resolveAccessRequest: resolveUnifiedOverlayAccessRequest
   });
 
-  app.get("/overlay/modules/:moduleId/:purpose", { preHandler: modulePreHandler }, async (_request, reply) =>
+  app.get("/overlay/modules/:moduleId/:purpose", { preHandler: shellPreHandler }, async (_request, reply) =>
     sendHtml(reply, await dependencies.webShellRenderer.renderOverlayShell())
   );
-  app.get("/overlay/modules/:moduleId/:purpose/:overlayKey", { preHandler: modulePreHandler }, async (_request, reply) =>
+  app.get("/overlay/modules/:moduleId/:purpose/:overlayKey", { preHandler: shellPreHandler }, async (_request, reply) =>
     sendHtml(reply, await dependencies.webShellRenderer.renderOverlayShell())
   );
   app.get(
@@ -64,26 +67,13 @@ export function registerOverlayRoutes(app: FastifyInstance, dependencies: Overla
     }
   );
 
-  app.get("/overlay/unified/:purpose/:overlayKey", { preHandler: unifiedPreHandler }, async (_request, reply) =>
-    sendHtml(reply, await dependencies.webShellRenderer.renderOverlayShell())
-  );
+  // Retired navigation gets no executable shell or visible diagnostic document.
+  app.get("/overlay/unified/:purpose", async (_request, reply) => sendTransparentOverlayRejection(reply));
+  app.get("/overlay/unified/:purpose/:overlayKey", async (_request, reply) => sendTransparentOverlayRejection(reply));
   app.get(
     "/overlay/unified/:purpose/:overlayKey/composition",
     { preHandler: unifiedPreHandler },
-    async (request) => {
-      const params = readUnifiedOverlayParams(request.params);
-      if (params.purpose === null) {
-        throw new Error("Overlay purpose must be live or test");
-      }
-
-      const composition = await dependencies.overlayCompositionService.resolveUnifiedOutput({
-        overlayId: defaultOverlayId,
-        purpose: params.purpose,
-        enabledModuleIds: listUnifiedOverlayModuleIds(dependencies.overlayModuleRegistry)
-      });
-
-      return overlayCompositionSchema.parse(composition);
-    }
+    async (_request, reply) => reply.status(401).send({ error: { code: "OVERLAY_ROUTE_KEY_UNAUTHORIZED" } })
   );
 
   if (dependencies.overlayGateway !== undefined) {

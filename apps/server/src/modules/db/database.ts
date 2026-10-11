@@ -49,6 +49,7 @@ import { videoBusAdmissionMigration } from "./migrations/043-video-bus-admission
 import { timerProfileAppearanceMigration } from "./migrations/044-timer-profile-appearance.js";
 import { videoContentLayoutMigration } from "./migrations/045-video-content-layout.js";
 import { singleVideoQueueMigration } from "./migrations/046-single-video-queue.js";
+import { retirePublicOverlaysMigration } from "./migrations/047-retire-public-overlays.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -113,7 +114,8 @@ export const streamJamsMigrations = Object.freeze([
   videoBusAdmissionMigration,
   timerProfileAppearanceMigration,
   videoContentLayoutMigration,
-  singleVideoQueueMigration
+  singleVideoQueueMigration,
+  retirePublicOverlaysMigration
 ] satisfies readonly StreamJamsMigration[]);
 
 const migrations = streamJamsMigrations;

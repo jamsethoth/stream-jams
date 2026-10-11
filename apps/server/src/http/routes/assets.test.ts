@@ -1,3 +1,4 @@
+import { HistoricalOverlayKeyFixture } from "../test-support/historical-overlay-key-fixture.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,7 +26,7 @@ const replacementPngBytes = Buffer.concat([pngSignature, Buffer.from([9, 8, 7])]
 describe("asset routes", () => {
   it("serves scoped grants and exact owned overlay versions without granting management access", async () => {
     const access = createOverlayAccessService(["ovl_versions"]);
-    const key = await access.createKey({ overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module" });
+    const key = await access.seedHistoricalKey({ overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module" });
     const { app, authHeaders, store, repository, media } = await createAppWithAssets({ enableMedia: true, overlayAccessService: access });
     try {
       await app.inject({ method: "POST", url: "/assets/import", headers: { ...authHeaders, "content-type": "application/octet-stream", "x-stream-jams-file-name": "test.png", "x-stream-jams-mime-type": "image/png" }, payload: pngBytes });
@@ -82,13 +83,12 @@ describe("asset routes", () => {
       await app.close();
     }
   });
-  it.each(["management", "module", "unified"] as const)("serves authorized %s asset ranges and HEAD without widening access", async kind => {
+  it.each(["management", "module"] as const)("serves authorized %s asset ranges and HEAD without widening access", async kind => {
     const access = createOverlayAccessService(["ovl_ranges"]);
-    const key = await access.createKey({ overlayId: "default", moduleId: kind === "unified" ? null : "alerts", purpose: "live", scope: kind === "unified" ? "unified" : "module" });
+    const key = await access.seedHistoricalKey({ overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module" });
     const { app, authHeaders } = await createAppWithAssets({ overlayAccessService: access });
     await app.inject({ method: "POST", url: "/assets/import", headers: { ...authHeaders, "content-type": "application/octet-stream", "x-stream-jams-file-name": "test.png", "x-stream-jams-mime-type": "image/png" }, payload: pngBytes });
-    const url = kind === "management" ? "/assets/asset_1/file" : kind === "module"
-      ? `/overlay/modules/alerts/live/${key.rawKey}/assets/asset_1` : `/overlay/unified/live/${key.rawKey}/assets/asset_1`;
+    const url = kind === "management" ? "/assets/asset_1/file" : `/overlay/modules/alerts/live/${key.rawKey}/assets/asset_1`;
     const headers = kind === "management" ? authHeaders : {};
     for (const [range, start, end] of [["bytes=1-3", 1, 3], ["bytes=8-", 8, 10], ["bytes=-3", 8, 10], ["bytes=8-99", 8, 10], ["bytes=-99", 0, 10]] as const) {
       const response = await app.inject({ method: "GET", url, headers: { ...headers, range } });
@@ -468,13 +468,13 @@ describe("asset routes", () => {
       scope: "module",
       targetProfileId: "landscape"
     });
-    const revokedKey = await overlayAccessService.createKey({
+    const revokedKey = await overlayAccessService.seedHistoricalKey({
       overlayId: "default",
       moduleId: "alerts",
       purpose: "live",
       scope: "module"
     });
-    const unifiedKey = await overlayAccessService.createKey({
+    const unifiedKey = await overlayAccessService.seedHistoricalKey({
       overlayId: "default",
       moduleId: null,
       purpose: "live",
@@ -638,10 +638,10 @@ async function createAppWithAssets(options: {
   };
 }
 
-function createOverlayAccessService(rawKeys: readonly string[]): LocalOverlayAccessService {
+function createOverlayAccessService(rawKeys: readonly string[]): HistoricalOverlayKeyFixture {
   let rawKeyIndex = 0;
   let id = 0;
-  return new LocalOverlayAccessService({
+  return new HistoricalOverlayKeyFixture({
     clock: () => new Date("2026-05-30T12:00:00.000Z"),
     generateId: () => {
       id += 1;

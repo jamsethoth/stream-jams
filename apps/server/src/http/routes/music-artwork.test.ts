@@ -60,7 +60,7 @@ describe("music artwork HTTP delivery", () => {
       expect((await app.inject({ url: `/overlay/modules/music/live/wrong/artwork/${sourceRef}` })).statusCode).toBe(401);
       expect((await app.inject({ url: `/overlay/modules/music/test/valid/artwork/${sourceRef}` })).statusCode).toBe(401);
       expect((await app.inject({ url: `/overlay/modules/music/live/valid/artwork/${sourceRef}?profile=wrong` })).statusCode).toBe(401);
-      expect((await app.inject({ url: `/overlay/unified/live/valid/music/artwork/${sourceRef}` })).statusCode).toBe(200);
+      expect((await app.inject({ url: `/overlay/unified/live/valid/music/artwork/${sourceRef}` })).statusCode).toBe(401);
       revoke();
       expect((await app.inject({ url: `/overlay/modules/music/live/valid/artwork/${sourceRef}` })).statusCode).toBe(401);
     } finally { await app.close(); }

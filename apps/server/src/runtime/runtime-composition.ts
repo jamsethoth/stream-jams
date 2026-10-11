@@ -1,4 +1,6 @@
 import { AutomationControlService } from "../modules/automation/automation-control-service.js";
+import { cleanupRetiredOutputSecrets } from "../modules/overlays/retired-output-secrets.js";
+import { isOrdinaryOverlayOutput } from "@stream-jams/core";
 import { AutomationCredentialService } from "../modules/automation/automation-credential-service.js";
 import { SqliteAutomationGrantRepository } from "../modules/automation/sqlite-automation-grant-repository.js";
 import { createAutomationMachinePreHandler, createAutomationSecurityPreHandler } from "../http/middleware/automation-security.js";
@@ -443,6 +445,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   await localMaintenanceService.clearOldLogs();
   const overlayOutputManagementService = new OverlayOutputManagementService({
+    listLegacyKeys: () => overlayKeyRepository.list(),
+    onKeyRevoked: () => overlayGateway.recheckRecipientPolicy(),
+    onCleanupFailure: async () => logRetiredSecretCleanupFailure(1),
     getCanvas: (moduleId, targetProfileId): Promise<import("@stream-jams/core").OutputCanvas> => overlayCompositionService.getModuleOutputCanvas({ moduleId, ...(targetProfileId === undefined ? {} : { targetProfileId }) }),
     overlayAccessService,
     overlayKeyRepository,
@@ -451,6 +456,14 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     secretStore
   });
   const generateRuntimeReferenceId = () => `ref_${randomBytes(12).toString("base64url")}`;
+  async function logRetiredSecretCleanupFailure(count: number): Promise<void> {
+    await runtimeLogger.warn("Overlay credentials were revoked, but credential-store cleanup needs attention. Restart to retry retired-output cleanup.", {
+      module: "overlays", source: "overlay.retired-secret.cleanup-failed", correlationId: generateRuntimeReferenceId(), processingId: null,
+      metadata: { count, nextStep: "Restart the app to retry cleanup. Retired sources remain unauthorized." }
+    });
+  }
+  const retiredSecretFailures = await cleanupRetiredOutputSecrets(database.connection, secretStore);
+  if (retiredSecretFailures > 0) await logRetiredSecretCleanupFailure(retiredSecretFailures);
   function trackRuntimeWork(work: () => Promise<void>): Promise<void> {
     if (closing) return Promise.resolve();
     const pending = trackRuntimeTask({
@@ -617,6 +630,15 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     modulePaused: initialEffectModuleSettings.paused
   });
   const maintenanceGate = new RuntimeMaintenanceGate();
+  function refreshRecipientPolicy(): void {
+    overlayGateway.setRecipientPolicy(client => {
+      const row = database.connection.prepare("SELECT overlay_id, module_id, purpose, scope, target_profile_id FROM overlay_keys WHERE id = ? AND revoked_at IS NULL").get(client.keyId);
+      return row !== undefined && isOrdinaryOverlayOutput(client, true) && row.overlay_id === client.overlayId
+        && row.module_id === client.moduleId && row.purpose === client.purpose && row.scope === client.scope
+        && row.target_profile_id === (client.targetProfileId ?? null);
+    });
+  }
+  refreshRecipientPolicy();
   let desktopAudioSink: DesktopAudioSink | undefined;
   if (options.desktopAudioTransport !== undefined) {
     try {
@@ -1498,6 +1520,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       automationCredentialService.clearPending();
       automationControlService.invalidateRuntime();
       await playbackOperationsService.restoreSafety(playback);
+      refreshRecipientPolicy();
       await refreshBrowserConfigurations();
     },
     assetDurationCatalog,
@@ -1535,6 +1558,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       },
       deleteOldSecret: ref => secretStore.deleteSecret(ref)
     },
+    retireOverlayRecipients: () => overlayGateway.setRecipientPolicy(() => false),
     runExclusive: (work) => maintenanceGate.runMaintenance(() => localMediaService.maintenance(work))
   });
   const managementOverviewService = new ManagementOverviewService({
@@ -1600,8 +1624,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const musicOutputRuntime = new MusicOutputRuntime({
     runtime: musicRuntimeCoordinator,
     assets: assetLibraryService,
-    getConfig: async () => (await overlayModuleConfigService.getModuleConfig("music")).config as import("@stream-jams/core").MusicModuleConfig,
-    now: () => now().getTime()
+    getConfig: async () => (await overlayModuleConfigService.getModuleConfig("music")).config as import("@stream-jams/core").MusicModuleConfig
   });
   const overlayModuleRuntimes = new Map<string, OverlayModuleRuntime>([
     ["alerts", {

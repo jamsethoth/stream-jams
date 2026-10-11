@@ -36,17 +36,6 @@ export class OutputReadinessService {
     );
   }
 
-  isUnifiedBrowserSourceConnected(): boolean {
-    return this.options.getClientStates().some(
-      (client) => client.connectionState === "connected"
-        && client.overlayId === "default"
-        && client.purpose === "live"
-        && client.scope === "unified"
-        && client.moduleId === null
-        && (client.targetProfileId ?? null) === null
-    );
-  }
-
   async listAlertBrowserSources(origin: string): Promise<readonly AlertBrowserSourceView[]> {
     const outputs = await this.options.listOutputs(origin);
     return outputs
@@ -105,25 +94,8 @@ export class OutputReadinessService {
     readonly targetProfileId: TargetProfileId | null;
   }): Promise<boolean> {
     const moduleConnected = this.isModuleBrowserSourceConnected(input.moduleId, input.targetProfileId);
-    const unifiedConnected = input.targetProfileId === null && this.isUnifiedBrowserSourceConnected();
-    let unifiedVisualEnabled = false;
-    if (input.hasVisual && unifiedConnected) {
-      try {
-        const surface = (await this.options.listSurfaces()).find(
-          (candidate) => candidate.kind === "unified-browser" && candidate.overlayId === "default"
-        );
-        unifiedVisualEnabled = surface?.layers.some(
-          (layer) => layer.moduleId === input.moduleId && layer.visible
-        ) ?? false;
-      }
-      // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
-      catch {
-        unifiedVisualEnabled = false;
-      }
-    }
-
-    const visualReady = input.hasVisual && (moduleConnected || (unifiedConnected && unifiedVisualEnabled));
-    const audioReady = input.hasAudio && (moduleConnected || unifiedConnected);
+    const visualReady = input.hasVisual && moduleConnected;
+    const audioReady = input.hasAudio && moduleConnected;
     return visualReady || audioReady;
   }
 

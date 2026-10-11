@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   appConfigSchema,
+  isOrdinaryOverlayOutput,
   upgradeTimersConfig,
   upgradeVideosLayout, upgradeVideosRewardMappings,
   configurationBackupLimits,
@@ -66,6 +67,7 @@ export interface ConfigurationBackupServiceOptions {
   readonly safetyBackupStore: { write(archive: ConfigurationBackupArchive): Promise<string> };
   readonly regenerateOutput: (output: ConfigurationBackupOutput, origin: string) => Promise<{ readonly label: string; readonly url: string }>;
   readonly reloadRuntimeConfiguration?: () => void | Promise<void>;
+  readonly retireOverlayRecipients?: () => void;
   readonly assetDurationCatalog?: { replace(records: readonly AssetRecord[]): void };
   readonly twitchCredentials?: {
     findConnectedAccountId(): Promise<string | null>;
@@ -278,7 +280,9 @@ export class ConfigurationBackupService {
     const archive = parsed.data;
     const blockers: ActionableManagementError[] = [];
     const warnings: ActionableManagementError[] = [];
-    if (archive.configuration.overlayOutputs.some(output => output.moduleId === "videos" && output.purpose === "test")) warnings.push(warning("Videos test source was retired", "The old test source will not be restored. Reward requests now use the ordinary queue.", "Remove the old test browser source in OBS and review the ordinary Videos queue before playback."));
+    if (archive.configuration.overlayOutputs.some(output => output.purpose === "test" || output.scope === "unified")
+      || archive.configuration.tables.overlay_surfaces?.some(row => row.kind === "unified-browser")) warnings.push(warning("Browser outputs were retired", "Test and unified sources and surfaces will not be restored.", "Remove old test/unified sources in OBS and add ordinary module sources with their displayed dimensions."));
+    if (archive.manifest.schemaVersion < 46 && archive.configuration.overlayOutputs.some(output => isOrdinaryOverlayOutput(output, true) && !isOrdinaryOverlayOutput(output))) warnings.push(warning("Legacy profileless sources will not be restored", "Portable restore does not create new legacy source credentials.", "Create the module's Landscape or Vertical source in management and update OBS."));
     if (archive.configuration.tables.overlay_module_config?.some(row => {
       if (row.module_id !== "videos" || typeof row.config_json !== "string") return false;
       try {
@@ -529,6 +533,7 @@ export class ConfigurationBackupService {
         musicSuspended = true;
         await this.#options.musicRestore.suspend();
       }
+      this.#options.retireOverlayRecipients?.();
       this.#options.snapshotRepository.replace({ tables: upgradedConfiguration.tables, assets: stagedAssets });
       await this.#options.configStore.updateConfig({
         desktop: restoredConfig.desktop,
@@ -725,7 +730,7 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   // Schema 40 adds provider details to the runtime Videos queue, which backups never contain.
   if (currentSchemaVersion === 40) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 39;
   // Manual bus/admission are runtime-only; counts 43/44 add typed Timer/Video upgrades (IDs 044/045).
-  if (currentSchemaVersion >= 41 && currentSchemaVersion <= 45) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion < currentSchemaVersion;
+  if (currentSchemaVersion >= 41 && currentSchemaVersion <= 46) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion < currentSchemaVersion;
   if (currentSchemaVersion === 28) return [19, 20, 21, 22, 23, 24, 25, 26, 27].includes(archiveSchemaVersion);
   return false;
 }
@@ -734,7 +739,13 @@ function upgradeLegacyConfiguration(
   configuration: BackupConfiguration,
   schemaVersion: number
 ): BackupConfiguration {
-  configuration = { ...configuration, overlayOutputs: configuration.overlayOutputs.filter(output => !(output.moduleId === "videos" && output.purpose === "test")) };
+  configuration = { ...configuration,
+    overlayOutputs: configuration.overlayOutputs.filter(output => output.purpose !== "test" && output.scope !== "unified"
+      && !(schemaVersion < 46 && isOrdinaryOverlayOutput(output, true) && !isOrdinaryOverlayOutput(output))),
+    tables: { ...configuration.tables, ...(configuration.tables.overlay_surfaces === undefined ? {} : {
+      overlay_surfaces: configuration.tables.overlay_surfaces.filter(row => row.kind !== "unified-browser")
+    }) }
+  };
   let tables = configuration.tables;
   if (tables.overlay_module_config !== undefined) {
     tables = { ...tables, overlay_module_config: tables.overlay_module_config.map(row => {

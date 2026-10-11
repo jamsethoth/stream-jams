@@ -160,24 +160,24 @@ test("vertical overlay preserves styled text geometry at its native viewport", a
   await expect(outer).toHaveCount(0);
 });
 
-test("unified overlay renders enabled modules and excludes disabled modules", async ({ page }) => {
+test("ordinary overlay renders enabled modules and excludes disabled modules", async ({ page }) => {
   await installOverlayWebSocketMock(page);
-  await page.route("**/overlay/unified/live/ovl_unified/composition", async (route) => {
+  await page.route("**/overlay/modules/alerts/live/ovl_ordinary/composition", async (route) => {
     await route.fulfill({
       contentType: "application/json",
       json: emptyComposition({
         purpose: "live",
-        scope: "unified",
+        scope: "module",
         modules: [
           {
             moduleId: "alerts",
             enabled: true,
             instructions: [
               textInstruction({
-                id: "initial-unified-alert",
+                id: "initial-ordinary-alert",
                 purpose: "live",
-                scope: "unified",
-                text: "Unified alert ready"
+                scope: "module",
+                text: "Ordinary alert ready"
               })
             ]
           },
@@ -189,7 +189,7 @@ test("unified overlay renders enabled modules and excludes disabled modules", as
                 id: "disabled-goal-alert",
                 moduleId: "goals",
                 purpose: "live",
-                scope: "unified",
+                scope: "module",
                 text: "Disabled goal should not render"
               })
             ]
@@ -199,19 +199,19 @@ test("unified overlay renders enabled modules and excludes disabled modules", as
     });
   });
 
-  await page.goto("/overlay/unified/live/ovl_unified");
+  await page.goto("/overlay/modules/alerts/live/ovl_ordinary");
 
-  await expect(page.getByText("Unified alert ready")).toBeVisible();
+  await expect(page.getByText("Ordinary alert ready")).toBeVisible();
   await expect(page.getByText("Disabled goal should not render")).toHaveCount(0);
 
   await sendOverlayPlayback(page, textInstruction({
-    id: "unified-live-event",
+    id: "ordinary-live-event",
     purpose: "live",
-    scope: "unified",
-    text: "Unified synthetic event"
+    scope: "module",
+    text: "Ordinary synthetic event"
   }));
 
-  await expect(page.getByText("Unified synthetic event")).toBeVisible();
+  await expect(page.getByText("Ordinary synthetic event")).toBeVisible();
 });
 
 test("module overlay renders image assets through overlay-safe media URLs", async ({ page }) => {

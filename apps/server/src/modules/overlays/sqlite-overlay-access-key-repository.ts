@@ -28,6 +28,11 @@ export class SqliteOverlayAccessKeyRepository implements OverlayAccessKeyReposit
     this.#connection = connection;
   }
 
+  async list(): Promise<readonly OverlayAccessKey[]> {
+    return this.#connection.prepare("SELECT * FROM overlay_keys WHERE scope = 'module' AND purpose = 'live' AND revoked_at IS NULL ORDER BY created_at, id").all()
+      .map(row => mapOverlayAccessKeyRow(row as unknown as OverlayAccessKeyRow));
+  }
+
   async create(input: OverlayAccessKeyCreateRecordInput): Promise<OverlayAccessKey> {
     this.#connection
       .prepare(

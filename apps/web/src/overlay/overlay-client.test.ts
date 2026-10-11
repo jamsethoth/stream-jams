@@ -21,7 +21,7 @@ describe("overlay-client", () => {
     expect(createOverlayMusicArtworkUrl(parseOverlayRoute("/overlay/modules/music/live/ovl_music?profile=vertical")!, "art_safe"))
       .toBe("/overlay/modules/music/live/ovl_music/artwork/art_safe?profile=vertical");
     expect(createOverlayMusicArtworkUrl(parseOverlayRoute("/overlay/unified/live/ovl_unified")!, "art_safe"))
-      .toBe("/overlay/unified/live/ovl_unified/music/artwork/art_safe");
+      .toBe("");
     expect(createOverlayMusicArtworkUrl(parseOverlayRoute("/overlay/modules/music/test/ovl_test")!, "art_safe")).toBe("");
     expect(createOverlayMusicArtworkUrl(parseOverlayRoute("/overlay/modules/alerts/live/ovl_alert")!, "art_safe")).toBe("");
     expect(createOverlayMusicArtworkUrl(parseOverlayRoute("/overlay/modules/music/live/ovl_music")!, "https://remote/")).toBe("");
@@ -33,7 +33,7 @@ describe("overlay-client", () => {
     expect(createOverlayAssetUrl(parseOverlayRoute("/overlay/modules/alerts/live/ovl_profile")!, "clip", version))
       .toBe(`/overlay/modules/alerts/live/ovl_profile/assets/clip?version=${version}`);
     expect(createOverlayAssetUrl(parseOverlayRoute("/overlay/unified/live/ovl_profile")!, "clip", version))
-      .toBe(`/overlay/unified/live/ovl_profile/assets/clip?version=${version}`);
+      .toBe("");
   });
   it("parses validated composition updates from the live socket", async () => {
     const onMessage = vi.fn(); connectClient(onMessage); await vi.advanceTimersByTimeAsync(0); onMessage.mockClear();
@@ -80,27 +80,13 @@ describe("overlay-client", () => {
     }
     expect(onMessage).toHaveBeenCalledExactlyOnceWith({ type: "surface-layers", layers });
   });
-  it("parses module and unified overlay routes without query-string credentials", () => {
-    expect(parseOverlayRoute("/overlay/modules/alerts/test/ovl_moduleKey?key=ovl_queryKey")).toEqual({
-      overlayId: "default",
-      moduleId: "alerts",
-      purpose: "test",
-      scope: "module",
-      targetProfileId: null,
-      rawKey: "ovl_moduleKey",
-      compositionPath: "/overlay/modules/alerts/test/ovl_moduleKey/composition",
-      webSocketPath: "/overlay/ws/modules/alerts/test/ovl_moduleKey"
+  it("parses ordinary module paths without query-string credentials and rejects retired paths", () => {
+    expect(parseOverlayRoute("/overlay/modules/alerts/live/ovl_moduleKey?key=ovl_queryKey")).toMatchObject({
+      overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", targetProfileId: null, rawKey: "ovl_moduleKey",
+      compositionPath: "/overlay/modules/alerts/live/ovl_moduleKey/composition", webSocketPath: "/overlay/ws/modules/alerts/live/ovl_moduleKey"
     });
-    expect(parseOverlayRoute("/overlay/unified/live/ovl_unifiedKey")).toEqual({
-      overlayId: "default",
-      moduleId: null,
-      purpose: "live",
-      scope: "unified",
-      targetProfileId: null,
-      rawKey: "ovl_unifiedKey",
-      compositionPath: "/overlay/unified/live/ovl_unifiedKey/composition",
-      webSocketPath: "/overlay/ws/unified/live/ovl_unifiedKey"
-    });
+    expect(parseOverlayRoute("/overlay/modules/alerts/test/ovl_moduleKey?key=ovl_queryKey")).toBeNull();
+    expect(parseOverlayRoute("/overlay/unified/live/ovl_unifiedKey")).toBeNull();
   });
 
   it("carries a fixed target profile through composition, WebSocket, and asset requests", () => {
@@ -140,7 +126,7 @@ describe("overlay-client", () => {
       "/overlay/modules/alerts/live/ovl_moduleKey/assets/asset%20image"
     );
     expect(createOverlayAssetUrl(parseOverlayRoute("/overlay/unified/test/ovl_unifiedKey")!, "asset-audio")).toBe(
-      "/overlay/unified/test/ovl_unifiedKey/assets/asset-audio"
+      ""
     );
   });
 

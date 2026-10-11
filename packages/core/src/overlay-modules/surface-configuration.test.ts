@@ -109,6 +109,7 @@ describe("surface configuration", () => {
   it("binds unified identity to a stable output ID and rejects desktop-only fields", () => {
     const unified = { id: "unified-browser:overlay-main", kind: "unified-browser", overlayId: "overlay-main", layers: [] };
     expect(surfaceConfigurationSchema.parse(unified)).toEqual(unified);
+    expect(surfaceConfigurationUpdateSchema.safeParse(unified).success).toBe(false);
     expect(surfaceConfigurationSchema.safeParse({ ...unified, id: "unified-browser:another" }).success).toBe(false);
     expect(surfaceConfigurationSchema.safeParse({ ...unified, displayId: "42" }).success).toBe(false);
   });

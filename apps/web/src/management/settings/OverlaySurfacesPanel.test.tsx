@@ -13,7 +13,7 @@ function harness() {
     { id: "desktop:primary", kind: "desktop", enabled: false, displayId: "one", displayLabel: "Main monitor", autoFollowDisplayName: false, opacity: 1, layers: [{ moduleId: "alerts", visible: true }, { moduleId: "future", visible: false }] },
     { id: "unified-browser:default", kind: "unified-browser", overlayId: "default", layers: [{ moduleId: "future", visible: true }, { moduleId: "alerts", visible: true }] }
   ], desktop: { available: true, state: "disabled", message: null, displays: [{ id: "one", label: "Main monitor", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }] }, desktopBindingState: "not-needed" };
-  const api = { load: vi.fn<SurfaceSettingsApi["load"]>(async () => structuredClone(view)), save: vi.fn<SurfaceSettingsApi["save"]>(async value => { view = { ...view, surfaces: view.surfaces.map(surface => surface.id === value.id ? (value.kind === "desktop" ? { ...value, displayLabel: view.desktop.displays.find(display => display.id === value.displayId)?.label ?? null } : value) : surface) }; return structuredClone(view); }), retry: vi.fn<SurfaceSettingsApi["retry"]>(async () => structuredClone(view)) };
+  const api = { load: vi.fn<SurfaceSettingsApi["load"]>(async () => structuredClone(view)), save: vi.fn<SurfaceSettingsApi["save"]>(async value => { view = { ...view, surfaces: view.surfaces.map(surface => surface.id === value.id ? { ...value, displayLabel: view.desktop.displays.find(display => display.id === value.displayId)?.label ?? null } : surface) }; return structuredClone(view); }), retry: vi.fn<SurfaceSettingsApi["retry"]>(async () => structuredClone(view)) };
   return { api, get view() { return view; }, set view(value: SurfaceSettingsView) { view = value; } };
 }
 it("embedded in Settings, names the region without a repeated heading", async () => {
@@ -48,15 +48,14 @@ it("shows readable known and unknown module names without changing saved IDs", a
   expect(await screen.findByRole("checkbox", { name: "Show Alerts on Desktop overlay" })).toBeVisible();
   expect(screen.getByRole("checkbox", { name: "Show Future on Desktop overlay" })).toBeVisible();
 });
-it("keeps local independent drafts and explicitly saves only the selected surface", async () => {
+it("keeps desktop drafts local and excludes retired public surface controls", async () => {
   const { api } = harness(); const user = userEvent.setup(); render(<OverlaySurfacesPanel api={api} />);
   await user.click(await screen.findByRole("checkbox", { name: "Enable desktop overlay" }));
-  await user.click(screen.getByRole("checkbox", { name: "Show Alerts on Unified browser: default" }));
+  expect(screen.queryByRole("checkbox", { name: "Show Alerts on Unified browser: default" })).not.toBeInTheDocument();
   expect(api.save).not.toHaveBeenCalled(); expect(api.retry).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Save Desktop overlay" }));
   expect(api.save).toHaveBeenCalledTimes(1); expect(api.save.mock.calls[0]![0]).toMatchObject({ kind: "desktop", enabled: true });
-  expect(screen.getByRole("checkbox", { name: "Show Alerts on Unified browser: default" })).not.toBeChecked();
-  expect(screen.getByRole("button", { name: "Save Unified browser: default" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "Save Unified browser: default" })).not.toBeInTheDocument();
 });
 it("stores the selected display label locally, opts in explicitly, and omits the label from the update", async () => {
   const { api } = harness(); const user = userEvent.setup(); render(<OverlaySurfacesPanel api={api} />);
@@ -85,11 +84,11 @@ it("preserves a failed-save draft and reports actionable failure", async () => {
   await user.click(await screen.findByRole("checkbox", { name: "Enable desktop overlay" })); await user.click(screen.getByRole("button", { name: "Save Desktop overlay" }));
   expect(await screen.findByText("Overlay settings were not saved")).toBeVisible(); expect(screen.getByRole("checkbox", { name: "Enable desktop overlay" })).toBeChecked();
 });
-it("keeps desktop unavailable in CLI while unified controls remain editable", async () => {
+it("keeps desktop unavailable in CLI and retired surface controls absent", async () => {
   const state = harness(); state.view = { ...state.view, desktop: { available: false, displays: [], state: "unavailable", message: "Use Windows desktop." } };
   render(<OverlaySurfacesPanel api={state.api} />);
   expect(await screen.findByRole("checkbox", { name: "Enable desktop overlay" })).toBeDisabled();
-  expect(screen.getByRole("checkbox", { name: "Show Alerts on Unified browser: default" })).toBeEnabled(); expect(screen.getByText("Use Windows desktop.")).toBeVisible();
+  expect(screen.queryByRole("checkbox", { name: "Show Alerts on Unified browser: default" })).not.toBeInTheDocument(); expect(screen.getByText("Use Windows desktop.")).toBeVisible();
 });
 it.each([
   { enabled: true, state: "unavailable" as const, expected: "attention" },
@@ -108,7 +107,7 @@ it.each([
   render(<OverlaySurfacesPanel api={state.api} onSummaryChange={onSummaryChange} />);
 
   await screen.findByText("Desktop output needs attention.");
-  await waitFor(() => expect(onSummaryChange).toHaveBeenLastCalledWith({ count: 2, state: expected }));
+  await waitFor(() => expect(onSummaryChange).toHaveBeenLastCalledWith({ count: 1, state: expected }));
 });
 it("refreshes capabilities while preserving dirty drafts and retains stale state on refresh failure", async () => {
   vi.useFakeTimers(); const state = harness(); render(<OverlaySurfacesPanel api={state.api} />); await act(async () => {});

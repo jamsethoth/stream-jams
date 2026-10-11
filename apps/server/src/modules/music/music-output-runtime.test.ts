@@ -11,22 +11,20 @@ const live: MusicWidgetProjection = {
   layout: { x: 0, y: 0, width: 640, height: 178, zIndex: 0 }, css: config.css, assets: []
 };
 
-it("keeps test fixture separate from live source and attaches versioned saved assets", async () => {
+it("rejects retired test snapshots without reading the source and attaches saved assets to ordinary output", async () => {
   const getProjection = vi.fn(() => live);
   const resolveMusicAssets = vi.fn(async () => ({ assets: [{ assetId: "brand", version: "a".repeat(64),
     mimeType: "image/png" as const, sizeBytes: 3, durationMs: null }], missingAssetIds: [] }));
-  const output = new MusicOutputRuntime({ runtime: { getProjection, revision: 1 }, assets: { resolveMusicAssets }, getConfig: async () => config, now: () => 1000 });
+  const output = new MusicOutputRuntime({ runtime: { getProjection, revision: 1 }, assets: { resolveMusicAssets }, getConfig: async () => config });
   const test = await output.getModuleSnapshot({ recipientKind: "browser", moduleId: "music", overlayId: "default", purpose: "test", scope: "module", targetProfileId: "vertical" });
   expect(getProjection).not.toHaveBeenCalled();
-  expect(test.presentation?.kind).toBe("music-widget");
-  if (test.presentation?.kind !== "music-widget") throw new Error("Missing fixture");
-  expect(test.presentation.widget.snapshot.providerId).toBe("music-fixture");
-  expect(test.presentation.widget.snapshot.track?.artworkRef).toBeNull();
-  expect(test.presentation.widget.assets[0]?.assetId).toBe("brand");
+  expect(test.presentation).toBeUndefined();
+  expect(resolveMusicAssets).not.toHaveBeenCalled();
   const actual = await output.getModuleSnapshot({ recipientKind: "browser", moduleId: "music", overlayId: "default", purpose: "live", scope: "module", targetProfileId: "vertical" });
   expect(actual.presentation?.kind).toBe("music-widget");
   if (actual.presentation?.kind !== "music-widget") throw new Error("Missing live projection");
   expect(actual.presentation.widget.snapshot.track?.id).toBe("live");
+  expect(actual.presentation.widget.assets[0]?.assetId).toBe("brand");
   expect(resolveMusicAssets).toHaveBeenCalledWith(config, "vertical");
 });
 
@@ -41,9 +39,9 @@ it("does not publish an obsolete live projection after slow asset resolution", a
   expect((await pending).presentation).toBeUndefined();
 });
 
-it("composes Music on both module profiles and a visible unified layer", async () => {
+it("composes ordinary Music profiles and rejects a retired public unified layer", async () => {
   const output = new MusicOutputRuntime({ runtime: { getProjection: profile => ({ ...live, targetProfileId: profile }), revision: 1 },
-    assets: { resolveMusicAssets: async () => ({ assets: [], missingAssetIds: [] }) }, getConfig: async () => config, now: () => 1000 });
+    assets: { resolveMusicAssets: async () => ({ assets: [], missingAssetIds: [] }) }, getConfig: async () => config });
   const compositions = new DefaultOverlayCompositionService({
     configService: { getModuleConfig: async moduleId => ({ moduleId, enabled: true, config, updatedAt: "2026-10-04T00:00:00Z" }) },
     runtime: { getModuleSnapshot: request => output.getModuleSnapshot(request) },
@@ -51,17 +49,16 @@ it("composes Music on both module profiles and a visible unified layer", async (
       layers: [{ moduleId: "music", visible: true }] }] }
   });
   const vertical = await compositions.resolveModuleOutput({ moduleId: "music", overlayId: "default", purpose: "live", targetProfileId: "vertical" });
-  const landscape = await compositions.resolveModuleOutput({ moduleId: "music", overlayId: "default", purpose: "test", targetProfileId: "landscape" });
+  const landscape = await compositions.resolveModuleOutput({ moduleId: "music", overlayId: "default", purpose: "live", targetProfileId: "landscape" });
   const unified = await compositions.resolveUnifiedOutput({ overlayId: "default", purpose: "live", enabledModuleIds: ["music"] });
   expect(vertical.modules[0]?.presentation?.kind).toBe("music-widget");
   expect(landscape.modules[0]?.presentation?.kind).toBe("music-widget");
-  if (vertical.modules[0]?.presentation?.kind !== "music-widget" || landscape.modules[0]?.presentation?.kind !== "music-widget" ||
-    unified.modules[0]?.presentation?.kind !== "music-widget") throw new Error("Missing Music composition");
+  if (vertical.modules[0]?.presentation?.kind !== "music-widget" || landscape.modules[0]?.presentation?.kind !== "music-widget") throw new Error("Missing Music composition");
   expect(vertical.modules[0].presentation.widget.targetProfileId).toBe("vertical");
-  expect(landscape.modules[0].presentation.widget.snapshot.providerId).toBe("music-fixture");
-  expect(unified.modules[0].presentation.widget.targetProfileId).toBe("landscape");
-  expect(unified.modules[0].surfaceLayer).toEqual({ visible: true, zIndex: 0 });
-  expect(unified.modules[0].instructions).toEqual([]);
+  expect(landscape.modules[0].presentation.widget.snapshot.providerId).toBe("pear");
+  expect(unified.modules[0]?.presentation).toBeUndefined();
+  expect(unified.modules[0]?.surfaceLayer).toEqual({ visible: true, zIndex: 0 });
+  expect(unified.modules[0]?.instructions).toEqual([]);
 });
 
 
@@ -70,9 +67,9 @@ it("uses desktop placement only for the private desktop recipient", async () => 
   const projection = { ...live, targetProfileId: "landscape" as const };
   const output = new MusicOutputRuntime({ runtime: { getProjection: () => projection, revision: 1 }, assets: { resolveMusicAssets: async () => ({ assets: [], missingAssetIds: [] }) }, getConfig: async () => saved });
   const desktop = await output.getModuleSnapshot({ recipientKind: "desktop", moduleId: "music", overlayId: "desktop:primary", purpose: "live", scope: "unified", targetProfileId: "landscape" });
-  const browser = await output.getModuleSnapshot({ recipientKind: "browser", moduleId: "music", overlayId: "default", purpose: "live", scope: "unified", targetProfileId: "landscape" });
+  const browser = await output.getModuleSnapshot({ recipientKind: "browser", moduleId: "music", overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape" });
   expect(desktop.presentation?.kind === "music-widget" && desktop.presentation.widget.layout).toMatchObject({ x: 123, y: 234 });
-  expect(browser.presentation?.kind === "music-widget" && browser.presentation.widget.layout).toMatchObject({ x: 0, y: 0 });
+  expect(browser.presentation?.kind === "music-widget" && browser.presentation.widget.layout).toMatchObject({ x: 100, y: 82 });
 });
 
 it("keeps both browser profiles and empty reconnect metadata independent of playback and desktop placement", async () => {

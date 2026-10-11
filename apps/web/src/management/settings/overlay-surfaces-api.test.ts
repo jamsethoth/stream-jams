@@ -8,14 +8,14 @@ it("uses protected requests, encoded complete surface identity, and an empty ret
     const headers = new Headers(init?.headers);
     expect(headers.get("authorization")).toBe("Bearer mgmt_test");
     if (init?.method !== undefined) expect(headers.get("x-stream-jams-csrf")).toBe("csrf_test");
-    if (url === "/overlay-surfaces/unified-browser%3Aspace%2Fone") expect(init).toMatchObject({ method: "PUT", body: JSON.stringify({ id: "unified-browser:space/one", kind: "unified-browser", overlayId: "space/one", layers: [] }) });
+    if (url === "/overlay-surfaces/desktop%3Aprimary") { expect(init?.method).toBe("PUT"); expect(JSON.parse(String(init?.body))).toEqual({ id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, autoFollowDisplayName: false, opacity: 1, layers: [] }); }
     if (url === "/overlay-surfaces/desktop/retry") { expect(init?.method).toBe("POST"); expect(init?.body).toBeUndefined(); }
     return json(view);
   });
   const api = createHttpSurfaceSettingsApi({ fetch: fetcher }); expect(await api.load()).toEqual(view);
-  expect(await api.save({ id: "unified-browser:space/one", kind: "unified-browser", overlayId: "space/one", layers: [] })).toEqual(view);
+  expect(await api.save({ id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, autoFollowDisplayName: false, opacity: 1, layers: [] })).toEqual(view);
   expect(await api.retry()).toEqual(view);
-  expect(fetcher.mock.calls.map(call => String(call[0]))).toEqual(["/auth/management/sessions", "/overlay-surfaces", "/overlay-surfaces/unified-browser%3Aspace%2Fone", "/overlay-surfaces/desktop/retry"]);
+  expect(fetcher.mock.calls.map(call => String(call[0]))).toEqual(["/auth/management/sessions", "/overlay-surfaces", "/overlay-surfaces/desktop%3Aprimary", "/overlay-surfaces/desktop/retry"]);
 });
 it("rejects invalid drafts before network access and malformed responses", async () => {
   const fetcher = vi.fn<typeof fetch>(async input => String(input) === "/auth/management/sessions" ? json({ id: "mgmt_test", csrfToken: "csrf_test" }) : json({ ...view, token: "unexpected" }));

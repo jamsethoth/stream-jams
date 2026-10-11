@@ -8,6 +8,7 @@ import type {
   OverlayScope,
   OverlayTargetProfileId
 } from "@stream-jams/core";
+import { isOrdinaryOverlayOutput } from "@stream-jams/core";
 import { overlayPlaybackFailureSchema, type OverlayPlaybackFailure, type SerializedException } from "@stream-jams/core";
 import {
   overlayVideoDurationMessageType, overlayVideoDurationReportSchema, videoMirrorPublisherSignalSchema, videoMirrorReceiverSignalSchema, videoMirrorSignalMessageType,
@@ -146,7 +147,7 @@ interface PlaybackPreparation {
 
 export class OverlayGateway {
   #registrationEpoch = 0;
-  #recipientPolicy: (client: OverlayGatewayClient & { readonly keyId: string }) => boolean = client => !(client.moduleId === "videos" && client.purpose === "test");
+  #recipientPolicy: (client: OverlayGatewayClient & { readonly keyId: string }) => boolean = client => isOrdinaryOverlayOutput(client, true);
   readonly #compositionRevisions = new Map<string, { runtimeId: string; revision: number }>();
   readonly #overlayAccessService: Pick<OverlayAccessService, "verifyRouteAccess">;
   readonly #generateClientId: () => string;
@@ -193,7 +194,12 @@ export class OverlayGateway {
   /** Replacement/retirement fence: close denied recipients and reject registrations that raced the fence. */
   setRecipientPolicy(policy: (client: OverlayGatewayClient & { readonly keyId: string }) => boolean): void {
     this.#registrationEpoch += 1;
-    this.#recipientPolicy = client => !(client.moduleId === "videos" && client.purpose === "test") && policy(client);
+    this.#recipientPolicy = client => isOrdinaryOverlayOutput(client, true) && policy(client);
+    this.recheckRecipientPolicy();
+  }
+
+  /** Recheck revoked keys without replacing a maintenance fence or invalidating unrelated registrations. */
+  recheckRecipientPolicy(): void {
     for (const client of [...this.#clients.values()]) {
       if (this.#recipientPolicy(client)) continue;
       this.unregisterClient(client.id);

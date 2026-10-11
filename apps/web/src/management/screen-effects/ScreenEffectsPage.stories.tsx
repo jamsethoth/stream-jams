@@ -12,7 +12,7 @@ import type { ScreenEffectsApi } from "./screen-effects-api.js";
 
 const savedEffect = effect();
 
-const meta = { tags: ["mantine-feedback-tabs", "mantine-stage5"],
+const meta = { tags: ["mantine-feedback-tabs", "mantine-stage5", "public-output-retirement"],
   title: "Management/Screen Effects/Inventory",
   component: ScreenEffectsPage,
   args: {
@@ -38,8 +38,8 @@ export const Inventory: Story = {
     const controls = canvas.getByLabelText("Module controls");
     await expect(Boolean(controls.compareDocumentPosition(browserSources) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     await expect(within(browserSources).getByText("URL available")).toBeVisible();
-    await expect(within(browserSources).getByText("Screen Effects Test")).toBeVisible();
-    await expect(within(browserSources).getByText("create required")).toBeVisible();
+    await expect(within(browserSources).queryByText("Screen Effects Test")).toBeNull();
+    await expect(within(browserSources).queryByText("create required")).toBeNull();
     await userEvent.type(canvas.getByRole("searchbox", { name: "Search effects" }), "missing effect");
     await expect(canvas.getByRole("status")).toHaveTextContent("No effects match your search.");
     await userEvent.clear(canvas.getByRole("searchbox", { name: "Search effects" }));

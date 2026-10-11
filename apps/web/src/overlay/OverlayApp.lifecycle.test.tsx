@@ -62,30 +62,11 @@ describe("OverlayApp playback lifecycle", () => {
     });
     expect(screen.queryByText("Prepared content")).not.toBeInTheDocument();
   });
-  it("applies queued and live unified layers without restarting active instructions", () => {
-    window.history.replaceState(null, "", "/overlay/unified/live/test-local");
+  it("keeps retired unified navigation transparent before transport opens", () => {
+    window.history.replaceState(null, "", "/overlay/unified/live/ovl_fixture");
     render(<OverlayApp />);
-    act(() => {
-      clientHarness.onMessage?.({ type: "audio-state", muted: false });
-      clientHarness.onMessage?.({ type: "surface-layers", layers: [{ moduleId: "alerts", visible: false }] });
-      clientHarness.onMessage?.({ type: "composition", composition: { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
-        overlayId: "default", purpose: "live", scope: "unified", modules: [{ moduleId: "alerts", enabled: true, instructions: [{
-          id: "layer-test", overlayId: "default", moduleId: "alerts", purpose: "live", scope: "unified", visual: null, audio: null, tts: null,
-          text: { text: "Layer content", layout: { x: 0, y: 0, width: 300, height: 80, zIndex: 100 } }, durationMs: 1000
-        }] }]
-      } });
-    });
-    const element = screen.getByText("Layer content");
-    expect(element).not.toBeVisible();
-    act(() => {
-      vi.advanceTimersByTime(500);
-      clientHarness.onMessage?.({ type: "surface-layers", layers: [{ moduleId: "future", visible: false }, { moduleId: "alerts", visible: true }] });
-    });
-    expect(screen.getByText("Layer content")).toBe(element);
-    expect(element).toBeVisible();
-    expect(clientHarness.reportStarted).toHaveBeenCalledTimes(1);
-    act(() => vi.advanceTimersByTime(500));
-    expect(clientHarness.reportCompleted).toHaveBeenCalledWith("layer-test", expect.objectContaining({ terminalOutcome: "completed" }));
+    expect(screen.getByTestId("overlay-root")).toBeEmptyDOMElement();
+    expect(document.body.textContent).not.toContain("Playing");
   });
 
   beforeEach(() => {

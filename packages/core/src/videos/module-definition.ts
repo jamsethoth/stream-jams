@@ -16,5 +16,5 @@ export const videosModuleDefinition = {
     { id: "maxLengthSeconds", label: "Maximum length (seconds)", type: "number", required: true },
     { id: "gapSeconds", label: "Gap between videos (seconds)", type: "number", required: true }
   ] }] },
-  renderer: { entryPoint: "overlay/modules/videos", supportsDesktopComposition: true, supportedOutputs: ["module", "unified"] }
+  renderer: { entryPoint: "overlay/modules/videos", supportsDesktopComposition: true, supportedOutputs: ["module"] }
 } as const satisfies OverlayModuleDefinition<VideosModuleConfig>;

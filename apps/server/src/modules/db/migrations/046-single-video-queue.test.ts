@@ -3,7 +3,8 @@ import { readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createDefaultVideosModuleConfig } from "@stream-jams/core";
-import { openStreamJamsDatabase } from "../database.js";
+import { applyStreamJamsMigration, openStreamJamsDatabase, runInTransaction } from "../database.js";
+import { singleVideoQueueMigration } from "./046-single-video-queue.js";
 import { VideoQueueService } from "../../videos/video-queue-service.js";
 import { SqliteVideoQueueRepository } from "../../videos/video-queue-repository.js";
 import { createPreMigrationDatabase } from "../../../test-support/pre-migration-database.js";
@@ -27,13 +28,19 @@ describe("single Video queue upgrade", () => {
       fixture.connection.prepare("INSERT INTO overlay_keys (id,overlay_id,module_id,purpose,scope,key_hash,created_at,revoked_at,target_profile_id) VALUES (?,'default',?,?,?,?,'old',NULL,NULL)")
         .run(id, moduleId, id === "ordinary" ? "live" : "test", scope, id.padEnd(64, "a"));
     }
+    runInTransaction(fixture.connection, () => {
+      applyStreamJamsMigration(fixture.connection, singleVideoQueueMigration);
+      fixture.connection.prepare("INSERT INTO schema_migrations VALUES (?, 'fixture')").run(singleVideoQueueMigration.id);
+    });
+    // Freeze046's narrower contract before the current upgrader additionally retires public unified credentials.
+    expect(fixture.connection.prepare("SELECT id FROM overlay_keys WHERE revoked_at IS NULL ORDER BY id").all().map(row => row.id)).toEqual(["ordinary", "unified"]);
     const db = fixture.upgrade();
     const receipt = JSON.parse(String(db.connection.prepare("SELECT result_json FROM video_bus_admissions").get()?.result_json));
     const accepted = Object.fromEntries(Object.entries(item).filter(([key]) => key !== "purpose"));
     expect(receipt).toEqual({ status: "accepted", item: { ...accepted, reviewRequired: false, migrationProvenance: null } });
     expect(db.connection.prepare("SELECT title,status,review_required,duration_ms FROM video_requests").get()).toEqual({ title: "Current title", status: "held", review_required: 1, duration_ms: 60000 });
     expect(JSON.parse(String(db.connection.prepare("SELECT config_json FROM overlay_module_config").get()?.config_json)).rewardMappings).toEqual([{ rewardId: "test-reward" }]);
-    expect(db.connection.prepare("SELECT id FROM overlay_keys WHERE revoked_at IS NULL ORDER BY id").all().map(row => row.id)).toEqual(["ordinary", "unified"]);
+    expect(db.connection.prepare("SELECT id FROM overlay_keys WHERE revoked_at IS NULL ORDER BY id").all().map(row => row.id)).toEqual(["ordinary"]);
   });
 
   it("preflights corrupt imported duplicate identities before destructive writes", () => {

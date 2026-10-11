@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import {
-  listDesktopOverlayModuleIds, listUnifiedOverlayModuleIds, reconcileSurfaceLayers, surfaceConfigurationSchema, validateSurfaceOrder,
+  listDesktopOverlayModuleIds, reconcileSurfaceLayers, surfaceConfigurationSchema, validateSurfaceOrder,
   type OverlayModuleRegistry, type SurfaceConfiguration, type SurfaceRepository
 } from "@stream-jams/core";
 import { runInTransaction } from "../db/database.js";
@@ -14,8 +14,9 @@ export class SqliteSurfaceRepository implements SurfaceRepository {
 
   async save(configuration: SurfaceConfiguration): Promise<void> {
     const parsed = surfaceConfigurationSchema.parse(configuration);
+    if (parsed.kind !== "desktop") throw new Error("Public unified surfaces were retired. Configure ordinary module sources instead.");
     runInTransaction(this.connection, () => {
-      validateSurfaceOrder(parsed.layers, this.moduleIds(parsed.kind));
+      validateSurfaceOrder(parsed.layers, this.moduleIds());
       const surfaces = this.reconcile();
       if (!surfaces.some(surface => surface.id === parsed.id)) throw new Error("Unknown overlay surface");
       this.write(parsed);
@@ -23,8 +24,7 @@ export class SqliteSurfaceRepository implements SurfaceRepository {
   }
 
   private reconcile(): SurfaceConfiguration[] {
-    // Public browser composition and private desktop composition have independent membership.
-    const modules = this.registry.listModules().filter(module => module.renderer.supportedOutputs.includes("unified"));
+    this.connection.prepare("DELETE FROM overlay_surfaces WHERE kind = 'unified-browser'").run();
     const rows = this.connection.prepare("SELECT configuration_json FROM overlay_surfaces ORDER BY id").all();
     const surfaces = rows.map(row => surfaceConfigurationSchema.parse(JSON.parse(String(row.configuration_json))));
     if (!surfaces.some(surface => surface.id === "desktop:primary")) {
@@ -41,30 +41,16 @@ export class SqliteSurfaceRepository implements SurfaceRepository {
       this.write(desktop);
       surfaces.push(desktop);
     }
-    const outputs = this.connection.prepare("SELECT DISTINCT overlay_id FROM overlay_keys WHERE scope = 'unified' AND revoked_at IS NULL ORDER BY overlay_id").all();
-    for (const output of outputs) {
-      const overlayId = String(output.overlay_id);
-      const id = `unified-browser:${overlayId}`;
-      if (surfaces.some(surface => surface.id === id)) continue;
-      // Existing unified composition paints registry order bottom-first.
-      const layers = modules.map(module => {
-        const config = this.connection.prepare("SELECT enabled FROM overlay_module_config WHERE module_id = ?").get(module.id);
-        return { moduleId: module.id, visible: config === undefined ? module.defaultEnabled : config.enabled === 1 };
-      }).reverse();
-      const surface: SurfaceConfiguration = { id, kind: "unified-browser", overlayId, layers };
-      this.write(surface);
-      surfaces.push(surface);
-    }
     return surfaces.map(surface => {
-      const layers = reconcileSurfaceLayers(surface.layers, this.moduleIds(surface.kind));
+      const layers = reconcileSurfaceLayers(surface.layers, this.moduleIds());
       const reconciled = { ...surface, layers };
       if (JSON.stringify(layers) !== JSON.stringify(surface.layers)) this.write(reconciled);
       return reconciled;
     }).sort((left, right) => left.id.localeCompare(right.id));
   }
 
-  private moduleIds(kind: SurfaceConfiguration["kind"]): string[] {
-    return kind === "desktop" ? listDesktopOverlayModuleIds(this.registry) : listUnifiedOverlayModuleIds(this.registry);
+  private moduleIds(): string[] {
+    return listDesktopOverlayModuleIds(this.registry);
   }
 
   private write(configuration: SurfaceConfiguration): void {
