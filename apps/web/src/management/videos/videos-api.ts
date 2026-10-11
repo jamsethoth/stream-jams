@@ -1,3 +1,4 @@
+import { outputCanvasSchema, type OutputCanvas } from "@stream-jams/core";
 import type { OverlayPurpose, VideoQueueResponse, VideoSubmissionPending, VideosModuleConfig } from "@stream-jams/core";
 import { createManagementHttpClient, ManagementHttpError, type HttpManagementClientOptions } from "../management-http-client.js";
 
@@ -29,6 +30,7 @@ export interface VideoQueueApi {
 }
 
 export interface VideosBrowserSource {
+  readonly canvas?: OutputCanvas;
   readonly id: string;
   readonly label: string;
   readonly purpose: OverlayPurpose;
@@ -167,7 +169,7 @@ function parseBrowserSource(value: unknown): readonly VideosBrowserSource[] {
   if (typeof value.id !== "string" || typeof value.label !== "string" || (value.purpose !== "live" && value.purpose !== "test")
     || typeof value.overlayId !== "string" || typeof value.enabled !== "boolean" || (value.url !== null && typeof value.url !== "string")
     || !["available", "create-required", "regenerate-required"].includes(String(value.copyableUrlStatus))) return [];
-  return [{ id: value.id, label: value.label, purpose: value.purpose, overlayId: value.overlayId, enabled: value.enabled,
+  return [{ ...(value.canvas === undefined ? {} : { canvas: outputCanvasSchema.parse(value.canvas) }), id: value.id, label: value.label, purpose: value.purpose, overlayId: value.overlayId, enabled: value.enabled,
     url: value.url as string | null, status: value.copyableUrlStatus as VideosBrowserSource["status"] }];
 }
 

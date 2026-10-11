@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { expect, test, type Page } from "@playwright/test";
 import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -51,7 +52,7 @@ test("unified streamed layers reorder without replay and effect-only stop preser
       text: null, audio: null, tts: null, durationMs: 60_000
     });
     const now = Date.now();
-    await page.route("**/overlay/unified/live/fixture/composition", route => route.fulfill({ json: {
+    await page.route("**/overlay/unified/live/fixture/composition", route => route.fulfill({ json: { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
       overlayId: "default", purpose: "live", scope: "unified", targetProfileId: "landscape", modules: [
         { moduleId: "alerts", enabled: true, instructions: [video("alert", "alerts", 999)] },
         { moduleId: "screen-effects", enabled: true, instructions: [video("effect", "screen-effects", 1)] },

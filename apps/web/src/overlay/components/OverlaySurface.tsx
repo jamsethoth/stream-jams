@@ -112,17 +112,22 @@ export function OverlaySurface({ composition, preparingInstructionIds, muted = f
 
   return (
     <div className="overlay-root" data-testid="overlay-root" ref={rootElementRef} style={overlayRootStyle}>
-      {profile === undefined ? instructions : (
+      {composition.canvas.kind === "content" ? (
+        <div data-testid="overlay-content-canvas" style={{ position: "absolute", left: 0, top: 0,
+          width: composition.canvas.width, height: composition.canvas.height, overflow: "hidden" }}>
+          <div style={{ position: "absolute", left: composition.canvas.origin.x, top: composition.canvas.origin.y, width: "100%", height: "100%" }}>{instructions}</div>
+        </div>
+      ) : profile === undefined ? instructions : (
         <div
           data-testid="overlay-profile-canvas"
           style={{
-            height: `${profile.height}px`,
+            height: profile.height,
             left: "50%",
             position: "absolute",
             top: "50%",
             transform: `translate(-50%, -50%) scale(${Math.min(viewport.width / profile.width, viewport.height / profile.height)})`,
             transformOrigin: "center",
-            width: `${profile.width}px`
+            width: profile.width
           }}
         >
           {instructions}

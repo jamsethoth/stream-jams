@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { timersOverlayModuleDefinition, type TimerDefinition } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
 import { createHttpTimersApi } from "./timers-api.js";
@@ -15,7 +16,7 @@ describe("createHttpTimersApi", () => {
       if (url === "/timers" && init?.method === undefined) return json([definition]);
       if (url === "/timers/state") return json([]);
       if (url === "/timers/browser-sources") return json([
-        {
+        { canvas: sceneOutputCanvas(0, 1920, 1080),
           id: "module:timers:landscape:live", label: "Timers Landscape Live", purpose: "live", overlayId: "default",
           scope: "module", moduleId: "timers", targetProfileId: "landscape", enabled: true, keyId: "key-1",
           url: "http://127.0.0.1/overlay/modules/timers/live/secret?profile=landscape", copyableUrlStatus: "available",

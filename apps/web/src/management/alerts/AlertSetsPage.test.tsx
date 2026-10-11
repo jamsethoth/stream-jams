@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { renderManagement as render } from "../../test-support/render-management.js";
 import {
   compatibilityAlertTextBoxStyle,
@@ -1255,7 +1256,7 @@ function detail(): AlertSetDetail {
     browserSources: [
       {
         id: "module:alerts:landscape:live",
-        targetProfileId: "landscape",
+        canvas: sceneOutputCanvas(), targetProfileId: "landscape",
         purpose: "live",
         connectionState: "connected",
         lastConnectedAt: "2026-07-15T05:00:00.000Z",
@@ -1265,7 +1266,7 @@ function detail(): AlertSetDetail {
       },
       {
         id: "module:alerts:vertical:live",
-        targetProfileId: "vertical",
+        canvas: sceneOutputCanvas(0, 1080, 1920), targetProfileId: "vertical",
         purpose: "live",
         connectionState: "never-connected",
         lastConnectedAt: null,
@@ -1363,7 +1364,7 @@ function impact(): AlertSetActivationImpact {
 }
 
 function output(targetProfileId: "landscape" | "vertical", purpose: "live") {
-  return {
+  return { canvas: sceneOutputCanvas(0, targetProfileId === "vertical" ? 1080 : 1920, targetProfileId === "vertical" ? 1920 : 1080),
     id: `module:alerts:${targetProfileId}:${purpose}`,
     label: `Alerts ${targetProfileId} ${purpose}`,
     purpose,

@@ -230,6 +230,13 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
 
     const nextSocket = new WebSocketCtor(webSocketUrl);
     let generation = 0;
+    let acceptedComposition: OverlayComposition | null = null;
+    const acceptComposition = (composition: OverlayComposition): boolean => {
+      if (acceptedComposition !== null && (composition.runtimeId !== acceptedComposition.runtimeId ||
+        composition.canvas.configRevision < acceptedComposition.canvas.configRevision)) return false;
+      acceptedComposition = composition;
+      return true;
+    };
     socket = nextSocket;
     nextSocket.addEventListener("open", () => {
       if (socket !== nextSocket) return;
@@ -242,6 +249,7 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
         })
         .then((composition) => {
           if (disposed || socket !== nextSocket || settledCompositionGeneration >= generation) return;
+          if (!acceptComposition(composition)) return;
           settledCompositionGeneration = generation;
           options.onMessage({ type: "composition", composition });
         })
@@ -252,10 +260,14 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
         });
     });
     nextSocket.addEventListener("message", (event) => {
+      if (disposed || socket !== nextSocket) return;
       const signal = parseVideoMirrorSignal(event.data);
       if (signal !== null) { for (const listener of [...videoMirrorListeners]) listener(signal); return; }
       const message = parseOverlaySocketMessage(event.data, (instructionId, failure) => reporter.reportFailed(instructionId, failure));
-      if (message?.type === "composition" && generation > 0) settledCompositionGeneration = Math.max(settledCompositionGeneration, generation);
+      if (message?.type === "composition") {
+        if (!acceptComposition(message.composition)) return;
+        if (generation > 0) settledCompositionGeneration = Math.max(settledCompositionGeneration, generation);
+      }
       if (message !== null) options.onMessage(message);
     });
     // Browsers expose no cause on WebSocket error; close carries the diagnostic

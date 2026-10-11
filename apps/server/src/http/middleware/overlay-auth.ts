@@ -40,6 +40,7 @@ export function parseOverlayTargetProfileQuery(
   query: unknown,
   allowTargetProfile: boolean
 ): OverlayTargetProfileQuery {
+  if (typeof query === "object" && query !== null && ("recipientKind" in query || "savedConfig" in query)) return { valid: false };
   if (typeof query !== "object" || query === null || !("profile" in query)) {
     return { valid: true, targetProfileId: null };
   }

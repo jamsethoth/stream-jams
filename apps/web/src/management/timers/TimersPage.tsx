@@ -24,7 +24,6 @@ import "./timers.css";
 type AssetRole = "iconAssetId" | "startAudioAssetId" | "endAudioAssetId";
 const emptyDraft: TimerDefinitionInput = { label: "", durationMs: 60_000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null,
   outputs: { browserSource: true, deviceRouteIds: [] } };
-const profileDimensions = { landscape: { width: 1920, height: 1080 }, vertical: { width: 1080, height: 1920 } } as const;
 
 export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTimersApi, ownerId }: {
   readonly ownerId?: string | undefined;
@@ -143,7 +142,11 @@ export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTim
     if (!parsed.success) { setLayoutError(parsed.error.issues[0]?.message ?? "Correct the overlay layout before saving."); return; }
     setLayoutError(null);
     mutationRef.current = true; setBusy(true); clearFeedback();
-    try { const saved = await api.saveModuleConfig(enabled, parsed.data); setLayout(saved.config); showNotice("Timer overlay layout saved."); }
+    try { const saved = await api.saveModuleConfig(enabled, parsed.data); setLayout(saved.config);
+      stateRevisionRef.current += 1;
+      try { setBrowserSources(await api.listBrowserSources()); setRefreshError(null); }
+      catch (reason) { setRefreshError(actionableError(reason, "Timer layout saved; source dimensions could not be refreshed", "Reopen Timers to load the saved OBS dimensions.")); }
+      showNotice("Timer overlay layout saved."); }
     catch (reason) { showError(reason); } finally { mutationRef.current = false; setBusy(false); }
   }
   async function confirmModuleEnablement() {
@@ -230,7 +233,7 @@ function BrowserSources({ busy, expanded, refreshFailed, onCopy, onCreate, onReg
 }) {
   const ready = sources.filter(source => source.status === "available").length; const needsSetup = sources.length - ready;
   return <BrowserSourcesPanel id="browser-sources" refreshFailed={refreshFailed} detailsId="timer-browser-source-details" expanded={expanded} onToggle={onToggle} readyCount={ready} needsSetupCount={needsSetup}>
-    <div className="timer-browser-sources__list">{sources.map(source => { const label = profileLabel(source.targetProfileId); const dimensions = profileDimensions[source.targetProfileId]; const revealed = revealedSourceIds.has(source.id); return <BrowserSourceRow key={source.id} label={label} ready={source.status === "available"} telemetry={source.connectionState === "connected" ? "Listening now" : source.lastConnectedAt === null ? "Not listening. No connection recorded." : `Not listening. Last seen ${formatDateTime(source.lastConnectedAt)}`} metadata={<strong><bdi dir="ltr">{dimensions.width} x {dimensions.height}</bdi></strong>} guidance={<>Add a Browser Source in OBS at <bdi dir="ltr">{dimensions.width} x {dimensions.height}</bdi>, then paste this URL.</>} url={source.url === null ? <p>Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source URL`} readOnly value={source.url} /> : <code>{maskRouteKey(source.url)}</code>} actions={<>{source.status === "create-required" ? <Button disabled={busy} onClick={() => onCreate(source)}>Create {label} URL</Button> : null}{source.url === null ? null : <><Button aria-label={`${revealed ? "Hide" : "Reveal"} ${label} URL`} variant="default" onClick={() => onToggleReveal(source)}>{revealed ? "Hide" : "Reveal"}</Button><Button aria-label={`Copy ${label} URL`} variant="default" onClick={() => onCopy(source)}>Copy</Button></>}{source.status !== "create-required" ? <Button aria-label={`Regenerate ${label} URL`} color="red" variant="light" disabled={busy} onClick={() => onRegenerate(source)}>Regenerate</Button> : null}</>} />; })}</div>
+    <div className="timer-browser-sources__list">{sources.map(source => { const label = profileLabel(source.targetProfileId); const dimensions = source.canvas; const revealed = revealedSourceIds.has(source.id); return <BrowserSourceRow key={source.id} label={label} ready={source.status === "available"} telemetry={source.connectionState === "connected" ? "Listening now" : source.lastConnectedAt === null ? "Not listening. No connection recorded." : `Not listening. Last seen ${formatDateTime(source.lastConnectedAt)}`} canvas={dimensions} guidance={dimensions === undefined ? undefined : <>Add a Browser Source in OBS at <bdi dir="ltr">{dimensions.width} x {dimensions.height}</bdi>, then paste this URL.</>} url={source.url === null ? <p>Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source URL`} readOnly value={source.url} /> : <code>{maskRouteKey(source.url)}</code>} actions={<>{source.status === "create-required" ? <Button disabled={busy} onClick={() => onCreate(source)}>Create {label} URL</Button> : null}{source.url === null ? null : <><Button aria-label={`${revealed ? "Hide" : "Reveal"} ${label} URL`} variant="default" onClick={() => onToggleReveal(source)}>{revealed ? "Hide" : "Reveal"}</Button><Button aria-label={`Copy ${label} URL`} variant="default" onClick={() => onCopy(source)}>Copy</Button></>}{source.status !== "create-required" ? <Button aria-label={`Regenerate ${label} URL`} color="red" variant="light" disabled={busy} onClick={() => onRegenerate(source)}>Regenerate</Button> : null}</>} />; })}</div>
   </BrowserSourcesPanel>;
 }
 

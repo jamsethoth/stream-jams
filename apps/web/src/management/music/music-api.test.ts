@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { createDefaultMusicModuleConfig } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
 import type { ManagementHttpClient } from "../management-http-client.js";
@@ -51,8 +52,8 @@ describe("Music API", () => {
   it("round-trips Music config through the generic module endpoint and validates output links", async () => {
     const config = createDefaultMusicModuleConfig();
     const getJson = vi.fn(async (path: string) => path.endsWith("/config") ? { enabled: false, config } : [
-      { id: "music-live", label: "Music Landscape Live", overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId: "landscape", enabled: false, keyId: null, url: null, copyableUrlStatus: "create-required" },
-      { id: "music-legacy", label: "Music Live", overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId: null, enabled: false, keyId: null, url: null, copyableUrlStatus: "create-required" },
+      { canvas: sceneOutputCanvas(0, 1920, 1080), id: "music-live", label: "Music Landscape Live", overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId: "landscape", enabled: false, keyId: null, url: null, copyableUrlStatus: "create-required" },
+      { canvas: sceneOutputCanvas(0, 1920, 1080), id: "music-legacy", label: "Music Live", overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId: null, enabled: false, keyId: null, url: null, copyableUrlStatus: "create-required" },
       { id: "alerts-live", moduleId: "alerts" }
     ]);
     const putJson = vi.fn(async () => ({ enabled: true, config }));

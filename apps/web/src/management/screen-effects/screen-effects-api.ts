@@ -1,3 +1,4 @@
+import { outputCanvasSchema, type OutputCanvas } from "@stream-jams/core";
 import {
   screenEffectDocumentSchema,
   screenEffectSetSchema,
@@ -29,6 +30,7 @@ export interface EffectLiveTestResult {
 }
 
 export interface ScreenEffectBrowserSource {
+  readonly canvas?: OutputCanvas;
   readonly id: string;
   readonly label: string;
   readonly purpose: "live" | "test";
@@ -197,6 +199,7 @@ function parseBrowserSource(candidate: unknown): readonly ScreenEffectBrowserSou
     || !["available", "create-required", "regenerate-required"].includes(String(value.copyableUrlStatus))
   ) return [];
   return [{
+    ...(value.canvas === undefined ? {} : { canvas: outputCanvasSchema.parse(value.canvas) }),
     id: value.id,
     label: value.label,
     purpose: value.purpose,

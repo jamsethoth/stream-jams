@@ -36,10 +36,10 @@ Specification approved 2026-10-10; implementation is authorized and in progress.
 
 ## 5. S05 — Canvas and trusted recipient foundation (depends on S01)
 
-- [ ] 5.1 Test empty/disabled metadata, old response rejection, reconnect/runtime revision reset and rejection of public desktop selection.
-- [ ] 5.2 Add trusted recipient kind and validated versioned canvas metadata with atomic config/projection refresh and saved-revision caching.
-- [ ] 5.3 Add fixed CSS-pixel content mode while retaining scene mode and existing module defaults.
-- [ ] 5.4 Display authoritative source dimensions and verify renderer lifecycle, Storybook and bundle boundaries; record checks and commit.
+- [x] 5.1 Test empty/disabled metadata, old response rejection, reconnect/runtime revision reset and rejection of public desktop selection.
+- [x] 5.2 Add trusted recipient kind and validated versioned canvas metadata with atomic config/projection refresh and saved-revision caching.
+- [x] 5.3 Add fixed CSS-pixel content mode while retaining scene mode and existing module defaults.
+- [x] 5.4 Display authoritative source dimensions and verify renderer lifecycle, Storybook and bundle boundaries; record checks and commit.
 
 ## 6. S06 — Music compact content output (depends on S05)
 

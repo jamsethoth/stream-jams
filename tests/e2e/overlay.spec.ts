@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { expect, test } from "@playwright/test";
 import { Buffer } from "node:buffer";
 import { resolve } from "node:path";
@@ -11,7 +12,7 @@ test("module test overlay renders a test alert without displaying its route key"
   await page.route("**/overlay/modules/alerts/test/ovl_test/composition", async (route) => {
     await route.fulfill({
       contentType: "application/json",
-      json: {
+      json: { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
         overlayId: "default",
         purpose: "test",
         scope: "module",
@@ -92,7 +93,7 @@ test("management test audio can be enabled after the browser blocks autoplay", a
   });
   await page.route("**/overlay/modules/alerts/live/ovl_audio/composition*", (route) => route.fulfill({
     contentType: "application/json",
-    json: {
+    json: { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
       overlayId: "default",
       purpose: "live",
       scope: "module",
@@ -166,7 +167,7 @@ for (const scenario of [
     }, { mode: scenario.mode });
     await page.route("**/overlay/modules/alerts/live/ovl_failure/composition*", route => {
       const now = scenario.mode === "readiness" ? testTime.getTime() : Date.now();
-      return route.fulfill({ contentType: "application/json", json: {
+      return route.fulfill({ contentType: "application/json", json: { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
         overlayId: "default", purpose: "live", scope: "module", targetProfileId: "vertical",
         modules: [{ moduleId: "alerts", enabled: true, instructions: [{
           id: `video-${scenario.mode}`, overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", targetProfileId: "vertical",

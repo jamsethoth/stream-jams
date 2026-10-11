@@ -444,6 +444,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   await localMaintenanceService.clearOldLogs();
   const overlayOutputManagementService = new OverlayOutputManagementService({
+    getCanvas: (moduleId, targetProfileId): Promise<import("@stream-jams/core").OutputCanvas> => overlayCompositionService.getModuleOutputCanvas({ moduleId, ...(targetProfileId === undefined ? {} : { targetProfileId }) }),
     overlayAccessService,
     overlayKeyRepository,
     overlayModuleRegistry,
@@ -1480,6 +1481,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       return { label: regenerated.output.label, url: regenerated.url };
     },
     reloadRuntimeConfiguration: async () => {
+      overlayCompositionService.resetConfigurationCache();
       moderationService.reloadSettings();
       eventBusSettingsService.reload();
       // Events journaled before the restore belong to the replaced configuration; never play them late.
@@ -1495,6 +1497,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       automationCredentialService.clearPending();
       automationControlService.invalidateRuntime();
       await playbackOperationsService.restoreSafety(playback);
+      await refreshBrowserConfigurations();
     },
     assetDurationCatalog,
     twitchCredentials: {
@@ -1633,6 +1636,15 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     logger: runtimeLogger,
     generateReferenceId: generateRuntimeReferenceId
   });
+  const refreshBrowserConfigurations = async () => {
+    await Promise.all(overlayGateway.clients.map(async client => {
+      const composition = client.moduleId === null
+        ? await overlayCompositionService.resolveUnifiedOutput({ overlayId: client.overlayId, purpose: client.purpose, enabledModuleIds: listUnifiedOverlayModuleIds(overlayModuleRegistry) })
+        : await overlayCompositionService.resolveModuleOutput({ moduleId: client.moduleId, overlayId: client.overlayId, purpose: client.purpose,
+          ...(client.targetProfileId == null ? {} : { targetProfileId: client.targetProfileId }) });
+      overlayGateway.deliverComposition(client.id, composition);
+    }));
+  };
   const syncBrowserTimerCompositions = async () => {
     const moduleIds = listUnifiedOverlayModuleIds(overlayModuleRegistry);
     await Promise.all(overlayGateway.clients
@@ -1828,6 +1840,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       if (config.moduleId === "screen-effects" && !config.enabled) {
         await effectPlaybackCoordinator.disable();
       }
+      if (config.moduleId === "alerts" || config.moduleId === "screen-effects") await refreshBrowserConfigurations();
       if (config.moduleId === "timers") await queueTimerOutputSync();
       if (config.moduleId === "music") await refreshCommittedMusicConfig(config.enabled);
       if (config.moduleId === "videos") await refreshCommittedVideosConfig(config.enabled);
@@ -1840,6 +1853,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       if (config.moduleId === "screen-effects" && !config.enabled) {
         await effectPlaybackCoordinator.disable();
       }
+      if (config.moduleId === "alerts" || config.moduleId === "screen-effects") await refreshBrowserConfigurations();
       if (config.moduleId === "timers") await queueTimerOutputSync();
       if (config.moduleId === "music") await refreshCommittedMusicConfig(config.enabled);
       if (config.moduleId === "videos") await refreshCommittedVideosConfig(config.enabled);

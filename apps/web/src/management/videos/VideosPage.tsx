@@ -139,6 +139,8 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
     void mutate(async () => {
       const saved = await api.saveModuleConfig(enabled, config);
       setEnabled(saved.enabled); setDraft(toDraft(saved.config));
+      try { setSources(await api.listBrowserSources()); }
+      catch (reason) { setActionError(actionableError(reason, "Videos settings saved; source dimensions could not be refreshed", "Reopen Videos to load the saved OBS dimensions.")); }
       setNotice({ tone: "success", message: "Videos settings saved. They apply to later requests and runs." });
     }, "Videos settings could not be saved");
   }
@@ -199,7 +201,7 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
         <BrowserSourcesPanel id="browser-sources" detailsId="videos-sources-content" expanded={sourcesExpanded} onToggle={() => setSourcesExpanded(value => !value)}
         readyCount={sources.filter(source => source.status === "available").length} needsSetupCount={sources.filter(source => source.status !== "available").length} description="Module live and test outputs.">
         <p>Add the Videos URL as an OBS Browser Source at 1920 x 1080. To show videos on the desktop overlay, turn on Videos in <a href="/manage/settings#overlay-surfaces">Overlay surfaces</a>.</p>
-        {sources.length === 0 ? <p>No Videos Browser Source output is registered.</p> : sources.map(source => <BrowserSourceRow key={source.id} label={source.label} ready={source.status === "available"}
+        {sources.length === 0 ? <p>No Videos Browser Source output is registered.</p> : sources.map(source => <BrowserSourceRow key={source.id} label={source.label} canvas={source.canvas} ready={source.status === "available"}
           telemetry={source.status === "available" ? "URL available" : source.status.replace("-", " ")} metadata={<span>Module source · {source.purpose === "live" ? "Live" : "Test"}</span>}
           url={source.url === null ? <p>Create a URL before adding this output.</p> : <MaskedValue label={`${source.label} Browser Source URL`} value={source.url} />}
           actions={source.status === "create-required"

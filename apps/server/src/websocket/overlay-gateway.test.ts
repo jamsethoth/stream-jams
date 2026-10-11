@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import type {
   OverlayAccessService,
   OverlayAccessVerification,
@@ -143,7 +144,7 @@ describe("OverlayGateway", () => {
     const registration = { overlayId: "default", moduleId: "timers", purpose: "live", scope: "module", targetProfileId: "landscape", rawKey: "timer-key" } as const;
     const gateway = createGateway({ allowed: [registration] }); const socket = new RecordingSocket();
     const result = await gateway.registerClient(socket, registration); expect(result.authorized).toBe(true);
-    const composition = { overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", modules: [
+    const composition = { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(), overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", modules: [
       { moduleId: "timers", enabled: true, instructions: [] }
     ] } as const;
     expect(gateway.deliverComposition(result.authorized ? result.clientId : "", composition)).toBe(true);

@@ -124,6 +124,12 @@ export function MusicPage({ api, assetApi, surfaceApi }: { readonly api: MusicPa
       if (!mounted.current) return true;
       setSaved(result);
       if (draftRevision.current === revision) { setDraft(result.config); setEnabled(result.enabled); }
+      try {
+        const availableOutputs = await api.listMusicOutputs();
+        if (mounted.current) setOutputs(availableOutputs);
+      } catch (cause) {
+        if (mounted.current) setError(actionableError(cause, "Music appearance saved; source dimensions could not be refreshed", "Reopen Music to load the saved OBS dimensions."));
+      }
       const stillCurrent = draftRevision.current === revision;
       setNotice({ tone: "success", message: stillCurrent ? "Music appearance saved." : "Earlier Music appearance saved. Newer edits remain unsaved." });
       return stillCurrent;
@@ -195,7 +201,7 @@ export function MusicPage({ api, assetApi, surfaceApi }: { readonly api: MusicPa
   const sourceRows = (purpose: "live" | "test") => outputs.filter(output => output.purpose === purpose).map(output => {
     const label = `${output.targetProfileId === "landscape" ? "Landscape" : "Vertical"}${purpose === "test" ? " test" : ""}`;
     const revealed = revealedOutputs.has(output.id);
-    return <BrowserSourceRow key={output.id} label={label} ready={output.copyableUrlStatus === "available"} metadata={<strong><bdi dir="ltr">{output.targetProfileId === "landscape" ? "1920 x 1080" : "1080 x 1920"}</bdi></strong>} guidance={<>Add a Browser Source in OBS at {output.targetProfileId === "landscape" ? "1920 x 1080" : "1080 x 1920"}, then paste this URL.</>} telemetry={purpose === "live" ? "Live output" : "Test output"} url={output.url === null ? <p className="browser-source-row__missing">Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source URL`} readOnly value={output.url} /> : <code>{output.url.replace(/(\/(?:live|test)\/)[^?]+/u, "$1********")}</code>} actions={<>
+    return <BrowserSourceRow key={output.id} label={label} ready={output.copyableUrlStatus === "available"} canvas={output.canvas} guidance={output.canvas === undefined ? undefined : <>Add a Browser Source in OBS at {output.canvas.width} x {output.canvas.height}, then paste this URL.</>} telemetry={purpose === "live" ? "Live output" : "Test output"} url={output.url === null ? <p className="browser-source-row__missing">Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source URL`} readOnly value={output.url} /> : <code>{output.url.replace(/(\/(?:live|test)\/)[^?]+/u, "$1********")}</code>} actions={<>
       {output.copyableUrlStatus === "create-required" ? <Button variant="default" disabled={busy} onClick={() => void createOutput(output)} type="button">Create {label} URL</Button> : null}
       {output.url === null ? null : <><Button aria-label={`${revealed ? "Hide" : "Reveal"} ${label} URL`} variant="default" onClick={() => setRevealedOutputs(current => { const next = new Set(current); if (revealed) next.delete(output.id); else next.add(output.id); return next; })} type="button">{revealed ? "Hide" : "Reveal"}</Button><Button aria-label={`Copy ${label} URL`} variant="default" onClick={() => void copyOutput(output.url!)} type="button">Copy</Button></>}
       {output.copyableUrlStatus === "create-required" ? null : <Button aria-label={`Regenerate ${label} URL`} color="red" variant="light" disabled={busy} onClick={() => { setConfirmationError(null); setRegenerateOutput(output); }} type="button">Regenerate</Button>}

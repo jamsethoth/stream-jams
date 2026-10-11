@@ -25,10 +25,10 @@ export class MusicOutputRuntime implements OverlayModuleRuntime {
   async getModuleSnapshot(request: OverlayModuleSnapshotRequest): Promise<OverlayModuleSnapshot> {
     const targetProfileId: OverlayTargetProfileId = request.targetProfileId ?? "landscape";
     const revision = this.dependencies.runtime.revision;
-    const projection = request.purpose === "test" ? await this.#fixture(targetProfileId) : this.dependencies.runtime.getProjection(targetProfileId);
+    const config = request.savedConfig === undefined ? await this.dependencies.getConfig() : request.savedConfig.config as MusicModuleConfig;
+    const projection = request.purpose === "test" ? await this.#fixture(targetProfileId, config) : this.dependencies.runtime.getProjection(targetProfileId, config);
     if (projection === null) return { moduleId: "music", enabled: true, instructions: [] };
-    const config = await this.dependencies.getConfig();
-    const placed = request.overlayId === "desktop:primary" && request.scope === "unified" && request.purpose === "live"
+    const placed = request.recipientKind === "desktop"
       ? applyMusicDesktopPlacement(projection, config) : projection;
     const { assets } = await this.dependencies.assets.resolveMusicAssets(config, targetProfileId);
     if (request.purpose === "live" && this.dependencies.runtime.revision !== revision) {
@@ -39,10 +39,10 @@ export class MusicOutputRuntime implements OverlayModuleRuntime {
     } };
   }
 
-  async #fixture(targetProfileId: OverlayTargetProfileId): Promise<MusicWidgetProjection | null> {
+  async #fixture(targetProfileId: OverlayTargetProfileId, config: MusicModuleConfig): Promise<MusicWidgetProjection | null> {
     const now = (this.dependencies.now ?? Date.now)();
     return projectMusicWidget({ ...fixtureSnapshot, observedAtEpochMs: now },
       { state: "connected", stale: false, diagnosticReference: null },
-      await this.dependencies.getConfig(), targetProfileId, now, now);
+      config, targetProfileId, now, now);
   }
 }

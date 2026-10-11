@@ -398,3 +398,5 @@ export { defaultModuleMuteState, type ModuleMuteState, type MutablePlaybackModul
 
 export { manualEventSubmissionSchema, manualEventActionSchema, manualEventActionMaxBytes } from "./event-bus/manual-submission.js";
 export type * from "./event-bus/manual-submission.js";
+
+export { outputCanvasSchema, sceneOutputCanvas, moduleOutputCanvas, type OutputCanvas } from "./overlay-modules/output-canvas.js";

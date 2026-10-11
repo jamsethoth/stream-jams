@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { createDefaultMusicModuleConfig } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fireEvent, userEvent, waitFor, within } from "storybook/test";
@@ -16,7 +17,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const BrowserSources: Story = {
-  args: { api: createStoryManagementApi({ listMusicOutputs: async () => (["landscape", "vertical"] as const).map(targetProfileId => ({ id: targetProfileId, overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId, label: targetProfileId, enabled: true, keyId: null, url: null, copyableUrlStatus: "create-required" })) }) },
+  args: { api: createStoryManagementApi({ listMusicOutputs: async () => (["landscape", "vertical"] as const).map(targetProfileId => ({ canvas: sceneOutputCanvas(0, targetProfileId === "vertical" ? 1080 : 1920, targetProfileId === "vertical" ? 1920 : 1080), id: targetProfileId, overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId, label: targetProfileId, enabled: true, keyId: null, url: null, copyableUrlStatus: "create-required" })) }) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Expand browser sources" }));

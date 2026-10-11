@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { createTestMediaPreviewApi } from "../../test-support/media-preview-fixture.js";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { timersOverlayModuleDefinition, type TimerDefinition, type TimerRunState } from "@stream-jams/core";
@@ -16,8 +17,8 @@ const assetApi = createTestMediaPreviewApi() as unknown as AssetApi;
 const buildApi = (states: readonly TimerRunState[], enabled = true): TimersApi => ({
   list: async () => [definition], listStates: async () => states, create: async input => ({ ...definition, ...input }), update: async (_id, input) => ({ ...definition, ...input }),
   listBrowserSources: async () => [
-    { id: "module:timers:landscape:live", label: "Timers Landscape Live", purpose: "live", overlayId: "default", scope: "module", moduleId: "timers", targetProfileId: "landscape", enabled: true, keyId: "landscape-key", url: "http://127.0.0.1:39187/overlay/modules/timers/live/story-key?profile=landscape", status: "available", connectionState: "connected", lastConnectedAt: definition.updatedAt },
-    { id: "module:timers:vertical:live", label: "Timers Vertical Live", purpose: "live", overlayId: "default", scope: "module", moduleId: "timers", targetProfileId: "vertical", enabled: true, keyId: null, url: null, status: "create-required", connectionState: "never-connected", lastConnectedAt: null }
+    { canvas: sceneOutputCanvas(0, 1920, 1080), id: "module:timers:landscape:live", label: "Timers Landscape Live", purpose: "live", overlayId: "default", scope: "module", moduleId: "timers", targetProfileId: "landscape", enabled: true, keyId: "landscape-key", url: "http://127.0.0.1:39187/overlay/modules/timers/live/story-key?profile=landscape", status: "available", connectionState: "connected", lastConnectedAt: definition.updatedAt },
+    { canvas: sceneOutputCanvas(0, 1080, 1920), id: "module:timers:vertical:live", label: "Timers Vertical Live", purpose: "live", overlayId: "default", scope: "module", moduleId: "timers", targetProfileId: "vertical", enabled: true, keyId: null, url: null, status: "create-required", connectionState: "never-connected", lastConnectedAt: null }
   ],
   createBrowserSource: async source => source, regenerateBrowserSource: async source => source,
   remove: async () => {}, adjust: async () => ({ changed: false, state: null }), command: async () => ({ changed: false, state: states[0] ?? null }),

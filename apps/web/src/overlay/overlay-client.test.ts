@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   connectOverlayClient,
@@ -36,11 +37,38 @@ describe("overlay-client", () => {
   });
   it("parses validated composition updates from the live socket", async () => {
     const onMessage = vi.fn(); connectClient(onMessage); await vi.advanceTimersByTimeAsync(0); onMessage.mockClear();
-    const composition = { overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape",
+    const composition = { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(), overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape",
       modules: [{ moduleId: "alerts", enabled: true, instructions: [] }] };
     FakeWebSocket.instances[0]!.emitMessage(JSON.stringify({ type: "overlay.composition", composition }));
     FakeWebSocket.instances[0]!.emitMessage(JSON.stringify({ type: "overlay.composition", composition: { ...composition, modules: "bad" } }));
     expect(onMessage).toHaveBeenCalledExactlyOnceWith({ type: "composition", composition });
+  });
+
+  it("rejects delayed pre-reset geometry on the same socket and reconnect initializes current canvas", async () => {
+    const onMessage = vi.fn();
+    const connection = connectClient(onMessage);
+    const oldSocket = FakeWebSocket.instances[0]!;
+    oldSocket.emit("open");
+    await vi.advanceTimersByTimeAsync(0);
+    onMessage.mockClear();
+    const composition = { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(10, 800, 600), overlayId: "default", purpose: "live", scope: "module", modules: [] };
+    oldSocket.emitMessage(JSON.stringify({ type: "overlay.composition", composition }));
+    oldSocket.emitMessage(JSON.stringify({ type: "overlay.composition", composition: { ...composition, canvas: sceneOutputCanvas(9, 1920, 1080) } }));
+    oldSocket.emitMessage(JSON.stringify({ type: "overlay.composition", composition: { ...composition, runtimeId: "unrelated-runtime" } }));
+    expect(onMessage.mock.calls.filter(([message]) => message.type === "composition")).toEqual([[{ type: "composition", composition }]]);
+    oldSocket.emitClose(1006);
+    await vi.advanceTimersByTimeAsync(1000);
+    const currentSocket = FakeWebSocket.instances[1]!;
+    currentSocket.emit("open");
+    onMessage.mockClear();
+    const current = { ...composition, runtimeId: "new-runtime", canvas: sceneOutputCanvas(0, 400, 300) };
+    // A service restart is accepted only by a fresh connection, before its initial HTTP capture pins identity.
+    currentSocket.emitMessage(JSON.stringify({ type: "overlay.composition", composition: current }));
+    oldSocket.emitMessage(JSON.stringify({ type: "overlay.composition", composition }));
+    expect(onMessage).toHaveBeenCalledExactlyOnceWith({ type: "composition", composition: current });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onMessage).toHaveBeenCalledTimes(1);
+    connection.close();
   });
 
   it("validates complete layer control payloads and rejects duplicate or malformed rows", () => {
@@ -198,7 +226,7 @@ describe("overlay-client", () => {
 
   it("fetches a fresh authoritative composition after every successful connection", async () => {
     const onMessage = vi.fn();
-    const fetcher = vi.fn().mockResolvedValue({ ok: true, json: vi.fn().mockResolvedValue({
+    const fetcher = vi.fn().mockResolvedValue({ ok: true, json: vi.fn().mockResolvedValue({ runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
       overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", modules: []
     }) });
     connectOverlayClient({
@@ -347,7 +375,7 @@ function connectClient(onMessage = vi.fn()) {
     route: parseOverlayRoute("/overlay/modules/alerts/live/ovl_reconnect?profile=landscape")!,
     fetcher: vi.fn().mockResolvedValue({
       ok: true,
-      json: vi.fn().mockResolvedValue({
+      json: vi.fn().mockResolvedValue({ runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
         overlayId: "default",
         purpose: "live",
         scope: "module",

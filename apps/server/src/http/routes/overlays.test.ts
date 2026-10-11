@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import type {
   ModuleOutputRequest,
   OverlayComposition,
@@ -29,6 +30,10 @@ describe("overlay routes", () => {
         `/overlay/modules/music/live/${live.rawKey}/composition?profile=landscape`,
         `/overlay/unified/test/${unified.rawKey}/composition`]) {
         expect((await app.inject({ url })).statusCode).toBe(401);
+      }
+      // Public URL input cannot select a trusted desktop recipient or inject a saved capture.
+      for (const selector of ["recipientKind=desktop", "savedConfig=forged"]) {
+        expect((await app.inject({ url: `/overlay/modules/music/live/${live.rawKey}/composition?profile=vertical&${selector}` })).statusCode).toBe(401);
       }
       await access.revokeKey(live.record.id);
       expect((await app.inject({ url: `/overlay/modules/music/live/${live.rawKey}/composition?profile=vertical` })).statusCode).toBe(401);
@@ -103,7 +108,7 @@ describe("overlay routes", () => {
     expect(shell.body).not.toContain("/src/main.tsx");
     expect(shell.body).not.toContain(created.rawKey);
     expect(composition.statusCode).toBe(200);
-    expect(composition.json()).toEqual({
+    expect(composition.json()).toEqual({ runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
       overlayId: "default",
       purpose: "live",
       scope: "module",
@@ -189,7 +194,7 @@ describe("overlay routes", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
+    expect(response.json()).toEqual({ runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
       overlayId: "default",
       purpose: "test",
       scope: "unified",
@@ -394,7 +399,7 @@ class RecordingOverlayCompositionService implements OverlayCompositionService {
 
   async resolveModuleOutput(request: ModuleOutputRequest): Promise<OverlayComposition> {
     this.moduleRequests.push(request);
-    return {
+    return { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
       overlayId: request.overlayId,
       purpose: request.purpose,
       scope: "module",
@@ -411,7 +416,7 @@ class RecordingOverlayCompositionService implements OverlayCompositionService {
 
   async resolveUnifiedOutput(request: UnifiedOutputRequest): Promise<OverlayComposition> {
     this.unifiedRequests.push(request);
-    return {
+    return { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
       overlayId: request.overlayId,
       purpose: request.purpose,
       scope: "unified",

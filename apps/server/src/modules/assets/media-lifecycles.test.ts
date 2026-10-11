@@ -30,7 +30,7 @@ function definition(): TimerDefinition {
   return { id: "timer", label: "Timer", durationMs: 1000, iconAssetId: "icon", startAudioAssetId: null, endAudioAssetId: "bell", outputs: { browserSource: true, deviceRouteIds: [] }, createdAt: "2026-09-30T00:00:00Z", updatedAt: "2026-09-30T00:00:00Z" };
 }
 function timerConfig() { return { moduleId: "timers", enabled: true, updatedAt: "2026-09-30T00:00:00Z", config: { profiles: { landscape: { layout: { x: 0, y: 0, width: 800, height: 400, zIndex: 1 }, orientation: "vertical", maxVisible: 4 }, vertical: { layout: { x: 0, y: 0, width: 400, height: 800, zIndex: 1 }, orientation: "vertical", maxVisible: 4 } } } }; }
-const snapshotRequest = { moduleId: "timers", overlayId: "default", purpose: "live", scope: "unified", targetProfileId: "landscape" } as const;
+const snapshotRequest = { recipientKind: "browser", moduleId: "timers", overlayId: "default", purpose: "live", scope: "unified", targetProfileId: "landscape" } as const;
 
 it("holds paused and hidden timer versions through replacement and freshly verifies a new run", async () => {
   const f = await fixture();

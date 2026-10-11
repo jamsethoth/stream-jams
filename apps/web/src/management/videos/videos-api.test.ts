@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
 import { describedVideos, queuedVideos, recentVideos, videoItem } from "../../stories/video-queue-fixtures.js";
 import { createHttpVideosApi, isVideoQueueConflict } from "./videos-api.js";
@@ -88,8 +89,8 @@ describe("createHttpVideosApi", () => {
   it("loads settings and keeps only Videos module outputs", async () => {
     const fetcher = createFetch(url => {
       if (url === "/management/overlay-outputs") return json([
-        { id: "module:videos:live", label: "Videos Live", purpose: "live", overlayId: "default", scope: "module", moduleId: "videos", targetProfileId: null, enabled: true, keyId: "k", url: "http://127.0.0.1/overlay/modules/videos/live/key", copyableUrlStatus: "available" },
-        { id: "module:timers:live", label: "Timers Live", purpose: "live", overlayId: "default", scope: "module", moduleId: "timers", targetProfileId: null, enabled: true, keyId: null, url: null, copyableUrlStatus: "create-required" }
+        { canvas: sceneOutputCanvas(0, 1920, 1080), id: "module:videos:live", label: "Videos Live", purpose: "live", overlayId: "default", scope: "module", moduleId: "videos", targetProfileId: null, enabled: true, keyId: "k", url: "http://127.0.0.1/overlay/modules/videos/live/key", copyableUrlStatus: "available" },
+        { canvas: sceneOutputCanvas(0, 1920, 1080), id: "module:timers:live", label: "Timers Live", purpose: "live", overlayId: "default", scope: "module", moduleId: "timers", targetProfileId: null, enabled: true, keyId: null, url: null, copyableUrlStatus: "create-required" }
       ]);
       return json({ moduleId: "videos", enabled: false, config, updatedAt: "2026-10-08T00:00:00.000Z" });
     });

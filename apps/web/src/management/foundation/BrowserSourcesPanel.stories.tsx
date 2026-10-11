@@ -1,3 +1,4 @@
+import { BrowserSourceRow } from "./BrowserSourceRow.js";
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, within } from "storybook/test";
@@ -30,3 +31,13 @@ export const Expanded: Story = { args: { expanded: true } };
 export const RefreshFailure: Story = { args: { refreshFailed: true } };
 export const Empty: Story = { args: { readyCount: 0, needsSetupCount: 0 } };
 export const Narrow: Story = { globals: { viewport: { value: "mobile1", isRotated: false } } };
+
+export const AuthoritativeDimensions: Story = {
+  tags: ["output-canvas"],
+  args: { expanded: true, children: <BrowserSourceRow label="Music Landscape" ready={false} canvas={{ width: 777, height: 211 }}
+    telemetry="Not listening. No connection recorded." url={<p>Create a URL before adding this profile to OBS.</p>} actions={null} /> },
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).getByRole("article")).toHaveTextContent("777 x 211");
+    await expect(within(canvasElement).getByRole("article")).toHaveTextContent("Needs setup");
+  }
+};

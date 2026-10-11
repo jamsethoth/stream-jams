@@ -369,7 +369,7 @@ describe("TimerRuntimeCoordinator", () => {
     expect(coordinator.getState("a")).toMatchObject({ status: "paused", remainingMs: 4321 });
     expect(onRecoveryError).toHaveBeenCalledExactlyOnceWith(failure);
     expect(cueSink.play).not.toHaveBeenCalled();
-    const projected = await coordinator.getModuleSnapshot({ moduleId: "timers", overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape" });
+    const projected = await coordinator.getModuleSnapshot({ recipientKind: "browser", moduleId: "timers", overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape" });
     expect(JSON.stringify(projected)).not.toContain("missing-icon");
     await coordinator.close();
   });
@@ -447,7 +447,7 @@ describe("TimerRuntimeCoordinator", () => {
     await coordinator.start("b");
     await time.advance(2_000);
     expect(coordinator.listStates().map(state => state.definitionId)).toEqual(["a", "b"]);
-    const snapshot = await coordinator.getModuleSnapshot({ moduleId: "timers", overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape" });
+    const snapshot = await coordinator.getModuleSnapshot({ recipientKind: "browser", moduleId: "timers", overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape" });
     expect(snapshot.presentation?.kind === "timer-stack" ? snapshot.presentation.stack.cards.map(card => card.definitionId) : undefined).toEqual(["a", "b"]);
   });
   it("starts independent timers with immutable definition snapshots and publishes revisions", async () => {
@@ -547,7 +547,7 @@ describe("TimerRuntimeCoordinator", () => {
     await coordinator.start("a");
     await time.advance(1_000);
     await coordinator.start("b");
-    const snapshot = await coordinator.getModuleSnapshot({
+    const snapshot = await coordinator.getModuleSnapshot({ recipientKind: "browser",
       moduleId: "timers", overlayId: "default", purpose: "live", scope: "module", targetProfileId: "vertical"
     });
     expect(snapshot).toMatchObject({

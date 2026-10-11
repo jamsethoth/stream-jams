@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { ManagementHttpError } from "../management-http-client.js";
 import { renderManagement as render } from "../../test-support/render-management.js";
 import { createStoryEffectSets } from "../../stories/screen-effect-set-fixtures.js";
@@ -214,7 +215,7 @@ function api(options: {
   readonly url?: string | null;
 } = {}): ScreenEffectsApi {
   const document = effect();
-  const source = {
+  const source = { canvas: sceneOutputCanvas(0, 1920, 1080),
     id: "source-one",
     label: "Screen Effects Live",
     purpose: "live" as const,

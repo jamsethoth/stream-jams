@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { mockMediaPreviews } from "./media-preview-fixtures.js";
 import { expect, test } from "@playwright/test";
 import { installOverlayWebSocketMock, mockManagementShell } from "./e2e-helpers.js";
@@ -279,7 +280,7 @@ function asset(id: string, displayName: string, mediaType: "image" | "audio", mi
 
 function composition(now: number) {
   const slot = (x: number) => ({ x, y: 40, width: 300, height: 120, zIndex: 20 });
-  return { overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", modules: [{
+  return { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(), overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", modules: [{
     moduleId: "timers", enabled: true, instructions: [], presentation: { kind: "timer-stack", stack: {
       targetProfileId: "landscape", region: { layout: { x: 40, y: 40, width: 900, height: 120, zIndex: 20 }, orientation: "horizontal", maxVisible: 3 },
       cards: [

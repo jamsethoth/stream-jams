@@ -338,7 +338,7 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
   }
 
   async getModuleSnapshot(request: OverlayModuleSnapshotRequest): Promise<OverlayModuleSnapshot> {
-    const saved = await this.#config.getModuleConfig("timers");
+    const saved = request.savedConfig ?? await this.#config.getModuleConfig("timers");
     const config = timersOverlayModuleConfigSchema.parse(saved.config);
     const targetProfileId = request.targetProfileId ?? "landscape";
     const projection = projectTimerStack({ nowEpochMs: this.#clock.now(), targetProfileId, region: config.profiles[targetProfileId], runs: this.listStates() });

@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { renderManagement as render } from "../../test-support/render-management.js";
 import { createDefaultMusicModuleConfig } from "@stream-jams/core";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -74,7 +75,7 @@ describe("Music appearance", () => {
   });
   it("shows both profile rows with masked URLs and confirms regeneration separately from appearance", async () => {
     const user = userEvent.setup();
-    const outputs = (["landscape", "vertical"] as const).map(targetProfileId => ({ id: targetProfileId, overlayId: "default", moduleId: "music", scope: "module" as const, targetProfileId, purpose: "live" as const, label: targetProfileId, enabled: true, keyId: "example", url: `http://127.0.0.1:39187/overlay/modules/music/live/example-${targetProfileId}`, copyableUrlStatus: "available" as const }));
+    const outputs = (["landscape", "vertical"] as const).map(targetProfileId => ({ canvas: sceneOutputCanvas(0, targetProfileId === "vertical" ? 1080 : 1920, targetProfileId === "vertical" ? 1920 : 1080), id: targetProfileId, overlayId: "default", moduleId: "music", scope: "module" as const, targetProfileId, purpose: "live" as const, label: targetProfileId, enabled: true, keyId: "example", url: `http://127.0.0.1:39187/overlay/modules/music/live/example-${targetProfileId}`, copyableUrlStatus: "available" as const }));
     const regenerate = vi.fn(async () => ({ output: outputs[0]!, keyId: "replacement", url: "http://127.0.0.1:39187/overlay/modules/music/live/replacement" }));
     renderPage({ listMusicOutputs: async () => outputs, regenerateOverlayOutputKey: regenerate });
     await user.click(await screen.findByRole("button", { name: "Expand browser sources" }));
@@ -158,8 +159,10 @@ describe("Music appearance", () => {
 
   it("keeps profile and view drafts independent, then persists only on Save", async () => {
     const user = userEvent.setup();
-    const save = vi.fn(async (enabled, config) => ({ enabled, config }));
-    renderPage({ saveMusicConfig: save });
+    let canvas = sceneOutputCanvas();
+    const save = vi.fn(async (enabled, config) => { canvas = sceneOutputCanvas(1, 777, 211); return { enabled, config }; });
+    const listMusicOutputs = vi.fn(async () => [{ canvas, id: "live", overlayId: "default", moduleId: "music", scope: "module" as const, targetProfileId: "landscape" as const, purpose: "live" as const, label: "Music Landscape Live", enabled: false, keyId: null, url: null, copyableUrlStatus: "create-required" as const }]);
+    renderPage({ saveMusicConfig: save, listMusicOutputs });
     await openEditorControls();
     expect(within(screen.getByRole("region", { name: "Music preview" })).getByTestId("music-widget")).toHaveStyle({ width: "640px", height: "178px" });
     await user.selectOptions(screen.getByLabelText("Preview view"), "compact");
@@ -179,6 +182,8 @@ describe("Music appearance", () => {
     await waitFor(() => expect(save).toHaveBeenCalled());
     expect(save.mock.calls[0]?.[1].profiles.landscape.views.compact.widthPx).toBe(510);
     expect(save.mock.calls[0]?.[1].profiles.vertical.views.compact.widthPx).toBe(480);
+    await waitFor(() => expect(screen.getByRole("article", { name: "Landscape browser source" })).toHaveTextContent("777 x 211"));
+    expect(listMusicOutputs).toHaveBeenCalledTimes(2);
   });
 
   it("shows CSS errors and retains the last valid preview while disabling preserves source", async () => {
@@ -208,8 +213,8 @@ describe("Music appearance", () => {
     config.css = { ...config.css, source: ".sj-title { color: red; }", enabled: true };
     config.profiles.landscape.views.full.branding.assetId = "brand-a";
     renderPage({ getMusicConfig: async () => ({ enabled: false, config }), listMusicOutputs: async () => [
-      { id: "live", overlayId: "default", moduleId: "music", scope: "module", targetProfileId: "landscape", purpose: "live", label: "Music Landscape Live", enabled: false, keyId: "key", url: "http://127.0.0.1:39187/overlay/modules/music/live/example", copyableUrlStatus: "available" },
-      { id: "test", overlayId: "default", moduleId: "music", scope: "module", targetProfileId: "landscape", purpose: "test", label: "Music Landscape Test", enabled: false, keyId: "key", url: "http://127.0.0.1:39187/overlay/modules/music/test/example", copyableUrlStatus: "available" }
+      { canvas: sceneOutputCanvas(0, 1920, 1080), id: "live", overlayId: "default", moduleId: "music", scope: "module", targetProfileId: "landscape", purpose: "live", label: "Music Landscape Live", enabled: false, keyId: "key", url: "http://127.0.0.1:39187/overlay/modules/music/live/example", copyableUrlStatus: "available" },
+      { canvas: sceneOutputCanvas(0, 1920, 1080), id: "test", overlayId: "default", moduleId: "music", scope: "module", targetProfileId: "landscape", purpose: "test", label: "Music Landscape Test", enabled: false, keyId: "key", url: "http://127.0.0.1:39187/overlay/modules/music/test/example", copyableUrlStatus: "available" }
     ] });
     await openEditorControls();
     await user.click(screen.getByRole("button", { name: "Reset appearance to theme" }));
@@ -225,7 +230,7 @@ describe("Music appearance", () => {
 
   it("creates the selected profile output link through the existing output service", async () => {
     const user = userEvent.setup();
-    const output = { id: "landscape-live", overlayId: "default", moduleId: "music", scope: "module" as const, targetProfileId: "landscape" as const, purpose: "live" as const, label: "Music Landscape Live", enabled: false, keyId: null, url: null, copyableUrlStatus: "create-required" as const };
+    const output = { canvas: sceneOutputCanvas(0, 1920, 1080), id: "landscape-live", overlayId: "default", moduleId: "music", scope: "module" as const, targetProfileId: "landscape" as const, purpose: "live" as const, label: "Music Landscape Live", enabled: false, keyId: null, url: null, copyableUrlStatus: "create-required" as const };
     const create = vi.fn(async () => ({ output: { ...output, keyId: "key", url: "http://127.0.0.1:39187/overlay/modules/music/live/example", copyableUrlStatus: "available" as const }, keyId: "key", url: "http://127.0.0.1:39187/overlay/modules/music/live/example" }));
     renderPage({ listMusicOutputs: async () => [output], createOverlayOutputKey: create });
     await openEditorControls();

@@ -16,14 +16,14 @@ it("keeps test fixture separate from live source and attaches versioned saved as
   const resolveMusicAssets = vi.fn(async () => ({ assets: [{ assetId: "brand", version: "a".repeat(64),
     mimeType: "image/png" as const, sizeBytes: 3, durationMs: null }], missingAssetIds: [] }));
   const output = new MusicOutputRuntime({ runtime: { getProjection, revision: 1 }, assets: { resolveMusicAssets }, getConfig: async () => config, now: () => 1000 });
-  const test = await output.getModuleSnapshot({ moduleId: "music", overlayId: "default", purpose: "test", scope: "module", targetProfileId: "vertical" });
+  const test = await output.getModuleSnapshot({ recipientKind: "browser", moduleId: "music", overlayId: "default", purpose: "test", scope: "module", targetProfileId: "vertical" });
   expect(getProjection).not.toHaveBeenCalled();
   expect(test.presentation?.kind).toBe("music-widget");
   if (test.presentation?.kind !== "music-widget") throw new Error("Missing fixture");
   expect(test.presentation.widget.snapshot.providerId).toBe("music-fixture");
   expect(test.presentation.widget.snapshot.track?.artworkRef).toBeNull();
   expect(test.presentation.widget.assets[0]?.assetId).toBe("brand");
-  const actual = await output.getModuleSnapshot({ moduleId: "music", overlayId: "default", purpose: "live", scope: "module", targetProfileId: "vertical" });
+  const actual = await output.getModuleSnapshot({ recipientKind: "browser", moduleId: "music", overlayId: "default", purpose: "live", scope: "module", targetProfileId: "vertical" });
   expect(actual.presentation?.kind).toBe("music-widget");
   if (actual.presentation?.kind !== "music-widget") throw new Error("Missing live projection");
   expect(actual.presentation.widget.snapshot.track?.id).toBe("live");
@@ -35,7 +35,7 @@ it("does not publish an obsolete live projection after slow asset resolution", a
   let revision = 1;
   const output = new MusicOutputRuntime({ runtime: { getProjection: () => live, get revision() { return revision; } },
     assets: { resolveMusicAssets: () => new Promise(resolve => { finish = resolve; }) }, getConfig: async () => config });
-  const pending = output.getModuleSnapshot({ moduleId: "music", overlayId: "default", purpose: "live", scope: "module" });
+  const pending = output.getModuleSnapshot({ recipientKind: "browser", moduleId: "music", overlayId: "default", purpose: "live", scope: "module" });
   await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
   revision = 2; finish({ assets: [], missingAssetIds: [] });
   expect((await pending).presentation).toBeUndefined();
@@ -69,8 +69,8 @@ it("uses desktop placement only for the private desktop recipient", async () => 
   const saved = createDefaultMusicModuleConfig(); saved.desktopPlacement.full = { x: 123, y: 234 };
   const projection = { ...live, targetProfileId: "landscape" as const };
   const output = new MusicOutputRuntime({ runtime: { getProjection: () => projection, revision: 1 }, assets: { resolveMusicAssets: async () => ({ assets: [], missingAssetIds: [] }) }, getConfig: async () => saved });
-  const desktop = await output.getModuleSnapshot({ moduleId: "music", overlayId: "desktop:primary", purpose: "live", scope: "unified", targetProfileId: "landscape" });
-  const browser = await output.getModuleSnapshot({ moduleId: "music", overlayId: "default", purpose: "live", scope: "unified", targetProfileId: "landscape" });
+  const desktop = await output.getModuleSnapshot({ recipientKind: "desktop", moduleId: "music", overlayId: "desktop:primary", purpose: "live", scope: "unified", targetProfileId: "landscape" });
+  const browser = await output.getModuleSnapshot({ recipientKind: "browser", moduleId: "music", overlayId: "default", purpose: "live", scope: "unified", targetProfileId: "landscape" });
   expect(desktop.presentation?.kind === "music-widget" && desktop.presentation.widget.layout).toMatchObject({ x: 123, y: 234 });
   expect(browser.presentation?.kind === "music-widget" && browser.presentation.widget.layout).toMatchObject({ x: 0, y: 0 });
 });

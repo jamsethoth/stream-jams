@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import type { VideoQueueResponse } from "@stream-jams/core";
 import type { VideoQueueApi, VideoQueueItem, VideoRecentItem, VideosApi } from "../management/videos/videos-api.js";
 
@@ -101,8 +102,8 @@ export function createStaticVideosApi(queue: VideoQueueResponse, overrides: Part
     saveModuleConfig: async (enabled, config) => ({ enabled, config }),
     setModuleEnabled: async enabled => enabled,
     listBrowserSources: async () => [
-      { id: "module:videos:live", label: "Videos Live", purpose: "live", overlayId: "default", enabled: true, url: "http://127.0.0.1:39187/overlay/modules/videos/live/story-placeholder", status: "available" },
-      { id: "module:videos:test", label: "Videos Test", purpose: "test", overlayId: "default", enabled: true, url: null, status: "create-required" }
+      { canvas: sceneOutputCanvas(0, 1920, 1080), id: "module:videos:live", label: "Videos Live", purpose: "live", overlayId: "default", enabled: true, url: "http://127.0.0.1:39187/overlay/modules/videos/live/story-placeholder", status: "available" },
+      { canvas: sceneOutputCanvas(0, 1920, 1080), id: "module:videos:test", label: "Videos Test", purpose: "test", overlayId: "default", enabled: true, url: null, status: "create-required" }
     ],
     createBrowserSource: async () => {},
     regenerateBrowserSource: async () => {},

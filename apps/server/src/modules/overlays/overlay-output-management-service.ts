@@ -20,6 +20,7 @@ const purposes = ["live", "test"] as const satisfies readonly OverlayPurpose[];
 const alertTargetProfileIds = ["landscape", "vertical"] as const satisfies readonly OverlayTargetProfileId[];
 
 export interface OverlayOutputManagementServiceOptions {
+  readonly getCanvas?: (moduleId: string, profile: OverlayTargetProfileId | null | undefined) => Promise<import("@stream-jams/core").OutputCanvas>;
   readonly overlayAccessService: Pick<OverlayAccessService, "createKey" | "revokeKey">;
   readonly overlayKeyRepository: Pick<OverlayAccessKeyRepository, "findByOutput" | "findById">;
   readonly overlayModuleRegistry: Pick<OverlayModuleRegistry, "getModule" | "listModules">;
@@ -28,6 +29,7 @@ export interface OverlayOutputManagementServiceOptions {
 }
 
 export class OverlayOutputManagementService {
+  readonly #getCanvas: OverlayOutputManagementServiceOptions["getCanvas"];
   readonly #overlayAccessService: Pick<OverlayAccessService, "createKey" | "revokeKey">;
   readonly #overlayKeyRepository: Pick<OverlayAccessKeyRepository, "findByOutput" | "findById">;
   readonly #overlayModuleRegistry: Pick<OverlayModuleRegistry, "getModule" | "listModules">;
@@ -35,6 +37,7 @@ export class OverlayOutputManagementService {
   readonly #secretStore: Pick<SecretStore, "setSecret" | "getSecret" | "deleteSecret">;
 
   constructor(options: OverlayOutputManagementServiceOptions) {
+    this.#getCanvas = options.getCanvas;
     this.#overlayAccessService = options.overlayAccessService;
     this.#overlayKeyRepository = options.overlayKeyRepository;
     this.#overlayModuleRegistry = options.overlayModuleRegistry;
@@ -142,10 +145,12 @@ export class OverlayOutputManagementService {
     enabled: boolean,
     origin: string
   ): Promise<OverlayOutputView> {
+    const canvas = input.moduleId === null ? undefined : await this.#getCanvas?.(input.moduleId, input.targetProfileId);
     const activeKey = (await this.#overlayKeyRepository.findByOutput(input)).find((key) => key.revokedAt === null);
     if (activeKey === undefined) {
       return {
         ...input,
+        ...(canvas === undefined ? {} : { canvas }),
         id: outputId(input),
         label,
         enabled,
@@ -158,6 +163,7 @@ export class OverlayOutputManagementService {
     const rawKey = await this.#readRouteKey(activeKey.routeKeySecretRef);
     return {
       ...input,
+      ...(canvas === undefined ? {} : { canvas }),
       id: outputId(input),
       label,
       enabled,

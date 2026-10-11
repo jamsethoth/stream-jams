@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import type { OverlayClientMessage } from "./overlay-client.js";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -39,7 +40,7 @@ describe("OverlayApp playback lifecycle", () => {
       text: { text: "Prepared content", layout: { x: 0, y: 0, width: 300, height: 80, zIndex: 1 } }, durationMs: 1000 };
     act(() => {
       clientHarness.onMessage?.({ type: "audio-state", muted: false });
-      clientHarness.onMessage?.({ type: "composition", composition: { overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", modules: [] } });
+      clientHarness.onMessage?.({ type: "composition", composition: { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(), overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", modules: [] } });
       clientHarness.onMessage?.({ type: "prepare", instruction });
     });
     await act(async () => {});
@@ -67,7 +68,7 @@ describe("OverlayApp playback lifecycle", () => {
     act(() => {
       clientHarness.onMessage?.({ type: "audio-state", muted: false });
       clientHarness.onMessage?.({ type: "surface-layers", layers: [{ moduleId: "alerts", visible: false }] });
-      clientHarness.onMessage?.({ type: "composition", composition: {
+      clientHarness.onMessage?.({ type: "composition", composition: { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
         overlayId: "default", purpose: "live", scope: "unified", modules: [{ moduleId: "alerts", enabled: true, instructions: [{
           id: "layer-test", overlayId: "default", moduleId: "alerts", purpose: "live", scope: "unified", visual: null, audio: null, tts: null,
           text: { text: "Layer content", layout: { x: 0, y: 0, width: 300, height: 80, zIndex: 100 } }, durationMs: 1000
@@ -107,7 +108,7 @@ describe("OverlayApp playback lifecycle", () => {
       clientHarness.onMessage?.({ type: "audio-state", muted: false });
       clientHarness.onMessage?.({
         type: "composition",
-        composition: {
+        composition: { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
           overlayId: "default",
           purpose: "live",
           scope: "module",
@@ -152,7 +153,7 @@ describe("OverlayApp playback lifecycle", () => {
       clientHarness.onMessage?.({ type: "audio-state", muted: false });
       clientHarness.onMessage?.({
         type: "composition",
-        composition: {
+        composition: { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
           overlayId: "default",
           purpose: "live",
           scope: "module",
@@ -200,7 +201,7 @@ describe("OverlayApp playback lifecycle", () => {
       clientHarness.onMessage?.({ type: "audio-state", muted: false });
       clientHarness.onMessage?.({
         type: "composition",
-        composition: {
+        composition: { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
           overlayId: "default",
           purpose: "live",
           scope: "module",
@@ -249,7 +250,7 @@ describe("OverlayApp playback lifecycle", () => {
       clientHarness.onMessage?.({ type: "audio-state", muted: false });
       clientHarness.onMessage?.({
         type: "composition",
-        composition: {
+        composition: { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
           overlayId: "default",
           purpose: "live",
           scope: "module",
@@ -321,7 +322,7 @@ describe("OverlayApp playback lifecycle", () => {
       });
       clientHarness.onMessage?.({
         type: "composition",
-        composition: {
+        composition: { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
           overlayId: "default",
           purpose: "live",
           scope: "module",
@@ -360,7 +361,7 @@ describe("OverlayApp playback lifecycle", () => {
       clientHarness.onMessage?.({ type: "playback", instruction });
       clientHarness.onMessage?.({
         type: "composition",
-        composition: {
+        composition: { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
           overlayId: "default",
           purpose: "live",
           scope: "module",
@@ -386,7 +387,7 @@ describe("OverlayApp playback lifecycle", () => {
       }
       clientHarness.onMessage?.({
         type: "composition",
-        composition: {
+        composition: { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
           overlayId: "default",
           purpose: "live",
           scope: "module",

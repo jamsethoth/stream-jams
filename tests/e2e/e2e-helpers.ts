@@ -1,9 +1,12 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import type { Page } from "@playwright/test";
 
 type OverlayPurpose = "live" | "test";
 type OverlayScope = "module" | "unified";
 
 interface OverlayComposition {
+  readonly runtimeId: string;
+  readonly canvas: import("@stream-jams/core").OutputCanvas;
   readonly overlayId: string;
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
@@ -188,7 +191,7 @@ export function emptyComposition(input: {
   readonly targetProfileId?: "landscape" | "vertical" | undefined;
   readonly modules?: readonly OverlayModuleSnapshot[] | undefined;
 }): OverlayComposition {
-  return {
+  return { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
     overlayId: "default",
     purpose: input.purpose,
     scope: input.scope,

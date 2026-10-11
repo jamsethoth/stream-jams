@@ -58,6 +58,7 @@ export class OutputReadinessService {
         const connected = states.some((client) => client.connectionState === "connected");
         const latest = states[0] ?? null;
         return {
+          ...(output.canvas === undefined ? {} : { canvas: output.canvas }),
           id: output.id,
           targetProfileId: output.targetProfileId,
           purpose: "live" as const,

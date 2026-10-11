@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import {
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
@@ -789,7 +790,7 @@ describe("OverlaySurface", () => {
 
   it("renders timer presentation inside a visible module layer without playback completion events", () => {
     const onPlaybackEvent = vi.fn();
-    const timerComposition: OverlayComposition = {
+    const timerComposition: OverlayComposition = { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
       overlayId: "overlay-1", purpose: "live", scope: "unified", targetProfileId: "landscape",
       modules: [{
         moduleId: "timers", enabled: true, surfaceLayer: { visible: true, zIndex: 3 }, instructions: [],
@@ -819,7 +820,7 @@ describe("OverlaySurface", () => {
       id: "track", title: "Now Playing", artists: ["Artist"], album: null, artworkRef: "art_ref"
     }, playbackState: "paused", positionMs: null, durationMs: null, observedAtEpochMs: now, session: null },
     { state: "connected", stale: false, diagnosticReference: null }, createDefaultMusicModuleConfig(), "landscape", now, now)!;
-    const music: OverlayComposition = { overlayId: "default", purpose: "live", scope: "unified", targetProfileId: "landscape",
+    const music: OverlayComposition = { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(), overlayId: "default", purpose: "live", scope: "unified", targetProfileId: "landscape",
       modules: [{ moduleId: "music", enabled: true, instructions: [], surfaceLayer: { visible: true, zIndex: 4 }, presentation: { kind: "music-widget", widget } }] };
     const onPlaybackEvent = vi.fn();
     const view = render(<OverlaySurface composition={music} resolveAssetUrl={() => ""} resolveMusicAsset={{ resolveAsset: () => null, resolveArtwork: () => "/art" }} onPlaybackEvent={onPlaybackEvent} />);
@@ -863,7 +864,7 @@ function compositionFromInstructions(
   instructions: readonly OverlayInstruction[],
   targetProfileId: "landscape" | "vertical" = "landscape"
 ): OverlayComposition {
-  return {
+  return { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
     overlayId: "overlay-1",
     purpose: "live",
     scope: "module",

@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { createScreenEffectDocument, screenEffectDocumentSchema } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
 import { createHttpScreenEffectsApi } from "./screen-effects-api.js";
@@ -16,7 +17,7 @@ describe("createHttpScreenEffectsApi", () => {
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
       const url = String(input);
       if (url === "/auth/management/sessions") return json({ id: "mgmt-effects", csrfToken: "csrf-effects" });
-      if (url === "/management/overlay-outputs") return json([{
+      if (url === "/management/overlay-outputs") return json([{ canvas: sceneOutputCanvas(0, 1920, 1080),
         id: "module:screen-effects:live",
         label: "Screen Effects",
         purpose: "live",
@@ -38,7 +39,7 @@ describe("createHttpScreenEffectsApi", () => {
       if (url === "/overlay-modules/screen-effects/enabled") return json({
         moduleId: "screen-effects", enabled: true, config: {}, updatedAt: "2026-09-13T12:00:00.000Z"
       });
-      if (url.startsWith("/management/overlay-outputs/keys")) return json({ output: {
+      if (url.startsWith("/management/overlay-outputs/keys")) return json({ output: { canvas: sceneOutputCanvas(0, 1920, 1080),
         id: "module:screen-effects:live",
         label: "Screen Effects",
         purpose: "live",
@@ -58,7 +59,7 @@ describe("createHttpScreenEffectsApi", () => {
     const api = createHttpScreenEffectsApi({ fetch: fetcher });
 
     await expect(api.list()).resolves.toEqual([document]);
-    await expect(api.listBrowserSources()).resolves.toEqual([{
+    await expect(api.listBrowserSources()).resolves.toEqual([{ canvas: sceneOutputCanvas(0, 1920, 1080),
       id: "module:screen-effects:live",
       label: "Screen Effects",
       purpose: "live",

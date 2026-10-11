@@ -126,6 +126,7 @@ export interface ModerationPreviewResultView {
 }
 
 export interface OverlayOutputUrl {
+  readonly canvas?: import("@stream-jams/core").OutputCanvas;
   readonly id: string;
   readonly label: string;
   readonly purpose: "live" | "test";

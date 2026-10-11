@@ -144,6 +144,7 @@ interface PlaybackPreparation {
 }
 
 export class OverlayGateway {
+  readonly #compositionRevisions = new Map<string, { runtimeId: string; revision: number }>();
   readonly #overlayAccessService: Pick<OverlayAccessService, "verifyRouteAccess">;
   readonly #generateClientId: () => string;
   readonly #clock: () => Date;
@@ -260,6 +261,7 @@ export class OverlayGateway {
     if (close !== undefined) this.#onTransportDiagnostic({ clientId, operation: "close", exception: null,
       closeCode: close.code, closeReason: client.sanitize(close.reason), outcome: "disconnected" });
     this.#clients.delete(clientId);
+    this.#compositionRevisions.delete(clientId);
     this.#videoSignalBudgets.delete(clientId);
     for (const [instructionId, preparation] of this.#preparations) {
       preparation.pending.get(clientId)?.(false);
@@ -379,7 +381,13 @@ export class OverlayGateway {
     if (composition.overlayId !== client.overlayId || composition.purpose !== client.purpose || composition.scope !== client.scope ||
       (composition.targetProfileId ?? null) !== (client.targetProfileId ?? null) ||
       (client.scope === "module" && composition.modules.some(module => module.moduleId !== client.moduleId))) return false;
-    try { sendGatewayMessage(client.socket, { type: "overlay.composition", composition }); return true; }
+    const previous = this.#compositionRevisions.get(clientId);
+    if (previous !== undefined && (previous.runtimeId !== composition.runtimeId || composition.canvas.configRevision < previous.revision)) return false;
+    try {
+      sendGatewayMessage(client.socket, { type: "overlay.composition", composition });
+      this.#compositionRevisions.set(clientId, { runtimeId: composition.runtimeId, revision: composition.canvas.configRevision });
+      return true;
+    }
     // error-provenance: allow expected -- a failed current-client send is converted to disconnect and a false delivery result
     catch (error) { this.#sendFailed(clientId, error); return false; }
   }

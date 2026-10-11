@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -355,7 +356,7 @@ function createRegistry(moduleIds: readonly string[]): Pick<OverlayModuleRegistr
 
 class NoopOverlayCompositionService implements OverlayCompositionService {
   async resolveModuleOutput(request: ModuleOutputRequest): Promise<OverlayComposition> {
-    return {
+    return { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
       overlayId: request.overlayId,
       purpose: request.purpose,
       scope: "module",
@@ -364,7 +365,7 @@ class NoopOverlayCompositionService implements OverlayCompositionService {
   }
 
   async resolveUnifiedOutput(request: UnifiedOutputRequest): Promise<OverlayComposition> {
-    return {
+    return { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
       overlayId: request.overlayId,
       purpose: request.purpose,
       scope: "unified",

@@ -69,7 +69,7 @@ export class VideosRuntime implements OverlayModuleRuntime, VideoRouteService {
   }
 
   async getModuleSnapshot(request: OverlayModuleSnapshotRequest): Promise<OverlayModuleSnapshot> {
-    const config = await this.options.getConfig();
+    const config = request.savedConfig === undefined ? await this.options.getConfig() : request.savedConfig.config as VideosModuleConfig;
     return { moduleId: "videos", enabled: true, instructions: [], presentation: { kind: "videos", videos: toVideosProjection(this.options.queue.view(request.purpose), config, this.options.mirror?.available === true) } };
   }
 

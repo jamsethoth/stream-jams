@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import type { AssetLibraryItem, OverlayComposition } from "@stream-jams/core";
 import type {
   DiagnosticsView,
@@ -54,7 +55,7 @@ export const storyModerationExample = {
   readonly tts: ModerationPreviewResultView;
 };
 
-export const liveAlertsOutput = {
+export const liveAlertsOutput = { canvas: sceneOutputCanvas(0, 1920, 1080),
   id: "output-alerts-live",
   label: "Alerts Live",
   purpose: "live",
@@ -199,7 +200,7 @@ export const storyAssetLibraryItems = [
   }
 ] satisfies readonly AssetLibraryItem[];
 
-export const idleOverlayComposition = {
+export const idleOverlayComposition = { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
   overlayId: "overlay-alerts-live",
   purpose: "live",
   scope: "module",
@@ -212,7 +213,7 @@ export const idleOverlayComposition = {
   ]
 } satisfies OverlayComposition;
 
-export const textOnlyOverlayComposition = {
+export const textOnlyOverlayComposition = { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
   overlayId: "overlay-alerts-test",
   purpose: "test",
   scope: "module",
@@ -247,7 +248,7 @@ export const textOnlyOverlayComposition = {
   ]
 } satisfies OverlayComposition;
 
-export const mediaOverlayComposition = {
+export const mediaOverlayComposition = { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
   overlayId: "overlay-alerts-test",
   purpose: "test",
   scope: "module",
@@ -292,7 +293,7 @@ export const mediaOverlayComposition = {
   ]
 } satisfies OverlayComposition;
 
-export const errorSafeOverlayComposition = {
+export const errorSafeOverlayComposition = { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
   overlayId: "overlay-alerts-live",
   purpose: "live",
   scope: "module",

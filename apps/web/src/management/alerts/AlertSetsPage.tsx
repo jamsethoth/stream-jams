@@ -89,10 +89,7 @@ interface AlertMutationDialogState {
   readonly alert: AlertInventoryRow;
 }
 
-const targetProfileDimensions: Record<TargetProfileId, Readonly<{ width: number; height: number }>> = {
-  landscape: { width: 1920, height: 1080 },
-  vertical: { width: 1080, height: 1920 }
-};
+
 
 export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: AlertSetsPageProps) {
   const [sets, setSets] = useState<readonly AlertSetOverview[]>([]);
@@ -1239,7 +1236,7 @@ function BrowserSources({
       <div className="alert-sets-page__source-list">
         {sources.map((source) => {
           const label = formatProfile(source.targetProfileId);
-          const dimensions = targetProfileDimensions[source.targetProfileId];
+          const dimensions = source.canvas;
           const revealed = revealedSourceIds.has(source.id);
           const ready = source.copyableUrlStatus === "available";
           const listenerStatus = source.connectionState === "connected"
@@ -1248,7 +1245,7 @@ function BrowserSources({
               ? "Not listening. No connection recorded."
               : `Not listening. Last seen ${formatDateTime(source.lastConnectedAt)}`;
           return (
-            <BrowserSourceRow key={source.id} label={label} ready={ready} telemetry={listenerStatus} metadata={<strong><bdi dir="ltr">{dimensions.width} x {dimensions.height}</bdi></strong>} guidance={<>Add a Browser source in OBS at {dimensions.width} x {dimensions.height}, then paste this URL.</>} url={source.url === null ? <p className="browser-source-row__missing">Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source`} readOnly value={source.url} /> : <code>{maskRouteKey(source.url)}</code>} actions={<>
+            <BrowserSourceRow key={source.id} label={label} ready={ready} telemetry={listenerStatus} canvas={dimensions} guidance={dimensions === undefined ? undefined : <>Add a Browser source in OBS at {dimensions.width} x {dimensions.height}, then paste this URL.</>} url={source.url === null ? <p className="browser-source-row__missing">Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source`} readOnly value={source.url} /> : <code>{maskRouteKey(source.url)}</code>} actions={<>
 
                 {source.copyableUrlStatus === "create-required" ? <Button disabled={busy} onClick={() => onCreate(source)} type="button">Create URL</Button> : null}
                 {source.url === null ? null : <><Button aria-label={`${revealed ? "Hide" : "Reveal"} ${label} URL`} variant="default" onClick={() => onToggleReveal(source)} type="button">{revealed ? "Hide" : "Reveal"}</Button><Button aria-label={`Copy ${label} URL`} variant="default" onClick={() => onCopy(source)} type="button">Copy</Button></>}

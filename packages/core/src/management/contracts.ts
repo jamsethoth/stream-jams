@@ -1,3 +1,4 @@
+import { outputCanvasSchema } from "../overlay-modules/output-canvas.js";
 import { z } from "zod";
 import { localWebSocketConnectionSchema } from "./local-websocket-connection.js";
 import { alertAudioOutputsSchema, mediaVolumeSchema } from "../audio/schemas.js";
@@ -395,6 +396,7 @@ export const alertStarterTemplates = [
 }[];
 
 export const alertBrowserSourceViewSchema = z.object({
+  canvas: outputCanvasSchema.optional(),
   id: nonEmptyStringSchema,
   targetProfileId: targetProfileIdSchema,
   purpose: z.literal("live"),

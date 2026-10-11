@@ -58,7 +58,7 @@ export function OverlayApp() {
         if (message.type === "composition") {
           if (bootstrapFailedRef.current) return;
           const composition = pendingMutationsRef.current.reduce(
-            (current, mutation) => applyMutation(current, route, mutation),
+            (current, mutation) => applyMutation(current, mutation),
             message.composition
           );
           pendingMutationsRef.current = [];
@@ -86,7 +86,7 @@ export function OverlayApp() {
             setPreparingIds(new Set(preparedIdsRef.current));
           }
           if (!compositionReceivedRef.current) queueMutation(message);
-          else setComposition((current) => appendInstruction(current, route, message.instruction));
+          else setComposition((current) => current === null ? null : appendInstruction(current, message.instruction));
         } else if (message.type === "audio-state") {
           setMuted(message.muted);
           setModuleMutes(message.moduleMutes);
@@ -177,12 +177,11 @@ type OverlayMutation = Extract<OverlayClientMessage, { readonly type: "playback"
 
 function applyMutation(
   composition: OverlayComposition,
-  route: NonNullable<ReturnType<typeof parseOverlayRoute>>,
   mutation: OverlayMutation
 ): OverlayComposition {
   if (mutation.type === "surface-layers") return applySurfaceLayers(composition, mutation.layers);
   return mutation.type === "playback" || mutation.type === "prepare"
-    ? appendInstruction(composition, route, mutation.instruction)
+    ? appendInstruction(composition, mutation.instruction)
     : removeInstructions(composition, mutation.instructionIds) ?? composition;
 }
 
@@ -201,25 +200,15 @@ function applySurfaceLayers(composition: OverlayComposition, layers: Extract<Ove
 }
 
 function appendInstruction(
-  composition: OverlayComposition | null,
-  route: NonNullable<ReturnType<typeof parseOverlayRoute>>,
+  composition: OverlayComposition,
   instruction: OverlayInstruction
 ): OverlayComposition {
-  const currentComposition =
-    composition ??
-    ({
-      overlayId: route.overlayId,
-      purpose: route.purpose,
-      scope: route.scope,
-      targetProfileId: route.targetProfileId,
-      modules: []
-    } satisfies OverlayComposition);
-  if (currentComposition.modules.some((moduleSnapshot) =>
+  if (composition.modules.some((moduleSnapshot) =>
     moduleSnapshot.instructions.some((currentInstruction) => currentInstruction.id === instruction.id)
   )) {
-    return currentComposition;
+    return composition;
   }
-  const modules = currentComposition.modules.map((moduleSnapshot): OverlayModuleSnapshot => {
+  const modules = composition.modules.map((moduleSnapshot): OverlayModuleSnapshot => {
     if (moduleSnapshot.moduleId !== instruction.moduleId) {
       return moduleSnapshot;
     }
@@ -239,7 +228,7 @@ function appendInstruction(
   }
 
   return {
-    ...currentComposition,
+    ...composition,
     modules
   };
 }

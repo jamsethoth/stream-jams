@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { expect, test, type Page } from "@playwright/test";
 import { installOverlayWebSocketMock } from "./e2e-helpers.js";
 
@@ -5,7 +6,7 @@ const clipSource = { provider: "twitch-clip", clipSlug: "ClipOne" } as const;
 const layout = { x: 269, y: 140, width: 1382, height: 876 } as const;
 
 function composition(videos: unknown) {
-  return {
+  return { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
     overlayId: "default",
     purpose: "live",
     scope: "module",

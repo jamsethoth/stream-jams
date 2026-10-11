@@ -1,4 +1,5 @@
 import {
+  DefaultOverlayCompositionService,
   DefaultOverlayModuleConfigService,
   InMemoryOverlayModuleConfigRepository,
   createDefaultOverlayModuleRegistry,
@@ -13,6 +14,20 @@ import {
 } from "./overlay-output-management-service.js";
 
 describe("OverlayOutputManagementService", () => {
+  it("advertises the same authoritative canvas while empty and disabled after save", async () => {
+    const { service, configService, compositions } = createService([]);
+    const origin = "http://127.0.0.1:39187";
+    await configService.saveModuleConfig({ moduleId: "alerts", enabled: false, config: { canvas: { width: 800, height: 600 } } });
+    const output = (await service.listOutputs(origin)).find(output => output.moduleId === "alerts" && output.targetProfileId === null && output.purpose === "live")!;
+    const composition = await compositions.resolveModuleOutput({ moduleId: "alerts", overlayId: "default", purpose: "live" });
+    expect(output.enabled).toBe(false);
+    expect(composition.modules).toEqual([]);
+    expect(output.canvas).toEqual(composition.canvas);
+    expect(output.canvas).toMatchObject({ width: 800, height: 600, configRevision: 1 });
+    const again = await compositions.resolveModuleOutput({ moduleId: "alerts", overlayId: "default", purpose: "live" });
+    expect(again.canvas).toBe(composition.canvas);
+  });
+
   it("lists Music live and test outputs for Landscape and Vertical", async () => {
     const { service } = createService([]);
     const outputs = await service.listOutputs("http://127.0.0.1:39187");
@@ -257,18 +272,18 @@ function createService(
     createRouteKeySecretRef: createOverlayRouteKeySecretRef
   });
 
+  const configService = new DefaultOverlayModuleConfigService({ registry, repository: new InMemoryOverlayModuleConfigRepository(), clock: () => new Date("2026-06-16T12:00:00.000Z") });
+  const compositions = new DefaultOverlayCompositionService({ configService, runtime: { getModuleSnapshot: async request => ({ moduleId: request.moduleId, enabled: true, instructions: [] }) } });
   return {
+    configService, compositions,
     repository,
     secrets,
     service: new OverlayOutputManagementService({
       overlayAccessService: accessService,
       overlayKeyRepository: repository,
       overlayModuleRegistry: registry,
-      overlayModuleConfigService: new DefaultOverlayModuleConfigService({
-        registry,
-        repository: new InMemoryOverlayModuleConfigRepository(),
-        clock: () => new Date("2026-06-16T12:00:00.000Z")
-      }),
+      overlayModuleConfigService: configService,
+      getCanvas: (moduleId, targetProfileId) => compositions.getModuleOutputCanvas({ moduleId, ...(targetProfileId === undefined ? {} : { targetProfileId }) }),
       secretStore: secrets
     })
   };

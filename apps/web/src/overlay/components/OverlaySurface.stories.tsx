@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { expect, fn, waitFor, within } from "storybook/test";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import {
@@ -199,7 +200,7 @@ export const ManualAudioDenied: Story = {
 
 export const AnimatedShape: Story = {
   args: {
-    composition: {
+    composition: { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
       overlayId: "overlay-alerts-test",
       purpose: "test",
       scope: "module",
@@ -297,7 +298,7 @@ export const MutedMedia: Story = {
 
 function profileComposition(profileId: "landscape" | "vertical"): OverlayComposition {
   const vertical = profileId === "vertical";
-  return {
+  return { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
     overlayId: `overlay-alerts-${profileId}`,
     purpose: "test",
     scope: "module",
@@ -333,7 +334,7 @@ function styledTextComposition(
   boxStyle: NonNullable<OverlayComposition["modules"][number]["instructions"][number]["text"]>["boxStyle"]
 ): OverlayComposition {
   const vertical = profileId === "vertical";
-  return {
+  return { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
     overlayId: `overlay-alerts-style-${profileId}`,
     purpose: "test",
     scope: "module",
@@ -379,4 +380,23 @@ export const Preparing: Story = {
 export const AlertsMutedEffectsAudible: Story = {
   args: { composition: mediaOverlayComposition, moduleMutes: { alerts: true, "screen-effects": false }, resolveAssetUrl },
   parameters: { docs: { description: { story: "Alerts stay visible with their audio muted. Effects and timer cues keep their own audio policy." } } }
+};
+
+
+export const FixedContentCanvas: Story = {
+  tags: ["output-canvas"],
+  args: { composition: { ...textOnlyOverlayComposition,
+    canvas: { ...sceneOutputCanvas(3, 640, 240), kind: "content", origin: { x: 0, y: 0 } } }, muted: true, resolveAssetUrl },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement).getByTestId("overlay-content-canvas");
+    await expect(canvas).toHaveStyle({ width: "640px", height: "240px", left: "0px", top: "0px", overflow: "hidden" });
+    await expect(canvas.style.transform).toBe("");
+    await expect(within(canvasElement).queryByTestId("overlay-profile-canvas")).not.toBeInTheDocument();
+  }
+};
+
+export const EmptyContentCanvas: Story = {
+  ...FixedContentCanvas, tags: ["output-canvas"],
+  args: { ...FixedContentCanvas.args, composition: { ...idleOverlayComposition,
+    canvas: { ...sceneOutputCanvas(3, 640, 240), kind: "content" } } }
 };

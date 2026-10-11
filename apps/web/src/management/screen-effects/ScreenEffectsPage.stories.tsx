@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { createStoryEffectSets } from "../../stories/screen-effect-set-fixtures.js";
 import {
   createScreenEffectDocument,
@@ -115,7 +116,7 @@ function createApi(
     ...createStoryEffectSets(documents.map((document) => document.id)),
     list: async () => documents,
     listBrowserSources: async () => [
-      {
+      { canvas: sceneOutputCanvas(0, 1920, 1080),
         id: "effects-live",
         label: "Screen Effects Live",
         purpose: "live",
@@ -128,7 +129,7 @@ function createApi(
         url: "http://127.0.0.1:39187/overlay/modules/screen-effects/live/ovl_story",
         status: "available"
       },
-      {
+      { canvas: sceneOutputCanvas(0, 1920, 1080),
         id: "effects-test",
         label: "Screen Effects Test",
         purpose: "test",
