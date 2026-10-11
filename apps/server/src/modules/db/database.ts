@@ -257,7 +257,9 @@ class NodeSqliteStreamJamsDatabase implements StreamJamsDatabase {
       renameSync(temporaryPath, snapshotPath);
       return snapshotPath;
     } catch (cause) {
-      try { rmSync(temporaryPath, { force: true }); } catch { /* best effort; the original error is reported */ }
+      try { rmSync(temporaryPath, { force: true }); }
+      // error-provenance: allow cleanup -- a leftover partial copy is replaced on retry; the snapshot failure is reported
+      catch { /* keep the original snapshot failure */ }
       throw new Error("Videos upgrade could not create its required rollback database. Check free space and permissions beside the database, then retry; consolidation has not started.", { cause });
     }
   }

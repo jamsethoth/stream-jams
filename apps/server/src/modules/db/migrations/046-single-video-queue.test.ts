@@ -193,7 +193,7 @@ describe("single Video queue upgrade", () => {
     // The retained copy is the latest pre-upgrade state, replaced on each retry rather than accumulated.
     expect(snapshot.prepare("SELECT COUNT(*) n FROM video_requests").get()?.n).toBe(500);
     db.close();
-    using reopened = openStreamJamsDatabase(path);
+    openStreamJamsDatabase(path).close();
     expect(snapshots()).toEqual(["old.sqlite.pre046.sqlite"]);
   });
 });

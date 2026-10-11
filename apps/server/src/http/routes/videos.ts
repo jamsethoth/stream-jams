@@ -189,6 +189,5 @@ function rejectRetiredPurpose(value: unknown): void {
 function withoutLivePurpose(body: unknown): unknown {
   rejectRetiredPurpose(body);
   if (typeof body !== "object" || body === null || Array.isArray(body) || !("purpose" in body)) return body;
-  const { purpose: _live, ...rest } = body as Record<string, unknown>;
-  return rest;
+  return Object.fromEntries(Object.entries(body).filter(([key]) => key !== "purpose"));
 }
