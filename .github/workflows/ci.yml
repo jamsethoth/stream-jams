@@ -65,7 +65,7 @@ jobs:
           if-no-files-found: ignore
   build:
     name: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
@@ -278,11 +278,12 @@ jobs:
 
   codeql:
     name: codeql
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       actions: read
       contents: read
+      security-events: write
 
     steps:
       - name: Checkout repository
@@ -294,30 +295,14 @@ jobs:
           languages: javascript-typescript
           queries: security-extended,security-and-quality
 
-      # Code scanning is unavailable for this private repository, so results stay in the run.
+      # Results go to the Security tab; reviewed false positives are dismissed there (docs/security/codeql-suppressions.md).
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v4
-        with:
-          upload: never
-          output: codeql-results
-
-      # Pull-request analysis is diff-informed, so only full push scans can prove an exception stale.
-      - name: Gate CodeQL findings
-        run: node scripts/codeql-sarif-gate.mjs ${{ github.event_name == 'pull_request' && '--partial-scan' || '' }} codeql-results .github/codeql-exceptions.json
-
-      - name: Upload CodeQL results
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: codeql-results
-          path: codeql-results/
-          if-no-files-found: warn
-          retention-days: 14
 
   dependency-review:
     name: dependency-review
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
