@@ -286,8 +286,17 @@ test("actual portable OBS keeps ordinary module geometry local, retired sources 
     const pausedBefore = await api("/timers/state");
     const notice = async () => {
       // Reissue the five-second production notice for each synthetic capture, keeping the queue empty.
-      await api("/management/events/manual", "POST", { action: { kind: "simulate-external", identity: { providerKind: "streamerbot", sourceKey: "General", eventType: "Custom" }, payload: { source: "StreamJams", type: "VideoRequest", action: "no-clip", displayName: "Owned OBS fixture" } } });
-      await expect.poll(async () => (await composition(selected)).modules[0]?.presentation, { timeout: 5000 }).toMatchObject({ kind: "videos", videos: { status: "notice" } });
+      // Bus delivery is asynchronous and the notice expires after five seconds, so a slow delivery or an expiry
+      // before observation reissues a fresh notice. A dropped command still fails at once: every fresh journal
+      // row must be admitted (or still pending) by the Videos consumer, never reported as no-match or failed.
+      for (let attempt = 1; ; attempt++) {
+        const receipt = await api("/management/events/manual", "POST", { action: { kind: "simulate-external", identity: { providerKind: "streamerbot", sourceKey: "General", eventType: "Custom" }, payload: { source: "StreamJams", type: "VideoRequest", action: "no-clip", displayName: "Owned OBS fixture" } } }) as { busId: string; consumers: Array<{ consumerId: string; outcome: string }> };
+        expect(["admitted", "pending"], `Videos consumer outcome for fresh no-clip ${receipt.busId}`).toContain(receipt.consumers.find(consumer => consumer.consumerId === "videos")?.outcome);
+        try {
+          await expect.poll(async () => (await composition(selected)).modules[0]?.presentation, { timeout: 5000 }).toMatchObject({ kind: "videos", videos: { status: "notice" } });
+          return;
+        } catch (error) { if (attempt >= 3) throw error; }
+      }
     };
     const snapshot = async (phase: string) => { if (selected.moduleId === "videos") await notice(); return capture(phase); };
     const stable = async (phase: string) => {

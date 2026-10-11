@@ -1,4 +1,4 @@
-import { compatibilityAlertTextStyle, compatibilityAlertTextBoxStyle, type AlertEditorDocument, type AlertEditorTestRequest, type AlertCreateRequestInput, AlertSetDetail, AlertSetOverview, AlertValidationIssue, AlertEventType, TwitchCustomReward } from "@stream-jams/core";
+import { compatibilityAlertTextStyle, sceneOutputCanvas, compatibilityAlertTextBoxStyle, type AlertEditorDocument, type AlertEditorTestRequest, type AlertCreateRequestInput, AlertSetDetail, AlertSetOverview, AlertValidationIssue, AlertEventType, TwitchCustomReward } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { createStoryManagementApi } from "../../stories/mock-apis.js";
@@ -540,6 +540,7 @@ function detail(set: AlertSetOverview): AlertSetDetail {
     browserSources: [
       {
         id: "module:alerts:landscape:live",
+        canvas: sceneOutputCanvas(),
         targetProfileId: "landscape",
         purpose: "live",
         connectionState: "connected",
@@ -550,6 +551,7 @@ function detail(set: AlertSetOverview): AlertSetDetail {
       },
       {
         id: "module:alerts:vertical:live",
+        canvas: sceneOutputCanvas(0, 1080, 1920),
         targetProfileId: "vertical",
         purpose: "live",
         connectionState: "never-connected",

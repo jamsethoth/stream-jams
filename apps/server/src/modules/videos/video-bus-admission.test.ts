@@ -32,7 +32,7 @@ function setup(path: string, enabled: boolean | (() => Promise<boolean>) = true)
   databases.push(database);
   database.runMigrations();
   let config = createDefaultVideosModuleConfig();
-  const queue = new VideoQueueService({ repository: new SqliteVideoQueueRepository(database.connection), getConfig: () => config, now: () => Date.parse(now) });
+  const queue = new VideoQueueService({ repository: new SqliteVideoQueueRepository(database.connection, () => now), getConfig: () => config, now: () => Date.parse(now) });
   queues.push(queue);
   const admissions = new SqliteVideoBusAdmissionRepository(database.connection, () => Date.parse(now));
   const intake = new VideoRequestIntake({ queue, admissions, getConfig: () => config, isModuleEnabled: () => typeof enabled === "function" ? enabled() : enabled });

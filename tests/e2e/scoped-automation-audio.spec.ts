@@ -92,7 +92,13 @@ test("v1 mute reaches concurrent browser modules, future playback and reconnect 
     await runtime.composition.playbackCoordinator.skipCurrent();
     const currentEffect = runtime.composition.playbackOperationsService.getSnapshot().current.find(row => row.moduleId === "screen-effects")!; await runtime.composition.effectPlaybackCoordinator.skip(currentEffect.occurrenceId);
     await runtime.composition.timerRuntimeCoordinator.stop(timer.id);
-    await Promise.all(Object.values(modulePages).map(outputPage => outputPage.reload()));
+    // Transient effects reach only outputs connected at prepare, so wait until each reloaded output has
+    // reconnected (its composition is fetched after the socket opens) before starting new playback.
+    await Promise.all(Object.values(modulePages).map(async outputPage => {
+      const reconnected = outputPage.waitForResponse(response => response.url().includes("/composition") && response.ok());
+      await outputPage.reload();
+      await reconnected;
+    }));
     await expect(page.getByTestId("overlay-root")).toBeVisible();
     await startAll();
     await assertMutes(false, true);

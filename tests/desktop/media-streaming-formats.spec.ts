@@ -205,7 +205,8 @@ test("two transient private VP9-alpha videos preserve transparent pixels and det
   const document = alertEditorDocumentSchema.parse({ ...editor, durationMode: "custom", durationMs: 10_000, outputs: { browserSource: false, deviceRouteIds: [] }, layers,
     targetProfiles: editor.targetProfiles.map(profile => ({ ...profile, enabled: profile.id === "landscape", reviewState: "ready", layerLayouts: layers.map((layer, index) => ({ layerId: layer.id, x: index * 350, y: 0, width: 320, height: 240, zIndex: index })) })) });
   const response = await api<{ status: string }>(`/management/alerts/${editor.id}/editor/test`, "POST", { document, targetProfileId: "landscape", includeAudio: false, includeTts: false, samplePayload: editor.samplePayloads[0]!.payload });
-  expect(response.status).toBe("queued");
+  // Manual tests go through the event bus: a "pending" receipt is valid and delivery is awaited below.
+  expect(["queued", "pending"]).toContain(response.status);
   const overlay = await windowByUrl(desktop, "stream-jams-overlay://surface/");
   await expect.poll(() => overlay.locator("video").evaluateAll(elements => elements.length === 2 && elements.map(element => element as HTMLVideoElement).every(video => video.currentTime > 0.1)), { timeout: 15_000 }).toBe(true);
   const samples = await overlay.locator("video").evaluateAll(elements => elements.map(element => element as HTMLVideoElement).map(video => ({ time: video.currentTime, muted: video.muted, privateUrl: video.src.startsWith("stream-jams-overlay://surface/media/private_"), width: video.videoWidth, error: video.error?.code ?? null })));
@@ -266,7 +267,8 @@ async function sendAudio(assetId: string, type: "audio" | "video"): Promise<void
     ...(type === "audio" ? { volume: 0 } : { playEmbeddedAudio: true, audioVolume: 0 })
   }] });
   const response = await api<{ status: string }>(`/management/alerts/${editor.id}/editor/test`, "POST", { document, targetProfileId: null, includeAudio: true, includeTts: false, samplePayload: editor.samplePayloads[0]!.payload });
-  expect(response.status).toBe("queued");
+  // Manual tests go through the event bus: a "pending" receipt is valid and delivery is awaited below.
+  expect(["queued", "pending"]).toContain(response.status);
   await expect.poll(() => player.locator("audio").evaluateAll(elements => elements.map(element => element as HTMLAudioElement).some(audio => audio.currentTime > 0.05)), { timeout: 15_000 }).toBe(true);
 }
 async function seekPrivateAudio(interiorTarget?: number) {
