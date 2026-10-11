@@ -6,7 +6,7 @@ import { actionableError } from "../foundation/actionable-error.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import type { ActionableManagementError } from "@stream-jams/core";
-import { BrowserSourcesPanel } from "../foundation/BrowserSourcesPanel.js";
+import { BrowserSourceSetupNotice, BrowserSourcesPanel, browserSourceSizesShown } from "../foundation/BrowserSourcesPanel.js";
 import { formatTimerRemaining, timerDefinitionInputSchema, timersOverlayModuleConfigSchema, type TimerDefinition, type TimerDefinitionInput, type TimerRunState, type TimersOverlayModuleConfig } from "@stream-jams/core";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { AudioApi } from "../audio/audio-api.js";
@@ -239,6 +239,7 @@ function BrowserSources({ busy, expanded, refreshFailed, onCopy, onCreate, onReg
 }) {
   const ready = sources.filter(source => source.status === "available").length; const needsSetup = sources.length - ready;
   return <BrowserSourcesPanel id="browser-sources" refreshFailed={refreshFailed} detailsId="timer-browser-source-details" expanded={expanded} onToggle={onToggle} readyCount={ready} needsSetupCount={needsSetup}>
+    <BrowserSourceSetupNotice sizesShown={browserSourceSizesShown(sources)} />
     <div className="timer-browser-sources__list">{sources.map(source => { const label = profileLabel(source.targetProfileId); const dimensions = source.canvas; const revealed = revealedSourceIds.has(source.id); return <BrowserSourceRow key={source.id} label={label} ready={source.status === "available"} telemetry={source.connectionState === "connected" ? "Listening now" : source.lastConnectedAt === null ? "Not listening. No connection recorded." : `Not listening. Last seen ${formatDateTime(source.lastConnectedAt)}`} canvas={dimensions} guidance={dimensions === undefined ? undefined : <>Add a Browser Source in OBS at <bdi dir="ltr">{dimensions.width} x {dimensions.height}</bdi>, then paste this URL.</>} url={source.url === null ? <p>Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source URL`} readOnly value={source.url} /> : <code>{maskRouteKey(source.url)}</code>} actions={<>{source.status === "create-required" ? <Button disabled={busy} onClick={() => onCreate(source)}>Create {label} URL</Button> : null}{source.url === null ? null : <><Button aria-label={`${revealed ? "Hide" : "Reveal"} ${label} URL`} variant="default" onClick={() => onToggleReveal(source)}>{revealed ? "Hide" : "Reveal"}</Button><Button aria-label={`Copy ${label} URL`} variant="default" onClick={() => onCopy(source)}>Copy</Button></>}{source.status !== "create-required" ? <Button aria-label={`Regenerate ${label} URL`} color="red" variant="light" disabled={busy} onClick={() => onRegenerate(source)}>Regenerate</Button> : null}</>} />; })}</div>
   </BrowserSourcesPanel>;
 }

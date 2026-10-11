@@ -1,12 +1,13 @@
 import { ActionIcon, Button, Checkbox, NativeSelect, TextInput } from "@mantine/core";
 import { surfaceConfigurationSchema, surfaceConfigurationUpdateSchema, type ActionableManagementError, type SurfaceConfiguration, type SurfaceConfigurationUpdate, type SurfaceSettingsView } from "@stream-jams/core";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { RetiredOutputsBanner, retiredOutputBannerVisible, useRetiredOutputDismissal } from "./RetiredOutputsBanner.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import { formatModuleLabel } from "../foundation/presentation-labels.js";
 import { ManagementHttpError } from "../management-http-client.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
-import { defaultSurfaceSettingsApi, type SurfaceSettingsApi } from "./overlay-surfaces-api.js";
+import { defaultSurfaceSettingsApi, type ManagementSurfaceSettingsView, type SurfaceSettingsApi } from "./overlay-surfaces-api.js";
 import { SectionHeading } from "../foundation/ModulePageLayout.js";
 import { FocusFallback } from "../foundation/FocusFallback.js";
 import "./overlay-surfaces-panel.css";
@@ -20,7 +21,9 @@ export interface OverlaySurfacesPanelProps {
   /** Hosted inside a disclosure whose summary already shows the title. */
   readonly embedded?: boolean | undefined;
 }
-type Model = { view: SurfaceSettingsView | null; drafts: ReadonlyMap<string, SurfaceConfiguration> };
+type DesktopSurface = Extract<SurfaceConfiguration, { kind: "desktop" }>;
+type DesktopSettingsView = Omit<ManagementSurfaceSettingsView, "surfaces"> & { readonly surfaces: readonly DesktopSurface[] };
+type Model = { view: DesktopSettingsView | null; drafts: ReadonlyMap<string, DesktopSurface> };
 
 export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, OverlaySurfacesPanelProps>(function OverlaySurfacesPanel(
   { api = defaultSurfaceSettingsApi, embedded = false, onDirtyChange, manageNavigation = true, onSummaryChange }, ref
@@ -65,16 +68,19 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
   const dirtyDrafts = [...model.drafts.values()].filter(draft => !same(draft, model.view?.surfaces.find(surface => surface.id === draft.id)));
   const dirty = dirtyDrafts.length > 0;
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+  const [retiredDismissal, dismissRetired] = useRetiredOutputDismissal();
+  const retiredAttempts = model.view?.retiredOutputAttempts;
+  const showRetiredBanner = retiredOutputBannerVisible(retiredAttempts, retiredDismissal);
   useEffect(() => {
-    const desktopInUse = model.view?.surfaces.some((surface) => surface.kind === "desktop" && surface.enabled) ?? false;
+    const desktopInUse = model.view?.surfaces.some((surface) => surface.enabled) ?? false;
     const desktopNeedsAttention = desktopInUse && (model.view?.desktop.state === "failed" || model.view?.desktop.state === "unavailable");
     onSummaryChange?.({
       count: model.view?.surfaces.length ?? 0,
-      state: loading && model.view === null ? "loading" : refreshError !== null || actionError !== null || desktopNeedsAttention ? "attention" : "ready"
+      state: loading && model.view === null ? "loading" : refreshError !== null || actionError !== null || desktopNeedsAttention || showRetiredBanner ? "attention" : "ready"
     });
-  }, [actionError, loading, model.view, onSummaryChange, refreshError]);
+  }, [actionError, loading, model.view, onSummaryChange, refreshError, showRetiredBanner]);
 
-  const saveValues = useCallback(async (values: readonly SurfaceConfiguration[]): Promise<boolean> => {
+  const saveValues = useCallback(async (values: readonly DesktopSurface[]): Promise<boolean> => {
     if (busyRef.current) return false;
     if (values.length === 0) return true;
     busyRef.current = true; setBusy(true); setActionError(null); setNotice(null);
@@ -84,8 +90,8 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
         const response = await api.save(toUpdate(value));
         if (!mounted.current || requestVersion !== version.current) return false;
         setModel(current => mergeView(current, response, value.id)); setRefreshError(null);
-        const warning = value.kind === "desktop" && (response.desktop.state === "failed" || response.desktop.state === "unavailable");
-        setNotice({ tone: warning ? "warning" : "success", message: warning ? "Desktop settings saved; output needs attention." : `${title(value)} settings saved.`, ...(warning && response.desktop.message !== null ? { detail: response.desktop.message } : {}) });
+        const warning = (response.desktop.state === "failed" || response.desktop.state === "unavailable");
+        setNotice({ tone: warning ? "warning" : "success", message: warning ? "Desktop settings saved; output needs attention." : "Desktop overlay settings saved.", ...(warning && response.desktop.message !== null ? { detail: response.desktop.message } : {}) });
       }
       return true;
     } catch (cause) {
@@ -110,8 +116,8 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
   useImperativeHandle(ref, () => ({ save: saveForNavigation, discard }), [saveForNavigation, discard]);
   useDirtyNavigationSource({ id: "overlay-surfaces", dirty: manageNavigation && dirty, summary: "Overlay surface settings have unsaved changes.", save: saveForNavigation, discard });
 
-  function edit(value: SurfaceConfiguration) { setModel(current => ({ ...current, drafts: new Map(current.drafts).set(value.id, value) })); }
-  function move(draft: SurfaceConfiguration, index: number, offset: number) {
+  function edit(value: DesktopSurface) { setModel(current => ({ ...current, drafts: new Map(current.drafts).set(value.id, value) })); }
+  function move(draft: DesktopSurface, index: number, offset: number) {
     const layers = [...draft.layers]; const row = layers.splice(index, 1)[0]; if (row === undefined) return;
     layers.splice(index + offset, 0, row); edit({ ...draft, layers });
   }
@@ -133,23 +139,21 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
     {loading && view === null ? <p role="status">Loading overlay surfaces…</p> : null}
     {refreshError === null ? null : <div><ManagementErrorBanner error={refreshError} /><Button type="button" disabled={busy} onClick={() => { setLoading(true); setReload(value => value + 1); }}>Refresh overlay settings</Button>{view === null ? null : <p>Showing last known status; it may be stale.</p>}</div>}
     {view !== null && view.surfaces.length === 0 ? <p>No overlay surfaces are configured.</p> : null}
-    <p>Public test and unified browser sources have been retired. Use the ordinary source links on each module page and update the dimensions in OBS. Desktop layers remain independent.</p>
-    {view?.surfaces.filter(surface => surface.kind === "desktop").map(saved => {
-      const draft = model.drafts.get(saved.id) ?? saved; const name = title(draft); const changed = !same(draft, saved);
-      const unavailable = draft.kind === "desktop" && !view.desktop.available;
+    {showRetiredBanner ? <RetiredOutputsBanner attempts={retiredAttempts} onDismiss={dismissRetired} /> : null}
+    {view?.surfaces.map(saved => {
+      const draft = model.drafts.get(saved.id) ?? saved; const name = "Desktop overlay"; const changed = !same(draft, saved);
+      const unavailable = !view.desktop.available;
       const invalid = !surfaceConfigurationSchema.safeParse(draft).success;
-      const savedDesktop = saved.kind === "desktop" ? saved : null;
-      const selected = savedDesktop === null ? null : view.desktop.displays.find(display => display.id === savedDesktop.displayId);
+      const savedDesktop = saved;
+      const selected = view.desktop.displays.find(display => display.id === savedDesktop.displayId);
       return <form key={draft.id} className="overlay-surfaces__surface" aria-label={name} onSubmit={event => { event.preventDefault(); void saveValues([draft]); }}>
         <div className="overlay-surfaces__heading"><h4 tabIndex={-1} ref={(element) => { if (element === null) surfaceHeadings.current.delete(draft.id); else surfaceHeadings.current.set(draft.id, element); }}>{name}</h4><span>{changed ? "Unsaved changes" : "Saved settings"}</span></div>
-        {draft.kind === "desktop" ? <>
-          <p>Desktop status: <strong>{stateLabel(view.desktop.state)}</strong>. Saved display: {selected?.label ?? savedDesktop?.displayLabel ?? savedDesktop?.displayId ?? "Not selected"}.</p>
-          {view.desktop.message === null ? null : <p className="overlay-surfaces__message">{view.desktop.message}</p>}
-          <p>Exclusive fullscreen may cover the overlay. Use borderless or windowed mode; graphics injection is not used.</p>
-        </> : null}
+        <p>Desktop status: <strong>{stateLabel(view.desktop.state)}</strong>. Saved display: {selected?.label ?? savedDesktop.displayLabel ?? savedDesktop.displayId ?? "Not selected"}.</p>
+        {view.desktop.message === null ? null : <p className="overlay-surfaces__message">{view.desktop.message}</p>}
+        <p>Exclusive fullscreen may cover the overlay. Use borderless or windowed mode; graphics injection is not used.</p>
         <fieldset disabled={busy || unavailable}>
           <legend className="overlay-surfaces__legend">{name} configuration</legend>
-          {draft.kind === "desktop" ? <div className="overlay-surfaces__desktop-fields">
+          <div className="overlay-surfaces__desktop-fields">
             <div className="overlay-surfaces__field--full"><Checkbox checked={draft.enabled} onChange={event => edit({ ...draft, enabled: event.currentTarget.checked })} label="Enable desktop overlay" /></div>
             <NativeSelect label="Desktop display" value={draft.displayId ?? ""} onChange={event => { const displayId = event.currentTarget.value || null; const display = view.desktop.displays.find(candidate => candidate.id === displayId); edit({ ...draft, displayId, displayLabel: display?.label ?? null, ...(displayId === null ? { autoFollowDisplayName: false } : {}) }); }}>
               <option value="">Select a display</option>
@@ -158,8 +162,8 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
             </NativeSelect>
             <TextInput label="Desktop opacity" type="number" min="0" max="1" step="0.05" value={Number.isFinite(draft.opacity) ? draft.opacity : ""} onChange={event => edit({ ...draft, opacity: event.currentTarget.valueAsNumber })} />
             <div className="overlay-surfaces__field--full"><Checkbox checked={draft.autoFollowDisplayName} disabled={draft.displayId === null || draft.displayLabel === null} onChange={event => edit({ ...draft, autoFollowDisplayName: event.currentTarget.checked })} label="Automatically follow this display name" /></div>
-          </div> : null}
-          {draft.kind === "desktop" ? <p className="overlay-surfaces__message">{automaticBindingDescription(view.desktopBindingState, draft.displayLabel)}</p> : null}
+          </div>
+          <p className="overlay-surfaces__message">{automaticBindingDescription(view.desktopBindingState, draft.displayLabel)}</p>
           {invalid ? <p role="alert">Select a display when enabled and enter an opacity from 0 to 1 before saving.</p> : null}
           <p>Modules are listed topmost first. Visibility changes affect this surface only.</p>
           {draft.layers.length === 0 ? <p>No registered modules on this surface.</p> : <ol className="overlay-surfaces__layers" aria-label={`${name} module order`}>
@@ -171,9 +175,9 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
         </fieldset>
         <FocusFallback visible={changed} target={() => surfaceHeadings.current.get(draft.id)} />
         <div className="overlay-surfaces__actions">{changed ? <><Button type="submit" disabled={busy || unavailable || !changed || invalid}>Save {name}</Button><Button variant="default" type="button" disabled={busy || !changed} onClick={() => edit(saved)}>Revert {name}</Button></> : null}
-          {draft.kind === "desktop" && savedDesktop?.enabled === true ? <Button variant="default" type="button" disabled={busy || unavailable || savedDesktop?.enabled !== true} onClick={() => void retry()}>Retry desktop output</Button> : null}
+          {savedDesktop.enabled ? <Button variant="default" type="button" disabled={busy || unavailable} onClick={() => void retry()}>Retry desktop output</Button> : null}
         </div>
-        {draft.kind === "desktop" && changed ? <p>Retry uses saved desktop settings. Unsaved changes will not be applied.</p> : null}
+        {changed ? <p>Retry uses saved desktop settings. Unsaved changes will not be applied.</p> : null}
       </form>;
     })}
     {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
@@ -181,9 +185,9 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
   </section>;
 });
 
-function mergeView(current: Model, view: SurfaceSettingsView, savedId?: string): Model {
-  view = { ...view, surfaces: view.surfaces.filter(surface => surface.kind === "desktop") };
-  const drafts = new Map<string, SurfaceConfiguration>();
+function mergeView(current: Model, response: ManagementSurfaceSettingsView, savedId?: string): Model {
+  const view: DesktopSettingsView = { ...response, surfaces: response.surfaces.filter((surface): surface is DesktopSurface => surface.kind === "desktop") };
+  const drafts = new Map<string, DesktopSurface>();
   for (const surface of view.surfaces) {
     const draft = current.drafts.get(surface.id); const saved = current.view?.surfaces.find(value => value.id === surface.id);
     drafts.set(surface.id, surface.id !== savedId && draft !== undefined && !same(draft, saved) ? draft : surface);
@@ -191,8 +195,7 @@ function mergeView(current: Model, view: SurfaceSettingsView, savedId?: string):
   return { view, drafts };
 }
 function same(a: SurfaceConfiguration | undefined, b: SurfaceConfiguration | undefined): boolean { return JSON.stringify(a) === JSON.stringify(b); }
-function toUpdate(value: SurfaceConfiguration): SurfaceConfigurationUpdate {
-  if (value.kind !== "desktop") throw new Error("Public unified surfaces were retired.");
+function toUpdate(value: DesktopSurface): SurfaceConfigurationUpdate {
   return surfaceConfigurationUpdateSchema.parse({
     id: value.id,
     kind: value.kind,
@@ -203,7 +206,6 @@ function toUpdate(value: SurfaceConfiguration): SurfaceConfigurationUpdate {
     layers: value.layers
   });
 }
-function title(surface: SurfaceConfiguration): string { return surface.kind === "desktop" ? "Desktop overlay" : `Unified browser: ${surface.overlayId}`; }
 function stateLabel(state: SurfaceSettingsView["desktop"]["state"]): string { return state === "ready" ? "Ready for future alerts" : state === "disabled" ? "Disabled" : state === "failed" ? "Failed — Retry required" : "Unavailable"; }
 function automaticBindingDescription(state: SurfaceSettingsView["desktopBindingState"], displayLabel: string | null): string {
   if (state === "rebound") return `Automatically reconnected to ${displayLabel ?? "the saved display"}.`;

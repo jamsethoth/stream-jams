@@ -226,7 +226,7 @@ function QueueWorkspace({ api, headingLevel, headingRef, pollIntervalMs, recentC
           </ol>
         )}
         {recentCard !== undefined ? <RecentVideos busy={busy} card={recentCard} headingTag={SubheadingTag} items={queue.recent} onReplay={item => void run(`replay:${item.id}`, current => api.requeue(current.revision, item.id),
-          `${itemName(item)} added to the ordinary video queue.`)} /> : failed.length === 0 ? null : <>
+          `${itemName(item)} added to the live video queue.`)} /> : failed.length === 0 ? null : <>
           <SubheadingTag>Failed recently ({failed.length})</SubheadingTag>
           <p className="video-queue__hint">These videos did not load in time. Check the link, then add it again if needed.</p>
           <ol className="video-queue__list">{failed.map(item => <li key={item.id}><QueueItem item={item} actions={null} /></li>)}</ol>
@@ -240,7 +240,7 @@ function QueueWorkspace({ api, headingLevel, headingRef, pollIntervalMs, recentC
       {/* Operator and management share this modal surface; the review keeps a failure for explicit retry and locks dismissal while pending. */}
       <ManagementModalSurface labelledBy={clearTitleId} onCancel={() => setClearOpen(false)} open={clearOpen} pending={busy} restoreFocusFallbackRef={headingRef}>
         <ManagementModalTitle>{`Clear ${waiting.length} waiting video${waiting.length === 1 ? "" : "s"}?`}</ManagementModalTitle>
-        <p>Every queued and held video in the ordinary queue is removed. The current video keeps playing. Removed requests cannot be restored.</p>
+        <p>Every queued and held video in the live queue is removed. The current video keeps playing. Removed requests cannot be restored.</p>
         {clearError === null || busy ? null : <QueueErrorBanner error={clearError} />}
         <div className="management-modal__actions">
           <Button variant="default" disabled={busy} onClick={() => setClearOpen(false)}>Cancel</Button>

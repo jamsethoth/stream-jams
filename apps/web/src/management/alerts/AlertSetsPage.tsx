@@ -3,7 +3,7 @@ import { DestructiveConfirmationDialog } from "../foundation/DestructiveConfirma
 import { Button, Checkbox, NativeSelect, TextInput, Tooltip } from "@mantine/core";
 import { DisclosureIcon, ModulePageLayout, ModuleControls, SectionHeading } from "../foundation/ModulePageLayout.js";
 import { BrowserSourceRow } from "../foundation/BrowserSourceRow.js";
-import { BrowserSourcesPanel } from "../foundation/BrowserSourcesPanel.js";
+import { BrowserSourceSetupNotice, BrowserSourcesPanel, browserSourceSizesShown } from "../foundation/BrowserSourcesPanel.js";
 import {
   alertStarterTemplates,
   type ActionableManagementError,
@@ -1227,6 +1227,7 @@ function BrowserSources({
 
   return (
     <BrowserSourcesPanel id="browser-sources" detailsId="browser-source-details" expanded={expanded} onToggle={onToggle} readyCount={readyCount} needsSetupCount={needsSetupCount} refreshFailed={refreshError !== null}>
+      <BrowserSourceSetupNotice sizesShown={browserSourceSizesShown(sources)} />
       <p className={`alert-sets-page__status-freshness${refreshError === null ? "" : " alert-sets-page__status-freshness--stale"}`} role="status">
         {refreshError === null
           ? statusUpdatedAt === null ? "Connection status has not loaded." : `Connection status updated ${formatDateTime(statusUpdatedAt)}`

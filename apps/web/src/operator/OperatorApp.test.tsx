@@ -278,7 +278,7 @@ describe("OperatorApp", () => {
     expect(screen.getByText("Recent follow").closest("article")).toHaveClass("operator-item");
     await user.click(within(card).getByRole("button", { name: "Replay Cat plays keyboard in Videos" }));
     expect(requeue).toHaveBeenCalledWith(4, "done");
-    expect(await screen.findByText("Cat plays keyboard added to the ordinary video queue.")).toBeVisible();
+    expect(await screen.findByText("Cat plays keyboard added to the live video queue.")).toBeVisible();
   });
 
   it("shows an actionable initial error without inventing playback state", async () => {

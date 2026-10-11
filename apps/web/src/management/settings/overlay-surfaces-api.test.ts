@@ -30,3 +30,21 @@ it("accepts desktop automatic matching but rejects browser-supplied display labe
   await expect(api.save({ id: "desktop:primary", kind: "desktop", enabled: true, displayId: "one", autoFollowDisplayName: true, opacity: 1, layers: [] })).resolves.toEqual(view);
   await expect(api.save({ id: "desktop:primary", kind: "desktop", enabled: true, displayId: "one", displayLabel: "spoofed", autoFollowDisplayName: true, opacity: 1, layers: [] } as never)).rejects.toThrow();
 });
+
+it("accepts optional retired output attempts and rejects malformed attempt diagnostics", async () => {
+  const attempts = [{ kind: "unified", lastSeenAt: "2026-10-11T12:00:00.000Z", count: 3 }];
+  let body: unknown = { ...view, retiredOutputAttempts: attempts };
+  const fetcher = vi.fn<typeof fetch>(async input => String(input) === "/auth/management/sessions" ? json({ id: "mgmt_test", csrfToken: "csrf_test" }) : json(body));
+  const api = createHttpSurfaceSettingsApi({ fetch: fetcher });
+  await expect(api.load()).resolves.toEqual({ ...view, retiredOutputAttempts: attempts });
+  body = { ...view, retiredOutputAttempts: [] };
+  await expect(api.load()).resolves.toEqual({ ...view, retiredOutputAttempts: [] });
+  body = view;
+  await expect(api.load()).resolves.not.toHaveProperty("retiredOutputAttempts");
+  body = { ...view, retiredOutputAttempts: [{ kind: "unified", lastSeenAt: "not a time", count: 1 }] };
+  await expect(api.load()).rejects.toThrow(/lastSeenAt/u);
+  body = { ...view, retiredOutputAttempts: [{ kind: "test", lastSeenAt: "2026-10-11T12:00:00.000Z", count: -1 }] };
+  await expect(api.load()).rejects.toThrow(/count/u);
+  body = { ...view, retiredOutputAttempts: "unified" };
+  await expect(api.load()).rejects.toThrow(/array/u);
+});
