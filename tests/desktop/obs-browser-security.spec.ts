@@ -203,8 +203,11 @@ test("actual portable OBS keeps ordinary module geometry local, retired sources 
       // OBS frontend PNGs are RGB. Observe the actual browser over black and white
       // native color sources; do not infer transparency from decoded PNG alpha.
       for (const matte of ["black", "white"] as const) {
-        // CI OBS 32.2.2 has kept a resized source's old native size for over 15 s while reporting the new
-        // settings; re-issue the same resize until native size follows (fixture-only, the app never sizes OBS).
+        // obs-browser race on the software-paint path CI uses (Basic Render Driver, no shared texture): a frame
+        // painted at the old size that lands after Update() applies the resize makes OnPaint copy that frame's
+        // size back into the source, and GetViewRect then keeps CEF at it (obs-browser 9ecf652
+        // browser-client.cpp:349-359, obs-browser-source.cpp:528). Nothing re-applies the new size until the
+        // next settings update, so re-issue it (fixture-only; the app never sizes OBS).
         let receipt: ObsReceipt;
         for (const deadline = Date.now() + 15000; ;) {
           const id = await request("capture", `${phase}-${matte}`, matte);

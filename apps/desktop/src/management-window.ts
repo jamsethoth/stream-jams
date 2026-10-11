@@ -51,7 +51,12 @@ export class ManagementWindow {
       isMainFrame: event.senderFrame === this.window.webContents.mainFrame,
       url: event.senderFrame?.url ?? "", origin
     });
-    const ready = (event: IpcMainEvent) => { if (trusted(event)) this.#guardReady = true; };
+    const ready = (event: IpcMainEvent) => {
+      if (!trusted(event) || this.#guardReady) return;
+      this.#guardReady = true;
+      // A newly committed document never saw a request sent to its predecessor; ask it again.
+      if (this.#pending !== null) this.window.webContents.send("desktop:quit-requested", this.#pending.id);
+    };
     const reply = (event: IpcMainEvent, candidate: unknown) => {
       if (!trusted(event)) return;
       const parsed = quitReplySchema.safeParse(candidate);
@@ -62,6 +67,8 @@ export class ManagementWindow {
     ipcMain.on("desktop:guard-ready", ready);
     ipcMain.on("desktop:quit-reply", reply);
     this.window.webContents.on("did-start-navigation", (_event, _url, inPlace, mainFrame) => { if (mainFrame && !inPlace) this.#guardReady = false; });
+    // The outgoing document keeps running until commit and can still register; only the committed document counts.
+    this.window.webContents.on("did-navigate", () => { this.#guardReady = false; });
     this.window.webContents.on("render-process-gone", () => {
       this.#guardReady = false;
       if (this.#pending !== null) void this.#confirmUnavailable();
