@@ -191,15 +191,15 @@ describe("ManualEventService", () => {
     expect(handle).toHaveBeenCalledTimes(2);
   });
 
-  it("legacy dispatch consumers no-match targeted and simulated manual actions", async () => {
+  it("keeps Videos manual actions inactive while Alerts and Effects activate source simulations", async () => {
     const { service, delivered } = setup();
     await service.submit(simulation, { channel: "management" });
     await service.submit(video, { channel: "management" });
     const streamerBot = vi.fn();
     const channelPoints = { handleEvent: vi.fn() };
     const videos = createVideosBusConsumer({ streamerBot, channelPoints });
-    const enqueueEvent = vi.fn();
-    const effectEventSink = { handleEvent: vi.fn() };
+    const enqueueEvent = vi.fn(async () => ({ status: "no-matches" as const, matchedRuleIds: [], enqueuedAlertIds: [], snapshot: {} as never }));
+    const effectEventSink = { handleEvent: vi.fn(async (event: BusEvent) => ({ status: "no-matches" as const, eventId: event.eventId, outcomes: [] as const })) };
     const pipeline = new EventPipeline({ playbackCoordinator: { enqueueEvent }, effectEventSink, diagnosticsLogRepository: { appendEventLog: vi.fn(), appendAlertMatchLog: vi.fn(), appendPlaybackLog: vi.fn() }, generateId: () => "test" });
     for (const event of delivered) {
       expect(await videos.handle(event, { checkpoint() {} })).toBe("no-match");
@@ -207,7 +207,8 @@ describe("ManualEventService", () => {
     }
     expect(streamerBot).not.toHaveBeenCalled();
     expect(channelPoints.handleEvent).not.toHaveBeenCalled();
-    expect(enqueueEvent).not.toHaveBeenCalled();
-    expect(effectEventSink.handleEvent).not.toHaveBeenCalled();
+    expect(enqueueEvent).toHaveBeenCalledOnce();
+    expect(enqueueEvent).toHaveBeenCalledWith(expect.objectContaining({ id: "manual_1", ingestProvider: "twitch" }), "manual");
+    expect(effectEventSink.handleEvent).toHaveBeenCalledTimes(2);
   });
 });

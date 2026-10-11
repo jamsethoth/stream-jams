@@ -765,12 +765,18 @@ export const alertEditorTestDestinationSchema = z.object({
 });
 
 export const alertEditorTestResultSchema = z.object({
-  status: z.literal("queued"),
+  status: z.enum(["queued", "pending"]),
   targetProfileId: targetProfileIdSchema.nullable(),
   referenceId: nonEmptyStringSchema,
   test: z.literal(true),
   deliveredDestinations: z.array(alertEditorTestDestinationSchema).default([]),
-  unavailableDestinations: z.array(alertEditorTestDestinationSchema).default([])
+  unavailableDestinations: z.array(alertEditorTestDestinationSchema).default([]),
+  busId: nonEmptyStringSchema.optional(),
+  eventId: nonEmptyStringSchema.optional()
+}).superRefine((result, context) => {
+  if (result.status === "pending" && (result.busId === undefined || result.eventId === undefined || result.deliveredDestinations.length > 0)) {
+    context.addIssue({ code: "custom", message: "Pending delivery requires bus identity and cannot claim delivered destinations." });
+  }
 });
 
 export const alertEditorErrorReportInputSchema = z.object({

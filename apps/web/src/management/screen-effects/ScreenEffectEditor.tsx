@@ -811,6 +811,10 @@ function LiveTestDialog({ api, document, feedback, onCancel, onClose, onError, o
         onNotice({ tone: "warning", message: `Saved test queued as ${result.occurrenceId ?? "a new occurrence"}. Pause or DND may hold it; review Operator for authoritative state.` });
         onError(null);
         onClose();
+      } else if (result.status === "pending") {
+        onNotice({ tone: "warning", message: `Manual event accepted; delivery is pending. Reference ${result.busId}.`, detail: "Review Event intake in Diagnostics. Do not resend while this accepted event's outcome is unknown." });
+        onError(null);
+        onClose();
       } else {
         onError(actionableError(new Error(`Saved test was not queued: ${result.status.replace("-", " ")}.`), "Saved test was not queued", "Review module enablement, outputs and Operator state before testing again."));
       }

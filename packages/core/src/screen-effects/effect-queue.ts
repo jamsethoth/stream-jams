@@ -9,8 +9,8 @@ export interface EffectOccurrence {
   readonly id: string;
   readonly moduleId: "screen-effects";
   readonly trigger: EffectTrigger | null;
-  /** Source kind that delivered the triggering event; null for manual tests. */
-  readonly sourceKind: IngestProviderId | null;
+  /** Actual delivering origin; null remains compatible with historical tests. */
+  readonly sourceKind: IngestProviderId | "manual" | null;
   readonly content: EffectContentSnapshot;
   readonly enqueuedAtMs: number;
   readonly sequence: number;

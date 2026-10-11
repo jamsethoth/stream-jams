@@ -2,7 +2,7 @@
 
 Detailed scope, file owners, interfaces, test cases, delivery graph and gates: [agent implementation plan](../../../docs/superpowers/plans/2026-10-10-browser-desktop-output-layouts.md).
 
-Specification approved 2026-10-10; implementation has not started. These checkboxes are the authoritative progress ledger. A slice completes only with the evidence required by its plan section. Default delivery order is S01 through S11; dependencies below define the permissible alternatives.
+Specification approved 2026-10-10; implementation is authorized and in progress. These checkboxes are the authoritative progress ledger. A slice completes only with the evidence required by its plan section. Default delivery order is S01 through S11; dependencies below define the permissible alternatives.
 
 ## 1. S01 — Explicit desktop composition capability (no dependencies)
 
@@ -20,11 +20,11 @@ Specification approved 2026-10-10; implementation has not started. These checkbo
 
 ## 3. S03 — Alert and Effect manual dispatch (depends on S02)
 
-- [ ] 3.1 Test explicit sends publish/admit once while local previews never publish and invalid drafts never journal.
-- [ ] 3.2 Adapt draft/saved Alert and Effect tests to bus consumers, preserving profile/device eligibility, confirmations, audio/TTS inclusion and ordinary safety/admission.
-- [ ] 3.3 Verify source simulations fan out normally, targeted tests remain targeted, and failure of one consumer does not suppress others.
-- [ ] 3.4 Apply transparent ordinary-output audio failure handling to manual events while preserving local preview activation.
-- [ ] 3.5 Add stories/E2E, rebuild and verify disposable ordinary browser/private desktop delivery; record checks and commit.
+- [x] 3.1 Test explicit sends publish/admit once while local previews never publish and invalid drafts never journal.
+- [x] 3.2 Adapt draft/saved Alert and Effect tests to bus consumers, preserving profile/device eligibility, confirmations, audio/TTS inclusion and ordinary safety/admission.
+- [x] 3.3 Verify source simulations fan out normally, targeted tests remain targeted, and failure of one consumer does not suppress others.
+- [x] 3.4 Apply transparent ordinary-output audio failure handling to manual events while preserving local preview activation.
+- [x] 3.5 Add stories/E2E, rebuild and verify disposable ordinary browser/private desktop delivery; record checks and commit.
 
 ## 4. S04 — Durable video bus admission (depends on S02)
 

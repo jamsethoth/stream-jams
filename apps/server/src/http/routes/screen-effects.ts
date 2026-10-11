@@ -1,3 +1,4 @@
+import { ManualSubmissionRejectedError } from "../../modules/events/manual-event-service.js";
 import { screenEffectDocumentSchema, screenEffectSetInputSchema, ScreenEffectSetError } from "@stream-jams/core";
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
 import {
@@ -162,6 +163,7 @@ function sendScreenEffectError(reply: Parameters<typeof sendHttpError>[0], error
   if (error instanceof ScreenEffectSetError) {
     return sendHttpError(reply, 409, { code: "SCREEN_EFFECT_SET_CONFLICT", message: error.message });
   }
+  if (error instanceof ManualSubmissionRejectedError) return sendHttpError(reply, 422, { code: "MANUAL_SUBMISSION_REJECTED", message: `${error.message} Reference ${error.referenceId}.`, id: error.referenceId });
   if (error instanceof EffectDefinitionNotFoundError) {
     return sendHttpError(reply, 404, { code: "SCREEN_EFFECT_NOT_FOUND", message: error.message });
   }

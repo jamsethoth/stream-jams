@@ -112,12 +112,13 @@ test("packaged production host renders an isolated silent Landscape event withou
     async function event(id: string) {
       // This protected production route resolves a normalized event via the real coordinator.
       // Provider connectivity is independently covered by runtime ingestion tests.
-      const result = await api<{ status: string }>("/alerts/test", "POST", {
+      const result = await api<{ status: string; consumers: readonly { consumerId: string; outcome: string }[] }>("/alerts/test", "POST", {
         id, providerId: "twitch", sourcePlatform: "twitch", ingestProvider: "streamerbot",
         occurredAt: new Date().toISOString(), type: "follow", amount: null,
         actor: { id: "fixture-viewer", displayName: "Fixture" }, message: null, metadata: {}
       });
-      expect(result.status).toBe("queued");
+      expect(result.status).toBe("accepted");
+      expect(result.consumers.find(consumer => consumer.consumerId === "alerts")?.outcome).toBe("admitted");
     }
     async function configure(enabled: boolean, visible: boolean) {
       const surface = (await api<SurfaceSettingsView>("/overlay-surfaces")).surfaces.find(candidate => candidate.kind === "desktop")!;

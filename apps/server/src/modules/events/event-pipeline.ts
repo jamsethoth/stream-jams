@@ -1,3 +1,4 @@
+import { canonicalEventForSelector } from "@stream-jams/core";
 import type {
   AlertMatchLogRecord,
   AlertSourceEvent,
@@ -20,6 +21,7 @@ export interface EventPipelineIdGenerator {
 }
 
 export interface EventPipelineOptions {
+  readonly isAlertsEnabled?: () => Promise<boolean>;
   /** Resolves true when the event matched at least one timer rule. */
   readonly timerEventSink?: { handleEvent(event: BusEvent): Promise<boolean> };
   readonly onTimerError?: (error: unknown, event: BusEvent) => void | Promise<void>;
@@ -31,6 +33,7 @@ export interface EventPipelineOptions {
   readonly generateId: EventPipelineIdGenerator;
   readonly effectEventSink?: { handleEvent(event: BusEvent): Promise<EffectAdmissionResult> } | undefined;
   readonly onEffectError?: ((error: Error, event: BusEvent) => void | Promise<void>) | undefined;
+  readonly manualAlertSink?: { handleEvent(event: Extract<BusEvent, { kind: "manual" }>): Promise<EventBusHandleOutcome> };
   readonly now?: (() => Date) | undefined;
 }
 
@@ -46,9 +49,13 @@ export class EventPipeline {
   readonly #generateId: EventPipelineIdGenerator;
   readonly #effectEventSink: NonNullable<EventPipelineOptions["effectEventSink"]> | null;
   readonly #onEffectError: (error: Error, event: BusEvent) => void | Promise<void>;
+  readonly #manualAlertSink: EventPipelineOptions["manualAlertSink"];
+  readonly #isAlertsEnabled: EventPipelineOptions["isAlertsEnabled"];
   readonly #now: () => Date;
 
   constructor(options: EventPipelineOptions) {
+    this.#manualAlertSink = options.manualAlertSink;
+    this.#isAlertsEnabled = options.isAlertsEnabled;
     this.#timerEventSink = options.timerEventSink;
     this.#onTimerError = options.onTimerError;
     this.#playbackCoordinator = options.playbackCoordinator;
@@ -71,16 +78,20 @@ export class EventPipeline {
   }
 
   async #deliverAlerts(busEvent: BusEvent): Promise<EventBusHandleOutcome> {
-    if (busEvent.kind === "manual") return "no-match";
+    if (this.#isAlertsEnabled !== undefined && !await this.#isAlertsEnabled()) return "no-match";
+    if (busEvent.kind === "manual" && (busEvent.action.kind === "alert-draft-test" || busEvent.action.kind === "alert-saved-test")) {
+      return this.#manualAlertSink?.handleEvent(busEvent) ?? "no-match";
+    }
+    const canonical = canonicalEventForSelector(busEvent);
     const events: AlertSourceEvent[] = [
-      ...(busEvent.kind === "canonical" ? [busEvent.event] : []),
+      ...(canonical === null ? [] : [canonical]),
       ...createExternalAlertEvents(busEvent)
     ];
     let failure: { readonly error: unknown } | null = null;
     let admitted = false;
     for (const event of events) {
       try {
-        admitted = await this.#deliverAlertEvent(event) || admitted;
+        admitted = await this.#deliverAlertEvent(event, busEvent.kind === "manual") || admitted;
       } catch (error) {
         // error-provenance: allow expected -- each admitted event is attempted before the first failure is reported
         failure ??= { error };
@@ -91,18 +102,18 @@ export class EventPipeline {
   }
 
   /** Resolves true when the event queued an alert. */
-  async #deliverAlertEvent(event: AlertSourceEvent): Promise<boolean> {
+  async #deliverAlertEvent(event: AlertSourceEvent, manual = false): Promise<boolean> {
     const processingId = this.#generateId("processing") as ProcessingId;
-    const correlationId = createCorrelationId(event);
-    await this.#appendEventLog(event, "received", correlationId, processingId, null);
+    const correlationId = manual ? `event:manual:${event.id}` : createCorrelationId(event);
+    if (!manual) await this.#appendEventLog(event, "received", correlationId, processingId, null);
 
     try {
-      const result = await this.#playbackCoordinator.enqueueEvent(event);
+      const result = await this.#playbackCoordinator.enqueueEvent(event, manual ? "manual" : event.ingestProvider);
       await this.#appendPlaybackRecords(event, result, correlationId, processingId);
-      await this.#appendEventLog(event, "processed", correlationId, processingId, null);
+      if (!manual) await this.#appendEventLog(event, "processed", correlationId, processingId, null);
       return result.status === "queued";
     } catch (error) {
-      await this.#appendEventLog(
+      if (!manual) await this.#appendEventLog(
         event,
         "failed",
         correlationId,
@@ -123,7 +134,6 @@ export class EventPipeline {
   }
 
   async #deliverEffects(busEvent: BusEvent): Promise<EventBusHandleOutcome> {
-    if (busEvent.kind === "manual") return "no-match";
     if (this.#effectEventSink === null) return "no-match";
     try {
       const result = await this.#effectEventSink.handleEvent(busEvent);
@@ -228,6 +238,11 @@ function createCorrelationId(event: AlertSourceEvent): string {
  * sanitized summary and user name, so payload fields never reach alert matching or templates.
  */
 function createExternalAlertEvents(busEvent: BusEvent): readonly ExternalAlertEvent[] {
+  if (busEvent.kind === "manual" && busEvent.action.kind === "simulate-external") {
+    return [{ id: busEvent.eventId, type: "external_event", providerId: "streamerbot", ingestProvider: "streamerbot",
+      occurredAt: busEvent.receivedAt, actor: { id: null, displayName: "Manual" }, message: null, metadata: {}, amount: null,
+      identity: busEvent.action.identity, summary: `Manual ${busEvent.action.identity.sourceKey} ${busEvent.action.identity.eventType}`.slice(0, 256), userName: "" }];
+  }
   return busEvent.effectTriggers.flatMap((trigger) => {
     if (trigger.kind !== "streamerbot-event") return [];
     const userName = trigger.userName ?? "";

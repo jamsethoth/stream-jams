@@ -671,6 +671,7 @@ function createManagementApi(): ManagementApi {
       throw new Error("not called");
     }),
     saveAlertEditorDocument: vi.fn(async (_alertId, document) => document),
+    sendSavedAlertTest: vi.fn(async (_alertId, request) => ({ status: "queued" as const, targetProfileId: request.targetProfileId, referenceId: "ref-saved-test", test: true as const, deliveredDestinations: [], unavailableDestinations: [] })),
     sendAlertEditorTest: vi.fn(async (_alertId, request) => ({
       status: "queued" as const,
       targetProfileId: request.targetProfileId,

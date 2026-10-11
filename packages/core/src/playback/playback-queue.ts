@@ -8,7 +8,7 @@ export interface EnqueuePlaybackItemInput {
   readonly audio?: readonly ResolvedAlertAudio[];
   readonly priority?: number;
   /** Source kind that delivered the live event; omitted or null for editor tests. */
-  readonly deliveredBy?: IngestProviderId | null;
+  readonly deliveredBy?: IngestProviderId | "manual" | null;
 }
 
 export interface PlaybackQueue {

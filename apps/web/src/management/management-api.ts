@@ -318,6 +318,7 @@ export interface ManagementApi extends MusicApi {
     confirmLiveImpact?: boolean,
     priorityAssignments?: readonly AlertVariationPriorityAssignment[]
   ): Promise<AlertEditorDocument>;
+  sendSavedAlertTest(alertId: string, request: Omit<AlertEditorTestRequest, "document">): Promise<AlertEditorTestResult>;
   sendAlertEditorTest(alertId: string, request: AlertEditorTestRequest): Promise<AlertEditorTestResult>;
   reportAlertEditorError(alertId: string, input: AlertEditorErrorReportInput): Promise<AlertEditorErrorReportResult>;
   listAssetLibraryItems(): Promise<readonly AssetLibraryItem[]>;
@@ -701,6 +702,9 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
       );
     },
 
+    sendSavedAlertTest(alertId, request) {
+      return postContract(`/management/alerts/${encodeURIComponent(alertId)}/editor/test-saved`, request, alertEditorTestResultSchema, "Unable to send the saved alert test.");
+    },
     sendAlertEditorTest(alertId, request) {
       return postContract(
         `/management/alerts/${encodeURIComponent(alertId)}/editor/test`,

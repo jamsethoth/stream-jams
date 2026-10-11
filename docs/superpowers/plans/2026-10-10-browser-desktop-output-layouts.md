@@ -10,7 +10,7 @@
 
 **Spec:** [Approved design](../../../openspec/changes/separate-browser-desktop-output-layouts/design.md), [proposal](../../../openspec/changes/separate-browser-desktop-output-layouts/proposal.md), and all deltas below that change's `specs/` directory.
 
-**Status:** Specification approved by the user on 2026-10-10. Plan prepared for review; implementation not started. Source baseline is local commit `37bc1891`; remote state must be refreshed at implementation start. This document does not authorize deployment, merging, or changes to real user data.
+**Status:** Specification approved by the user on 2026-10-10. Implementation authorized and in progress on `codex/browser-desktop-output-implementation`; accepted slices are tracked in the task ledger and verification record. Source baseline is local commit `37bc1891`; remote state must be refreshed at implementation start. The user authorized per-slice commit/push and final PR creation; deployment, merging and real user-data changes remain outside this task.
 
 ## Global constraints
 

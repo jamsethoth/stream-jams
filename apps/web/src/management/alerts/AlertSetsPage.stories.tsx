@@ -1,4 +1,4 @@
-import type { AlertCreateRequestInput, AlertSetDetail, AlertSetOverview, AlertValidationIssue, AlertEventType, TwitchCustomReward } from "@stream-jams/core";
+import { compatibilityAlertTextStyle, compatibilityAlertTextBoxStyle, type AlertEditorDocument, type AlertEditorTestRequest, type AlertCreateRequestInput, AlertSetDetail, AlertSetOverview, AlertValidationIssue, AlertEventType, TwitchCustomReward } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { createStoryManagementApi } from "../../stories/mock-apis.js";
@@ -686,3 +686,64 @@ function storyTwitchReward(id: string, title: string, cost: number): TwitchCusto
     isInStock: true
   };
 }
+
+function editorDocument(): AlertEditorDocument {
+  return { schemaVersion: 1,
+    id: "alert-follow",
+    setId: "set-default",
+    providerKind: "twitch",
+    eventType: "follow",
+    kind: "default",
+    parentAlertId: null,
+    name: "New follower",
+    enabled: true,
+    conditions: [],
+    variantConditions: [],
+    weight: 1,
+    priority: null,
+    cooldownSeconds: 0,
+    rulePriority: 0,
+    durationMs: 5_000,
+    outputs: { browserSource: true, deviceRouteIds: [] },
+    layers: [{
+      id: "layer-message",
+      name: "Message",
+      type: "text",
+      visible: true,
+      order: 0,
+      template: "Thanks, {userName}!",
+      textStyle: structuredClone(compatibilityAlertTextStyle),
+      boxStyle: structuredClone(compatibilityAlertTextBoxStyle),
+      animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" }
+    }],
+    targetProfiles: [
+      { id: "landscape", enabled: true, reviewState: "ready", layerLayouts: [{ layerId: "layer-message", x: 100, y: 100, width: 600, height: 180, zIndex: 0 }] },
+      { id: "vertical", enabled: true, reviewState: "ready", layerLayouts: [{ layerId: "layer-message", x: 100, y: 100, width: 600, height: 180, zIndex: 0 }] }
+    ],
+    samplePayloads: [{ id: "normal", label: "Normal", kind: "built-in", payload: { userName: "James" } }]
+  };
+}
+
+
+const draftSendForSavedStory = fn(async () => { throw new Error("Saved delivery must not send a draft"); });
+
+export const SavedDelivery: Story = {
+  tags: ["manual-saved-delivery"],
+  args: { managementApi: (() => {
+    const saved = editorDocument();
+    saved.targetProfiles = saved.targetProfiles.map(profile => ({ ...profile, enabled: profile.id === "landscape" }));
+    return createStoryManagementApi({
+      ...api([activeSet], detail(activeSet)),
+      getAlertEditorDocument: async () => saved,
+      sendSavedAlertTest: fn(async (_alertId: string, request: Omit<AlertEditorTestRequest, "document">) => ({ status: "queued" as const, targetProfileId: request.targetProfileId, referenceId: "ref-saved-story", test: true as const, deliveredDestinations: [], unavailableDestinations: [] })),
+      sendAlertEditorTest: draftSendForSavedStory
+    });
+  })() },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Test saved New follower" }));
+    await waitFor(() => expect(args.managementApi.sendSavedAlertTest).toHaveBeenCalledWith("alert-follow", { targetProfileId: "landscape", samplePayload: { userName: "James" }, includeAudio: true, includeTts: true }));
+    await expect(draftSendForSavedStory).not.toHaveBeenCalled();
+    await expect(await canvas.findByText(/Reference ref-saved-story/u)).toBeVisible();
+  }
+};

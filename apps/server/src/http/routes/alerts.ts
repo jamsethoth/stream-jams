@@ -1,27 +1,24 @@
+import { ManualSubmissionRejectedError } from "../../modules/events/manual-event-service.js";
 import {
   AlertCollectionNotFoundError,
   AlertRuleNotFoundError,
   AlertVariantIdConflictError,
   AlertVariantNotFoundError,
   LastAlertVariantError,
-  normalizedStreamEventSchema,
-  type NormalizedStreamEvent,
+  manualEventSubmissionSchema,
+  type ManualEventSubmission,
+  type ManualSubmissionReceipt,
   type AlertService,
   alertVariantSchema,
   createAlertRuleInputSchema,
   updateAlertRuleInputSchema
 } from "@stream-jams/core";
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
-import type { PlaybackEnqueueResult } from "../../modules/playback/playback-coordinator.js";
 import { sendHttpError } from "../errors.js";
 
-export interface AlertTestPlaybackCoordinator {
-  enqueueEvent(event: NormalizedStreamEvent): Promise<PlaybackEnqueueResult>;
-}
-
 export interface AlertRuleRouteDependencies {
+  readonly submitAlertSimulation?: (input: ManualEventSubmission) => Promise<ManualSubmissionReceipt>;
   readonly alertService: AlertService;
-  readonly alertTestPlaybackCoordinator?: AlertTestPlaybackCoordinator | undefined;
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
 }
@@ -99,20 +96,14 @@ export function registerAlertRoutes(app: FastifyInstance, dependencies: AlertRul
     }
   });
 
-  const alertTestPlaybackCoordinator = dependencies.alertTestPlaybackCoordinator;
-  if (alertTestPlaybackCoordinator !== undefined) {
-    app.post("/alerts/test", { preHandler }, async (request, reply) => {
+  if (dependencies.submitAlertSimulation !== undefined) {
+    app.post("/alerts/test", { preHandler, bodyLimit: 65_536 }, async (request, reply) => {
       try {
-        const event = normalizedStreamEventSchema.parse(request.body);
-        const result = await alertTestPlaybackCoordinator.enqueueEvent(event);
-        return reply.send({
-          status: result.status,
-          matchedRuleIds: result.matchedRuleIds,
-          enqueuedAlertIds: result.enqueuedAlertIds
-        });
-      } catch (error) {
-        return sendAlertError(reply, error);
-      }
+        const event = { ...readObjectBody(request.body) };
+        delete event.id;
+        delete event.occurredAt;
+        return await dependencies.submitAlertSimulation!(manualEventSubmissionSchema.parse({ action: { kind: "simulate-canonical", event } }));
+      } catch (error) { return sendAlertError(reply, error); }
     });
   }
 }
@@ -139,6 +130,7 @@ function parseEnabledPayload(body: unknown): { readonly enabled: boolean } | nul
 }
 
 function sendAlertError(reply: Parameters<typeof sendHttpError>[0], error: unknown) {
+  if (error instanceof ManualSubmissionRejectedError) return sendHttpError(reply, 422, { code: "MANUAL_SUBMISSION_REJECTED", message: error.message, id: error.referenceId });
   if (isZodError(error)) {
     return sendHttpError(reply, 400, {
       code: "INVALID_ALERT_RULE_REQUEST",

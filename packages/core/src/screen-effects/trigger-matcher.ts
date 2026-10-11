@@ -6,6 +6,13 @@ import type { EffectBinding, EffectTrigger } from "./types.js";
 export function matchEffectBinding(binding: EffectBinding, event: BusEvent): EffectTrigger | null {
   if (!matchSelector(binding.selector, event)) return null;
   const { match } = binding.selector;
+  if (event.kind === "manual" && event.action.kind === "simulate-external") {
+    return {
+      kind: "manual-external", eventId: event.eventId, occurredAt: event.receivedAt,
+      sourceKey: event.action.identity.sourceKey, eventType: event.action.identity.eventType,
+      summary: `Manual ${event.action.identity.sourceKey} ${event.action.identity.eventType}`.slice(0, 256)
+    };
+  }
   if (match.kind === "canonical") {
     const canonical = canonicalEventForSelector(event);
     if (canonical === null) return null;

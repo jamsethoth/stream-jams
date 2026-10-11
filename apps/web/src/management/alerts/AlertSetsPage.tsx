@@ -61,7 +61,7 @@ export type AlertSetsPageApi = Pick<
   | "setOverlayModuleEnabled"
   | "deleteAlertSet"
   | "getAlertEditorDocument"
-  | "sendAlertEditorTest"
+  | "sendSavedAlertTest"
   | "createOverlayOutputKey"
   | "regenerateOverlayOutputKey"
 >;
@@ -648,13 +648,8 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
       const document = preparedDocument ?? await managementApi.getAlertEditorDocument(alert.id);
       const sample = document.samplePayloads.find((candidate) => candidate.kind === "built-in");
       if (sample === undefined) throw new Error("The saved alert has no built-in sample payload.");
-      const result = await managementApi.sendAlertEditorTest(alert.id, {
-        document,
-        targetProfileId,
-        samplePayload: sample.payload,
-        includeAudio: true,
-        includeTts: true
-      });
+      const testRequest = { targetProfileId, samplePayload: sample.payload, includeAudio: true, includeTts: true };
+      const result = await managementApi.sendSavedAlertTest(alert.id, testRequest);
       setNotice(alertTestNotice(result));
     } catch (cause) {
       setError(toActionableError(

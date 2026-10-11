@@ -109,6 +109,8 @@ import {
 } from "../modules/events/event-ingestion-service.js";
 import { EventBus } from "../modules/events/event-bus.js";
 import { EventBusSettingsService } from "../modules/events/event-bus-settings-service.js";
+import { ManualEventService } from "../modules/events/manual-event-service.js";
+import { ManualAlertEffectService } from "../modules/events/manual-alert-effect-service.js";
 import { EventPipeline } from "../modules/events/event-pipeline.js";
 import { SqliteEventBusJournalRepository } from "../modules/events/sqlite-event-bus-journal-repository.js";
 import { SqliteTimerRunRepository } from "../modules/timers/sqlite-timer-run-repository.js";
@@ -926,6 +928,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const automationAuthPreHandler = createAutomationSecurityPreHandler({ credentials: automationCredentialService, limiter: automationLimiter });
   const automationControlService = new AutomationControlService({ timers: timerRuntimeCoordinator, definitions: timerManagementService, playback: playbackOperationsService, now: () => now().getTime(), runCommand: work => maintenanceGate.runIntake(work) });
   const eventPipeline = new EventPipeline({
+    isAlertsEnabled: async () => (await overlayModuleConfigService.getModuleConfig("alerts")).enabled,
+    manualAlertSink: { handleEvent: event => manualDispatchService.handleAlert(event) },
     timerEventSink: new TimerEventService(timerDefinitionRepository, timerRuntimeCoordinator),
     onTimerError: (error, event) => runtimeLogger.error("Timer event handling failed", {
       module: "timers", source: "timers.event-admission", correlationId: `event:${event.sourceKind}:${event.eventId}`,
@@ -934,7 +938,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     playbackCoordinator,
     effectEventSink: {
       async handleEvent(event) {
-        const result = await effectAdmissionService.handleEvent(event);
+        const result = await manualDispatchService.handleEffect(event);
         await effectPlaybackCoordinator.startNext();
         return result;
       }
@@ -1006,7 +1010,6 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       metadata: { consumerId }
     }, error)
   });
-  await eventBus.start();
   let eventReplayTimer: ReturnType<typeof setTimeout> | undefined;
   const scheduleEventReplay = () => {
     clearTimeout(eventReplayTimer);
@@ -1241,6 +1244,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     hasReadyDesktopOutput: () => outputReadinessService.isDesktopVisualReady("alerts"),
     getAudioOutputStatus: () => audioOutputService.getStatus(),
     listAudioOutputRoutes: () => audioOutputService.listRoutes(),
+    submitTest: request => maintenanceGate.runIntake(() => manualDispatchService.sendAlert(request)),
+    isModuleEnabled: async () => (await overlayModuleConfigService.getModuleConfig("alerts")).enabled,
     async enqueueTest(playback) {
       playbackCoordinator.enqueueResolvedTest(playback);
     },
@@ -1279,6 +1284,36 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       return false;
     }
   }
+  const manualEventService = new ManualEventService({
+    bus: eventBus, now,
+    async validateReferences(action) {
+      switch (action.kind) {
+        case "alert-draft-test":
+          await alertEditorService.validateTestReferences(action.request);
+          return true;
+        case "alert-saved-test":
+          await alertEditorService.validateTestReferences({ document: await alertEditorService.getDocument(action.alertId), targetProfileId: action.targetProfileId, samplePayload: action.samplePayload, includeAudio: action.includeAudio, includeTts: action.includeTts });
+          return true;
+        case "effect-test": {
+          const document = await effectRepository.find(action.effectId);
+          const variant = document?.variants.find(candidate => candidate.id === action.variantId && candidate.enabled);
+          return document?.enabled === true && variant !== undefined && await effectPlaybackEligibilityService.referencesExist({ effectId: document.id, effectName: document.name, variant, priority: document.priority });
+        }
+        case "simulate-canonical": return true;
+        case "simulate-external": {
+          const identity = action.identity;
+          const [alerts, effects, timers] = await Promise.all([alertRepository.listRules(), effectRepository.list(), timerDefinitionRepository.list()]);
+          return eventBus.externalPayloadIdentities().some(candidate => candidate.providerKind === identity.providerKind && candidate.sourceKey === identity.sourceKey && candidate.eventType === identity.eventType)
+            || alerts.some(rule => rule.externalIdentity?.providerKind === identity.providerKind && rule.externalIdentity.sourceKey === identity.sourceKey && rule.externalIdentity.eventType === identity.eventType)
+            || [...effects.flatMap(effect => effect.bindings.map(binding => binding.selector)), ...timers.flatMap(timer => (timer.eventRules ?? []).map(rule => rule.selector))].some(selector => selector.match.kind === "external" && selector.match.providerKind === identity.providerKind && selector.match.sourceKey === identity.sourceKey && selector.match.eventType === identity.eventType);
+        }
+        // S04 owns the scoped Video adapter and durable admission.
+        case "video-request": return false;
+      }
+    }
+  });
+  const manualDispatchService: ManualAlertEffectService = new ManualAlertEffectService({ manualEvents: manualEventService, alerts: alertEditorService, effects: effectAdmissionService });
+  await eventBus.start();
   const alertSetManagementService = new AlertSetManagementService({
     alertService,
     metadataRepository: alertSetMetadataRepository,
@@ -1726,9 +1761,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     isInActiveSet: (id) => effectRepository.isInActiveSet(id),
     repository: effectRepository,
     async testEffectVariant(effectId, variantId) {
-      const outcome = await effectAdmissionService.testEffectVariant(effectId, variantId);
-      if (outcome.status === "queued") await effectPlaybackCoordinator.startNext();
-      return outcome;
+      return manualDispatchService.sendEffect(effectId, variantId);
     },
     runMutation: work => maintenanceGate.runIntake(work),
     async isTwitchRewardAvailable(broadcasterId, rewardId) {
@@ -1826,6 +1859,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     musicManagementService,
     alertSetManagementService,
     alertEditorService,
+    submitManualSimulation: input => maintenanceGate.runIntake(() => manualEventService.submit(input, { channel: "management" })),
+    sendSavedAlertTest: action => maintenanceGate.runIntake(() => manualDispatchService.sendSavedAlert(action)),
     managementAssetLibraryService: assetLibraryService,
     reportAlertEditorError,
     reportClientException,
@@ -1842,7 +1877,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     overlayOutputManagementService,
     overlayGateway,
     alertService,
-    alertTestPlaybackCoordinator: playbackCoordinator,
+    submitAlertSimulation: input => maintenanceGate.runIntake(() => manualEventService.submit(input, { channel: "management" })),
     assetRepository,
     mediaImportPipeline,
     assetStore,

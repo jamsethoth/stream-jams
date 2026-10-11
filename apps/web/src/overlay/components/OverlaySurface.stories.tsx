@@ -1,10 +1,11 @@
+import { expect, fn, waitFor, within } from "storybook/test";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import {
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
   type OverlayComposition
 } from "@stream-jams/core";
-import { AudioActivationPrompt, OverlaySurface } from "./OverlaySurface.js";
+import { OverlaySurface } from "./OverlaySurface.js";
 import {
   errorSafeOverlayComposition,
   idleOverlayComposition,
@@ -176,20 +177,24 @@ export const Media: Story = {
   }
 };
 
-export const TestAudioActivation: Story = {
-  args: {
-    composition: idleOverlayComposition,
-    muted: false,
-    resolveAssetUrl
+export const ManualAudioDenied: Story = {
+  tags: ["manual-event-delivery"],
+  beforeEach: () => {
+    const original = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = () => Promise.reject(new DOMException("Playback requires user interaction", "NotAllowedError"));
+    return () => { HTMLMediaElement.prototype.play = original; };
   },
-  render: () => <AudioActivationPrompt onEnable={() => undefined} />,
-  parameters: {
-    docs: {
-      description: {
-        story: "Shown only when a management-triggered test needs one browser interaction before audio can play."
-      }
-    }
-  }
+  args: {
+    composition: { ...mediaOverlayComposition, modules: mediaOverlayComposition.modules.map(module => ({ ...module, instructions: module.instructions.map(instruction => ({ ...instruction, operatorTest: true, visual: null, text: null, audio: { assetId: "tiny-audio", volume: 0 } })) })) },
+    muted: true,
+    onPlaybackEvent: fn(),
+    resolveAssetUrl: () => "/storybook-assets/tiny-audio.wav"
+  },
+  play: async ({ args, canvasElement }) => {
+    await waitFor(() => expect(args.onPlaybackEvent).toHaveBeenCalledWith(expect.objectContaining({ status: "failed", failure: expect.objectContaining({ stage: "play" }) })));
+    await expect(within(canvasElement).queryByRole("button")).not.toBeInTheDocument();
+  },
+  parameters: { docs: { description: { story: "Manual audio denial reports failure and keeps production output transparent. Correct setup and deliberately submit a new event." } } }
 };
 
 export const AnimatedShape: Story = {

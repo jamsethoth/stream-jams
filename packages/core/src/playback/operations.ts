@@ -17,8 +17,8 @@ export const operationRowSchema = z.object({
   occurrenceId: nonEmptyStringSchema.max(256),
   name: nonEmptyStringSchema.max(120),
   summary: z.string().max(256),
-  /** Source kind that delivered the event; null for manual tests. */
-  source: ingestProviderIdSchema.nullable(),
+  /** Actual origin, independent of simulated provider data. */
+  source: z.union([ingestProviderIdSchema, z.literal("manual")]).nullable(),
   status: operationStatusSchema,
   enqueuedAtMs: z.number().int().nonnegative(),
   completedAtMs: z.number().int().nonnegative().nullable(),

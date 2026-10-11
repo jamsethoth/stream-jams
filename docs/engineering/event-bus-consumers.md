@@ -2,6 +2,8 @@
 
 Every module that reacts to stream events registers as a consumer of the central event bus. Alerts, Screen Effects, Timers and Videos do so today. Custom data overlay rules (BL-061, building on BL-055) use the same contract. The [central event bus design](../../openspec/changes/archive/2026-10-08-add-central-event-bus/design.md) explains why the bus exists. This page covers what a consumer must do.
 
+Manual simulation and targeted management sends use the [manual event API contract](manual-event-management-api.md). Their bus source is `manual`; simulated provider fields never identify a subscribed delivery.
+
 ## Registration
 
 A consumer is an `EventBusConsumerRegistration` from `@stream-jams/core`. Runtime composition (`apps/server/src/runtime/runtime-composition.ts`) passes it to the `EventBus`.

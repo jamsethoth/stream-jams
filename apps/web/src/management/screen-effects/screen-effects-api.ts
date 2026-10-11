@@ -12,6 +12,7 @@ import {
 } from "../management-http-client.js";
 
 export type EffectLiveTestStatus =
+  | "pending"
   | "queued"
   | "full"
   | "no-output"
@@ -23,6 +24,8 @@ export interface EffectLiveTestResult {
   readonly effectId: string;
   readonly status: EffectLiveTestStatus;
   readonly occurrenceId?: string;
+  readonly busId?: string;
+  readonly eventId?: string;
 }
 
 export interface ScreenEffectBrowserSource {
@@ -163,13 +166,16 @@ function parseTestResult(candidate: unknown): EffectLiveTestResult {
   const value = candidate as Record<string, unknown>;
   if (
     typeof value.effectId !== "string"
-    || !["queued", "full", "no-output", "missing-reference", "unavailable-output", "module-disabled"].includes(String(value.status))
+    || !["pending", "queued", "full", "no-output", "missing-reference", "unavailable-output", "module-disabled"].includes(String(value.status))
+    || (value.status === "pending" && (typeof value.busId !== "string" || typeof value.eventId !== "string" || value.occurrenceId !== undefined))
     || (value.occurrenceId !== undefined && typeof value.occurrenceId !== "string")
   ) {
     throw new TypeError("The Screen Effect test returned an invalid response");
   }
   return {
     effectId: value.effectId,
+    ...(typeof value.busId === "string" ? { busId: value.busId } : {}),
+    ...(typeof value.eventId === "string" ? { eventId: value.eventId } : {}),
     status: value.status as EffectLiveTestStatus,
     ...(typeof value.occurrenceId === "string" ? { occurrenceId: value.occurrenceId } : {})
   };
