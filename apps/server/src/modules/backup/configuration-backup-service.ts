@@ -283,7 +283,7 @@ export class ConfigurationBackupService {
     const blockers: ActionableManagementError[] = [];
     const warnings: ActionableManagementError[] = [];
     if (archive.configuration.overlayOutputs.some(output => output.purpose === "test" || output.scope === "unified")
-      || archive.configuration.tables.overlay_surfaces?.some(row => row.kind === "unified-browser")) warnings.push(warning("Browser outputs were retired", "Test and unified sources and surfaces will not be restored.", "Remove old test/unified sources in OBS and add ordinary module sources with their displayed dimensions."));
+      || archive.configuration.tables.overlay_surfaces?.some(row => row.kind === "unified-browser")) warnings.push(warning("Browser outputs were retired", "Test and unified sources and surfaces will not be restored.", "Remove old test/unified sources in OBS and add the per-module Browser Sources with their displayed dimensions."));
     if (archive.manifest.schemaVersion < 46 && archive.configuration.overlayOutputs.some(output => isOrdinaryOverlayOutput(output, true) && !isOrdinaryOverlayOutput(output))) warnings.push(warning("Legacy profileless sources will not be restored", "Portable restore does not create new legacy source credentials.", "Create the module's Landscape or Vertical source in management and update OBS."));
     if (archive.configuration.tables.overlay_module_config?.some(row => {
       if (row.module_id !== "videos" || typeof row.config_json !== "string") return false;

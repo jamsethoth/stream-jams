@@ -167,7 +167,7 @@ async function handle(reply: FastifyReply, work: () => unknown): Promise<unknown
   try {
     return await work();
   } catch (error) {
-    if (error instanceof RetiredVideoTestError) return sendHttpError(reply, 410, { code: "VIDEO_TEST_RETIRED", message: "The isolated Videos test queue was retired. Refresh the ordinary queue and use /videos/live; remove purpose selectors before submitting explicitly." });
+    if (error instanceof RetiredVideoTestError) return sendHttpError(reply, 410, { code: "VIDEO_TEST_RETIRED", message: "The isolated Videos test queue was retired. Refresh the live queue and use /videos/live; remove purpose selectors before submitting explicitly." });
     if (error instanceof ManualSubmissionRejectedError) return reply.status(error.reason === "forbidden" ? 403 : 422).send({ error: { code: "MANUAL_SUBMISSION_REJECTED", message: error.message, referenceId: error.referenceId } });
     if (error instanceof VideoScopeError) return sendHttpError(reply, 403, { code: "AUTOMATION_SCOPE_REQUIRED", message: "This installation has not been granted this operation." });
     if (error instanceof z.ZodError) return sendHttpError(reply, 400, { code: "VIDEO_INVALID_INPUT", message: "Invalid video request. Refresh and try again." });

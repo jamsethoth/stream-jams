@@ -14,7 +14,7 @@ export class SqliteSurfaceRepository implements SurfaceRepository {
 
   async save(configuration: SurfaceConfiguration): Promise<void> {
     const parsed = surfaceConfigurationSchema.parse(configuration);
-    if (parsed.kind !== "desktop") throw new Error("Public unified surfaces were retired. Configure ordinary module sources instead.");
+    if (parsed.kind !== "desktop") throw new Error("Public unified surfaces were retired. Configure per-module Browser Sources instead.");
     runInTransaction(this.connection, () => {
       validateSurfaceOrder(parsed.layers, this.moduleIds());
       const surfaces = this.reconcile();

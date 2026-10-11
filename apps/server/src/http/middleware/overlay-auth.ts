@@ -40,7 +40,7 @@ export function createOverlayAuthPreHandler(options: OverlayAuthPreHandlerOption
     if (!isOrdinaryOverlayOutput(accessRequest, true)) {
       if (options.shell) return sendTransparentOverlayRejection(reply);
       return sendHttpError(reply, 401, { code: "OVERLAY_ROUTE_KEY_UNAUTHORIZED",
-        message: "This output was retired. Select an ordinary module source in management and replace the old source URL." });
+        message: "This output was retired. Select the per-module Browser Source in management and replace the old source URL." });
     }
 
     const verification = await options.overlayAccessService.verifyRouteAccess(accessRequest);
