@@ -43,8 +43,10 @@ it("accepts optional retired output attempts and rejects malformed attempt diagn
   await expect(api.load()).resolves.not.toHaveProperty("retiredOutputAttempts");
   body = { ...view, retiredOutputAttempts: [{ kind: "unified", lastSeenAt: "not a time", count: 1 }] };
   await expect(api.load()).rejects.toThrow(/lastSeenAt/u);
-  body = { ...view, retiredOutputAttempts: [{ kind: "test", lastSeenAt: "2026-10-11T12:00:00.000Z", count: -1 }] };
+  body = { ...view, retiredOutputAttempts: [{ kind: "module-test", lastSeenAt: "2026-10-11T12:00:00.000Z", count: -1 }] };
   await expect(api.load()).rejects.toThrow(/count/u);
+  body = { ...view, retiredOutputAttempts: [{ kind: "test", lastSeenAt: "2026-10-11T12:00:00.000Z", count: 1 }] };
+  await expect(api.load()).rejects.toThrow(/kind/u);
   body = { ...view, retiredOutputAttempts: "unified" };
   await expect(api.load()).rejects.toThrow(/array/u);
 });

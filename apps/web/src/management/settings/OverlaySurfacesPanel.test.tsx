@@ -158,7 +158,7 @@ it("pauses polling while hidden, refreshes on visibility, and stops after unmoun
 });
 
 describe("retired output attempts", () => {
-  const attempt = { kind: "unified", lastSeenAt: "2026-10-11T12:00:00.000Z", count: 4 };
+  const attempt = { kind: "unified" as const, lastSeenAt: "2026-10-11T12:00:00.000Z", count: 4 };
   const banner = () => screen.queryByRole("region", { name: "An old test or unified OBS source is still connecting." });
   beforeEach(() => { window.localStorage.clear(); });
 

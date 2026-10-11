@@ -61,8 +61,8 @@ export const SavedButRuntimeFailed: Story = {
 export const Empty: Story = { args: { api: api({ ...view(), surfaces: [] }) } };
 
 const retiredAttemptsApi = () => ({ ...api(), load: fn(async () => ({ ...view(), retiredOutputAttempts: [
-  { kind: "unified", lastSeenAt: "2026-10-11T12:00:00.000Z", count: 4 },
-  { kind: "test", lastSeenAt: "2026-10-11T11:30:00.000Z", count: 1 }
+  { kind: "unified" as const, lastSeenAt: "2026-10-11T12:00:00.000Z", count: 4 },
+  { kind: "module-test" as const, lastSeenAt: "2026-10-11T11:30:00.000Z", count: 1 }
 ] })) });
 const clearRetiredDismissal = () => { try { window.localStorage.removeItem("stream-jams-retired-output-banner-dismissed"); } catch { /* Story still renders. */ } };
 

@@ -2,8 +2,9 @@ import { surfaceConfigurationUpdateSchema, surfaceSettingsViewSchema, type Surfa
 import { createManagementHttpClient, type HttpManagementClientOptions } from "../management-http-client.js";
 
 /** A retired public test or unified Browser Source that is still trying to connect. */
+export type RetiredOutputKind = "module-test" | "unified";
 export interface RetiredOutputAttempt {
-  readonly kind: string;
+  readonly kind: RetiredOutputKind;
   readonly lastSeenAt: string;
   readonly count: number;
 }
@@ -42,7 +43,7 @@ function parseRetiredOutputAttempts(value: unknown): readonly RetiredOutputAttem
   return value.map((entry: unknown, index) => {
     if (typeof entry !== "object" || entry === null) throw new TypeError(`retiredOutputAttempts.${index} must be an object.`);
     const { kind, lastSeenAt, count } = entry as Record<string, unknown>;
-    if (typeof kind !== "string" || kind.length === 0) throw new TypeError(`retiredOutputAttempts.${index}.kind must be a non-empty string.`);
+    if (kind !== "module-test" && kind !== "unified") throw new TypeError(`retiredOutputAttempts.${index}.kind must be module-test or unified.`);
     if (typeof lastSeenAt !== "string" || Number.isNaN(Date.parse(lastSeenAt))) throw new TypeError(`retiredOutputAttempts.${index}.lastSeenAt must be a timestamp.`);
     if (typeof count !== "number" || !Number.isInteger(count) || count < 0) throw new TypeError(`retiredOutputAttempts.${index}.count must be a non-negative integer.`);
     return { kind, lastSeenAt, count };

@@ -1,7 +1,7 @@
 import { Button } from "@mantine/core";
 import { useState } from "react";
 import { formatCount, formatDateTime } from "../foundation/formatters.js";
-import type { RetiredOutputAttempt } from "./overlay-surfaces-api.js";
+import type { RetiredOutputAttempt, RetiredOutputKind } from "./overlay-surfaces-api.js";
 
 const moduleSourceLinks = [
   { label: "Alerts sources", href: "/manage/modules/alerts#browser-sources" },
@@ -62,8 +62,6 @@ export function useRetiredOutputDismissal(): readonly [string | null, (signature
   return [dismissed, (signature: string) => { writeRetiredOutputDismissal(signature); setDismissed(signature); }] as const;
 }
 
-function retiredKindLabel(kind: string): string {
-  if (kind === "unified") return "Old unified source";
-  if (kind === "test") return "Old test source";
-  return `Old ${kind} source`;
+function retiredKindLabel(kind: RetiredOutputKind): string {
+  return kind === "unified" ? "Old unified source" : "Old test source";
 }
