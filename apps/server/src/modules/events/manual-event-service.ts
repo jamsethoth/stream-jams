@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { manualEventSubmissionSchema, normalizedStreamEventSchema, type ManualBusEvent, type ManualEventAction, type ManualEventSubmission, type ManualSubmissionReceipt, type ManualSubmissionChannel } from "@stream-jams/core";
+import { manualEventSubmissionSchema, normalizedStreamEventSchema, type ExternalEventIdentity, type ManualBusEvent, type ManualEventAction, type ManualEventSubmission, type ManualSubmissionReceipt, type ManualSubmissionChannel } from "@stream-jams/core";
 import type { AutomationScope } from "../automation/automation-credential-service.js";
 import { createNormalizedEffectTriggers } from "../screen-effects/effect-trigger-adapter.js";
 import type { EventBus } from "./event-bus.js";
@@ -16,6 +16,28 @@ export interface ManualEventServiceOptions {
   readonly generateEventId?: () => string;
   readonly generateReferenceId?: () => string;
   readonly now?: () => Date;
+}
+
+/**
+ * Payload declarations follow the bus's external payload semantics: source keys compare case-insensitively (as
+ * Streamer.bot source names always have) and event types exactly.
+ */
+export function isDeclaredExternalPayloadIdentity(declared: readonly ExternalEventIdentity[], identity: ExternalEventIdentity): boolean {
+  return declared.some(candidate => candidate.providerKind === identity.providerKind
+    && candidate.sourceKey.toLowerCase() === identity.sourceKey.toLowerCase() && candidate.eventType === identity.eventType);
+}
+
+/**
+ * Whether a simulated external event has any declared consumer. Payload declarations compare source keys
+ * case-insensitively; alert rules and trigger selectors match exactly, as their own matchers do.
+ */
+export function hasExternalSimulationConsumer(identity: ExternalEventIdentity, consumers: {
+  readonly payloadIdentities: readonly ExternalEventIdentity[];
+  readonly exactIdentities: readonly ExternalEventIdentity[];
+}): boolean {
+  return isDeclaredExternalPayloadIdentity(consumers.payloadIdentities, identity)
+    || consumers.exactIdentities.some(candidate => candidate.providerKind === identity.providerKind
+      && candidate.sourceKey === identity.sourceKey && candidate.eventType === identity.eventType);
 }
 
 export class ManualSubmissionRejectedError extends Error {
@@ -46,7 +68,7 @@ export class ManualEventService {
     catch { return this.#reject("invalid-reference", context.channel); }
     if (!validReferences) return this.#reject("invalid-reference", context.channel);
     // Preserve the provider payload subscription limit: undeclared consumers never acquire arbitrary payloads.
-    const journalAction: ManualEventAction = action.kind === "simulate-external" && !this.options.bus.externalPayloadIdentities().some(identity => identity.providerKind === action.identity.providerKind && identity.sourceKey.toLowerCase() === action.identity.sourceKey.toLowerCase() && identity.eventType === action.identity.eventType)
+    const journalAction: ManualEventAction = action.kind === "simulate-external" && !isDeclaredExternalPayloadIdentity(this.options.bus.externalPayloadIdentities(), action.identity)
       ? { kind: "simulate-external", identity: action.identity }
       : action;
     const event: Omit<ManualBusEvent, "sequence" | "busId"> = {

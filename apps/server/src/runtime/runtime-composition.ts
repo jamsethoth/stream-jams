@@ -110,7 +110,7 @@ import {
 } from "../modules/events/event-ingestion-service.js";
 import { EventBus } from "../modules/events/event-bus.js";
 import { EventBusSettingsService } from "../modules/events/event-bus-settings-service.js";
-import { ManualEventService } from "../modules/events/manual-event-service.js";
+import { hasExternalSimulationConsumer, ManualEventService } from "../modules/events/manual-event-service.js";
 import { ManualAlertEffectService } from "../modules/events/manual-alert-effect-service.js";
 import { EventPipeline } from "../modules/events/event-pipeline.js";
 import { SqliteEventBusJournalRepository } from "../modules/events/sqlite-event-bus-journal-repository.js";
@@ -1342,9 +1342,14 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         case "simulate-external": {
           const identity = action.identity;
           const [alerts, effects, timers] = await Promise.all([alertRepository.listRules(), effectRepository.list(), timerDefinitionRepository.list()]);
-          return eventBus.externalPayloadIdentities().some(candidate => candidate.providerKind === identity.providerKind && candidate.sourceKey === identity.sourceKey && candidate.eventType === identity.eventType)
-            || alerts.some(rule => rule.externalIdentity?.providerKind === identity.providerKind && rule.externalIdentity.sourceKey === identity.sourceKey && rule.externalIdentity.eventType === identity.eventType)
-            || [...effects.flatMap(effect => effect.bindings.map(binding => binding.selector)), ...timers.flatMap(timer => (timer.eventRules ?? []).map(rule => rule.selector))].some(selector => selector.match.kind === "external" && selector.match.providerKind === identity.providerKind && selector.match.sourceKey === identity.sourceKey && selector.match.eventType === identity.eventType);
+          const selectors = [...effects.flatMap(effect => effect.bindings.map(binding => binding.selector)), ...timers.flatMap(timer => (timer.eventRules ?? []).map(rule => rule.selector))];
+          return hasExternalSimulationConsumer(identity, {
+            payloadIdentities: eventBus.externalPayloadIdentities(),
+            exactIdentities: [
+              ...alerts.flatMap(rule => rule.externalIdentity === undefined ? [] : [rule.externalIdentity]),
+              ...selectors.flatMap(selector => selector.match.kind === "external" ? [selector.match] : [])
+            ]
+          });
         }
         // A Video action references no local asset or saved target. Link/module/allowlist/capacity policy is owned by its validated consumer intake.
         case "video-request": return true;

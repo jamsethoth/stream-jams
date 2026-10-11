@@ -4,7 +4,7 @@ import { createInMemoryStreamJamsDatabase } from "../db/database.js";
 import { createVideosBusConsumer } from "../videos/videos-bus-consumer.js";
 import { EventPipeline } from "./event-pipeline.js";
 import { EventBus, type EventBusOptions } from "./event-bus.js";
-import { ManualEventService, ManualSubmissionRejectedError } from "./manual-event-service.js";
+import { hasExternalSimulationConsumer, isDeclaredExternalPayloadIdentity, ManualEventService, ManualSubmissionRejectedError } from "./manual-event-service.js";
 import { SqliteEventBusJournalRepository } from "./sqlite-event-bus-journal-repository.js";
 
 const now = "2026-10-10T12:00:00.000Z";
@@ -213,5 +213,19 @@ describe("ManualEventService", () => {
     expect(enqueueEvent).toHaveBeenCalledOnce();
     expect(enqueueEvent).toHaveBeenCalledWith(expect.objectContaining({ id: "manual_1", ingestProvider: "twitch" }), "manual");
     expect(effectEventSink.handleEvent).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("external simulation consumer check", () => {
+  const general = { providerKind: "streamerbot", sourceKey: "General", eventType: "Custom" } as const;
+  it("treats payload declarations case-insensitively by source key, matching journal payload attachment", () => {
+    expect(hasExternalSimulationConsumer({ ...general, sourceKey: "general" }, { payloadIdentities: [general], exactIdentities: [] })).toBe(true);
+    expect(isDeclaredExternalPayloadIdentity([general], { ...general, sourceKey: "GENERAL" })).toBe(true);
+  });
+  it("keeps event types exact and alert/selector identities exact like their matchers", () => {
+    expect(hasExternalSimulationConsumer({ ...general, eventType: "custom" }, { payloadIdentities: [general], exactIdentities: [] })).toBe(false);
+    expect(hasExternalSimulationConsumer({ ...general, sourceKey: "general" }, { payloadIdentities: [], exactIdentities: [general] })).toBe(false);
+    expect(hasExternalSimulationConsumer(general, { payloadIdentities: [], exactIdentities: [general] })).toBe(true);
+    expect(hasExternalSimulationConsumer(general, { payloadIdentities: [], exactIdentities: [] })).toBe(false);
   });
 });
