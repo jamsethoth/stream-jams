@@ -48,17 +48,17 @@ describe("public output retirement", () => {
     }
     const before = db.prepare("SELECT * FROM overlay_keys WHERE id='ordinary'").get();
     const fail = vi.fn(async () => { throw new Error("keyring unavailable"); });
-    expect(await cleanupRetiredOutputSecrets(db, { deleteSecret: fail })).toBe(3);
+    expect(await cleanupRetiredOutputSecrets(new SqliteOverlayAccessKeyRepository(db), { deleteSecret: fail })).toBe(3);
     expect(db.prepare("SELECT revoked_at FROM overlay_keys WHERE id='bad-ref'").get()?.revoked_at).not.toBeNull();
     expect(fail.mock.calls).toHaveLength(2);
     expect(db.prepare("SELECT * FROM overlay_keys WHERE id='ordinary'").get()).toEqual(before);
     const succeed = vi.fn(async (ref: SecretRef) => { expect(ref.namespace).toBe("overlay"); });
-    expect(await cleanupRetiredOutputSecrets(db, { deleteSecret: succeed })).toBe(1);
+    expect(await cleanupRetiredOutputSecrets(new SqliteOverlayAccessKeyRepository(db), { deleteSecret: succeed })).toBe(1);
     expect(succeed.mock.calls.map(call => call[0])).toEqual([
       { namespace: "overlay", accountId: "retired-video", name: "route-key" },
       { namespace: "overlay", accountId: "revoked-legacy", name: "route-key" }
     ]);
-    expect(await cleanupRetiredOutputSecrets(db, { deleteSecret: succeed })).toBe(1);
+    expect(await cleanupRetiredOutputSecrets(new SqliteOverlayAccessKeyRepository(db), { deleteSecret: succeed })).toBe(1);
     expect(succeed).toHaveBeenCalledTimes(2);
     expect(db.prepare("SELECT * FROM overlay_keys WHERE id='ordinary'").get()).toEqual(before);
   });

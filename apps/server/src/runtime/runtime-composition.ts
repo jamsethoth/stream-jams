@@ -462,7 +462,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       metadata: { count, nextStep: "Restart the app to retry cleanup. Retired sources remain unauthorized." }
     });
   }
-  const retiredSecretFailures = await cleanupRetiredOutputSecrets(database.connection, secretStore);
+  const retiredSecretFailures = await cleanupRetiredOutputSecrets(overlayKeyRepository, secretStore);
   if (retiredSecretFailures > 0) await logRetiredSecretCleanupFailure(retiredSecretFailures);
   function trackRuntimeWork(work: () => Promise<void>): Promise<void> {
     if (closing) return Promise.resolve();
@@ -632,10 +632,10 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const maintenanceGate = new RuntimeMaintenanceGate();
   function refreshRecipientPolicy(): void {
     overlayGateway.setRecipientPolicy(client => {
-      const row = database.connection.prepare("SELECT overlay_id, module_id, purpose, scope, target_profile_id FROM overlay_keys WHERE id = ? AND revoked_at IS NULL").get(client.keyId);
-      return row !== undefined && isOrdinaryOverlayOutput(client, true) && row.overlay_id === client.overlayId
-        && row.module_id === client.moduleId && row.purpose === client.purpose && row.scope === client.scope
-        && row.target_profile_id === (client.targetProfileId ?? null);
+      const row = overlayKeyRepository.findActiveRecipientIdentity(client.keyId);
+      return row !== null && isOrdinaryOverlayOutput(client, true) && row.overlayId === client.overlayId
+        && row.moduleId === client.moduleId && row.purpose === client.purpose && row.scope === client.scope
+        && row.targetProfileId === (client.targetProfileId ?? null);
     });
   }
   refreshRecipientPolicy();

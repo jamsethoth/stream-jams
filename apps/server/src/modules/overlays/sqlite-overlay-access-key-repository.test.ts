@@ -127,4 +127,21 @@ describe("SqliteOverlayAccessKeyRepository", () => {
     ).resolves.toEqual([landscape]);
     await expect(repository.findById(landscape.id)).resolves.toMatchObject({ targetProfileId: "landscape" });
   });
+
+  it("resolves only active recipient identities synchronously and clears secret refs only for revoked keys", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const repository = new SqliteOverlayAccessKeyRepository(database.connection);
+    const base = { overlayId: "default", moduleId: "music", purpose: "live", scope: "module", keyHash: "sha256:a", createdAt: "2026-05-30T10:00:00.000Z" } as const;
+    await repository.create({ ...base, id: "active", targetProfileId: "landscape", routeKeySecretRef: { namespace: "overlay", accountId: "active", name: "route-key" } });
+    const revoked = await repository.create({ ...base, id: "revoked", keyHash: "sha256:b", routeKeySecretRef: { namespace: "overlay", accountId: "revoked", name: "route-key" } });
+    await repository.update({ ...revoked, revokedAt: "2026-05-30T11:00:00.000Z" });
+    expect(repository.findActiveRecipientIdentity("active")).toEqual({ overlayId: "default", moduleId: "music", purpose: "live", scope: "module", targetProfileId: "landscape" });
+    expect(repository.findActiveRecipientIdentity("revoked")).toBeNull();
+    expect(repository.findActiveRecipientIdentity("missing")).toBeNull();
+    expect(repository.listRevokedSecretReferences()).toEqual([{ id: "revoked", secretRefJson: JSON.stringify({ namespace: "overlay", accountId: "revoked", name: "route-key" }) }]);
+    repository.clearRevokedSecretReference("active");
+    repository.clearRevokedSecretReference("revoked");
+    expect((await repository.findById("active"))?.routeKeySecretRef).not.toBeNull();
+    expect((await repository.findById("revoked"))?.routeKeySecretRef).toBeNull();
+  });
 });

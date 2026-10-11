@@ -7,6 +7,16 @@ import type {
   OverlayScope,
   OverlayTargetProfileId
 } from "@stream-jams/core";
+import type { RetiredOutputKeyRepository } from "./retired-output-secrets.js";
+
+/** The stored identity an active (unrevoked) key authorizes, for synchronous recipient policy checks. */
+export interface ActiveOverlayRecipientIdentity {
+  readonly overlayId: string;
+  readonly moduleId: string | null;
+  readonly purpose: string;
+  readonly scope: string;
+  readonly targetProfileId: string | null;
+}
 
 interface OverlayAccessKeyRow {
   readonly id: unknown;
@@ -21,11 +31,43 @@ interface OverlayAccessKeyRow {
   readonly revoked_at: unknown;
 }
 
-export class SqliteOverlayAccessKeyRepository implements OverlayAccessKeyRepository {
+export class SqliteOverlayAccessKeyRepository implements OverlayAccessKeyRepository, RetiredOutputKeyRepository {
   readonly #connection: DatabaseSync;
+  #activeRecipientStatement: ReturnType<DatabaseSync["prepare"]> | undefined;
 
   constructor(connection: DatabaseSync) {
     this.#connection = connection;
+  }
+
+  /** Synchronous lookup for the overlay gateway's per-recipient policy; revoked or unknown keys return null. */
+  findActiveRecipientIdentity(keyId: string): ActiveOverlayRecipientIdentity | null {
+    this.#activeRecipientStatement ??= this.#connection.prepare(
+      "SELECT overlay_id, module_id, purpose, scope, target_profile_id FROM overlay_keys WHERE id = ? AND revoked_at IS NULL"
+    );
+    const row = this.#activeRecipientStatement.get(keyId);
+    if (row === undefined) return null;
+    return {
+      overlayId: String(row.overlay_id),
+      moduleId: row.module_id === null ? null : String(row.module_id),
+      purpose: String(row.purpose),
+      scope: String(row.scope),
+      targetProfileId: row.target_profile_id === null ? null : String(row.target_profile_id)
+    };
+  }
+
+  revokeRetiredPublicOutputs(): void {
+    this.#connection.prepare("UPDATE overlay_keys SET revoked_at = COALESCE(revoked_at, created_at) WHERE purpose = 'test' OR scope = 'unified'").run();
+  }
+
+  listRevokedSecretReferences(): readonly { readonly id: string; readonly secretRefJson: string }[] {
+    return this.#connection
+      .prepare("SELECT id, route_key_secret_ref_json FROM overlay_keys WHERE revoked_at IS NOT NULL AND route_key_secret_ref_json IS NOT NULL ORDER BY rowid")
+      .all()
+      .map(row => ({ id: String(row.id), secretRefJson: String(row.route_key_secret_ref_json) }));
+  }
+
+  clearRevokedSecretReference(keyId: string): void {
+    this.#connection.prepare("UPDATE overlay_keys SET route_key_secret_ref_json = NULL WHERE id = ? AND revoked_at IS NOT NULL").run(keyId);
   }
 
   async list(): Promise<readonly OverlayAccessKey[]> {
