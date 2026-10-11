@@ -2,7 +2,7 @@
 
 The maintained written design for this change is [OpenSpec design](../../../openspec/changes/separate-browser-desktop-output-layouts/design.md), with its [proposal](../../../openspec/changes/separate-browser-desktop-output-layouts/proposal.md) and [requirements](../../../openspec/changes/separate-browser-desktop-output-layouts/specs/output-specific-module-rendering/spec.md).
 
-Status: written-spec review pending. No product implementation or implementation plan has started.
+Status: written specification approved by the user on 2026-10-10. The [agent implementation plan](../plans/2026-10-10-browser-desktop-output-layouts.md) is prepared for review. Product implementation has not started.
 
 Confirmed scope: remove test and unified browser sources; keep landscape and vertical layouts for Alerts, Music and Timers; use stable content-sized canvases for Music, Timers and Videos independent of desktop placement; retain full-scene positioning for Alerts/Screen Effects; introduce independent per-profile Timer appearance controls.
 
