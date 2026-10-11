@@ -63,9 +63,10 @@ test("unsigned setup wizard installs per user into a chosen folder, launches wit
         console.error(`Uninstall left files behind:\n${(await readdir(installDirectory, { recursive: true }).catch(() => [])).slice(0, 40).join("\n")}`);
         throw error;
       }
-      expect(await shortcuts(startMenu)).toHaveLength(0);
-      expect(await shortcuts(desktopFolder)).toHaveLength(0);
-      expect(await uninstallEntry()).toBeNull();
+      // The detached uninstaller can remove shortcuts and the Apps entry after the app folder is gone.
+      await expect.poll(() => shortcuts(startMenu), { timeout: 30_000 }).toHaveLength(0);
+      await expect.poll(() => shortcuts(desktopFolder), { timeout: 30_000 }).toHaveLength(0);
+      await expect.poll(() => uninstallEntry(), { timeout: 30_000 }).toBeNull();
     });
 
     await test.step("User configuration and data survive uninstall", async () => {
