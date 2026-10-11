@@ -41,11 +41,14 @@ Installers, signing, automatic updates, non-Windows desktop delivery, LAN mode, 
 
 The October 5, 2026 UTC reconciliation archived 21 completed changes under [the change archive](../openspec/changes/archive), using the `2026-10-05-` prefix. Before archival, canonical requirements were synchronized for automatic local-output rebinding, persistent event timers, repository error provenance, and the compact Operator panel. Other completed changes were already synchronized; newer timing, streaming, variant-removal and menu requirements were preserved rather than overwritten by older deltas. Historical acceptance limits remain with their archived records.
 
-Six changes remain active:
+The October 11, 2026 UTC reconciliation archived three completed changes with the `2026-10-11-` prefix. The Pear re-pair fix and the NSIS installer switch synchronized their deltas into [Music source providers](../openspec/specs/music-source-providers/spec.md) and [Windows desktop runtime](../openspec/specs/windows-desktop-runtime/spec.md). The browser/desktop output layouts change was archived without a spec update because its slices had already synchronized canonical requirements, and the canonical specs carry newer scenarios its deltas lack.
+
+Seven changes remain active:
 
 | Change | Remaining work |
 | --- | --- |
-| [separate-browser-desktop-output-layouts](../openspec/changes/separate-browser-desktop-output-layouts/tasks.md) | Implementation and canonical sync delivered in ordered slices; final integration gates and parent acceptance/review are recorded in [verification](verification/browser-desktop-output-layouts.md). Archival remains separately authorized. |
+| [add-live-music-layout-preview](../openspec/changes/add-live-music-layout-preview/tasks.md) | Implemented (PR #180); only task 3.4, the maintainer's Windows check that the preview follows Pear playback, is open |
+| [add-event-source-maintenance](../openspec/changes/add-event-source-maintenance/proposal.md) | Edit, replace and delete event sources (BL-067); spec only, awaiting review |
 | [add-main-branch-changelog](../openspec/changes/add-main-branch-changelog/tasks.md) | Unimplemented proposal, 22 unchecked tasks; no root changelog or enforcing workflow |
 | [add-custom-data-overlays](../openspec/changes/add-custom-data-overlays/proposal.md) | Slice 1 of 4 for data overlays: values, goals, reset groups, canvases, outputs and Operator controls; 21 unchecked tasks, awaiting approval |
 | [add-data-overlay-event-rules](../openspec/changes/add-data-overlay-event-rules/proposal.md) | Slice 2: data rules as a central event bus consumer, plus Streamer.bot globals; 19 unchecked tasks; depends on slice 1 and the bus change |
