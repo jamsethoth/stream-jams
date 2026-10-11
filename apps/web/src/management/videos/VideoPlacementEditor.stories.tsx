@@ -61,3 +61,18 @@ export const SavingLocked: Story = {
     await expect(canvas.getByLabelText("Video content height (px)")).toBeDisabled();
   }
 };
+
+/** An out-of-range content width stays visible as a draft and is reported to the page so Save is refused. */
+export const InvalidDraftReported: Story = {
+  args: { onInvalidDraftChange: fn() },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    const width = canvas.getByLabelText("Video content width (px)");
+    await userEvent.clear(width);
+    await userEvent.type(width, "100");
+    await expect(args.onInvalidDraftChange).toHaveBeenLastCalledWith(true);
+    await userEvent.tab();
+    await expect(width).toHaveAccessibleDescription("Enter a whole number from 240 to 1920.");
+    await expect(args.onChange).not.toHaveBeenCalled();
+  }
+};

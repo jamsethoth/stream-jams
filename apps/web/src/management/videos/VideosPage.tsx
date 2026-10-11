@@ -12,7 +12,7 @@ import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } fro
 import { MaskedValue } from "../foundation/MaskedValue.js";
 import { ModuleControls, ModulePageLayout, ModuleSection } from "../foundation/ModulePageLayout.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
-import { VideoPlacementEditor } from "./VideoPlacementEditor.js";
+import { VideoPlacementEditor, type VideoPlacementEditorHandle } from "./VideoPlacementEditor.js";
 import { VideoQueuePanel } from "./VideoQueuePanel.js";
 import { createHttpVideosApi, type VideoQueueApi, type VideosApi, type VideosBrowserSource } from "./videos-api.js";
 
@@ -60,6 +60,8 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
   const [routes, setRoutes] = useState<readonly AudioRouteStatus[]>([]);
   const [routesError, setRoutesError] = useState(false);
   const [sources, setSources] = useState<readonly VideosBrowserSource[]>([]);
+  const [placementDraftInvalid, setPlacementDraftInvalid] = useState(false);
+  const placementEditor = useRef<VideoPlacementEditorHandle>(null);
   const [sourcesExpanded, setSourcesExpanded] = useState(window.location.hash === "#browser-sources");
   const [catalog, setCatalog] = useState<RewardCatalog>({ status: "loading" });
   const [loadError, setLoadError] = useState<ActionableManagementError | null>(null);
@@ -119,9 +121,7 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
     if (draft === null || enabled === null) return;
     // Placement number fields preserve raw invalid drafts without committing them into config.
     // Do not report a successful save of the old committed value while such a draft is visible.
-    const invalidGeometryField = Array.from(event.currentTarget.querySelectorAll<HTMLInputElement>("#video-placement input[type='number']"))
-      .find(input => !input.checkValidity());
-    if (invalidGeometryField !== undefined) { invalidGeometryField.reportValidity(); invalidGeometryField.focus(); return; }
+    if (placementDraftInvalid) { placementEditor.current?.focusFirstInvalid(); return; }
     const errors: FieldErrors = {};
     const maxLength = Number(draft.maxLengthSeconds);
     const gap = Number(draft.gapSeconds);
@@ -219,7 +219,7 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
       secondary={draft === null ? (loadError === null ? <p className="management-empty" role="status">Loading Videos settings…</p> : null) : <form className="videos-settings" onSubmit={save} noValidate>
         <ModuleSection title="Placement" label="Video placement" id="video-placement"
           description="Content size controls browser dimensions. Desktop position and scale are independent. Changes apply after Save Videos settings.">
-          <VideoPlacementEditor value={draft.layout} disabled={busy} onChange={layout => { setDraft(current => current === null ? current : { ...current, layout }); setFieldErrors(current => withField(current, "layout", null)); }} />
+          <VideoPlacementEditor ref={placementEditor} onInvalidDraftChange={setPlacementDraftInvalid} value={draft.layout} disabled={busy} onChange={layout => { setDraft(current => current === null ? current : { ...current, layout }); setFieldErrors(current => withField(current, "layout", null)); }} />
           {fieldErrors.layout === undefined ? null : <p className="videos-settings__error" role="alert">{fieldErrors.layout}</p>}
         </ModuleSection>
         <ModuleSection title="Limits and audio" label="Limits and audio" description="Videos longer than the limit, or of unknown length, wait as held until you choose Play anyway.">
