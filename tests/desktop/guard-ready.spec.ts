@@ -30,7 +30,7 @@ test("guard readiness waits for the management main frame and detaches", () => {
   }
 });
 
-test("reload readiness ignores stale registration until main-frame navigation starts", () => {
+test("reload readiness ignores stale registration until main-frame navigation commits", () => {
   const ipcMain = new EventEmitter();
   const origin = "http://127.0.0.1:4321";
   const frame = { url: `${origin}/manage` };
@@ -42,15 +42,18 @@ test("reload readiness ignores stale registration until main-frame navigation st
     observeGuardReady(electron, { origin, afterNavigation: true });
     ready();
     expect(observed.shutdownGuard?.ready).toBe(false);
-    sender.emit("did-start-navigation", {}, frame.url, true, true);
-    sender.emit("did-start-navigation", {}, frame.url, false, false);
+    // The outgoing document can still register after navigation starts, before commit.
+    sender.emit("did-start-navigation", {}, frame.url, false, true);
     ready();
     expect(observed.shutdownGuard?.ready).toBe(false);
-    sender.emit("did-start-navigation", {}, frame.url, false, true);
+    sender.emit("did-navigate", {}, "http://127.0.0.1:4322/manage", 200, "OK");
+    ready();
+    expect(observed.shutdownGuard?.ready).toBe(false);
+    sender.emit("did-navigate", {}, frame.url, 200, "OK");
     ready();
     expect(observed.shutdownGuard?.ready).toBe(true);
     expect(ipcMain.listenerCount("desktop:guard-ready")).toBe(0);
-    expect(sender.listenerCount("did-start-navigation")).toBe(0);
+    expect(sender.listenerCount("did-navigate")).toBe(0);
   } finally {
     observed.shutdownGuard?.dispose();
     delete observed.shutdownGuard;
