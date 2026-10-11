@@ -76,6 +76,31 @@ describe("video routes", () => {
     expect((await stale.app.inject({ method: "POST", url: "/videos/live/commands", headers, payload: play })).statusCode).toBe(409);
     await stale.app.close();
   });
+  it("accepts and ignores purpose=live in body or query, keeping 410 for test and other retired values", async () => {
+    const headers = { "x-management": "yes" };
+    const { app, calls } = setup({ submitResult: { status: "accepted", item: { id: "queued" } as never } });
+    for (const [url, payload] of [["/videos/live/requests", { ...link, purpose: "live" }], ["/videos/live/requests?purpose=live", link]] as const) {
+      expect((await app.inject({ method: "POST", url, headers, payload })).statusCode).toBe(201);
+    }
+    expect((await app.inject({ method: "POST", url: "/automation/v1/videos/live/requests?purpose=live", headers: bearer("submitter"), payload: { ...link, purpose: "live" } })).statusCode).toBe(201);
+    expect(calls.map(call => call.args[1])).toEqual([link, link, link]);
+    for (const [url, payload] of [["/videos/live/requests", { ...link, purpose: "staging" }], ["/videos/live/requests", { ...link, purpose: null }], ["/videos/live/requests?purpose=LIVE", link]] as const) {
+      const result = await app.inject({ method: "POST", url, headers, payload });
+      expect(result.statusCode).toBe(410); expect(result.json()).toMatchObject({ error: { code: "VIDEO_TEST_RETIRED" } });
+    }
+    expect((await app.inject({ method: "POST", url: "/automation/v1/videos/live/requests", headers: bearer("submitter"), payload: { ...link, purpose: "test" } })).statusCode).toBe(410);
+    expect(calls).toHaveLength(3);
+    await app.close();
+  });
+
+  it("maps a review-required play-anyway refusal to 409 with its reason", async () => {
+    const { app } = setup({ commandError: new VideoQueueCommandError("review-required", "Review this video with Play before overriding its length hold.") });
+    const response = await app.inject({ method: "POST", url: "/videos/live/commands", headers: { "x-management": "yes" }, payload: { expectedRevision: 3, command: { kind: "play-anyway", itemId: "migrated" } } });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ error: { code: "VIDEO_QUEUE_COMMAND_REJECTED", reason: "review-required" } });
+    await app.close();
+  });
+
   it("returns identified pending without claiming a queued item", async () => {
     const { app } = setup({ submitResult: { status: "pending", busId: "pending-bus", eventId: "pending-event" } as never });
     const response = await app.inject({ method: "POST", url: "/videos/live/requests", headers: { "x-management": "yes" }, payload: link });

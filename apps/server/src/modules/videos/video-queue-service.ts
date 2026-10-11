@@ -61,7 +61,7 @@ export type VideoItemCommand =
   | { readonly kind: "seek"; readonly positionMs: number };
 
 export class VideoQueueCommandError extends Error {
-  constructor(readonly code: "queue-full" | "not-found" | "not-playing" | "invalid-order" | "item-mismatch", message: string) {
+  constructor(readonly code: "queue-full" | "not-found" | "not-playing" | "invalid-order" | "item-mismatch" | "review-required", message: string) {
     super(message);
     this.name = "VideoQueueCommandError";
   }
@@ -207,7 +207,7 @@ export class VideoQueueService {
       }
       case "play-anyway": {
         const item = this.waitingItem(snapshot, command.itemId);
-        if (item.reviewRequired) throw new VideoQueueCommandError("not-found", "Review this migrated video with Play before overriding its length hold.");
+        if (item.reviewRequired) throw new VideoQueueCommandError("review-required", "Review this video with Play before overriding its length hold.");
         const released = { ...item, status: "queued" as const, holdReason: null, limitOverridden: true };
         if (this.isIdle(state)) {
           this.commit(purpose, expectedRevision, { upsert: [released] }, true);

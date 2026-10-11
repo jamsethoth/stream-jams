@@ -65,7 +65,7 @@ describe("single Video queue upgrade", () => {
     config = { ...config, maxLengthSeconds: 240 }; queue.reevaluateLimits();
     expect(queue.view("live").items.every(item => item.status === "held" && item.reviewRequired && !item.autoplay)).toBe(true);
     expect(() => queue.command("live", queue.view("live").revision, { kind: "play-all" })).toThrow();
-    expect(() => queue.command("live", queue.view("live").revision, { kind: "play-anyway", itemId: "overridden" })).toThrow(/review/iu);
+    expect(() => queue.command("live", queue.view("live").revision, { kind: "play-anyway", itemId: "overridden" })).toThrow(expect.objectContaining({ code: "review-required", message: expect.stringMatching(/review/iu) }));
     const revision = queue.view("live").revision;
     expect(() => queue.command("live", revision - 1, { kind: "play", itemId: "within" })).toThrow();
     expect(queue.view("live").items.find(item => item.id === "within")?.reviewRequired).toBe(true);

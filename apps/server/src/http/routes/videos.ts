@@ -67,9 +67,8 @@ export function registerVideoRoutes(app: FastifyInstance, dependencies: VideoRou
   app.get("/videos/:purpose", management, async (request, reply) => handle(reply, () => videos.response(readPurpose(request))));
   app.post("/videos/:purpose/requests", management, async (request, reply) => handle(reply, async () => {
     const via = submitterSchema.catch("management").parse((request.query as { readonly from?: unknown } | undefined)?.from);
-    rejectLegacyPurpose(request.body);
-    rejectLegacyPurpose(request.query);
-    return submitted(reply, await videos.submit(readPurpose(request), request.body, { via, mayAutoplay: true }));
+    rejectRetiredPurpose(request.query);
+    return submitted(reply, await videos.submit(readPurpose(request), withoutLivePurpose(request.body), { via, mayAutoplay: true }));
   }));
   app.post("/videos/:purpose/commands", management, async (request, reply) => handle(reply, () => {
     const body = commandBodySchema.parse(request.body);
@@ -94,9 +93,8 @@ export function registerVideoRoutes(app: FastifyInstance, dependencies: VideoRou
   app.post("/automation/v1/videos/:purpose/requests", automation, async (request, reply) => handle(reply, async () => {
     requireScope(request, "videos:submit");
     const mayAutoplay = getAutomationGrant(request).scopes.includes("videos:control");
-    rejectLegacyPurpose(request.body);
-    rejectLegacyPurpose(request.query);
-    return submitted(reply, await videos.submit(readPurpose(request), request.body, { via: "automation", mayAutoplay, scopes: getAutomationGrant(request).scopes }));
+    rejectRetiredPurpose(request.query);
+    return submitted(reply, await videos.submit(readPurpose(request), withoutLivePurpose(request.body), { via: "automation", mayAutoplay, scopes: getAutomationGrant(request).scopes }));
   }));
   app.post("/automation/v1/videos/:purpose/commands", automation, async (request, reply) => handle(reply, () => {
     requireScope(request, "videos:control");
@@ -181,6 +179,16 @@ async function handle(reply: FastifyReply, work: () => unknown): Promise<unknown
   }
 }
 
-function rejectLegacyPurpose(body: unknown): void {
-  if (typeof body === "object" && body !== null && "purpose" in body) throw new RetiredVideoTestError();
+/** `purpose=live` names the only queue and is accepted and ignored; any other purpose was retired (410). */
+function rejectRetiredPurpose(value: unknown): void {
+  if (typeof value === "object" && value !== null && "purpose" in value && (value as { readonly purpose?: unknown }).purpose !== "live") {
+    throw new RetiredVideoTestError();
+  }
+}
+
+function withoutLivePurpose(body: unknown): unknown {
+  rejectRetiredPurpose(body);
+  if (typeof body !== "object" || body === null || Array.isArray(body) || !("purpose" in body)) return body;
+  const { purpose: _live, ...rest } = body as Record<string, unknown>;
+  return rest;
 }
