@@ -107,6 +107,14 @@ describe("VideosOverlay", () => {
     expect(screen.getByTestId("video-overlay")).toHaveStyle({ left: "1400px", top: "40px", width: "480px", height: "320px" });
   });
 
+  it("draws the saved picture shadow, and the original CSS shadow when none is saved", () => {
+    const layout = { schemaVersion: 2 as const, content: { width: 480, height: 320 }, desktopPlacement: { x: 0, y: 0, scale: 1 } };
+    const { rerender } = render(<VideosOverlay projection={active(clip, { layout })} />);
+    expect(screen.getByTestId("video-overlay").querySelector<HTMLElement>(".video-overlay__frame")!.style.boxShadow).toBe("");
+    rerender(<VideosOverlay projection={active(clip, { layout: { ...layout, shadow: { offsetX: 4, offsetY: 6, blur: 10, spread: 2, color: "#11223380" } } })} />);
+    expect(screen.getByTestId("video-overlay").querySelector(".video-overlay__frame")).toHaveStyle({ boxShadow: "4px 6px 10px 2px #11223380" });
+  });
+
   it("fails closed on a box that leaves the canvas", () => {
     const events = vi.fn();
     const { container } = render(<VideosOverlay onPlaybackEvent={events} projection={active(clip, { layout: { schemaVersion: 2 as const, content: { width: 480, height: 320 }, desktopPlacement: { x: 1700, y: 0, scale: 1 } } })} />);

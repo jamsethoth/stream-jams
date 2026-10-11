@@ -1,4 +1,4 @@
-import { videosPlacementGeometry, type VideosLayout } from "@stream-jams/core";
+import { boxShadowCss, videosPlacementGeometry, type VideosLayout } from "@stream-jams/core";
 import type { CSSProperties, HTMLAttributes, ReactNode } from "react";
 import "../overlay.css";
 
@@ -17,10 +17,10 @@ export function VideoBox({ layout, children, ...attributes }: { readonly layout:
   return <div className="video-overlay" style={style} {...attributes}>{children}</div>;
 }
 
-/** The picture's size in canvas pixels; it stays the same with or without a caption. */
+/** The picture's size in canvas pixels (the same with or without a caption) and any saved shadow. */
 export function videoFrameStyle(layout: VideosLayout): CSSProperties {
-  // A fresh object of exactly width and height on every call.
-  return videosPlacementGeometry(layout).frame;
+  const { frame } = videosPlacementGeometry(layout);
+  return layout.shadow === undefined ? frame : { ...frame, boxShadow: boxShadowCss(layout.shadow) };
 }
 
 /** Title and requester under the picture, matching its width. Renders nothing without either. */

@@ -1,3 +1,4 @@
+import type { BoxShadow } from "../shared/box-shadow.js";
 /** The sole ordinary Videos session; public submissions cannot select it. */
 export type VideoQueuePurpose = "live";
 
@@ -80,6 +81,8 @@ export interface VideosLayout {
   readonly schemaVersion: 2;
   readonly content: { readonly width: number; readonly height: number };
   readonly desktopPlacement: { readonly x: number; readonly y: number; readonly scale: number };
+  /** Picture shadow; absent keeps the original CSS shadow with no browser source margin. */
+  readonly shadow?: BoxShadow | undefined;
 }
 
 export interface VideosModuleConfig {

@@ -76,3 +76,17 @@ export const InvalidDraftReported: Story = {
     await expect(args.onChange).not.toHaveBeenCalled();
   }
 };
+
+/** The collapsed Shadow section edits the picture shadow; the preview draws it and the browser source grows to fit. */
+export const ShadowEdited: Story = {
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByText("Shadow", { selector: "summary" }));
+    const blur = canvas.getByLabelText("Shadow blur (px)");
+    await userEvent.clear(blur);
+    await userEvent.type(blur, "24{Enter}");
+    await expect(args.onChange).toHaveBeenLastCalledWith({ ...createDefaultVideosLayout(), shadow: { offsetX: 0, offsetY: 18, blur: 24, spread: 0, color: "#00000073" } });
+    await userEvent.selectOptions(canvas.getByLabelText("Shadow"), "off");
+    await expect(args.onChange).toHaveBeenLastCalledWith({ ...createDefaultVideosLayout(), shadow: { offsetX: 0, offsetY: 18, blur: 24, spread: 0, color: "#00000000" } });
+  }
+};

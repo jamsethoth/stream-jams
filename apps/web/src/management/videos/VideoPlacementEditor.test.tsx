@@ -111,4 +111,23 @@ describe("VideoPlacementEditor", () => {
     fireEvent.pointerDown(move, { pointerId: 4, clientX: 0, clientY: 0 }); fireEvent.pointerMove(move, { pointerId: 4, clientX: 50, clientY: 50 }); fireEvent.keyDown(move, { key: "ArrowRight" });
     expect(saved()).toEqual(createDefaultVideosLayout());
   });
+  it("edits the picture shadow in a collapsed section, previews it and keeps it on content reset", async () => {
+    const user = userEvent.setup(); render(<Fixture />);
+    const frame = () => screen.getByTestId("video-placement-preview").querySelector(".video-overlay__frame")!;
+    expect(saved()).not.toHaveProperty("shadow");
+    await user.click(screen.getByText("Shadow", { selector: "summary" }));
+    const blur = screen.getByLabelText("Shadow blur (px)");
+    expect(blur).toHaveValue(48);
+    await user.clear(blur); await user.type(blur, "12{Enter}");
+    expect(saved().shadow).toEqual({ offsetX: 0, offsetY: 18, blur: 12, spread: 0, color: "#00000073" });
+    expect(frame()).toHaveStyle({ boxShadow: "0px 18px 12px 0px #00000073" });
+    const color = screen.getByLabelText("Shadow color");
+    await user.clear(color); await user.type(color, "red{Enter}");
+    expect(color).toHaveAccessibleDescription(/Enter an 8-digit RGBA hex color/u);
+    expect(saved().shadow?.color).toBe("#00000073");
+    await user.selectOptions(screen.getByLabelText("Shadow"), "off");
+    expect(saved().shadow).toEqual({ offsetX: 0, offsetY: 18, blur: 12, spread: 0, color: "#00000000" });
+    await user.click(screen.getByRole("button", { name: "Reset content and placement" }));
+    expect(saved()).toEqual({ ...createDefaultVideosLayout(), shadow: { offsetX: 0, offsetY: 18, blur: 12, spread: 0, color: "#00000000" } });
+  });
 });

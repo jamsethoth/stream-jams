@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { videosProjectionSchema } from "./contract.js";
-import { createDefaultVideosLayout, isValidVideosLayout } from "./layout.js";
+import { browserVideosLayout, createDefaultVideosLayout, defaultVideoShadow, isValidVideosLayout } from "./layout.js";
 import { videosPlacementGeometry } from "./placement-geometry.js";
 import { createDefaultVideosModuleConfig, currentVideosModuleConfigSchema } from "./schemas.js";
 
@@ -24,6 +24,16 @@ describe("Videos content and placement", () => {
     for (const desktopPlacement of [{ x: -1, y: 0, scale: 1 }, { x: 0, y: 0, scale: 0 }, { x: 0, y: 0, scale: -1 }, { x: 1000, y: 0, scale: 1 }, { x: 0, y: 0, scale: 2 }, { x: Infinity, y: 0, scale: 1 }, { x: 0, y: 0, scale: NaN }]) expect(accepts({ ...layout, desktopPlacement })).toBe(false);
     expect(isValidVideosLayout({ ...layout, content: { width: 240, height: 180, extra: 1 } })).toBe(false);
     expect(accepts({ x: 0, y: 0, width: 240, height: 180 })).toBe(false);
+  });
+  it("accepts an optional bounded shadow and carries it to the browser projection", () => {
+    const layout = { ...createDefaultVideosLayout(), desktopPlacement: { x: 10, y: 20, scale: 0.5 }, shadow: defaultVideoShadow };
+    const accepts = (value: unknown) => currentVideosModuleConfigSchema.safeParse({ ...createDefaultVideosModuleConfig(), layout: value }).success;
+    expect(isValidVideosLayout(layout)).toBe(true); expect(accepts(layout)).toBe(true);
+    for (const shadow of [{ ...defaultVideoShadow, blur: 129 }, { ...defaultVideoShadow, offsetX: 1.5 }, { ...defaultVideoShadow, color: "#000000" }, { ...defaultVideoShadow, extra: 1 }, undefined]) {
+      expect(isValidVideosLayout({ ...layout, shadow })).toBe(false); expect(accepts({ ...layout, shadow })).toBe(false);
+    }
+    expect(browserVideosLayout(layout)).toEqual({ ...layout, desktopPlacement: { x: 0, y: 0, scale: 1 } });
+    expect(browserVideosLayout(createDefaultVideosLayout())).not.toHaveProperty("shadow");
   });
   it("fails transparent on invalid notice geometry without inventing a default", () => {
     const notice = { status: "notice", noticeId: "n1", notice: "no-clip", displayName: null };

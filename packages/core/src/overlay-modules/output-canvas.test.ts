@@ -9,6 +9,15 @@ describe("output canvas", () => {
     expect(moduleOutputCanvas(config, null, "browser", 9)).toMatchObject({ kind: "content", width: 1382, height: 876, origin: { x: 0, y: 0 }, configRevision: 9 });
     expect(moduleOutputCanvas(config, null, "desktop", 9)).toEqual(sceneOutputCanvas(9));
   });
+  it("adds the Video shadow margin around browser content and shifts the box past it", () => {
+    const base = createDefaultVideosModuleConfig();
+    const config = (shadow: object) => ({ moduleId: "videos", enabled: true, updatedAt: "2026-10-11T00:00:00Z", config: { ...base, layout: { ...base.layout, shadow } } });
+    expect(moduleOutputCanvas(config({ offsetX: 0, offsetY: 18, blur: 48, spread: 0, color: "#00000073" }), null, "browser", 1)).toMatchObject({
+      width: 1382 + 192, height: 876 + 78 + 114, origin: { x: 96, y: 78 }, insets: { top: 78, right: 96, bottom: 114, left: 96 } });
+    expect(moduleOutputCanvas(config({ offsetX: 0, offsetY: 18, blur: 48, spread: 0, color: "#00000000" }), null, "browser", 1)).toMatchObject({
+      width: 1382, height: 876, origin: { x: 0, y: 0 } });
+    expect(moduleOutputCanvas(config({ offsetX: 0, offsetY: 18, blur: 48, spread: 0, color: "#00000073" }), null, "desktop", 1)).toEqual(sceneOutputCanvas(1));
+  });
   it("rejects unsafe geometry before publication", () => {
     const canvas = sceneOutputCanvas();
     for (const value of [0, -1, 1.1, Infinity, NaN, Number.MAX_SAFE_INTEGER + 1]) {
