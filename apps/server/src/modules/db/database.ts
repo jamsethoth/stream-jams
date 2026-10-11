@@ -1,5 +1,4 @@
-import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, renameSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync, type StatementResultingChanges } from "node:sqlite";
 import { initialSchemaMigration } from "./migrations/001-initial-schema.js";
@@ -122,6 +121,11 @@ const migrations = streamJamsMigrations;
 
 export const currentSchemaVersion = migrations.length;
 
+/** The single retained pre-046 rollback copy for a database file. */
+export function rollbackSnapshotPathFor(databasePath: string): string {
+  return `${databasePath}.pre046.sqlite`;
+}
+
 export function openStreamJamsDatabase(databasePath: string): StreamJamsDatabase {
   mkdirSync(dirname(databasePath), { recursive: true });
   return createStreamJamsDatabase(databasePath);
@@ -195,14 +199,12 @@ class NodeSqliteStreamJamsDatabase implements StreamJamsDatabase {
   }
 
   runMigrations(): void {
+    let rollbackSnapshotPath: string | null = null;
     if (this.databasePath !== ":memory:"
       && this.connection.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='video_requests'").get() !== undefined
       && (this.connection.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'").get() === undefined
         || this.connection.prepare("SELECT 1 FROM schema_migrations WHERE id=?").get(singleVideoQueueMigration.id) === undefined)) {
-      // VACUUM INTO captures committed WAL pages into an independent, consistent rollback database.
-      const snapshotPath = `${this.databasePath}.pre046-${randomUUID()}.sqlite`;
-      try { this.connection.prepare("VACUUM INTO ?").run(snapshotPath); }
-      catch (cause) { throw new Error("Videos upgrade could not create its required rollback database. Check free space and permissions beside the database, then retry; consolidation has not started.", { cause }); }
+      rollbackSnapshotPath = this.writeRollbackSnapshot();
     }
     this.connection.exec(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -225,11 +227,38 @@ class NodeSqliteStreamJamsDatabase implements StreamJamsDatabase {
     reconcilePreMergeVideosHistory(this.connection);
     const appliedCount = validateMigrationHistory(this.connection);
     const pending = migrations.slice(appliedCount);
-    for (const migration of pending) {
+    if (pending.length === 0) return;
+    // Every migration is transaction-safe (no PRAGMA, VACUUM or transaction control), so the whole pending batch
+    // commits atomically. A refusal leaves the exact prior schema version that the previous app still accepts.
+    try {
       runInTransaction(this.connection, () => {
-        applyStreamJamsMigration(this.connection, migration);
-        insertMigrationRecord(this.connection, migration.id);
+        for (const migration of pending) {
+          applyStreamJamsMigration(this.connection, migration);
+          insertMigrationRecord(this.connection, migration.id);
+        }
       });
+    } catch (cause) {
+      if (rollbackSnapshotPath === null) throw cause;
+      const message = cause instanceof Error ? cause.message : String(cause);
+      throw new Error(`${message} No upgrade changes were saved; the database remains at its previous version. Rollback copy: ${rollbackSnapshotPath}`, { cause });
+    }
+  }
+
+  /**
+   * One deterministic rollback copy per database: retries replace it atomically instead of accumulating copies, and it
+   * is retained after a successful upgrade. VACUUM INTO captures committed WAL pages into an independent database.
+   */
+  private writeRollbackSnapshot(): string {
+    const snapshotPath = rollbackSnapshotPathFor(this.databasePath);
+    const temporaryPath = `${snapshotPath}.partial`;
+    try {
+      rmSync(temporaryPath, { force: true });
+      this.connection.prepare("VACUUM INTO ?").run(temporaryPath);
+      renameSync(temporaryPath, snapshotPath);
+      return snapshotPath;
+    } catch (cause) {
+      try { rmSync(temporaryPath, { force: true }); } catch { /* best effort; the original error is reported */ }
+      throw new Error("Videos upgrade could not create its required rollback database. Check free space and permissions beside the database, then retry; consolidation has not started.", { cause });
     }
   }
 

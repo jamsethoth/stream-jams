@@ -131,7 +131,7 @@ describe("Stream Jams SQLite database", () => {
     const queueBefore = fixture.connection.prepare("SELECT * FROM video_queue_state ORDER BY purpose").all();
     const path = String(fixture.connection.prepare("PRAGMA database_list").all()[0]?.file);
     const database = fixture.upgrade();
-    const snapshotPath = readdirSync(dirname(path)).find(name => name.includes(".pre046-"))!;
+    const snapshotPath = readdirSync(dirname(path)).find(name => name.includes(".pre046"))!;
     using snapshot = new DatabaseSync(join(dirname(path), snapshotPath), { readOnly: true });
     expect(snapshot.prepare("SELECT * FROM schema_migrations ORDER BY rowid").all()).toEqual(historyBefore);
     expect(snapshot.prepare("SELECT * FROM video_queue_state ORDER BY purpose").all()).toEqual(queueBefore);

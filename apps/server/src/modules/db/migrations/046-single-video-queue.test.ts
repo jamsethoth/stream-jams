@@ -3,7 +3,7 @@ import { readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createDefaultVideosModuleConfig } from "@stream-jams/core";
-import { applyStreamJamsMigration, openStreamJamsDatabase, runInTransaction } from "../database.js";
+import { applyStreamJamsMigration, openStreamJamsDatabase, rollbackSnapshotPathFor, runInTransaction } from "../database.js";
 import { singleVideoQueueMigration } from "./046-single-video-queue.js";
 import { VideoQueueService } from "../../videos/video-queue-service.js";
 import { SqliteVideoQueueRepository } from "../../videos/video-queue-repository.js";
@@ -101,7 +101,7 @@ describe("single Video queue upgrade", () => {
     const path = String(fixture.connection.prepare("PRAGMA database_list").all()[0]?.file);
     expect(statSync(`${path}-wal`).size).toBeGreaterThan(0);
     using db = openStreamJamsDatabase(path);
-    const snapshots = readdirSync(dirname(path)).filter(name => name.includes(".pre046-"));
+    const snapshots = readdirSync(dirname(path)).filter(name => name.includes(".pre046"));
     expect(snapshots).toHaveLength(1);
     using snapshot = new DatabaseSync(join(dirname(path), snapshots[0]!), { readOnly: true });
     expect(snapshot.prepare("SELECT purpose,status FROM video_requests WHERE id='wal-only'").get()).toEqual({ purpose: "test", status: "queued" });
@@ -153,5 +153,47 @@ describe("single Video queue upgrade", () => {
     using read=new DatabaseSync(path);
     expect(read.prepare("SELECT COUNT(*) n FROM video_requests WHERE purpose='test'").get()?.n).toBe(251);
     expect(read.prepare("SELECT COUNT(*) n FROM schema_migrations WHERE id='046-single-video-queue'").get()?.n).toBe(0);
+  });
+
+  it("refuses the whole pending batch atomically so the previous app's exact history still opens, naming the rollback copy", () => {
+    using fixture = createPreMigrationDatabase("042-manual-event-bus");
+    for (let i = 0; i < 501; i++) insert(fixture.connection, `item-${i}`, i < 250 ? "live" : "test");
+    const path = String(fixture.connection.prepare("PRAGMA database_list").all()[0]?.file);
+    const historyBefore = fixture.connection.prepare("SELECT id FROM schema_migrations ORDER BY rowid").all().map(row => row.id);
+    const tablesBefore = fixture.connection.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all();
+    let failure: unknown;
+    try { fixture.upgrade(); } catch (error) { failure = error; }
+    expect(failure).toBeInstanceOf(Error);
+    const message = (failure as Error).message;
+    expect(message).toMatch(/capacity 500/u);
+    expect(message).toContain(rollbackSnapshotPathFor(path));
+    expect(message).not.toMatch(/retained backup/u);
+    using read = new DatabaseSync(path);
+    expect(read.prepare("SELECT id FROM schema_migrations ORDER BY rowid").all().map(row => row.id)).toEqual(historyBefore);
+    expect(historyBefore.at(-1)).toBe("041-video-request-metadata");
+    expect(read.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all()).toEqual(tablesBefore);
+  });
+
+  it("keeps exactly one deterministic rollback copy across failed retries and after success", () => {
+    using fixture = createPreMigrationDatabase("044-timer-profile-appearance");
+    for (let i = 0; i < 501; i++) insert(fixture.connection, `item-${i}`, "test");
+    const path = String(fixture.connection.prepare("PRAGMA database_list").all()[0]?.file);
+    const snapshots = () => readdirSync(dirname(path)).filter(name => name.includes(".pre046")).sort();
+    expect(() => fixture.upgrade()).toThrow(/capacity/u);
+    expect(() => openStreamJamsDatabase(path)).toThrow(/capacity/u);
+    expect(snapshots()).toEqual(["old.sqlite.pre046.sqlite"]);
+    {
+      using edit = new DatabaseSync(path);
+      edit.exec("DELETE FROM video_requests WHERE id='item-0'");
+    }
+    using db = openStreamJamsDatabase(path);
+    expect(db.connection.prepare("SELECT COUNT(*) n FROM schema_migrations WHERE id='046-single-video-queue'").get()?.n).toBe(1);
+    expect(snapshots()).toEqual(["old.sqlite.pre046.sqlite"]);
+    using snapshot = new DatabaseSync(rollbackSnapshotPathFor(path), { readOnly: true });
+    // The retained copy is the latest pre-upgrade state, replaced on each retry rather than accumulated.
+    expect(snapshot.prepare("SELECT COUNT(*) n FROM video_requests").get()?.n).toBe(500);
+    db.close();
+    using reopened = openStreamJamsDatabase(path);
+    expect(snapshots()).toEqual(["old.sqlite.pre046.sqlite"]);
   });
 });

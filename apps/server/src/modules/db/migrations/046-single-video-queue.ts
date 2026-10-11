@@ -7,7 +7,7 @@ export const singleVideoQueueMigration: StreamJamsMigration = {
   sql: "-- Validated single-queue cutover runs transactionally below.",
   apply(db) {
     const count = Number(db.prepare("SELECT COUNT(*) n FROM video_requests WHERE status IN ('queued','held','playing','paused')").get()?.n);
-    if (count > 500) throw new Error(`Videos upgrade needs review: ${count} active/waiting requests exceed capacity 500. Open the previous app, remove requests, and retry with the retained backup.`);
+    if (count > 500) throw new Error(`Videos upgrade needs review: ${count} active/waiting requests exceed capacity 500. Open the database with the previous app version, remove waiting requests, then retry the upgrade.`);
     const rows = db.prepare("SELECT * FROM video_requests ORDER BY position, created_at, id").all();
     if (new Set(rows.map(row => row.id)).size !== rows.length) throw new Error("Videos upgrade found duplicate identities. Repair the source database before retrying; no requests were changed.");
     const configRow = db.prepare("SELECT config_json FROM overlay_module_config WHERE module_id='videos'").get();
