@@ -437,7 +437,8 @@ test("actual portable OBS keeps ordinary module geometry local, retired sources 
     expect(log).toMatch(/Portable mode:\s*true/iu);
     expect(log).not.toMatch(/obs-websocket|aitum-stream-suite|obs_google_caption/iu);
     expect(log).not.toMatch(/Error loading script|Failed to load.*frontend-tools/iu);
-    const listeners = await promisify(execFile)("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `$obsOwnedIds=[System.Collections.Generic.HashSet[int]]::new(); $null=$obsOwnedIds.Add(${child.pid}); $obsProcesses=Get-CimInstance Win32_Process; for($i=0;$i -lt 10;$i++){foreach($p in $obsProcesses){if($obsOwnedIds.Contains([int]$p.ParentProcessId)){$null=$obsOwnedIds.Add([int]$p.ProcessId)}}}; ConvertTo-Json -Compress -InputObject @(Get-NetTCPConnection -State Listen | Where-Object {$obsOwnedIds.Contains([int]$_.OwningProcess)} | Select-Object LocalAddress,LocalPort)`], { windowsHide: true, timeout: 10000 });
+    // CIM process and TCP enumeration can take longer than 10 s on a loaded runner after a long OBS session.
+    const listeners = await promisify(execFile)("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `$obsOwnedIds=[System.Collections.Generic.HashSet[int]]::new(); $null=$obsOwnedIds.Add(${child.pid}); $obsProcesses=Get-CimInstance Win32_Process; for($i=0;$i -lt 10;$i++){foreach($p in $obsProcesses){if($obsOwnedIds.Contains([int]$p.ParentProcessId)){$null=$obsOwnedIds.Add([int]$p.ProcessId)}}}; ConvertTo-Json -Compress -InputObject @(Get-NetTCPConnection -State Listen | Where-Object {$obsOwnedIds.Contains([int]$_.OwningProcess)} | Select-Object LocalAddress,LocalPort)`], { windowsHide: true, timeout: 30000 });
     expect(listeners.stdout.trim()).toBe("[]");
   } catch (error) {
     failures.push(error);
