@@ -58,10 +58,10 @@ Specification approved 2026-10-10; implementation is authorized and in progress.
 
 ## 8. S08 — Video content geometry (depends on S05)
 
-- [ ] 8.1 Test fixed picture/caption/notice envelopes and preservation of old desktop geometry across content states.
-- [ ] 8.2 Add separated content/desktop layout, pure upgrader, DB migration and backup validation using existing picture aspect-fit calculation.
-- [ ] 8.3 Update trusted projection and placement editor; verify geometry saves do not restart players or reconnect mirrors.
-- [ ] 8.4 Add stories/E2E for content dimensions, invalid placement and restore; run checks, record evidence and commit.
+- [x] 8.1 Test fixed picture/caption/notice envelopes and preservation of old desktop geometry across content states.
+- [x] 8.2 Add separated content/desktop layout, pure upgrader, DB migration and backup validation using existing picture aspect-fit calculation.
+- [x] 8.3 Update trusted projection and placement editor; verify geometry saves do not restart players or reconnect mirrors.
+- [x] 8.4 Add stories/E2E for content dimensions, invalid placement and restore; run checks, record evidence and commit.
 
 ## 9. S09 — Videos single queue cutover (depends on S04 and S08)
 

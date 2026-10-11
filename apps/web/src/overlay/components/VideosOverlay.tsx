@@ -114,7 +114,8 @@ interface MirrorReceiverProps {
  * Shows the desktop primary player's stream. Stays transparent until frames arrive and
  * whenever the mirror is unavailable; reconnects on its own and releases the connection on unmount.
  * It asks only for what it plays: sound only while audible, and a picture no larger than its
- * frame in device pixels. Needing more later (unmuted, a bigger box) reconnects once; needing less does not.
+ * frame in device pixels. Sound upgrades and connection failures can renegotiate; geometry changes
+ * preserve a healthy peer and use current dimensions only when a genuine reconnect occurs.
  */
 function MirrorReceiver({ connector, context, layout, muted, paused, createPeerConnection }: MirrorReceiverProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -125,8 +126,10 @@ function MirrorReceiver({ connector, context, layout, muted, paused, createPeerC
   useEffect(() => {
     latest.current = { muted, layout };
     if (videoRef.current !== null) videoRef.current.muted = muted;
-    receiverRef.current?.refresh();
   }, [muted, layout]);
+  // Geometry changes are presentation-only. A healthy peer keeps its negotiated picture size until
+  // a genuine reconnect; sound upgrades retain the existing bounded receiver refresh policy.
+  useEffect(() => { receiverRef.current?.refresh(); }, [muted]);
   useEffect(() => {
     const receiver = startVideoMirrorReceiver({
       connector,
@@ -136,7 +139,7 @@ function MirrorReceiver({ connector, context, layout, muted, paused, createPeerC
         const { frame } = videosPlacementGeometry(box);
         // The canvas is scaled to the output; measure the box to get device pixels.
         const width = videoRef.current?.closest(".video-overlay")?.getBoundingClientRect().width ?? 0;
-        const scale = (width / box.width || 1) * devicePixelRatio;
+        const scale = (width / box.content.width || box.desktopPlacement.scale) * devicePixelRatio;
         return { media: latest.current.muted ? "video" : "both", ...videoMirrorPictureSize(frame.width * scale, frame.height * scale) };
       },
       onState: setState,
@@ -248,22 +251,22 @@ function createReporter(itemId: string, setStarted: (started: boolean) => void, 
 }
 
 /** Stream Jams' own `<video>` for allowlisted direct files: follows the shared clock exactly. */
-function DirectPlayer({ clock, muted, now, playerUrl, reportRef }: PlayerFrameProps & { readonly reportRef: Reporter }) {
+function DirectPlayer({ clock: { state, positionMs, atEpochMs }, muted, now, playerUrl, reportRef }: PlayerFrameProps & { readonly reportRef: Reporter }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const video = videoRef.current;
     if (video === null) return;
     const sync = () => {
-      const targetSeconds = videoClockPositionMs(clock, now()) / 1000;
+      const targetSeconds = videoClockPositionMs({ state, positionMs, atEpochMs }, now()) / 1000;
       if (Number.isFinite(video.duration) && Math.abs(video.currentTime - targetSeconds) * 1000 > videoDriftToleranceMs) video.currentTime = targetSeconds;
-      if (clock.state === "paused") video.pause();
+      if (state === "paused") video.pause();
       else if (video.paused && !video.ended) void video.play().catch((error: unknown) => reportRef.current.failed("The video could not start.", error));
     };
     sync();
     video.addEventListener("loadedmetadata", sync);
     const interval = window.setInterval(sync, driftCheckIntervalMs);
     return () => { video.removeEventListener("loadedmetadata", sync); window.clearInterval(interval); };
-  }, [clock, now, reportRef]);
+  }, [state, positionMs, atEpochMs, now, reportRef]);
   return (
     <video
       className="video-overlay__player"
@@ -285,7 +288,7 @@ function DirectPlayer({ clock, muted, now, playerUrl, reportRef }: PlayerFramePr
  * Provider iframe. YouTube is steered through its postMessage API (no provider script runs in
  * this page). Twitch exposes no control here, so it plays from its start offset until the queue ends it.
  */
-function EmbeddedPlayer({ clock, now, playerUrl, reportRef, source }: PlayerFrameProps & { readonly reportRef: Reporter }) {
+function EmbeddedPlayer({ clock: { state, positionMs, atEpochMs }, now, playerUrl, reportRef, source }: PlayerFrameProps & { readonly reportRef: Reporter }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [loaded, setLoaded] = useState(false);
   const playerTimeRef = useRef<number | null>(null);
@@ -313,15 +316,15 @@ function EmbeddedPlayer({ clock, now, playerUrl, reportRef, source }: PlayerFram
     const command = (func: string, args: readonly unknown[] = []) => post({ event: "command", func, args, id: 1, channel: "widget" });
     post({ event: "listening", id: 1, channel: "widget" });
     const sync = () => {
-      const targetSeconds = videoClockPositionMs(clock, now()) / 1000;
+      const targetSeconds = videoClockPositionMs({ state, positionMs, atEpochMs }, now()) / 1000;
       const current = playerTimeRef.current;
       if (current === null || Math.abs(current - targetSeconds) * 1000 > videoDriftToleranceMs) command("seekTo", [targetSeconds, true]);
-      command(clock.state === "paused" ? "pauseVideo" : "playVideo");
+      command(state === "paused" ? "pauseVideo" : "playVideo");
     };
     sync();
     const interval = window.setInterval(sync, driftCheckIntervalMs);
     return () => window.clearInterval(interval);
-  }, [clock, controllable, loaded, now, origin]);
+  }, [state, positionMs, atEpochMs, controllable, loaded, now, origin]);
 
   return (
     <iframe

@@ -1,5 +1,5 @@
 import { Button, Checkbox, TextInput } from "@mantine/core";
-import { createDefaultVideosLayout, videosCanvas, videosLayoutLimits, type VideosLayout } from "@stream-jams/core";
+import { createDefaultVideosLayout, isValidVideosLayout, videosCanvas, videosLayoutLimits, type VideosLayout } from "@stream-jams/core";
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { VideoBox, VideoCaption, videoFrameStyle } from "../../overlay/components/OverlaySurface.js";
 import { snapEditorRect, type SnapGuide } from "../editor/snapping.js";
@@ -16,21 +16,19 @@ type Gesture = { readonly pointerId: number; readonly mode: "move" | "resize"; r
 const bounds = videosCanvas;
 const { minWidth, minHeight } = videosLayoutLimits;
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+const rect = (layout: VideosLayout) => ({ x: layout.desktopPlacement.x, y: layout.desktopPlacement.y,
+  width: layout.content.width * layout.desktopPlacement.scale, height: layout.content.height * layout.desktopPlacement.scale });
 
 function moveLayout(layout: VideosLayout, x: number, y: number): VideosLayout {
-  return { ...layout, x: clamp(Math.round(x), 0, bounds.width - layout.width), y: clamp(Math.round(y), 0, bounds.height - layout.height) };
-}
-
-function sizeLayout(layout: VideosLayout, width: number, height: number): VideosLayout {
-  return { ...layout, width: clamp(Math.round(width), minWidth, bounds.width - layout.x), height: clamp(Math.round(height), minHeight, bounds.height - layout.y) };
+  const box = rect(layout);
+  return { ...layout, desktopPlacement: { ...layout.desktopPlacement,
+    x: clamp(x, 0, Math.max(0, bounds.width - box.width)), y: clamp(y, 0, Math.max(0, bounds.height - box.height)) } };
 }
 
 /** Pointer resizing keeps the box's proportions, so the picture grows with it; fields and arrow keys stay independent. */
-function scaleLayout(start: VideosLayout, factor: number): VideosLayout {
-  const lower = Math.max(minWidth / start.width, minHeight / start.height);
-  const upper = Math.min((bounds.width - start.x) / start.width, (bounds.height - start.y) / start.height);
-  const scale = clamp(factor, Math.min(lower, upper), upper);
-  return sizeLayout(start, start.width * scale, start.height * scale);
+function scaleLayout(start: VideosLayout, scale: number): VideosLayout {
+  const upper = Math.min((bounds.width - start.desktopPlacement.x) / start.content.width, (bounds.height - start.desktopPlacement.y) / start.content.height);
+  return { ...start, desktopPlacement: { ...start.desktopPlacement, scale: clamp(scale, Math.min(0.01, upper), upper) } };
 }
 
 /**
@@ -45,6 +43,7 @@ export function VideoPlacementEditor({ value, onChange, disabled = false }: Vide
   const [alignment, setAlignment] = useState(true);
   const [guides, setGuides] = useState<readonly SnapGuide[]>([]);
   const scale = Math.min(1, availableWidth / bounds.width);
+  const box = rect(value);
 
   useEffect(() => {
     const element = viewport.current;
@@ -70,20 +69,21 @@ export function VideoPlacementEditor({ value, onChange, disabled = false }: Vide
     const dx = (event.clientX - active.clientX) * active.factor;
     const dy = (event.clientY - active.clientY) * active.factor;
     const { start } = active;
+    const startBox = rect(start);
     if (active.mode === "move") {
-      const raw = moveLayout(start, start.x + dx, start.y + dy);
-      const snapped = grid || alignment ? snapEditorRect(raw, { mode: "move", bounds, peers: [], grid, alignment, scale: 1 / active.factor, minSize: minHeight }) : null;
+      const raw = moveLayout(start, startBox.x + dx, startBox.y + dy);
+      const snapped = grid || alignment ? snapEditorRect(rect(raw), { mode: "move", bounds, peers: [], grid, alignment, scale: 1 / active.factor }) : null;
       setGuides(snapped?.guides ?? []);
       onChange(snapped === null ? raw : moveLayout(start, snapped.rect.x, snapped.rect.y));
       return;
     }
     // Project the pointer onto the box diagonal so both directions scale the box evenly.
-    const raw = scaleLayout(start, 1 + (dx * start.width + dy * start.height) / (start.width ** 2 + start.height ** 2));
-    const snapped = grid || alignment ? snapEditorRect(raw, { mode: "resize", bounds, peers: [], grid, alignment, scale: 1 / active.factor, minSize: minHeight }) : null;
+    const raw = scaleLayout(start, start.desktopPlacement.scale * (1 + (dx * startBox.width + dy * startBox.height) / (startBox.width ** 2 + startBox.height ** 2)));
+    const snapped = grid || alignment ? snapEditorRect(rect(raw), { mode: "resize", bounds, peers: [], grid, alignment, scale: 1 / active.factor }) : null;
     setGuides(snapped?.guides ?? []);
     if (snapped === null) { onChange(raw); return; }
     const byHeight = snapped.guides.some(guide => guide.axis === "y") && !snapped.guides.some(guide => guide.axis === "x");
-    onChange(scaleLayout(start, byHeight ? snapped.rect.height / start.height : snapped.rect.width / start.width));
+    onChange(scaleLayout(start, byHeight ? snapped.rect.height / start.content.height : snapped.rect.width / start.content.width));
   };
   const end = (event: PointerEvent<HTMLButtonElement>) => {
     if (gesture.current?.pointerId === event.pointerId) { gesture.current = null; setGuides([]); }
@@ -108,7 +108,8 @@ export function VideoPlacementEditor({ value, onChange, disabled = false }: Vide
     const delta = directions[event.key];
     if (delta === undefined || disabled) return;
     event.preventDefault();
-    onChange(mode === "move" ? moveLayout(value, value.x + delta[0], value.y + delta[1]) : sizeLayout(value, value.width + delta[0], value.height + delta[1]));
+    onChange(mode === "move" ? moveLayout(value, box.x + delta[0], box.y + delta[1])
+      : scaleLayout(value, value.desktopPlacement.scale + (delta[0] || delta[1]) / value.content.width));
   };
   const handleProps = (mode: Gesture["mode"]) => ({
     disabled,
@@ -122,8 +123,8 @@ export function VideoPlacementEditor({ value, onChange, disabled = false }: Vide
   });
 
   return <div className="video-placement">
-    <p className="module-section-description">Drag the box to move the video, or its corner to resize it. The picture keeps 16:9 inside the box with the title and requester below it.
-      Arrow keys move or resize by 1 px; hold Shift for 10 px. Escape cancels a drag.</p>
+    <p className="module-section-description">Content size sets the browser canvas and the video-and-caption appearance. OBS positions the browser source.
+      Drag the desktop box or its corner to move or scale only the desktop presentation. Arrow keys move or scale its width by 1 px; hold Shift for 10 px. Escape cancels a drag.</p>
     <div className="video-placement__viewport" ref={viewport}>
       <div aria-label="Video placement canvas" className="video-placement__stage" role="group" style={{ width: bounds.width * scale, height: bounds.height * scale }}>
         <div aria-hidden="true" className="video-placement__scaled" style={{ width: bounds.width, height: bounds.height, transform: `scale(${scale})` }}>
@@ -132,23 +133,34 @@ export function VideoPlacementEditor({ value, onChange, disabled = false }: Vide
             <VideoCaption layout={value} requester="Viewer" title="Example video title" />
           </VideoBox>
         </div>
-        <button aria-label="Move video box" className="video-placement__move" style={{ left: value.x * scale, top: value.y * scale, width: value.width * scale, height: value.height * scale }} {...handleProps("move")} />
-        <button aria-label="Resize video box" className="video-placement__resize" style={{ left: (value.x + value.width) * scale - 7, top: (value.y + value.height) * scale - 7 }} {...handleProps("resize")} />
+        <button aria-label="Move video box" className="video-placement__move" style={{ left: box.x * scale, top: box.y * scale, width: box.width * scale, height: box.height * scale }} {...handleProps("move")} />
+        <button aria-label="Scale desktop video box" className="video-placement__resize" style={{ left: (box.x + box.width) * scale - 7, top: (box.y + box.height) * scale - 7 }} {...handleProps("resize")} />
         {guides.map((guide, index) => <div aria-hidden="true" className={`video-placement__guide video-placement__guide--${guide.axis}`} data-snap-axis={guide.axis} data-snap-position={guide.position}
           key={`${guide.axis}:${guide.position}:${index}`} style={guide.axis === "x" ? { left: guide.position * scale } : { top: guide.position * scale }} />)}
       </div>
     </div>
     <fieldset className="video-placement__fields" disabled={disabled}>
-      <legend>Video box (px on a 1920 x 1080 canvas)</legend>
-      <PlacementNumberField label="Video X (px)" value={value.x} min={0} max={bounds.width - value.width} onCommit={x => onChange(moveLayout(value, x, value.y))} />
-      <PlacementNumberField label="Video Y (px)" value={value.y} min={0} max={bounds.height - value.height} onCommit={y => onChange(moveLayout(value, value.x, y))} />
-      <PlacementNumberField label="Video width (px)" value={value.width} min={minWidth} max={bounds.width - value.x} onCommit={width => onChange(sizeLayout(value, width, value.height))} />
-      <PlacementNumberField label="Video height (px)" value={value.height} min={minHeight} max={bounds.height - value.y} onCommit={height => onChange(sizeLayout(value, value.width, height))} />
+      <legend>Browser content size (CSS pixels)</legend>
+      <PlacementNumberField label="Video content width (px)" value={value.content.width} min={minWidth} max={bounds.width} whole onCommit={width => onChange({ ...value, content: { ...value.content, width } })} />
+      <PlacementNumberField label="Video content height (px)" value={value.content.height} min={minHeight} max={bounds.height} whole onCommit={height => onChange({ ...value, content: { ...value.content, height } })} />
     </fieldset>
+    <fieldset className="video-placement__fields" disabled={disabled}>
+      <legend>Desktop placement (1920 x 1080 scene)</legend>
+      <PlacementNumberField label="Desktop Video X (px)" value={value.desktopPlacement.x} min={0} max={Math.max(0, bounds.width - box.width)} onCommit={x => onChange(moveLayout(value, x, box.y))} />
+      <PlacementNumberField label="Desktop Video Y (px)" value={value.desktopPlacement.y} min={0} max={Math.max(0, bounds.height - box.height)} onCommit={y => onChange(moveLayout(value, box.x, y))} />
+      <PlacementNumberField label="Desktop Video scale" value={value.desktopPlacement.scale} min={Number.EPSILON} max={Math.min((bounds.width - box.x) / value.content.width, (bounds.height - box.y) / value.content.height)}
+        onCommit={next => onChange({ ...value, desktopPlacement: { ...value.desktopPlacement, scale: next } })} />
+    </fieldset>
+    {isValidVideosLayout(value) ? null : <p className="videos-settings__error" role="alert">Keep content between 240 x 180 and 1920 x 1080 px, and reduce desktop scale or move the box to fit the scene before saving.</p>}
     <div className="video-placement__actions">
       <Checkbox label="Snap to grid" checked={grid} onChange={event => { setGrid(event.currentTarget.checked); setGuides([]); }} />
       <Checkbox label="Snap to alignment" checked={alignment} onChange={event => { setAlignment(event.currentTarget.checked); setGuides([]); }} />
-      <Button variant="default" disabled={disabled} onClick={() => { gesture.current = null; setGuides([]); onChange(createDefaultVideosLayout()); }}>Reset to default placement</Button>
+      <Button variant="default" disabled={disabled} onClick={() => {
+        gesture.current = null; setGuides([]);
+        const placement = createDefaultVideosLayout().desktopPlacement;
+        onChange(moveLayout({ ...value, desktopPlacement: placement }, placement.x, placement.y));
+      }}>Reset desktop placement</Button>
+      <Button variant="default" disabled={disabled} onClick={() => { gesture.current = null; setGuides([]); onChange(createDefaultVideosLayout()); }}>Reset content and placement</Button>
     </div>
   </div>;
 }
@@ -157,15 +169,15 @@ export function VideoPlacementEditor({ value, onChange, disabled = false }: Vide
  * Whole-pixel field that commits on blur or Enter, as the Music placement fields do; an out-of-range
  * draft shows its correction and is never applied. Kept local so this lazy page adds no shared chunk.
  */
-function PlacementNumberField({ label, value, min, max, onCommit }: { readonly label: string; readonly value: number; readonly min: number; readonly max: number; readonly onCommit: (value: number) => void }) {
+function PlacementNumberField({ label, value, min, max, whole = false, onCommit }: { readonly label: string; readonly value: number; readonly min: number; readonly max: number; readonly whole?: boolean; readonly onCommit: (value: number) => void }) {
   const [draft, setDraft] = useState(String(value));
   const [error, setError] = useState(false);
   useEffect(() => { setDraft(String(value)); setError(false); }, [value]);
   const commit = () => {
     const next = Number(draft);
-    if (draft.trim() === "" || !Number.isInteger(next) || next < min || next > max) { setError(true); return; }
+    if (draft.trim() === "" || !Number.isFinite(next) || (whole && !Number.isInteger(next)) || next < min || next > max) { setError(true); return; }
     setError(false); onCommit(next);
   };
-  return <TextInput label={label} error={error ? `Enter a whole number from ${min} to ${max}.` : false} errorProps={{ role: "alert" }} max={max} min={min} step={1} type="number" value={draft}
-    onBlur={commit} onChange={event => { setDraft(event.currentTarget.value); setError(false); }} onKeyDown={event => { if (event.key === "Enter") event.currentTarget.blur(); }} />;
+  return <TextInput label={label} error={error ? `Enter ${whole ? "a whole number" : "a number"} from ${min} to ${max}.` : false} errorProps={{ role: "alert" }} max={max} min={min} required withAsterisk={false} step={whole ? 1 : "any"} type="number" value={draft}
+    onBlur={commit} onChange={event => { setDraft(event.currentTarget.value); setError(false); }} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); } }} />;
 }

@@ -46,6 +46,7 @@ import { videoRequestMetadataMigration } from "./migrations/041-video-request-me
 import { manualEventBusMigration } from "./migrations/042-manual-event-bus.js";
 import { videoBusAdmissionMigration } from "./migrations/043-video-bus-admission.js";
 import { timerProfileAppearanceMigration } from "./migrations/044-timer-profile-appearance.js";
+import { videoContentLayoutMigration } from "./migrations/045-video-content-layout.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -108,7 +109,8 @@ export const streamJamsMigrations = Object.freeze([
   videoRequestMetadataMigration,
   manualEventBusMigration,
   videoBusAdmissionMigration,
-  timerProfileAppearanceMigration
+  timerProfileAppearanceMigration,
+  videoContentLayoutMigration
 ] satisfies readonly StreamJamsMigration[]);
 
 const migrations = streamJamsMigrations;

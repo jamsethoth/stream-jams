@@ -26,6 +26,21 @@ function setup() {
 }
 
 describe("VideosRuntime with the desktop mirror", () => {
+  it("uses captured trusted recipient configuration without changing either lane's item or clock", async () => {
+    const { runtime, queue, item, mirror } = setup();
+    const config = { ...createDefaultVideosModuleConfig(), layout: { schemaVersion: 2 as const, content: { width: 640, height: 460 }, desktopPlacement: { x: 1230, y: 40, scale: 0.5 } } };
+    const before = runtime.response("live"); const testBefore = runtime.response("test");
+    for (const recipientKind of ["browser", "desktop"] as const) {
+      const snapshot = await runtime.getModuleSnapshot({ moduleId: "videos", overlayId: "default", purpose: "live", scope: "module", recipientKind,
+        savedConfig: { moduleId: "videos", enabled: true, config, updatedAt: "2026-10-11T00:00:00.000Z" } });
+      expect(snapshot.presentation).toMatchObject({ kind: "videos", videos: { itemId: item.id, layout: { content: { width: 640, height: 460 },
+        desktopPlacement: recipientKind === "browser" ? { x: 0, y: 0, scale: 1 } : { x: 1230, y: 40, scale: 0.5 } } } });
+    }
+    expect(runtime.response("live")).toEqual(before); expect(runtime.response("test")).toEqual(testBefore);
+    mirror.available = true;
+    expect(toVideosProjection(queue.view("live"), config, true, "desktop")).toMatchObject({ itemId: item.id, delivery: { mode: "mirror" } });
+    expect(queue.view("live").current?.clock).toEqual({ state: "paused", positionMs: 0, atEpochMs: 1000000 });
+  });
   it("returns provider details in queue and Recent responses but keeps them off the stream caption", async () => {
     const { runtime, queue, item, snapshot } = setup();
     queue.applyMetadata("live", item.id, { title: "Provider clip title", channelName: "SpeedyStreamer", durationMs: null });
@@ -61,10 +76,11 @@ describe("VideosRuntime with the desktop mirror", () => {
 
   it("places the video at the saved box for player and mirror delivery alike", async () => {
     const { snapshot, queue } = setup();
-    expect(await snapshot()).toMatchObject({ videos: { layout: { x: 269, y: 140, width: 1382, height: 876 } } });
-    const layout = { x: 1400, y: 40, width: 480, height: 320 };
+    expect(await snapshot()).toMatchObject({ videos: { layout: { schemaVersion: 2 as const, content: { width: 1382, height: 876 }, desktopPlacement: { x: 0, y: 0, scale: 1 } } } });
+    const layout = { schemaVersion: 2 as const, content: { width: 480, height: 320 }, desktopPlacement: { x: 1400, y: 40, scale: 1 } };
     for (const mirrored of [false, true]) {
-      expect(toVideosProjection(queue.view("live"), { obsAudio: true, layout }, mirrored)).toMatchObject({ status: "active", layout, delivery: { mode: mirrored ? "mirror" : "player" } });
+      expect(toVideosProjection(queue.view("live"), { obsAudio: true, layout }, mirrored, "desktop")).toMatchObject({ status: "active", layout, delivery: { mode: mirrored ? "mirror" : "player" } });
+      expect(toVideosProjection(queue.view("live"), { obsAudio: true, layout }, mirrored, "browser")).toMatchObject({ status: "active", layout: { ...layout, desktopPlacement: { x: 0, y: 0, scale: 1 } }, delivery: { mode: mirrored ? "mirror" : "player" } });
     }
   });
 

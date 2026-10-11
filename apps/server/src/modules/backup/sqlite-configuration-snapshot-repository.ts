@@ -29,6 +29,7 @@ import {
   targetProfileIdSchema,
   timerDefinitionSchema,
   timersOverlayModuleConfigSchema,
+  videosModuleConfigSchema,
   type ConfigurationBackupArchive,
   type ConfigurationBackupOutput,
   type ModerationSettings
@@ -530,6 +531,9 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
     }
     if (row.module_id === "timers") {
       pushSchemaError(errors, `overlay_module_config[${index}].config_json Timer appearance`, timersOverlayModuleConfigSchema.safeParse(parseJsonValue(row.config_json)));
+    }
+    if (row.module_id === "videos") {
+      pushSchemaError(errors, `overlay_module_config[${index}].config_json Videos layout`, videosModuleConfigSchema.safeParse(parseJsonValue(row.config_json)));
     }
   }
 

@@ -3,6 +3,7 @@ import {
   appConfigSchema,
   timersOverlayModuleDefinition,
   upgradeTimersConfig,
+  createDefaultVideosModuleConfig,
   configurationBackupLimits,
   type AlertEditorDocument,
   type AlertRule,
@@ -47,6 +48,36 @@ const asset: AssetRecord = {
 };
 
 describe("ConfigurationBackupService", () => {
+  it("normalizes legacy Videos before typed preflight and repeated restore, rejects invalid geometry without mutation", async () => {
+    const source = createRealService(); const target = createRealService();
+    try {
+      source.database.connection.prepare("INSERT INTO overlay_module_config VALUES ('videos', 1, ?, '2026-10-11T00:00:00.000Z')").run(JSON.stringify(createDefaultVideosModuleConfig()));
+      const archive = await source.service.exportArchive(); archive.manifest.schemaVersion = 43;
+      const row = archive.configuration.tables.overlay_module_config!.find(row => row.module_id === "videos")!;
+      row.config_json = JSON.stringify({ ...createDefaultVideosModuleConfig(), gapSeconds: 9, layout: { x: 1440, y: 40, width: 400, height: 300 } });
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      const before = target.snapshotRepository.captureRestorePoint();
+      expect((await target.service.preflight(archive)).state).toBe("valid"); expect(target.snapshotRepository.captureRestorePoint()).toEqual(before);
+      const expected = { ...createDefaultVideosModuleConfig(), gapSeconds: 9, layout: { schemaVersion: 2, content: { width: 400, height: 300 }, desktopPlacement: { x: 1440, y: 40, scale: 1 } } };
+      const saved = () => JSON.parse(String(target.database.connection.prepare("SELECT config_json FROM overlay_module_config WHERE module_id='videos'").get()?.config_json));
+      for (let repetition = 0; repetition < 2; repetition++) {
+        const preflight = await target.service.preflight(archive);
+        await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true }); expect(saved()).toEqual(expected);
+      }
+      const current = await target.service.exportArchive();
+      expect(current.manifest.schemaVersion).toBe(44); expect(JSON.stringify(current)).not.toMatch(/video_bus_admissions|video_requests|video_queue_state/u);
+      await target.service.restore({ archive: current, archiveId: (await target.service.preflight(current)).archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true }); expect(saved()).toEqual(expected);
+      const invalid = structuredClone(archive);
+      invalid.configuration.tables.overlay_module_config![0]!.config_json = JSON.stringify({ ...expected, layout: { ...expected.layout, desktopPlacement: { x: 1800, y: 0, scale: 1 } } });
+      const unchanged = target.snapshotRepository.captureRestorePoint();
+      expect((await target.service.preflight(invalid)).blockers.some(error => error.summary.includes("checksum"))).toBe(true);
+      invalid.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(invalid.configuration);
+      const preflight = await target.service.preflight(invalid);
+      expect(preflight.state).toBe("invalid"); expect(preflight.blockers.some(error => error.cause?.includes("Videos"))).toBe(true);
+      await expect(target.service.restore({ archive: invalid, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true })).rejects.toThrow();
+      expect(target.snapshotRepository.captureRestorePoint()).toEqual(unchanged);
+    } finally { source.database.close(); target.database.close(); }
+  });
   it("preflights and round-trips legacy Timer appearance once, blocks invalid geometry and verifies original checksums", async () => {
     const source = createRealService(); const target = createRealService();
     try {

@@ -7,7 +7,7 @@ import { VideoPlacementEditor } from "./VideoPlacementEditor.js";
 const meta = {
   title: "Management/Videos Placement",
   component: VideoPlacementEditor,
-  tags: ["videos"],
+  tags: ["video-content"],
   args: { value: createDefaultVideosLayout(), onChange: fn() },
   render: function Example(args) {
     const [layout, setLayout] = useState(args.value);
@@ -21,22 +21,22 @@ type Story = StoryObj<typeof meta>;
 export const DefaultPlacement: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByLabelText("Video X (px)")).toHaveValue(269);
-    await expect(canvas.getByLabelText("Video width (px)")).toHaveValue(1382);
+    await expect(canvas.getByLabelText("Desktop Video X (px)")).toHaveValue(269);
+    await expect(canvas.getByLabelText("Video content width (px)")).toHaveValue(1382);
     await expect(canvas.getByText("Example video title")).toBeInTheDocument();
   }
 };
 
 /** An operator moves a small picture-in-picture box with the keyboard. */
 export const PictureInPicture: Story = {
-  args: { value: { x: 1420, y: 40, width: 460, height: 320 } },
+  args: { value: { schemaVersion: 2, content: { width: 460, height: 320 }, desktopPlacement: { x: 1420, y: 40, scale: 1 } } },
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
     canvas.getByRole("button", { name: "Move video box" }).focus();
     await userEvent.keyboard("{Shift>}{ArrowLeft}{/Shift}{ArrowDown}");
-    await expect(canvas.getByLabelText("Video X (px)")).toHaveValue(1410);
-    await expect(canvas.getByLabelText("Video Y (px)")).toHaveValue(41);
-    await expect(args.onChange).toHaveBeenLastCalledWith({ x: 1410, y: 41, width: 460, height: 320 });
+    await expect(canvas.getByLabelText("Desktop Video X (px)")).toHaveValue(1410);
+    await expect(canvas.getByLabelText("Desktop Video Y (px)")).toHaveValue(41);
+    await expect(args.onChange).toHaveBeenLastCalledWith({ schemaVersion: 2, content: { width: 460, height: 320 }, desktopPlacement: { x: 1410, y: 41, scale: 1 } });
   }
 };
 
@@ -44,10 +44,10 @@ export const PictureInPicture: Story = {
 export const OffCanvasValueRejected: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
-    const width = canvas.getByLabelText("Video width (px)");
+    const width = canvas.getByLabelText("Video content width (px)");
     await userEvent.clear(width);
-    await userEvent.type(width, "1800{Enter}");
-    await expect(width).toHaveAccessibleDescription("Enter a whole number from 240 to 1651.");
+    await userEvent.type(width, "1921{Enter}");
+    await expect(width).toHaveAccessibleDescription("Enter a whole number from 240 to 1920.");
     await expect(args.onChange).not.toHaveBeenCalled();
   }
 };
@@ -58,6 +58,6 @@ export const SavingLocked: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole("button", { name: "Move video box" })).toBeDisabled();
-    await expect(canvas.getByLabelText("Video height (px)")).toBeDisabled();
+    await expect(canvas.getByLabelText("Video content height (px)")).toBeDisabled();
   }
 };

@@ -1,4 +1,4 @@
-import { outputCanvasSchema, type OutputCanvas } from "@stream-jams/core";
+import { isValidVideosLayout, outputCanvasSchema, type OutputCanvas } from "@stream-jams/core";
 import type { OverlayPurpose, VideoQueueResponse, VideoSubmissionPending, VideosModuleConfig } from "@stream-jams/core";
 import { createManagementHttpClient, ManagementHttpError, type HttpManagementClientOptions } from "../management-http-client.js";
 
@@ -154,7 +154,7 @@ function parseModuleState(value: unknown): VideosModuleState {
   }
   const layout = value.config.layout;
   // Placement is rendered and saved as-is, so a missing or partial box fails closed.
-  if (!isRecord(layout) || !["x", "y", "width", "height"].every(key => typeof layout[key] === "number")) {
+    if (!isValidVideosLayout(layout)) {
     throw new TypeError("Videos settings returned an invalid response. Reload and retry.");
   }
   const delays = value.config.audioDeviceDelaysMs;

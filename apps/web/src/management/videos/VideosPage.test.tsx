@@ -55,7 +55,7 @@ describe("VideosPage", () => {
       maxLengthSeconds: 300, gapSeconds: 3, allowedDirectHosts: ["videos.example.com", "cdn.example.org"], obsAudio: false,
       audioDeviceIds: ["stream", "private"], audioDeviceDelaysMs: { stream: 120 }, streamerBotAutoplay: false,
       rewardMappings: [{ rewardId: "reward-video", purpose: "live" }, { rewardId: "reward-test", purpose: "test" }],
-      layout: { x: 269, y: 140, width: 1382, height: 876 }
+      layout: { schemaVersion: 2, content: { width: 1382, height: 876 }, desktopPlacement: { x: 269, y: 140, scale: 1 } }
     });
     expect(await screen.findByText("Videos settings saved. They apply to later requests and runs.")).toBeVisible();
   });
@@ -92,35 +92,45 @@ describe("VideosPage", () => {
     const save = vi.spyOn(api, "saveModuleConfig");
     renderManagement(<VideosPage api={api} audioApi={createStoryAudioApi()} managementApi={managementApi()} />);
     const placement = await screen.findByRole("region", { name: "Video placement" });
-    expect(await within(placement).findByLabelText("Video X (px)")).toHaveValue(269);
+    expect(await within(placement).findByLabelText("Desktop Video X (px)")).toHaveValue(269);
     within(placement).getByRole("button", { name: "Move video box" }).focus();
     await user.keyboard("{Shift>}{ArrowLeft}{/Shift}{ArrowUp}");
-    const width = within(placement).getByLabelText("Video width (px)");
+    const width = within(placement).getByLabelText("Video content width (px)");
     await user.clear(width); await user.type(width, "960{Enter}");
-    expect(within(placement).getByLabelText("Video X (px)")).toHaveValue(259);
+    expect(within(placement).getByLabelText("Desktop Video X (px)")).toHaveValue(259);
     expect(screen.getByTestId("video-placement-preview")).toHaveStyle({ left: "259px", top: "139px", width: "960px", height: "876px" });
     await user.click(screen.getByRole("button", { name: "Save Videos settings" }));
-    expect(save).toHaveBeenLastCalledWith(true, expect.objectContaining({ layout: { x: 259, y: 139, width: 960, height: 876 } }));
-    await user.click(within(placement).getByRole("button", { name: "Reset to default placement" }));
+    expect(save).toHaveBeenLastCalledWith(true, expect.objectContaining({ layout: { schemaVersion: 2, content: { width: 960, height: 876 }, desktopPlacement: { x: 259, y: 139, scale: 1 } } }));
+    await user.click(within(placement).getByRole("button", { name: "Reset content and placement" }));
     await user.click(screen.getByRole("button", { name: "Save Videos settings" }));
-    expect(save).toHaveBeenLastCalledWith(true, expect.objectContaining({ layout: { x: 269, y: 140, width: 1382, height: 876 } }));
+    expect(save).toHaveBeenLastCalledWith(true, expect.objectContaining({ layout: { schemaVersion: 2, content: { width: 1382, height: 876 }, desktopPlacement: { x: 269, y: 140, scale: 1 } } }));
+  });
+  it("keeps invalid content drafts visible and refuses a misleading save of the previous layout", async () => {
+    const user = userEvent.setup();
+    const api = createStaticVideosApi(queuedVideos()); const save = vi.spyOn(api, "saveModuleConfig");
+    renderManagement(<VideosPage api={api} audioApi={createStoryAudioApi()} managementApi={managementApi()} />);
+    const width = await screen.findByLabelText("Video content width (px)");
+    await user.clear(width); await user.type(width, "100");
+    await user.click(screen.getByRole("button", { name: "Save Videos settings" }));
+    expect(width).toHaveValue(100); expect(width).toHaveAccessibleDescription("Enter a whole number from 240 to 1920.");
+    expect(save).not.toHaveBeenCalled(); expect(screen.queryByText("Videos settings saved. They apply to later requests and runs.")).toBeNull();
   });
 
   it("keeps an off-canvas saved placement from being saved again", async () => {
     const user = userEvent.setup();
     const base = createStaticVideosApi(queuedVideos());
     const state = await base.getModuleConfig();
-    const api = createStaticVideosApi(queuedVideos(), { getModuleConfig: async () => ({ ...state, config: { ...state.config, layout: { x: 900, y: 0, width: 1382, height: 876 } } }) });
+    const api = createStaticVideosApi(queuedVideos(), { getModuleConfig: async () => ({ ...state, config: { ...state.config, layout: { schemaVersion: 2, content: { width: 1382, height: 876 }, desktopPlacement: { x: 900, y: 0, scale: 1 } } } }) });
     const save = vi.spyOn(api, "saveModuleConfig");
     renderManagement(<VideosPage api={api} audioApi={createStoryAudioApi()} managementApi={managementApi()} />);
-    await within(await screen.findByRole("region", { name: "Video placement" })).findByLabelText("Video X (px)");
+    await within(await screen.findByRole("region", { name: "Video placement" })).findByLabelText("Desktop Video X (px)");
     await user.click(screen.getByRole("button", { name: "Save Videos settings" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Keep the video box at least 240 x 180 px and inside the 1920 x 1080 canvas.");
+    expect(screen.getAllByRole("alert").some(alert => alert.textContent?.includes("reduce desktop scale"))).toBe(true);
     expect(save).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Reset to default placement" }));
-    expect(screen.queryByText(/Keep the video box/u)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Reset content and placement" }));
+    expect(screen.queryByText(/reduce desktop scale/u)).toBeNull();
     await user.click(screen.getByRole("button", { name: "Save Videos settings" }));
-    expect(save).toHaveBeenCalledWith(true, expect.objectContaining({ layout: { x: 269, y: 140, width: 1382, height: 876 } }));
+    expect(save).toHaveBeenCalledWith(true, expect.objectContaining({ layout: { schemaVersion: 2, content: { width: 1382, height: 876 }, desktopPlacement: { x: 269, y: 140, scale: 1 } } }));
   });
 
   it("says when the desktop app is not running so browser sources play on their own", async () => {

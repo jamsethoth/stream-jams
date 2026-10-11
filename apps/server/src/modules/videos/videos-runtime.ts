@@ -1,5 +1,5 @@
 import type { OverlayModuleRuntime, OverlayModuleSnapshot, OverlayModuleSnapshotRequest, OverlayPurpose, VideoQueueResponse, VideoSubmissionResult, VideosModuleConfig, VideosProjection } from "@stream-jams/core";
-import { videoInstructionPrefix } from "@stream-jams/core/videos";
+import { browserVideosLayout, videoInstructionPrefix } from "@stream-jams/core/videos";
 import type { VideoRequeueOutcome, VideoRouteService } from "../../http/routes/videos.js";
 import { toVideoQueueResponse } from "./video-queue-response.js";
 import type { VideoItemCommand, VideoPlaybackPhase, VideoQueueCommand, VideoQueueService, VideoQueueView } from "./video-queue-service.js";
@@ -18,7 +18,9 @@ export interface VideosRuntimeOptions {
 }
 
 /** What browser sources render for the current queue state. A playing item wins over a notice. */
-export function toVideosProjection(view: VideoQueueView, config: Pick<VideosModuleConfig, "obsAudio" | "layout">, mirrorAvailable = false): VideosProjection {
+export function toVideosProjection(view: VideoQueueView, config: Pick<VideosModuleConfig, "obsAudio" | "layout">, mirrorAvailable = false,
+  recipientKind: "browser" | "desktop" = "browser"): VideosProjection {
+  const layout = recipientKind === "desktop" ? structuredClone(config.layout) : browserVideosLayout(config.layout);
   if (view.current !== null) {
     const { item, clock, phase } = view.current;
     return {
@@ -26,7 +28,7 @@ export function toVideosProjection(view: VideoQueueView, config: Pick<VideosModu
       itemId: item.id,
       title: item.title,
       requester: item.requester,
-      layout: { ...config.layout },
+      layout,
       // With the desktop app running, every output shows its primary player's mirror.
       // Without it, each browser source plays the item itself from the shared clock.
       delivery: mirrorAvailable
@@ -36,7 +38,7 @@ export function toVideosProjection(view: VideoQueueView, config: Pick<VideosModu
         : { mode: "player", source: item.source, clock: phase === "loading" ? { ...clock, state: "playing" } : { ...clock }, obsAudio: config.obsAudio }
     };
   }
-  if (view.notice !== null) return { status: "notice", noticeId: view.notice.id, notice: "no-clip", displayName: view.notice.displayName, layout: { ...config.layout } };
+  if (view.notice !== null) return { status: "notice", noticeId: view.notice.id, notice: "no-clip", displayName: view.notice.displayName, layout };
   return { status: "idle" };
 }
 
@@ -70,7 +72,7 @@ export class VideosRuntime implements OverlayModuleRuntime, VideoRouteService {
 
   async getModuleSnapshot(request: OverlayModuleSnapshotRequest): Promise<OverlayModuleSnapshot> {
     const config = request.savedConfig === undefined ? await this.options.getConfig() : request.savedConfig.config as VideosModuleConfig;
-    return { moduleId: "videos", enabled: true, instructions: [], presentation: { kind: "videos", videos: toVideosProjection(this.options.queue.view(request.purpose), config, this.options.mirror?.available === true) } };
+    return { moduleId: "videos", enabled: true, instructions: [], presentation: { kind: "videos", videos: toVideosProjection(this.options.queue.view(request.purpose), config, this.options.mirror?.available === true, request.recipientKind) } };
   }
 
   /**

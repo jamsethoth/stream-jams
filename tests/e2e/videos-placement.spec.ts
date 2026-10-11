@@ -1,8 +1,9 @@
+import type { VideosLayout } from "@stream-jams/core";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { createProviderSecurityRuntimeFixture } from "../../apps/server/src/test-support/provider-security-runtime-fixture.js";
 
 // Videos placement against a real local runtime: the operator places the box on the management page,
-// saves, and the live browser source moves the playing video there. Providers are stubbed locally.
+// saves, and the live browser source retains its local origin. Providers are stubbed locally.
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
 type Fixture = Awaited<ReturnType<typeof createProviderSecurityRuntimeFixture>>;
@@ -28,24 +29,24 @@ test.afterEach(async () => {
   await fixture.close();
 });
 
-test("the operator places the video box, saves it, and the live browser source moves the playing video there", async ({ context, page }) => {
+test("the operator places the video box, saves it, and the live browser source retains its local origin", async ({ context, page }) => {
   test.setTimeout(60_000);
   const outbound = await stubProviders(context);
   const overlay = await openBrowserSource(context);
 
   await page.goto(`${fixture.runtime.url}/manage/modules/videos`);
   const placement = page.getByRole("region", { name: "Video placement" });
-  await expect(placement.getByLabel("Video X (px)")).toHaveValue("269");
-  await expect(placement.getByLabel("Video width (px)")).toHaveValue("1382");
+  await expect(placement.getByLabel("Desktop Video X (px)")).toHaveValue("269");
+  await expect(placement.getByLabel("Video content width (px)")).toHaveValue("1382");
 
   // Exact values from the fields, then the keyboard.
-  for (const [label, value] of [["Video width (px)", "640"], ["Video height (px)", "460"], ["Video X (px)", "1240"], ["Video Y (px)", "40"]] as const) {
+  for (const [label, value] of [["Video content width (px)", "640"], ["Video content height (px)", "460"], ["Desktop Video X (px)", "1240"], ["Desktop Video Y (px)", "40"]] as const) {
     await placement.getByLabel(label).fill(value);
     await placement.getByLabel(label).press("Enter");
   }
   await placement.getByRole("button", { name: "Move video box" }).focus();
   await page.keyboard.press("Shift+ArrowLeft");
-  await expect(placement.getByLabel("Video X (px)")).toHaveValue("1230");
+  await expect(placement.getByLabel("Desktop Video X (px)")).toHaveValue("1230");
 
   // A pointer drag near the right edge snaps flush to it and shows the guide only during the drag.
   const canvas = placement.getByRole("group", { name: "Video placement canvas" });
@@ -60,12 +61,12 @@ test("the operator places the video box, saves it, and the live browser source m
   await expect(placement.locator("[data-snap-axis='x'][data-snap-position='1920']")).toHaveCount(1);
   await page.mouse.up();
   await expect(placement.locator("[data-snap-axis]")).toHaveCount(0);
-  await expect(placement.getByLabel("Video X (px)")).toHaveValue("1280");
+  await expect(placement.getByLabel("Desktop Video X (px)")).toHaveValue("1280");
   await expect(page.getByTestId("video-placement-preview")).toHaveCSS("left", "1280px");
 
   await page.getByRole("button", { name: "Save Videos settings" }).click();
   await expect(page.getByText("Videos settings saved. They apply to later requests and runs.")).toBeVisible();
-  expect(await savedLayout()).toEqual({ x: 1280, y: 40, width: 640, height: 460 });
+  expect(await savedLayout()).toEqual({ schemaVersion: 2, content: { width: 640, height: 460 }, desktopPlacement: { x: 1280, y: 40, scale: 1 } });
 
   // Play a request: the browser source shows it in the saved box with a 16:9 picture.
   const queue = page.getByRole("region", { name: "Video queue" });
@@ -76,31 +77,31 @@ test("the operator places the video box, saves it, and the live browser source m
   await queue.getByRole("button", { name: "Play next" }).click();
   await expect(overlay.frameLocator("iframe[title='Video player']").getByText("stub player")).toBeVisible();
   await expect(overlay.getByText("Placed clip")).toBeVisible();
-  await expectBox(overlay, { x: 1280, y: 40, width: 640, height: 460 });
+  await expectBox(overlay, { x: 0, y: 0, width: 640, height: 460 });
   const frame = (await overlay.locator(".video-overlay__frame").boundingBox())!;
   expect(frame.width).toBeCloseTo(640, 0);
   expect(frame.height).toBeCloseTo(360, 0);
   expect(frame.y + frame.height).toBeLessThanOrEqual(500);
 
   // Resetting and saving moves the running output back without a reload.
-  await placement.getByRole("button", { name: "Reset to default placement" }).click();
+  await placement.getByRole("button", { name: "Reset content and placement" }).click();
   await page.getByRole("button", { name: "Save Videos settings" }).click();
-  await expectBox(overlay, { x: 269, y: 140, width: 1382, height: 876 });
+  await expectBox(overlay, { x: 0, y: 0, width: 1382, height: 876 });
   expect(outbound()).toEqual([]);
 });
 
 test("the server refuses an off-canvas box and keeps the saved placement", async () => {
   const before = await fixture.request("/overlay-modules/videos/config");
   const { config } = await before.json() as { config: Record<string, unknown> };
-  const refused = await fixture.request("/overlay-modules/videos/config", "PUT", { enabled: true, config: { ...config, layout: { x: 1700, y: 0, width: 480, height: 320 } } });
+  const refused = await fixture.request("/overlay-modules/videos/config", "PUT", { enabled: true, config: { ...config, layout: { schemaVersion: 2, content: { width: 480, height: 320 }, desktopPlacement: { x: 1700, y: 0, scale: 1 } } } });
   expect(refused.status).toBe(400);
-  expect(await savedLayout()).toEqual({ x: 269, y: 140, width: 1382, height: 876 });
+  expect(await savedLayout()).toEqual({ schemaVersion: 2, content: { width: 1382, height: 876 }, desktopPlacement: { x: 269, y: 140, scale: 1 } });
 });
 
-async function savedLayout(): Promise<Layout> {
+async function savedLayout(): Promise<VideosLayout> {
   const response = await fixture.request("/overlay-modules/videos/config");
   expect(response.status).toBe(200);
-  return (await response.json() as { config: { layout: Layout } }).config.layout;
+  return (await response.json() as { config: { layout: VideosLayout } }).config.layout;
 }
 
 async function expectBox(overlay: Page, expected: Layout): Promise<void> {

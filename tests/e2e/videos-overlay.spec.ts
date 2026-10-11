@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { installOverlayWebSocketMock } from "./e2e-helpers.js";
 
 const clipSource = { provider: "twitch-clip", clipSlug: "ClipOne" } as const;
-const layout = { x: 269, y: 140, width: 1382, height: 876 } as const;
+const layout = { schemaVersion: 2, content: { width: 1382, height: 876 }, desktopPlacement: { x: 269, y: 140, scale: 1 } } as const;
 
 function composition(videos: unknown) {
   return { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
@@ -97,7 +97,7 @@ test("refuses a video box that leaves the canvas", async ({ page }) => {
     route.fulfill({ contentType: "application/json", json: composition({ status: "idle" }) }));
   await page.goto("/overlay/modules/videos/live/ovl_videos");
   await expect(page.getByTestId("overlay-root")).toBeVisible();
-  await pushComposition(page, composition(active("off-canvas", clipSource, { layout: { x: 1700, y: 0, width: 480, height: 320 } })));
+  await pushComposition(page, composition(active("off-canvas", clipSource, { layout: { schemaVersion: 2, content: { width: 480, height: 320 }, desktopPlacement: { x: 1700, y: 0, scale: 1 } } })));
   await expect.poll(() => socketMessages(page)).toContainEqual(expect.objectContaining({ type: "overlay.playback.failed", instructionId: "video:off-canvas" }));
   await expect(page.locator("iframe, video")).toHaveCount(0);
   await expect(page.getByTestId("video-overlay")).toHaveCount(0);

@@ -69,12 +69,11 @@ export interface VideoRewardMapping {
   readonly purpose: OverlayPurpose;
 }
 
-/** The Videos box on the 1920x1080 canvas: picture and caption, in whole canvas pixels. */
+/** Stable local picture/caption content, with independent desktop scene placement. */
 export interface VideosLayout {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
+  readonly schemaVersion: 2;
+  readonly content: { readonly width: number; readonly height: number };
+  readonly desktopPlacement: { readonly x: number; readonly y: number; readonly scale: number };
 }
 
 export interface VideosModuleConfig {
@@ -87,7 +86,7 @@ export interface VideosModuleConfig {
   readonly audioDeviceDelaysMs: Readonly<Record<string, number>>;
   readonly streamerBotAutoplay: boolean;
   readonly rewardMappings: readonly VideoRewardMapping[];
-  /** Where every output (browser sources, desktop overlay, mirror) places the video. */
+  /** Browser content size and desktop-only placement. Layer order remains with the desktop surface. */
   readonly layout: VideosLayout;
 }
 

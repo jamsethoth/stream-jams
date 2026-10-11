@@ -16,7 +16,7 @@ function createFetch(handler: (url: string, init: RequestInit | undefined) => Re
 }
 
 const config = { maxLengthSeconds: 120, gapSeconds: 3, allowedDirectHosts: [], obsAudio: true, audioDeviceIds: [], audioDeviceDelaysMs: {}, streamerBotAutoplay: true, rewardMappings: [],
-  layout: { x: 269, y: 140, width: 1382, height: 876 } };
+  layout: { schemaVersion: 2 as const, content: { width: 1382, height: 876 }, desktopPlacement: { x: 269, y: 140, scale: 1 } } };
 
 describe("createHttpVideosApi", () => {
   it("retains pending identity and reads a late outcome without repeating submission", async () => {

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   appConfigSchema,
   upgradeTimersConfig,
+  upgradeVideosLayout,
   configurationBackupLimits,
   configurationBackupArchiveSchema,
   currentConfigurationBackupArchiveVersion,
@@ -713,8 +714,8 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   if (currentSchemaVersion === 39) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 38;
   // Schema 40 adds provider details to the runtime Videos queue, which backups never contain.
   if (currentSchemaVersion === 40) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 39;
-  // Manual bus/admission are runtime-only; schema count 43 appends the typed Timer upgrade (ID 044).
-  if (currentSchemaVersion >= 41 && currentSchemaVersion <= 43) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion < currentSchemaVersion;
+  // Manual bus/admission are runtime-only; counts 43/44 add typed Timer/Video upgrades (IDs 044/045).
+  if (currentSchemaVersion >= 41 && currentSchemaVersion <= 44) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion < currentSchemaVersion;
   if (currentSchemaVersion === 28) return [19, 20, 21, 22, 23, 24, 25, 26, 27].includes(archiveSchemaVersion);
   return false;
 }
@@ -726,6 +727,14 @@ function upgradeLegacyConfiguration(
   let tables = configuration.tables;
   if (tables.overlay_module_config !== undefined) {
     tables = { ...tables, overlay_module_config: tables.overlay_module_config.map(row => {
+      if (row.module_id === "videos") {
+        try {
+          const raw = JSON.parse(String(row.config_json)) as Record<string, unknown>;
+          return { ...row, config_json: JSON.stringify({ ...raw, layout: upgradeVideosLayout(raw.layout) }) };
+        }
+        // error-provenance: allow expected -- typed preflight reports invalid Videos before mutation
+        catch { return row; }
+      }
       if (row.module_id !== "timers") return row;
       try { return { ...row, config_json: JSON.stringify(upgradeTimersConfig(JSON.parse(String(row.config_json)) as unknown)) }; }
       // error-provenance: allow expected -- preserve invalid rows so typed preflight reports a blocker before any mutation

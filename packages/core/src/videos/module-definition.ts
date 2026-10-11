@@ -8,7 +8,7 @@ export const videosModuleDefinition = {
   version: "0.0.0",
   // Nothing plays until a request is queued and the operator (or an allowed autoplay request) starts it.
   defaultEnabled: true,
-  configSchemaVersion: 1,
+  configSchemaVersion: 2,
   // Pure so bundles that never read the definition (the management startup graph) drop it.
   defaultConfig: /* @__PURE__ */ createDefaultVideosModuleConfig(),
   configSchema: videosModuleConfigSchema,

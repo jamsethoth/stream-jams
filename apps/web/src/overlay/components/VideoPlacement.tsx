@@ -3,8 +3,8 @@ import type { CSSProperties, HTMLAttributes, ReactNode } from "react";
 import "../overlay.css";
 
 /*
- * Placement shared by every Videos output and the management preview: the saved box on the
- * 1920 x 1080 canvas, holding the largest 16:9 picture that leaves room for the caption,
+ * Shared saved content box, positioned/scaled inside the desktop scene or projected at browser-local
+ * 0/0/1, holding the largest 16:9 picture that leaves room for the caption,
  * anchored to the box's bottom center.
  */
 
@@ -12,7 +12,8 @@ type BoxAttributes = Omit<HTMLAttributes<HTMLDivElement>, "style" | "className" 
 
 export function VideoBox({ layout, children, ...attributes }: { readonly layout: VideosLayout; readonly children: ReactNode } & BoxAttributes) {
   const { scale, gap } = videosPlacementGeometry(layout);
-  const style = { left: layout.x, top: layout.y, width: layout.width, height: layout.height, gap, "--video-scale": scale } as CSSProperties;
+  const style = { left: layout.desktopPlacement.x, top: layout.desktopPlacement.y, width: layout.content.width, height: layout.content.height,
+    transform: `scale(${layout.desktopPlacement.scale})`, transformOrigin: "top left", gap, "--video-scale": scale } as CSSProperties;
   return <div className="video-overlay" style={style} {...attributes}>{children}</div>;
 }
 

@@ -15,6 +15,9 @@ import {
 } from "./overlay-composition-service.js";
 import type { OverlayModuleSnapshot } from "./types.js";
 import type { SurfaceConfiguration } from "./surface-configuration.js";
+import { createDefaultVideosModuleConfig } from "../videos/schemas.js";
+import { browserVideosLayout } from "../videos/layout.js";
+import type { VideosModuleConfig } from "../videos/types.js";
 
 const now = new Date("2026-05-30T04:00:00.000Z");
 
@@ -276,6 +279,34 @@ describe("overlay composition service", () => {
 
 
 describe("authoritative output configuration", () => {
+  it("keeps captured Video projection and dimensions together after a late response, disabled output and reconnect", async () => {
+    let finish!: () => void; let entered!: () => void; let first = true;
+    const blocked = new Promise<void>(resolve => { finish = resolve; });
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const { compositionService, configService } = createCompositionService({ getModuleSnapshot: async request => {
+      if (first) { first = false; entered(); await blocked; }
+      const config = request.savedConfig!.config as VideosModuleConfig;
+      return { moduleId: request.moduleId, enabled: true, instructions: [], presentation: { kind: "videos", videos: {
+        status: "active", itemId: "stable-video", title: null, requester: null, layout: browserVideosLayout(config.layout),
+        delivery: { mode: "player", source: { provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 0 }, clock: { state: "paused", positionMs: 7000, atEpochMs: 1 }, obsAudio: false }
+      } } };
+    } });
+    await configService.setModuleEnabled("videos", true);
+    const request = { moduleId: "videos", overlayId: "default", purpose: "live" as const };
+    const old = compositionService.resolveModuleOutput(request); await started;
+    const config = { ...createDefaultVideosModuleConfig(), layout: { schemaVersion: 2 as const, content: { width: 640, height: 460 }, desktopPlacement: { x: 1200, y: 600, scale: 0.5 } } };
+    await configService.saveModuleConfig({ moduleId: "videos", enabled: true, config });
+    const current = await compositionService.resolveModuleOutput(request); finish();
+    expect(await old).toEqual(current);
+    expect(current.canvas).toMatchObject({ kind: "content", width: 640, height: 460 });
+    expect(current.modules[0]?.presentation).toMatchObject({ kind: "videos", videos: { itemId: "stable-video", layout: { ...config.layout, desktopPlacement: { x: 0, y: 0, scale: 1 } }, delivery: { clock: { state: "paused", positionMs: 7000, atEpochMs: 1 } } } });
+    await configService.setModuleEnabled("videos", false);
+    const disabled = await compositionService.resolveModuleOutput(request); expect(disabled.modules).toEqual([]);
+    compositionService.resetConfigurationCache();
+    const reconnected = await compositionService.resolveModuleOutput(request);
+    expect(reconnected.canvas).toMatchObject({ width: 640, height: 460 }); expect(reconnected.canvas.configRevision).toBeGreaterThan(disabled.canvas.configRevision);
+    expect(reconnected.runtimeId).toBe(current.runtimeId);
+  });
   it("empty_disabled_snapshot_has_canvas", async () => {
     const { compositionService, configService } = createCompositionService({ getModuleSnapshot: async request => ({ moduleId: request.moduleId, enabled: true, instructions: [] }) });
     await configService.setModuleEnabled("alerts", false);

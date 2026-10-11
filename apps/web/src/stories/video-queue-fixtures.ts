@@ -98,12 +98,12 @@ export function createStaticVideosApi(queue: VideoQueueResponse, overrides: Part
     ...createStaticVideoQueueApi(queue),
     getModuleConfig: async () => ({ enabled: true, config: { maxLengthSeconds: 120, gapSeconds: 3, allowedDirectHosts: ["videos.example.com"], obsAudio: true,
       audioDeviceIds: ["stream"], audioDeviceDelaysMs: { stream: 120 }, streamerBotAutoplay: true, rewardMappings: [{ rewardId: "reward-video", purpose: "live" }],
-      layout: { x: 269, y: 140, width: 1382, height: 876 } } }),
+      layout: { schemaVersion: 2, content: { width: 1382, height: 876 }, desktopPlacement: { x: 269, y: 140, scale: 1 } } } }),
     saveModuleConfig: async (enabled, config) => ({ enabled, config }),
     setModuleEnabled: async enabled => enabled,
     listBrowserSources: async () => [
-      { canvas: sceneOutputCanvas(0, 1920, 1080), id: "module:videos:live", label: "Videos Live", purpose: "live", overlayId: "default", enabled: true, url: "http://127.0.0.1:39187/overlay/modules/videos/live/story-placeholder", status: "available" },
-      { canvas: sceneOutputCanvas(0, 1920, 1080), id: "module:videos:test", label: "Videos Test", purpose: "test", overlayId: "default", enabled: true, url: null, status: "create-required" }
+      { canvas: { ...sceneOutputCanvas(0, 1382, 876), kind: "content" }, id: "module:videos:live", label: "Videos Live", purpose: "live", overlayId: "default", enabled: true, url: "http://127.0.0.1:39187/overlay/modules/videos/live/story-placeholder", status: "available" },
+      { canvas: { ...sceneOutputCanvas(0, 1382, 876), kind: "content" }, id: "module:videos:test", label: "Videos Test", purpose: "test", overlayId: "default", enabled: true, url: null, status: "create-required" }
     ],
     createBrowserSource: async () => {},
     regenerateBrowserSource: async () => {},

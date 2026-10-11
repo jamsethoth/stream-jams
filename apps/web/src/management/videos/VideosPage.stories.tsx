@@ -11,6 +11,7 @@ const rewards = { rewards: [
 const meta = {
   title: "Management/Videos",
   component: VideosPage,
+  tags: ["video-content"],
   parameters: { layout: "fullscreen" },
   args: {
     api: createStaticVideosApi(playingVideo()),

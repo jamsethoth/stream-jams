@@ -117,6 +117,11 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
   function save(event: FormEvent) {
     event.preventDefault();
     if (draft === null || enabled === null) return;
+    // Placement number fields preserve raw invalid drafts without committing them into config.
+    // Do not report a successful save of the old committed value while such a draft is visible.
+    const invalidGeometryField = Array.from(event.currentTarget.querySelectorAll<HTMLInputElement>("#video-placement input[type='number']"))
+      .find(input => !input.checkValidity());
+    if (invalidGeometryField !== undefined) { invalidGeometryField.reportValidity(); invalidGeometryField.focus(); return; }
     const errors: FieldErrors = {};
     const maxLength = Number(draft.maxLengthSeconds);
     const gap = Number(draft.gapSeconds);
@@ -131,7 +136,7 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
       if (!Number.isInteger(delay) || delay < 0 || delay > limits.deviceDelayMs) errors[`delay:${id}`] = `Enter whole milliseconds from 0 to ${limits.deviceDelayMs}.`;
       else if (delay > 0) audioDeviceDelaysMs[id] = delay;
     }
-    if (!isValidVideosLayout(draft.layout)) errors.layout = "Keep the video box at least 240 x 180 px and inside the 1920 x 1080 canvas.";
+    if (!isValidVideosLayout(draft.layout)) errors.layout = "Keep Video content within 240 x 180 to 1920 x 1080 px and fit its scaled desktop box inside the scene.";
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
     const config: VideosModuleConfig = { maxLengthSeconds: maxLength, gapSeconds: gap, allowedDirectHosts: draft.allowedDirectHosts, obsAudio: draft.obsAudio,
@@ -200,7 +205,8 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
             : <><strong>Mirror status:</strong> unknown until the queue loads.</>}</p>
         <BrowserSourcesPanel id="browser-sources" detailsId="videos-sources-content" expanded={sourcesExpanded} onToggle={() => setSourcesExpanded(value => !value)}
         readyCount={sources.filter(source => source.status === "available").length} needsSetupCount={sources.filter(source => source.status !== "available").length} description="Module live and test outputs.">
-        <p>Add the Videos URL as an OBS Browser Source at 1920 x 1080. To show videos on the desktop overlay, turn on Videos in <a href="/manage/settings#overlay-surfaces">Overlay surfaces</a>.</p>
+        <p>Add the Videos URL as an OBS Browser Source with the saved width and height shown below. Position it in OBS; desktop placement affects only the desktop overlay.
+          To show videos on the desktop overlay, turn on Videos in <a href="/manage/settings#overlay-surfaces">Overlay surfaces</a>.</p>
         {sources.length === 0 ? <p>No Videos Browser Source output is registered.</p> : sources.map(source => <BrowserSourceRow key={source.id} label={source.label} canvas={source.canvas} ready={source.status === "available"}
           telemetry={source.status === "available" ? "URL available" : source.status.replace("-", " ")} metadata={<span>Module source · {source.purpose === "live" ? "Live" : "Test"}</span>}
           url={source.url === null ? <p>Create a URL before adding this output.</p> : <MaskedValue label={`${source.label} Browser Source URL`} value={source.url} />}
@@ -211,7 +217,7 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
       </>}
       secondary={draft === null ? (loadError === null ? <p className="management-empty" role="status">Loading Videos settings…</p> : null) : <form className="videos-settings" onSubmit={save} noValidate>
         <ModuleSection title="Placement" label="Video placement" id="video-placement"
-          description="Where the video appears on browser sources, the desktop overlay and the mirror. Changes apply after Save Videos settings.">
+          description="Content size controls browser dimensions. Desktop position and scale are independent. Changes apply after Save Videos settings.">
           <VideoPlacementEditor value={draft.layout} disabled={busy} onChange={layout => { setDraft(current => current === null ? current : { ...current, layout }); setFieldErrors(current => withField(current, "layout", null)); }} />
           {fieldErrors.layout === undefined ? null : <p className="videos-settings__error" role="alert">{fieldErrors.layout}</p>}
         </ModuleSection>
