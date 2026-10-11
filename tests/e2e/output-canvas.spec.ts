@@ -34,7 +34,7 @@ test("saved canvas refresh is authoritative while empty/disabled and reconnect u
     expect(invalid.status).toBe(400);
     expect(overlayCompositionSchema.parse(await (await fetch(`${url}/composition`)).json()).canvas).toEqual(current.canvas);
     await page.goto(`${fixture.runtime.url}/manage/modules/music#browser-sources`);
-    await expect(page.getByRole("article", { name: "Landscape browser source" })).toContainText("1920 x 1080");
-    await expect(page.getByRole("article", { name: "Vertical browser source" })).toContainText("1080 x 1920");
+    await expect(page.getByRole("article", { name: "Landscape browser source" })).toContainText("840 x 378");
+    await expect(page.getByRole("article", { name: "Vertical browser source" })).toContainText("840 x 378");
   } finally { await fixture.close(); }
 });

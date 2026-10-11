@@ -27,6 +27,14 @@ async function openEditorControls() {
 }
 
 describe("Music appearance", () => {
+  it("keeps desktop fallback controls out of either browser profile's configuration", async () => {
+    renderPage();
+    await screen.findByLabelText("Initial view");
+    expect(screen.queryByLabelText("Desktop fallback placement")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Output profile"), { target: { value: "vertical" } });
+    expect(screen.queryByLabelText("Desktop fallback placement")).toBeNull();
+    expect(screen.queryByLabelText("Alignment")).toBeNull();
+  });
   it("previews the track playing in the selected source with its artwork and falls back to the sample track", async () => {
     const snapshot = { providerId: "provider-1", generation: "music_1", revision: 1, track: { id: "song", title: "Live Pear title", artists: ["Live artist"], album: "Live album", artworkRef: "art_1" }, playbackState: "playing" as const, positionMs: 30_000, durationMs: 120_000, observedAtEpochMs: 2_000_000, session: null };
     const connected = { state: "connected" as const, stale: false, diagnosticReference: null };

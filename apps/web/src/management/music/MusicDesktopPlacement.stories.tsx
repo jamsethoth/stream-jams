@@ -26,3 +26,10 @@ export const StatusFailure: Story = { beforeEach: () => { const original = conso
 export const CustomCss: Story = { args: { config: { ...createDefaultMusicModuleConfig(), css: { enabled: true, source: ".sj-title { color: red; }", styleContractVersion: 1 } } } };
 
 export const Rescale: Story = { play: async ({ canvasElement }) => { const canvas = within(canvasElement); const handle = canvas.getByRole("button", { name: "Rescale Music widget on desktop overlay" }); await handle.focus(); await userEvent.keyboard("{Shift>}{ArrowRight}{/Shift}"); await expect(canvas.getByLabelText("Desktop Music scale (%)")).toHaveValue(110); } };
+
+export const FallbackPlacement: Story = { tags: ["music-content-canvas"], play: async ({ canvasElement }) => {
+  const canvas = within(canvasElement);
+  await userEvent.selectOptions(canvas.getByLabelText("Desktop fallback placement"), "top-right");
+  await expect(canvas.getByLabelText("Desktop Music X (px)")).toHaveValue(1280);
+  await expect(canvas.getByLabelText("Desktop Music Y (px)")).toHaveValue(0);
+} };

@@ -1,4 +1,4 @@
-import { createDefaultMusicModuleConfig, DefaultOverlayCompositionService, type MusicWidgetProjection } from "@stream-jams/core";
+import { createDefaultMusicModuleConfig, DefaultOverlayCompositionService, projectMusicWidget, resolveMusicOutputGeometry, type MusicWidgetProjection } from "@stream-jams/core";
 import { expect, it, vi } from "vitest";
 import { MusicOutputRuntime } from "./music-output-runtime.js";
 
@@ -73,4 +73,50 @@ it("uses desktop placement only for the private desktop recipient", async () => 
   const browser = await output.getModuleSnapshot({ recipientKind: "browser", moduleId: "music", overlayId: "default", purpose: "live", scope: "unified", targetProfileId: "landscape" });
   expect(desktop.presentation?.kind === "music-widget" && desktop.presentation.widget.layout).toMatchObject({ x: 123, y: 234 });
   expect(browser.presentation?.kind === "music-widget" && browser.presentation.widget.layout).toMatchObject({ x: 0, y: 0 });
+});
+
+it("keeps both browser profiles and empty reconnect metadata independent of playback and desktop placement", async () => {
+  let visible = true;
+  const saved = createDefaultMusicModuleConfig();
+  saved.desktopPlacement.full = { x: 1472, y: 955 }; saved.desktopScale.full = 0.7;
+  const getProjection = vi.fn((target, captured) => visible ? projectMusicWidget(live.snapshot,
+    { state: "connected", stale: false, diagnosticReference: null }, captured, target, 1000, 1000) : null);
+  const output = new MusicOutputRuntime({ runtime: { getProjection, revision: 7 },
+    assets: { resolveMusicAssets: async () => ({ assets: [], missingAssetIds: [] }) }, getConfig: async () => saved });
+  const moduleConfig = { moduleId: "music", enabled: true, config: saved, updatedAt: "2026-10-11T00:00:00Z" };
+  const compositions = new DefaultOverlayCompositionService({ configService: { getModuleConfig: async () => moduleConfig }, runtime: output });
+  for (const targetProfileId of ["landscape", "vertical"] as const) {
+    const request = { moduleId: "music", overlayId: "default", purpose: "live" as const, targetProfileId };
+    const first = await compositions.resolveModuleOutput(request);
+    expect(first.canvas).toMatchObject(resolveMusicOutputGeometry(saved, targetProfileId));
+    expect(first.modules[0]?.presentation?.kind === "music-widget" && first.modules[0].presentation.widget.layout).toMatchObject({ x: 100, y: 82 });
+    visible = false;
+    const empty = await compositions.resolveModuleOutput(request);
+    expect(empty.canvas).toEqual(first.canvas); expect(empty.modules[0]?.presentation).toBeUndefined();
+    compositions.committedModuleConfig({ ...moduleConfig, enabled: false });
+    expect((await compositions.resolveModuleOutput(request)).modules).toEqual([]);
+    compositions.committedModuleConfig(moduleConfig); visible = true;
+  }
+});
+
+it("retries a delayed Music snapshot with one new saved geometry/profile while preserving its appearance epoch", async () => {
+  const old = createDefaultMusicModuleConfig();
+  const next = createDefaultMusicModuleConfig(); next.profiles.vertical.views.full.widthPx = 800;
+  let finish!: () => void;
+  let calls = 0;
+  const output = new MusicOutputRuntime({ runtime: { revision: 7, getProjection: (target, captured) => projectMusicWidget(live.snapshot,
+    { state: "connected", stale: false, diagnosticReference: null }, captured ?? old, target, 1000, 1000) },
+    assets: { resolveMusicAssets: async () => { if (++calls === 1) await new Promise<void>(resolve => { finish = resolve; }); return { assets: [], missingAssetIds: [] }; } },
+    getConfig: async () => old });
+  const capture = { moduleId: "music", enabled: true, config: old, updatedAt: "2026-10-11T00:00:00Z" };
+  const compositions = new DefaultOverlayCompositionService({ configService: { getModuleConfig: async () => capture }, runtime: output });
+  const pending = compositions.resolveModuleOutput({ moduleId: "music", overlayId: "default", purpose: "live", targetProfileId: "vertical" });
+  await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+  compositions.committedModuleConfig({ ...capture, config: next }); finish();
+  const current = await pending;
+  expect(current.canvas).toMatchObject({ width: 1000, height: 378, configRevision: 1 });
+  const widget = current.modules[0]?.presentation;
+  expect(widget?.kind === "music-widget" && widget.widget).toMatchObject({ appearanceStartedAtEpochMs: 1000,
+    snapshot: { generation: "owned", revision: 7, track: { id: "live" } }, layout: { x: 100, y: 82, width: 800 }, contentCanvas: { width: 1000, height: 378 } });
+  expect(calls).toBe(2);
 });

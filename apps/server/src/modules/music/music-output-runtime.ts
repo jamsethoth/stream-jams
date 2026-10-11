@@ -1,5 +1,6 @@
 import {
-  applyMusicDesktopPlacement, projectMusicWidget,
+  applyMusicContentGeometry, applyMusicDesktopPlacement, projectMusicWidget, resolveMusicOutputGeometry,
+  type MusicOutputGeometry,
   type MusicModuleConfig, type MusicSnapshot, type MusicWidgetProjection,
   type OverlayModuleRuntime, type OverlayModuleSnapshot, type OverlayModuleSnapshotRequest,
   type OverlayTargetProfileId
@@ -15,6 +16,7 @@ const fixtureSnapshot: MusicSnapshot = {
 
 /** A test output has a local fixture; it never reads or starts the selected source. */
 export class MusicOutputRuntime implements OverlayModuleRuntime {
+  readonly #geometry = new WeakMap<MusicModuleConfig, Partial<Record<OverlayTargetProfileId, MusicOutputGeometry>>>();
   constructor(private readonly dependencies: {
     readonly runtime: Pick<MusicRuntimeCoordinator, "getProjection" | "revision">;
     readonly assets: Pick<AssetLibraryService, "resolveMusicAssets">;
@@ -28,8 +30,13 @@ export class MusicOutputRuntime implements OverlayModuleRuntime {
     const config = request.savedConfig === undefined ? await this.dependencies.getConfig() : request.savedConfig.config as MusicModuleConfig;
     const projection = request.purpose === "test" ? await this.#fixture(targetProfileId, config) : this.dependencies.runtime.getProjection(targetProfileId, config);
     if (projection === null) return { moduleId: "music", enabled: true, instructions: [] };
-    const placed = request.recipientKind === "desktop"
-      ? applyMusicDesktopPlacement(projection, config) : projection;
+    let placed = request.recipientKind === "desktop" ? applyMusicDesktopPlacement(projection, config) : projection;
+    if (request.recipientKind === "browser" && request.scope === "module") {
+      const profiles = this.#geometry.get(config) ?? {};
+      const geometry = profiles[targetProfileId] ??= resolveMusicOutputGeometry(config, targetProfileId);
+      this.#geometry.set(config, profiles);
+      placed = applyMusicContentGeometry(projection, geometry);
+    }
     const { assets } = await this.dependencies.assets.resolveMusicAssets(config, targetProfileId);
     if (request.purpose === "live" && this.dependencies.runtime.revision !== revision) {
       return { moduleId: "music", enabled: true, instructions: [] };

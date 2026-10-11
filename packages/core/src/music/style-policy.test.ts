@@ -22,6 +22,8 @@ const invalid = [
   "body .sj-title { color: red; }",
   "#app .sj-title { color: red; }",
   ".sj-managed-frame { color: red; }",
+  ".music-content-canvas { width: 1px; transform: translate(10px, 10px); }",
+  ".music-widget-host { width: 1px; }",
   ".sj-title::slotted(*) { color: red; }",
   ".sj-title, .other-widget { color: red; }",
   ".sj-title[data-view=full] { color: red; }",

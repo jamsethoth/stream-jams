@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { moduleOutputCanvas, outputCanvasSchema, sceneOutputCanvas } from "./output-canvas.js";
+import { createDefaultMusicModuleConfig } from "../music/schemas.js";
 
 describe("output canvas", () => {
   it("rejects unsafe geometry before publication", () => {
@@ -13,12 +14,19 @@ describe("output canvas", () => {
     expect(outputCanvasSchema.safeParse({ ...canvas, insets: { ...canvas.insets, left: -1 } }).success).toBe(false);
     expect(outputCanvasSchema.safeParse({ ...canvas, width: 640, kind: "content", origin: { x: 0.5, y: -0.5 } }).success).toBe(true);
   });
-  it("keeps every actual module scene-sized until its owning slice", () => {
-    for (const moduleId of ["music", "timers", "videos", "alerts", "screen-effects"]) {
+  it("keeps other modules scene-sized until their owning slices", () => {
+    for (const moduleId of ["timers", "videos", "alerts", "screen-effects"]) {
       const config = { moduleId, enabled: false, updatedAt: "2026-10-11T00:00:00.000Z", config: {} };
       expect(moduleOutputCanvas(config, "landscape", "browser", 5)).toEqual(sceneOutputCanvas(5));
       expect(moduleOutputCanvas(config, "vertical", "browser", 5)).toEqual(sceneOutputCanvas(5, 1080, 1920));
       expect(moduleOutputCanvas(config, "vertical", "desktop", 5)).toEqual(sceneOutputCanvas(5));
+    }
+  });
+  it("advertises Music's saved envelope while disabled, with legacy landscape and private scene semantics", () => {
+    const config = { moduleId: "music", enabled: false, updatedAt: "2026-10-11T00:00:00Z", config: createDefaultMusicModuleConfig() };
+    for (const profile of [null, "landscape", "vertical"] as const) {
+      expect(moduleOutputCanvas(config, profile, "browser", 5)).toMatchObject({ kind: "content", width: 840, height: 378, configRevision: 5 });
+      expect(moduleOutputCanvas(config, profile, "desktop", 5)).toEqual(sceneOutputCanvas(5));
     }
   });
 });

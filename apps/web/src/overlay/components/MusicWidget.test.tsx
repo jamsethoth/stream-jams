@@ -1,5 +1,5 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react";
-import { createDefaultMusicModuleConfig, projectMusicWidget, type MusicAssetResolver, type MusicSnapshot, type MusicWidgetProjection } from "@stream-jams/core";
+import { applyMusicContentGeometry, createDefaultMusicModuleConfig, projectMusicWidget, resolveMusicOutputGeometry, type MusicAssetResolver, type MusicSnapshot, type MusicWidgetProjection } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
 import { MusicWidget } from "./MusicWidget.js";
 import { StrictMode } from "react";
@@ -19,6 +19,24 @@ const fixture = (observation: MusicSnapshot = snapshot): MusicWidgetProjection =
 const shadowOf = (container: HTMLElement) => container.querySelector(".music-widget-host")?.shadowRoot;
 
 describe("MusicWidget", () => {
+  it("clips custom overflow at the outer canvas while reserving native shadow insets, and keeps desktop clipping", async () => {
+    const config = createDefaultMusicModuleConfig();
+    const value = applyMusicContentGeometry(fixture(), resolveMusicOutputGeometry(config, "landscape"));
+    value.css = { enabled: true, styleContractVersion: 1, source: ".sj-content { width: 1900px; transform: translate(-100px, -82px); overflow: visible; }" };
+    const view = render(<MusicWidget projection={value} resolveAsset={resolver} nowEpochMs={now} />);
+    const canvas = view.getByTestId("music-content-canvas");
+    const host = view.getByTestId("music-widget");
+    expect(canvas.style.width).toBe("840px"); expect(canvas.style.height).toBe("378px");
+    expect(canvas.style.overflow).toBe("hidden");
+    expect(host.style.left).toBe("100px"); expect(host.style.top).toBe("82px");
+    expect(host.style.overflow).toBe("visible"); expect(host.style.contain).toBe("layout style");
+    await waitFor(() => expect(host.shadowRoot?.textContent).toContain("translate(-100px,-82px)"));
+    expect(canvas.getRootNode()).toBe(document); expect(host.shadowRoot?.querySelector('[data-testid="music-content-canvas"]')).toBeNull();
+    view.rerender(<MusicWidget projection={fixture()} resolveAsset={resolver} nowEpochMs={now} />);
+    expect(view.queryByTestId("music-content-canvas")).toBeNull();
+    expect(view.getByTestId("music-widget").style.overflow).toBe("hidden");
+    expect(view.getByTestId("music-widget").style.contain).toBe("layout paint style");
+  });
   it("retries transient artwork failures after 1, 2 and 5 seconds, then keeps the placeholder", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const view = render(<MusicWidget projection={fixture()} resolveAsset={resolver} nowEpochMs={now} />);

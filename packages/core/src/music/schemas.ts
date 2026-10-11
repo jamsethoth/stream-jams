@@ -155,9 +155,10 @@ export const musicWidgetProjectionSchema = z.object({
   appearanceStartedAtEpochMs: milliseconds, clockReferenceEpochMs: milliseconds.max(Number.MAX_SAFE_INTEGER),
   profile: musicProfileConfigSchema, view: musicViewSchema,
   renderScale: z.number().min(0.1).max(3).optional(),
+  contentCanvas: z.object({ width: z.int().positive(), height: z.int().positive() }).strict().optional(),
   layout: overlayElementLayoutSchema.strict(), css: musicCssConfigSchema, assets: z.array(musicPublicAssetReferenceSchema)
 }).strict().superRefine((projection, context) => {
-  const bounds = targetProfileDefinitions.find(profile => profile.id === projection.targetProfileId)!;
+  const bounds = projection.contentCanvas ?? targetProfileDefinitions.find(profile => profile.id === projection.targetProfileId)!;
   const { layout } = projection;
   const scale = projection.renderScale ?? 1;
   if (!projection.snapshot.track || layout.x < 0 || layout.y < 0 || layout.x + layout.width * scale > bounds.width || layout.y + layout.height * scale > bounds.height) {

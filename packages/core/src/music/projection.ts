@@ -3,6 +3,7 @@ import { overlayTargetProfileIdSchema, type OverlayTargetProfileId } from "../sh
 import { fitMusicComponentLayout } from "./component-layout.js";
 import { musicLimits, musicModuleConfigSchema, musicSnapshotSchema, musicStatusSchema, musicWidgetProjectionSchema } from "./schemas.js";
 import type { MusicModuleConfig, MusicSnapshot, MusicStatus, MusicWidgetProjection } from "./types.js";
+import type { MusicOutputGeometry } from "./output-geometry.js";
 
 export function getMusicPositionMs(snapshot: MusicSnapshot, nowEpochMs: number): number | null {
   const result = musicSnapshotSchema.safeParse(snapshot);
@@ -51,12 +52,20 @@ function isEpoch(value: number): boolean {
   return Number.isFinite(value) && value >= 0;
 }
 
+/** Browser module recipients use one shared inset anchor; canvas.origin remains zero. */
+export function applyMusicContentGeometry(projection: MusicWidgetProjection, geometry: MusicOutputGeometry): MusicWidgetProjection {
+  const content = { ...projection }; delete content.renderScale;
+  return musicWidgetProjectionSchema.parse({ ...content, contentCanvas: { width: geometry.width, height: geometry.height },
+    layout: { ...projection.layout, x: geometry.insets.left, y: geometry.insets.top } });
+}
+
 
 /** Apply only at the private desktop recipient boundary; browser alignment stays independent. */
 export function applyMusicDesktopPlacement(projection: MusicWidgetProjection, config: MusicModuleConfig): MusicWidgetProjection {
   if (projection.targetProfileId !== "landscape") return projection;
   const position = config.desktopPlacement[projection.view];
-  if (position === null && config.desktopScale[projection.view] === 1) return projection;
+  if (position === null && config.desktopScale[projection.view] === 1 && projection.contentCanvas === undefined) return projection;
+  const scene = { ...projection }; delete scene.contentCanvas;
   const bounds = targetProfileDefinitions.find(profile => profile.id === "landscape")!;
   const renderScale = Math.min(config.desktopScale[projection.view], bounds.width / projection.layout.width, bounds.height / projection.layout.height);
   const width = projection.layout.width * renderScale;
@@ -64,7 +73,7 @@ export function applyMusicDesktopPlacement(projection: MusicWidgetProjection, co
   const alignment = projection.profile.alignment;
   const x = position?.x ?? (alignment.endsWith("left") ? 0 : alignment.endsWith("right") ? bounds.width - width : (bounds.width - width) / 2);
   const y = position?.y ?? (alignment.startsWith("top") ? 0 : alignment.startsWith("bottom") ? bounds.height - height : (bounds.height - height) / 2);
-  return { ...projection, renderScale, layout: { ...projection.layout,
+  return { ...scene, renderScale, layout: { ...projection.layout,
     x: Math.min(x, bounds.width - width), y: Math.min(y, bounds.height - height)
   } };
 }

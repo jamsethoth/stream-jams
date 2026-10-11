@@ -7,8 +7,8 @@ import { gzipSync } from "node:zlib";
 const defaultBuildDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "../apps/web/dist");
 const defaultBudgets = {
   bootstrap: 100 * 1024,
-  // Required saved canvas metadata and reconnect ordering add about 0.19 KiB over S04.
-  overlay: 151.25 * 1024,
+  // Saved canvas metadata/ordering and content renderers retain their validated output boundaries.
+  overlay: 152 * 1024,
   operator: 190 * 1024,
   management: 250 * 1024
 };

@@ -37,6 +37,18 @@ it("keeps unavailable output setup visible and disables native positioning under
   expect(screen.getByRole("link", { name: "Open Overlay settings" })).toHaveAttribute("href", "/manage/settings#overlay-surfaces");
   expect(screen.getByRole("button", { name: "Move Music widget on desktop overlay" })).toBeDisabled();
   expect(screen.getByLabelText("Desktop Music X (px)")).toBeDisabled();
+  expect(screen.getByLabelText("Desktop fallback placement")).toBeDisabled();
+});
+
+it("owns fallback alignment on the landscape desktop appearance and retains vertical compatibility data", async () => {
+  const user = userEvent.setup(); render(<Fixture />);
+  const initial = JSON.parse(screen.getByTestId("config").textContent!) as MusicModuleConfig;
+  await user.selectOptions(screen.getByLabelText("Desktop fallback placement"), "top-right");
+  const saved = JSON.parse(screen.getByTestId("config").textContent!) as MusicModuleConfig;
+  expect(saved.profiles.landscape.alignment).toBe("top-right");
+  expect(saved.profiles.vertical).toEqual(initial.profiles.vertical);
+  expect(screen.getByLabelText("Desktop Music X (px)")).toHaveValue(1280);
+  expect(screen.getByLabelText("Desktop Music Y (px)")).toHaveValue(0);
 });
 
 it("marks retained desktop status stale on refresh failure and recovers", async () => {

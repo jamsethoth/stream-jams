@@ -1,4 +1,4 @@
-import { outputCanvasSchema } from "../overlay-modules/output-canvas.js";
+import { outputCanvasSchema } from "../overlay-modules/output-canvas-contract.js";
 import { z } from "zod";
 import { localWebSocketConnectionSchema } from "./local-websocket-connection.js";
 import { alertAudioOutputsSchema, mediaVolumeSchema } from "../audio/schemas.js";

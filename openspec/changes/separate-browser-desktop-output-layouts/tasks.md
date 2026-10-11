@@ -43,10 +43,10 @@ Specification approved 2026-10-10; implementation is authorized and in progress.
 
 ## 6. S06 — Music compact content output (depends on S05)
 
-- [ ] 6.1 Test stable full/compact/hidden/long-text/artwork envelopes, shared anchor, deterministic shadow insets and CSS isolation.
-- [ ] 6.2 Implement pure Music geometry and browser projection while preserving desktop placement, provider epoch and media authorization.
-- [ ] 6.3 Update source/placement copy and stories; verify both profiles, idle reconnect and unchanged browser rendering after desktop moves.
-- [ ] 6.4 Run affected checks and rebuilt live workflow, record evidence and commit.
+- [x] 6.1 Test stable full/compact/hidden/long-text/artwork envelopes, shared anchor, deterministic shadow insets and CSS isolation.
+- [x] 6.2 Implement pure Music geometry and browser projection while preserving desktop placement, provider epoch and media authorization.
+- [x] 6.3 Update source/placement copy and stories; verify both profiles, idle reconnect and unchanged browser rendering after desktop moves.
+- [x] 6.4 Run affected checks and rebuilt live workflow, record evidence and commit.
 
 ## 7. S07 — Timer appearance and migration (depends on S05)
 

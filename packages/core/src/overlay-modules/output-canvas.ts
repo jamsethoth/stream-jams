@@ -1,26 +1,12 @@
 import { z } from "zod";
 import type { OverlayModuleConfig } from "./types.js";
 import type { OverlayTargetProfileId } from "../overlays/types.js";
+import { resolveMusicOutputGeometry } from "../music/output-geometry.js";
+import type { MusicModuleConfig } from "../music/types.js";
 
-/** Saved geometry, independent of playback and viewport dimensions. */
-export interface OutputCanvas {
-  readonly schemaVersion: 1;
-  readonly kind: "content" | "scene";
-  readonly width: number;
-  readonly height: number;
-  readonly origin: { readonly x: number; readonly y: number };
-  readonly insets: { readonly top: number; readonly right: number; readonly bottom: number; readonly left: number };
-  readonly configRevision: number;
-}
-// Zod numbers exclude nonfinite values; int() also requires a safe integer.
+import { outputCanvasSchema, type OutputCanvas } from "./output-canvas-contract.js";
+export { outputCanvasSchema, type OutputCanvas } from "./output-canvas-contract.js";
 const dimension = z.int().positive();
-const inset = z.number().nonnegative();
-export const outputCanvasSchema = z.strictObject({
-  schemaVersion: z.literal(1), kind: z.enum(["content", "scene"]), width: dimension, height: dimension,
-  origin: z.strictObject({ x: z.number(), y: z.number() }),
-  insets: z.strictObject({ top: inset, right: inset, bottom: inset, left: inset }),
-  configRevision: z.int().nonnegative()
-}) satisfies z.ZodType<OutputCanvas>;
 
 export function sceneOutputCanvas(configRevision = 0, width = 1920, height = 1080): OutputCanvas {
   return outputCanvasSchema.parse({ schemaVersion: 1, kind: "scene", width, height,
@@ -31,6 +17,9 @@ export function sceneOutputCanvas(configRevision = 0, width = 1920, height = 108
 export function moduleOutputCanvas(config: OverlayModuleConfig, profile: OverlayTargetProfileId | null | undefined,
   recipientKind: "browser" | "desktop", configRevision: number): OutputCanvas {
   if (recipientKind === "desktop") return sceneOutputCanvas(configRevision);
+  if (config.moduleId === "music") return outputCanvasSchema.parse({
+    ...resolveMusicOutputGeometry(config.config as MusicModuleConfig, profile ?? "landscape"), configRevision
+  });
   if (profile === "vertical") return sceneOutputCanvas(configRevision, 1080, 1920);
   if (profile === "landscape") return sceneOutputCanvas(configRevision);
   if (config.moduleId === "alerts" && typeof config.config === "object" && config.config !== null && "canvas" in config.config) {

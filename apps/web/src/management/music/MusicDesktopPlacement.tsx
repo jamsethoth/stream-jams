@@ -97,6 +97,11 @@ export function MusicDesktopPlacement({ config, snapshot, now, resolveAsset, onC
     {error === null ? null : <><ManagementErrorBanner error={error} /><Button variant="default" onClick={() => setReload(current => current + 1)} type="button">Refresh desktop status</Button>{status === null ? null : <p>Desktop status is stale; the last known settings are shown.</p>}</>}
     <a href="/manage/settings#overlay-surfaces">Open Overlay settings</a>
     <NativeSelect label="Desktop preview view" value={view} onChange={event => { gesture.current = null; setGuides([]); setView(event.currentTarget.value as typeof view); }}><option value="full">Full</option><option value="compact">Compact</option></NativeSelect>
+    <NativeSelect label="Desktop fallback placement" disabled={blocked} value={config.profiles.landscape.alignment} onChange={event => onChange({ ...config, profiles: { ...config.profiles,
+      landscape: { ...config.profiles.landscape, alignment: event.currentTarget.value as typeof config.profiles.landscape.alignment } } })}>
+      {["top-left", "top-center", "top-right", "center-left", "center-right", "bottom-left", "bottom-center", "bottom-right"].map(item => <option key={item} value={item}>{item.charAt(0).toUpperCase() + item.slice(1).replace("-", " ")}</option>)}
+    </NativeSelect>
+    <p>Fallback placement uses the desktop's Landscape appearance when a view has no custom position.</p>
     {blocked ? <p role="status">Disable custom CSS to edit native desktop placement. CSS can override the widget position.</p> : null}
     <div className="music-desktop-placement__viewport" ref={viewport}>
       {projection === null || rect === null ? <p role="status">Desktop placement preview is unavailable.</p> : <div aria-label="Desktop placement canvas" className="music-desktop-placement__stage" style={{ width: bounds.width * scale, height: bounds.height * scale }}>
@@ -123,6 +128,6 @@ export function MusicDesktopPlacement({ config, snapshot, now, resolveAsset, onC
       <div className="music-layout-editor__snapping"><Checkbox label="Snap desktop placement to grid" checked={grid} onChange={event => { setGrid(event.currentTarget.checked); setGuides([]); }} /><Checkbox label="Snap desktop placement to alignment" checked={alignment} onChange={event => { setAlignment(event.currentTarget.checked); setGuides([]); }} /></div>
       <Button variant="default" disabled={config.desktopPlacement[view] === null} onClick={() => { gesture.current = null; setGuides([]); onChange({ ...config, desktopPlacement: { ...config.desktopPlacement, [view]: null } }); }} type="button">Reset desktop placement to alignment</Button>
     </fieldset>
-    <p>Drag the widget to position it or its corner to scale it proportionally. Scale affects only desktop output. Arrow keys move by 1 px; Shift moves by 10 px. Escape cancels a drag. Browser-source placement is unchanged.</p>
+    <p>Drag the widget to position it or its corner to scale it proportionally. Position and scale affect only desktop output. Arrow keys move by 1 px; Shift moves by 10 px. Escape cancels a drag. Position the browser source in OBS using its advertised content dimensions.</p>
   </div>;
 }
