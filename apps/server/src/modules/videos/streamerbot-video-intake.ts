@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { overlayPurposeSchema, type BusEvent, type EventBusHandleOutcome, type OverlayPurpose } from "@stream-jams/core";
+import { type BusEvent, type BusEventInput, type EventBusHandleOutcome, type VideoQueuePurpose } from "@stream-jams/core";
 import { videoRequesterSchema } from "@stream-jams/core/videos";
-import { externalIdentityMatchesTrigger } from "../events/event-bus.js";
+import { EventBusInputRejectedError, externalIdentityMatchesTrigger } from "../events/event-bus.js";
 import type { VideoRequestIntake, VideoRequestRejection } from "./video-request-intake.js";
 import type { VideoQueueService } from "./video-queue-service.js";
 
@@ -34,8 +34,23 @@ export interface StreamerBotVideoIntakeOptions {
   readonly onDiagnostic?: ((entry: VideoIntakeDiagnostic) => void | Promise<void>) | undefined;
 }
 
-const envelopeSchema = z.object({ action: z.enum(["play", "no-clip", "clear"]).default("play"), purpose: overlayPurposeSchema.default("live") });
+const envelopeSchema = z.object({ action: z.enum(["play", "no-clip", "clear"]).default("play"), purpose: z.literal("live").default("live") });
 const twitchClipIdSchema = z.string().trim().regex(/^[A-Za-z0-9_-]{1,100}$/u);
+
+/** Ingress fence; consumer validation still rejects already-journaled legacy rows on replay. */
+export function validateVideoBusInput(input: BusEventInput): void {
+  const applies = input.kind === "external" ? input.effectTriggers.some(trigger => externalIdentityMatchesTrigger(videoExternalIdentity, trigger))
+    : input.kind === "manual" && input.action.kind === "simulate-external" && input.action.identity.providerKind === "streamerbot"
+      && input.action.identity.sourceKey.toLowerCase() === "general" && input.action.identity.eventType === "Custom";
+  if (!applies) return;
+  const payload = input.kind === "external" ? input.payload
+    : input.kind === "manual" && input.action.kind === "simulate-external" ? input.action.payload : undefined;
+  if (readMarker(payload) === null) return;
+  const data = payload as Record<string, unknown>;
+  if (data.purpose !== undefined && data.purpose !== "live") {
+    throw new EventBusInputRejectedError("VIDEO_TEST_RETIRED", "Videos test input was retired. Remove its purpose selector and refresh the ordinary queue before submitting.");
+  }
+}
 
 /**
  * Passive adapter for General/Custom bus events: it never calls Twitch, parses chat, or executes Streamer.bot
@@ -58,7 +73,7 @@ export function createStreamerBotVideoIntake(options: StreamerBotVideoIntakeOpti
     const data = payload as Record<string, unknown>;
     const parsedEnvelope = envelopeSchema.safeParse(data);
     if (!parsedEnvelope.success) {
-      await report({ level: "warn", message: "Streamer.bot video request was rejected.", metadata: { reason: "invalid-request", fields: ["action", "purpose"].filter(field => field in data) } });
+      await report({ level: "warn", message: "Streamer.bot video request was rejected.", metadata: { reason: "retired-video-test-or-invalid-request", fields: ["action", "purpose"].filter(field => field in data) } });
       return "failed";
     }
     const { action, purpose } = parsedEnvelope.data;
@@ -129,7 +144,7 @@ function legacyRequestFields(data: Record<string, unknown>): Record<string, unkn
   };
 }
 
-function stopCurrent(queue: StreamerBotVideoIntakeOptions["queue"], purpose: OverlayPurpose): void {
+function stopCurrent(queue: StreamerBotVideoIntakeOptions["queue"], purpose: VideoQueuePurpose): void {
   const view = queue.view(purpose);
   if (view.current === null && view.gapEndsAtEpochMs === null) return;
   queue.command(purpose, view.revision, { kind: "stop" });

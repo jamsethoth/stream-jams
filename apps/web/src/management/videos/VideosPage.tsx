@@ -1,5 +1,5 @@
 import { Button, Checkbox, NativeSelect, TextInput } from "@mantine/core";
-import { isValidVideosLayout, type ActionableManagementError, type AudioRouteStatus, type OverlayPurpose, type TwitchCustomReward, type TwitchCustomRewardCatalog, type VideosLayout, type VideosModuleConfig } from "@stream-jams/core";
+import { isValidVideosLayout, type ActionableManagementError, type AudioRouteStatus, type TwitchCustomReward, type TwitchCustomRewardCatalog, type VideosLayout, type VideosModuleConfig } from "@stream-jams/core";
 import { useCallback, useEffect, useRef, useState, type ComponentType, type FormEvent } from "react";
 import type { OperatorItemCardProps } from "../../operator/OperatorItemCard.js";
 import type { AudioApi } from "../audio/audio-api.js";
@@ -67,7 +67,7 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
   const [actionError, setActionError] = useState<ActionableManagementError | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [hostDraft, setHostDraft] = useState("");
-  const [rewardDraft, setRewardDraft] = useState({ rewardId: "", purpose: "live" as OverlayPurpose });
+  const [rewardDraft, setRewardDraft] = useState({ rewardId: "" });
   const [regenerate, setRegenerate] = useState<VideosBrowserSource | null>(null);
   const [confirmationError, setConfirmationError] = useState<ActionableManagementError | null>(null);
   const [busy, setBusy] = useState(false);
@@ -83,7 +83,7 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
       setLoadError(actionableError(reason, "Videos settings could not be loaded", "Check that Stream Jams is running, then reopen Videos."));
     }
     // The queue reports whether the desktop primary player is running.
-    try { setMirrorAvailable((await api.getQueue("live")).mirror.available); }
+    try { setMirrorAvailable((await api.getQueue()).mirror.available); }
     // error-provenance: allow expected -- the mirror note falls back to an unknown state; the queue panel reports load failures
     catch { setMirrorAvailable(null); }
     try { setRoutes((await audioApi.getStatus()).routes); setRoutesError(false); }
@@ -168,7 +168,7 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
       : draft.rewardMappings.length >= limits.rewards ? `Up to ${limits.rewards} rewards can be mapped.` : null;
     setFieldErrors(current => withField(current, "reward", error));
     if (error !== null) return;
-    setDraft({ ...draft, rewardMappings: [...draft.rewardMappings, { rewardId, purpose: rewardDraft.purpose }] }); setRewardDraft({ rewardId: "", purpose: "live" });
+    setDraft({ ...draft, rewardMappings: [...draft.rewardMappings, { rewardId }] }); setRewardDraft({ rewardId: "" });
   }
 
   async function confirmRegenerate() {
@@ -263,12 +263,10 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
           </fieldset>
           <fieldset className="videos-settings__fieldset">
             <legend>Channel point rewards</legend>
-            <p className="module-section-description">A redemption of a mapped reward queues the link the viewer typed. It never autoplays.</p>
+            <p className="module-section-description">Mapped rewards queue the viewer's link in the ordinary Videos queue and never autoplay. Former test mappings now use this queue; review them after upgrading.</p>
             {draft.rewardMappings.length === 0 ? <p className="management-empty">No rewards are mapped.</p> : <ul className="videos-settings__list" aria-label="Mapped rewards">
               {draft.rewardMappings.map(mapping => { const name = rewardTitle(mapping.rewardId) ?? mapping.rewardId; return <li key={mapping.rewardId}>
                 <span>{name}</span>
-                <NativeSelect aria-label={`Queue for ${name}`} value={mapping.purpose} data={[{ value: "live", label: "Live queue" }, { value: "test", label: "Test queue" }]}
-                  onChange={event => setDraft({ ...draft, rewardMappings: draft.rewardMappings.map(row => row.rewardId === mapping.rewardId ? { ...row, purpose: event.currentTarget.value === "test" ? "test" : "live" } : row) })} />
                 <Button size="xs" variant="subtle" color="red" aria-label={`Remove reward ${name}`} onClick={() => setDraft({ ...draft, rewardMappings: draft.rewardMappings.filter(row => row.rewardId !== mapping.rewardId) })}>Remove</Button>
               </li>; })}
             </ul>}
@@ -277,8 +275,6 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
               {catalog.status === "loaded" ? <NativeSelect label="Reward" value={rewardDraft.rewardId} error={fieldErrors.reward} onChange={event => setRewardDraft({ ...rewardDraft, rewardId: event.currentTarget.value })}
                 data={[{ value: "", label: unmappedRewards.length === 0 ? "No more rewards" : "Choose a reward" }, ...unmappedRewards.map(reward => ({ value: reward.id, label: reward.title }))]} />
                 : <TextInput label="Reward ID" disabled={catalog.status === "loading"} value={rewardDraft.rewardId} error={fieldErrors.reward} onChange={event => setRewardDraft({ ...rewardDraft, rewardId: event.currentTarget.value })} />}
-              <NativeSelect label="Queue" value={rewardDraft.purpose} data={[{ value: "live", label: "Live queue" }, { value: "test", label: "Test queue" }]}
-                onChange={event => setRewardDraft({ ...rewardDraft, purpose: event.currentTarget.value === "test" ? "test" : "live" })} />
               <Button variant="default" disabled={catalog.status === "loading"} onClick={addReward}>Add reward</Button>
             </div>
           </fieldset>

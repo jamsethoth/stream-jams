@@ -58,7 +58,7 @@ export class OverlayOutputManagementService {
           ? [null, ...alertTargetProfileIds]
           : [null];
       for (const targetProfileId of targetProfileIds) {
-        for (const purpose of purposes) {
+        for (const purpose of moduleDefinition.id === "videos" ? ["live"] as const : purposes) {
           const input = {
             overlayId: defaultOverlayId,
             scope: "module" as const,
@@ -174,6 +174,7 @@ export class OverlayOutputManagementService {
   }
 
   #assertKnownOutput(input: CreateOverlayKeyInput): void {
+    if (input.moduleId === "videos" && input.purpose === "test") throw new UnknownOverlayOutputError(input);
     if (input.scope === "module") {
       const moduleDefinition = input.moduleId === null ? null : this.#overlayModuleRegistry.getModule(input.moduleId);
       if (moduleDefinition === null || !moduleDefinition.renderer.supportedOutputs.includes("module")) {

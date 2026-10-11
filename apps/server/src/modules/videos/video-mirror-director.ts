@@ -1,4 +1,4 @@
-import type { OverlayPurpose, VideoControlSupport, VideosModuleConfig } from "@stream-jams/core";
+import type { VideoQueuePurpose, VideoControlSupport, VideosModuleConfig } from "@stream-jams/core";
 import {
   desktopVideoEventSchema, videoClockPositionMs,
   type DesktopVideoCommand, type DesktopVideoEvent, type DesktopVideoTransport, type VideoMirrorPublisherSignal, type VideoMirrorReceiverSignal
@@ -8,7 +8,7 @@ import type { VideoQueueService, VideoQueueView } from "./video-queue-service.js
 /** A browser source that relays mirror signaling over its overlay WebSocket. */
 export interface VideoMirrorBrowserClient {
   readonly id: string;
-  readonly purpose: OverlayPurpose;
+  readonly purpose: VideoQueuePurpose;
 }
 
 export interface VideoMirrorDirectorOptions {
@@ -31,7 +31,7 @@ interface SentState {
   readonly seekGeneration: number;
 }
 
-const purposes = ["live", "test"] as const;
+const purposes = ["live"] as const;
 const browserPrefix = "browser:";
 
 /**
@@ -41,10 +41,10 @@ const browserPrefix = "browser:";
  * browser players.
  */
 export class VideoMirrorDirector {
-  readonly #sent = new Map<OverlayPurpose, SentState | null>([["live", null], ["test", null]]);
+  readonly #sent = new Map<VideoQueuePurpose, SentState | null>([["live", null]]);
   readonly #controls = new Map<string, VideoControlSupport>();
   /** Browser receivers that have signaled, so a disconnect can close their peer connection. */
-  readonly #browserReceivers = new Map<string, OverlayPurpose>();
+  readonly #browserReceivers = new Map<string, VideoQueuePurpose>();
   readonly #unsubscribe: (() => void) | null;
   #available: boolean;
   #outputRequest = 0;
@@ -63,7 +63,7 @@ export class VideoMirrorDirector {
   controlsFor(itemId: string): VideoControlSupport | undefined { return this.available ? this.#controls.get(itemId) : undefined; }
 
   /** Translates a queue change into player commands: load, play, pause, seek or stop. */
-  queueChanged(purpose: OverlayPurpose, view: VideoQueueView): void {
+  queueChanged(purpose: VideoQueuePurpose, view: VideoQueueView): void {
     if (!this.available) return;
     const current = view.current;
     const sent = this.#sent.get(purpose) ?? null;
@@ -85,7 +85,7 @@ export class VideoMirrorDirector {
     this.#sent.set(purpose, { itemId, paused, seekGeneration: current.seekGeneration });
   }
 
-  /** Mute policy or device selection changed: re-send the audio destinations for both purposes. */
+  /** Mute policy or device selection changed: re-send the ordinary audio destinations. */
   refreshOutput(): void {
     if (!this.available) return;
     const request = ++this.#outputRequest;
@@ -105,6 +105,7 @@ export class VideoMirrorDirector {
 
   /** A browser source sent a mirror signal over its overlay WebSocket. Its id is assigned here, never by the client. */
   receiveBrowserSignal(client: VideoMirrorBrowserClient, signal: VideoMirrorReceiverSignal): void {
+    if (client.purpose !== "live") return;
     if (!this.available) {
       if (signal.type === "hello") this.options.deliverSignal(client.id, { type: "not-ready", connection: signal.connection });
       return;

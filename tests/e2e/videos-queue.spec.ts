@@ -462,7 +462,7 @@ test("the Operator replays a video that played to the end from Recent back into 
   const replay = card.getByRole("button", { name: "Replay Replay pick in Videos" });
   await replay.focus();
   await page.keyboard.press("Enter");
-  await expect(queue.getByRole("status").filter({ hasText: "Replay pick added to the live video queue." })).toBeVisible();
+  await expect(queue.getByRole("status").filter({ hasText: "Replay pick added to the ordinary video queue." })).toBeVisible();
   await expect(queue.getByRole("heading", { name: "Waiting (1)" })).toBeVisible();
   await expect(queue.getByRole("list").first().getByRole("article", { name: "Replay pick" })).toContainText("Queued");
   await expect(replay).toBeFocused();

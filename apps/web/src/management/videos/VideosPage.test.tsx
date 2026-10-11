@@ -48,13 +48,13 @@ describe("VideosPage", () => {
     await user.type(screen.getByLabelText("Host name"), "Cdn.Example.org");
     await user.click(screen.getByRole("button", { name: "Add host" }));
     await user.selectOptions(await screen.findByLabelText("Reward"), "reward-test");
-    await user.selectOptions(screen.getByLabelText("Queue"), "test");
+    expect(screen.queryByLabelText("Queue")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Add reward" }));
     await user.click(screen.getByRole("button", { name: "Save Videos settings" }));
     expect(save).toHaveBeenCalledWith(true, {
       maxLengthSeconds: 300, gapSeconds: 3, allowedDirectHosts: ["videos.example.com", "cdn.example.org"], obsAudio: false,
       audioDeviceIds: ["stream", "private"], audioDeviceDelaysMs: { stream: 120 }, streamerBotAutoplay: false,
-      rewardMappings: [{ rewardId: "reward-video", purpose: "live" }, { rewardId: "reward-test", purpose: "test" }],
+      rewardMappings: [{ rewardId: "reward-video" }, { rewardId: "reward-test" }],
       layout: { schemaVersion: 2, content: { width: 1382, height: 876 }, desktopPlacement: { x: 269, y: 140, scale: 1 } }
     });
     expect(await screen.findByText("Videos settings saved. They apply to later requests and runs.")).toBeVisible();
@@ -162,20 +162,22 @@ describe("VideosPage", () => {
     await user.type(screen.getByLabelText("Reward ID"), "manual-reward");
     await user.click(screen.getByRole("button", { name: "Add reward" }));
     await user.click(screen.getByRole("button", { name: "Save Videos settings" }));
-    await waitFor(() => expect(save).toHaveBeenCalledWith(true, expect.objectContaining({ rewardMappings: [{ rewardId: "reward-video", purpose: "live" }, { rewardId: "manual-reward", purpose: "live" }] })));
+    await waitFor(() => expect(save).toHaveBeenCalledWith(true, expect.objectContaining({ rewardMappings: [{ rewardId: "reward-video" }, { rewardId: "manual-reward" }] })));
   });
 
-  it("toggles the module and creates a test Browser Source URL", async () => {
+  it("toggles the module and creates the ordinary Browser Source URL", async () => {
     const user = userEvent.setup();
     const api = createStaticVideosApi(queuedVideos());
     const setEnabled = vi.spyOn(api, "setModuleEnabled");
     const create = vi.spyOn(api, "createBrowserSource");
+    const sources = await api.listBrowserSources();
+    vi.spyOn(api, "listBrowserSources").mockResolvedValue(sources.map(source => ({ ...source, url: null, status: "create-required" })));
     renderManagement(<VideosPage api={api} audioApi={createStoryAudioApi()} managementApi={managementApi()} />);
     await user.click(await screen.findByRole("button", { name: "Disable Videos module" }));
     expect(setEnabled).toHaveBeenCalledWith(false);
     expect(await screen.findByText("Module disabled")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Expand browser sources" }));
     await user.click(screen.getByRole("button", { name: "Create URL" }));
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({ purpose: "test" }));
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ purpose: "live" }));
   });
 });

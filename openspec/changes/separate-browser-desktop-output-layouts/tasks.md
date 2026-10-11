@@ -65,11 +65,11 @@ Specification approved 2026-10-10; implementation is authorized and in progress.
 
 ## 9. S09 — Videos single queue cutover (depends on S04 and S08)
 
-- [ ] 9.1 Test transactional legacy live/test migration, held test items, preserved history/order/IDs, conflict preflight and rollback.
-- [ ] 9.2 Consolidate queue/run/player/mirror ownership and invalidate stale receivers/revisions without autoplay or releasing migration holds through Play all.
-- [ ] 9.3 Remove purpose selection from new contracts/UI/mappings; preserve live route spellings and reject legacy test callers with guidance.
-- [ ] 9.4 Retire Videos test keys/routes/media and prevent their regeneration; update desktop IPC, Operator, clients and examples atomically.
-- [ ] 9.5 Verify selected audio, fallback playback, guarded reports and S04 crash dedupe after migration; run browser/desktop checks and commit the complete cutover.
+- [x] 9.1 Test transactional legacy live/test migration, held test items, preserved history/order/IDs, conflict preflight and rollback.
+- [x] 9.2 Consolidate queue/run/player/mirror ownership and invalidate stale receivers/revisions without autoplay or releasing migration holds through Play all.
+- [x] 9.3 Remove purpose selection from new contracts/UI/mappings; preserve live route spellings and reject legacy test callers with guidance.
+- [x] 9.4 Retire Videos test keys/routes/media and prevent their regeneration; update desktop IPC, Operator, clients and examples atomically.
+- [x] 9.5 Verify selected audio, fallback playback, guarded reports and S04 crash dedupe after migration; run browser/desktop checks and commit the complete cutover.
 
 ## 10. S10 — Remaining public output retirement (depends on S01, S03, S06, S07 and S09)
 

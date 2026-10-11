@@ -1,4 +1,4 @@
-import type { OverlayModuleRuntime, OverlayModuleSnapshot, OverlayModuleSnapshotRequest, OverlayPurpose, VideoQueueResponse, VideoSubmissionResult, VideosModuleConfig, VideosProjection } from "@stream-jams/core";
+import type { OverlayModuleRuntime, OverlayModuleSnapshot, OverlayModuleSnapshotRequest, VideoQueuePurpose, VideoQueueResponse, VideoSubmissionResult, VideosModuleConfig, VideosProjection } from "@stream-jams/core";
 import { browserVideosLayout, videoInstructionPrefix } from "@stream-jams/core/videos";
 import type { VideoRequeueOutcome, VideoRouteService } from "../../http/routes/videos.js";
 import { toVideoQueueResponse } from "./video-queue-response.js";
@@ -46,33 +46,34 @@ export function toVideosProjection(view: VideoQueueView, config: Pick<VideosModu
 export class VideosRuntime implements OverlayModuleRuntime, VideoRouteService {
   constructor(private readonly options: VideosRuntimeOptions) {}
 
-  response(purpose: OverlayPurpose): VideoQueueResponse {
+  response(purpose: VideoQueuePurpose): VideoQueueResponse {
     return this.toResponse(this.options.queue.view(purpose));
   }
 
-  submit(purpose: OverlayPurpose, input: unknown, context: VideoRequestContext): Promise<VideoSubmissionResult> {
+  submit(purpose: VideoQueuePurpose, input: unknown, context: VideoRequestContext): Promise<VideoSubmissionResult> {
     if (this.options.submissions === undefined) throw new Error("Manual Video submission is unavailable.");
     return this.options.submissions.submit(purpose, input, context);
   }
 
   submission(busId: string): VideoSubmissionResult | null { return this.options.submissions?.submission(busId) ?? null; }
 
-  command(purpose: OverlayPurpose, expectedRevision: number, command: VideoQueueCommand): VideoQueueResponse {
+  command(purpose: VideoQueuePurpose, expectedRevision: number, command: VideoQueueCommand): VideoQueueResponse {
     return this.toResponse(this.options.queue.command(purpose, expectedRevision, command));
   }
 
-  control(purpose: OverlayPurpose, expectedItemId: string, command: VideoItemCommand): VideoQueueResponse {
+  control(purpose: VideoQueuePurpose, expectedItemId: string, command: VideoItemCommand): VideoQueueResponse {
     return this.toResponse(this.options.queue.control(purpose, expectedItemId, command));
   }
 
-  async requeue(purpose: OverlayPurpose, expectedRevision: number, itemId: string, context: Pick<VideoRequestContext, "via">): Promise<VideoRequeueOutcome> {
+  async requeue(purpose: VideoQueuePurpose, expectedRevision: number, itemId: string, context: Pick<VideoRequestContext, "via">): Promise<VideoRequeueOutcome> {
     const result = await this.options.intake.requeue(purpose, expectedRevision, itemId, context.via);
     return result.status === "rejected" ? result : { status: "accepted", queue: this.response(purpose) };
   }
 
   async getModuleSnapshot(request: OverlayModuleSnapshotRequest): Promise<OverlayModuleSnapshot> {
+    if (request.purpose !== "live") return { moduleId: "videos", enabled: true, instructions: [], presentation: { kind: "videos", videos: { status: "idle" } } };
     const config = request.savedConfig === undefined ? await this.options.getConfig() : request.savedConfig.config as VideosModuleConfig;
-    return { moduleId: "videos", enabled: true, instructions: [], presentation: { kind: "videos", videos: toVideosProjection(this.options.queue.view(request.purpose), config, this.options.mirror?.available === true, request.recipientKind) } };
+    return { moduleId: "videos", enabled: true, instructions: [], presentation: { kind: "videos", videos: toVideosProjection(this.options.queue.view("live"), config, this.options.mirror?.available === true, request.recipientKind) } };
   }
 
   /**
@@ -101,7 +102,7 @@ export class VideosRuntime implements OverlayModuleRuntime, VideoRouteService {
   }
 
   private currentPhase(itemId: string): VideoPlaybackPhase | null {
-    for (const purpose of ["live", "test"] as const) {
+    for (const purpose of ["live"] as const) {
       const current = this.options.queue.view(purpose).current;
       if (current?.item.id === itemId) return current.phase;
     }

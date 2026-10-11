@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { BrowserWindow, ipcMain, session, webFrameMain, type IpcMainEvent, type Session, type WebFrameMain } from "electron";
 import { z } from "zod";
-import type { OverlayPurpose } from "@stream-jams/core";
+import type { VideoQueuePurpose } from "@stream-jams/core";
 import { VIDEO_PLAYER_COMMAND_CHANNEL, VIDEO_PLAYER_REPORT_CHANNEL, videoPlayerCommandSchema, type VideoPlayerCommand } from "./video-ipc.js";
 import { providerFrameCleanScript, twitchFrameScript } from "./twitch-frame-script.js";
 import type { TwitchFrameOperation, TwitchFrameState, VideoPlayerPort, VideoPortCallbacks } from "./video-player-host.js";
@@ -30,7 +30,7 @@ const contentSecurityPolicy = [
 ].join("; ");
 const twitchHosts = new Set(["clips.twitch.tv", "player.twitch.tv"]);
 
-export function videoPlayerPageUrl(origin: string, purpose: OverlayPurpose): string {
+export function videoPlayerPageUrl(origin: string, purpose: VideoQueuePurpose): string {
   return `${origin}${videoPlayerBasePath}${purpose}`;
 }
 
@@ -80,7 +80,7 @@ function prepareSession(target: Session, origin: string): SessionState {
     }
     const name = url.pathname.slice(videoPlayerBasePath.length);
     const headers = { "Content-Security-Policy": contentSecurityPolicy, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "origin" };
-    if (name === "live" || name === "test") return new Response(playerHtml, { headers: { ...headers, "Content-Type": "text/html; charset=utf-8" } });
+    if (name === "live") return new Response(playerHtml, { headers: { ...headers, "Content-Type": "text/html; charset=utf-8" } });
     const file = files.get(name);
     if (file === undefined) return new Response(null, { status: 404 });
     try { return new Response(await readFile(file.path), { headers: { ...headers, "Content-Type": file.type } }); }
@@ -114,7 +114,7 @@ const playerHtml = `<!doctype html>
 <style>html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#000}#stage>*{position:absolute;inset:0;width:1920px;height:1080px;border:0;background:#000}</style>
 </head><body><div id="stage"></div><script type="module" src="player.js"></script></body></html>`;
 
-/** One long-lived hidden player per purpose. It never navigates; providers are swapped inside its page. */
+/** One long-lived ordinary hidden player. It never navigates; providers are swapped inside its page. */
 export class VideoPlayerWindow implements VideoPlayerPort {
   readonly window: BrowserWindow;
   readonly #session = session.fromPartition(VIDEO_PLAYER_PARTITION, { cache: false });
@@ -123,7 +123,7 @@ export class VideoPlayerWindow implements VideoPlayerPort {
   readonly #report: (event: IpcMainEvent, candidate: unknown) => void;
   #destroying = false;
 
-  constructor(purpose: OverlayPurpose, origin: string, callbacks: VideoPortCallbacks) {
+  constructor(purpose: VideoQueuePurpose, origin: string, callbacks: VideoPortCallbacks) {
     const parsed = new URL(origin);
     if (parsed.protocol !== "http:" || parsed.hostname !== "127.0.0.1" || parsed.origin !== origin) throw new Error("The video player needs the local service origin");
     this.#url = videoPlayerPageUrl(origin, purpose);

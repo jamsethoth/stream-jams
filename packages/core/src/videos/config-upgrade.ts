@@ -17,3 +17,13 @@ export function upgradeVideosLayout(raw: unknown): VideosLayout {
   const { x, y, width, height } = legacy.data;
   return videosLayoutSchema.parse({ schemaVersion: 2, content: { width, height }, desktopPlacement: { x, y, scale: 1 } });
 }
+
+/** Upgrade saved mappings only. New submissions/configuration use the strict current validator. */
+export function upgradeVideosRewardMappings(raw: unknown): unknown {
+  if (!Array.isArray(raw)) return raw;
+  return raw.map(value => {
+    if (typeof value !== "object" || value === null || !("purpose" in value)) return value;
+    const legacy = z.strictObject({ rewardId: z.string().trim().min(1).max(128), purpose: z.enum(["live", "test"]) }).parse(value);
+    return { rewardId: legacy.rewardId };
+  });
+}

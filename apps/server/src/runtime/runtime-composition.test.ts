@@ -313,7 +313,7 @@ it("serves audio routes over loopback, observes Alerts mute, and retains binding
     expect(sent.status, JSON.stringify(sentBody)).toBe(200);
     expect(sentBody).toMatchObject({
       targetProfileId: null,
-      referenceId: expect.stringMatching(/^ref_/u),
+      referenceId: expect.stringMatching(/^manual_/u),
       test: true,
       deliveredDestinations: [{ kind: "device-route", id: route.id, name: "Private" }],
       unavailableDestinations: []
@@ -921,7 +921,7 @@ it("switches Videos outputs to the desktop mirror while the desktop player is av
     expect(sent).toEqual([]);
     for (const listener of listeners) listener({ type: "status", available: true });
     expect((await queue()).mirror).toEqual({ available: true });
-    await vi.waitFor(() => expect(sent.filter(command => command.type === "set-output").map(command => command.purpose)).toEqual(["live", "test"]));
+    await vi.waitFor(() => expect(sent.filter(command => command.type === "set-output").map(command => command.purpose)).toEqual(["live"]));
     for (const listener of listeners) listener({ type: "status", available: false });
     expect((await queue()).mirror).toEqual({ available: false });
   } finally {

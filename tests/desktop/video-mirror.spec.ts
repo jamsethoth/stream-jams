@@ -61,6 +61,9 @@ test("desktop primary player captures one hidden page and mirrors it to the devi
 
     await command(desktop, { type: "load", purpose: "live", itemId: "item-1", source: { provider: "direct", url: clipUrl }, positionMs: 0, paused: false });
     const player = await windowByUrl(desktop, playerUrl);
+    await command(desktop, { type: "load", purpose: "test", itemId: "retired-test", source: { provider: "direct", url: clipUrl }, positionMs: 0, paused: false } as never);
+    expect(await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(window => /video-player/u.test(window.webContents.getURL())).length)).toBe(1);
+    expect((await events(desktop)).some(event => event.itemId === "retired-test")).toBe(false);
     expect(await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().every(window => !window.isVisible()))).toBe(true);
     await expect.poll(async () => (await events(desktop)).find(event => event.state === "started"), { timeout: 15_000 })
       .toMatchObject({ type: "report", itemId: "item-1", controls: { pause: true, seek: true } });

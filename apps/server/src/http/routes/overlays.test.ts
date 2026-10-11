@@ -41,9 +41,9 @@ describe("overlay routes", () => {
     } finally { await app.close(); }
   });
   it("authorizes Videos browser sources through the existing module route keys only", async () => {
-    const access = createAccessService(["ovl_videosLive", "ovl_videosTest", "ovl_alertsLive", "ovl_unified"]);
+    const access = createAccessService(["ovl_videosLive", "ovl_alertsLive", "ovl_unified"]);
     const live = await access.createKey({ overlayId: "default", moduleId: "videos", purpose: "live", scope: "module" });
-    const test = await access.createKey({ overlayId: "default", moduleId: "videos", purpose: "test", scope: "module" });
+    await expect(access.createKey({ overlayId: "default", moduleId: "videos", purpose: "test", scope: "module" })).rejects.toThrow(/retired/u);
     const alerts = await access.createKey({ overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module" });
     const unified = await access.createKey({ overlayId: "default", moduleId: null, purpose: "live", scope: "unified" });
     const compositions = new RecordingOverlayCompositionService();
@@ -54,7 +54,6 @@ describe("overlay routes", () => {
       expect(shell.statusCode).toBe(200);
       expect(shell.body).not.toContain(live.rawKey);
       expect((await app.inject({ url: `/overlay/modules/videos/live/${live.rawKey}/composition` })).statusCode).toBe(200);
-      expect((await app.inject({ url: `/overlay/modules/videos/test/${test.rawKey}/composition` })).statusCode).toBe(200);
       for (const url of [
         "/overlay/modules/videos/live",
         `/overlay/modules/videos/test/${live.rawKey}/composition`,

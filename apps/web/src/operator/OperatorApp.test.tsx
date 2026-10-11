@@ -12,7 +12,7 @@ import { createHttpVideosApi } from "../management/videos/videos-api.js";
 // The lazily loaded Videos panel defaults to the HTTP client; keep tests that do not exercise it on an idle in-memory queue.
 vi.mock("../management/videos/videos-api.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../management/videos/videos-api.js")>();
-  return { ...actual, createHttpVideosApi: vi.fn(() => ({ getQueue: async () => ({ purpose: "live", revision: 1, queuePaused: false, runRemaining: 0, gapEndsAtEpochMs: null, serverTimeEpochMs: Date.now(), mirror: { available: false }, items: [], recent: [], current: null }) })) };
+  return { ...actual, createHttpVideosApi: vi.fn(() => ({ getQueue: async () => ({ revision: 1, queuePaused: false, runRemaining: 0, gapEndsAtEpochMs: null, serverTimeEpochMs: Date.now(), mirror: { available: false }, items: [], recent: [], current: null }) })) };
 });
 const idleTimersApi: OperatorTimersApi = { listStates: async () => [], adjust: async () => ({ changed: false, state: null }), command: async () => ({ changed: false, state: null }) };
 
@@ -258,11 +258,11 @@ describe("OperatorApp", () => {
     expect(within(card).getByRole("slider", { name: "Seek" })).toBeVisible();
     within(card).getByRole("button", { name: "Pause video" }).focus();
     await user.keyboard("{Enter}");
-    expect(control).toHaveBeenCalledWith("live", "pause", "now", undefined);
+    expect(control).toHaveBeenCalledWith("pause", "now", undefined);
     await user.click(await screen.findByRole("button", { name: "Play next" }));
-    expect(command).toHaveBeenCalledWith("live", 4, { kind: "play-next" });
+    expect(command).toHaveBeenCalledWith(4, { kind: "play-next" });
     await user.type(screen.getByLabelText("Video link"), "https://youtu.be/abc{Enter}");
-    expect(submit).toHaveBeenCalledWith("live", { link: "https://youtu.be/abc", title: "" });
+    expect(submit).toHaveBeenCalledWith({ link: "https://youtu.be/abc", title: "" });
   });
 
   it("lists recent Videos beside the Alerts and Effects Recent list and replays one into the queue", async () => {
@@ -277,8 +277,8 @@ describe("OperatorApp", () => {
     expect(card).toHaveClass("operator-item");
     expect(screen.getByText("Recent follow").closest("article")).toHaveClass("operator-item");
     await user.click(within(card).getByRole("button", { name: "Replay Cat plays keyboard in Videos" }));
-    expect(requeue).toHaveBeenCalledWith("live", 4, "done");
-    expect(await screen.findByText("Cat plays keyboard added to the live video queue.")).toBeVisible();
+    expect(requeue).toHaveBeenCalledWith(4, "done");
+    expect(await screen.findByText("Cat plays keyboard added to the ordinary video queue.")).toBeVisible();
   });
 
   it("shows an actionable initial error without inventing playback state", async () => {

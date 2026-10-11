@@ -777,6 +777,48 @@ describe("Videos mirror signaling", () => {
   const unifiedRoute = { overlayId: "default", moduleId: null, purpose: "test", scope: "unified", rawKey: "ovl_unifiedTest" } as const;
   const hello = (connection = 1) => JSON.stringify({ type: "videos.mirror.signal", signal: { type: "hello", connection } });
 
+  it("rejects test registrations and video reports from other modules or connected unified-test clients", async () => {
+    const retired = { ...videosRoute, purpose: "test" as const, rawKey: "retired" };
+    const ordinaryUnified = { ...unifiedRoute, purpose: "live" as const, rawKey: "ordinary-unified" };
+    const onPlaybackReport = vi.fn(); const onVideoMirrorSignal = vi.fn();
+    const gateway = createGateway({ allowed: [videosRoute, alertsRoute, unifiedRoute, retired, ordinaryUnified], onPlaybackReport, onVideoMirrorSignal });
+    for (const route of [videosRoute, alertsRoute, unifiedRoute, ordinaryUnified]) await gateway.registerClient(new RecordingSocket(), route);
+    const rejected = new RecordingSocket(); expect((await gateway.registerClient(rejected, retired)).authorized).toBe(false);
+    expect(rejected.closed?.code).toBe(1008);
+    for (const id of ["client-1", "client-2", "client-3", "client-4"]) {
+      gateway.handleClientMessage(id, JSON.stringify({ type: "overlay.playback.completed", instructionId: "video:item" }));
+      gateway.handleClientMessage(id, hello());
+    }
+    expect(onPlaybackReport.mock.calls.map(([report]) => report.clientId)).toEqual(["client-1", "client-4"]);
+    expect(onVideoMirrorSignal.mock.calls.map(([client]) => client.id)).toEqual(["client-1", "client-4"]);
+    expect(gateway.sendVideoMirrorSignal("client-3", { type: "not-ready", connection: 1 })).toBe(false);
+  });
+
+  it("retirement disconnects already connected identities and rejects stale reports/signals and racing registration", async () => {
+    const access = new StubOverlayAccessService([videosRoute, unifiedRoute]);
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    let wait = false; let id = 0;
+    const onPlaybackReport = vi.fn(); const onVideoMirrorSignal = vi.fn();
+    const gateway = new OverlayGateway({ overlayAccessService: { verifyRouteAccess: async request => { if (wait) await pending; return access.verifyRouteAccess(request); } },
+      generateClientId: () => `retire-${++id}`, onPlaybackReport, onVideoMirrorSignal });
+    const ordinary = new RecordingSocket(); const test = new RecordingSocket();
+    await gateway.registerClient(ordinary, videosRoute); await gateway.registerClient(test, unifiedRoute);
+    wait = true; const racing = new RecordingSocket(); const registration = gateway.registerClient(racing, videosRoute);
+    const trusted: string[] = [];
+    gateway.setRecipientPolicy(client => { trusted.push(client.keyId); return false; });
+    expect(trusted.every(key => typeof key === "string" && key.length > 0)).toBe(true);
+    expect(ordinary.closed?.code).toBe(1008); expect(test.closed?.code).toBe(1008);
+    release(); expect((await registration).authorized).toBe(false);
+    for (const clientId of ["retire-1", "retire-2"]) {
+      gateway.handleClientMessage(clientId, hello());
+      gateway.handleClientMessage(clientId, JSON.stringify({ type: "overlay.playback.completed", instructionId: "video:item" }));
+      expect(gateway.canReceiveVideos(clientId)).toBe(false);
+    }
+    expect(onPlaybackReport).not.toHaveBeenCalled(); expect(onVideoMirrorSignal).not.toHaveBeenCalled();
+    expect(racing.closed?.code).toBe(1008);
+  });
+
   it("relays validated signals only from outputs whose overlay key covers Videos", async () => {
     const onVideoMirrorSignal = vi.fn();
     const gateway = createGateway({ allowed: [videosRoute, alertsRoute, unifiedRoute], onVideoMirrorSignal });
@@ -787,8 +829,7 @@ describe("Videos mirror signaling", () => {
     gateway.handleClientMessage("client-2", hello());
     gateway.handleClientMessage("client-3", hello(4));
     expect(onVideoMirrorSignal.mock.calls).toEqual([
-      [expect.objectContaining({ id: "client-1", moduleId: "videos", purpose: "live" }), { type: "hello", connection: 1 }],
-      [expect.objectContaining({ id: "client-3", scope: "unified", purpose: "test" }), { type: "hello", connection: 4 }]
+      [expect.objectContaining({ id: "client-1", moduleId: "videos", purpose: "live" }), { type: "hello", connection: 1 }]
     ]);
     // The overlay key never reaches the relay.
     expect(JSON.stringify(onVideoMirrorSignal.mock.calls)).not.toContain("ovl_");

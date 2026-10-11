@@ -17,7 +17,7 @@ import {
   type OverlayInstruction
 } from "@stream-jams/core";
 import { createSequence, InMemorySecretStore } from "@stream-jams/test-support";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   TwitchApiClient,
   TwitchCurrentUser,
@@ -123,7 +123,16 @@ describe("runtime app composition smoke", () => {
 
     const disabled = await composition.app.inject({ method: "POST", url: testUrl, headers, payload });
     expect(disabled.statusCode, disabled.body).toBe(200);
-    expect(disabled.json()).toMatchObject({ status: "module-disabled" });
+    const assertNoPlayback = async (response: typeof disabled, completedStatus: string) => {
+      const result = response.json<{ status: string; busId: string }>();
+      expect([completedStatus, "pending"]).toContain(result.status);
+      const journal = new SqliteEventBusJournalRepository(composition.database.connection);
+      const event = journal.findByBusId(result.busId);
+      expect(event).not.toBeNull();
+      await vi.waitFor(() => expect(journal.consumerOutcomes(event!.sequence).find(outcome => outcome.consumerId === "screen-effects")?.outcome).toBe("no-match"));
+      expect(composition.effectPlaybackCoordinator.getSnapshot()).toMatchObject({ current: null, queued: [] });
+    };
+    await assertNoPlayback(disabled, "module-disabled");
 
     const enabled = await composition.app.inject({
       method: "PATCH",
@@ -134,7 +143,7 @@ describe("runtime app composition smoke", () => {
     expect(enabled.statusCode, enabled.body).toBe(200);
     const unavailable = await composition.app.inject({ method: "POST", url: testUrl, headers, payload });
     expect(unavailable.statusCode, unavailable.body).toBe(200);
-    expect(unavailable.json()).toMatchObject({ status: "unavailable-output" });
+    await assertNoPlayback(unavailable, "unavailable-output");
     expect(composition.effectPlaybackCoordinator.getSnapshot()).toMatchObject({ current: null, queued: [] });
   });
 

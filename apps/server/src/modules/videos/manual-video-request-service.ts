@@ -1,24 +1,22 @@
-import type { OverlayPurpose, VideoSubmissionResult } from "@stream-jams/core";
+import type { VideoQueuePurpose, VideoSubmissionResult } from "@stream-jams/core";
 import { videoRequestInputSchema } from "@stream-jams/core/videos";
 import type { ManualEventService } from "../events/manual-event-service.js";
 import type { SqliteEventBusJournalRepository } from "../events/sqlite-event-bus-journal-repository.js";
 import type { VideoBusAdmissionRepository } from "./video-bus-admission-repository.js";
-import type { VideoRequestContext, VideoRequestIntake } from "./video-request-intake.js";
+import type { VideoRequestContext } from "./video-request-intake.js";
 
 export interface ManualVideoRequestServiceOptions {
   readonly manualEvents: Pick<ManualEventService, "submit">;
   readonly admissions: VideoBusAdmissionRepository;
   readonly journal: Pick<SqliteEventBusJournalRepository, "findByBusId" | "consumerOutcomes">;
-  readonly legacyIntake: Pick<VideoRequestIntake, "submit">;
 }
 
 /** HTTP adapter publishes once; the consumer's durable receipt is the only admission result. */
 export class ManualVideoRequestService {
   constructor(private readonly options: ManualVideoRequestServiceOptions) {}
 
-  async submit(purpose: OverlayPurpose, input: unknown, context: VideoRequestContext): Promise<VideoSubmissionResult> {
-    // S09 owns test-queue retirement. An old test caller must not reach ordinary playback early.
-    if (purpose === "test") return this.options.legacyIntake.submit(purpose, input, context);
+  async submit(purpose: VideoQueuePurpose, input: unknown, context: VideoRequestContext): Promise<VideoSubmissionResult> {
+    if (purpose !== "live") throw new Error("The Videos test queue was retired. Use the ordinary queue explicitly.");
     const parsed = videoRequestInputSchema.safeParse(input);
     if (!parsed.success) return { status: "rejected", reason: "invalid-request", fields: [...new Set(parsed.error.issues.map(issue => String(issue.path[0] ?? "request")))] };
     const receipt = await this.options.manualEvents.submit({ action: { kind: "video-request", request: parsed.data } },

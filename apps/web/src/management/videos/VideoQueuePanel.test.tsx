@@ -60,10 +60,10 @@ describe("VideoQueuePanel", () => {
     const command = vi.fn(async () => queuedVideos());
     renderManagement(<VideoQueuePanel api={createStaticVideoQueueApi(queuedVideos(), { command })} />);
     await user.click(await screen.findByRole("button", { name: "Play next" }));
-    expect(command).toHaveBeenLastCalledWith("live", 4, { kind: "play-next" });
+    expect(command).toHaveBeenLastCalledWith(4, { kind: "play-next" });
     expect(await screen.findByText("Playing the next video.")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Play all now" }));
-    expect(command).toHaveBeenLastCalledWith("live", 4, { kind: "play-all" });
+    expect(command).toHaveBeenLastCalledWith(4, { kind: "play-all" });
     expect(await screen.findByText("Playing 3 queued videos in order.")).toBeVisible();
   });
 
@@ -74,10 +74,10 @@ describe("VideoQueuePanel", () => {
       .mockResolvedValueOnce(videoQueue({ ...queuedVideos(), queuePaused: false, revision: 6 }));
     renderManagement(<VideoQueuePanel api={createStaticVideoQueueApi(queuedVideos(), { command })} pollIntervalMs={60_000} />);
     await user.click(await screen.findByRole("button", { name: "Pause queue" }));
-    expect(command).toHaveBeenLastCalledWith("live", 4, { kind: "pause-queue" });
+    expect(command).toHaveBeenLastCalledWith(4, { kind: "pause-queue" });
     expect(await screen.findByText("Queue paused")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Resume queue" }));
-    expect(command).toHaveBeenLastCalledWith("live", 5, { kind: "resume-queue" });
+    expect(command).toHaveBeenLastCalledWith(5, { kind: "resume-queue" });
     expect(await screen.findByRole("button", { name: "Pause queue" })).toBeVisible();
   });
 
@@ -94,7 +94,7 @@ describe("VideoQueuePanel", () => {
     expect(within(mystery).queryByRole("button", { name: /Play anyway/u })).not.toBeInTheDocument();
     expect(within(screen.getByRole("article", { name: "Short clip" })).queryByRole("button", { name: /Play anyway/u })).not.toBeInTheDocument();
     await user.click(within(concert).getByRole("button", { name: "Play anyway: Full concert" }));
-    expect(command).toHaveBeenCalledWith("live", 4, { kind: "play-anyway", itemId: "long" });
+    expect(command).toHaveBeenCalledWith(4, { kind: "play-anyway", itemId: "long" });
   });
 
   describe("provider details", () => {
@@ -119,7 +119,7 @@ describe("VideoQueuePanel", () => {
       const command = vi.fn(async () => describedVideos());
       renderManagement(<VideoQueuePanel api={createStaticVideoQueueApi(describedVideos(), { command })} pollIntervalMs={60_000} />);
       await user.click(await screen.findByRole("button", { name: "Remove: Never Gonna Give You Up (Official Video)" }));
-      expect(command).toHaveBeenCalledWith("live", 4, { kind: "remove", itemId: "yt" });
+      expect(command).toHaveBeenCalledWith(4, { kind: "remove", itemId: "yt" });
       expect(await screen.findByText("Never Gonna Give You Up (Official Video) removed.")).toBeVisible();
     });
 
@@ -190,8 +190,8 @@ describe("VideoQueuePanel", () => {
       const replay = await screen.findByRole("button", { name: "Replay Cat plays keyboard in Videos" });
       replay.focus();
       await user.keyboard("{Enter}");
-      expect(requeue).toHaveBeenCalledWith("live", 4, "done");
-      expect(await screen.findByText("Cat plays keyboard added to the live video queue.")).toBeVisible();
+      expect(requeue).toHaveBeenCalledWith(4, "done");
+      expect(await screen.findByText("Cat plays keyboard added to the ordinary video queue.")).toBeVisible();
       expect(screen.getByText("Waiting (2)")).toBeVisible();
       await waitFor(() => expect(screen.getByRole("button", { name: "Replay Cat plays keyboard in Videos" })).toHaveFocus());
     });
@@ -218,9 +218,9 @@ describe("VideoQueuePanel", () => {
     renderManagement(<VideoQueuePanel api={createStaticVideoQueueApi(queuedVideos(), { command })} />);
     expect(await screen.findByRole("button", { name: "Move up: Cat plays keyboard" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Move down: Cat plays keyboard" }));
-    expect(command).toHaveBeenLastCalledWith("live", 4, { kind: "reorder", itemIds: ["b", "a", "c"] });
+    expect(command).toHaveBeenLastCalledWith(4, { kind: "reorder", itemIds: ["b", "a", "c"] });
     await user.click(screen.getByRole("button", { name: "Remove: Speedrun highlight" }));
-    expect(command).toHaveBeenLastCalledWith("live", 4, { kind: "remove", itemId: "b" });
+    expect(command).toHaveBeenLastCalledWith(4, { kind: "remove", itemId: "b" });
   });
 
   it("asks for confirmation before clearing and cancels without a command", async () => {
@@ -233,7 +233,7 @@ describe("VideoQueuePanel", () => {
     expect(command).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Clear queue" }));
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Clear queue" }));
-    expect(command).toHaveBeenCalledWith("live", 4, { kind: "clear" });
+    expect(command).toHaveBeenCalledWith(4, { kind: "clear" });
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(await screen.findByText("Waiting videos cleared.")).toBeVisible();
   });
@@ -262,11 +262,11 @@ describe("VideoQueuePanel", () => {
     const seek = within(card).getByRole("slider", { name: "Seek" });
     fireEvent.change(seek, { target: { value: "120000" } });
     fireEvent.keyUp(seek, { key: "ArrowRight" });
-    await waitFor(() => expect(control).toHaveBeenCalledWith("live", "seek", "now", 120_000));
+    await waitFor(() => expect(control).toHaveBeenCalledWith("seek", "now", 120_000));
     await user.click(within(await screen.findByRole("article", { name: "Now playing" })).getByRole("button", { name: "Resume video" }));
-    expect(control).toHaveBeenLastCalledWith("live", "resume", "now", undefined);
+    expect(control).toHaveBeenLastCalledWith("resume", "now", undefined);
     await user.click(within(screen.getByRole("article", { name: "Now playing" })).getByRole("button", { name: "Skip" }));
-    expect(command).toHaveBeenLastCalledWith("live", 4, { kind: "skip" });
+    expect(command).toHaveBeenLastCalledWith(4, { kind: "skip" });
   });
 
   it("pauses a playing video", async () => {
@@ -274,7 +274,7 @@ describe("VideoQueuePanel", () => {
     const control = vi.fn(async () => playingVideo("paused"));
     renderManagement(<VideoQueuePanel api={createStaticVideoQueueApi(playingVideo(), { control })} />);
     await user.click(await screen.findByRole("button", { name: "Pause video" }));
-    expect(control).toHaveBeenCalledWith("live", "pause", "now", undefined);
+    expect(control).toHaveBeenCalledWith("pause", "now", undefined);
     expect(await screen.findByText("Now playing clip paused.")).toBeVisible();
   });
 
@@ -297,7 +297,7 @@ describe("VideoQueuePanel", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(getQueue).toHaveBeenCalledTimes(2);
     await user.click(screen.getByRole("button", { name: "Play next" }));
-    expect(command).toHaveBeenLastCalledWith("live", 9, { kind: "play-next" });
+    expect(command).toHaveBeenLastCalledWith(9, { kind: "play-next" });
   });
 
   it("shows a command rejection with its message", async () => {
@@ -325,18 +325,16 @@ describe("VideoQueuePanel", () => {
     await user.type(link, "https://youtu.be/abc");
     await user.type(screen.getByLabelText("Title (optional)"), "Viewer pick");
     await user.click(screen.getByRole("button", { name: "Add video" }));
-    expect(submit).toHaveBeenLastCalledWith("live", { link: "https://youtu.be/abc", title: "Viewer pick" });
+    expect(submit).toHaveBeenLastCalledWith({ link: "https://youtu.be/abc", title: "Viewer pick" });
     expect(await screen.findByText("Video added and held: it is over the length limit.")).toBeVisible();
     expect(link).toHaveValue("");
   });
 
-  it("switches to the test queue", async () => {
-    const user = userEvent.setup();
-    const getQueue = vi.fn(async (purpose: "live" | "test") => videoQueue({ purpose }));
+  it("loads the ordinary queue without a destination selector", async () => {
+    const getQueue = vi.fn(async () => videoQueue());
     renderManagement(<VideoQueuePanel api={createStaticVideoQueueApi(videoQueue(), { getQueue })} />);
     await screen.findByText("Nothing is playing.");
-    await user.click(screen.getByRole("button", { name: "Test queue" }));
-    expect(screen.getByRole("button", { name: "Test queue" })).toHaveAttribute("aria-pressed", "true");
-    await waitFor(() => expect(getQueue).toHaveBeenLastCalledWith("test"));
+    expect(screen.queryByRole("button", { name: "Test queue" })).not.toBeInTheDocument();
+    await waitFor(() => expect(getQueue).toHaveBeenLastCalledWith());
   });
 });

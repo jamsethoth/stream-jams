@@ -35,19 +35,25 @@ describe("OverlayOutputManagementService", () => {
       [null, "live"], [null, "test"], ["landscape", "live"], ["landscape", "test"], ["vertical", "live"], ["vertical", "test"]
     ]);
   });
-  it("lists create-required Videos live and test module outputs", async () => {
+  it("lists only the ordinary Videos module output", async () => {
     const { service } = createService([]);
     const outputs = await service.listOutputs("http://127.0.0.1:39187");
     expect(outputs.filter(output => output.moduleId === "video-shoutout")).toEqual([]);
     expect(outputs.filter(output => output.moduleId === "videos")).toEqual([
-      expect.objectContaining({ id: "module:videos:live", scope: "module", targetProfileId: null, purpose: "live", enabled: true, url: null, copyableUrlStatus: "create-required" }),
-      expect.objectContaining({ id: "module:videos:test", scope: "module", targetProfileId: null, purpose: "test", enabled: true, url: null, copyableUrlStatus: "create-required" })
+      expect.objectContaining({ id: "module:videos:live", scope: "module", targetProfileId: null, purpose: "live", enabled: true, url: null, copyableUrlStatus: "create-required" })
     ]);
   });
   it("creates a Videos URL on the existing module route family", async () => {
     const { service } = createService(["ovl_videosLive"]);
     const created = await service.createKey({ overlayId: "default", scope: "module", moduleId: "videos", purpose: "live", targetProfileId: null }, "http://127.0.0.1:39187");
     expect(created.url).toBe("http://127.0.0.1:39187/overlay/modules/videos/live/ovl_videosLive");
+  });
+  it("cannot recreate a retired Videos test key", async () => {
+    const { service } = createService([]);
+    const retired = { overlayId: "default", scope: "module" as const, moduleId: "videos", purpose: "test" as const, targetProfileId: null };
+    await expect(service.createKey(retired, "http://127.0.0.1:39187")).rejects.toThrow();
+    await expect(service.regenerateKey(retired, "http://127.0.0.1:39187")).rejects.toThrow();
+    expect((await service.listOutputs("http://127.0.0.1:39187")).some(output => output.moduleId === "videos" && output.purpose === "test")).toBe(false);
   });
   it("lists independent Alerts outputs for both target profiles and purposes", async () => {
     const { service } = createService([]);

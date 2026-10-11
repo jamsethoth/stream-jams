@@ -1,4 +1,5 @@
-import type { OverlayPurpose } from "../shared/schemas.js";
+/** The sole ordinary Videos session; public submissions cannot select it. */
+export type VideoQueuePurpose = "live";
 
 export type VideoProvider = "youtube" | "twitch-clip" | "twitch-vod" | "direct";
 
@@ -27,7 +28,8 @@ export type VideoSubmissionResult =
 
 export interface VideoRequestItem {
   readonly id: string;
-  readonly purpose: OverlayPurpose;
+  readonly reviewRequired: boolean;
+  readonly migrationProvenance: { readonly kind: "test-queue-consolidation"; readonly originalPurpose: "test"; readonly originalStatus: VideoRequestStatus } | null;
   readonly source: VideoSource;
   /** The title given with the submission. It wins over `providerTitle` and is the only title shown on stream. */
   readonly title: string | null;
@@ -66,7 +68,6 @@ export interface VideoMetadata {
 
 export interface VideoRewardMapping {
   readonly rewardId: string;
-  readonly purpose: OverlayPurpose;
 }
 
 /** Stable local picture/caption content, with independent desktop scene placement. */
@@ -127,7 +128,6 @@ export type VideosProjection =
 
 /** Queue state as returned to management, operator and automation clients. */
 export interface VideoQueueResponse {
-  readonly purpose: OverlayPurpose;
   readonly revision: number;
   readonly queuePaused: boolean;
   readonly runRemaining: number;

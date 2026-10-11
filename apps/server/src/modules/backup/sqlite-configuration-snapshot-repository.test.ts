@@ -20,6 +20,17 @@ describe("SqliteConfigurationSnapshotRepository", () => {
 
   afterEach(() => database.close());
 
+  it("excludes only retired Videos test output metadata and preserves unified test until its owning cutover", () => {
+    for (const [id, moduleId, purpose, scope] of [["video-test", "videos", "test", "module"], ["video-live", "videos", "live", "module"], ["unified-test", null, "test", "unified"]] as const) {
+      database.connection.prepare("INSERT INTO overlay_keys (id,overlay_id,module_id,purpose,scope,key_hash,created_at,revoked_at,target_profile_id) VALUES (?,'default',?,?,?,?,'old',NULL,NULL)")
+        .run(id, moduleId, purpose, scope, id.padEnd(64, "a"));
+    }
+    const outputs = new SqliteConfigurationSnapshotRepository(database.connection).snapshot().overlayOutputs;
+    expect(outputs).toContainEqual({ overlayId: "default", scope: "unified", moduleId: null, purpose: "test", targetProfileId: null });
+    expect(outputs).toContainEqual({ overlayId: "default", scope: "module", moduleId: "videos", purpose: "live", targetProfileId: null });
+    expect(outputs.some(output => output.moduleId === "videos" && output.purpose === "test")).toBe(false);
+  });
+
   it("blocks credential-bearing legacy provider exports and imports with safe errors", () => {
     const repository = new SqliteConfigurationSnapshotRepository(database.connection);
     const snapshot = repository.snapshot();

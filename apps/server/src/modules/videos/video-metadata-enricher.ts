@@ -1,4 +1,4 @@
-import type { OverlayPurpose, VideoRequestItem } from "@stream-jams/core";
+import type { VideoQueuePurpose, VideoRequestItem } from "@stream-jams/core";
 import type { VideoMetadataLookup, VideoMetadataLookupResult } from "./video-metadata-lookup.js";
 import type { VideoQueueService } from "./video-queue-service.js";
 
@@ -29,7 +29,7 @@ export class VideoMetadataEnricher {
   }
 
   /** Looks up the item's details unless it is a direct file or already described. Never rejects. */
-  async enrich(purpose: OverlayPurpose, item: VideoRequestItem): Promise<void> {
+  async enrich(purpose: VideoQueuePurpose, item: VideoRequestItem): Promise<void> {
     if (this.#controller.signal.aborted || item.source.provider === "direct") return;
     if (item.providerTitle !== null && item.channelName !== null && (item.durationMs !== null || item.source.provider === "youtube")) return;
     let result: VideoMetadataLookupResult;

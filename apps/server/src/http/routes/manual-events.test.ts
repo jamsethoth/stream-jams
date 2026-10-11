@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import { createBaseServerApp } from "../../app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import { ManualSubmissionRejectedError } from "../../modules/events/manual-event-service.js";
+import { EventBusInputRejectedError } from "../../modules/events/event-bus.js";
 import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 import { registerManualEventRoutes } from "./manual-events.js";
 
@@ -29,5 +30,9 @@ it("protects simulations with management session origin and CSRF; rejects forged
     const rejected = await app.inject({ method: "POST", url: "/management/events/manual", headers, payload: simulation });
     expect(rejected.statusCode).toBe(422);
     expect(rejected.json().error.message).toContain("ref-invalid");
+    submit.mockRejectedValueOnce(new EventBusInputRejectedError("VIDEO_TEST_RETIRED", "Remove the Videos purpose selector and refresh the ordinary queue."));
+    const retired = await app.inject({ method: "POST", url: "/management/events/manual", headers, payload: simulation });
+    expect(retired.statusCode).toBe(410);
+    expect(retired.json()).toMatchObject({ error: { code: "VIDEO_TEST_RETIRED", message: expect.stringContaining("ordinary queue") } });
   } finally { await app.close(); }
 });

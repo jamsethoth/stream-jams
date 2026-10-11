@@ -57,3 +57,5 @@ Never automatically retry commands after timeout/disconnect/uncertain errors. Re
 ## Verification boundary
 
 Server acceptance uses disposable databases, local services, browser approval and output fixtures. The separate Stream Deck HTTP adapter, SDK credential export checks and physical key/audio acceptance are separate deliverables. This API does not authenticate arbitrary local malware or protect against a compromised user account.
+
+Videos uses one ordinary queue under `/automation/v1/videos/live`. Legacy test paths and submission-purpose selectors return 410 `VIDEO_TEST_RETIRED` without admission. The guarded item command `{kind:"play",itemId}` releases migration review only; a real length hold still requires the separate Play anyway command. Refresh queue state after an upgrade and keep unknown-outcome requests unrepeated.

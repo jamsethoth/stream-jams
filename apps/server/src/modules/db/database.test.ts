@@ -1,4 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
+import { readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { compatibilityAlertTextBoxStyle, compatibilityAlertTextStyle } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
 import { createInMemoryStreamJamsDatabase, runInTransaction } from "./database.js";
@@ -56,7 +58,8 @@ const expectedMigrations = [
   "042-manual-event-bus",
   "043-video-bus-admission",
   "044-timer-profile-appearance",
-  "045-video-content-layout"
+  "045-video-content-layout",
+  "046-single-video-queue"
 ] as const;
 
 const expectedTables = [
@@ -123,10 +126,17 @@ describe("Stream Jams SQLite database", () => {
     fixture.connection.exec(videoRequestQueueMigration.sql);
     fixture.connection.exec("INSERT INTO schema_migrations VALUES ('033-video-request-queue', '2026-10-05T00:00:00.000Z')");
     fixture.connection.exec("UPDATE video_queue_state SET revision = 4 WHERE purpose = 'live'");
+    const historyBefore = fixture.connection.prepare("SELECT * FROM schema_migrations ORDER BY rowid").all();
+    const queueBefore = fixture.connection.prepare("SELECT * FROM video_queue_state ORDER BY purpose").all();
+    const path = String(fixture.connection.prepare("PRAGMA database_list").all()[0]?.file);
     const database = fixture.upgrade();
+    const snapshotPath = readdirSync(dirname(path)).find(name => name.includes(".pre046-"))!;
+    using snapshot = new DatabaseSync(join(dirname(path), snapshotPath), { readOnly: true });
+    expect(snapshot.prepare("SELECT * FROM schema_migrations ORDER BY rowid").all()).toEqual(historyBefore);
+    expect(snapshot.prepare("SELECT * FROM video_queue_state ORDER BY purpose").all()).toEqual(queueBefore);
     expect(database.connection.prepare("SELECT id FROM schema_migrations ORDER BY rowid").all().map(row => row.id)).toEqual(expectedMigrations);
     expect(database.connection.prepare("SELECT applied_at FROM schema_migrations WHERE id = '040-video-request-queue'").get()?.applied_at).toBe("2026-10-05T00:00:00.000Z");
-    expect(database.connection.prepare("SELECT revision FROM video_queue_state WHERE purpose = 'live'").get()?.revision).toBe(4);
+    expect(database.connection.prepare("SELECT revision FROM video_queue_state WHERE purpose = 'live'").get()?.revision).toBe(5);
     expect(listTables(database.connection)).toEqual(expectedTables);
     expect(() => database.runMigrations()).not.toThrow();
   });

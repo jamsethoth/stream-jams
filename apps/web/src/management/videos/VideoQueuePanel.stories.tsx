@@ -60,6 +60,19 @@ export const EmptyQueue: Story = {
   }
 };
 
+export const MigratedRequestNeedsReview: Story = {
+  args: { api: createStaticVideoQueueApi(videoQueue({ items: [videoItem("migrated", { title: "Migrated clip", status: "held", reviewRequired: true,
+    migrationProvenance: { kind: "test-queue-consolidation", originalPurpose: "test", originalStatus: "queued" } })] })) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const row = await canvas.findByRole("article", { name: "Migrated clip" });
+    await expect(within(row).getByText("Migrated test request: review before Play")).toBeVisible();
+    await expect(within(row).getByRole("button", { name: "Play reviewed video: Migrated clip" })).toBeEnabled();
+    await expect(within(row).queryByRole("button", { name: "Play anyway: Migrated clip" })).not.toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Play all now" })).toBeDisabled();
+  }
+};
+
 export const QueuedRequests: Story = {
   args: { api: createStaticVideoQueueApi(queuedVideos()) },
   play: async ({ canvasElement }) => {
@@ -125,7 +138,7 @@ export const OperatorRecentVideos: Story = {
     await expect(recent.getByRole("article", { name: "Cat plays keyboard" })).toHaveTextContent("youtu.be · via channel points");
     await expect(canvas.queryByText(/Failed recently/u)).not.toBeInTheDocument();
     await userEvent.click(recent.getByRole("button", { name: "Replay Removed upload in Videos" }));
-    await expect(await canvas.findByText("Removed upload added to the live video queue.")).toBeVisible();
+    await expect(await canvas.findByText("Removed upload added to the ordinary video queue.")).toBeVisible();
   }
 };
 

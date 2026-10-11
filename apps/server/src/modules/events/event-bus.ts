@@ -43,7 +43,14 @@ export interface EventBusDeliveryFailureReport {
   readonly error: unknown;
 }
 
+/** Bounded adapter rejection, safe for management errors and source diagnostics. */
+export class EventBusInputRejectedError extends Error {
+  constructor(readonly code: string, message: string) { super(message); this.name = "EventBusInputRejectedError"; }
+}
+
 export interface EventBusOptions {
+  /** Reject retired adapter input before journal admission or consumer startup. */
+  readonly validateInput?: ((input: BusEventInput) => void) | undefined;
   readonly journal: EventBusJournalRepository;
   readonly consumers: readonly EventBusConsumer[];
   readonly generateReferenceId: () => string;
@@ -84,6 +91,7 @@ const pruneIntervalMs = 60 * 60_000;
  * accepted events independently, in order, at least once.
  */
 export class EventBus implements EventSink {
+  readonly #validateInput: EventBusOptions["validateInput"];
   readonly #journal: EventBusJournalRepository;
   readonly #workers: readonly ConsumerWorker[];
   readonly #generateBusId: () => string;
@@ -103,6 +111,7 @@ export class EventBus implements EventSink {
   #lastPrunedAtMs = Number.NEGATIVE_INFINITY;
 
   constructor(options: EventBusOptions) {
+    this.#validateInput = options.validateInput;
     const ids = new Set(options.consumers.map((consumer) => consumer.id));
     if (ids.size !== options.consumers.length) throw new Error("Event bus consumer IDs must be unique");
     this.#journal = options.journal;
@@ -214,6 +223,7 @@ export class EventBus implements EventSink {
   }
 
   async #append(input: BusEventInput): Promise<EventBusAppendResult> {
+    this.#validateInput?.(input);
     await this.start();
     const receivedAtMs = Date.parse(input.receivedAt);
     const appended = this.#journal.append(input, this.#generateBusId(), {

@@ -20,13 +20,13 @@ export function createChannelPointVideoIntake(options: ChannelPointVideoIntakeOp
       const mapping = (await options.getConfig()).rewardMappings.find(candidate => candidate.rewardId === event.rewardId);
       if (mapping === undefined) return "no-match";
       const link = event.userInput?.trim() ?? "";
-      const result = await options.intake.submit(mapping.purpose, {
+      const result = await options.intake.submit("live", {
         link: link === "" ? undefined : link,
         requester: event.actor.displayName.slice(0, 64)
       }, { ...(context ?? {}), via: context?.via ?? "channel-points", mayAutoplay: false, policy: "channel-points" });
       await options.onDiagnostic?.(result.status === "accepted"
-        ? { level: "info", message: "Channel point video request was queued.", metadata: { purpose: mapping.purpose, itemId: result.item.id, provider: result.item.source.provider, status: result.item.status } }
-        : { level: "warn", message: "Channel point video request was rejected and not queued.", metadata: { purpose: mapping.purpose, reason: result.reason, fields: result.fields, eventId: event.id } });
+        ? { level: "info", message: "Channel point video request was queued.", metadata: { purpose: "live", itemId: result.item.id, provider: result.item.source.provider, status: result.item.status } }
+        : { level: "warn", message: "Channel point video request was rejected and not queued.", metadata: { purpose: "live", reason: result.reason, fields: result.fields, eventId: event.id } });
       return result.status === "accepted" ? "admitted" : rejectionOutcome(result.reason);
     }
   };

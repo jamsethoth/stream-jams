@@ -17,7 +17,7 @@ export const videosMaximumDeviceDelayMs = 500;
 const directHostSchema = /* @__PURE__ */ z.string().trim().toLowerCase()
   .regex(/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u);
 
-export const videosModuleConfigSchema = /* @__PURE__ */ z.object({
+const videosConfigFields = /* @__PURE__ */ z.object({
   maxLengthSeconds: z.number().int().min(5).max(videosMaximumLengthSecondsLimit),
   gapSeconds: z.number().int().min(0).max(videosMaximumGapSeconds),
   allowedDirectHosts: z.array(directHostSchema).max(videosMaximumDirectHosts)
@@ -28,12 +28,22 @@ export const videosModuleConfigSchema = /* @__PURE__ */ z.object({
   // Saved before device delays existed: no delay.
   audioDeviceDelaysMs: z.record(z.string().min(1).max(512), z.number().int().min(0).max(videosMaximumDeviceDelayMs)).default({}),
   streamerBotAutoplay: z.boolean(),
-  rewardMappings: z.array(z.object({ rewardId: z.string().trim().min(1).max(128), purpose: overlayPurposeSchema }).strict())
-    .max(videosMaximumRewardMappings)
-    .refine(mappings => new Set(mappings.map(mapping => mapping.rewardId)).size === mappings.length, "Rewards must be unique"),
   // Saved before placement existed: the fixed look those outputs already had.
   layout: videosLayoutSchema.default(createDefaultVideosLayout)
-}).strict().refine(config => Object.keys(config.audioDeviceDelaysMs).every(id => config.audioDeviceIds.includes(id)),
+}).strict();
+
+/** Reserved historical v2 validator for migration 045. Active boundaries use v3 below. */
+export const videosModuleConfigSchema = /* @__PURE__ */ videosConfigFields.extend({
+  rewardMappings: z.array(z.object({ rewardId: z.string().trim().min(1).max(128), purpose: overlayPurposeSchema }).strict())
+    .max(videosMaximumRewardMappings)
+    .refine(mappings => new Set(mappings.map(mapping => mapping.rewardId)).size === mappings.length, "Rewards must be unique")
+}).refine(config => Object.keys(config.audioDeviceDelaysMs).every(id => config.audioDeviceIds.includes(id)),
+  { message: "Delays are only allowed for selected devices", path: ["audioDeviceDelaysMs"] });
+
+export const currentVideosModuleConfigSchema = /* @__PURE__ */ videosConfigFields.extend({
+  rewardMappings: z.array(z.strictObject({ rewardId: z.string().trim().min(1).max(128) })).max(videosMaximumRewardMappings)
+    .refine(mappings => new Set(mappings.map(mapping => mapping.rewardId)).size === mappings.length, "Rewards must be unique")
+}).refine(config => Object.keys(config.audioDeviceDelaysMs).every(id => config.audioDeviceIds.includes(id)),
   { message: "Delays are only allowed for selected devices", path: ["audioDeviceDelaysMs"] }) satisfies z.ZodType<VideosModuleConfig>;
 
 export function createDefaultVideosModuleConfig(): VideosModuleConfig {

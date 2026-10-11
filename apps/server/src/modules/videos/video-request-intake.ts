@@ -1,4 +1,4 @@
-import type { OverlayPurpose, VideoRequestAdmissionResult, VideoRequestItem, VideoSubmissionChannel, VideosModuleConfig } from "@stream-jams/core";
+import type { VideoQueuePurpose, VideoRequestAdmissionResult, VideoRequestItem, VideoSubmissionChannel, VideosModuleConfig } from "@stream-jams/core";
 import { isAllowedVideoSource, parseVideoLink } from "@stream-jams/core/videos";
 import { VideoQueueCommandError, type VideoQueueService } from "./video-queue-service.js";
 import type { VideoBusAdmissionRepository, VideoBusIdentity } from "./video-bus-admission-repository.js";
@@ -25,7 +25,7 @@ export interface VideoRequestIntakeOptions {
    * Called once for every request this intake queues, after the queue accepted it, so provider
    * details can be looked up without delaying the submitter. It must not throw or block.
    */
-  readonly onQueued?: ((purpose: OverlayPurpose, item: VideoRequestItem) => void) | undefined;
+  readonly onQueued?: ((purpose: VideoQueuePurpose, item: VideoRequestItem) => void) | undefined;
 }
 
 export interface VideoRequestContext {
@@ -45,12 +45,19 @@ export interface VideoRequestContext {
 export class VideoRequestIntake {
   constructor(private readonly options: VideoRequestIntakeOptions) {}
 
-  async submit(purpose: OverlayPurpose, input: unknown, context: VideoRequestContext): Promise<VideoRequestResult> {
+  /** Redelivery returns the committed snapshot even when the original payload is now retired. */
+  findAdmission(identity: VideoBusIdentity): VideoRequestResult | null {
+    const receipt = this.options.admissions?.find(identity.busId);
+    if (receipt !== null && receipt !== undefined && receipt.eventId !== identity.eventId) throw new Error("Video admission identity does not match its durable receipt.");
+    return receipt?.result ?? null;
+  }
+
+  async submit(purpose: VideoQueuePurpose, input: unknown, context: VideoRequestContext): Promise<VideoRequestResult> {
     const identity = context.busIdentity;
     if (identity !== undefined && this.options.admissions === undefined) throw new Error("Durable video admission is unavailable.");
     this.options.admissions?.prune();
-    const receipt = identity === undefined ? null : this.options.admissions?.find(identity.busId);
-    if (receipt !== null && receipt !== undefined) return receipt.result;
+    const receipt = identity === undefined ? null : this.findAdmission(identity);
+    if (receipt !== null) return receipt;
     const reject = (reason: VideoRequestRejection, fields: readonly string[]): VideoRequestResult => {
       const result = { status: "rejected", reason, fields } as const;
       if (identity !== undefined) this.options.admissions?.record(identity, result);
@@ -90,7 +97,7 @@ export class VideoRequestIntake {
    * the module must be on and the link must still pass the current allowlist. Revision conflicts,
    * a missing Recent item and a full queue throw from the queue service.
    */
-  async requeue(purpose: OverlayPurpose, expectedRevision: number, itemId: string, via: VideoSubmissionChannel): Promise<VideoRequeueResult> {
+  async requeue(purpose: VideoQueuePurpose, expectedRevision: number, itemId: string, via: VideoSubmissionChannel): Promise<VideoRequeueResult> {
     const { queue } = this.options;
     if (!(await this.options.isModuleEnabled())) return { status: "rejected", reason: "module-disabled" };
     const config = await this.options.getConfig();

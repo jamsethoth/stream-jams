@@ -12,7 +12,7 @@ import { SqliteVideoQueueRepository } from "./video-queue-repository.js";
 import { SqliteVideoBusAdmissionRepository } from "./video-bus-admission-repository.js";
 import { VideoRequestIntake } from "./video-request-intake.js";
 import { createVideosBusConsumer } from "./videos-bus-consumer.js";
-import { createStreamerBotVideoIntake } from "./streamerbot-video-intake.js";
+import { createStreamerBotVideoIntake, validateVideoBusInput } from "./streamerbot-video-intake.js";
 import { createChannelPointVideoIntake } from "./channel-point-video-intake.js";
 import { ManualVideoRequestService } from "./manual-video-request-service.js";
 
@@ -42,9 +42,9 @@ function setup(path: string, enabled: boolean | (() => Promise<boolean>) = true)
     channelPoints: createChannelPointVideoIntake({ intake, getConfig: () => config })
   });
   const journal = new SqliteEventBusJournalRepository(database.connection);
-  const bus = new EventBus({ journal, consumers: [consumer], now: () => new Date(now), generateReferenceId: () => "failure-ref" });
+  const bus = new EventBus({ journal, consumers: [consumer], validateInput: validateVideoBusInput, now: () => new Date(now), generateReferenceId: () => "failure-ref" });
   const manual = new ManualEventService({ bus, now: () => new Date(now), validateReferences: async () => true });
-  const submissions = new ManualVideoRequestService({ manualEvents: manual, admissions, journal, legacyIntake: intake });
+  const submissions = new ManualVideoRequestService({ manualEvents: manual, admissions, journal });
   return { database, queue, intake, admissions, consumer, journal, bus, manual, submissions, setConfig: (change: Partial<VideosModuleConfig>) => { config = { ...config, ...change }; } };
 }
 
@@ -118,10 +118,11 @@ describe("durable Videos bus admission", () => {
 
   it("receipt persistence failure rolls back queue insertion and revision before publication", async () => {
     const { database, consumer, queue } = setup(file());
+    const before = queue.view("live").revision;
     database.connection.exec("CREATE TRIGGER reject_receipt BEFORE INSERT ON video_bus_admissions BEGIN SELECT RAISE(ABORT, 'receipt unavailable'); END;");
     expect(await consumer.handle({ ...manualVideo(), sequence: 1, busId: "rollback-bus" }, { checkpoint: () => {} })).toBe("failed");
     expect(queue.view("live").items).toEqual([]);
-    expect(queue.view("live").revision).toBe(0);
+    expect(queue.view("live").revision).toBe(before);
     expect(database.connection.prepare("SELECT COUNT(*) AS total FROM video_requests").get()!.total).toBe(0);
   });
 
@@ -173,13 +174,51 @@ describe("durable Videos bus admission", () => {
     expect(journal.headSequence()).toBe(2);
   });
 
-  it("legacy test requests remain isolated and never publish an ordinary action", async () => {
+  it("rejects retired manual and external test input before journal admission", async () => {
     const { bus, submissions, queue, journal } = setup(file());
     await bus.start();
-    expect(await submissions.submit("test", { link }, { via: "management", mayAutoplay: true })).toMatchObject({ status: "accepted", item: { purpose: "test" } });
+    await expect(submissions.submit("test" as never, { link }, { via: "management", mayAutoplay: true })).rejects.toThrow(/retired/iu);
+    await expect(bus.handleTriggers([{ kind: "streamerbot-event", sourceKey: "General", eventType: "Custom", eventId: "retired-video", occurredAt: now,
+      providerId: "provider-streamerbot", summary: "Video", userName: "" }], { source: "StreamJams", type: "VideoRequest", purpose: "test", link })).rejects.toMatchObject({ code: "VIDEO_TEST_RETIRED" });
     expect(journal.headSequence()).toBe(0);
     expect(queue.view("live").items).toEqual([]);
-    expect(queue.view("test").items).toHaveLength(1);
+    expect(journal.readAfter(0, 10)).toEqual([]);
+    const { manual, journal: simulationJournal, queue: simulationQueue } = setup(":memory:");
+    await expect(manual.submit({ action: { kind: "simulate-external", identity: { providerKind: "streamerbot", sourceKey: "General", eventType: "Custom" }, payload: { source: "StreamJams", type: "VideoRequest", purpose: "test", link } } }, { channel: "management" })).rejects.toMatchObject({ code: "VIDEO_TEST_RETIRED" });
+    expect(simulationJournal.headSequence()).toBe(0); expect(simulationQueue.view("live").items).toEqual([]);
+    expect(queue.view("live").items).toEqual([]);
+  });
+
+  it("receipted legacy test redelivery returns its durable outcome without touching the queue", async () => {
+    const { consumer, queue, admissions, journal } = setup(":memory:");
+    const item = queue.submit("live", { source: { provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 0 }, title: "Original receipt", requester: null, durationMs: null, autoplay: false, via: "streamerbot" });
+    admissions.record({ busId: "legacy-accepted", eventId: "legacy-event" }, { status: "accepted", item });
+    admissions.record({ busId: "legacy-rejected", eventId: "legacy-event" }, { status: "rejected", reason: "module-disabled", fields: [] });
+    const before = queue.view("live");
+    const event = { kind: "external" as const, sourceKind: "streamerbot" as const, sourceRegistrationId: null, correlationKey: null,
+      eventId: "legacy-event", receivedAt: now, effectTriggers: [{ kind: "streamerbot-event" as const, sourceKey: "General", eventType: "Custom", eventId: "legacy-event", occurredAt: now, providerId: "provider-streamerbot", summary: "Video", userName: "" }],
+      payload: { source: "StreamJams", type: "VideoRequest", purpose: "test", link } };
+    const appended = journal.append(event, "legacy-accepted", { duplicateSinceMs: 0, correlationSinceMs: 0 });
+    if (appended.status !== "appended") throw new Error("fixture not appended");
+    expect(await consumer.handle(appended.event, { checkpoint: () => {} })).toBe("admitted");
+    expect(await consumer.handle({ ...appended.event, busId: "legacy-rejected" }, { checkpoint: () => {} })).toBe("no-match");
+    expect(await consumer.handle({ ...appended.event, eventId: "mismatched-event" }, { checkpoint: () => {} })).toBe("failed");
+    expect(queue.view("live")).toEqual(before);
+    expect(admissions.find("legacy-accepted")?.result).toEqual({ status: "accepted", item });
+  });
+
+  it("legacy journaled test replay fails closed while unrelated external identities remain admissible", async () => {
+    const { consumer, queue, bus, journal } = setup(":memory:");
+    await bus.start();
+    const input = { kind: "external" as const, sourceKind: "streamerbot" as const, sourceRegistrationId: null, correlationKey: null,
+      eventId: "legacy-test", receivedAt: now, effectTriggers: [{ kind: "streamerbot-event" as const, sourceKey: "General", eventType: "Custom", eventId: "legacy-test", occurredAt: now, providerId: "provider-streamerbot", summary: "Video", userName: "" }],
+      payload: { source: "StreamJams", type: "VideoRequest", purpose: "test", link } };
+    const appended = journal.append(input, "old-test", { duplicateSinceMs: 0, correlationSinceMs: 0 });
+    if (appended.status !== "appended") throw new Error("fixture not appended");
+    expect(await consumer.handle(appended.event, { checkpoint: () => {} })).toBe("failed");
+    expect(queue.view("live").items).toEqual([]);
+    await expect(bus.publish({ ...input, eventId: "unrelated", effectTriggers: [] })).resolves.toEqual({ status: "accepted" });
+    expect(queue.view("live").items).toEqual([]);
   });
 
   it("replays rejected receipt after reopen even when module admission changes", async () => {
@@ -198,7 +237,7 @@ describe("durable Videos bus admission", () => {
 
   it("manual simulations retain their channel and normal provider admission policies", async () => {
     const { bus, manual, queue, setConfig, journal } = setup(file());
-    setConfig({ rewardMappings: [{ rewardId: "video-reward", purpose: "live" }], streamerBotAutoplay: false });
+    setConfig({ rewardMappings: [{ rewardId: "video-reward" }], streamerBotAutoplay: false });
     await bus.start();
     await manual.submit({ action: { kind: "simulate-external", identity: { providerKind: "streamerbot", sourceKey: "General", eventType: "Custom" }, payload: { source: "StreamJams", type: "VideoRequest", link, autoplay: true } } }, { channel: "management" });
     await manual.submit({ action: { kind: "simulate-canonical", event: { type: "channel_point_redemption", providerId: "twitch", sourcePlatform: "twitch", ingestProvider: "twitch", actor: { id: "viewer", displayName: "Viewer" }, amount: null, message: null, metadata: {}, rewardId: "video-reward", rewardTitle: "Video", userInput: link } } }, { channel: "operator" });

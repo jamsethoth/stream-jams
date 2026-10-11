@@ -3,7 +3,7 @@ import {
   desktopVideoCommandSchema, desktopVideoEventSchema, isLocalHostIceCandidate, overlayVideoDurationReportSchema, parseYouTubeMessage,
   videoMediaDurationMaximumMs, videoMirrorPublisherSignalSchema, videoMirrorReceiverIdSchema, videoMirrorReceiverSignalSchema, videoMirrorVideoEncoding
 } from "./contract.js";
-import { videosModuleConfigSchema, createDefaultVideosModuleConfig } from "./schemas.js";
+import { currentVideosModuleConfigSchema, createDefaultVideosModuleConfig } from "./schemas.js";
 
 const host = (address: string, type = "host") => `candidate:1 1 udp 2122260223 ${address} 54321 typ ${type} generation 0`;
 
@@ -100,7 +100,8 @@ describe("desktop video transport", () => {
   });
 
   it("validates host events", () => {
-    expect(desktopVideoEventSchema.safeParse({ type: "report", purpose: "test", itemId: "video:1", state: "progress", positionMs: 1200, durationMs: 9000, controls: { pause: true, seek: true } }).success).toBe(true);
+    expect(desktopVideoEventSchema.safeParse({ type: "report", purpose: "live", itemId: "video:1", state: "progress", positionMs: 1200, durationMs: 9000, controls: { pause: true, seek: true } }).success).toBe(true);
+    expect(desktopVideoEventSchema.safeParse({ type: "report", purpose: "test", itemId: "video:1", state: "progress", positionMs: 1200 }).success).toBe(false);
     expect(desktopVideoEventSchema.safeParse({ type: "report", purpose: "test", itemId: "video:1", state: "playing" }).success).toBe(false);
   });
 });
@@ -118,12 +119,12 @@ describe("device delays", () => {
   it("defaults missing delays and bounds them per selected device", () => {
     const legacy: Partial<typeof config> = { ...config };
     delete legacy.audioDeviceDelaysMs;
-    expect(videosModuleConfigSchema.parse(legacy).audioDeviceDelaysMs).toEqual({});
-    expect(videosModuleConfigSchema.safeParse({ ...config, audioDeviceDelaysMs: { "route-a": 500 } }).success).toBe(true);
-    expect(videosModuleConfigSchema.safeParse({ ...config, audioDeviceDelaysMs: { "route-a": 501 } }).success).toBe(false);
-    expect(videosModuleConfigSchema.safeParse({ ...config, audioDeviceDelaysMs: { "route-a": -1 } }).success).toBe(false);
-    expect(videosModuleConfigSchema.safeParse({ ...config, audioDeviceDelaysMs: { "route-a": 1.5 } }).success).toBe(false);
-    expect(videosModuleConfigSchema.safeParse({ ...config, audioDeviceDelaysMs: { "route-b": 10 } }).success).toBe(false);
+    expect(currentVideosModuleConfigSchema.parse(legacy).audioDeviceDelaysMs).toEqual({});
+    expect(currentVideosModuleConfigSchema.safeParse({ ...config, audioDeviceDelaysMs: { "route-a": 500 } }).success).toBe(true);
+    expect(currentVideosModuleConfigSchema.safeParse({ ...config, audioDeviceDelaysMs: { "route-a": 501 } }).success).toBe(false);
+    expect(currentVideosModuleConfigSchema.safeParse({ ...config, audioDeviceDelaysMs: { "route-a": -1 } }).success).toBe(false);
+    expect(currentVideosModuleConfigSchema.safeParse({ ...config, audioDeviceDelaysMs: { "route-a": 1.5 } }).success).toBe(false);
+    expect(currentVideosModuleConfigSchema.safeParse({ ...config, audioDeviceDelaysMs: { "route-b": 10 } }).success).toBe(false);
   });
 });
 

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync, type StatementResultingChanges } from "node:sqlite";
@@ -47,6 +48,7 @@ import { manualEventBusMigration } from "./migrations/042-manual-event-bus.js";
 import { videoBusAdmissionMigration } from "./migrations/043-video-bus-admission.js";
 import { timerProfileAppearanceMigration } from "./migrations/044-timer-profile-appearance.js";
 import { videoContentLayoutMigration } from "./migrations/045-video-content-layout.js";
+import { singleVideoQueueMigration } from "./migrations/046-single-video-queue.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -110,7 +112,8 @@ export const streamJamsMigrations = Object.freeze([
   manualEventBusMigration,
   videoBusAdmissionMigration,
   timerProfileAppearanceMigration,
-  videoContentLayoutMigration
+  videoContentLayoutMigration,
+  singleVideoQueueMigration
 ] satisfies readonly StreamJamsMigration[]);
 
 const migrations = streamJamsMigrations;
@@ -172,7 +175,7 @@ function createStreamJamsDatabase(databasePath: string): StreamJamsDatabase {
   });
   connection.exec("PRAGMA foreign_keys = ON");
 
-  const database = new NodeSqliteStreamJamsDatabase(connection);
+  const database = new NodeSqliteStreamJamsDatabase(connection, databasePath);
   try {
     database.runMigrations();
     return database;
@@ -185,11 +188,20 @@ function createStreamJamsDatabase(databasePath: string): StreamJamsDatabase {
 class NodeSqliteStreamJamsDatabase implements StreamJamsDatabase {
   readonly connection: DatabaseSync;
 
-  constructor(connection: DatabaseSync) {
+  constructor(connection: DatabaseSync, private readonly databasePath: string) {
     this.connection = connection;
   }
 
   runMigrations(): void {
+    if (this.databasePath !== ":memory:"
+      && this.connection.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='video_requests'").get() !== undefined
+      && (this.connection.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'").get() === undefined
+        || this.connection.prepare("SELECT 1 FROM schema_migrations WHERE id=?").get(singleVideoQueueMigration.id) === undefined)) {
+      // VACUUM INTO captures committed WAL pages into an independent, consistent rollback database.
+      const snapshotPath = `${this.databasePath}.pre046-${randomUUID()}.sqlite`;
+      try { this.connection.prepare("VACUUM INTO ?").run(snapshotPath); }
+      catch (cause) { throw new Error("Videos upgrade could not create its required rollback database. Check free space and permissions beside the database, then retry; consolidation has not started.", { cause }); }
+    }
     this.connection.exec(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
         id TEXT PRIMARY KEY NOT NULL,
@@ -210,7 +222,8 @@ class NodeSqliteStreamJamsDatabase implements StreamJamsDatabase {
     }
     reconcilePreMergeVideosHistory(this.connection);
     const appliedCount = validateMigrationHistory(this.connection);
-    for (const migration of migrations.slice(appliedCount)) {
+    const pending = migrations.slice(appliedCount);
+    for (const migration of pending) {
       runInTransaction(this.connection, () => {
         applyStreamJamsMigration(this.connection, migration);
         insertMigrationRecord(this.connection, migration.id);

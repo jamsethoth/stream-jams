@@ -88,6 +88,7 @@ export class LocalOverlayAccessService implements OverlayAccessService {
 
   async createKey(input: CreateOverlayKeyInput): Promise<CreatedOverlayAccessKey> {
     assertValidScopeInput(input);
+    if (input.moduleId === "videos" && input.purpose === "test") throw new Error("The Videos test output was retired. Use the ordinary Videos source.");
 
     const rawKey = this.#generateRawKey();
     const keyId = this.#generateId();
@@ -103,6 +104,7 @@ export class LocalOverlayAccessService implements OverlayAccessService {
   }
 
   async verifyRouteAccess(request: OverlayRouteAccessRequest): Promise<OverlayAccessVerification> {
+    if (request.moduleId === "videos" && request.purpose === "test") return { authorized: false, reason: "not-found" };
     const requestedKeyHash = hashOverlayRouteKey(request.rawKey);
     const hashMatch = await this.#repository.findByHash(requestedKeyHash);
 

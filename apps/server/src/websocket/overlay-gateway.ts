@@ -94,6 +94,7 @@ export interface OverlayGatewayDependencies {
 }
 
 interface RegisteredOverlayGatewayClient extends OverlayGatewayClient {
+  readonly keyId: string;
   readonly socket: OverlayGatewaySocket;
   readonly sanitize: (text: string) => string;
 }
@@ -144,6 +145,8 @@ interface PlaybackPreparation {
 }
 
 export class OverlayGateway {
+  #registrationEpoch = 0;
+  #recipientPolicy: (client: OverlayGatewayClient & { readonly keyId: string }) => boolean = client => !(client.moduleId === "videos" && client.purpose === "test");
   readonly #compositionRevisions = new Map<string, { runtimeId: string; revision: number }>();
   readonly #overlayAccessService: Pick<OverlayAccessService, "verifyRouteAccess">;
   readonly #generateClientId: () => string;
@@ -187,13 +190,32 @@ export class OverlayGateway {
     ];
   }
 
+  /** Replacement/retirement fence: close denied recipients and reject registrations that raced the fence. */
+  setRecipientPolicy(policy: (client: OverlayGatewayClient & { readonly keyId: string }) => boolean): void {
+    this.#registrationEpoch += 1;
+    this.#recipientPolicy = client => !(client.moduleId === "videos" && client.purpose === "test") && policy(client);
+    for (const client of [...this.#clients.values()]) {
+      if (this.#recipientPolicy(client)) continue;
+      this.unregisterClient(client.id);
+      try { client.socket.close(1008, "Overlay recipient retired; reconnect with a current source."); }
+      // error-provenance: allow cleanup -- already closed transports remain retired in the gateway
+      catch { /* Identity was removed before closing. */ }
+    }
+  }
+
+  canReceiveVideos(clientId: string): boolean {
+    const client = this.#clients.get(clientId);
+    return client !== undefined && this.#recipientPolicy(client) && mayReceiveVideoMirror(client);
+  }
+
   async registerClient(
     socket: OverlayGatewaySocket,
     registration: OverlayGatewayClientRegistration,
     metadata: OverlayGatewayClientMetadata = {}
   ): Promise<OverlayGatewayRegistrationResult> {
+    const epoch = this.#registrationEpoch;
     const verification = await this.#overlayAccessService.verifyRouteAccess(registration);
-    if (!verification.authorized) {
+    if (!verification.authorized || epoch !== this.#registrationEpoch || !this.#recipientPolicy({ ...registration, id: "", keyId: verification.authorized ? verification.record.id : "", connectedAt: "", lastSeenAt: "", userAgent: null })) {
       sendGatewayMessage(socket, {
         type: "overlay.error",
         code: "OVERLAY_ROUTE_KEY_UNAUTHORIZED",
@@ -202,7 +224,7 @@ export class OverlayGateway {
       socket.close(1008, "Overlay route key is not authorized for this output");
       return {
         authorized: false,
-        reason: verification.reason
+        reason: verification.authorized ? "revoked" : verification.reason
       };
     }
 
@@ -210,6 +232,7 @@ export class OverlayGateway {
     const connectedAt = this.#clock().toISOString();
     const client: RegisteredOverlayGatewayClient = {
       id: clientId,
+      keyId: verification.record.id,
       socket,
       sanitize: text => text.replaceAll(registration.rawKey, "[redacted]").replace(/(?:https?|wss?):\/\/[^\s]+/giu, "[redacted-url]").slice(0, 512),
       overlayId: registration.overlayId,
@@ -482,6 +505,7 @@ export class OverlayGateway {
     }
     const report = parsePlaybackReport(client, rawMessage);
     if (report !== null) {
+      if (report.instructionId.startsWith("video:") && !this.canReceiveVideos(clientId)) return;
       if (report.status === "failed") {
         const preparation = this.#preparations.get(report.instructionId);
         if (preparation !== undefined) {
@@ -508,7 +532,7 @@ export class OverlayGateway {
 
 function mayReceiveVideoMirror(client: OverlayGatewayClient): boolean {
   // Only keys scoped to the Videos module, or unified keys that render it, may join the mirror.
-  return client.scope === "unified" ? client.moduleId === null : client.moduleId === "videos";
+  return client.purpose === "live" && (client.scope === "unified" ? client.moduleId === null : client.moduleId === "videos");
 }
 
 function clientMatchesInstruction(client: OverlayGatewayClient, instruction: OverlayInstruction): boolean {

@@ -29,7 +29,7 @@ import {
   targetProfileIdSchema,
   timerDefinitionSchema,
   timersOverlayModuleConfigSchema,
-  videosModuleConfigSchema,
+  currentVideosModuleConfigSchema,
   type ConfigurationBackupArchive,
   type ConfigurationBackupOutput,
   type ModerationSettings
@@ -148,7 +148,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
       .prepare(
         `SELECT DISTINCT overlay_id, scope, module_id, purpose, target_profile_id
          FROM overlay_keys
-         WHERE revoked_at IS NULL
+         WHERE revoked_at IS NULL AND (module_id IS NOT 'videos' OR purpose <> 'test')
          ORDER BY overlay_id, scope, module_id, target_profile_id, purpose`
       )
       .all()
@@ -533,7 +533,7 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
       pushSchemaError(errors, `overlay_module_config[${index}].config_json Timer appearance`, timersOverlayModuleConfigSchema.safeParse(parseJsonValue(row.config_json)));
     }
     if (row.module_id === "videos") {
-      pushSchemaError(errors, `overlay_module_config[${index}].config_json Videos layout`, videosModuleConfigSchema.safeParse(parseJsonValue(row.config_json)));
+      pushSchemaError(errors, `overlay_module_config[${index}].config_json Videos layout`, currentVideosModuleConfigSchema.safeParse(parseJsonValue(row.config_json)));
     }
   }
 

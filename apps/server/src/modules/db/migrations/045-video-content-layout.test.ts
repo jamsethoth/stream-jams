@@ -2,7 +2,9 @@ import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { createDefaultVideosModuleConfig } from "@stream-jams/core";
 import { createPreMigrationDatabase } from "../../../test-support/pre-migration-database.js";
-import { currentSchemaVersion } from "../database.js";
+import { applyStreamJamsMigration, runInTransaction, currentSchemaVersion } from "../database.js";
+
+import { videoContentLayoutMigration } from "./045-video-content-layout.js";
 
 describe("045 Video content migration", () => {
   it("upgrades historical settings without changing keys, surfaces, queues or durable receipts", () => {
@@ -18,14 +20,19 @@ describe("045 Video content migration", () => {
     db.prepare("INSERT INTO video_bus_admissions VALUES (?, ?, ?, ?, ?)").run("retained-bus", "retained-event", null, "{\"status\":\"rejected\",\"reason\":\"module-disabled\",\"fields\":[]}", 1);
     const tables = ["overlay_keys", "overlay_surfaces", "video_requests", "video_queue_state", "video_bus_admissions"];
     const before = tables.map(table => db.prepare(`SELECT * FROM ${table}`).all());
+    runInTransaction(db, () => {
+      applyStreamJamsMigration(db, videoContentLayoutMigration);
+      db.prepare("INSERT INTO schema_migrations VALUES (?, ?)").run(videoContentLayoutMigration.id, "old");
+    });
+    expect(tables.map(table => db.prepare(`SELECT * FROM ${table}`).all())).toEqual(before);
     const upgraded = fixture.upgrade();
-    expect(currentSchemaVersion).toBe(44);
+    expect(currentSchemaVersion).toBe(45);
     expect(JSON.parse(String(upgraded.connection.prepare("SELECT config_json FROM overlay_module_config WHERE module_id='videos'").get()?.config_json))).toMatchObject({
       maxLengthSeconds: 120, layout: { schemaVersion: 2, content: { width: 400, height: 300 }, desktopPlacement: { x: 1440, y: 40, scale: 1 } }
     });
-    expect(tables.map(table => upgraded.connection.prepare(`SELECT * FROM ${table}`).all())).toEqual(before);
+
     upgraded.runMigrations(); upgraded.runMigrations();
-    expect(upgraded.connection.prepare("SELECT COUNT(*) AS n FROM schema_migrations").get()?.n).toBe(44);
+    expect(upgraded.connection.prepare("SELECT COUNT(*) AS n FROM schema_migrations").get()?.n).toBe(45);
   });
   it("atomically blocks invalid saved layout and leaves the historical row intact", () => {
     using fixture = createPreMigrationDatabase("045-video-content-layout");

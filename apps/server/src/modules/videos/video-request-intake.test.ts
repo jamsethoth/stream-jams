@@ -22,7 +22,7 @@ function setup(overrides: Partial<VideosModuleConfig> = {}, options: { enabled?:
       if (options.full === true) throw new VideoQueueCommandError("queue-full", "full");
       submissions.push(submission);
       return {
-        id: `id${submissions.length}`, purpose, source: submission.source, title: submission.title, providerTitle: null, channelName: null, requester: submission.requester,
+        id: `id${submissions.length}`, reviewRequired: false, migrationProvenance: null, source: submission.source, title: submission.title, providerTitle: null, channelName: null, requester: submission.requester,
         submittedVia: submission.via, durationMs: submission.durationMs, status: "queued", holdReason: null, limitOverridden: false,
         autoplay: submission.autoplay, position: submissions.length, createdAt: new Date(0).toISOString()
       } satisfies VideoRequestItem;
@@ -47,11 +47,11 @@ describe("VideoRequestIntake", () => {
   it("announces each accepted request once for a provider lookup, after the queue accepted it, and never a rejected one", async () => {
     const announced: string[] = [];
     const { intake } = setup({}, { onQueued: (purpose, item) => announced.push(`${purpose}:${item.id}`) });
-    const accepted = await intake.submit("test", { link: youtube }, { via: "streamerbot", mayAutoplay: false });
-    await intake.submit("test", { link: "not a link" }, { via: "streamerbot", mayAutoplay: false });
-    await intake.submit("test", { title: "no link" }, { via: "streamerbot", mayAutoplay: false });
+    const accepted = await intake.submit("live", { link: youtube }, { via: "streamerbot", mayAutoplay: false });
+    await intake.submit("live", { link: "not a link" }, { via: "streamerbot", mayAutoplay: false });
+    await intake.submit("live", { title: "no link" }, { via: "streamerbot", mayAutoplay: false });
     expect(accepted.status).toBe("accepted");
-    expect(announced).toEqual(["test:id1"]);
+    expect(announced).toEqual(["live:id1"]);
 
     const full: string[] = [];
     const rejected = setup({}, { full: true, onQueued: (_purpose, item) => full.push(item.id) });
@@ -158,9 +158,9 @@ describe("Streamer.bot video intake", () => {
 
   it("queues VideoRequest payloads and honors explicit autoplay", async () => {
     const { handle, submissions, diagnostics } = streamerBotSetup();
-    expect(await handle(envelope({ source: "StreamJams", type: "VideoRequest", purpose: "test", link: youtube, requester: "Mod", autoplay: true }))).toBe("admitted");
+    expect(await handle(envelope({ source: "StreamJams", type: "VideoRequest", link: youtube, requester: "Mod", autoplay: true }))).toBe("admitted");
     expect(submissions[0]).toMatchObject({ via: "streamerbot", requester: "Mod", autoplay: true });
-    expect(diagnostics[0]?.metadata).toMatchObject({ purpose: "test", legacy: false, autoplay: true });
+    expect(diagnostics[0]?.metadata).toMatchObject({ purpose: "live", legacy: false, autoplay: true });
     expect(JSON.stringify(diagnostics)).not.toContain("dQw4w9WgXcQ");
   });
 
@@ -181,7 +181,7 @@ describe("Streamer.bot video intake", () => {
     expect(await handle(envelope({ source: "StreamJams", type: "VideoRequest", link: "https://evil.example/private.mp4" }))).toBe("failed");
     expect(await handle(envelope({ source: "StreamJams", type: "VideoRequest", purpose: "staging", link: youtube }))).toBe("failed");
     expect(submissions).toHaveLength(0);
-    expect(diagnostics.map(entry => entry.metadata.reason)).toEqual(["unsupported-source", "invalid-request"]);
+    expect(diagnostics.map(entry => entry.metadata.reason)).toEqual(["unsupported-source", "retired-video-test-or-invalid-request"]);
     expect(JSON.stringify(diagnostics)).not.toContain("private");
   });
 
@@ -211,7 +211,7 @@ describe("channel point video intake", () => {
   }) as unknown as NormalizedStreamEvent;
 
   it("queues mapped rewards without autoplay and ignores others", async () => {
-    const base = setup({ rewardMappings: [{ rewardId: "reward-1", purpose: "live" }] });
+    const base = setup({ rewardMappings: [{ rewardId: "reward-1" }] });
     const diagnostics: VideoIntakeDiagnostic[] = [];
     const handler = createChannelPointVideoIntake({ intake: base.intake, getConfig: () => base.config, onDiagnostic: entry => { diagnostics.push(entry); } });
     expect(await handler.handleEvent(redemption("reward-2", youtube))).toBe("no-match");

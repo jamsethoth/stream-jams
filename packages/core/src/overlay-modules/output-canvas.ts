@@ -5,7 +5,7 @@ import { resolveMusicOutputGeometry } from "../music/output-geometry.js";
 import type { MusicModuleConfig } from "../music/types.js";
 import { resolveTimerOutputGeometry } from "../timers/output-geometry.js";
 import { timersOverlayModuleConfigSchema } from "../timers/schemas.js";
-import { videosModuleConfigSchema } from "../videos/schemas.js";
+import { currentVideosModuleConfigSchema } from "../videos/schemas.js";
 
 import { outputCanvasSchema, type OutputCanvas } from "./output-canvas-contract.js";
 export { outputCanvasSchema, type OutputCanvas } from "./output-canvas-contract.js";
@@ -21,7 +21,7 @@ export function moduleOutputCanvas(config: OverlayModuleConfig, profile: Overlay
   recipientKind: "browser" | "desktop", configRevision: number): OutputCanvas {
   if (recipientKind === "desktop") return sceneOutputCanvas(configRevision);
   if (config.moduleId === "videos") {
-    const { width, height } = videosModuleConfigSchema.parse(config.config).layout.content;
+    const { width, height } = currentVideosModuleConfigSchema.parse(config.config).layout.content;
     return outputCanvasSchema.parse({ schemaVersion: 1, kind: "content", width, height,
       origin: { x: 0, y: 0 }, insets: { top: 0, right: 0, bottom: 0, left: 0 }, configRevision });
   }

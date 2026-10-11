@@ -1,5 +1,5 @@
 import type { OverlayModuleDefinition } from "../overlay-modules/types.js";
-import { createDefaultVideosModuleConfig, videosModuleConfigSchema } from "./schemas.js";
+import { createDefaultVideosModuleConfig, currentVideosModuleConfigSchema } from "./schemas.js";
 import type { VideosModuleConfig } from "./types.js";
 
 export const videosModuleDefinition = {
@@ -8,10 +8,10 @@ export const videosModuleDefinition = {
   version: "0.0.0",
   // Nothing plays until a request is queued and the operator (or an allowed autoplay request) starts it.
   defaultEnabled: true,
-  configSchemaVersion: 2,
+  configSchemaVersion: 3,
   // Pure so bundles that never read the definition (the management startup graph) drop it.
   defaultConfig: /* @__PURE__ */ createDefaultVideosModuleConfig(),
-  configSchema: videosModuleConfigSchema,
+  configSchema: currentVideosModuleConfigSchema,
   wizard: { steps: [{ id: "videos-limits", title: "Video limits", fields: [
     { id: "maxLengthSeconds", label: "Maximum length (seconds)", type: "number", required: true },
     { id: "gapSeconds", label: "Gap between videos (seconds)", type: "number", required: true }

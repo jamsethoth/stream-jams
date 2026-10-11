@@ -2,16 +2,21 @@ import { describe, expect, it } from "vitest";
 import { videosProjectionSchema } from "./contract.js";
 import { createDefaultVideosLayout, isValidVideosLayout } from "./layout.js";
 import { videosPlacementGeometry } from "./placement-geometry.js";
-import { createDefaultVideosModuleConfig, videosModuleConfigSchema } from "./schemas.js";
+import { createDefaultVideosModuleConfig, currentVideosModuleConfigSchema } from "./schemas.js";
 
 describe("Videos content and placement", () => {
+  it("rejects destination selectors in current configuration mappings", () => {
+    const config = createDefaultVideosModuleConfig();
+    expect(currentVideosModuleConfigSchema.safeParse({ ...config, rewardMappings: [{ rewardId: "ordinary" }] }).success).toBe(true);
+    for (const purpose of ["live", "test"]) expect(currentVideosModuleConfigSchema.safeParse({ ...config, rewardMappings: [{ rewardId: "old", purpose }] }).success).toBe(false);
+  });
   it("retains the default desktop box and exact picture with two-line reserve", () => {
     expect(createDefaultVideosLayout()).toEqual({ schemaVersion: 2, content: { width: 1382, height: 876 }, desktopPlacement: { x: 269, y: 140, scale: 1 } });
     expect(videosPlacementGeometry(createDefaultVideosLayout())).toEqual({ scale: 1, frame: { width: 1382, height: 777.375 }, gap: 12 });
   });
   it("bounds integer content independently from scaled desktop footprint", () => {
     const layout = createDefaultVideosLayout();
-    const accepts = (value: unknown) => videosModuleConfigSchema.safeParse({ ...createDefaultVideosModuleConfig(), layout: value }).success;
+    const accepts = (value: unknown) => currentVideosModuleConfigSchema.safeParse({ ...createDefaultVideosModuleConfig(), layout: value }).success;
     expect(accepts({ ...layout, content: { width: 240, height: 180 }, desktopPlacement: { x: 1680, y: 900, scale: 1 } })).toBe(true);
     expect(accepts({ ...layout, content: { width: 1920, height: 1080 }, desktopPlacement: { x: 960, y: 540, scale: 0.5 } })).toBe(true);
     expect(accepts({ ...layout, desktopPlacement: { x: 0.5, y: 0.25, scale: 0.5 } })).toBe(true);

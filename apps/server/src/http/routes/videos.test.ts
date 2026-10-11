@@ -8,14 +8,14 @@ import { VideoQueueCommandError } from "../../modules/videos/video-queue-service
 import type { VideoRequestContext } from "../../modules/videos/video-request-intake.js";
 import { registerVideoRoutes, type VideoRequeueOutcome, type VideoRouteService } from "./videos.js";
 
-const emptyResponse: VideoQueueResponse = { purpose: "live", revision: 3, queuePaused: false, runRemaining: 0, gapEndsAtEpochMs: null, serverTimeEpochMs: 0, mirror: { available: false }, items: [], recent: [], current: null };
+const emptyResponse: VideoQueueResponse = { revision: 3, queuePaused: false, runRemaining: 0, gapEndsAtEpochMs: null, serverTimeEpochMs: 0, mirror: { available: false }, items: [], recent: [], current: null };
 
 type Scope = "videos:read" | "videos:submit" | "videos:control";
 
 function setup(options: { submitResult?: VideoSubmissionResult; commandError?: Error; requeueResult?: VideoRequeueOutcome } = {}) {
   const calls: { kind: string; args: unknown[] }[] = [];
   const service: VideoRouteService = {
-    response: purpose => { calls.push({ kind: "response", args: [purpose] }); return { ...emptyResponse, purpose }; },
+    response: purpose => { calls.push({ kind: "response", args: [purpose] }); return emptyResponse; },
     submission: busId => { calls.push({ kind: "submission", args: [busId] }); return options.submitResult ?? null; },
     submit: async (purpose, input, context: VideoRequestContext) => {
       calls.push({ kind: "submit", args: [purpose, input, context] });
@@ -30,7 +30,7 @@ function setup(options: { submitResult?: VideoSubmissionResult; commandError?: E
     requeue: async (purpose, revision, itemId, context) => {
       calls.push({ kind: "requeue", args: [purpose, revision, itemId, context] });
       if (options.commandError !== undefined) throw options.commandError;
-      return options.requeueResult ?? { status: "accepted", queue: { ...emptyResponse, purpose, revision: revision + 1 } };
+      return options.requeueResult ?? { status: "accepted", queue: { ...emptyResponse, revision: revision + 1 } };
     }
   };
   const grants: Record<string, readonly Scope[]> = {
@@ -59,6 +59,23 @@ const link = { link: "https://youtu.be/dQw4w9WgXcQ" };
 const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
 
 describe("video routes", () => {
+  it("rejects retired destinations before service calls and keeps item Play scoped and revision guarded", async () => {
+    const { app, calls } = setup();
+    const headers = { "x-management": "yes" };
+    for (const [url, payload] of [["/videos/test/requests", link], ["/videos/live/requests", { ...link, purpose: "test" }], ["/videos/live/requests?purpose=test", link]] as const) {
+      const result = await app.inject({ method: "POST", url, headers, payload });
+      expect(result.statusCode).toBe(410); expect(result.json()).toMatchObject({ error: { code: "VIDEO_TEST_RETIRED" } });
+    }
+    const play = { expectedRevision: 3, command: { kind: "play", itemId: "reviewed" } };
+    expect((await app.inject({ method: "POST", url: "/automation/v1/videos/live/commands", headers: bearer("reader"), payload: play })).statusCode).toBe(403);
+    expect(calls).toEqual([]);
+    expect((await app.inject({ method: "POST", url: "/automation/v1/videos/live/commands", headers: bearer("controller"), payload: play })).statusCode).toBe(200);
+    expect(calls).toEqual([{ kind: "command", args: ["live", 3, play.command] }]);
+    await app.close();
+    const stale = setup({ commandError: new VideoQueueConflictError() });
+    expect((await stale.app.inject({ method: "POST", url: "/videos/live/commands", headers, payload: play })).statusCode).toBe(409);
+    await stale.app.close();
+  });
   it("returns identified pending without claiming a queued item", async () => {
     const { app } = setup({ submitResult: { status: "pending", busId: "pending-bus", eventId: "pending-event" } as never });
     const response = await app.inject({ method: "POST", url: "/videos/live/requests", headers: { "x-management": "yes" }, payload: link });
@@ -90,9 +107,11 @@ describe("video routes", () => {
     const { app, calls } = setup();
     expect((await app.inject({ method: "GET", url: "/videos/live" })).statusCode).toBe(401);
     expect((await app.inject({ method: "GET", url: "/videos/live", headers: bearer("controller") })).statusCode).toBe(401);
-    const response = await app.inject({ method: "GET", url: "/videos/test", headers: { "x-management": "yes" } });
+    const response = await app.inject({ method: "GET", url: "/videos/live", headers: { "x-management": "yes" } });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ purpose: "test", revision: 3 });
+    expect(response.json()).toMatchObject({ revision: 3 });
+    expect(response.json()).not.toHaveProperty("purpose");
+    expect((await app.inject({ method: "GET", url: "/videos/test", headers: { "x-management": "yes" } })).statusCode).toBe(410);
     expect((await app.inject({ method: "GET", url: "/videos/staging", headers: { "x-management": "yes" } })).statusCode).toBe(400);
     expect(calls).toHaveLength(1);
     await app.close();
@@ -178,7 +197,7 @@ describe("video routes", () => {
   it("replays a Recent item for management and the Operator with a revision guard", async () => {
     const { app, calls } = setup();
     const headers = { "x-management": "yes" };
-    const url = "/videos/test/recent/requeue";
+    const url = "/videos/live/recent/requeue";
     expect((await app.inject({ method: "POST", url, payload: { expectedRevision: 3, itemId: "video:1" } })).statusCode).toBe(401);
     for (const payload of [{ itemId: "video:1" }, { expectedRevision: -1, itemId: "video:1" }, { expectedRevision: 3, itemId: "" }, { expectedRevision: 3, itemId: "video:1", autoplay: true }]) {
       expect((await app.inject({ method: "POST", url, headers, payload })).statusCode).toBe(400);
@@ -186,9 +205,9 @@ describe("video routes", () => {
     expect(calls).toHaveLength(0);
     const response = await app.inject({ method: "POST", url: `${url}?from=operator`, headers, payload: { expectedRevision: 3, itemId: "video:1" } });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ purpose: "test", revision: 4 });
+    expect(response.json()).toMatchObject({ revision: 4 });
     await app.inject({ method: "POST", url: `${url}?from=automation`, headers, payload: { expectedRevision: 3, itemId: "video:1" } });
-    expect(calls.map(call => call.args)).toEqual([["test", 3, "video:1", { via: "operator" }], ["test", 3, "video:1", { via: "management" }]]);
+    expect(calls.map(call => call.args)).toEqual([["live", 3, "video:1", { via: "operator" }], ["live", 3, "video:1", { via: "management" }]]);
     await app.close();
   });
 

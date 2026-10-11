@@ -328,7 +328,7 @@ describe("VideoQueueService", () => {
     expect(view.recentlyFailed.map(item => [item.title, item.status])).toEqual(
       [3, 4, 5, 6, 7].map(index => [`Clip ${index}`, "failed"])
     );
-    expect(service.view("test").recentlyFailed).toEqual([]);
+    expect(() => service.view("test" as never)).toThrow();
   });
 
   it("learns a duration from the player for unknown-length items", () => {
@@ -352,11 +352,11 @@ describe("VideoQueueService", () => {
     expect(service.view("live").items.map(item => item.title)).toEqual(["B"]);
   });
 
-  it("keeps purposes separate", () => {
+  it("rejects a retired queue without changing the ordinary queue", () => {
     const { service } = setup();
-    service.submit("test", clip("Test"));
+    expect(() => service.submit("test" as never, clip("Test"))).toThrow();
     expect(service.view("live").items).toHaveLength(0);
-    expect(service.view("test").items).toHaveLength(1);
+    expect(() => service.view("test" as never)).toThrow();
   });
 
   it("survives a restart with the interrupted item back at the head and nothing playing", () => {
@@ -372,27 +372,26 @@ describe("VideoQueueService", () => {
     expect(view.items.map(item => [item.id, item.status, item.autoplay])).toEqual([[playing.id, "queued", false], [expect.any(String), "queued", false]]);
   });
 
-  it("keeps a bounded finished history per purpose across restarts, newest first", () => {
+  it("keeps the combined finished history bound across restarts, newest first", () => {
     const first = setup();
     const insert = first.database.connection.prepare(`INSERT INTO video_requests (id, purpose, source_json, title, requester, submitted_via, duration_ms, status,
       hold_reason, limit_overridden, autoplay, position, created_at, updated_at) VALUES (?, ?, ?, ?, NULL, 'management', 30000, ?, NULL, 0, 0, ?, ?, ?)`);
     const source = JSON.stringify({ provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 0 });
     const at = (index: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString();
     for (let index = 0; index < videoFinishedHistoryLimit + 5; index += 1) insert.run(`live-${index}`, "live", source, `Live ${index}`, index % 2 === 0 ? "played" : "removed", index, at(index), at(index));
-    for (let index = 0; index < 3; index += 1) insert.run(`test-${index}`, "test", source, `Test ${index}`, "failed", index, at(index), at(index));
     const waiting = first.service.submit("live", clip("Still waiting"));
     first.service.dispose();
 
     const restarted = setup({}, first.database);
     const count = (purpose: string) => Number(first.database.connection.prepare("SELECT COUNT(*) AS n FROM video_requests WHERE purpose = ? AND status IN ('played', 'failed', 'removed')").get(purpose)?.n);
     expect(count("live")).toBe(videoFinishedHistoryLimit);
-    expect(count("test")).toBe(3);
+    expect(count("test")).toBe(0);
     expect(first.database.connection.prepare("SELECT id FROM video_requests WHERE id IN ('live-0', 'live-4', 'live-5')").all().map(row => row.id)).toEqual(["live-5"]);
     expect(restarted.service.view("live").items.map(item => item.id)).toEqual([waiting.id]);
   });
 
   describe("Recent and replay", () => {
-    function playToEnd(service: VideoQueueService, scheduler: FakeScheduler, purpose: "live" | "test", title: string, durationMs = 30_000) {
+    function playToEnd(service: VideoQueueService, scheduler: FakeScheduler, purpose: "live", title: string, durationMs = 30_000) {
       const item = service.submit(purpose, clip(title, durationMs));
       service.command(purpose, service.view(purpose).revision, { kind: "play-next" });
       service.reportStarted(item.id);
@@ -425,14 +424,14 @@ describe("VideoQueueService", () => {
       expect(view.items).toEqual([]);
     });
 
-    it("bounds Recent and keeps purposes separate", () => {
+    it("bounds ordinary Recent and rejects retired playback", () => {
       const { service, scheduler } = setup();
       for (let index = 1; index <= videoRecentLimit + 2; index += 1) playToEnd(service, scheduler, "live", `Live ${index}`);
-      playToEnd(service, scheduler, "test", "Test only");
+      expect(() => playToEnd(service, scheduler, "test" as never, "Test only")).toThrow();
       const live = service.view("live").recent;
       expect(live).toHaveLength(videoRecentLimit);
       expect(live.map(item => item.title)).toEqual(Array.from({ length: videoRecentLimit }, (_, index) => `Live ${videoRecentLimit + 2 - index}`));
-      expect(service.view("test").recent.map(item => item.title)).toEqual(["Test only"]);
+      expect(() => service.view("test" as never)).toThrow();
     });
 
     it("replays a failed item as a new waiting request without starting it", () => {
@@ -465,7 +464,7 @@ describe("VideoQueueService", () => {
       const played = playToEnd(service, scheduler, "live", "Played");
       const revision = service.view("live").revision;
       expect(() => service.requeue("live", revision - 1, played.id, "operator")).toThrow(VideoQueueConflictError);
-      expect(() => service.requeue("test", service.view("test").revision, played.id, "operator")).toThrow(VideoQueueCommandError);
+      expect(() => service.requeue("test" as never, revision, played.id, "operator")).toThrow();
       const removed = service.submit("live", clip("Removed"));
       service.command("live", service.view("live").revision, { kind: "remove", itemId: removed.id });
       const waiting = service.submit("live", clip("Waiting"));
@@ -473,7 +472,7 @@ describe("VideoQueueService", () => {
         expect(() => service.requeue("live", service.view("live").revision, itemId, "operator")).toThrow(VideoQueueCommandError);
       }
       expect(service.view("live").items.map(item => item.id)).toEqual([waiting.id]);
-      expect(service.view("test").items).toEqual([]);
+      expect(() => service.view("test" as never)).toThrow();
     });
   });
 
@@ -580,7 +579,7 @@ describe("VideoQueueService", () => {
       service.command("live", service.view("live").revision, { kind: "remove", itemId: item.id });
       const revision = service.view("live").revision;
       expect(service.applyMetadata("live", item.id, { title: "Late", channelName: null, durationMs: 10_000 })).toBe(false);
-      expect(service.applyMetadata("test", item.id, { title: "Wrong purpose", channelName: null, durationMs: null })).toBe(false);
+      expect(() => service.applyMetadata("test" as never, item.id, { title: "Wrong purpose", channelName: null, durationMs: null })).toThrow();
       expect(service.view("live").revision).toBe(revision);
     });
 

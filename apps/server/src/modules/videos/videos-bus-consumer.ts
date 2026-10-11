@@ -4,7 +4,7 @@ import { rejectionOutcome, videoExternalIdentity } from "./streamerbot-video-int
 import type { VideoRequestContext, VideoRequestIntake } from "./video-request-intake.js";
 
 export interface VideosBusConsumerOptions {
-  readonly intake?: Pick<VideoRequestIntake, "submit">;
+  readonly intake?: Pick<VideoRequestIntake, "submit"> & Partial<Pick<VideoRequestIntake, "findAdmission">>;
   /** Handles Streamer.bot General/Custom broadcasts that carry a Videos marker. */
   readonly streamerBot: (event: BusEvent) => Promise<EventBusHandleOutcome>;
   /** Handles canonical stream events; only mapped channel point redemptions queue a video. */
@@ -23,6 +23,8 @@ export function createVideosBusConsumer(options: VideosBusConsumerOptions): Even
     externalPayloads: [videoExternalIdentity],
     handle: async (event: BusEvent): Promise<EventBusHandleOutcome> => {
       try {
+        const committed = options.intake?.findAdmission?.({ busId: event.busId, eventId: event.eventId });
+        if (committed !== null && committed !== undefined) return committed.status === "accepted" ? "admitted" : rejectionOutcome(committed.reason);
         const context: VideoRequestContext = {
           busIdentity: { busId: event.busId, eventId: event.eventId },
           via: event.kind === "manual" ? event.submission.channel : "channel-points",

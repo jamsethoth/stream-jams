@@ -11,7 +11,7 @@ test("video manual submission journals once, confirms pending through an authori
     expect((await fixture.request("/overlay-modules/videos/enabled", "PATCH", { enabled: true })).status).toBe(200);
     const before = count("event_bus_journal");
     const forged = await fixture.request("/videos/live/requests", "POST", { link: "https://youtu.be/dQw4w9WgXcQ", sourceRegistrationId: "forged", purpose: "test" });
-    expect(forged.status).toBe(422);
+    expect(forged.status).toBe(410);
     expect(count("event_bus_journal")).toBe(before);
     let busId = "";
     let requests = 0;
