@@ -370,7 +370,7 @@ function createRegistry(moduleIds: readonly string[]): Pick<OverlayModuleRegistr
         (id) =>
           ({
             id,
-            renderer: { entryPoint: `overlay/modules/${id}`, supportedOutputs: ["module", "unified"] }
+            renderer: { entryPoint: `overlay/modules/${id}`, supportsDesktopComposition: true, supportedOutputs: ["module", "unified"] }
           }) as unknown as OverlayModuleDefinition
       );
     }

@@ -12,6 +12,18 @@ const desktop = {
 };
 
 describe("surface configuration", () => {
+  it("preserves saved desktop rows through repeated restart reconciliation", () => {
+    const saved = surfaceConfigurationSchema.parse({
+      ...desktop, enabled: true, displayId: "42", displayLabel: "Main", autoFollowDisplayName: true, opacity: 0.4,
+      layers: [{ moduleId: "timers", visible: false }, { moduleId: "alerts", visible: true }]
+    });
+    const first = { ...saved, layers: reconcileSurfaceLayers(saved.layers, ["alerts", "timers", "music"]) };
+    const restarted = surfaceConfigurationSchema.parse(JSON.parse(JSON.stringify(first)));
+    const second = { ...restarted, layers: reconcileSurfaceLayers(restarted.layers, ["alerts", "timers", "music"]) };
+    expect(second).toEqual({ ...saved, layers: [
+      { moduleId: "timers", visible: false }, { moduleId: "alerts", visible: true }, { moduleId: "music", visible: false }
+    ] });
+  });
   it("retains known order and visibility and adds new modules hidden at the bottom", () => {
     const saved = [{ moduleId: "removed", visible: true }, { moduleId: "alerts", visible: true }];
     expect(reconcileSurfaceLayers(saved, ["screen-effects", "alerts"])).toEqual([

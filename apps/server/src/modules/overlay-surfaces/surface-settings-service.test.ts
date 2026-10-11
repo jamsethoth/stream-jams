@@ -2,6 +2,30 @@ import { expect, it, vi } from "vitest";
 import type { DesktopOverlayStatus, Logger, SurfaceConfiguration } from "@stream-jams/core";
 import { SurfaceSettingsService } from "./surface-settings-service.js";
 
+it("validates desktop and public unified saves against their independent module memberships", async () => {
+  let saved: SurfaceConfiguration[] = [
+    { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, displayLabel: null,
+      autoFollowDisplayName: false, opacity: 1, layers: [{ moduleId: "desktop-only", visible: false }] },
+    { id: "unified-browser:output", kind: "unified-browser", overlayId: "output",
+      layers: [{ moduleId: "browser-only", visible: false }] }
+  ];
+  const service = new SurfaceSettingsService({
+    surfaces: { list: async () => saved, save: async value => { saved = saved.map(row => row.id === value.id ? value : row); } },
+    moduleIds: kind => kind === "desktop" ? ["desktop-only"] : ["browser-only"],
+    changed: async () => {}, runMutation: work => work()
+  });
+  const desktopUpdate = { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, opacity: 1,
+    layers: [{ moduleId: "desktop-only", visible: true }] };
+  const result = await service.save("desktop:primary", desktopUpdate);
+  expect(result.surfaces[0]?.layers).toEqual([{ moduleId: "desktop-only", visible: true }]);
+  await expect(service.save("desktop:primary", { ...desktopUpdate, layers: [{ moduleId: "browser-only", visible: true }] }))
+    .rejects.toMatchObject({ statusCode: 400 });
+  await expect(service.save("unified-browser:output", { ...saved[1], layers: [{ moduleId: "desktop-only", visible: true }] }))
+    .rejects.toMatchObject({ statusCode: 400 });
+  const unifiedResult = await service.save("unified-browser:output", { ...saved[1], layers: [{ moduleId: "browser-only", visible: true }] });
+  expect(unifiedResult.surfaces[1]?.layers).toEqual([{ moduleId: "browser-only", visible: true }]);
+});
+
 function fixture() {
   let saved: SurfaceConfiguration = { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null,
     displayLabel: null, autoFollowDisplayName: false, opacity: 1,

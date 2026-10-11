@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import {
-  listUnifiedOverlayModuleIds, reconcileSurfaceLayers, surfaceConfigurationSchema, validateSurfaceOrder,
+  listDesktopOverlayModuleIds, listUnifiedOverlayModuleIds, reconcileSurfaceLayers, surfaceConfigurationSchema, validateSurfaceOrder,
   type OverlayModuleRegistry, type SurfaceConfiguration, type SurfaceRepository
 } from "@stream-jams/core";
 import { runInTransaction } from "../db/database.js";
@@ -15,7 +15,7 @@ export class SqliteSurfaceRepository implements SurfaceRepository {
   async save(configuration: SurfaceConfiguration): Promise<void> {
     const parsed = surfaceConfigurationSchema.parse(configuration);
     runInTransaction(this.connection, () => {
-      validateSurfaceOrder(parsed.layers, listUnifiedOverlayModuleIds(this.registry));
+      validateSurfaceOrder(parsed.layers, this.moduleIds(parsed.kind));
       const surfaces = this.reconcile();
       if (!surfaces.some(surface => surface.id === parsed.id)) throw new Error("Unknown overlay surface");
       this.write(parsed);
@@ -23,9 +23,8 @@ export class SqliteSurfaceRepository implements SurfaceRepository {
   }
 
   private reconcile(): SurfaceConfiguration[] {
-    // Module-only modules never join unified or desktop layering.
+    // Public browser composition and private desktop composition have independent membership.
     const modules = this.registry.listModules().filter(module => module.renderer.supportedOutputs.includes("unified"));
-    const ids = modules.map(module => module.id);
     const rows = this.connection.prepare("SELECT configuration_json FROM overlay_surfaces ORDER BY id").all();
     const surfaces = rows.map(row => surfaceConfigurationSchema.parse(JSON.parse(String(row.configuration_json))));
     if (!surfaces.some(surface => surface.id === "desktop:primary")) {
@@ -57,11 +56,15 @@ export class SqliteSurfaceRepository implements SurfaceRepository {
       surfaces.push(surface);
     }
     return surfaces.map(surface => {
-      const layers = reconcileSurfaceLayers(surface.layers, ids);
+      const layers = reconcileSurfaceLayers(surface.layers, this.moduleIds(surface.kind));
       const reconciled = { ...surface, layers };
       if (JSON.stringify(layers) !== JSON.stringify(surface.layers)) this.write(reconciled);
       return reconciled;
     }).sort((left, right) => left.id.localeCompare(right.id));
+  }
+
+  private moduleIds(kind: SurfaceConfiguration["kind"]): string[] {
+    return kind === "desktop" ? listDesktopOverlayModuleIds(this.registry) : listUnifiedOverlayModuleIds(this.registry);
   }
 
   private write(configuration: SurfaceConfiguration): void {

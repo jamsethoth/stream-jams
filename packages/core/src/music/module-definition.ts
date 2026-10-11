@@ -9,5 +9,5 @@ export const musicModuleDefinition = {
     { id: "profiles.landscape.backgroundOpacity", label: "Landscape background opacity", type: "number", required: true },
     { id: "profiles.vertical.backgroundOpacity", label: "Vertical background opacity", type: "number", required: true }
   ] }] },
-  renderer: { entryPoint: "overlay/modules/music", supportedOutputs: ["module", "unified"] }
+  renderer: { entryPoint: "overlay/modules/music", supportsDesktopComposition: true, supportedOutputs: ["module", "unified"] }
 } as const satisfies OverlayModuleDefinition<MusicModuleConfig>;

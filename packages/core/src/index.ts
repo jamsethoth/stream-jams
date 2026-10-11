@@ -241,7 +241,7 @@ export type { SelectedDesktopDisplay, DesktopOverlayDiagnostic, DesktopOverlaySt
 export type { AlertsOverlayModuleConfig } from "./overlay-modules/module-definition.js";
 export { alertsOverlayModuleConfigSchema, alertsOverlayModuleDefinition } from "./overlay-modules/module-definition.js";
 export type { OverlayModuleRegistry } from "./overlay-modules/module-registry.js";
-export { StaticOverlayModuleRegistry, createDefaultOverlayModuleRegistry, listUnifiedOverlayModuleIds } from "./overlay-modules/module-registry.js";
+export { StaticOverlayModuleRegistry, createDefaultOverlayModuleRegistry, listUnifiedOverlayModuleIds, listDesktopOverlayModuleIds } from "./overlay-modules/module-registry.js";
 export type { OverlayModuleConfigRepository, OverlayModuleConfigService, SaveOverlayModuleConfigInput } from "./overlay-modules/module-config-service.js";
 export { DefaultOverlayModuleConfigService, InMemoryOverlayModuleConfigRepository, InvalidOverlayModuleConfigError, UnknownOverlayModuleError } from "./overlay-modules/module-config-service.js";
 export type { OverlayCompositionService, OverlayModuleRuntime, OverlayModuleSnapshotRequest } from "./overlay-modules/overlay-composition-service.js";

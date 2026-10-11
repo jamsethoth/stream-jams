@@ -6,10 +6,10 @@ Specification approved 2026-10-10; implementation has not started. These checkbo
 
 ## 1. S01 — Explicit desktop composition capability (no dependencies)
 
-- [ ] 1.1 Refresh baseline/worktree, record environment and baseline evidence, and verify scope is still unimplemented.
-- [ ] 1.2 Test desktop membership independently of public unified support, including saved rows and restart reconciliation.
-- [ ] 1.3 Add explicit registry desktop capability and replace inferred membership without retiring public outputs.
-- [ ] 1.4 Run focused checks, record interfaces/evidence and commit the behavior-preserving prerequisite.
+- [x] 1.1 Refresh baseline/worktree, record environment and baseline evidence, and verify scope is still unimplemented.
+- [x] 1.2 Test desktop membership independently of public unified support, including saved rows and restart reconciliation.
+- [x] 1.3 Add explicit registry desktop capability and replace inferred membership without retiring public outputs.
+- [x] 1.4 Run focused checks, record interfaces/evidence and commit the behavior-preserving prerequisite.
 
 ## 2. S02 — Typed manual bus events (no dependencies)
 

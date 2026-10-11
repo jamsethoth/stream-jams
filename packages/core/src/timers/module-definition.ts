@@ -35,6 +35,6 @@ export const timersOverlayModuleDefinition = {
   },
   renderer: {
     entryPoint: "overlay/modules/timers",
-    supportedOutputs: ["module", "unified"]
+    supportsDesktopComposition: true, supportedOutputs: ["module", "unified"]
   }
 } as const satisfies OverlayModuleDefinition<TimersOverlayModuleConfig>;

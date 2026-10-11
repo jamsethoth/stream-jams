@@ -22,6 +22,7 @@ import {
   createAppVersion,
   createDefaultOverlayModuleRegistry,
   listUnifiedOverlayModuleIds,
+  listDesktopOverlayModuleIds,
   isStreamerBotSubscriptionAvailable,
   overlayScopeSchema,
   pearConfigurationSchema,
@@ -1695,7 +1696,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       retry: () => options.desktopOverlayTransport!.retry(),
       ...(options.desktopOverlayTransport.getStatus === undefined ? {} : { getStatus: () => options.desktopOverlayTransport!.getStatus!() })
     } }),
-    moduleIds: () => listUnifiedOverlayModuleIds(overlayModuleRegistry),
+    moduleIds: kind => kind === "desktop"
+      ? listDesktopOverlayModuleIds(overlayModuleRegistry)
+      : listUnifiedOverlayModuleIds(overlayModuleRegistry),
     changed: async surface => {
       if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
       if (surface.kind === "desktop") await Promise.all([queueTimerOutputSync(), queueMusicOutputSync(), queueVideoOutputSync("live")]);

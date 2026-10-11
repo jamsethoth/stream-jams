@@ -10,7 +10,7 @@ export class SurfaceSettingsError extends Error {
 export interface SurfaceSettingsServiceDependencies {
   surfaces: SurfaceRepository;
   host?: Pick<DesktopOverlayTransport, "configure" | "retry" | "getStatus">;
-  moduleIds(): readonly string[];
+  moduleIds(kind: SurfaceConfiguration["kind"]): readonly string[];
   changed(surface: SurfaceConfiguration): Promise<void>;
   runMutation<T>(work: () => Promise<T>): Promise<T>;
   logger?: Logger;
@@ -56,7 +56,7 @@ export class SurfaceSettingsService {
       const config = parsed.data.kind === "desktop"
         ? await this.#trustedDesktopConfiguration(parsed.data, current)
         : surfaceConfigurationSchema.parse(parsed.data);
-      try { validateSurfaceOrder(config.layers, this.dependencies.moduleIds()); } catch (cause) { throw invalid(cause); }
+      try { validateSurfaceOrder(config.layers, this.dependencies.moduleIds(config.kind)); } catch (cause) { throw invalid(cause); }
       try { await this.dependencies.surfaces.save(config); }
       catch (cause) {
         await this.#log("error", "Overlay settings could not be saved.", "overlay-surfaces.save.failed", {
