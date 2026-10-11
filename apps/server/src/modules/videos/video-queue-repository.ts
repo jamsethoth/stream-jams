@@ -137,7 +137,7 @@ WHERE video_requests.purpose = excluded.purpose`);
           item.limitOverridden ? 1 : 0, item.autoplay ? 1 : 0, item.position, item.createdAt, this.now(), item.reviewRequired ? 1 : 0, item.migrationProvenance === null ? null : JSON.stringify(item.migrationProvenance)
         );
       }
-      if (change.admission !== undefined) new SqliteVideoBusAdmissionRepository(this.connection).record(change.admission, change.admission.result);
+      if (change.admission !== undefined) new SqliteVideoBusAdmissionRepository(this.connection, () => Date.parse(this.now())).record(change.admission, change.admission.result);
       return this.load(purpose);
     });
   }
