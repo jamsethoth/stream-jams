@@ -43,6 +43,8 @@ import { eventBusOutcomesMigration } from "./migrations/039-event-bus-outcomes.j
 import { videoRequestQueueMigration } from "./migrations/040-video-request-queue.js";
 import { videoRequestMetadataMigration } from "./migrations/041-video-request-metadata.js";
 
+import { manualEventBusMigration } from "./migrations/042-manual-event-bus.js";
+
 export interface StreamJamsMigration {
   readonly id: string;
   readonly sql: string;
@@ -94,7 +96,8 @@ const migrations = [
   externalAlertIdentityMigration,
   eventBusOutcomesMigration,
   videoRequestQueueMigration,
-  videoRequestMetadataMigration
+  videoRequestMetadataMigration,
+  manualEventBusMigration
 ] satisfies readonly StreamJamsMigration[];
 
 export const currentSchemaVersion = migrations.length;

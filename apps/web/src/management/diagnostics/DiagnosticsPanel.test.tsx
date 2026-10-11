@@ -13,6 +13,19 @@ afterEach(() => {
 });
 
 describe("DiagnosticsPanel", () => {
+  it("shows manual provenance and trusted submission channel without treating it as provider delivery", async () => {
+    const user = userEvent.setup();
+    render(<DiagnosticsPanel managementApi={{ ...managementApi(), getEventBusActivity: async () => ({ events: [{ id: 1, receivedAt: "2026-10-10T12:00:00.000Z", sourceKind: "manual", kind: "manual", submissionChannel: "automation", eventType: "video-request", outcome: "accepted", referenceId: null, consumers: [{ consumerId: "videos", outcome: "pending", referenceId: null }] }] }) }} />);
+    await user.click(await screen.findByRole("tab", { name: /Event intake/ }));
+    expect(within(screen.getByRole("table")).getByText("Manual")).toBeVisible();
+    const detail = screen.getByLabelText("Bus event detail");
+    expect(detail).toHaveTextContent("Manual action");
+    expect(detail).toHaveTextContent("Submitted fromAutomation");
+    expect(detail).toHaveTextContent("Pending");
+    expect(detail).not.toHaveTextContent("Streamer.bot");
+    expect(detail).not.toHaveTextContent("queued");
+  });
+
   it("lists bus intake with per-module outcomes and filters by module failure", async () => {
     const user = userEvent.setup();
     const api = { ...managementApi(), getEventBusActivity: vi.fn(async () => busActivity()) };

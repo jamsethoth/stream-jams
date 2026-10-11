@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { BusEvent, BusEventInput, EventBusConsumerOutcome, EventBusIntakeOutcome, IngestProviderId } from "@stream-jams/core";
+import type { BusEvent, BusEventInput, EventBusConsumerOutcome, EventBusIntakeOutcome, BusEventSourceKind, ManualSubmissionChannel } from "@stream-jams/core";
 import { busEventSchema } from "@stream-jams/core/event-bus";
 import { runInTransaction } from "../db/database.js";
 
@@ -34,7 +34,8 @@ export interface EventBusDeliveryFailure {
 
 export interface EventBusIntakeRecord {
   readonly receivedAt: string;
-  readonly sourceKind: IngestProviderId;
+  readonly sourceKind: BusEventSourceKind;
+  readonly submissionChannel?: ManualSubmissionChannel;
   /** Null for input rejected before it could be read. */
   readonly kind: BusEvent["kind"] | null;
   readonly eventType: string | null;
@@ -63,6 +64,8 @@ export interface EventBusJournalRepository {
    * paired with this source, falls within the correlation window.
    */
   append(input: BusEventInput, busId: string, windows: EventBusAppendWindows): EventBusAppendResult;
+  findByEventId(sourceKind: BusEventSourceKind, eventId: string): BusEvent | null;
+  consumerOutcomes(sequence: number): readonly EventBusActivityConsumer[];
   headSequence(): number;
   readAfter(sequence: number, limit: number): readonly EventBusJournalEntry[];
   getCursor(consumerId: string): number | null;
@@ -112,7 +115,9 @@ export class SqliteEventBusJournalRepository implements EventBusJournalRepositor
         }
       }
 
-      const payload = input.kind === "canonical"
+      const payload = input.kind === "manual"
+        ? { action: input.action, submission: input.submission, effectTriggers: input.effectTriggers }
+        : input.kind === "canonical"
         ? { event: input.event, effectTriggers: input.effectTriggers }
         : { effectTriggers: input.effectTriggers, ...(input.payload === undefined ? {} : { payload: input.payload }) };
       const result = this.connection.prepare(`INSERT INTO event_bus_journal
@@ -122,6 +127,16 @@ export class SqliteEventBusJournalRepository implements EventBusJournalRepositor
       const event = busEventSchema.parse({ ...input, sequence: Number(result.lastInsertRowid), busId });
       return { status: "appended", event } as const;
     });
+  }
+
+  findByEventId(sourceKind: BusEventSourceKind, eventId: string): BusEvent | null {
+    const row = this.connection.prepare("SELECT * FROM event_bus_journal WHERE source_kind = ? AND event_id = ? ORDER BY sequence DESC LIMIT 1").get(sourceKind, eventId);
+    return row === undefined ? null : readEntry(row).event;
+  }
+
+  consumerOutcomes(sequence: number): readonly EventBusActivityConsumer[] {
+    const recorded = new Map(this.connection.prepare("SELECT consumer_id, outcome, reference_id FROM event_bus_consumer_outcomes WHERE sequence = ?").all(sequence).map(row => [String(row.consumer_id), { outcome: String(row.outcome) as EventBusConsumerOutcome, referenceId: row.reference_id === null ? null : String(row.reference_id) }]));
+    return this.connection.prepare("SELECT consumer_id, last_sequence FROM event_bus_consumer_cursors ORDER BY consumer_id").all().map(row => ({ consumerId: String(row.consumer_id), ...(recorded.get(String(row.consumer_id)) ?? { outcome: Number(row.last_sequence) >= sequence ? "admitted" as const : "pending" as const, referenceId: null }) }));
   }
 
   headSequence(): number {
@@ -186,9 +201,9 @@ export class SqliteEventBusJournalRepository implements EventBusJournalRepositor
 
   recordIntake(record: EventBusIntakeRecord): void {
     this.connection.prepare(`INSERT INTO event_bus_intake_log
-      (received_at, received_at_ms, source_kind, kind, event_type, outcome, sequence, reference_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+      (received_at, received_at_ms, source_kind, kind, event_type, outcome, sequence, reference_id, submission_channel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(record.receivedAt, Date.parse(record.receivedAt), record.sourceKind, record.kind, record.eventType?.slice(0, maxStoredTypeLength) ?? null,
-        record.outcome, record.sequence, record.referenceId);
+        record.outcome, record.sequence, record.referenceId, record.submissionChannel ?? null);
   }
 
   recentActivity(limit: number): readonly EventBusActivityRecord[] {
@@ -204,7 +219,8 @@ export class SqliteEventBusJournalRepository implements EventBusJournalRepositor
       return {
         id: Number(row.id),
         receivedAt: String(row.received_at),
-        sourceKind: String(row.source_kind) as IngestProviderId,
+        sourceKind: String(row.source_kind) as BusEventSourceKind,
+        ...(row.submission_channel === null ? {} : { submissionChannel: String(row.submission_channel) as ManualSubmissionChannel }),
         kind: row.kind === null ? null : String(row.kind) as BusEvent["kind"],
         eventType: row.event_type === null ? null : String(row.event_type),
         outcome: String(row.outcome) as EventBusIntakeOutcome,

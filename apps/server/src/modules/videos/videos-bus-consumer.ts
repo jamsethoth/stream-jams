@@ -22,6 +22,7 @@ export function createVideosBusConsumer(options: VideosBusConsumerOptions): Even
     maxAttempts: 1,
     externalPayloads: [videoExternalIdentity],
     handle: async (event: BusEvent): Promise<EventBusHandleOutcome> => {
+      if (event.kind === "manual") return "no-match";
       if (event.sequence <= lastSequence) return "no-match";
       lastSequence = event.sequence;
       try {

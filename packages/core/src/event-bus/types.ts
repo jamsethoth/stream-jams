@@ -1,5 +1,8 @@
 import type { IngestProviderId, NormalizedStreamEvent } from "../events/types.js";
+import type { ManualEventAction, ManualSubmissionChannel } from "./manual-submission.js";
 import type { EffectTrigger } from "../screen-effects/types.js";
+
+export type BusEventSourceKind = IngestProviderId | "manual";
 
 interface BusEventBase {
   /** Journal-assigned, strictly increasing delivery order. */
@@ -7,7 +10,7 @@ interface BusEventBase {
   readonly busId: string;
   /** Upstream event identity used for same-source duplicate protection. */
   readonly eventId: string;
-  readonly sourceKind: IngestProviderId;
+  readonly sourceKind: BusEventSourceKind;
   readonly sourceRegistrationId: string | null;
   readonly receivedAt: string;
   /** Cross-source identity of a Twitch occurrence; null for external events. */
@@ -18,6 +21,7 @@ interface BusEventBase {
 
 export interface CanonicalBusEvent extends BusEventBase {
   readonly kind: "canonical";
+  readonly sourceKind: IngestProviderId;
   readonly event: NormalizedStreamEvent;
 }
 
@@ -37,14 +41,25 @@ export type ExternalEventPayload = Readonly<Record<string, unknown>>;
 
 export interface ExternalBusEvent extends BusEventBase {
   readonly kind: "external";
+  readonly sourceKind: IngestProviderId;
   readonly payload?: ExternalEventPayload | undefined;
 }
 
-export type BusEvent = CanonicalBusEvent | ExternalBusEvent;
+export interface ManualBusEvent extends BusEventBase {
+  readonly kind: "manual";
+  readonly sourceKind: "manual";
+  readonly sourceRegistrationId: null;
+  readonly correlationKey: null;
+  readonly action: ManualEventAction;
+  readonly submission: { readonly channel: ManualSubmissionChannel; readonly mayAutoplay: boolean };
+}
+
+export type BusEvent = CanonicalBusEvent | ExternalBusEvent | ManualBusEvent;
 
 export type BusEventInput =
   | Omit<CanonicalBusEvent, "sequence" | "busId">
-  | Omit<ExternalBusEvent, "sequence" | "busId">;
+  | Omit<ExternalBusEvent, "sequence" | "busId">
+  | Omit<ManualBusEvent, "sequence" | "busId">;
 
 /** What a consumer did with one event; recorded for Diagnostics. */
 export type EventBusConsumerOutcome = "admitted" | "no-match" | "failed" | "expired";

@@ -71,6 +71,7 @@ export class EventPipeline {
   }
 
   async #deliverAlerts(busEvent: BusEvent): Promise<EventBusHandleOutcome> {
+    if (busEvent.kind === "manual") return "no-match";
     const events: AlertSourceEvent[] = [
       ...(busEvent.kind === "canonical" ? [busEvent.event] : []),
       ...createExternalAlertEvents(busEvent)
@@ -122,6 +123,7 @@ export class EventPipeline {
   }
 
   async #deliverEffects(busEvent: BusEvent): Promise<EventBusHandleOutcome> {
+    if (busEvent.kind === "manual") return "no-match";
     if (this.#effectEventSink === null) return "no-match";
     try {
       const result = await this.#effectEventSink.handleEvent(busEvent);

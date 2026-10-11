@@ -929,7 +929,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     timerEventSink: new TimerEventService(timerDefinitionRepository, timerRuntimeCoordinator),
     onTimerError: (error, event) => runtimeLogger.error("Timer event handling failed", {
       module: "timers", source: "timers.event-admission", correlationId: `event:${event.sourceKind}:${event.eventId}`,
-      processingId: null, metadata: { eventType: event.kind === "canonical" ? event.event.type : "external" }
+      processingId: null, metadata: { eventType: event.kind === "canonical" ? event.event.type : event.kind }
     }, error),
     playbackCoordinator,
     effectEventSink: {
@@ -973,11 +973,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         }),
         onError: (error, event) => runtimeLogger.error("Video request handling failed", {
           module: "videos", source: "videos.event-admission", correlationId: `event:${event.sourceKind}:${event.eventId}`,
-          processingId: null, metadata: { eventType: event.kind === "canonical" ? event.event.type : "external" }
+          processingId: null, metadata: { eventType: event.kind === "canonical" ? event.event.type : event.kind }
         }, error)
       })
     ],
     generateReferenceId: generateEventSourceReferenceId,
+    onManualDeliveryWork: work => { void trackRuntimeWork(() => work); },
     resolveSourceRegistrationId: async (kind) => (await providerRegistrationRepository.findActiveByKind(kind))?.provider.id ?? null,
     now,
     onDeliveryFailure: (failure) => runtimeLogger.error("Event bus consumer failed", {
@@ -1833,7 +1834,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     getConfigurationBackupSummary: () => configurationBackupService.summary(),
     openDataFolder: () => localMaintenanceService.openDataFolder(),
     clearOldLogs: () => localMaintenanceService.clearOldLogs(),
-    getEventBusActivity: () => ({ events: eventBusJournal.recentActivity(100).map((record) => ({ id: record.id, receivedAt: record.receivedAt, sourceKind: record.sourceKind, kind: record.kind, eventType: record.eventType, outcome: record.outcome, referenceId: record.referenceId, consumers: record.consumers.map((consumer) => ({ ...consumer })) })) }),
+    getEventBusActivity: () => ({ events: eventBusJournal.recentActivity(100).map((record) => ({ id: record.id, receivedAt: record.receivedAt, sourceKind: record.sourceKind, ...(record.submissionChannel === undefined ? {} : { submissionChannel: record.submissionChannel }), kind: record.kind, eventType: record.eventType, outcome: record.outcome, referenceId: record.referenceId, consumers: record.consumers.map((consumer) => ({ ...consumer })) })) }),
     getEventBusSettings: () => eventBusSettingsService.get(),
     saveEventBusSettings: (settings) => eventBusSettingsService.save(settings),
     overlayAccessService,

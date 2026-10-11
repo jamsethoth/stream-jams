@@ -130,6 +130,7 @@ export class EffectAdmissionService {
   /** Admits every enabled effect with a binding whose selector matches the journal-validated bus event. */
   async handleEvent(event: BusEvent): Promise<EffectAdmissionResult> {
     const { eventId } = event;
+    if (event.kind === "manual") return this.#report({ status: "no-matches", eventId, outcomes: [] });
     if (!await this.#isModuleEnabled()) {
       return this.#report({ status: "module-disabled", eventId, outcomes: [] });
     }

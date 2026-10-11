@@ -1,4 +1,4 @@
-import { matchSelector } from "../event-bus/selector.js";
+import { canonicalEventForSelector, matchSelector } from "../event-bus/selector.js";
 import type { BusEvent } from "../event-bus/types.js";
 import type { EffectBinding, EffectTrigger } from "./types.js";
 
@@ -7,13 +7,14 @@ export function matchEffectBinding(binding: EffectBinding, event: BusEvent): Eff
   if (!matchSelector(binding.selector, event)) return null;
   const { match } = binding.selector;
   if (match.kind === "canonical") {
-    if (event.kind !== "canonical") return null;
+    const canonical = canonicalEventForSelector(event);
+    if (canonical === null) return null;
     return {
       kind: "canonical-event",
       eventId: event.eventId,
-      occurredAt: event.event.occurredAt,
-      eventType: event.event.type,
-      summary: canonicalSummary(event.event.type, event.event.actor.displayName)
+      occurredAt: canonical.occurredAt,
+      eventType: canonical.type,
+      summary: canonicalSummary(canonical.type, canonical.actor.displayName)
     };
   }
   return event.effectTriggers.find((trigger) => match.kind === "twitch-reward"

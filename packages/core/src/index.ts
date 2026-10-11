@@ -201,7 +201,7 @@ export { twitchCorrelationKey } from "./event-bus/correlation.js";
 export { eventBusActivityViewSchema, eventBusSettingsSchema, externalEventPayloadMaxBytes, externalEventPayloadSchema } from "./event-bus/schemas.js";
 export type { EventBusActivityView, EventBusSettings } from "./event-bus/schemas.js";
 export type { EventTriggerMatch, EventTriggerSelector } from "./event-bus/selector.js";
-export { eventTriggerMatchSchema, eventTriggerSelectorIdentity, eventTriggerSelectorSchema, matchSelector } from "./event-bus/selector.js";
+export { canonicalEventForSelector, eventTriggerMatchSchema, eventTriggerSelectorIdentity, eventTriggerSelectorSchema, matchSelector } from "./event-bus/selector.js";
 
 export type * from "./overlay-modules/types.js";
 export type { OverlayModulePresentation } from "./overlay-modules/presentation.js";
@@ -395,3 +395,6 @@ export { videosModuleDefinition } from "./videos/module-definition.js";
 export * from "./management/local-websocket-connection.js";
 export { moduleMuteStateSchema } from "./playback/schemas.js";
 export { defaultModuleMuteState, type ModuleMuteState, type MutablePlaybackModuleId } from "./playback/types.js";
+
+export { manualEventSubmissionSchema, manualEventActionSchema, manualEventActionMaxBytes } from "./event-bus/manual-submission.js";
+export type * from "./event-bus/manual-submission.js";

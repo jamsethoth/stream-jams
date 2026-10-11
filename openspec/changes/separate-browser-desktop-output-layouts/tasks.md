@@ -13,10 +13,10 @@ Specification approved 2026-10-10; implementation has not started. These checkbo
 
 ## 2. S02 — Typed manual bus events (no dependencies)
 
-- [ ] 2.1 Add bounded manual event/action schemas and tests for truthful provenance, simulated identity, duplicate versus deliberate repeat, and existing journal compatibility.
-- [ ] 2.2 Implement trusted-channel submission service, selector extraction, independent outcomes and existing replay/retention behavior without expanding provider registration types.
-- [ ] 2.3 Reject forged identity/recipients, invalid payloads and permission escalation before journaling; update diagnostics and any required storage migration.
-- [ ] 2.4 Run bus/schema/diagnostics checks and commit the frozen service/action/receipt interfaces.
+- [x] 2.1 Add bounded manual event/action schemas and tests for truthful provenance, simulated identity, duplicate versus deliberate repeat, and existing journal compatibility.
+- [x] 2.2 Implement trusted-channel submission service, selector extraction, independent outcomes and existing replay/retention behavior without expanding provider registration types.
+- [x] 2.3 Reject forged identity/recipients, invalid payloads and permission escalation before journaling; update diagnostics and any required storage migration.
+- [x] 2.4 Run bus/schema/diagnostics checks and commit the frozen service/action/receipt interfaces.
 
 ## 3. S03 — Alert and Effect manual dispatch (depends on S02)
 

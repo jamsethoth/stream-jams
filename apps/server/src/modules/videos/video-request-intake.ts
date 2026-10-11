@@ -1,20 +1,10 @@
-import { z } from "zod";
 import type { OverlayPurpose, VideoRequestItem, VideoSubmissionChannel, VideosModuleConfig } from "@stream-jams/core";
-import { isAllowedVideoSource, parseVideoLink, videoMaximumLinkLength, videoRequesterSchema, videoTitleSchema } from "@stream-jams/core/videos";
+import { isAllowedVideoSource, parseVideoLink } from "@stream-jams/core/videos";
 import { VideoQueueCommandError, type VideoQueueService } from "./video-queue-service.js";
 
-/** Longest duration a submitter may declare; the configured limit decides whether it plays. */
-const maximumDeclaredDurationSeconds = 24 * 60 * 60;
-
-export const videoRequestInputSchema = z.object({
-  link: z.string().trim().min(1).max(videoMaximumLinkLength),
-  title: videoTitleSchema.optional(),
-  requester: videoRequesterSchema.optional(),
-  durationSeconds: z.number().finite().positive().max(maximumDeclaredDurationSeconds).optional(),
-  autoplay: z.boolean().optional()
-}).strict();
-
-export type VideoRequestInput = z.infer<typeof videoRequestInputSchema>;
+export { videoRequestInputSchema } from "@stream-jams/core/videos";
+import { videoRequestInputSchema } from "@stream-jams/core/videos";
+export type { VideoRequestInput } from "@stream-jams/core/videos";
 
 export type VideoRequestRejection = "module-disabled" | "invalid-request" | "invalid-link" | "unsafe-link" | "unsupported-source" | "queue-full";
 
