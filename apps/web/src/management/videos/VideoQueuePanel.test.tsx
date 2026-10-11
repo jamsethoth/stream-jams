@@ -191,7 +191,7 @@ describe("VideoQueuePanel", () => {
       replay.focus();
       await user.keyboard("{Enter}");
       expect(requeue).toHaveBeenCalledWith(4, "done");
-      expect(await screen.findByText("Cat plays keyboard added to the ordinary video queue.")).toBeVisible();
+      expect(await screen.findByText("Cat plays keyboard added to the live video queue.")).toBeVisible();
       expect(screen.getByText("Waiting (2)")).toBeVisible();
       await waitFor(() => expect(screen.getByRole("button", { name: "Replay Cat plays keyboard in Videos" })).toHaveFocus());
     });

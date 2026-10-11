@@ -138,7 +138,7 @@ export const OperatorRecentVideos: Story = {
     await expect(recent.getByRole("article", { name: "Cat plays keyboard" })).toHaveTextContent("youtu.be · via channel points");
     await expect(canvas.queryByText(/Failed recently/u)).not.toBeInTheDocument();
     await userEvent.click(recent.getByRole("button", { name: "Replay Removed upload in Videos" }));
-    await expect(await canvas.findByText("Removed upload added to the ordinary video queue.")).toBeVisible();
+    await expect(await canvas.findByText("Removed upload added to the live video queue.")).toBeVisible();
   }
 };
 
