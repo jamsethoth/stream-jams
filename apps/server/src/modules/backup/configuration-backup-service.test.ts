@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import {
   appConfigSchema,
+  timersOverlayModuleDefinition,
+  upgradeTimersConfig,
   configurationBackupLimits,
   type AlertEditorDocument,
   type AlertRule,
@@ -45,6 +47,35 @@ const asset: AssetRecord = {
 };
 
 describe("ConfigurationBackupService", () => {
+  it("preflights and round-trips legacy Timer appearance once, blocks invalid geometry and verifies original checksums", async () => {
+    const source = createRealService(); const target = createRealService();
+    try {
+      const legacy = { profiles: { landscape: { layout: { x: 1320, y: 780, width: 600, height: 300, zIndex: 2 }, orientation: "horizontal", maxVisible: 3 },
+        vertical: { layout: { x: 48, y: 1320, width: 984, height: 480, zIndex: 0 }, orientation: "vertical", maxVisible: 4 } } };
+      source.database.connection.prepare("INSERT INTO overlay_module_config VALUES ('timers', 1, ?, '2026-10-11T00:00:00.000Z')").run(JSON.stringify(timersOverlayModuleDefinition.defaultConfig));
+      const archive = await source.service.exportArchive(); archive.manifest.schemaVersion = currentSchemaVersion - 1;
+      const row = archive.configuration.tables.overlay_module_config!.find(row => row.module_id === "timers")!;
+      row.config_json = JSON.stringify(legacy);
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      const expected = upgradeTimersConfig(legacy);
+      const before = target.snapshotRepository.captureRestorePoint();
+      expect((await target.service.preflight(archive)).state).toBe("valid");
+      expect(target.snapshotRepository.captureRestorePoint()).toEqual(before);
+      await target.service.restore({ archive, archiveId: (await target.service.preflight(archive)).archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
+      const config = () => JSON.parse(String(target.database.connection.prepare("SELECT config_json FROM overlay_module_config WHERE module_id='timers'").get()?.config_json));
+      expect(config()).toEqual(expected);
+      const exported = await target.service.exportArchive();
+      expect(JSON.stringify(exported)).not.toContain("timer_run_recovery");
+      await target.service.restore({ archive: exported, archiveId: (await target.service.preflight(exported)).archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true }); expect(config()).toEqual(expected);
+      await target.service.restore({ archive, archiveId: (await target.service.preflight(archive)).archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true }); expect(config()).toEqual(expected);
+      const invalid = structuredClone(archive); invalid.configuration.tables.overlay_module_config![0]!.config_json = JSON.stringify({ schemaVersion: 2, profiles: {} });
+      const unchanged = target.snapshotRepository.captureRestorePoint();
+      expect((await target.service.preflight(invalid)).blockers.some(error => error.summary.includes("checksum"))).toBe(true);
+      invalid.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(invalid.configuration);
+      expect((await target.service.preflight(invalid)).state).toBe("invalid");
+      expect(target.snapshotRepository.captureRestorePoint()).toEqual(unchanged);
+    } finally { source.database.close(); target.database.close(); }
+  });
   it("identifies local device bindings as excluded from portable backups", async () => {
     const { service } = createService();
 

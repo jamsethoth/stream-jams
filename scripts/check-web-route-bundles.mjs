@@ -7,9 +7,9 @@ import { gzipSync } from "node:zlib";
 const defaultBuildDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "../apps/web/dist");
 const defaultBudgets = {
   bootstrap: 100 * 1024,
-  // Saved canvas metadata/ordering and content renderers retain their validated output boundaries.
-  overlay: 152 * 1024,
-  operator: 190 * 1024,
+  // S07 measured Timer appearance validation/rendering: +2290 overlay gzip bytes over S06.
+  overlay: 154 * 1024,
+  operator: 191 * 1024,
   management: 250 * 1024
 };
 const routeSources = {

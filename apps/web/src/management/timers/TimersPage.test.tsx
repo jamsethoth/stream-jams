@@ -170,6 +170,27 @@ it("keeps invalid timer definition and layout correction inline without issuing 
   expect(values.api.saveModuleConfig).not.toHaveBeenCalled();
 });
 
+it("switches to the invalid profile and focuses its associated field without saving or issuing timer commands", async () => {
+  const user = userEvent.setup(); const values = harness();
+  render(<TimersPage api={values.api} assetApi={{} as AssetApi} audioApi={values.audioApi} managementApi={{} as AssetLibraryManagementApi} />);
+  await screen.findByText("Timer stack");
+  await user.click(screen.getByRole("radio", { name: "Vertical" }));
+  fireEvent.change(screen.getByLabelText("Maximum shown"), { target: { value: "99" } });
+  await user.click(screen.getByRole("radio", { name: "Landscape" }));
+  await user.click(screen.getByRole("button", { name: "Save overlay layout" }));
+  expect(screen.getByRole("radio", { name: "Vertical" })).toBeChecked();
+  expect(screen.getByLabelText("Maximum shown")).toHaveFocus();
+  expect(screen.getByLabelText("Maximum shown")).toHaveAttribute("aria-invalid", "true");
+  expect(values.api.saveModuleConfig).not.toHaveBeenCalled(); expect(values.api.command).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("Maximum shown"), { target: { value: "4" } });
+  fireEvent.change(screen.getByLabelText("X", { exact: true }), { target: { value: "1079" } });
+  await user.click(screen.getByRole("radio", { name: "Landscape" }));
+  await user.click(screen.getByRole("button", { name: "Save overlay layout" }));
+  expect(screen.getByRole("radio", { name: "Vertical" })).toBeChecked();
+  expect(screen.getByLabelText("X", { exact: true })).toHaveFocus();
+  expect(values.api.saveModuleConfig).not.toHaveBeenCalled();
+});
+
 it("retains correction input after a failed request and permits an explicit retry", async () => {
   const user = userEvent.setup();
   const values = harness({ status: "paused", definitionId: "mitts", generation: "g1", snapshot: definition, remainingMs: 60000 });
@@ -294,6 +315,8 @@ it("edits both profile layouts and reveals a one-time automation credential", as
   const user = userEvent.setup(); const { api } = renderPage(); await screen.findByText("Timer stack");
   screen.getByRole("button", { name: "Move timer region" }).focus(); await user.keyboard("{ArrowRight}");
   await user.click(screen.getByRole("radio", { name: "Vertical" })); await user.selectOptions(screen.getByLabelText("Orientation"), "horizontal");
+  fireEvent.change(screen.getByLabelText("Card width (px)"), { target: { value: "260" } });
+  fireEvent.change(screen.getByLabelText("Desktop scale"), { target: { value: ".5" } });
   await user.click(screen.getByRole("button", { name: "Save overlay layout" })); await waitFor(() => expect(api.saveModuleConfig).toHaveBeenCalled());
   await user.click(screen.getByRole("button", { name: "Create credential" }));
   expect(await screen.findByDisplayValue(/^tmr_/)).toBeInTheDocument(); expect(screen.getByText(/will not be shown again/i)).toBeInTheDocument();

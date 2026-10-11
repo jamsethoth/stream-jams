@@ -1,5 +1,5 @@
-import { useEffect, useState, type CSSProperties } from "react";
-import { formatTimerRemaining, timerProfileDimensions, type TimerOverlayCard, type TimerStackProjection } from "@stream-jams/core";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { alertFontPresets, formatTimerRemaining, timerProfileDimensions, type TimerAppearance, type TimerOverlayCard, type TimerStackProjection } from "@stream-jams/core";
 import "../overlay.css";
 
 export interface TimerStackProps {
@@ -21,6 +21,15 @@ export function TimerStack({ stack, resolveAssetUrl, now = systemNow }: TimerSta
   }, [hasRunning, now, stack.cards]);
 
   const region = stack.region.layout;
+  const { overflowStyle, scale } = useMemo(() => {
+  if (stack.overflow !== undefined) {
+    const badge = stack.overflow;
+    return { scale: stack.renderScale ?? 1, overflowStyle: {
+      "--timer-overflow-block-padding": `${badge.blockPaddingPx}px`, "--timer-overflow-font-size": `${badge.fontSizePx}px`,
+      "--timer-overflow-inline-padding": `${badge.inlinePaddingPx}px`, "--timer-overflow-offset": "0px",
+      width: `${badge.width}px`, height: `${badge.height}px`, left: `${badge.x}px`, top: `${badge.y}px`, zIndex: region.zIndex + 1
+    } as CSSProperties };
+  }
   const overflowPosition = stack.region.orientation === "vertical"
     ? { left: region.x, top: region.y + region.height }
     : { left: region.x + region.width, top: region.y };
@@ -51,6 +60,8 @@ export function TimerStack({ stack, resolveAssetUrl, now = systemNow }: TimerSta
     top: `${overflowPosition.top}px`,
     zIndex: region.zIndex + 1
   } as CSSProperties;
+  return { scale, overflowStyle };
+  }, [region, stack.overflow, stack.region.orientation, stack.region.maxVisible, stack.renderScale, stack.targetProfileId]);
   return (
     <div className="timer-stack" style={{ transform: `scale(${scale})`, transformOrigin: `${region.x}px ${region.y}px` }}>
       <div aria-label="Active timers" className="timer-stack__items" data-orientation={stack.region.orientation} role="list">
@@ -60,6 +71,7 @@ export function TimerStack({ stack, resolveAssetUrl, now = systemNow }: TimerSta
             key={`${card.definitionId}:${card.generation}`}
             nowEpochMs={nowEpochMs}
             resolveAssetUrl={resolveAssetUrl}
+            appearance={stack.appearance}
           />
         ))}
       </div>
@@ -69,7 +81,7 @@ export function TimerStack({ stack, resolveAssetUrl, now = systemNow }: TimerSta
           className={`timer-stack__overflow timer-stack__overflow--${stack.region.orientation}`}
           style={overflowStyle}
         >
-          +{stack.overflowCount} more
+          +{abbreviatedCount(stack.overflowCount)} more
         </div>
       )}
     </div>
@@ -79,33 +91,45 @@ export function TimerStack({ stack, resolveAssetUrl, now = systemNow }: TimerSta
 function TimerCard({
   card,
   nowEpochMs,
-  resolveAssetUrl
+  resolveAssetUrl,
+  appearance
 }: {
   readonly card: TimerOverlayCard;
   readonly nowEpochMs: number;
   readonly resolveAssetUrl: (assetId: string, version?: string) => string | null;
+  readonly appearance: TimerAppearance | undefined;
 }) {
   const remainingMs = card.status === "running"
     ? Math.max(0, card.endsAtEpochMs - nowEpochMs)
     : card.status === "paused" ? card.remainingMs : 0;
   const value = formatTimerRemaining(remainingMs);
-  const labelSize = scaleMeasurement(card.slot, 0.24, 0.08, 10, 42);
-  const valueSize = scaleMeasurement(card.slot, 0.29, 0.12, 12, 56);
-  const iconSize = scaleMeasurement(card.slot, 0.48, 0.16, 16, 64);
-  const style = {
-    "--timer-card-block-padding": `${scaleMeasurement(card.slot, 0.1, 0.025, 4, 16)}px`,
-    "--timer-card-gap": `${scaleMeasurement(card.slot, 0.12, 0.025, 4, 18)}px`,
-    "--timer-card-inline-padding": `${scaleMeasurement(card.slot, 0.14, 0.04, 6, 24)}px`,
-    "--timer-card-radius": `${scaleMeasurement(card.slot, 0.12, 0.03, 4, 16)}px`,
+  const style = useMemo(() => {
+  const labelSize = appearance?.labelFont.fontSizePx ?? scaleMeasurement(card.slot, 0.24, 0.08, 10, 42);
+  const valueSize = appearance?.valueFont.fontSizePx ?? scaleMeasurement(card.slot, 0.29, 0.12, 12, 56);
+  const iconSize = appearance?.iconSizePx ?? scaleMeasurement(card.slot, 0.48, 0.16, 16, 64);
+  return {
+    "--timer-card-block-padding": `${appearance?.blockPaddingPx ?? scaleMeasurement(card.slot, 0.1, 0.025, 4, 16)}px`,
+    "--timer-card-gap": `${appearance?.gapPx ?? scaleMeasurement(card.slot, 0.12, 0.025, 4, 18)}px`,
+    "--timer-card-inline-padding": `${appearance?.inlinePaddingPx ?? scaleMeasurement(card.slot, 0.14, 0.04, 6, 24)}px`,
+    "--timer-card-radius": `${appearance?.cornerRadiusPx ?? scaleMeasurement(card.slot, 0.12, 0.03, 4, 16)}px`,
     "--timer-icon-size": `${iconSize}px`,
     "--timer-label-size": `${labelSize}px`,
     "--timer-value-size": `${valueSize}px`,
+    "--timer-value-max-width": `${Math.max(0, card.slot.width - 2 * ((appearance?.inlinePaddingPx ?? scaleMeasurement(card.slot, .14, .04, 6, 24)) + (appearance?.borderWidthPx ?? 2)) - iconSize - 2 * (appearance?.gapPx ?? scaleMeasurement(card.slot, .12, .025, 4, 18)) - 1)}px`,
     height: `${card.slot.height}px`,
     left: `${card.slot.x}px`,
     top: `${card.slot.y}px`,
     width: `${card.slot.width}px`,
-    zIndex: card.slot.zIndex
+    zIndex: card.slot.zIndex,
+    ...(appearance === undefined ? {} : {
+      borderWidth: appearance.borderWidthPx, borderColor: card.status === "paused" ? appearance.pausedAccent : card.status === "completed" ? appearance.completedAccent : appearance.runningAccent ?? appearance.borderColor,
+      background: appearance.backgroundOpacity === 1 ? appearance.backgroundColor : `color-mix(in srgb, ${appearance.backgroundColor} ${appearance.backgroundOpacity * 100}%, transparent)`,
+      "--timer-label-family": family(appearance.labelFont), "--timer-value-family": family(appearance.valueFont),
+      "--timer-label-weight": appearance.labelFont.fontWeight, "--timer-value-weight": appearance.valueFont.fontWeight,
+      "--timer-label-color": appearance.labelFont.color, "--timer-value-color": appearance.valueFont.color
+    })
   } as CSSProperties;
+  }, [appearance, card.slot, card.status]);
   return (
     <div
       aria-label={`${card.label}, ${card.status}, ${value}`}
@@ -121,6 +145,17 @@ function TimerCard({
       <time className="timer-stack__value" data-testid={`timer-value-${card.definitionId}`}>{value}</time>
     </div>
   );
+}
+
+function family(font: TimerAppearance["labelFont"]): string {
+  return font.legacyFamily ?? alertFontPresets.find(preset => preset.id === font.fontPreset)!.fontFamily;
+}
+
+function abbreviatedCount(count: number): string {
+  if (count < 1000) return String(count);
+  if (count < 1_000_000) return `${Math.floor(count / 1000)}k`;
+  if (count < 1_000_000_000) return `${Math.floor(count / 1_000_000)}m`;
+  return "999m+";
 }
 
 function scaleMeasurement(

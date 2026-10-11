@@ -221,6 +221,10 @@ export {
 } from "./timers/schemas.js";
 export { overlayModulePresentationSchema } from "./overlay-modules/presentation.js";
 export { compareTimerRuns, formatTimerRemaining, projectTimerStack } from "./timers/projection.js";
+export { upgradeTimersConfig, legacyTimerAppearance, InvalidTimersConfigError } from "./timers/config-upgrade.js";
+export { resolveTimerOutputGeometry, timerOverflowGeometry } from "./timers/output-geometry.js";
+export type { TimerOutputGeometry } from "./timers/output-geometry.js";
+export { timerAppearanceSchema, timerProfileSchema } from "./timers/schemas.js";
 export { timersOverlayModuleDefinition } from "./timers/module-definition.js";
 export { surfaceLayerSchema, surfaceLayersSchema, surfaceConfigurationSchema, surfaceConfigurationUpdateSchema, reconcileSurfaceLayers, validateSurfaceOrder } from "./overlay-modules/surface-configuration.js";
 export type { SurfaceLayer, SurfaceConfiguration, SurfaceConfigurationUpdate, SurfaceRepository } from "./overlay-modules/surface-configuration.js";

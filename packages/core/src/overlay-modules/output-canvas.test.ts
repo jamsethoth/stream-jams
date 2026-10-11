@@ -15,7 +15,7 @@ describe("output canvas", () => {
     expect(outputCanvasSchema.safeParse({ ...canvas, width: 640, kind: "content", origin: { x: 0.5, y: -0.5 } }).success).toBe(true);
   });
   it("keeps other modules scene-sized until their owning slices", () => {
-    for (const moduleId of ["timers", "videos", "alerts", "screen-effects"]) {
+    for (const moduleId of ["videos", "alerts", "screen-effects"]) {
       const config = { moduleId, enabled: false, updatedAt: "2026-10-11T00:00:00.000Z", config: {} };
       expect(moduleOutputCanvas(config, "landscape", "browser", 5)).toEqual(sceneOutputCanvas(5));
       expect(moduleOutputCanvas(config, "vertical", "browser", 5)).toEqual(sceneOutputCanvas(5, 1080, 1920));

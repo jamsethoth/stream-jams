@@ -54,7 +54,8 @@ const expectedMigrations = [
   "040-video-request-queue",
   "041-video-request-metadata",
   "042-manual-event-bus",
-  "043-video-bus-admission"
+  "043-video-bus-admission",
+  "044-timer-profile-appearance"
 ] as const;
 
 const expectedTables = [

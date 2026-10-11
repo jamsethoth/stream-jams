@@ -45,10 +45,18 @@ import { videoRequestMetadataMigration } from "./migrations/041-video-request-me
 
 import { manualEventBusMigration } from "./migrations/042-manual-event-bus.js";
 import { videoBusAdmissionMigration } from "./migrations/043-video-bus-admission.js";
+import { timerProfileAppearanceMigration } from "./migrations/044-timer-profile-appearance.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
   readonly sql: string;
+  readonly apply?: (connection: DatabaseSync) => void;
+}
+
+/** Caller owns the transaction and applied-record insertion; historical SQL remains unchanged. */
+export function applyStreamJamsMigration(connection: DatabaseSync, migration: StreamJamsMigration): void {
+  connection.exec(migration.sql);
+  migration.apply?.(connection);
 }
 
 export interface StreamJamsDatabase extends Disposable {
@@ -99,7 +107,8 @@ export const streamJamsMigrations = Object.freeze([
   videoRequestQueueMigration,
   videoRequestMetadataMigration,
   manualEventBusMigration,
-  videoBusAdmissionMigration
+  videoBusAdmissionMigration,
+  timerProfileAppearanceMigration
 ] satisfies readonly StreamJamsMigration[]);
 
 const migrations = streamJamsMigrations;
@@ -201,7 +210,7 @@ class NodeSqliteStreamJamsDatabase implements StreamJamsDatabase {
     const appliedCount = validateMigrationHistory(this.connection);
     for (const migration of migrations.slice(appliedCount)) {
       runInTransaction(this.connection, () => {
-        this.connection.exec(migration.sql);
+        applyStreamJamsMigration(this.connection, migration);
         insertMigrationRecord(this.connection, migration.id);
       });
     }

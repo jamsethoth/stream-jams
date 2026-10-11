@@ -47,6 +47,7 @@ export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTim
   const [actionError, setActionError] = useState<ActionableManagementError | null>(null);
   const [definitionError, setDefinitionError] = useState<string | null>(null);
   const [layoutError, setLayoutError] = useState<string | null>(null);
+  const [layoutErrorPath, setLayoutErrorPath] = useState<string | null>(null);
   const openedOwnerRef = useRef<string | undefined>(undefined);
   const stateRevisionRef = useRef(0);
   const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false); const [notice, setNotice] = useState<ManagementToastNotice | null>(null); const [error, setError] = useState<ActionableManagementError | null>(null);
@@ -139,8 +140,13 @@ export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTim
   async function saveLayout() {
     if (layout === null || mutationRef.current) return;
     const parsed = timersOverlayModuleConfigSchema.safeParse(layout);
-    if (!parsed.success) { setLayoutError(parsed.error.issues[0]?.message ?? "Correct the overlay layout before saving."); return; }
-    setLayoutError(null);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      setLayoutError(issue?.message ?? "Correct the overlay layout before saving.");
+      setLayoutErrorPath(issue?.path.join(".") ?? null);
+      return;
+    }
+    setLayoutError(null); setLayoutErrorPath(null);
     mutationRef.current = true; setBusy(true); clearFeedback();
     try { const saved = await api.saveModuleConfig(enabled, parsed.data); setLayout(saved.config);
       stateRevisionRef.current += 1;
@@ -204,7 +210,7 @@ export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTim
     <ModuleSection title="Timer definitions" label="Timer definitions" actions={<Button disabled={busy} onClick={openCreate}>New timer</Button>}>
       {definitions.length === 0 ? <div className="timers-empty"><h3>No timers yet</h3><p>Create one for a recurring stream activity.</p><Button onClick={openCreate} type="button">Create timer</Button></div> : <div className="timers-list">{definitions.map(item => { const state = stateById.get(item.id); return <article aria-label={`${item.label} timer`} className="timer-row" key={item.id}><Button variant="subtle" className="timer-row__identity" onClick={() => openEdit(item.id)} type="button"><span className="timer-row__identity-label"><strong>{item.label}</strong><span>{formatTimerRemaining(item.durationMs)}</span></span></Button><StatusBadge label={state?.status ?? "Idle"} tone={state?.status === "running" ? "positive" : state?.status === "completed" ? "warning" : "neutral"} /><div className="timer-row__actions"><Button variant="default" onClick={() => openEdit(item.id)} type="button">Edit</Button><Button variant="default" disabled={busy} onClick={() => void command(state?.status === "paused" ? "resume" : "start", item.id)} type="button">{state?.status === "paused" ? "Resume" : "Start"}</Button></div></article>; })}</div>}
     </ModuleSection>
-    {layout === null ? null : <ModuleSection title="Overlay layout" label="Overlay layout" id="timer-presentation" description="Position the timer stack independently for each output profile."><TimerStackEditor assetApi={assetApi} definitions={definitions} value={layout} onChange={setLayout} /><div className="timer-layout-save">{layoutError === null ? null : <p role="alert">{layoutError}</p>}<Button disabled={busy} onClick={() => void saveLayout()} type="button">Save overlay layout</Button></div></ModuleSection>}
+    {layout === null ? null : <ModuleSection title="Overlay layout" label="Overlay layout" id="timer-presentation" description="Edit independent profile appearance and desktop placement."><TimerStackEditor assetApi={assetApi} definitions={definitions} value={layout} validationError={layoutError === null || layoutErrorPath === null ? null : { path: layoutErrorPath, message: layoutError }} onChange={next => { setLayout(next); setLayoutError(null); setLayoutErrorPath(null); }} /><div className="timer-layout-save">{layoutError === null ? null : <p role="alert">{layoutError}</p>}<Button disabled={busy} onClick={() => void saveLayout()} type="button">Save overlay layout</Button></div></ModuleSection>}
     <ModuleSection title="Automation credential" label="Automation credential" id="timer-credential" description={credential?.configured ? "Configured. Rotating invalidates the previous credential immediately." : "Not configured."}>{issuedToken === null ? null : <div className="timer-token"><label>Copy this credential now<input readOnly value={issuedToken} /></label><Button onClick={() => void navigator.clipboard?.writeText(issuedToken)} type="button">Copy</Button><Button variant="default" onClick={() => setIssuedToken(null)} type="button">Dismiss</Button></div>}<div className="timer-credential__actions"><Button disabled={busy} onClick={() => { if (!reviewConfirmation()) return; if (credential?.configured) setRotateConfirmation(true); else void rotateCredential(); }} type="button">{credential?.configured ? "Rotate credential" : "Create credential"}</Button><Button color="red" variant="subtle" disabled={busy || !credential?.configured} onClick={() => { if (reviewConfirmation()) setRevokeConfirmation(true); }} type="button">Revoke</Button></div></ModuleSection>
     </ModulePageLayout>
     <ModalSurface labelledBy="timer-editor-title" onCancel={closeEditor} open={editorOpen} pending={busy} restoreFocusFallbackRef={fallbackRef}><form className="timer-editor" onSubmit={save}>{feedbackOwner === "editor" ? feedback : null}<div className="timer-section-heading"><div><p className="management-eyebrow">Definition</p><ManagementModalTitle>{selected === null ? "Create timer" : `Edit ${selected.label}`}</ManagementModalTitle></div>{active === null ? null : <StatusBadge label={active.status} tone={active.status === "running" ? "positive" : "warning"} />}</div>

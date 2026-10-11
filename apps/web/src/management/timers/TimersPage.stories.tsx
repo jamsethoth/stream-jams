@@ -1,4 +1,4 @@
-import { sceneOutputCanvas } from "@stream-jams/core";
+import { moduleOutputCanvas } from "@stream-jams/core";
 import { createTestMediaPreviewApi } from "../../test-support/media-preview-fixture.js";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { timersOverlayModuleDefinition, type TimerDefinition, type TimerRunState } from "@stream-jams/core";
@@ -17,8 +17,8 @@ const assetApi = createTestMediaPreviewApi() as unknown as AssetApi;
 const buildApi = (states: readonly TimerRunState[], enabled = true): TimersApi => ({
   list: async () => [definition], listStates: async () => states, create: async input => ({ ...definition, ...input }), update: async (_id, input) => ({ ...definition, ...input }),
   listBrowserSources: async () => [
-    { canvas: sceneOutputCanvas(0, 1920, 1080), id: "module:timers:landscape:live", label: "Timers Landscape Live", purpose: "live", overlayId: "default", scope: "module", moduleId: "timers", targetProfileId: "landscape", enabled: true, keyId: "landscape-key", url: "http://127.0.0.1:39187/overlay/modules/timers/live/story-key?profile=landscape", status: "available", connectionState: "connected", lastConnectedAt: definition.updatedAt },
-    { canvas: sceneOutputCanvas(0, 1080, 1920), id: "module:timers:vertical:live", label: "Timers Vertical Live", purpose: "live", overlayId: "default", scope: "module", moduleId: "timers", targetProfileId: "vertical", enabled: true, keyId: null, url: null, status: "create-required", connectionState: "never-connected", lastConnectedAt: null }
+    { canvas: moduleOutputCanvas({ moduleId: "timers", enabled, config: timersOverlayModuleDefinition.defaultConfig, updatedAt: definition.updatedAt }, "landscape", "browser", 0), id: "module:timers:landscape:live", label: "Timers Landscape Live", purpose: "live", overlayId: "default", scope: "module", moduleId: "timers", targetProfileId: "landscape", enabled: true, keyId: "landscape-key", url: "http://127.0.0.1:39187/overlay/modules/timers/live/story-key?profile=landscape", status: "available", connectionState: "connected", lastConnectedAt: definition.updatedAt },
+    { canvas: moduleOutputCanvas({ moduleId: "timers", enabled, config: timersOverlayModuleDefinition.defaultConfig, updatedAt: definition.updatedAt }, "vertical", "browser", 0), id: "module:timers:vertical:live", label: "Timers Vertical Live", purpose: "live", overlayId: "default", scope: "module", moduleId: "timers", targetProfileId: "vertical", enabled: true, keyId: null, url: null, status: "create-required", connectionState: "never-connected", lastConnectedAt: null }
   ],
   createBrowserSource: async source => source, regenerateBrowserSource: async source => source,
   remove: async () => {}, adjust: async () => ({ changed: false, state: null }), command: async () => ({ changed: false, state: states[0] ?? null }),
@@ -28,7 +28,7 @@ const buildApi = (states: readonly TimerRunState[], enabled = true): TimersApi =
   getAutomationCredential: async () => ({ configured: false, createdAt: null, rotatedAt: null }),
   rotateAutomationCredential: async () => ({ configured: true, createdAt: definition.createdAt, rotatedAt: null, token: `tmr_${"placeholder".repeat(4)}` }), revokeAutomationCredential: async () => {}
 });
-const meta = { tags: ["mantine-stage6d", "stream-local-media", "mantine-feedback-tabs", "mantine-feedback-timers", "mantine-stage5"], title: "Management/Timers", component: TimersPage, parameters: { layout: "fullscreen" }, args: {
+const meta = { tags: ["timer-appearance", "mantine-stage6d", "stream-local-media", "mantine-feedback-tabs", "mantine-feedback-timers", "mantine-stage5"], title: "Management/Timers", component: TimersPage, parameters: { layout: "fullscreen" }, args: {
   assetApi, audioApi, managementApi: {} as AssetLibraryManagementApi, api: buildApi([])
 } } satisfies Meta<typeof TimersPage>;
 export default meta; type Story = StoryObj<typeof meta>;
@@ -67,7 +67,7 @@ export const InvalidLayoutCorrection: Story = { play: async ({ canvasElement }) 
   const maximum = canvas.getByRole("spinbutton", { name: "Maximum shown" });
   await userEvent.clear(maximum);
   await userEvent.type(maximum, "99");
-  await expect(canvas.getByText("Correct the layout values to preview the timer stack.")).toBeVisible();
+  await expect(canvas.getByText("Correct the appearance or placement values to preview the timer stack.")).toBeVisible();
   await userEvent.click(canvas.getByRole("button", { name: "Save overlay layout" }));
   await expect(canvas.getByRole("alert").closest(".management-toast")).toBeNull();
   await expect(maximum).toHaveValue(99);
@@ -101,7 +101,7 @@ export const BrowserSourceSetup: Story = { play: async ({ canvasElement }) => {
   await userEvent.click(await canvas.findByRole("button", { name: "Expand browser sources" }));
   const landscape = canvas.getByRole("article", { name: "Landscape browser source" });
   await expect(within(landscape).getByText("Listening now")).toBeVisible();
-  for (const dimensions of within(landscape).getAllByText("1920 x 1080")) {
+  for (const dimensions of within(landscape).getAllByText("736 x 409")) {
     await expect(dimensions).toBeVisible();
     await expect(dimensions).toHaveAttribute("dir", "ltr");
   }

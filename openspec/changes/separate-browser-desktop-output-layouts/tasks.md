@@ -50,11 +50,11 @@ Specification approved 2026-10-10; implementation is authorized and in progress.
 
 ## 7. S07 — Timer appearance and migration (depends on S05)
 
-- [ ] 7.1 Capture old rendering fixtures and test fractional slots, both orientations/profiles, overflow and scene-edge fitting.
-- [ ] 7.2 Add typed profile appearance/placement, pure upgrader, transactional DB migration and matching legacy/new backup handling.
-- [ ] 7.3 Implement stable stack/overflow geometry and rendering without changing timer runtime, recovery or command semantics.
-- [ ] 7.4 Add bounded appearance editor controls, independent drafts/save/reset and representative production stories with keyboard/error tests.
-- [ ] 7.5 Verify browser placement independence, migration/restore and timer/automation regressions; rebuild, record evidence and commit.
+- [x] 7.1 Capture old rendering fixtures and test fractional slots, both orientations/profiles, overflow and scene-edge fitting.
+- [x] 7.2 Add typed profile appearance/placement, pure upgrader, transactional DB migration and matching legacy/new backup handling.
+- [x] 7.3 Implement stable stack/overflow geometry and rendering without changing timer runtime, recovery or command semantics.
+- [x] 7.4 Add bounded appearance editor controls, independent drafts/save/reset and representative production stories with keyboard/error tests.
+- [x] 7.5 Verify browser placement independence, migration/restore and timer/automation regressions; rebuild, record evidence and commit.
 
 ## 8. S08 — Video content geometry (depends on S05)
 

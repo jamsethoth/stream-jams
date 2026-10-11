@@ -7,7 +7,7 @@ import {
   type TimerScheduler
 } from "./timer-runtime-coordinator.js";
 import { RuntimeMaintenanceGate } from "../backup/runtime-maintenance-gate.js";
-import { normalizedStreamEventSchema, type TimerEventRule } from "@stream-jams/core";
+import { normalizedStreamEventSchema, upgradeTimersConfig, timersOverlayModuleDefinition, type TimerEventRule } from "@stream-jams/core";
 import { canonicalBusEvent } from "../../test-support/bus-event-fixtures.js";
 import { TimerEventService } from "./timer-event-service.js";
 import { snapshotTimerDefinition } from "./timer-management-service.js";
@@ -61,12 +61,12 @@ function setup(definitions = [definition("a"), definition("b", 5_000)], gate?: R
     moduleId: "timers",
     enabled: true,
     updatedAt: "2026-09-28T00:00:00.000Z",
-    config: {
+    config: upgradeTimersConfig({
       profiles: {
         landscape: { layout: { x: 0, y: 0, width: 800, height: 400, zIndex: 1 }, orientation: "vertical", maxVisible: 4 },
         vertical: { layout: { x: 0, y: 0, width: 600, height: 800, zIndex: 1 }, orientation: "horizontal", maxVisible: 2 }
       }
-    }
+    })
   };
   const coordinator = new TimerRuntimeCoordinator({
     ...extra,
@@ -83,6 +83,19 @@ function setup(definitions = [definition("a"), definition("b", 5_000)], gate?: R
 }
 
 describe("TimerRuntimeCoordinator", () => {
+  it("uses captured appearance and preserves running identity while desktop always uses landscape", async () => {
+    const { coordinator } = setup();
+    await coordinator.start("a"); const before = coordinator.getState("a");
+    const config = timersOverlayModuleDefinition.defaultConfig;
+    const saved = { moduleId: "timers", enabled: true, updatedAt: "2026-10-11T00:00:00Z", config };
+    const request = { moduleId: "timers", overlayId: "default", purpose: "live" as const, scope: "module" as const, targetProfileId: "vertical" as const, savedConfig: saved };
+    const browser = await coordinator.getModuleSnapshot({ ...request, recipientKind: "browser" });
+    const desktop = await coordinator.getModuleSnapshot({ ...request, recipientKind: "desktop" });
+    expect(browser.presentation).toMatchObject({ kind: "timer-stack", stack: { targetProfileId: "vertical", renderScale: 1, cards: [{ slot: { x: 48, y: 40, width: 984, height: 120 } }] } });
+    expect(desktop.presentation).toMatchObject({ kind: "timer-stack", stack: { targetProfileId: "landscape", cards: [{ slot: { x: 64, y: 720, width: 640, height: 70 } }] } });
+    expect(coordinator.getState("a")).toEqual(before);
+    await coordinator.close();
+  });
   it("does not resurrect activation during pending replacement cleanup", async () => {
     const { coordinator, time, cueSink } = setup([definition("a", 1000)]);
     await coordinator.start("a"); await time.advance(1000);

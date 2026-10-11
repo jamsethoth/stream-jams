@@ -3,6 +3,8 @@ import type { OverlayModuleConfig } from "./types.js";
 import type { OverlayTargetProfileId } from "../overlays/types.js";
 import { resolveMusicOutputGeometry } from "../music/output-geometry.js";
 import type { MusicModuleConfig } from "../music/types.js";
+import { resolveTimerOutputGeometry } from "../timers/output-geometry.js";
+import { timersOverlayModuleConfigSchema } from "../timers/schemas.js";
 
 import { outputCanvasSchema, type OutputCanvas } from "./output-canvas-contract.js";
 export { outputCanvasSchema, type OutputCanvas } from "./output-canvas-contract.js";
@@ -20,6 +22,11 @@ export function moduleOutputCanvas(config: OverlayModuleConfig, profile: Overlay
   if (config.moduleId === "music") return outputCanvasSchema.parse({
     ...resolveMusicOutputGeometry(config.config as MusicModuleConfig, profile ?? "landscape"), configRevision
   });
+  if (config.moduleId === "timers") {
+    const geometry = resolveTimerOutputGeometry(timersOverlayModuleConfigSchema.parse(config.config).profiles[profile ?? "landscape"]);
+    return outputCanvasSchema.parse({ schemaVersion: 1, kind: "content", width: geometry.width, height: geometry.height,
+      origin: geometry.origin, insets: geometry.insets, configRevision });
+  }
   if (profile === "vertical") return sceneOutputCanvas(configRevision, 1080, 1920);
   if (profile === "landscape") return sceneOutputCanvas(configRevision);
   if (config.moduleId === "alerts" && typeof config.config === "object" && config.config !== null && "canvas" in config.config) {

@@ -1,4 +1,6 @@
 import { timerRunStateSchema, timerStackRegionSchema } from "./schemas.js";
+import { resolveTimerOutputGeometry, type TimerOutputGeometry } from "./output-geometry.js";
+import type { TimerProfile } from "./types.js";
 import type { TimerOverlayCard, TimerRunState, TimerStackProjection, TimerStackRegion } from "./types.js";
 import { overlayTargetProfileIdSchema, type OverlayElementLayout, type OverlayTargetProfileId } from "../shared/schemas.js";
 
@@ -15,21 +17,29 @@ export function formatTimerRemaining(remainingMs: number): string {
 export function projectTimerStack(input: {
   readonly nowEpochMs: number;
   readonly targetProfileId: OverlayTargetProfileId;
-  readonly region: TimerStackRegion;
+  readonly region?: TimerStackRegion;
+  readonly profile?: TimerProfile;
+  readonly geometry?: TimerOutputGeometry;
+  readonly recipientKind?: "browser" | "desktop";
   readonly runs: readonly TimerRunState[];
 }): TimerStackProjection {
   const targetProfileId = overlayTargetProfileIdSchema.parse(input.targetProfileId);
-  const region = timerStackRegionSchema.parse(input.region);
+  const geometry = input.profile === undefined ? undefined : input.geometry ?? resolveTimerOutputGeometry(input.profile);
+  const profile = input.profile;
+  const desktop = input.recipientKind === "desktop";
+  const appearance = profile?.appearance;
+  const region = geometry === undefined ? timerStackRegionSchema.parse(input.region) : desktop ? geometry.desktopRegion : geometry.browserRegion;
   const runs = input.runs.map(run => timerRunStateSchema.parse(run))
     .filter(run => run.status !== "completed" || run.expiresAtEpochMs > input.nowEpochMs)
     .sort(compareTimerRuns);
   const visible = runs.slice(0, region.maxVisible);
-  const slots = createSlots(region.layout, region.orientation, region.maxVisible);
+  const slots = geometry === undefined ? createSlots(region.layout, region.orientation, region.maxVisible) : desktop ? geometry.desktopSlots : geometry.slots;
   return {
     targetProfileId,
     region,
     cards: visible.map((run, index) => toCard(run, slots[index]!)),
-    overflowCount: Math.max(0, runs.length - visible.length)
+    overflowCount: Math.max(0, runs.length - visible.length),
+    ...(appearance === undefined ? {} : { appearance, overflow: desktop ? geometry!.desktopOverflow : geometry!.overflow, renderScale: desktop ? profile!.desktopPlacement.scale : 1 })
   };
 }
 

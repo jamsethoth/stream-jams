@@ -28,6 +28,7 @@ import {
   screenEffectSetSchema,
   targetProfileIdSchema,
   timerDefinitionSchema,
+  timersOverlayModuleConfigSchema,
   type ConfigurationBackupArchive,
   type ConfigurationBackupOutput,
   type ModerationSettings
@@ -526,6 +527,9 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
         const validation = validateMusicCss(css.source, css.styleContractVersion);
         if (!validation.valid) errors.push(`overlay_module_config[${index}].config_json contains invalid Music CSS: ${validation.errors[0]?.message ?? "invalid stylesheet"}.`);
       }
+    }
+    if (row.module_id === "timers") {
+      pushSchemaError(errors, `overlay_module_config[${index}].config_json Timer appearance`, timersOverlayModuleConfigSchema.safeParse(parseJsonValue(row.config_json)));
     }
   }
 
