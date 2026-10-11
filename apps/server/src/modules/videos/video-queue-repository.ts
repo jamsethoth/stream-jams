@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { OverlayPurpose, VideoRecentItem, VideoRequestItem } from "@stream-jams/core";
 import { videoChannelNameSchema, videoRequesterSchema, videoSourceSchema, videoTitleSchema } from "@stream-jams/core/videos";
 import { runInTransaction } from "../db/database.js";
+import { SqliteVideoBusAdmissionRepository, type VideoBusAdmissionReceipt } from "./video-bus-admission-repository.js";
 
 /** An active play-all run: the ids snapshotted when the operator chose Play all now. */
 export interface VideoQueueRun {
@@ -24,6 +25,7 @@ export interface VideoQueueSnapshot {
 }
 
 export interface VideoQueueChange {
+  readonly admission?: VideoBusAdmissionReceipt;
   readonly upsert?: readonly VideoRequestItem[];
   readonly queuePaused?: boolean;
   readonly run?: VideoQueueRun | null;
@@ -131,6 +133,7 @@ WHERE video_requests.purpose = excluded.purpose`);
           item.limitOverridden ? 1 : 0, item.autoplay ? 1 : 0, item.position, item.createdAt, this.now()
         );
       }
+      if (change.admission !== undefined) new SqliteVideoBusAdmissionRepository(this.connection).record(change.admission, change.admission.result);
       return this.load(purpose);
     });
   }

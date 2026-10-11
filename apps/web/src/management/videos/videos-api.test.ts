@@ -18,6 +18,15 @@ const config = { maxLengthSeconds: 120, gapSeconds: 3, allowedDirectHosts: [], o
   layout: { x: 269, y: 140, width: 1382, height: 876 } };
 
 describe("createHttpVideosApi", () => {
+  it("retains pending identity and reads a late outcome without repeating submission", async () => {
+    const pending = { status: "pending", busId: "pending-bus", eventId: "pending-event" };
+    const fetcher = createFetch(url => url.includes("/submissions/") ? json({ item: videoItem("late"), busId: pending.busId, eventId: pending.eventId }, 201) : json(pending, 202));
+    const api = createHttpVideosApi({ fetch: fetcher });
+    await expect(api.submit("live", { link: "https://youtu.be/new" })).resolves.toEqual(pending);
+    await expect(api.submission("pending-bus")).resolves.toMatchObject({ id: "late" });
+    expect(fetcher.mock.calls.filter(call => String(call[0]).includes("/requests"))).toHaveLength(1);
+    expect(fetcher.mock.calls.at(-1)?.[0]).toBe("/videos/live/submissions/pending-bus");
+  });
   it("attributes Operator submissions and sends guarded commands", async () => {
     const queue = queuedVideos();
     const fetcher = createFetch((url, init) => {

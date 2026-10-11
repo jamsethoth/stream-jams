@@ -83,6 +83,7 @@ export const twitchClipPlaying = (): VideoQueueResponse => {
 export function createStaticVideoQueueApi(queue: VideoQueueResponse, overrides: Partial<VideoQueueApi> = {}): VideoQueueApi {
   return {
     getQueue: async () => queue,
+    submission: async () => { throw new Error("Video submission outcome is unavailable."); },
     submit: async (_purpose, input) => videoItem("added", { link: input.link, title: input.title ?? null, submittedVia: "management" }),
     command: async () => queue,
     control: async () => queue,

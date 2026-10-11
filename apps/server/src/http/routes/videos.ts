@@ -1,11 +1,12 @@
 import { z } from "zod";
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerHookHandler } from "fastify";
-import { overlayPurposeSchema, type OverlayPurpose, type VideoQueueResponse } from "@stream-jams/core";
+import { overlayPurposeSchema, type OverlayPurpose, type VideoQueueResponse, type VideoSubmissionResult } from "@stream-jams/core";
 import { getAutomationGrant } from "../middleware/automation-security.js";
 import { sendHttpError } from "../errors.js";
 import { VideoQueueConflictError } from "../../modules/videos/video-queue-repository.js";
 import { VideoQueueCommandError, type VideoItemCommand, type VideoQueueCommand } from "../../modules/videos/video-queue-service.js";
 import type { VideoRequestContext, VideoRequestResult, VideoRequeueResult } from "../../modules/videos/video-request-intake.js";
+import { ManualSubmissionRejectedError } from "../../modules/events/manual-event-service.js";
 
 export type VideoRequeueOutcome =
   | { readonly status: "accepted"; readonly queue: VideoQueueResponse }
@@ -13,7 +14,8 @@ export type VideoRequeueOutcome =
 
 export interface VideoRouteService {
   response(purpose: OverlayPurpose): VideoQueueResponse;
-  submit(purpose: OverlayPurpose, input: unknown, context: VideoRequestContext): Promise<VideoRequestResult>;
+  submit(purpose: OverlayPurpose, input: unknown, context: VideoRequestContext): Promise<VideoSubmissionResult>;
+  submission(busId: string): VideoSubmissionResult | null;
   command(purpose: OverlayPurpose, expectedRevision: number, command: VideoQueueCommand): VideoQueueResponse;
   control(purpose: OverlayPurpose, expectedItemId: string, command: VideoItemCommand): VideoQueueResponse;
   /** Queues a Recent item's video again as a new request. */
@@ -55,6 +57,12 @@ export function registerVideoRoutes(app: FastifyInstance, dependencies: VideoRou
   const automation = { preHandler: dependencies.automationAuthPreHandler, bodyLimit: 4_096 };
   const { videos } = dependencies;
 
+  app.get("/videos/live/submissions/:busId", management, async (request, reply) => handle(reply, () => lookupSubmission(videos, request, reply)));
+  app.get("/automation/v1/videos/live/submissions/:busId", automation, async (request, reply) => handle(reply, () => {
+    requireScope(request, "videos:read");
+    return lookupSubmission(videos, request, reply);
+  }));
+
   app.get("/videos/:purpose", management, async (request, reply) => handle(reply, () => videos.response(readPurpose(request))));
   app.post("/videos/:purpose/requests", management, async (request, reply) => handle(reply, async () => {
     const via = submitterSchema.catch("management").parse((request.query as { readonly from?: unknown } | undefined)?.from);
@@ -83,7 +91,7 @@ export function registerVideoRoutes(app: FastifyInstance, dependencies: VideoRou
   app.post("/automation/v1/videos/:purpose/requests", automation, async (request, reply) => handle(reply, async () => {
     requireScope(request, "videos:submit");
     const mayAutoplay = getAutomationGrant(request).scopes.includes("videos:control");
-    return submitted(reply, await videos.submit(readPurpose(request), request.body, { via: "automation", mayAutoplay }));
+    return submitted(reply, await videos.submit(readPurpose(request), request.body, { via: "automation", mayAutoplay, scopes: getAutomationGrant(request).scopes }));
   }));
   app.post("/automation/v1/videos/:purpose/commands", automation, async (request, reply) => handle(reply, () => {
     requireScope(request, "videos:control");
@@ -116,10 +124,22 @@ function control(videos: VideoRouteService, request: FastifyRequest): VideoQueue
   return videos.control(readPurpose(request), body.expectedItemId, { kind: action });
 }
 
-function submitted(reply: FastifyReply, result: VideoRequestResult): unknown {
-  if (result.status === "accepted") return reply.status(201).send({ item: result.item });
+function lookupSubmission(videos: VideoRouteService, request: FastifyRequest, reply: FastifyReply): unknown {
+  reply.header("cache-control", "no-store");
+  const { busId } = z.object({ busId: z.string().min(1).max(512) }).parse(request.params);
+  const result = videos.submission(busId);
+  if (result === null) return sendHttpError(reply, 404, { code: "VIDEO_SUBMISSION_NOT_FOUND", message: "The video submission outcome is no longer available. Check the queue and Diagnostics before sending another request." });
+  return submitted(reply, result, 200);
+}
+
+function submitted(reply: FastifyReply, result: VideoSubmissionResult, acceptedStatus = 201): unknown {
+  reply.header("cache-control", "no-store");
+  if (result.status === "pending") return reply.status(202).send(result);
+  if (result.status === "unavailable") return sendHttpError(reply, 409, { code: "VIDEO_SUBMISSION_UNAVAILABLE", message: "The video submission was not confirmed. Check Diagnostics before sending another request.", ...result });
+  const identity = result.busId === undefined ? {} : { busId: result.busId, eventId: result.eventId };
+  if (result.status === "accepted") return reply.status(acceptedStatus).send({ item: result.item, ...identity });
   const statusCode = result.reason === "module-disabled" ? 409 : result.reason === "queue-full" ? 429 : 422;
-  return reply.status(statusCode).send({ error: { code: "VIDEO_REQUEST_REJECTED", message: rejectionMessage(result.reason), reason: result.reason }, fields: result.fields });
+  return reply.status(statusCode).send({ error: { code: "VIDEO_REQUEST_REJECTED", message: rejectionMessage(result.reason), reason: result.reason }, fields: result.fields, ...identity });
 }
 
 function rejectionMessage(reason: Extract<VideoRequestResult, { status: "rejected" }>["reason"]): string {
@@ -141,6 +161,7 @@ async function handle(reply: FastifyReply, work: () => unknown): Promise<unknown
   try {
     return await work();
   } catch (error) {
+    if (error instanceof ManualSubmissionRejectedError) return reply.status(error.reason === "forbidden" ? 403 : 422).send({ error: { code: "MANUAL_SUBMISSION_REJECTED", message: error.message, referenceId: error.referenceId } });
     if (error instanceof VideoScopeError) return sendHttpError(reply, 403, { code: "AUTOMATION_SCOPE_REQUIRED", message: "This installation has not been granted this operation." });
     if (error instanceof z.ZodError) return sendHttpError(reply, 400, { code: "VIDEO_INVALID_INPUT", message: "Invalid video request. Refresh and try again." });
     if (error instanceof VideoQueueConflictError) return sendHttpError(reply, 409, { code: "VIDEO_QUEUE_CONFLICT", message: "The video queue changed. Refresh before trying again." });

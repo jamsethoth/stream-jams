@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { OverlayPurpose, VideoHoldReason, VideoMetadata, VideoRecentItem, VideoRequestItem, VideoSource, VideoSubmissionChannel, VideosModuleConfig } from "@stream-jams/core";
 import { videoClockPositionMs } from "@stream-jams/core/videos";
 import { VideoQueueConflictError, type VideoQueueChange, type VideoQueueRepository, type VideoQueueRun, type VideoQueueSnapshot } from "./video-queue-repository.js";
+import { acceptedVideoReceipt, type VideoBusIdentity } from "./video-bus-admission-repository.js";
 
 export const videoQueueMaximumItems = 500;
 /** A player that has not reported started by then is marked failed. */
@@ -129,10 +130,10 @@ export class VideoQueueService {
     return () => this.listeners.delete(listener);
   }
 
-  submit(purpose: OverlayPurpose, submission: VideoSubmission): VideoRequestItem {
+  submit(purpose: OverlayPurpose, submission: VideoSubmission, identity?: VideoBusIdentity): VideoRequestItem {
     const state = this.state(purpose);
     const item = this.newItem(purpose, submission);
-    this.commit(purpose, state.snapshot.revision, { upsert: [item] });
+    this.commit(purpose, state.snapshot.revision, { upsert: [item], ...(identity === undefined ? {} : { admission: acceptedVideoReceipt(identity, item) }) });
     if (item.autoplay && item.status === "queued" && this.isIdle(state) && !state.snapshot.queuePaused) {
       this.startRun(purpose, { mode: "next", remainingIds: [item.id] });
     } else {

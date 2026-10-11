@@ -65,12 +65,12 @@ describe("Videos bus consumer", () => {
     expect(streamEvents[0]).toMatchObject({ userInput: "https://clips.twitch.tv/ClipOne" });
   });
 
-  it("applies each journal row at most once", async () => {
+  it("delegates redelivery to durable intake instead of suppressing it with process-local sequence", async () => {
     const { handle, streamerBotEvents } = createConsumer();
     const event = external("General", "Custom", { source: "StreamJams", type: "VideoRequest" });
     expect(await handle(event)).toBe("admitted");
-    expect(await handle(event)).toBe("no-match");
-    expect(streamerBotEvents).toHaveLength(1);
+    expect(await handle(event)).toBe("admitted");
+    expect(streamerBotEvents).toEqual([event, event]);
   });
 
   it("diagnoses an intake failure and reports it as failed instead of throwing", async () => {

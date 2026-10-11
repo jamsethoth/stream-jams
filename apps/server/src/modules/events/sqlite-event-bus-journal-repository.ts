@@ -88,6 +88,11 @@ const maxStoredTypeLength = 250;
 export class SqliteEventBusJournalRepository implements EventBusJournalRepository {
   constructor(private readonly connection: DatabaseSync) {}
 
+  findByBusId(busId: string): BusEvent | null {
+    const row = this.connection.prepare("SELECT * FROM event_bus_journal WHERE bus_id = ?").get(busId);
+    return row === undefined ? null : readEntry(row).event;
+  }
+
   append(input: BusEventInput, busId: string, windows: EventBusAppendWindows): EventBusAppendResult {
     return runInTransaction(this.connection, () => {
       const duplicate = this.connection.prepare(`SELECT 1 FROM event_bus_journal

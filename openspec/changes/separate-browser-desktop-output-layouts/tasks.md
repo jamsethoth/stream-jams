@@ -28,11 +28,11 @@ Specification approved 2026-10-10; implementation is authorized and in progress.
 
 ## 4. S04 — Durable video bus admission (depends on S02)
 
-- [ ] 4.1 Add persistent crash/redelivery, duplicate provider publication, pending-versus-admitted and scoped authorization tests.
-- [ ] 4.2 Couple video admission with checkpoint or durable unique receipt; keep network metadata lookup outside the transaction.
-- [ ] 4.3 Route ordinary management/automation requests through the bus and shared intake while preserving limits, autoplay policies and guarded commands.
-- [ ] 4.4 Preserve legacy isolated test adapter until S09 and implement bounded truthful submission outcomes without automatic retry.
-- [ ] 4.5 Run Videos/routes/automation checks, record evidence and commit.
+- [x] 4.1 Add persistent crash/redelivery, duplicate provider publication, pending-versus-admitted and scoped authorization tests.
+- [x] 4.2 Couple video admission with checkpoint or durable unique receipt; keep network metadata lookup outside the transaction.
+- [x] 4.3 Route ordinary management/automation requests through the bus and shared intake while preserving limits, autoplay policies and guarded commands.
+- [x] 4.4 Preserve legacy isolated test adapter until S09 and implement bounded truthful submission outcomes without automatic retry.
+- [x] 4.5 Run Videos/routes/automation checks, record evidence and commit.
 
 ## 5. S05 — Canvas and trusted recipient foundation (depends on S01)
 

@@ -1,12 +1,13 @@
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { busEventSchema } from "@stream-jams/core/event-bus";
-import { createInMemoryStreamJamsDatabase, runInTransaction } from "../database.js";
+import { runInTransaction } from "../database.js";
 import { SqliteEventBusJournalRepository } from "../../events/sqlite-event-bus-journal-repository.js";
 import { eventBusJournalMigration } from "./034-event-bus-journal.js";
 import { eventBusCorrelationMigration } from "./035-event-bus-correlation.js";
 import { eventBusOutcomesMigration } from "./039-event-bus-outcomes.js";
 import { manualEventBusMigration } from "./042-manual-event-bus.js";
+import { createPreMigrationDatabase } from "../../../test-support/pre-migration-database.js";
 
 const time = "2026-10-10T12:00:00.000Z";
 const follow = { id: "old-canonical", occurredAt: time, type: "follow", providerId: "twitch", sourcePlatform: "twitch", ingestProvider: "twitch", actor: { id: "viewer", displayName: "Viewer" }, message: null, amount: null, metadata: {} } as const;
@@ -48,15 +49,13 @@ describe("042-manual-event-bus", () => {
   });
 
   it("upgrades an old backup schema through the production migration runner exactly once", () => {
-    using database = createInMemoryStreamJamsDatabase();
-    const connection = database.connection;
-    // Reconstruct the previous empty bus schema inside this disposable full application database.
-    for (const table of ["event_bus_delivery_failures", "event_bus_correlation_merges", "event_bus_consumer_outcomes", "event_bus_intake_log", "event_bus_settings", "event_bus_consumer_cursors", "event_bus_journal"]) connection.exec(`DROP TABLE ${table}`);
-    connection.exec("DELETE FROM schema_migrations WHERE id = '042-manual-event-bus'");
-    for (const migration of [eventBusJournalMigration, eventBusCorrelationMigration, eventBusOutcomesMigration]) connection.exec(migration.sql);
-    const journal = new SqliteEventBusJournalRepository(connection);
+    using fixture = createPreMigrationDatabase("042-manual-event-bus");
+    let journal = new SqliteEventBusJournalRepository(fixture.connection);
     journal.append({ kind: "canonical", event: follow, eventId: follow.id, receivedAt: time, sourceKind: "twitch", sourceRegistrationId: "old-registration", correlationKey: "twitch:follow:viewer", effectTriggers: [] }, "old-backup-bus", { duplicateSinceMs: 0, correlationSinceMs: 0 });
     journal.setCursor("alerts", 0, time);
+    const database = fixture.upgrade();
+    const connection = database.connection;
+    journal = new SqliteEventBusJournalRepository(connection);
     database.runMigrations();
     database.runMigrations();
     expect(journal.readAfter(journal.getCursor("alerts")!, 10)[0]?.event).toMatchObject({ busId: "old-backup-bus", sequence: 1, sourceRegistrationId: "old-registration", kind: "canonical" });

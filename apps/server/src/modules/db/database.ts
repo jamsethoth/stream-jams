@@ -44,6 +44,7 @@ import { videoRequestQueueMigration } from "./migrations/040-video-request-queue
 import { videoRequestMetadataMigration } from "./migrations/041-video-request-metadata.js";
 
 import { manualEventBusMigration } from "./migrations/042-manual-event-bus.js";
+import { videoBusAdmissionMigration } from "./migrations/043-video-bus-admission.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -56,7 +57,7 @@ export interface StreamJamsDatabase extends Disposable {
   close(): void;
 }
 
-const migrations = [
+export const streamJamsMigrations = Object.freeze([
   initialSchemaMigration,
   alertVariantSelectionMigration,
   twitchAccountsMigration,
@@ -97,8 +98,11 @@ const migrations = [
   eventBusOutcomesMigration,
   videoRequestQueueMigration,
   videoRequestMetadataMigration,
-  manualEventBusMigration
-] satisfies readonly StreamJamsMigration[];
+  manualEventBusMigration,
+  videoBusAdmissionMigration
+] satisfies readonly StreamJamsMigration[]);
+
+const migrations = streamJamsMigrations;
 
 export const currentSchemaVersion = migrations.length;
 

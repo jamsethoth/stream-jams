@@ -12,6 +12,40 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const conflict = () => new ManagementHttpError("The video queue changed. Refresh before trying again. (VIDEO_QUEUE_CONFLICT)", "VIDEO_QUEUE_CONFLICT", null, null, [], [], 409);
 
 describe("VideoQueuePanel", () => {
+  it("shows pending identity and confirms late admission without resubmitting", async () => {
+    const user = userEvent.setup();
+    const submit = vi.fn(async () => ({ status: "pending", busId: "pending-bus", eventId: "pending-event" } as const));
+    const submission = vi.fn(async () => queuedVideos().items[0]!);
+    renderManagement(<VideoQueuePanel api={createStaticVideoQueueApi(videoQueue(), { submit, submission })} />);
+    await user.type(await screen.findByLabelText("Video link"), "https://youtu.be/dQw4w9WgXcQ");
+    await user.click(screen.getByRole("button", { name: "Add video" }));
+    expect(await screen.findByText(/Admission pending.*pending-bus/u)).toBeVisible();
+    expect(screen.queryByText("Video added to the queue.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add video" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Check submission outcome" }));
+    expect(await screen.findByText("Video added to the queue.")).toBeVisible();
+    expect(submission).toHaveBeenCalledWith("pending-bus");
+    expect(submit).toHaveBeenCalledTimes(1);
+  });
+
+  it("resets form ownership on API change and ignores an earlier submission completion", async () => {
+    const user = userEvent.setup();
+    let resolve!: (value: ReturnType<typeof queuedVideos>["items"][number]) => void;
+    const first = createStaticVideoQueueApi(videoQueue(), { submit: () => new Promise(done => { resolve = done; }) });
+    const second = createStaticVideoQueueApi(videoQueue(), { submit: async () => ({ status: "pending", busId: "new-bus", eventId: "new-event" }) });
+    const view = renderManagement(<VideoQueuePanel api={first} />);
+    await user.type(await screen.findByLabelText("Video link"), "https://youtu.be/dQw4w9WgXcQ");
+    await user.click(screen.getByRole("button", { name: "Add video" }));
+    expect(screen.getByLabelText("Video link")).toBeDisabled();
+    view.rerender(<VideoQueuePanel api={second} />);
+    await waitFor(() => expect(screen.getByLabelText("Video link")).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Add video" }));
+    expect(await screen.findByText(/Admission pending.*new-bus/u)).toBeVisible();
+    resolve(queuedVideos().items[0]!);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Add video" })).toBeDisabled());
+    expect(screen.getByText(/Admission pending.*new-bus/u)).toBeVisible();
+    expect(screen.queryByText("Video added to the queue.")).not.toBeInTheDocument();
+  });
   it("shows an empty queue with disabled play controls", async () => {
     renderManagement(<VideoQueuePanel api={createStaticVideoQueueApi(videoQueue())} />);
     expect(await screen.findByText("No videos are waiting. Add a link below or wait for requests.")).toBeVisible();

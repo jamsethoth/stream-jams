@@ -5,6 +5,7 @@ import { videoSourceSchema } from "./source-schema.js";
 import { videosLayoutSchema } from "./layout-schema.js";
 
 export * from "./providers.js";
+export * from "./admission-schema.js";
 export * from "./mirror.js";
 export * from "./mirror-receiver.js";
 export { videoSourceSchema } from "./source-schema.js";

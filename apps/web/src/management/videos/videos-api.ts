@@ -1,4 +1,4 @@
-import type { OverlayPurpose, VideoQueueResponse, VideosModuleConfig } from "@stream-jams/core";
+import type { OverlayPurpose, VideoQueueResponse, VideoSubmissionPending, VideosModuleConfig } from "@stream-jams/core";
 import { createManagementHttpClient, ManagementHttpError, type HttpManagementClientOptions } from "../management-http-client.js";
 
 // Only types come from the Videos contract: its schemas stay out of the management and operator bundles.
@@ -20,7 +20,8 @@ export interface VideoRequestInput {
 
 export interface VideoQueueApi {
   getQueue(purpose: OverlayPurpose): Promise<VideoQueueResponse>;
-  submit(purpose: OverlayPurpose, input: VideoRequestInput): Promise<VideoQueueItem>;
+  submit(purpose: OverlayPurpose, input: VideoRequestInput): Promise<VideoQueueItem | VideoSubmissionPending>;
+  submission(busId: string): Promise<VideoQueueItem | VideoSubmissionPending>;
   command(purpose: OverlayPurpose, expectedRevision: number, command: VideoQueueCommand): Promise<VideoQueueResponse>;
   control(purpose: OverlayPurpose, action: VideoCurrentAction, expectedItemId: string, positionMs?: number): Promise<VideoQueueResponse>;
   /** Queues a Recent item's video again as a new request; it waits like any other request. */
@@ -63,9 +64,10 @@ export function createHttpVideosApi(options: HttpManagementClientOptions & { rea
     async submit(purpose, input) {
       const body = { link: input.link, ...(input.title === undefined || input.title.trim() === "" ? {} : { title: input.title.trim() }) };
       const response = await client.postJson<unknown>(`${path(purpose)}/requests?from=${options.from ?? "management"}`, body, "Unable to add the video.");
-      const item = typeof response === "object" && response !== null && "item" in response ? response.item : null;
-      if (!isQueueItem(item, false)) throw new TypeError("The video request returned an invalid response.");
-      return item as VideoQueueItem;
+      return parseSubmission(response);
+    },
+    async submission(busId) {
+      return parseSubmission(await client.getJson(`/videos/live/submissions/${encodeURIComponent(busId)}`, "Unable to confirm the video submission. Check the queue and Diagnostics before submitting again."));
     },
     async command(purpose, expectedRevision, command) {
       return parseQueue(await client.postJson(`${path(purpose)}/commands`, { expectedRevision, command }, "Unable to update the video queue."));
@@ -98,6 +100,16 @@ export function createHttpVideosApi(options: HttpManagementClientOptions & { rea
 }
 
 const statuses = ["queued", "held", "playing", "paused", "played", "failed", "removed"];
+
+function parseSubmission(response: unknown): VideoQueueItem | VideoSubmissionPending {
+  if (isRecord(response) && response.status === "pending") {
+    if (typeof response.busId !== "string" || response.busId.length === 0 || response.busId.length > 512 || typeof response.eventId !== "string" || response.eventId.length === 0 || response.eventId.length > 512 || "item" in response) throw new TypeError("The pending video submission returned an invalid identity.");
+    return { status: "pending", busId: response.busId, eventId: response.eventId };
+  }
+  const item = isRecord(response) ? response.item : null;
+  if (!isQueueItem(item, false)) throw new TypeError("The video request returned an invalid response.");
+  return item as VideoQueueItem;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;

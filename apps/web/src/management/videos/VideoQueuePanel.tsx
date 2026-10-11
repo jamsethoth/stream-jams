@@ -1,5 +1,5 @@
 import { Button, TextInput } from "@mantine/core";
-import type { OverlayPurpose, VideoQueueResponse } from "@stream-jams/core";
+import type { OverlayPurpose, VideoQueueResponse, VideoSubmissionPending } from "@stream-jams/core";
 import { useCallback, useEffect, useId, useRef, useState, type ComponentType, type FormEvent, type ReactNode, type RefObject } from "react";
 import { ManagementModalSurface, ManagementModalTitle } from "../foundation/ManagementModalSurface.js";
 import { StatusBadge, type StatusBadgeTone } from "../foundation/StatusBadge.js";
@@ -381,28 +381,61 @@ function AddVideoForm({ api, busy, onAdded, purpose }: {
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingSubmission, setPendingSubmission] = useState<VideoSubmissionPending | null>(null);
   const submittingRef = useRef(false);
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (submittingRef.current) return;
-    if (link.trim() === "") { setError("Paste a Twitch, YouTube or direct video link."); return; }
+  const generationRef = useRef(0);
+  useEffect(() => {
+    submittingRef.current = false;
+    setSubmitting(false); setPendingSubmission(null); setError(null);
+    return () => { generationRef.current += 1; };
+  }, [api, purpose]);
+
+  function admitted(item: VideoQueueItem) {
+    setPendingSubmission(null);
+    onAdded(item.status === "held"
+      ? "Video added and held: it is over the length limit."
+      : item.status === "playing" ? "Video added and playing." : "Video added to the queue.");
+  }
+
+  async function checkSubmission() {
+    if (submittingRef.current || pendingSubmission === null) return;
+    const generation = generationRef.current;
     submittingRef.current = true; setSubmitting(true); setError(null);
     try {
-      const item = await api.submit(purpose, { link: link.trim(), title });
-      setLink(""); setTitle("");
-      onAdded(item.status === "held"
-        ? "Video added and held: it is over the length limit."
-        : item.status === "playing" ? "Video added and playing." : "Video added to the queue.");
+      const result = await api.submission(pendingSubmission.busId);
+      if (generation !== generationRef.current) return;
+      if (result.status !== "pending") admitted(result);
     } catch (reason) {
-      setError(requestMessage(reason));
-    } finally { submittingRef.current = false; setSubmitting(false); }
+      if (generation === generationRef.current) setError(`${requestMessage(reason)} Check Diagnostics before sending again.`);
+    } finally { if (generation === generationRef.current) { submittingRef.current = false; setSubmitting(false); } }
+  }
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (submittingRef.current || pendingSubmission !== null) return;
+    if (link.trim() === "") { setError("Paste a Twitch, YouTube or direct video link."); return; }
+    submittingRef.current = true; setSubmitting(true); setError(null);
+    const generation = generationRef.current;
+    try {
+      const item = await api.submit(purpose, { link: link.trim(), title });
+      if (generation !== generationRef.current) return;
+      setLink(""); setTitle("");
+      if (item.status === "pending") setPendingSubmission(item);
+      else admitted(item);
+    } catch (reason) {
+      if (generation === generationRef.current) setError(requestMessage(reason));
+    } finally { if (generation === generationRef.current) { submittingRef.current = false; setSubmitting(false); } }
   }
   return (
     <form aria-label="Add video" className="video-queue__add" onSubmit={event => void submit(event)} noValidate>
-      <TextInput label="Video link" placeholder="https://www.youtube.com/watch?v=…" value={link} error={error ?? undefined} disabled={submitting}
+      {pendingSubmission !== null && <div>
+        <p role="status">Admission pending. Reference: {pendingSubmission.busId}. Check the queue and Diagnostics; do not submit this request again.</p>
+        <Button type="button" variant="default" disabled={submitting} onClick={() => void checkSubmission()}>Check submission outcome</Button>
+        <Button type="button" variant="subtle" disabled={submitting} onClick={() => { setPendingSubmission(null); setError(null); }}>Dismiss pending notice</Button>
+      </div>}
+      <TextInput label="Video link" placeholder="https://www.youtube.com/watch?v=…" value={link} error={error ?? undefined} disabled={submitting || pendingSubmission !== null}
         onChange={event => { setLink(event.currentTarget.value); setError(null); }} />
-      <TextInput label="Title (optional)" maxLength={200} value={title} disabled={submitting} onChange={event => setTitle(event.currentTarget.value)} />
-      <Button type="submit" variant="default" disabled={busy || submitting} loading={submitting}>Add video</Button>
+      <TextInput label="Title (optional)" maxLength={200} value={title} disabled={submitting || pendingSubmission !== null} onChange={event => setTitle(event.currentTarget.value)} />
+      <Button type="submit" variant="default" disabled={busy || submitting || pendingSubmission !== null} loading={submitting}>Add video</Button>
     </form>
   );
 }

@@ -1,12 +1,14 @@
-import type { OverlayModuleRuntime, OverlayModuleSnapshot, OverlayModuleSnapshotRequest, OverlayPurpose, VideoQueueResponse, VideosModuleConfig, VideosProjection } from "@stream-jams/core";
+import type { OverlayModuleRuntime, OverlayModuleSnapshot, OverlayModuleSnapshotRequest, OverlayPurpose, VideoQueueResponse, VideoSubmissionResult, VideosModuleConfig, VideosProjection } from "@stream-jams/core";
 import { videoInstructionPrefix } from "@stream-jams/core/videos";
 import type { VideoRequeueOutcome, VideoRouteService } from "../../http/routes/videos.js";
 import { toVideoQueueResponse } from "./video-queue-response.js";
 import type { VideoItemCommand, VideoPlaybackPhase, VideoQueueCommand, VideoQueueService, VideoQueueView } from "./video-queue-service.js";
-import type { VideoRequestContext, VideoRequestIntake, VideoRequestResult } from "./video-request-intake.js";
+import type { VideoRequestContext, VideoRequestIntake } from "./video-request-intake.js";
+import type { ManualVideoRequestService } from "./manual-video-request-service.js";
 import type { VideoMirrorDirector } from "./video-mirror-director.js";
 
 export interface VideosRuntimeOptions {
+  readonly submissions?: Pick<ManualVideoRequestService, "submit" | "submission">;
   readonly queue: VideoQueueService;
   readonly intake: Pick<VideoRequestIntake, "submit" | "requeue">;
   readonly getConfig: () => Promise<VideosModuleConfig>;
@@ -46,9 +48,12 @@ export class VideosRuntime implements OverlayModuleRuntime, VideoRouteService {
     return this.toResponse(this.options.queue.view(purpose));
   }
 
-  submit(purpose: OverlayPurpose, input: unknown, context: VideoRequestContext): Promise<VideoRequestResult> {
-    return this.options.intake.submit(purpose, input, context);
+  submit(purpose: OverlayPurpose, input: unknown, context: VideoRequestContext): Promise<VideoSubmissionResult> {
+    if (this.options.submissions === undefined) throw new Error("Manual Video submission is unavailable.");
+    return this.options.submissions.submit(purpose, input, context);
   }
+
+  submission(busId: string): VideoSubmissionResult | null { return this.options.submissions?.submission(busId) ?? null; }
 
   command(purpose: OverlayPurpose, expectedRevision: number, command: VideoQueueCommand): VideoQueueResponse {
     return this.toResponse(this.options.queue.command(purpose, expectedRevision, command));

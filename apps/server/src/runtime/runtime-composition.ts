@@ -147,6 +147,8 @@ import { VideoMetadataEnricher } from "../modules/videos/video-metadata-enricher
 import { createTwitchConnectedAccessReader } from "../modules/twitch/twitch-connected-access.js";
 import { createChannelPointVideoIntake } from "../modules/videos/channel-point-video-intake.js";
 import { createVideosBusConsumer } from "../modules/videos/videos-bus-consumer.js";
+import { SqliteVideoBusAdmissionRepository } from "../modules/videos/video-bus-admission-repository.js";
+import { ManualVideoRequestService } from "../modules/videos/manual-video-request-service.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
 import { evaluateProviderActivationImpact, findOverlappingTwitchSources } from "../modules/providers/provider-activation-impact.js";
 import { SqliteProviderRegistrationRepository } from "../modules/providers/sqlite-provider-registration-repository.js";
@@ -497,6 +499,16 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const readVideosConfig = async () => (await overlayModuleConfigService.getModuleConfig("videos")).config as VideosModuleConfig;
   // The queue reads limits synchronously; saves through the runtime config service refresh this copy.
   let videosConfig = await readVideosConfig();
+  const videoAdmissions = new SqliteVideoBusAdmissionRepository(database.connection, () => now().getTime());
+  videoAdmissions.prune();
+  const videoAdmissionCleanup = setInterval(() => {
+    void trackRuntimeWork(async () => videoAdmissions.prune()).catch(
+      // error-provenance: allow expected -- failed background receipt cleanup is reported and retried on the next bounded pass
+      (error: unknown) => runtimeLogger.error("Video admission receipt cleanup failed", { module: "videos", source: "videos.admission-cleanup", correlationId: generateRuntimeReferenceId(), processingId: null }, error)
+    );
+  }, 60_000);
+  videoAdmissionCleanup.unref();
+  cleanups.push(() => clearInterval(videoAdmissionCleanup));
   const videoQueueService = new VideoQueueService({
     repository: new SqliteVideoQueueRepository(database.connection),
     getConfig: () => videosConfig,
@@ -515,6 +527,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   const videoRequestIntake = new VideoRequestIntake({
     queue: videoQueueService,
+    admissions: videoAdmissions,
     getConfig: () => videosConfig,
     isModuleEnabled: async () => (await overlayModuleConfigService.getModuleConfig("videos")).enabled,
     // Queue first, describe after: the submitter never waits on YouTube or Twitch.
@@ -524,6 +537,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const videoMirror: { director?: VideoMirrorDirector } = {};
   let videoOutputsReady = false;
   const videosRuntime = new VideosRuntime({
+    submissions: { submit: (purpose, input, context) => manualVideoService.submit(purpose, input, context), submission: busId => manualVideoService.submission(busId) },
     queue: videoQueueService, intake: videoRequestIntake, getConfig: async () => videosConfig, now: () => now().getTime(),
     mirror: { get available() { return videoMirror.director?.available === true; }, controlsFor: itemId => videoMirror.director?.controlsFor(itemId) }
   });
@@ -965,6 +979,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     consumers: [
       ...eventPipeline.consumers(),
       createVideosBusConsumer({
+        intake: videoRequestIntake,
         streamerBot: createStreamerBotVideoIntake({
           intake: videoRequestIntake,
           queue: videoQueueService,
@@ -1307,12 +1322,13 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
             || alerts.some(rule => rule.externalIdentity?.providerKind === identity.providerKind && rule.externalIdentity.sourceKey === identity.sourceKey && rule.externalIdentity.eventType === identity.eventType)
             || [...effects.flatMap(effect => effect.bindings.map(binding => binding.selector)), ...timers.flatMap(timer => (timer.eventRules ?? []).map(rule => rule.selector))].some(selector => selector.match.kind === "external" && selector.match.providerKind === identity.providerKind && selector.match.sourceKey === identity.sourceKey && selector.match.eventType === identity.eventType);
         }
-        // S04 owns the scoped Video adapter and durable admission.
-        case "video-request": return false;
+        // A Video action references no local asset or saved target. Link/module/allowlist/capacity policy is owned by its validated consumer intake.
+        case "video-request": return true;
       }
     }
   });
   const manualDispatchService: ManualAlertEffectService = new ManualAlertEffectService({ manualEvents: manualEventService, alerts: alertEditorService, effects: effectAdmissionService });
+  const manualVideoService: ManualVideoRequestService = new ManualVideoRequestService({ manualEvents: manualEventService, admissions: videoAdmissions, journal: eventBusJournal, legacyIntake: videoRequestIntake });
   await eventBus.start();
   const alertSetManagementService = new AlertSetManagementService({
     alertService,

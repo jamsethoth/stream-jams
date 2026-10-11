@@ -6,7 +6,11 @@ import { createStreamerBotVideoIntake, type VideoIntakeDiagnostic } from "./stre
 import { VideoRequestIntake } from "./video-request-intake.js";
 import { createInMemoryStreamJamsDatabase, type StreamJamsDatabase } from "../db/database.js";
 import { SqliteVideoQueueRepository, VideoQueueConflictError } from "./video-queue-repository.js";
+import { SqliteVideoBusAdmissionRepository } from "./video-bus-admission-repository.js";
 import { VideoQueueCommandError, VideoQueueService, type VideoSubmission } from "./video-queue-service.js";
+
+const intakeDatabases: StreamJamsDatabase[] = [];
+afterEach(() => { for (const database of intakeDatabases.splice(0)) database.close(); });
 
 function setup(overrides: Partial<VideosModuleConfig> = {}, options: { enabled?: boolean; full?: boolean; onQueued?: (purpose: string, item: VideoRequestItem) => void } = {}) {
   const submissions: VideoSubmission[] = [];
@@ -24,7 +28,9 @@ function setup(overrides: Partial<VideosModuleConfig> = {}, options: { enabled?:
       } satisfies VideoRequestItem;
     }
   };
-  const intake = new VideoRequestIntake({ queue, getConfig: () => config, isModuleEnabled: () => options.enabled ?? true, onQueued: options.onQueued });
+  const database = createInMemoryStreamJamsDatabase();
+  intakeDatabases.push(database);
+  const intake = new VideoRequestIntake({ queue, admissions: new SqliteVideoBusAdmissionRepository(database.connection), getConfig: () => config, isModuleEnabled: () => options.enabled ?? true, onQueued: options.onQueued });
   return { intake, submissions, config };
 }
 
@@ -101,9 +107,11 @@ describe("VideoRequestIntake", () => {
   });
 });
 
+let providerSequence = 0;
 function envelope(payload: Record<string, unknown> | undefined, sourceKey = "General", eventType = "Custom") {
-  const eventId = "sb-video";
-  return { ...externalBusEvent([{ kind: "streamerbot-event", eventId, occurredAt: "2026-10-07T00:00:00.000Z", providerId: "provider-streamerbot", sourceKey, eventType, summary: "Custom", userName: "" }]), ...(payload === undefined ? {} : { payload }) };
+  const sequence = ++providerSequence;
+  const eventId = `sb-video-${sequence}`;
+  return { ...externalBusEvent([{ kind: "streamerbot-event", eventId, occurredAt: "2026-10-07T00:00:00.000Z", providerId: "provider-streamerbot", sourceKey, eventType, summary: "Custom", userName: "" }]), sequence, ...(payload === undefined ? {} : { payload }) };
 }
 
 function streamerBotSetup(overrides: Partial<VideosModuleConfig> = {}, options: { enabled?: boolean } = {}) {
@@ -125,6 +133,19 @@ function streamerBotSetup(overrides: Partial<VideosModuleConfig> = {}, options: 
 }
 
 describe("Streamer.bot video intake", () => {
+  it("old clear and no-clip redelivery cannot change newer playback", async () => {
+    const { handle, commands, notices, setPlaying } = streamerBotSetup();
+    setPlaying(true);
+    const clear = envelope({ source: "StreamJams", type: "VideoRequest", action: "clear" });
+    expect(await handle(clear)).toBe("admitted");
+    setPlaying(true); // a newer video now owns playback
+    expect(await handle(clear)).toBe("no-match");
+    expect(commands).toHaveLength(1);
+    const notice = envelope({ source: "StreamJams", type: "VideoRequest", action: "no-clip", displayName: "Friend" });
+    expect(await handle(notice)).toBe("admitted");
+    expect(await handle(notice)).toBe("no-match");
+    expect(notices).toEqual(["Friend"]);
+  });
   it("ignores events without a Videos marker", async () => {
     const { handle, submissions } = streamerBotSetup();
     expect(await handle(envelope({ source: "StreamJams", type: "Other", link: youtube }))).toBe("no-match");

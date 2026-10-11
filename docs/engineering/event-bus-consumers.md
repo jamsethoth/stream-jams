@@ -45,6 +45,8 @@ async handle(event, { checkpoint }) {
 
 The state change and the cursor commit or roll back together. When `handle` throws after the checkpoint committed, the bus does not deliver that event to the consumer again.
 
+Videos uses the other durable option: a unique bus-ID admission receipt is inserted in the same synchronous transaction as queue membership. A replay returns its committed item/rejection without inserting again. This retains the immediate/late HTTP caller result even when acknowledgement has not been recorded. Validation awaits precede the transaction and provider metadata lookup follows it. Receipt lifetime follows retained journal identities and active items, with bounded orphan-terminal cleanup independent from finished history rows; see [Video admission](manual-event-management-api.md#video-requests-and-durable-admission).
+
 ## External payloads
 
 The bus journals an external event's payload only when some registered consumer declared that event's identity in `externalPayloads`. Source keys compare case-insensitively and event types exactly. Payloads of undeclared identities are dropped at intake. Declaring an identity also makes the Streamer.bot connection subscribe to it while Streamer.bot advertises it, whatever the user's configured subscriptions.

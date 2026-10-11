@@ -191,13 +191,14 @@ describe("ManualEventService", () => {
     expect(handle).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps Videos manual actions inactive while Alerts and Effects activate source simulations", async () => {
+  it("routes canonical simulations normally while targeted Videos actions remain isolated from other consumers", async () => {
     const { service, delivered } = setup();
     await service.submit(simulation, { channel: "management" });
     await service.submit(video, { channel: "management" });
-    const streamerBot = vi.fn();
-    const channelPoints = { handleEvent: vi.fn() };
-    const videos = createVideosBusConsumer({ streamerBot, channelPoints });
+    const streamerBot = vi.fn(async () => "no-match" as const);
+    const channelPoints = { handleEvent: vi.fn(async () => "no-match" as const) };
+    const intake = { submit: vi.fn(async () => ({ status: "rejected" as const, reason: "module-disabled" as const, fields: [] })) };
+    const videos = createVideosBusConsumer({ streamerBot, channelPoints, intake });
     const enqueueEvent = vi.fn(async () => ({ status: "no-matches" as const, matchedRuleIds: [], enqueuedAlertIds: [], snapshot: {} as never }));
     const effectEventSink = { handleEvent: vi.fn(async (event: BusEvent) => ({ status: "no-matches" as const, eventId: event.eventId, outcomes: [] as const })) };
     const pipeline = new EventPipeline({ playbackCoordinator: { enqueueEvent }, effectEventSink, diagnosticsLogRepository: { appendEventLog: vi.fn(), appendAlertMatchLog: vi.fn(), appendPlaybackLog: vi.fn() }, generateId: () => "test" });
@@ -206,7 +207,9 @@ describe("ManualEventService", () => {
       for (const consumer of pipeline.consumers()) expect(await consumer.handle(event, { checkpoint() {} })).toBe("no-match");
     }
     expect(streamerBot).not.toHaveBeenCalled();
-    expect(channelPoints.handleEvent).not.toHaveBeenCalled();
+    expect(channelPoints.handleEvent).toHaveBeenCalledOnce();
+    expect(channelPoints.handleEvent).toHaveBeenCalledWith(expect.objectContaining({ id: "manual_1" }), expect.objectContaining({ via: "management", policy: "channel-points" }));
+    expect(intake.submit).toHaveBeenCalledWith("live", video.action.kind === "video-request" ? video.action.request : undefined, expect.objectContaining({ via: "management", busIdentity: expect.objectContaining({ eventId: "manual_2" }) }));
     expect(enqueueEvent).toHaveBeenCalledOnce();
     expect(enqueueEvent).toHaveBeenCalledWith(expect.objectContaining({ id: "manual_1", ingestProvider: "twitch" }), "manual");
     expect(effectEventSink.handleEvent).toHaveBeenCalledTimes(2);

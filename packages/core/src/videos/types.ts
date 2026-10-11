@@ -15,6 +15,16 @@ export type VideoRequestStatus = "queued" | "held" | "playing" | "paused" | "pla
 
 export type VideoHoldReason = "over-limit" | "unknown-length";
 
+export type VideoRequestRejection = "module-disabled" | "invalid-request" | "invalid-link" | "unsafe-link" | "unsupported-source" | "queue-full";
+export type VideoRequestAdmissionResult =
+  | { readonly status: "accepted"; readonly item: VideoRequestItem }
+  | { readonly status: "rejected"; readonly reason: VideoRequestRejection; readonly fields: readonly string[] };
+export interface VideoSubmissionPending { readonly status: "pending"; readonly busId: string; readonly eventId: string }
+export type VideoSubmissionResult =
+  | (VideoRequestAdmissionResult & { readonly busId?: string; readonly eventId?: string })
+  | VideoSubmissionPending
+  | { readonly status: "unavailable"; readonly busId: string; readonly eventId: string; readonly outcome: "failed" | "expired" | "no-match"; readonly referenceId: string | null };
+
 export interface VideoRequestItem {
   readonly id: string;
   readonly purpose: OverlayPurpose;
