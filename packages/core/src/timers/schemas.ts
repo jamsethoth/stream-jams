@@ -125,7 +125,7 @@ export const timerTypographySchema = z.strictObject({
 }) satisfies z.ZodType<TimerTypography>;
 export const timerAppearanceSchema = z.strictObject({
   cardWidthPx: z.number().finite().positive().max(1920), cardHeightPx: z.number().finite().positive().max(1920),
-  orientation: z.enum(["vertical", "horizontal"]), maxVisible: z.number().int().min(1).max(12), stackGapPx: px(128),
+  orientation: z.enum(["vertical", "horizontal"]), reverse: z.boolean().optional(), maxVisible: z.number().int().min(1).max(12), stackGapPx: px(128),
   gapPx: px(128), blockPaddingPx: px(128), inlinePaddingPx: px(128), cornerRadiusPx: px(256), borderWidthPx: px(16),
   borderColor: color, backgroundColor: color, backgroundOpacity: z.number().finite().min(0).max(1),
   labelFont: timerTypographySchema, valueFont: timerTypographySchema, iconSizePx: px(256),
@@ -140,7 +140,7 @@ export const timerAppearanceSchema = z.strictObject({
   }
 }) satisfies z.ZodType<TimerAppearance>;
 export const timerProfileSchema = z.strictObject({ appearance: timerAppearanceSchema,
-  desktopPlacement: z.strictObject({ x: px(1920), y: px(1920), zIndex: z.number().int().min(-10000).max(10000), scale: z.number().finite().positive().max(10) })
+  desktopPlacement: z.strictObject({ x: px(1920), y: px(1920), zIndex: z.number().int().min(-10000).max(10000), scale: z.number().finite().positive().max(10), reverse: z.boolean().optional() })
 }) satisfies z.ZodType<TimerProfile>;
 function currentProfileFor(profile: keyof typeof timerProfileDimensions) {
   return timerProfileSchema.superRefine((value, context) => {

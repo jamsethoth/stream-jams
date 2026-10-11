@@ -54,6 +54,36 @@ export const SavedContentAppearance: Story = {
   }
 };
 
+const reversedRuns = Array.from({ length: 6 }, (_, index) => ({ status: "paused" as const, definitionId: `reversed-${index}`, generation: `reversed-${index}`, remainingMs: (index + 1) * 15000,
+  snapshot: { id: `reversed-${index}`, label: `Timer ${index + 1}`, durationMs: 60000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: false, deviceRouteIds: [] } } }));
+const reversedProfile = (orientation: "vertical" | "horizontal") => {
+  const base = timersOverlayModuleDefinition.defaultConfig.profiles.landscape;
+  return { ...base, appearance: { ...base.appearance, orientation, reverse: true, ...(orientation === "horizontal" ? { cardWidthPx: 300, maxVisible: 3 } : {}) } };
+};
+
+export const BottomToTop: Story = {
+  args: { stack: projectTimerStack({ nowEpochMs: 0, targetProfileId: "landscape", recipientKind: "browser", profile: reversedProfile("vertical"), runs: reversedRuns }) },
+  decorators: [(Story) => <div style={{ width: 736, height: 409, overflow: "hidden", position: "relative", background: "#243140" }}><Story /></div>],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const cards = canvas.getAllByRole("listitem");
+    await expect(cards[0]).toHaveAccessibleName(/^Timer 1,/u);
+    await expect(cards[0]).toHaveStyle({ top: "283px" });
+    await expect(canvas.getByText("+2 more")).toHaveStyle({ top: "40px" });
+  }
+};
+
+export const RightToLeft: Story = {
+  args: { stack: projectTimerStack({ nowEpochMs: 0, targetProfileId: "landscape", recipientKind: "browser", profile: reversedProfile("horizontal"), runs: reversedRuns }) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const cards = canvas.getAllByRole("listitem");
+    await expect(cards[0]).toHaveAccessibleName(/^Timer 1,/u);
+    await expect(Number.parseFloat(cards[0]!.style.left)).toBeGreaterThan(Number.parseFloat(cards[2]!.style.left));
+    await expect(canvas.getByText("+3 more")).toHaveStyle({ left: "48px" });
+  }
+};
+
 export const ConcurrentStatesAndOverflow: Story = {
   args: { stack: {
     targetProfileId: "landscape",

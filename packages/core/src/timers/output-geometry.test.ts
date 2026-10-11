@@ -43,4 +43,31 @@ describe("Timer output geometry", () => {
     const bad = { ...original, profiles: { ...original.profiles, landscape: { ...original.profiles.landscape, desktopPlacement: { x: 1900, y: 1000, zIndex: 0, scale: 1 } } } };
     expect(timersOverlayModuleConfigSchema.safeParse(bad).success).toBe(false);
   });
+  it("reversed stacks fill from the far end inside the same footprint, with the badge at the start", () => {
+    const base = timersOverlayModuleDefinition.defaultConfig.profiles.landscape;
+    const runs = Array.from({ length: 6 }, (_, index) => ({ ...run, definitionId: `timer-${index}`, generation: `run-${index}`, remainingMs: 1000 * (index + 1) }));
+    for (const orientation of ["vertical", "horizontal"] as const) {
+      const forward = { ...base, appearance: { ...base.appearance, orientation } };
+      const reversed = { ...forward, appearance: { ...forward.appearance, reverse: true } };
+      const f = resolveTimerOutputGeometry(forward); const r = resolveTimerOutputGeometry(reversed);
+      expect([r.width, r.height, r.footprint]).toEqual([f.width, f.height, f.footprint]);
+      const axis = orientation === "vertical" ? "y" : "x";
+      const stack = projectTimerStack({ nowEpochMs: 0, targetProfileId: "landscape", profile: reversed, runs, recipientKind: "browser" });
+      // Soonest timer sits at the far end; later timers step toward the badge, which sits before every card.
+      expect(stack.cards.map(card => card.definitionId)).toEqual(["timer-0", "timer-1", "timer-2", "timer-3"]);
+      const positions = stack.cards.map(card => card.slot[axis]);
+      expect(positions).toEqual([...positions].sort((left, right) => right - left));
+      expect(stack.overflow![axis]).toBe(r.insets[axis === "y" ? "top" : "left"]);
+      expect(stack.overflow![axis] + stack.overflow![axis === "y" ? "height" : "width"]).toBeLessThan(Math.min(...positions));
+      expect(Math.max(...positions) + (axis === "y" ? base.appearance.cardHeightPx : base.appearance.cardWidthPx))
+        .toBe(r.insets[axis === "y" ? "top" : "left"] + r.footprint[axis === "y" ? "height" : "width"]);
+      // Desktop follows the browser direction unless its own override says otherwise; placement is unchanged.
+      expect(r.desktopSlots[0]![axis]).toBe(r.slots[0]![axis] - r.insets[axis === "y" ? "top" : "left"] + base.desktopPlacement[axis]);
+      const overridden = resolveTimerOutputGeometry({ ...reversed, desktopPlacement: { ...reversed.desktopPlacement, reverse: false } });
+      expect(overridden.desktopSlots).toEqual(f.desktopSlots); expect(overridden.desktopOverflow).toEqual(f.desktopOverflow);
+      expect(overridden.slots).toEqual(r.slots); expect(overridden.desktopRegion).toEqual(f.desktopRegion);
+    }
+    expect(timersOverlayModuleConfigSchema.safeParse({ ...timersOverlayModuleDefinition.defaultConfig, profiles: { ...timersOverlayModuleDefinition.defaultConfig.profiles,
+      landscape: { ...base, appearance: { ...base.appearance, reverse: "yes" } } } }).success).toBe(false);
+  });
 });

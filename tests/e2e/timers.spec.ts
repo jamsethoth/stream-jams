@@ -84,6 +84,55 @@ test("saved Timer appearance owns stable browser pixels independently of desktop
     for (const output of browsers) await output.browser.close();
   } finally { await fixture.close(); }
 });
+test("stack direction reverses the live browser source while the desktop override keeps its own direction", async ({ page, context }) => {
+  test.setTimeout(90000);
+  let latestDesktop: TimerStackProjection | null = null;
+  const transport: DesktopOverlayTransport = { configure: async () => {}, prepare: async () => "ready", start: async () => {}, stop: async () => {}, retry: async () => {}, close: async () => {},
+    getStatus: async () => ({ available: true, state: "ready", message: null, displays: [{ id: "monitor", label: "Timer test monitor", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }] }),
+    syncModule: async sync => { if (sync.moduleId === "timers") latestDesktop = sync.presentation?.kind === "timer-stack" ? sync.presentation.stack : null; } };
+  const fixture = await createProviderSecurityRuntimeFixture({ desktopOverlayTransport: transport });
+  const json = async (path: string, method = "GET", body?: unknown) => { const response = await fixture.request(path, method, body); expect(response.ok).toBe(true); return response.json(); };
+  try {
+    await fixture.start();
+    const saved = timersOverlayModuleConfigSchema.parse((await json("/overlay-modules/timers/config")).config);
+    await json("/overlay-modules/timers/config", "PUT", { enabled: true, config: saved });
+    const surfaces = await json("/overlay-surfaces") as SurfaceSettingsView;
+    const desktop = surfaces.surfaces.find(surface => surface.kind === "desktop")!;
+    await json(`/overlay-surfaces/${encodeURIComponent(desktop.id)}`, "PUT", { id: desktop.id, kind: "desktop", enabled: true, displayId: "monitor", autoFollowDisplayName: false, opacity: 1, layers: desktop.layers.map(layer => layer.moduleId === "timers" ? { ...layer, visible: true } : layer) });
+    for (let index = 0; index < 6; index++) {
+      const definition = await json("/timers", "POST", { label: `Timer ${index}`, durationMs: 60000 * (index + 1),
+        iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: false, deviceRouteIds: [] } }) as TimerDefinition;
+      await json(`/timers/${definition.id}/start`, "POST"); await json(`/timers/${definition.id}/pause`, "POST");
+    }
+    const { url } = await json("/management/overlay-outputs/keys", "POST", { overlayId: "default", moduleId: "timers", purpose: "live", scope: "module", targetProfileId: "landscape" }) as { url: string };
+    const browser = await context.newPage(); await browser.goto(url);
+    const cards = browser.getByRole("listitem"); await expect(cards).toHaveCount(4);
+    const canvasBefore = await browser.getByTestId("overlay-content-canvas").boundingBox();
+
+    await page.goto(`${fixture.runtime.url}/manage/modules/timers`);
+    await page.getByLabel("Stack direction").selectOption("Bottom to top");
+    await page.getByLabel("Desktop direction").selectOption("Top to bottom");
+    await page.getByLabel("X", { exact: true }).fill("100");
+    await page.getByRole("button", { name: "Save overlay layout" }).click();
+    await expect(page.getByText("Timer overlay layout saved.")).toBeVisible();
+    expect(timersOverlayModuleConfigSchema.parse((await json("/overlay-modules/timers/config")).config).profiles.landscape)
+      .toMatchObject({ appearance: { orientation: "vertical", reverse: true }, desktopPlacement: { reverse: false } });
+
+    // Soonest timer is lowest, the rest step upward, and the badge sits above them in the unchanged canvas.
+    await expect(cards.first()).toHaveAccessibleName(/^Timer 0,/u); await expect(cards.first()).toHaveCSS("top", "283px");
+    const tops = await cards.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().top));
+    expect(tops).toEqual([...tops].sort((left, right) => right - left));
+    const badge = await browser.getByText("+2 more").boundingBox();
+    expect(badge!.y + badge!.height).toBeLessThan(Math.min(...tops));
+    expect(await browser.getByTestId("overlay-content-canvas").boundingBox()).toEqual(canvasBefore);
+    await expect.poll(() => latestDesktop?.region.layout.x).toBe(100);
+    const desktopTops = latestDesktop!.cards.map(card => card.slot.y);
+    expect(desktopTops).toEqual([...desktopTops].sort((left, right) => left - right));
+    expect(latestDesktop!.overflow!.y).toBeGreaterThan(Math.max(...desktopTops));
+    await browser.close();
+  } finally { await fixture.close(); }
+});
+
 const defaultLayout = upgradeTimersConfig({
   profiles: {
     landscape: { layout: { x: 32, y: 32, width: 720, height: 360, zIndex: 20 }, orientation: "vertical", maxVisible: 3 },
@@ -260,7 +309,7 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
   await page.getByRole("radiogroup", { name: "Timer profile" }).getByText("Landscape", { exact: true }).click();
   await expect(page.getByRole("radio", { name: "Landscape" })).toBeChecked();
   await page.getByLabel("Card width (px)").fill("300");
-  await page.getByLabel("Orientation").selectOption("horizontal");
+  await page.getByLabel("Stack direction").selectOption("Left to right");
   await page.getByLabel("Maximum shown").fill("4");
   await page.getByRole("radiogroup", { name: "Timer profile" }).getByText("Vertical", { exact: true }).click();
   await expect(page.getByRole("radio", { name: "Vertical" })).toBeChecked();

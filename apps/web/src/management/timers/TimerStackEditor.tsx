@@ -15,6 +15,8 @@ const numericAppearance = [
 ] as const;
 const colorAppearance = [["borderColor", "Border color"], ["backgroundColor", "Background color"],
   ["runningAccent", "Running accent"], ["pausedAccent", "Paused accent"], ["completedAccent", "Completed accent"]] as const;
+const directionOptions = [["vertical", "Top to bottom"], ["vertical-reverse", "Bottom to top"],
+  ["horizontal", "Left to right"], ["horizontal-reverse", "Right to left"]] as const;
 const previewNow = () => 0;
 
 export function TimerStackEditor({ assetApi, definitions, value, onChange, validationError }: {
@@ -95,7 +97,9 @@ export function TimerStackEditor({ assetApi, definitions, value, onChange, valid
       <SegmentedControl aria-label="Timer profile" value={profile} onChange={next => { if (next === "landscape" || next === "vertical") setProfile(next); }} data={[{ value: "landscape", label: "Landscape" }, { value: "vertical", label: "Vertical" }]} /></div>
     <p>Appearance affects this browser profile and its content dimensions. Desktop output uses Landscape appearance.</p>
     <fieldset><legend>Profile appearance</legend><div className="timer-layout__controls">
-      <NativeSelect label="Orientation" data-timer-field={`profiles.${profile}.appearance.orientation`} value={a.orientation} onChange={event => updateAppearance({ orientation: event.currentTarget.value as TimerAppearance["orientation"] })}><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option></NativeSelect>
+      <NativeSelect label="Stack direction" data-timer-field={`profiles.${profile}.appearance.orientation`} value={`${a.orientation}${a.reverse === true ? "-reverse" : ""}`} onChange={event => {
+        const [orientation, reverse] = event.currentTarget.value.split("-"); updateAppearance({ orientation: orientation as TimerAppearance["orientation"], reverse: reverse !== undefined });
+      }}>{directionOptions.map(([optionValue, label]) => <option key={optionValue} value={optionValue}>{label}</option>)}</NativeSelect>
       {numericAppearance.map(([field, label, min, max]) => <TextInput key={field} label={label} error={errorFor(`profiles.${profile}.appearance.${field}`)} data-timer-field={`profiles.${profile}.appearance.${field}`} type="number" min={min} max={max} step={field === "maxVisible" ? 1 : "any"} value={Number.isFinite(a[field]) ? a[field] : ""} onChange={event => updateAppearance({ [field]: event.currentTarget.value === "" ? NaN : Number(event.currentTarget.value) })} />)}
       {colorAppearance.map(([field, label]) => <TextInput key={field} label={label} error={errorFor(`profiles.${profile}.appearance.${field}`)} data-timer-field={`profiles.${profile}.appearance.${field}`} value={a[field] ?? a.borderColor} onChange={event => updateAppearance({ [field]: event.currentTarget.value })} />)}
       {(["labelFont", "valueFont"] as const).map(field => {
@@ -112,6 +116,11 @@ export function TimerStackEditor({ assetApi, definitions, value, onChange, valid
     </div></fieldset>
     <Button variant="default" type="button" onClick={() => update(structuredClone(timersOverlayModuleDefinition.defaultConfig.profiles[profile]))}>Reset selected profile</Button>
     <fieldset><legend>Desktop placement</legend><p>{profile === "vertical" ? "Vertical placement is preserved for compatibility. The desktop still renders Landscape." : "Move or scale the desktop stack without changing the browser canvas."}</p>
+      <NativeSelect label="Desktop direction" data-timer-field={`profiles.${profile}.desktopPlacement.reverse`} value={placement.reverse === undefined ? "" : String(placement.reverse)}
+        onChange={event => updatePlacement({ reverse: event.currentTarget.value === "" ? undefined : event.currentTarget.value === "true" })}>
+        <option value="">Same as browser source</option>
+        {directionOptions.filter(([optionValue]) => optionValue.startsWith(a.orientation)).map(([optionValue, label]) => <option key={optionValue} value={String(optionValue.endsWith("-reverse"))}>{label}</option>)}
+      </NativeSelect>
       <div className="timer-layout__controls">{(["x", "y", "zIndex", "scale"] as const).map(field => <TextInput key={field} label={field === "x" ? "X" : field === "y" ? "Y" : field === "scale" ? "Desktop scale" : "Z order"}
         error={errorFor(`profiles.${profile}.desktopPlacement.${field}`)} data-timer-field={`profiles.${profile}.desktopPlacement.${field}`} type="number" step="any" value={Number.isFinite(placement[field]) ? placement[field] : ""} onChange={event => updatePlacement({ [field]: event.currentTarget.value === "" ? NaN : Number(event.currentTarget.value) })} />)}</div>
     </fieldset>

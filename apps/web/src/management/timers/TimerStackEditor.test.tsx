@@ -63,8 +63,14 @@ describe("TimerStackEditor", () => {
       fireEvent.change(screen.getByLabelText(`${label} color`), { target: { value: "#112233" } });
       expect(latest.profiles.landscape.appearance[field]).toEqual({ fontPreset: "serif", fontSizePx: 18, fontWeight: 500, color: "#112233" });
     }
-    await user.selectOptions(screen.getByLabelText("Orientation"), "horizontal");
-    expect(latest.profiles.landscape.appearance.orientation).toBe("horizontal");
+    await user.selectOptions(screen.getByLabelText("Stack direction"), "Right to left");
+    expect(latest.profiles.landscape.appearance).toMatchObject({ orientation: "horizontal", reverse: true });
+    await user.selectOptions(screen.getByLabelText("Desktop direction"), "Left to right");
+    expect(latest.profiles.landscape.desktopPlacement.reverse).toBe(false);
+    await user.selectOptions(screen.getByLabelText("Desktop direction"), "Same as browser source");
+    expect(latest.profiles.landscape.desktopPlacement.reverse).toBeUndefined();
+    await user.selectOptions(screen.getByLabelText("Stack direction"), "Left to right");
+    expect(latest.profiles.landscape.appearance).toMatchObject({ orientation: "horizontal", reverse: false });
     for (const [label, field, value] of [["X", "x", 65], ["Y", "y", 100], ["Z order", "zIndex", 7], ["Desktop scale", "scale", .4]] as const) {
       const before = latest.profiles.landscape.desktopPlacement;
       fireEvent.change(screen.getByLabelText(label, { exact: true }), { target: { value: String(value) } });

@@ -314,7 +314,7 @@ it("discloses active snapshots, applies state-aware controls, and blocks active 
 it("edits both profile layouts and reveals a one-time automation credential", async () => {
   const user = userEvent.setup(); const { api } = renderPage(); await screen.findByText("Timer stack");
   screen.getByRole("button", { name: "Move timer region" }).focus(); await user.keyboard("{ArrowRight}");
-  await user.click(screen.getByRole("radio", { name: "Vertical" })); await user.selectOptions(screen.getByLabelText("Orientation"), "horizontal");
+  await user.click(screen.getByRole("radio", { name: "Vertical" })); await user.selectOptions(screen.getByLabelText("Stack direction"), "Left to right");
   fireEvent.change(screen.getByLabelText("Card width (px)"), { target: { value: "260" } });
   fireEvent.change(screen.getByLabelText("Desktop scale"), { target: { value: ".5" } });
   await user.click(screen.getByRole("button", { name: "Save overlay layout" })); await waitFor(() => expect(api.saveModuleConfig).toHaveBeenCalled());
