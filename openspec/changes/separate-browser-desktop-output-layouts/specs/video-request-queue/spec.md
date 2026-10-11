@@ -41,31 +41,45 @@ The system SHALL separate Videos content geometry from desktop placement. Operat
 - **WHEN** off-scene scaled placement or invalid content dimensions are submitted or received
 - **THEN** the server refuses the save, management shows a correction and runtime output fails transparent with the existing failure-report contract
 
+### Requirement: Requests Are Always Queued And Persisted
+Every accepted video submission SHALL enter one ordinary persisted queue through the validated bus-consumer intake. Manual tests SHALL differ by provenance only, not destination. Acceptance SHALL not imply immediate playback: ordinary operator actions, allowed autoplay and length/queue rules SHALL still govern it. There SHALL be no separate test queue, test player or output-purpose selector.
+
+#### Scenario: Manual video request
+- **WHEN** an authorized operator submits a video as a manual event
+- **THEN** it is journaled once and admitted through the Videos consumer into the same queue as subscribed requests
+- **AND** it waits unless ordinary autoplay or an explicit play action permits playback
+
+#### Scenario: Subscribed request
+- **WHEN** a provider event already on the bus matches a video request
+- **THEN** the Videos consumer admits it without republishing the event or enqueuing it twice
+
+#### Scenario: Channel point autoplay request
+- **WHEN** a channel point submission asks for autoplay
+- **THEN** existing channel-point policy keeps it queued without autoplay
+
+#### Scenario: Restart
+- **WHEN** the application restarts with queued or active ordinary items
+- **THEN** queue order is preserved, active playback returns to the queue head and nothing starts until the existing explicit playback action
+
 ## ADDED Requirements
 
-### Requirement: Video test preview is isolated from ordinary output
-Subject to written-design confirmation of the preview destination, the system SHALL retain isolated live/test queues, purpose-scoped primary players and existing automation/intake contracts while replacing the public test browser source with a management-authenticated test preview. Ordinary browser and desktop visual output SHALL remain bound to live purpose. A test preview SHALL never retag an item, control the live queue, expose a copyable output URL or widen an overlay key.
+### Requirement: Video queue consolidation preserves data without replay
+Upgrade SHALL preserve live queue ordering and migrate legacy pending/active test items to held-for-review ordinary entries with autoplay false, preserving identities, metadata and source order. Historical test entries SHALL remain history with provenance, not a second queue. Migration SHALL clear obsolete test player/run state and invalidate stale revisions/receivers. Invalid capacity or identity conflicts SHALL block migration rather than discard items. Legacy test API routes/payloads SHALL fail with migration guidance; existing live API spellings SHALL address the sole ordinary queue.
 
-#### Scenario: Live and test items play concurrently
-- **WHEN** an ordinary output and the management test preview are connected while both queues play
-- **THEN** each receives only its own purpose/item state and mirror session
-- **AND** controls and reports cannot cross the purpose boundary
+#### Scenario: Upgrade has a pending test video
+- **WHEN** old test items are migrated
+- **THEN** they appear after existing ordinary items held for explicit review and do not autoplay or join an existing play-all run
 
-#### Scenario: Preview uses the available primary player
-- **WHEN** the desktop host already owns test playback
-- **THEN** opening the management preview subscribes to that mirror without creating another primary player or restarting the item
-- **AND** preview-local audio starts muted while independently selected device audio retains its existing policy
+#### Scenario: Old caller uses the test endpoint
+- **WHEN** a client calls a retired test route or submits a legacy test-purpose payload
+- **THEN** it receives an explicit migration error without sending content to ordinary output
 
-#### Scenario: Desktop host is unavailable
-- **WHEN** a visible authenticated test preview observes a playing test item without a desktop primary
-- **THEN** it uses the existing fallback provider renderer and authoritative playback clock
-- **AND** duration reports retain current item/identity validation and ordinary playback remains unaffected
+#### Scenario: Manual and subscribed videos coexist
+- **WHEN** both types of requests are admitted
+- **THEN** the single queue's normal priority/order and playback controls govern both
+- **AND** every connected ordinary recipient observes the same item and primary mirror session
 
-#### Scenario: Preview disconnects and reconnects
-- **WHEN** the preview closes or its management session expires
-- **THEN** its receiver, peer, subscriptions and media leases are released without issuing a queue command
-- **AND** a newly authenticated preview joins current state with a new receiver generation and rejects stale signals/reports
-
-#### Scenario: Public key attempts management preview
-- **WHEN** an overlay key or cross-origin client attempts the preview transport
-- **THEN** management authentication/origin checks reject it before signaling or media access
+#### Scenario: Admission is interrupted
+- **WHEN** the process fails between video queue insertion and bus acknowledgement
+- **THEN** persisted submission identity or an atomic admission/checkpoint prevents a second queue insertion on redelivery
+- **AND** acceptance receipts distinguish journal admission from module rejection

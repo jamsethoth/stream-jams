@@ -58,7 +58,7 @@ The management UI SHALL show the authoritative saved browser canvas width and he
 
 ### Requirement: Removed browser outputs fail closed
 
-The system SHALL reject public test and unified output creation/regeneration and HTTP, media, artwork, composition and WebSocket access. Persisted removed-output keys SHALL be deactivated without authorizing ordinary module outputs. Existing ordinary keys SHALL retain their exact module/profile scopes. Alerts and Screen Effects live-impact test commands SHALL retain their existing ordinary-recipient paths. Music and Timer editor previews SHALL remain isolated. Video test playback SHALL NOT be implicitly remapped into an ordinary-output recipient; the video-request-queue preview contract governs its destination.
+The system SHALL reject public test and unified output creation/regeneration and HTTP, media, artwork, composition and WebSocket access. Persisted removed-output keys SHALL be deactivated without authorizing ordinary module outputs. Existing ordinary keys SHALL retain their exact module/profile scopes. Alerts and Screen Effects live-impact test commands SHALL retain their existing ordinary-recipient paths. Music and Timer editor previews SHALL remain isolated. Explicit manual event submissions SHALL enter the shared bus and ordinary output path. There SHALL be no separate Video test queue, output or private preview destination; legacy test routes fail with migration guidance.
 
 #### Scenario: Existing test or unified source reconnects
 - **WHEN** a removed source uses its previous route key for shell, media or WebSocket access
@@ -71,7 +71,7 @@ The system SHALL reject public test and unified output creation/regeneration and
 #### Scenario: Management live-impact test remains usable
 - **WHEN** the operator confirms an Alerts or Screen Effects test using its existing recipient preflight
 - **THEN** the intended ordinary output receives the test without requiring a public test source
-- **AND** existing queue ownership, independent device recipients and single-playback/audio guarantees are preserved
+- **AND** manual bus admission, independent device recipients and single-playback/audio guarantees are preserved
 
 #### Scenario: Music fixture is not broadcast
 - **WHEN** a Music editor preview shows its sample track

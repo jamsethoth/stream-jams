@@ -104,3 +104,16 @@ Desktop module eligibility SHALL use an explicit trusted registered capability i
 - **WHEN** public unified support is removed from registered browser capabilities
 - **THEN** existing desktop module rows remain in their prior order and visibility
 - **AND** current playback, Music epoch, Timer runs, Video primary ownership and device audio are not reset
+
+### Requirement: Output geometry does not add continuous background work
+
+Canvas geometry SHALL be computed from saved configuration and reused until that configuration changes. Content updates SHALL NOT introduce per-frame server geometry, DOM-measurement loops, additional provider players or mirror encoders, or unbounded transport/journal buffers. Timer rendering SHALL retain its existing update cadence. Performance acceptance SHALL compare equal-output fixtures before and after, separately measuring the effect of smaller recommended OBS viewports. No numerical speedup SHALL be claimed without measurement.
+
+#### Scenario: Frequent content updates
+- **WHEN** Timer counts/time, Music metadata/progress or Video frames update without a configuration change
+- **THEN** the renderer retains existing canvas metadata and playback ownership without continuous resizing or recomputation
+
+#### Scenario: Manual event burst
+- **WHEN** bounded manual and subscribed events are submitted together
+- **THEN** they use the same journal/consumer system without double publication or duplicate queue admission
+- **AND** acceptance evidence records latency, resource use and normal bounded retention behavior

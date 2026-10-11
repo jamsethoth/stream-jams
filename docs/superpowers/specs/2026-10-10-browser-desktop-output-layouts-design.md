@@ -5,3 +5,5 @@ The maintained written design for this change is [OpenSpec design](../../../open
 Status: written-spec review pending. No product implementation or implementation plan has started.
 
 Confirmed scope: remove test and unified browser sources; keep landscape and vertical layouts for Alerts, Music and Timers; use stable content-sized canvases for Music, Timers and Videos independent of desktop placement; retain full-scene positioning for Alerts/Screen Effects; introduce independent per-profile Timer appearance controls.
+
+Manual Test/Send actions enter the shared event bus with manual provenance and use ordinary queues and outputs. Videos has one ordinary queue/player; no separate test queue or management test output remains. Local editor previews do not dispatch events. Performance expectations and before/after acceptance checks are recorded in the maintained design.
