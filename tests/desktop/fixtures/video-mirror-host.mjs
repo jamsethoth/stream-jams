@@ -1,6 +1,6 @@
 import { app, BrowserWindow, session } from "electron";
 import process from "node:process";
-import { setInterval } from "node:timers";
+import { clearInterval, setInterval } from "node:timers";
 import console from "node:console";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
@@ -44,8 +44,10 @@ void app.whenReady().then(async () => {
   });
   host.onEvent(event => globalThis.videoEvents.push(event));
   host.beginOwnership();
-  setInterval(() => host.refreshLease(), 2000);
+  const videoLease = setInterval(() => host.refreshLease(), 2000);
   globalThis.videoHost = host;
+  // A lost service stops leasing too; a lease after serviceLost() would re-announce the player.
+  globalThis.loseVideoService = () => { clearInterval(videoLease); host.serviceLost(); };
   // A desktop receiver that is not a browser source: it records what it is sent.
   globalThis.desktopSignals = [];
   globalThis.desktopReceiver = host.attachDesktopReceiver("desktop:probe", "live", signal => globalThis.desktopSignals.push(signal));

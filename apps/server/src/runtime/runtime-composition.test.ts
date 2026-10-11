@@ -631,7 +631,8 @@ it("applies persisted module mute before wiring the desktop transport for device
       cancelRecurring: () => {},
       desktopAudioTransport: transport
     });
-    expect(calls).toEqual(["mute:false", "modules:true:false", "devices"]);
+    // No saved route yet, so startup has nothing to rebind and does not enumerate devices.
+    expect(calls).toEqual(["mute:false", "modules:true:false"]);
 
     await mkdir(join(testRoot, "assets", "audio"), { recursive: true });
     await writeFile(join(testRoot, "assets", "audio", "tone.mp3"), Buffer.from([1, 2, 3]));
@@ -673,7 +674,7 @@ it("applies persisted module mute before wiring the desktop transport for device
       startDeadlineMs: expect.any(Number)
     }));
     expect(transport.play).not.toHaveBeenCalled();
-    expect(calls).toEqual(["mute:false", "modules:true:false", "devices", "devices", "devices", "prepare", "start"]);
+    expect(calls).toEqual(["mute:false", "modules:true:false", "devices", "devices", "prepare", "start"]);
     expect((await composition.app.inject({ method: "POST", url: "/audio/retry", headers })).statusCode).toBe(204);
     expect(transport.retry).toHaveBeenCalledTimes(1);
   } finally {
