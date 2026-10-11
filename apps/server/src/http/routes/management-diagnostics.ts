@@ -4,12 +4,16 @@ import {
   clientExceptionReportSchema,
   configurationBackupSummarySchema,
   diagnosticsWorkspaceViewSchema,
+  eventBusActivityViewSchema,
+  eventBusSettingsSchema,
   openDataFolderResultSchema,
   type ClearOldLogsResult,
   type ClientExceptionReport,
   type ClientExceptionReportResult,
   type ConfigurationBackupSummary,
   type DiagnosticsWorkspaceView,
+  type EventBusActivityView,
+  type EventBusSettings,
   type OpenDataFolderResult
 } from "@stream-jams/core";
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
@@ -21,6 +25,9 @@ export interface ManagementDiagnosticsRouteDependencies {
   readonly openDataFolder: () => Promise<OpenDataFolderResult>;
   readonly clearOldLogs: () => Promise<ClearOldLogsResult>;
   readonly reportClientException: (input: ClientExceptionReport) => Promise<ClientExceptionReportResult>;
+  readonly getEventBusActivity?: (() => EventBusActivityView) | undefined;
+  readonly getEventBusSettings?: (() => EventBusSettings) | undefined;
+  readonly saveEventBusSettings?: ((settings: EventBusSettings) => EventBusSettings) | undefined;
   readonly preHandlers: preHandlerHookHandler[];
 }
 
@@ -57,4 +64,19 @@ export function registerManagementDiagnosticsRoutes(
   app.post("/management/settings/clear-old-logs", { preHandler }, async () =>
     clearOldLogsResultSchema.parse(await dependencies.clearOldLogs())
   );
+
+  const { getEventBusActivity, getEventBusSettings, saveEventBusSettings } = dependencies;
+  if (getEventBusActivity !== undefined) {
+    app.get("/management/diagnostics/event-bus", { preHandler }, async () => eventBusActivityViewSchema.parse(getEventBusActivity()));
+  }
+  if (getEventBusSettings !== undefined && saveEventBusSettings !== undefined) {
+    app.get("/management/settings/event-bus", { preHandler }, async () => eventBusSettingsSchema.parse(getEventBusSettings()));
+    app.put("/management/settings/event-bus", { preHandler }, async (request) => {
+      const input = eventBusSettingsSchema.safeParse(request.body);
+      if (!input.success) {
+        throw new HttpResponseError(400, "EVENT_BUS_SETTINGS_INVALID", "Choose a replay age from 0 to 30 minutes.");
+      }
+      return eventBusSettingsSchema.parse(saveEventBusSettings(input.data));
+    });
+  }
 }

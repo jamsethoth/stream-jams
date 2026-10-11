@@ -34,7 +34,7 @@ The Twitch source panel explicitly creates provider-owned follower-total values 
 
 A source has no visible value until its first successful validation. A temporary failure retains the last good value for ten minutes, then hides dependent live content. Invalid, disconnected or changed-account bindings are hidden. Switching broadcasters invalidates old bindings; switching back does not silently restore them. Select a new source explicitly.
 
-The optional `channel:read:goals` scope is separate from existing alert permissions. Creator Goal event integration and goal binding controls remain blocked by the central event bus prerequisite. Follower polling works independently of that prerequisite. No real-account verification is implied by disposable-provider tests.
+The optional `channel:read:goals` scope is separate from existing alert permissions. The central event bus is available; Creator Goal event integration, goal binding controls and early follower refresh hints remain to be implemented. Follower polling works today. No real-account verification is implied by disposable-provider tests.
 
 ## Persistence and outputs
 
@@ -42,6 +42,6 @@ Backups include saved values, reset defaults, goal baselines, groups, pins, canv
 
 Browser outputs use purpose-scoped overlay keys; those keys cannot authorize Management or Operator APIs. Private desktop output uses the existing local image grants. Shared data updates preserve other modules' media. Missing or invalid content fails transparent on live outputs.
 
-Event-driven counters, automatic stream-online resets, Streamer.bot globals and native Twitch Creator Goals are pending the dependencies recorded in the [scenario trace](verification/data-overlays-scenarios.md). The current Management/Operator endpoints are authenticated application controls; a general external producer API has not been introduced.
+Event-driven counters, automatic stream-online resets and native Twitch Creator Goals are ready for implementation against the central bus. Streamer.bot globals still require real sanitized fixtures. See the [October 11 reassessment](verification/data-overlays-main-reassessment.md). The current Management/Operator endpoints are authenticated application controls; a general external producer API has not been introduced.
 
 See the [implementation plan](superpowers/plans/2026-10-08-data-overlays-implementation.md) and [verification evidence](verification/data-overlays-scenarios.md) for the candidate's exact scope and remaining acceptance work.

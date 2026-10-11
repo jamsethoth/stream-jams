@@ -7,6 +7,7 @@ function row(input: Partial<OperationRow> & Pick<OperationRow, "moduleId" | "occ
     occurrenceId: input.occurrenceId,
     name: input.name ?? "Playback",
     summary: input.summary ?? "Manual",
+    source: null,
     status: input.status ?? "queued",
     enqueuedAtMs: input.enqueuedAtMs ?? 1_000,
     completedAtMs: input.completedAtMs ?? null,

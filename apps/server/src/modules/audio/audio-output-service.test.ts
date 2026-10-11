@@ -5,7 +5,7 @@ import { RuntimeMaintenanceGate } from "../backup/runtime-maintenance-gate.js";
 import { SqliteAudioOutputRouteRepository } from "./sqlite-audio-output-route-repository.js";
 import { AudioOutputService } from "./audio-output-service.js";
 
-function fixture(available = true) {
+function fixture(available = true, onRoutesChanged?: () => void) {
   const db = createInMemoryStreamJamsDatabase();
   const routes = new SqliteAudioOutputRouteRepository(db.connection);
   const gate = new RuntimeMaintenanceGate();
@@ -25,7 +25,8 @@ function fixture(available = true) {
   const dependencies = {
     routes, ...(available ? { host } : {}), isMuted: () => muted, generateId: () => `route-${++id}`,
     runMutation: <T>(work: () => T) => gate.runConfigurationMutation(() => runInTransaction(db.connection, work)),
-    runTest: <T>(work: () => Promise<T>) => gate.runIntake(work), logger, generateReferenceId: () => "ref-audio-devices"
+    runTest: <T>(work: () => Promise<T>) => gate.runIntake(work), logger, generateReferenceId: () => "ref-audio-devices",
+    ...(onRoutesChanged === undefined ? {} : { onRoutesChanged })
   };
   const service = new AudioOutputService(dependencies);
   return { db, routes, gate, service, host, logger, mute: () => { muted = true; }, [Symbol.dispose]: () => db.close() };
@@ -399,4 +400,17 @@ it("reports missing/unbound routes without fallback while retaining healthy dest
   expect(await f.service.preparePlayback("next", audio)).toEqual({
     unavailableRouteIds: audio[0]!.outputs.deviceRouteIds, batches: []
   });
+});
+
+it("tells route consumers after a route is rebound or deleted, but not after a failed change", async () => {
+  const changed = vi.fn();
+  using f = fixture(true, changed);
+  const route = await f.service.createRoute({ name: "Stream" });
+  expect(changed).not.toHaveBeenCalled();
+  await f.service.updateRoute(route.id, { deviceId: "a" });
+  expect(changed).toHaveBeenCalledTimes(1);
+  await expect(f.service.updateRoute(route.id, { name: "" })).rejects.toBeDefined();
+  expect(changed).toHaveBeenCalledTimes(1);
+  f.service.deleteRoute(route.id);
+  expect(changed).toHaveBeenCalledTimes(2);
 });

@@ -15,7 +15,7 @@ import {
   type AlertSetOverview,
   type AlertValidationIssue,
   type ChannelPointRewardSelection,
-  type StreamEventType,
+  type AlertEventType,
   type TargetProfileId
 } from "@stream-jams/core";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
@@ -108,7 +108,8 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [nameDraft, setNameDraft] = useState("");
   const [createAlertOpen, setCreateAlertOpen] = useState(false);
   const [createAlertEventLocked, setCreateAlertEventLocked] = useState(false);
-  const [createAlertEventType, setCreateAlertEventType] = useState<StreamEventType>(alertStarterTemplates[0].eventType);
+  const [createAlertEventType, setCreateAlertEventType] = useState<AlertEventType>(alertStarterTemplates[0].eventType);
+  const [createAlertExternal, setCreateAlertExternal] = useState({ sourceKey: "", eventType: "" });
   const [createAlertName, setCreateAlertName] = useState<string>(alertStarterTemplates[0].defaultName);
   const [createAlertRewardSelection, setCreateAlertRewardSelection] = useState<ChannelPointRewardSelection>({ mode: "all" });
   const [createAlertError, setCreateAlertError] = useState<ActionableManagementError | null>(null);
@@ -398,17 +399,18 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     }
   }
 
-  function openCreateAlertDialog(eventType?: StreamEventType) {
+  function openCreateAlertDialog(eventType?: AlertEventType) {
     const template = alertStarterTemplates.find((candidate) => candidate.eventType === eventType) ?? alertStarterTemplates[0];
     setCreateAlertEventType(template.eventType);
     setCreateAlertName(template.defaultName);
     setCreateAlertRewardSelection({ mode: "all" });
+    setCreateAlertExternal({ sourceKey: "", eventType: "" });
     setCreateAlertEventLocked(eventType !== undefined);
     setCreateAlertError(null);
     setCreateAlertOpen(true);
   }
 
-  function selectAlertEventType(eventType: StreamEventType) {
+  function selectAlertEventType(eventType: AlertEventType) {
     const template = alertStarterTemplates.find((candidate) => candidate.eventType === eventType);
     setCreateAlertEventType(eventType);
     setCreateAlertRewardSelection({ mode: "all" });
@@ -425,6 +427,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         && createAlertRewardSelection.mode === "selected"
         && createAlertRewardSelection.rewardIds.length === 0
       )
+      || (createAlertEventType === "external_event" && !externalIdentityComplete(createAlertExternal))
     ) return;
     setBusy(true);
     setCreateAlertError(null);
@@ -434,6 +437,9 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         name: createAlertName.trim(),
         ...(createAlertEventType === "channel_point_redemption"
           ? { channelPointRewardSelection: createAlertRewardSelection }
+          : {}),
+        ...(createAlertEventType === "external_event"
+          ? { externalIdentity: { providerKind: "streamerbot" as const, sourceKey: createAlertExternal.sourceKey.trim(), eventType: createAlertExternal.eventType.trim() } }
           : {})
       });
       const groupKey = `event:${created.eventType}`;
@@ -873,6 +879,8 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         error={createAlertError}
         eventType={createAlertEventType}
         eventTypeLocked={createAlertEventLocked}
+        external={createAlertExternal}
+        onExternal={setCreateAlertExternal}
         loadTwitchCustomRewards={loadTwitchCustomRewards}
         name={createAlertName}
         onCancel={() => setCreateAlertOpen(false)}
@@ -963,7 +971,7 @@ function AlertInventory({
   readonly issues: readonly AlertValidationIssue[];
   readonly rewardTitles: ReadonlyMap<string, string> | null;
   readonly onAdd: () => void;
-  readonly onAddForEvent: (eventType: StreamEventType) => void;
+  readonly onAddForEvent: (eventType: AlertEventType) => void;
   readonly onCreateVariation: (alert: AlertInventoryRow) => void;
   readonly onDelete: (alert: AlertInventoryRow) => void;
   readonly onDuplicate: (alert: AlertInventoryRow) => void;
@@ -1024,7 +1032,7 @@ function AlertInventory({
                   </span>
                   <span className={`alert-sets-page__event-status alert-sets-page__event-status--${group.status}`}>{eventStatusLabel(group.status)}</span>
                 </button>
-                {group.known ? <Button aria-label={`Add alert for ${group.label}`} variant="default" size="xs" disabled={busy} onClick={() => onAddForEvent(group.eventType as StreamEventType)} type="button">Add alert</Button> : null}
+                {group.known ? <Button aria-label={`Add alert for ${group.label}`} variant="default" size="xs" disabled={busy} onClick={() => onAddForEvent(group.eventType as AlertEventType)} type="button">Add alert</Button> : null}
               </header>
               {expanded ? (
                 <div className="alert-sets-page__event-content" id={contentId}>
@@ -1156,6 +1164,8 @@ function AlertRowsTable({
                 <th scope="row">
                   <span>{alert.name}</span><small>{alert.kind === "default" ? "Default" : "Variation"} · {formatProvider(alert.providerKind)} catalog</small>
                   {summary.conditionSummaries.map((condition, index) => <small key={`${condition}-${index}`}>{condition}{summary.conditionDetails[index] === null ? null : <span className="alert-sets-page__condition-detail">{summary.conditionDetails[index]}</span>}</small>)}
+                  {alert.externalIdentity === undefined ? null : <small>Streamer.bot {alert.externalIdentity.sourceKey} · {alert.externalIdentity.eventType}</small>}
+                  {alert.externalIdentitySubscribed === false ? <small className="alert-sets-page__external-missing">No event source subscribes to this event. <a href="/manage/event-sources">Open Event sources</a></small> : null}
                   {summary.prioritySummary === null ? null : <small>{summary.prioritySummary}</small>}
                   {summary.weightSummary === null ? null : <small>{summary.weightSummary}</small>}
                 </th>
@@ -1261,15 +1271,26 @@ function NameDialog({ busy, error, onDismissError, draft, onCancel, onChange, on
   return <ModalSurface pending={busy} labelledBy="alert-set-name-dialog-title" onCancel={onCancel} open={state !== null}><form className="alert-sets-page__modal" onSubmit={onSubmit}>{error === null ? null : <ManagementErrorToast error={error} onDismiss={onDismissError} />}<div><ManagementModalTitle>{title}</ManagementModalTitle><p>Saving does not change which alert set is active.</p></div><TextInput label="Alert set name" autoComplete="off" autoFocus maxLength={120} onChange={(event) => onChange(event.currentTarget.value)} required withAsterisk={false} value={draft} /><div className="management-modal__actions"><Button variant="default" disabled={busy} onClick={onCancel} type="button">Cancel</Button><Button disabled={busy || draft.trim() === ""} type="submit">{state?.action === "duplicate" ? "Duplicate" : "Save"}</Button></div></form></ModalSurface>;
 }
 
-function CreateAlertDialog({ busy, error, eventType, eventTypeLocked, loadTwitchCustomRewards, name, onCancel, onEventType, onName, onRewardSelection, onSubmit, open, overlapAlertNames, rewardSelection }: {
+interface ExternalIdentityDraft {
+  readonly sourceKey: string;
+  readonly eventType: string;
+}
+
+function externalIdentityComplete(draft: ExternalIdentityDraft): boolean {
+  return draft.sourceKey.trim() !== "" && draft.eventType.trim() !== "";
+}
+
+function CreateAlertDialog({ busy, error, eventType, eventTypeLocked, external, loadTwitchCustomRewards, name, onCancel, onEventType, onExternal, onName, onRewardSelection, onSubmit, open, overlapAlertNames, rewardSelection }: {
   readonly busy: boolean;
   readonly error: ActionableManagementError | null;
-  readonly eventType: StreamEventType;
+  readonly eventType: AlertEventType;
+  readonly external: ExternalIdentityDraft;
+  readonly onExternal: (external: ExternalIdentityDraft) => void;
   readonly eventTypeLocked: boolean;
   readonly loadTwitchCustomRewards: () => ReturnType<AlertSetsPageApi["getTwitchCustomRewards"]>;
   readonly name: string;
   readonly onCancel: () => void;
-  readonly onEventType: (eventType: StreamEventType) => void;
+  readonly onEventType: (eventType: AlertEventType) => void;
   readonly onName: (name: string) => void;
   readonly onRewardSelection: (selection: ChannelPointRewardSelection) => void;
   readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -1281,6 +1302,7 @@ function CreateAlertDialog({ busy, error, eventType, eventTypeLocked, loadTwitch
   const rewardSelectionInvalid = eventType === "channel_point_redemption"
     && rewardSelection.mode === "selected"
     && rewardSelection.rewardIds.length === 0;
+  const externalInvalid = eventType === "external_event" && !externalIdentityComplete(external);
   return (
     <ModalSurface pending={busy} labelledBy="alert-create-dialog-title" onCancel={onCancel} open={open}>
       <form className="alert-sets-page__modal" onSubmit={onSubmit}>
@@ -1289,7 +1311,7 @@ function CreateAlertDialog({ busy, error, eventType, eventTypeLocked, loadTwitch
           <p>The alert starts empty and disabled. Add its content, then review both target profiles in the editor before enabling it.</p>
         </div>
         {error === null ? null : <ManagementErrorBanner error={error} />}
-        <NativeSelect label="Event type" autoFocus={!eventTypeLocked} disabled={eventTypeLocked || busy} onChange={(event) => onEventType(event.currentTarget.value as StreamEventType)} value={eventType}>
+        <NativeSelect label="Event type" autoFocus={!eventTypeLocked} disabled={eventTypeLocked || busy} onChange={(event) => onEventType(event.currentTarget.value as AlertEventType)} value={eventType}>
             {groups.map((group) => (
               <optgroup key={group} label={group}>
                 {alertStarterTemplates.filter((candidate) => candidate.group === group).map((candidate) => <option key={candidate.eventType} value={candidate.eventType}>{candidate.label}</option>)}
@@ -1306,9 +1328,17 @@ function CreateAlertDialog({ busy, error, eventType, eventTypeLocked, loadTwitch
             selection={rewardSelection}
           />
         ) : null}
+        {eventType === "external_event" ? (
+          <fieldset className="alert-sets-page__external-identity">
+            <legend>Streamer.bot event</legend>
+            <p>Use the exact source and type from Streamer.bot. The alert plays only for that event, and only its summary, user name and event type reach the alert text.</p>
+            <TextInput label="Streamer.bot source" autoComplete="off" disabled={busy} maxLength={120} onChange={(event) => onExternal({ ...external, sourceKey: event.currentTarget.value })} placeholder="General" required withAsterisk={false} value={external.sourceKey} />
+            <TextInput label="Streamer.bot event type" autoComplete="off" disabled={busy} maxLength={120} onChange={(event) => onExternal({ ...external, eventType: event.currentTarget.value })} placeholder="Custom" required withAsterisk={false} value={external.eventType} />
+          </fieldset>
+        ) : null}
         <div className="management-modal__actions">
           <Button variant="default" disabled={busy} onClick={onCancel} type="button">Cancel</Button>
-          <Button disabled={busy || name.trim() === "" || rewardSelectionInvalid} type="submit">{busy ? "Creating..." : "Create alert"}</Button>
+          <Button disabled={busy || name.trim() === "" || rewardSelectionInvalid || externalInvalid} type="submit">{busy ? "Creating..." : "Create alert"}</Button>
         </div>
       </form>
     </ModalSurface>

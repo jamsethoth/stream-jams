@@ -18,6 +18,8 @@ interface AudioOutputServiceDependencies {
   readonly runTest: <T>(work: () => Promise<T>) => Promise<T>;
   readonly logger?: Logger;
   readonly generateReferenceId?: () => string;
+  /** Called after a route's binding is changed or the route is deleted, for consumers that cache device destinations. */
+  readonly onRoutesChanged?: () => void;
 }
 
 export class AudioOutputService {
@@ -186,7 +188,7 @@ export class AudioOutputService {
     const binding = input.data.deviceId === undefined ? undefined : await this.#resolveBinding(input.data.deviceId);
     // Enumeration must finish before the transaction. Re-read inside it: a rename,
     // deletion or alert save may have completed while discovery was pending.
-    return this.dependencies.runMutation(() => {
+    const updated = await this.dependencies.runMutation(() => {
       const current = this.#requireRoute(id);
       if (binding !== undefined && binding.deviceId !== current.deviceId && !input.data.confirmLiveImpact) {
         const references = this.dependencies.routes.findReferences(id);
@@ -216,6 +218,8 @@ export class AudioOutputService {
       this.#automaticBindingStates.delete(id);
       return route;
     });
+    this.dependencies.onRoutesChanged?.();
+    return updated;
   }
 
   deleteRoute(id: string): void {
@@ -224,6 +228,7 @@ export class AudioOutputService {
       this.dependencies.routes.delete(id);
       this.#automaticBindingStates.delete(id);
     });
+    this.dependencies.onRoutesChanged?.();
   }
 
   async testRoute(id: string, candidate: unknown): Promise<{ readonly routeId: string; readonly muted: boolean }> {

@@ -1,7 +1,7 @@
-import type { NormalizedStreamEvent } from "../events/types.js";
+import type { AlertSourceEvent } from "../events/types.js";
 
 export interface PlaybackDedupeService {
-  accept(event: NormalizedStreamEvent): boolean;
+  accept(event: AlertSourceEvent): boolean;
 }
 
 export interface PlaybackDedupeKeyService {
@@ -26,7 +26,7 @@ export class DefaultPlaybackDedupeService implements PlaybackDedupeService, Play
     this.#maxEntries = dependencies.maxEntries ?? 1_000;
   }
 
-  accept(event: NormalizedStreamEvent): boolean {
+  accept(event: AlertSourceEvent): boolean {
     return this.acceptKey("alerts", `${event.providerId}:${event.id}`);
   }
 

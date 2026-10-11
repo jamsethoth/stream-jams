@@ -20,6 +20,7 @@
 .settings-page__facts div { min-width: 0; padding: 16px 16px; background: var(--color-surface); }
 .settings-page__facts dt { color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .settings-page__facts dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.settings-page__hint { margin: 0; max-width: 72ch; color: var(--color-text-muted); }
 .settings-page__backup-summary { display: grid; gap: 4px; }
 .settings-page__backup-summary span { color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .settings-page__restore { display: grid; gap: 16px; max-width: 780px; padding-inline-start: 16px; border-inline-start: 3px solid var(--color-border-strong); }

@@ -9,6 +9,7 @@ export type ManagementRouteId =
   | "modules-timers"
   | "data"
   | "modules-data-overlays"
+  | "modules-videos"
   | "alert-safety"
   | "alert-editor"
   | "screen-effect-editor"
@@ -86,6 +87,7 @@ const routeDefinitions: Record<ManagementRouteId, ManagementRouteDefinition> = {
     "Create reusable timers, control active runs, and configure timer overlays.",
     ["Modules", "Timers"]
   ),
+  "modules-videos": route("modules-videos", "Videos", "/manage/modules/videos", "Videos", "Queue and play viewer video requests.", ["Modules", "Videos"]),
   "alert-safety": route(
     "alert-safety",
     "Safety",
@@ -139,6 +141,7 @@ routeDefinitions["modules-alerts"] = {
     routeDefinitions["modules-timers"],
     routeDefinitions["modules-music"],
     routeDefinitions["modules-data-overlays"],
+    routeDefinitions["modules-videos"],
     routeDefinitions["alert-safety"]
   ]
 };

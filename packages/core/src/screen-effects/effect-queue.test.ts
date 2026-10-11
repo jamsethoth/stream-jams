@@ -14,6 +14,7 @@ function occurrence(
     id,
     moduleId: "screen-effects",
     trigger: null,
+    sourceKind: null,
     content: {
       effectId: `effect-${id}`,
       effectName: `Effect ${id}`,

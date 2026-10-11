@@ -175,6 +175,20 @@ export const MissingTrigger: Story = {
   }
 };
 
+export const StreamEventTrigger: Story = {
+  args: { api: createApi(effect({ eventTrigger: true })) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Triggers" }));
+    await expect(await canvas.findByText("Cheer · Cheer amount is at least 100 · Twitch only")).toBeVisible();
+    await expect(canvas.getByText("Configured")).toBeVisible();
+    await userEvent.selectOptions(canvas.getByLabelText("Event type"), "raid");
+    await userEvent.click(canvas.getByRole("button", { name: "Add condition" }));
+    await expect(canvas.getByLabelText("Event conditions Raid viewers value")).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Add event trigger" })).toBeEnabled();
+  }
+};
+
 export const NoOutputs: Story = {
   args: { api: createApi(effect({ enabled: true, noOutputs: true })) },
   play: async ({ canvasElement }) => {
@@ -313,6 +327,7 @@ function createApi(
 function effect(options: {
   readonly audioOnly?: boolean;
   readonly enabled?: boolean;
+  readonly eventTrigger?: boolean;
   readonly missingTrigger?: boolean;
   readonly multipleVariants?: boolean;
   readonly noOutputs?: boolean;
@@ -359,9 +374,18 @@ function effect(options: {
     enabled: options.enabled ?? false,
     bindings: options.missingTrigger ? [{
       id: "binding-missing",
-      kind: "twitch-reward",
-      broadcasterId: "broadcaster-story",
-      rewardId: "reward-missing"
+      selector: {
+        match: { kind: "twitch-reward", broadcasterId: "broadcaster-story", rewardId: "reward-missing" },
+        sources: "any",
+        conditions: []
+      }
+    }] : options.eventTrigger ? [{
+      id: "binding-cheer",
+      selector: {
+        match: { kind: "canonical", type: "cheer" },
+        sources: ["twitch"],
+        conditions: [{ field: "cheerAmount", operator: "min", value: 100 }]
+      }
     }] : [],
     variants: [
       baseVariant,

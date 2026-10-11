@@ -89,5 +89,6 @@ function actionable(summary: string, cause: unknown): ActionableManagementError 
 
 function requiredRead(scope: AutomationScope): AutomationScope | null {
   if (scope === "timers:control") return "timers:read";
+  if (scope === "videos:submit" || scope === "videos:control") return "videos:read";
   return scope.startsWith("playback:") && scope !== "playback:read" ? "playback:read" : null;
 }

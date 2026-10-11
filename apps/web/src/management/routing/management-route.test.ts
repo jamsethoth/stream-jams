@@ -17,6 +17,7 @@ describe("management route model", () => {
     ["/manage/modules/timers", "modules-timers"],
     ["/manage/data", "data"],
     ["/manage/modules/data-overlays", "modules-data-overlays"],
+    ["/manage/modules/videos", "modules-videos"],
     ["/manage/modules/alerts/safety", "alert-safety"],
     ["/manage/assets", "assets"],
     ["/manage/diagnostics", "diagnostics"],
@@ -70,8 +71,15 @@ describe("management route model", () => {
       "modules-timers",
       "modules-music",
       "modules-data-overlays",
+      "modules-videos",
       "alert-safety"
     ]);
+  });
+
+  it("round-trips the Videos route", () => {
+    expect(formatManagementRoute({ id: "modules-videos" })).toBe("/manage/modules/videos");
+    expect(parseManagementRoute("/manage/modules/videos")).toEqual({ id: "modules-videos" });
+    expect(getManagementRouteDefinition({ id: "modules-videos" }).breadcrumbs).toEqual(["Modules", "Videos"]);
   });
 
   it("round-trips the Music appearance route", () => {

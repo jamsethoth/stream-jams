@@ -28,6 +28,7 @@ export async function startLocalRuntime(options: RuntimeAppCompositionOptions): 
       suggestPorts: (host, preferredPort) => findSuggestedPorts({ host, preferredPort, portAvailability })
     });
     if (result.status !== "started") throw new LocalRuntimeStartupError(result.error);
+    composition.scheduleEventReplay();
     await composition.syncEventSourceRuntime();
     return { composition, url: result.url, close: composition.close };
   } catch (error) {

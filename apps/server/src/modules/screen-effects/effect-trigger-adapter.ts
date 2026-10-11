@@ -85,7 +85,8 @@ export function createStreamerBotEffectTriggers(
     providerId: context.providerId,
     sourceKey: externalEvent.subscriptionSourceKey,
     eventType: externalEvent.upstreamType,
-    summary: summaryFromPayload(externalEvent.payload, externalEvent.upstreamSource, externalEvent.upstreamType)
+    summary: summaryFromPayload(externalEvent.payload, externalEvent.upstreamSource, externalEvent.upstreamType),
+    userName: userNameFromPayload(externalEvent.payload)
   }));
   return triggers;
 }
@@ -132,6 +133,16 @@ function summaryFromPayload(payload: Record<string, unknown>, source: string, ty
     }
   }
   return safeSummary(`${source}.${type}`, "Streamer.bot event");
+}
+
+/** Only `user.name` or `userName` is read; every other payload field stays out of templates. */
+function userNameFromPayload(payload: Record<string, unknown>): string {
+  const user = payload.user;
+  const nested = typeof user === "object" && user !== null && !Array.isArray(user)
+    ? Object.getOwnPropertyDescriptor(user, "name")?.value as unknown
+    : undefined;
+  const candidate = typeof nested === "string" ? nested : Object.getOwnPropertyDescriptor(payload, "userName")?.value as unknown;
+  return typeof candidate === "string" ? safeSummary(candidate, "").slice(0, 100) : "";
 }
 
 function safeSummary(value: string, fallback: string): string {

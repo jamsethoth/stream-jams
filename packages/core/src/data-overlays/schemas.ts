@@ -21,7 +21,7 @@ export const dataValueSourceSchema = z.object({ provider: z.literal("twitch"), k
 export const twitchFollowerSourceInputSchema = z.object({ name: dataNameSchema }).strict();
 export const twitchDataSourceStatusSchema = z.object({
   follower: z.object({ state: z.enum(["unconfigured", "current", "stale", "invalid", "disconnected"]), broadcasterId: dataIdSchema.nullable(), valueIds: z.array(dataIdSchema), updatedAt: isoDateTimeSchema.nullable() }).strict(),
-  goals: z.object({ state: z.enum(["blocked-event-bus", "reauthorization-required", "disconnected"]), missingScopes: z.array(z.string()) }).strict()
+  goals: z.object({ state: z.enum(["integration-pending", "reauthorization-required", "disconnected"]), missingScopes: z.array(z.string()) }).strict()
 }).strict();
 const valueDocument = { ...valueDefinition, id: dataIdSchema, revision, createdAt: isoDateTimeSchema, updatedAt: isoDateTimeSchema, source: dataValueSourceSchema.optional() };
 export const dataValueSchema = z.discriminatedUnion("kind", [

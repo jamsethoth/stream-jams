@@ -58,11 +58,8 @@ export interface EffectManagementServiceOptions {
   readonly repository: ScreenEffectRepository;
   readonly testEffectVariant: (effectId: string, variantId: string) => Promise<EffectAdmissionOutcome>;
   readonly isTwitchRewardAvailable?: (broadcasterId: string, rewardId: string) => Promise<boolean>;
-  readonly isStreamerBotSelectionConfigured?: (
-    providerId: string,
-    sourceKey: string,
-    eventType: string
-  ) => Promise<boolean>;
+  /** Whether a Streamer.bot registration subscribes to this exact external source and event type. */
+  readonly isStreamerBotSelectionConfigured?: (sourceKey: string, eventType: string) => Promise<boolean>;
   readonly runMutation?: <T>(work: () => Promise<T>) => Promise<T>;
 }
 
@@ -182,13 +179,11 @@ export class EffectManagementService {
 
   async #validateBindings(bindings: readonly EffectBinding[]): Promise<void> {
     for (const binding of bindings) {
-      const available = binding.kind === "twitch-reward"
-        ? await this.#isTwitchRewardAvailable(binding.broadcasterId, binding.rewardId)
-        : await this.#isStreamerBotSelectionConfigured(
-          binding.providerId,
-          binding.sourceKey,
-          binding.eventType
-        );
+      const { match } = binding.selector;
+      const available = match.kind === "canonical"
+        || (match.kind === "twitch-reward"
+          ? await this.#isTwitchRewardAvailable(match.broadcasterId, match.rewardId)
+          : await this.#isStreamerBotSelectionConfigured(match.sourceKey, match.eventType));
       if (!available) throw new EffectBindingUnavailableError(binding.id);
     }
   }

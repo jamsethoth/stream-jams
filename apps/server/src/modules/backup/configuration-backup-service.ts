@@ -23,6 +23,7 @@ import {
   type SecretRef
 } from "@stream-jams/core";
 import { RuntimeMaintenanceUnavailableError } from "./runtime-maintenance-gate.js";
+import { upgradeLegacyEffectBindingRows, upgradeLegacyTimerEventRules } from "../events/legacy-trigger-selectors.js";
 
 type BackupConfiguration = ConfigurationBackupArchive["configuration"];
 type SnapshotConfiguration = Omit<BackupConfiguration, "appConfig">;
@@ -287,6 +288,10 @@ export class ConfigurationBackupService {
         "Open the backup with a compatible Stream Jams version, then export it again."
       ));
     }
+    // The unreleased Data candidate used main's schema numbers for a different migration history.
+    if ([33, 34].includes(archive.manifest.schemaVersion) && dataOverlayBackupTables.some(name => archive.configuration.tables[name] !== undefined)) {
+      blockers.push(blocker("Backup schema is not supported", "This backup uses the pre-merge Data candidate schema history.", "Export from a compatible Data candidate or restore a main-compatible backup."));
+    }
     if (archive.manifest.schemaVersion >= 20 && archive.configuration.tables.overlay_surfaces === undefined) {
       blockers.push(blocker("Backup surface configuration is missing", "Schema 20 and later require surface settings.", "Export a new backup from the source installation."));
     }
@@ -315,16 +320,19 @@ export class ConfigurationBackupService {
         }
       }
     }
+    if (archive.manifest.schemaVersion >= 38 && archive.configuration.tables.event_bus_settings === undefined) {
+      blockers.push(blocker("Backup event settings are missing", "Schema 38 and later require event_bus_settings.", "Export a new backup from the source installation."));
+    }
     if (!appConfigSchema.safeParse(archive.configuration.appConfig).success) {
       blockers.push(blocker("Backup preferences are invalid", "The application preferences do not match the supported schema.", "Export a new backup from the source installation."));
     }
-    if (archive.manifest.schemaVersion >= 34 && archive.configuration.tables.data_templates === undefined) {
-      blockers.push(blocker("Backup Data templates configuration is missing", "Schema 34 and later require data_templates.", "Export a complete backup from the original application."));
+    if (archive.manifest.schemaVersion >= 42 && archive.configuration.tables.data_templates === undefined) {
+      blockers.push(blocker("Backup Data templates configuration is missing", "Schema 42 and later require data_templates.", "Export a complete backup from the original application."));
     }
-    if (archive.manifest.schemaVersion >= 33) {
+    if (archive.manifest.schemaVersion >= 41) {
       for (const name of dataOverlayBackupTables) {
         if (archive.configuration.tables[name] === undefined) blockers.push(blocker(
-          "Backup Data Overlays configuration is missing", `Schema 33 and later require ${name}.`, "Export a new backup from the source installation."
+          "Backup Data Overlays configuration is missing", `Schema 41 and later require ${name}.`, "Export a new backup from the source installation."
         ));
       }
     }
@@ -713,8 +721,19 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   if (currentSchemaVersion === 31) return [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 30) return [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 32) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 31;
-  if (currentSchemaVersion === 33) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 32;
-  if (currentSchemaVersion === 34) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 33;
+  // Schemas 33 and 34 add only runtime event bus tables, which backups never contain. Schema 35 only
+  // relaxes the active event-source index, which every older archive already satisfies.
+  // Schema 36 converts Screen Effect bindings and timer rules to trigger selectors; older rows are upgraded.
+  // Schema 37 adds the external alert identity column; older alert rules are all canonical.
+  // Schema 38 adds event bus outcomes (runtime only) and the replay age setting, which restores its default when absent.
+  // Schema 39 adds the runtime Videos queue and retires Video shoutout settings and outputs, which older rows drop.
+  // A schema-33 archive from a Videos build made before the event bus merge differs from main's schema 33 only by its
+  // Videos settings row, which restores as is.
+  if (currentSchemaVersion === 39) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 38;
+  // Schema 40 adds provider details to the runtime Videos queue, which backups never contain.
+  if (currentSchemaVersion === 40) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 39;
+  // Data configuration and its template catalog are appended after main schema 40.
+  if (currentSchemaVersion === 41 || currentSchemaVersion === 42) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion < currentSchemaVersion;
   if (currentSchemaVersion === 28) return [19, 20, 21, 22, 23, 24, 25, 26, 27].includes(archiveSchemaVersion);
   return false;
 }
@@ -753,6 +772,25 @@ function upgradeLegacyConfiguration(
   }
   if (schemaVersion < 30) {
     tables = { ...tables, timer_definitions: (tables.timer_definitions ?? []).map(row => ({ ...row, event_rules_json: "[]" })) };
+  }
+  if (schemaVersion < 36) {
+    tables = {
+      ...tables,
+      ...(tables.screen_effect_bindings === undefined ? {} : { screen_effect_bindings: [...upgradeLegacyEffectBindingRows(tables.screen_effect_bindings)] }),
+      ...(tables.timer_definitions === undefined ? {} : {
+        timer_definitions: tables.timer_definitions.map(row => ({ ...row, event_rules_json: upgradeLegacyTimerEventRules(row.event_rules_json) }))
+      })
+    };
+  }
+  if (schemaVersion < 37 && tables.alert_rules !== undefined) {
+    tables = { ...tables, alert_rules: tables.alert_rules.map(row => ({ ...row, external_identity_json: null })) };
+  }
+  if (schemaVersion < 39) {
+    // Videos replaced the retired Video shoutout module; its settings and outputs have nothing to restore into.
+    const retired = (moduleId: unknown) => moduleId === "video-shoutout";
+    tables = { ...tables, ...(tables.overlay_module_config === undefined ? {} : { overlay_module_config: tables.overlay_module_config.filter(row => !retired(row.module_id)) }) };
+    const overlayOutputs = configuration.overlayOutputs.filter(output => !retired(output.moduleId));
+    return { ...configuration, tables, overlayOutputs };
   }
   return tables === configuration.tables ? configuration : { ...configuration, tables };
 }

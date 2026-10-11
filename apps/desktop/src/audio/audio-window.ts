@@ -38,9 +38,34 @@ export function registerAudioPlayerScheme(additionalSchemes: Electron.CustomSche
   }, ...additionalSchemes]);
 }
 
-function requestOrigin(requestingUrl: string): string {
-  return requestingUrl === AUDIO_PLAYER_URL ? AUDIO_PLAYER_ORIGIN : "";
+/**
+ * Hidden companion pages that play to selected devices in this session (the Videos device
+ * output). They share the audio player's partition and origin so device ids resolve the same
+ * way; each may ask only for speaker selection, only from its registered main-frame URL.
+ */
+const audioCompanions = new Map<number, string>();
+export function registerAudioCompanion(webContentsId: number, url: string): () => void {
+  if (!url.startsWith(AUDIO_PLAYER_ORIGIN) || url === AUDIO_PLAYER_URL) throw new Error("Audio companions must use their own audio-player page");
+  audioCompanions.set(webContentsId, url);
+  return () => { if (audioCompanions.get(webContentsId) === url) audioCompanions.delete(webContentsId); };
 }
+
+const videoDevicesHtml = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Stream Jams video device output</title></head>
+<body><script type="module" src="./video-devices.js"></script></body></html>`;
+
+function requestOrigin(requestingUrl: string): string {
+  return requestingUrl === AUDIO_PLAYER_URL || [...audioCompanions.values()].includes(requestingUrl) ? AUDIO_PLAYER_ORIGIN : "";
+}
+
+function isAllowedCompanionPermission(permission: string, senderId: number | null, requestingOrigin: string, requestingUrl: string, isMainFrame: boolean): boolean {
+  if (senderId === null) return false;
+  const url = audioCompanions.get(senderId);
+  return url !== undefined && isAllowedAudioPlayerPermission({ permission, senderId, expectedSenderId: senderId, requestingOrigin,
+    requestingUrl: requestingUrl === url ? AUDIO_PLAYER_URL : "", isMainFrame });
+}
+
+export const AUDIO_PARTITION_NAME = AUDIO_PARTITION;
 
 export class AudioWindow {
   readonly window: BrowserWindow;
@@ -57,9 +82,14 @@ export class AudioWindow {
       [`${AUDIO_PLAYER_ORIGIN}player.js`, { path: resolve(import.meta.dirname, "player.js"), contentType: "text/javascript; charset=utf-8" }],
       [`${AUDIO_PLAYER_ORIGIN}audio-player-policy.js`, { path: resolve(import.meta.dirname, "audio-player-policy.js"), contentType: "text/javascript; charset=utf-8" }]
       , [`${AUDIO_PLAYER_ORIGIN}tone.wav`, { path: resolve(import.meta.dirname, "tone.wav"), contentType: "audio/wav" }]
+      , [`${AUDIO_PLAYER_ORIGIN}video-devices.js`, { path: resolve(import.meta.dirname, "../videos/video-devices.js"), contentType: "text/javascript; charset=utf-8" }]
     ]);
     this.#audioSession.protocol.handle(AUDIO_SCHEME, async (request) => {
       if (this.#destroying) return new Response(null, { status: 404 });
+      if (request.url === `${AUDIO_PLAYER_ORIGIN}video-devices.html` && request.method === "GET") {
+        return new Response(videoDevicesHtml, { headers: { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": contentSecurityPolicy,
+          "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
+      }
       const resource = resources.get(request.url);
       if (resource === undefined || request.method !== "GET") {
         return (await this.#media?.handle(request)) ?? new Response(null, { status: 404 });
@@ -106,6 +136,7 @@ export class AudioWindow {
 
     const expectedSenderId = this.window.webContents.id;
     this.#audioSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details: PermissionCheckHandlerHandlerDetails) =>
+      isAllowedCompanionPermission(permission, webContents?.id ?? null, requestingOrigin, details.requestingUrl ?? "", details.isMainFrame) ||
       isAllowedAudioPlayerPermission({
         permission,
         senderId: webContents?.id ?? null,
@@ -115,7 +146,7 @@ export class AudioWindow {
         isMainFrame: details.isMainFrame
       }));
     this.#audioSession.setPermissionRequestHandler((webContents, permission, callback, details: PermissionRequest) => {
-      callback(isAllowedAudioPlayerPermission({
+      callback(isAllowedCompanionPermission(permission, webContents.id, requestOrigin(details.requestingUrl), details.requestingUrl, details.isMainFrame) || isAllowedAudioPlayerPermission({
         permission,
         senderId: webContents.id,
         expectedSenderId,

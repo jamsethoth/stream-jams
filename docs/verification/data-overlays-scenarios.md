@@ -2,6 +2,8 @@
 
 Implementation evidence for the four approved slices. Evidence below records focused unit checkpoints; final integrated gates are recorded separately. Planned rows are not verified. Provider and physical acceptance remain separate from automated fixtures.
 
+**Historical checkpoint: October 8, 2026.** The missing-bus blockers and schema 33/34 references below describe the pre-merge candidate. The [October 11 main integration reassessment](data-overlays-main-reassessment.md) supersedes those dependency statuses and records the new migration versions and merged verification. Unimplemented scenarios below remain unverified.
+
 ## add-custom-data-overlays
 
 | Capability | Requirement | Scenario | Evidence/status |

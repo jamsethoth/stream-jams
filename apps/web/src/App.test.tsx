@@ -36,6 +36,8 @@ function createManagementApi(): ManagementApi {
     async getMusicPairing() { return { attemptId: "pair_test", status: "approved", expiresAt: "2026-07-16T18:00:00.000Z", configuration: { baseUrl: "http://127.0.0.1:26538", transport: "auto" as const }, certificate: null }; },
     async cancelMusicPairing() {},
     async acceptMusicPairingCertificate() { throw new Error("No certificate review in this fixture"); },
+    async getMusicNowPlaying() { return { status: { state: "disconnected" as const, stale: false, diagnosticReference: null }, snapshot: null }; },
+    async getMusicArtwork(): Promise<Blob> { throw new Error("No Music artwork in this test."); },
     async getMusicStatus() { return { enabled: false, selectedProviderId: null, status: { state: "disconnected", stale: false, diagnosticReference: null }, missingAssetIds: { landscape: [], vertical: [] } }; },
     async reconnectMusicSource() { return { enabled: false, selectedProviderId: null, status: { state: "disconnected", stale: false, diagnosticReference: null }, missingAssetIds: { landscape: [], vertical: [] } }; },
     async replaceMusicCredential() { return { validation: { valid: true, connectionState: "connected", intakeState: null, validatedAt: "2026-07-15T05:00:00.000Z", availableVoices: [], error: null }, runtimeReconcilePending: false, credentialRetirementPending: false }; },
@@ -75,10 +77,13 @@ function createManagementApi(): ManagementApi {
       throw new Error("not called");
     },
     async getStreamerBotSubscriptions(providerId) {
-      return { providerId, available: false, sources: [], selected: [], unavailableSelections: [], twitchBroadcasterId: null };
+      return { providerId, forwardTwitchEvents: true, available: false, sources: [], selected: [], unavailableSelections: [], twitchBroadcasterId: null };
     },
     async updateStreamerBotSubscriptions(providerId, input) {
-      return { providerId, available: true, sources: input.externalSubscriptions, selected: input.externalSubscriptions, unavailableSelections: [], twitchBroadcasterId: input.twitchBroadcasterId };
+      return { providerId, forwardTwitchEvents: true, available: true, sources: input.externalSubscriptions, selected: input.externalSubscriptions, unavailableSelections: [], twitchBroadcasterId: input.twitchBroadcasterId };
+    },
+    async setStreamerBotForwarding() {
+      throw new Error("not called");
     },
     async activateProvider() {
       throw new Error("not called");
@@ -214,7 +219,7 @@ function createManagementApi(): ManagementApi {
         port: 39187
       };
     },
-    async getDesktopConfig() { return { available: false, closeToTray: true }; },
+    async getDesktopConfig() { return { available: false, closeToTray: true, gpuAcceleration: true }; },
     async updateDesktopConfig(input) { return { ...input, available: true }; },
     async updateServerConfig(input) {
       return input;

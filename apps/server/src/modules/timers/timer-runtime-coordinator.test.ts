@@ -8,6 +8,7 @@ import {
 } from "./timer-runtime-coordinator.js";
 import { RuntimeMaintenanceGate } from "../backup/runtime-maintenance-gate.js";
 import { normalizedStreamEventSchema, type TimerEventRule } from "@stream-jams/core";
+import { canonicalBusEvent } from "../../test-support/bus-event-fixtures.js";
 import { TimerEventService } from "./timer-event-service.js";
 import { snapshotTimerDefinition } from "./timer-management-service.js";
 
@@ -300,24 +301,24 @@ describe("TimerRuntimeCoordinator", () => {
   ])("applies $type tier/quantity rules with ordered actions and both idle alternatives", async ({ quantityUnit, added, ...fields }) => {
     const { coordinator, records } = setup();
     const event = normalizedStreamEventSchema.parse({ ...fields, id: "event", providerId: "twitch", sourcePlatform: "twitch", ingestProvider: "streamerbot", occurredAt: "2026-10-01T00:00:00Z", actor: { id: "u", displayName: "Viewer" }, message: null, metadata: {} });
-    const rule: TimerEventRule = { enabled: true, ingestProvider: "streamerbot", eventType: event.type, rewardId: null, tier: "2000", action: "increment", amountMs: 2000, quantityUnit, inactiveBehavior: "paused" };
+    const rule: TimerEventRule = { enabled: true, selector: { match: { kind: "canonical", type: event.type }, sources: ["streamerbot"], conditions: [{ field: "tier", operator: "equals", value: "2000" }] }, action: "increment", amountMs: 2000, quantityUnit, inactiveBehavior: "paused" };
     const setRules = (...rules: TimerEventRule[]) => records.set("a", { ...definition("a"), eventRules: rules });
     const service = new TimerEventService({ list: () => [...records.values()] }, coordinator);
     setRules(rule);
-    await service.handleEvent({ ...event, tier: "1000" } as typeof event);
+    await service.handleEvent(canonicalBusEvent({ ...event, tier: "1000" } as typeof event));
     expect(coordinator.getState("a")).toBeNull();
-    await service.handleEvent(event);
+    await service.handleEvent(canonicalBusEvent(event));
     expect(coordinator.getState("a")).toMatchObject({ status: "paused", remainingMs: 10000 + added });
-    setRules({ ...rule, action: "decrement" }); await service.handleEvent(event);
+    setRules({ ...rule, action: "decrement" }); await service.handleEvent(canonicalBusEvent(event));
     expect(coordinator.getState("a")).toMatchObject({ status: "paused", remainingMs: 10000 });
-    setRules({ ...rule, action: "restart" }, rule); await service.handleEvent(event);
+    setRules({ ...rule, action: "restart" }, rule); await service.handleEvent(canonicalBusEvent(event));
     const restarted = coordinator.getState("a");
     expect(restarted).toMatchObject({ status: "running", endsAtEpochMs: 11000 + added });
-    setRules({ ...rule, action: "start" }); await service.handleEvent(event);
+    setRules({ ...rule, action: "start" }); await service.handleEvent(canonicalBusEvent(event));
     expect(coordinator.getState("a")).toEqual(restarted);
-    setRules({ ...rule, action: "stop" }); await service.handleEvent(event);
+    setRules({ ...rule, action: "stop" }); await service.handleEvent(canonicalBusEvent(event));
     expect(coordinator.getState("a")).toBeNull();
-    setRules({ ...rule, inactiveBehavior: "start" }); await service.handleEvent(event);
+    setRules({ ...rule, inactiveBehavior: "start" }); await service.handleEvent(canonicalBusEvent(event));
     expect(coordinator.getState("a")).toMatchObject({ status: "running", endsAtEpochMs: 11000 + added });
     await coordinator.close();
   });

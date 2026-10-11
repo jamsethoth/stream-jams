@@ -6,6 +6,7 @@ import {
   providerRegistrationAttemptSchema,
   providerSetupInputSchema,
   streamerBotSubscriptionCatalogSchema,
+  streamerBotForwardingUpdateInputSchema,
   streamerBotSubscriptionUpdateInputSchema
 } from "./contracts.js";
 
@@ -53,7 +54,8 @@ describe("provider management contracts", () => {
             ...input.configuration,
             allowUnauthenticatedLocalConnection: false,
             externalSubscriptions: [],
-            twitchBroadcasterId: null
+            twitchBroadcasterId: null,
+            forwardTwitchEvents: true
           }
         }
       : input);
@@ -76,7 +78,9 @@ describe("provider management contracts", () => {
       }
     };
 
-    expect(providerSetupInputSchema.parse(input)).toEqual({ ...input, configuration: { ...input.configuration, allowUnauthenticatedLocalConnection: false } });
+    expect(providerSetupInputSchema.parse(input)).toEqual({ ...input, configuration: { ...input.configuration, allowUnauthenticatedLocalConnection: false, forwardTwitchEvents: true } });
+    expect(providerSetupInputSchema.parse({ ...input, configuration: { ...input.configuration, forwardTwitchEvents: false } }))
+      .toMatchObject({ configuration: { forwardTwitchEvents: false } });
     expect(providerSetupInputSchema.safeParse({
       name: "Speaker.bot",
       kind: "speakerbot",
@@ -110,8 +114,13 @@ describe("provider management contracts", () => {
       externalSubscriptions: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }]
     });
 
+    expect(streamerBotForwardingUpdateInputSchema.parse({ forwardTwitchEvents: false })).toEqual({ forwardTwitchEvents: false });
+    expect(streamerBotForwardingUpdateInputSchema.safeParse({ forwardTwitchEvents: "no" }).success).toBe(false);
+    expect(streamerBotForwardingUpdateInputSchema.safeParse({}).success).toBe(false);
+
     expect(streamerBotSubscriptionCatalogSchema.parse({
       providerId: "provider-streamerbot",
+      forwardTwitchEvents: true,
       available: true,
       sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged", "RecordingStarted"] }],
       selected: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
@@ -123,6 +132,7 @@ describe("provider management contracts", () => {
   it("requires a Streamer.bot subscription to be selected and currently advertised", () => {
     const catalog = streamerBotSubscriptionCatalogSchema.parse({
       providerId: "provider-streamerbot",
+      forwardTwitchEvents: true,
       available: true,
       sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
       selected: [{ sourceKey: "OBS", eventTypes: ["SceneChanged", "MissingEvent"] }],

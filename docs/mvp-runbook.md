@@ -15,7 +15,7 @@ For fast frontend iteration, use `corepack pnpm dev`. That path may run Vite for
 
 ## Windows desktop startup and tray
 
-The approved desktop follow-on adds a Windows x64 Electron host around the same local runtime. Build its unsigned runnable folder with `corepack pnpm desktop:package`, then launch `apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe`. Keep the entire folder together; the executable depends on its sibling resources. This is not an installer or a signed release. Windows may warn about an unsigned application.
+The approved desktop follow-on adds a Windows x64 Electron host around the same local runtime. Build its unsigned runnable folder with `corepack pnpm desktop:package`, then launch `apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe`. Keep the entire folder together; the executable depends on its sibling resources. On Windows, `corepack pnpm desktop:installer` then builds the unsigned setup wizard `apps/desktop/out/installer/StreamJamsSetup.exe` from that folder with electron-builder (NSIS). Neither is signed, so Windows may warn about an unsigned application.
 
 ### Download a portable CI build
 
@@ -31,12 +31,28 @@ The artifact is unsigned, so Windows may display a warning. It contains portable
 
 Local implementation evidence and the remaining hosted Actions acceptance gap are recorded in [portable Windows desktop artifact verification](verification/portable-windows-desktop-artifact.md).
 
+### Install with the unsigned installer
+
+The same job also publishes `StreamJamsSetup.exe` as an artifact named `stream-jams-windows-x64-installer-<ref>-<commit>`, with its own digest in the job summary. The separate `windows-desktop` job installs, launches and uninstalls that exact installer on its disposable runner profile.
+
+1. Download the installer artifact, check its SHA-256 against the job summary, and extract `StreamJamsSetup.exe`.
+2. Run it. Because it is unsigned, SmartScreen shows "Windows protected your PC" and the publisher is unknown: choose **More info**, then **Run anyway** only for a build you downloaded from this repository's CI.
+3. The setup wizard asks who to install for. **Only for me** is preselected and needs no administrator rights; **Anyone who uses this computer** asks for administrator approval and installs under Program Files.
+4. Choose the folder, or keep the default `%LocalAppData%\Programs\Stream Jams` for a per-user install. Setup adds Desktop and Start menu shortcuts and a Settings → Apps entry. Its finish page can start Stream Jams with your existing profile.
+5. To install a newer build, quit Stream Jams from the tray and run the newer Setup; it replaces the installed files in place. There is no automatic update yet.
+6. To uninstall, quit Stream Jams from the tray first, then remove it from **Settings → Apps**. Uninstalling stops a running copy without the normal quit flow and removes the installation folder. The `.stream-jams` profile, Electron settings and keyring credentials are kept; delete them yourself only if you want a clean reset.
+
+If you installed the earlier one-click build, which used `%LocalAppData%\StreamJams`, uninstall it from **Settings → Apps** before running the new Setup.
+
+Run `corepack pnpm test:desktop` with `STREAM_JAMS_INSTALLER_TEST=1` only on a Windows account where installing and uninstalling Stream Jams is acceptable. The installer test installs silently into a temporary folder for the current user and refuses to run while Stream Jams is already listed in Settings → Apps.
+
 The desktop main process owns one utility-process service, a sandboxed management window, and a tray icon. The service still owns Fastify, SQLite, provider connections, and configuration. The default loopback address, `.stream-jams` data profile, `STREAM_JAMS_CONFIG_PATH` override, and OS keyring adapter are unchanged. Quit any existing CLI service before using desktop with the same profile. An occupied port produces an actionable failure; desktop never kills that listener or chooses another port automatically.
 
 - By default, the window's X hides management to the tray. The service, overlays, and unsaved editor draft stay alive.
 - Tray **Open** restores management. **Mute/Unmute** uses the same persisted playback safety state as the Operator Console.
 - Tray **Quit** stops the owned service. Unsaved management changes require Save and leave, Discard, or Cancel first.
 - In Settings, disable **Close window to tray** and save to make X perform a full Quit. This preference also participates in backup restore and rollback.
+- GPU acceleration is on by default. If Stream Jams keeps running after Quit (seen on Windows 25H2 when the GPU process does not exit), clear **Use GPU acceleration** in Settings and save. The desktop app reads this choice before it starts, so it takes effect at the next launch. It is saved with the other settings and mirrored to `gpu-preference.json` in the Electron profile; a missing or damaged file means on.
 - If management crashes, native Quit warns that unsaved edits cannot be recovered. Startup has a 20-second deadline; graceful shutdown has 10 seconds before terminating only the owned worker.
 - A second launch with the same Electron profile focuses the existing instance. `STREAM_JAMS_DESKTOP_USER_DATA_PATH` accepts an absolute path for isolated testing; it does not change the application data directory or make concurrent use of one data profile safe.
 
@@ -44,7 +60,7 @@ Run `corepack pnpm test:desktop` on Windows after packaging. Tests copy the fold
 
 Run the audible hardware suite only after receiving explicit approval for the two physical outputs. Set `STREAM_JAMS_AUDIO_TEST=1`, set `STREAM_JAMS_AUDIO_TEST_OUTPUTS` to two exact device labels separated by `|`, then run `corepack pnpm test:desktop:hardware`. The hardware suite plays brief tones independently, together, and again after restarting the packaged application. See [desktop verification](verification/windows-desktop-tray-runtime.md) for actual results and remaining interactive checks.
 
-Installers, signing, durable release publication, updates, startup-at-login, a Windows service, non-Windows desktop delivery, and a `safeStorage` migration remain deferred under BL-030. The dependent alert-audio-routing change adds the controls below; the tray host alone does not add routing.
+Signing, durable release publication, updates, startup-at-login, a Windows service, non-Windows desktop delivery, and a `safeStorage` migration remain deferred under BL-030. The dependent alert-audio-routing change adds the controls below; the tray host alone does not add routing.
 
 ## Alert audio outputs
 
@@ -61,7 +77,7 @@ Alert duration defaults to **Match longest media** for newly created content. It
 | Browser Source and named outputs | Both paths receive explicit audio |
 | No outputs | Explicit audio is intentionally silent |
 
-TTS is independent: browser speech and Speaker.bot retain their existing routing and safety rules. Disabling Browser Source **explicit audio** does not guarantee a silent browser source when TTS is configured. Every visual video element remains internally muted. Select a video layer to control **Play embedded audio** and its independent volume; when enabled, the same local WebM or MP4 asset is played as a separate routed soundtrack. Legacy videos default off and remain silent until explicitly enabled and saved; newly added videos default on. A separate audio layer can play at the same time and does not change this toggle. Trackless videos remain silent, and the app does not extract or transcode media. The separate video-shoutout module is unchanged.
+TTS is independent: browser speech and Speaker.bot retain their existing routing and safety rules. Disabling Browser Source **explicit audio** does not guarantee a silent browser source when TTS is configured. Every visual video element remains internally muted. Select a video layer to control **Play embedded audio** and its independent volume; when enabled, the same local WebM or MP4 asset is played as a separate routed soundtrack. Legacy videos default off and remain silent until explicitly enabled and saved; newly added videos default on. A separate audio layer can play at the same time and does not change this toggle. Trackless videos remain silent, and the app does not extract or transcode media. The separate [Videos](videos.md) module is unaffected.
 
 **Preview** stays local to management and only plays local audio/TTS when explicitly selected. It never invokes the configured device routes. **Send test** uses the selected draft and sample; the inventory Test action uses the saved document and its first built-in sample. One enabled and reviewed saved profile sends immediately from inventory; multiple eligible saved profiles require a choice. Browser and desktop availability are evaluated during delivery rather than while building that choice. Device-only audio does not require an enabled, reviewed or connected visual profile. The Event inspector also offers an explicit no-browser test option and separate Send audio/Send TTS toggles. Unavailable visual destinations are never enabled or rendered to make a test succeed. Results identify available and skipped destinations plus a Diagnostics reference.
 
@@ -95,7 +111,7 @@ For a Stream Deck or another local HTTP client, create a one-time-visible Timer 
 
 Open **Modules → Screen Effects**, expand a set, and choose **New effect** to create a definition. Exactly one set is live: only its enabled effects respond to automatic triggers. Existing effects migrate into the active **Default** set. Create or duplicate sets to prepare inactive alternatives, then explicitly **Activate set** to switch; already queued effects retain their saved playback. The active set cannot be deleted. Expand an effect to see its variants, then select a variant to open it in the editor. A new effect starts disabled and selecting media never plays it. Choose one local image, GIF or video and/or one local sound, then select visual and audio destinations explicitly. New variants default to **Match longest media**: the longest local video or separate sound sets the duration, with a 10-second fallback and a 2-minute cap. Choose **Custom** for a fixed duration. Existing variants remain Custom until changed. Video soundtrack and separate sound can both be enabled with independent volumes and independent fade-in/fade-out controls; they share the variant's Browser Source and named-device selections. An audio-only effect is valid when at least one explicit audio destination is usable.
 
-Add one or more trusted triggers. Twitch channel-point bindings use stable broadcaster and reward IDs. Streamer.bot bindings use an exact source/type already selected under **Event sources**; saving an effect does not change subscriptions or switch the active provider. Save the definition, return to the inventory and explicitly enable it. **Preview** plays the selected draft variant locally with its layout, duration and sound. Use **Play preview**, **Stop preview**, and **Mute preview**; preview never sends to live output routes. **Test saved…** requires a saved, enabled, unchanged definition, lists the destinations it will affect, and sends the exact selected variant only after confirmation. Screen Effects has no animation controls; Alert-layer animation remains separate.
+Add one or more trusted triggers. A stream event trigger plays the effect for an event type such as raid or cheer from any active event source, optionally limited to Twitch or Streamer.bot and to typed conditions such as raid viewers at least 10; it uses the same conditions as alert rules. Twitch channel-point bindings use stable broadcaster and reward IDs. Streamer.bot bindings use an exact source/type already selected under **Event sources**; saving an effect does not change subscriptions or switch the active provider. Save the definition, return to the inventory and explicitly enable it. **Preview** plays the selected draft variant locally with its layout, duration and sound. Use **Play preview**, **Stop preview**, and **Mute preview**; preview never sends to live output routes. **Test saved…** requires a saved, enabled, unchanged definition, lists the destinations it will affect, and sends the exact selected variant only after confirmation. Screen Effects has no animation controls; Alert-layer animation remains separate.
 
 Every enabled variant participates in one weighted pool. Use **New variant** for a blank disabled variant or **Copy variant** to clone the selection. **Remove variant** changes only the draft after confirmation and supports Undo; the last variant and the only enabled variant cannot be removed. Save persists removal. Queue priority orders waiting effects without interrupting the current effect. Per-effect cooldown is owned by the triggering event; the optional module cooldown remains available.
 
@@ -179,6 +195,21 @@ Credential store is unavailable. Configure Windows Credential Manager, macOS Key
 ```
 
 On Linux, install and unlock a Secret Service-compatible keyring such as GNOME Keyring or KWallet through the desktop session before connecting Twitch. There is no plaintext fallback for real runtime tokens; in-memory or fake secret stores are only for automated tests.
+
+## Using Twitch and Streamer.bot together
+
+`Event sources` can keep one source of each kind in use, so direct Twitch and Streamer.bot can run together. Activating a source of the same kind replaces the one in use; other kinds keep running. When both deliver the same Twitch event, Stream Jams merges the copies so the event plays once.
+
+Streamer.bot forwards Twitch events by default. To keep direct Twitch as the only Twitch path and use Streamer.bot only for its configured external events, open the Streamer.bot source, clear `Forward Twitch events from Streamer.bot`, and select `Save forwarding`.
+
+## Streamer.bot event alerts
+
+An alert can play for one exact Streamer.bot event that is not a canonical Twitch event. In the alert set, choose `Add alert`, pick `Streamer.bot event`, and enter the exact `Streamer.bot source` and `Streamer.bot event type` (matching is case-sensitive). Only events from that source and type play the alert.
+
+- Templates can use only `{summary}`, `{userName}`, and `{eventType}`. Other placeholders render empty; raw Streamer.bot payload fields never reach the overlay.
+- These alerts have no conditions. Rendered-text moderation still applies to the summary and user name.
+- Queueing, dedupe, cooldown, and playback outputs work as for other alerts.
+- Saving the alert does not change event subscriptions. When no in-use Streamer.bot source subscribes to the selected event, the alert row shows a warning with `Open Event sources`; subscribe the event there.
 
 ## Channel point reward alerts
 

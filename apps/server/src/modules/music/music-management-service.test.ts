@@ -7,7 +7,7 @@ describe("MusicManagementService", () => {
     const config = createDefaultMusicModuleConfig();
     const service = new MusicManagementService({
       providers: { findActive: vi.fn(async () => ({ provider: { id: "provider-1" } }) as never), findById: vi.fn(async () => null) },
-      runtime: { getStatus: () => ({ state: "auth-required", stale: false, diagnosticReference: "ref_123" }), reconcile: vi.fn(async () => undefined) },
+      runtime: { getStatus: () => ({ state: "auth-required", stale: false, diagnosticReference: "ref_123" }), getLiveSnapshot: () => null, reconcile: vi.fn(async () => undefined) },
       getConfig: async () => ({ enabled: false, config }),
       assets: { resolveMusicAssets: vi.fn(async (_config, profile) => ({ assets: [], missingAssetIds: profile === "landscape" ? ["brand-missing"] : ["font-missing"] })) }
     });
@@ -22,7 +22,7 @@ describe("MusicManagementService", () => {
     const reconcile = vi.fn(async () => undefined);
     const service = new MusicManagementService({
       providers: { findActive: vi.fn(async () => null), findById: vi.fn(async id => id === "selected" ? { provider: { capability: "music-source", active: true } } as never : id === "inactive" ? { provider: { capability: "music-source", active: false } } as never : null) },
-      runtime: { getStatus: () => ({ state: "disconnected", stale: false, diagnosticReference: null }), reconcile },
+      runtime: { getStatus: () => ({ state: "disconnected", stale: false, diagnosticReference: null }), getLiveSnapshot: () => null, reconcile },
       getConfig: async () => ({ enabled: true, config: createDefaultMusicModuleConfig() }),
       assets: { resolveMusicAssets: vi.fn(async () => ({ assets: [], missingAssetIds: [] })) }
     });

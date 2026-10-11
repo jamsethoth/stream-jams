@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { createWriteStream, type WriteStream } from "node:fs";
+import { closeSync, openSync, writeSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { performance } from "node:perf_hooks";
 import { serializeException } from "@stream-jams/core";
@@ -13,9 +13,14 @@ const phases = new Set([
   "query-session-end", "session-end"
 ]);
 
-/** Opt-in, best-effort evidence. A quit event is never proof of native exit. */
+/**
+ * Opt-in, best-effort evidence. A quit event is never proof of native exit.
+ * Each record is one small synchronous append so the final phases reach the file before the
+ * process exits; queued stream writes were lost when Electron exited right after `quit`.
+ * Nothing is flushed to stable storage, and writes stop at the record and byte bounds.
+ */
 export class ShutdownLog {
-  #stream: WriteStream | undefined;
+  #fd: number | undefined;
   #closed = false;
   #bytes = 0;
   #sequence = 0;
@@ -25,10 +30,7 @@ export class ShutdownLog {
 
   constructor(path?: string) {
     if (path === undefined || !isAbsolute(path)) return;
-    try {
-      this.#stream = createWriteStream(path, { flags: "wx", mode: 0o600 });
-      this.#stream.on("error", () => { this.#closed = true; this.#stream = undefined; });
-    }
+    try { this.#fd = openSync(path, "wx", 0o600); }
     // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
     catch { this.#closed = true; }
   }
@@ -42,7 +44,7 @@ export class ShutdownLog {
   }
 
   #write(phase: unknown, failure?: { readonly referenceId: string; readonly exception: ReturnType<typeof serializeException> }): void {
-    if (this.#stream === undefined || this.#closed || typeof phase !== "string" || !phases.has(phase)) return;
+    if (this.#fd === undefined || this.#closed || typeof phase !== "string" || !phases.has(phase)) return;
     if (phase === "quit-requested") this.#attempt++;
     const line = JSON.stringify({
       version: 1, launchId: this.#launchId, pid: process.pid, attempt: this.#attempt,
@@ -52,17 +54,22 @@ export class ShutdownLog {
     }) + "\n";
     const bytes = Buffer.byteLength(line);
     if (this.#sequence >= 256 || this.#bytes + bytes > 64 * 1024) { this.close(); return; }
-    this.#bytes += bytes; // Includes queued writes, not just bytes already on disk.
+    this.#bytes += bytes;
     this.#sequence++;
-    try { this.#stream.write(line); }
+    try { writeSync(this.#fd, line); }
     // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
-    catch { this.#stream.destroy(); this.#closed = true; }
+    catch { this.close(); return; }
     if (this.#sequence === 256) this.close();
   }
 
   close(): void {
     if (this.#closed) return;
     this.#closed = true;
-    this.#stream?.end(); // Never await disk completion on the native teardown path.
+    const fd = this.#fd;
+    this.#fd = undefined;
+    if (fd === undefined) return;
+    try { closeSync(fd); }
+    // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+    catch { /* The evidence file is best effort. */ }
   }
 }

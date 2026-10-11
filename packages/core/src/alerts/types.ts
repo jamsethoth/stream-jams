@@ -1,4 +1,4 @@
-import type { StreamEventType } from "../events/types.js";
+import type { AlertEventType, ExternalAlertIdentity } from "../events/types.js";
 import type { OverlayElementLayout } from "../overlays/types.js";
 
 export interface AlertCollection {
@@ -47,7 +47,9 @@ export interface AlertVariant {
 export interface AlertRule {
   readonly id: string;
   readonly name: string;
-  readonly eventType: StreamEventType;
+  readonly eventType: AlertEventType;
+  /** Present exactly when `eventType` is `external_event`. */
+  readonly externalIdentity?: ExternalAlertIdentity | undefined;
   readonly enabled: boolean;
   readonly collectionIds: readonly string[];
   readonly conditions: readonly AlertCondition[];

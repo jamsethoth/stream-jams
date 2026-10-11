@@ -7,6 +7,11 @@ import { OverlayWindow } from "./overlay-window.js";
 import { OVERLAY_PLAYER_SCHEME, OVERLAY_PLAYER_URL } from "./overlay-player-policy.js";
 import { OVERLAY_COMMAND_CHANNEL, OVERLAY_REPLY_CHANNEL, overlayRendererReplySchema, overlayRendererRequestSchema, type OverlayRendererRequest } from "./overlay-ipc.js";
 import type { OverlayRendererCallbacks, OverlayRendererPort } from "./overlay-host.js";
+import { OVERLAY_VIDEO_SIGNAL_CHANNEL } from "../videos/video-ipc.js";
+import type { VideoMirrorPublisherSignal } from "@stream-jams/core/videos";
+
+/** Joins the desktop overlay to the live Videos mirror; returns the receiver's relay. */
+export type DesktopOverlayVideoMirror = (deliver: (signal: VideoMirrorPublisherSignal) => void) => { send(candidate: unknown): void; detach(): void };
 
 const contentSecurityPolicy = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; media-src 'self'; font-src 'self'; connect-src stream-jams-overlay://surface/media/; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
 type MediaOptions = Omit<PrivateMediaProtocolOptions, "scheme" | "host" | "recipientId">;
@@ -18,18 +23,20 @@ export class PrivateOverlayWindow implements OverlayRendererPort {
   readonly #reply: (event: IpcMainEvent, candidate: unknown) => void;
   readonly #download = (event: Electron.Event): void => event.preventDefault();
   #media: PrivateMediaProtocol | undefined;
+  #videoSignal: ((event: IpcMainEvent, candidate: unknown) => void) | undefined;
+  #videoReceiver: ReturnType<DesktopOverlayVideoMirror> | undefined;
 
   static create(config: Extract<SurfaceConfiguration, { kind: "desktop" }>, callbacks: OverlayRendererCallbacks,
-    mediaOptions?: MediaOptions | (() => MediaOptions)): PrivateOverlayWindow | null {
+    mediaOptions?: MediaOptions | (() => MediaOptions), videoMirror?: DesktopOverlayVideoMirror): PrivateOverlayWindow | null {
     const native = OverlayWindow.create({ enabled: config.enabled, selectedId: config.displayId,
       preloadPath: resolve(import.meta.dirname, "overlay-preload.cjs"), onUnavailable: callbacks.onUnavailable });
     if (native === null) return null;
-    try { return new PrivateOverlayWindow(native, config, callbacks, mediaOptions); }
+    try { return new PrivateOverlayWindow(native, config, callbacks, mediaOptions, videoMirror); }
     catch (error) { native.destroy(); throw error; }
   }
 
   private constructor(private readonly native: OverlayWindow, private readonly config: Extract<SurfaceConfiguration, { kind: "desktop" }>, callbacks: OverlayRendererCallbacks,
-    private readonly mediaOptions?: MediaOptions | (() => MediaOptions)) {
+    private readonly mediaOptions?: MediaOptions | (() => MediaOptions), videoMirror?: DesktopOverlayVideoMirror) {
     this.#media = mediaOptions === undefined || typeof mediaOptions === "function" ? undefined : new PrivateMediaProtocol({ ...mediaOptions,
       scheme: OVERLAY_PLAYER_SCHEME, host: "surface", recipientId: config.id });
     this.#reply = (event, candidate) => {
@@ -63,6 +70,18 @@ export class PrivateOverlayWindow implements OverlayRendererPort {
     this.#session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     this.#session.on("will-download", this.#download);
     ipcMain.on(OVERLAY_REPLY_CHANNEL, this.#reply);
+    if (videoMirror !== undefined) {
+      const receiver = videoMirror(signal => {
+        if (!this.#destroying && !native.window.isDestroyed()) native.window.webContents.send(OVERLAY_VIDEO_SIGNAL_CHANNEL, signal);
+      });
+      this.#videoReceiver = receiver;
+      this.#videoSignal = (event, candidate) => {
+        if (this.#destroying || native.window.isDestroyed() || event.sender !== native.window.webContents ||
+          event.senderFrame !== native.window.webContents.mainFrame || event.senderFrame.url !== OVERLAY_PLAYER_URL) return;
+        receiver.send(candidate);
+      };
+      ipcMain.on(OVERLAY_VIDEO_SIGNAL_CHANNEL, this.#videoSignal);
+    }
     native.window.on("closed", () => {
       if (this.#destroying) return;
       this.destroy();
@@ -111,6 +130,8 @@ export class PrivateOverlayWindow implements OverlayRendererPort {
     this.#destroying = true;
     this.#media?.destroy();
     ipcMain.removeListener(OVERLAY_REPLY_CHANNEL, this.#reply);
+    if (this.#videoSignal !== undefined) ipcMain.removeListener(OVERLAY_VIDEO_SIGNAL_CHANNEL, this.#videoSignal);
+    this.#videoReceiver?.detach();
     this.#session.removeListener("will-download", this.#download);
     this.#session.setPermissionCheckHandler(null);
     this.#session.setPermissionRequestHandler(null);

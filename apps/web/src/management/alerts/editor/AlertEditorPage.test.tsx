@@ -3386,6 +3386,31 @@ describe("AlertEditorPage", () => {
     expect(document.samplePayloads).toEqual(originalSamples);
   });
 
+  it("shows a Streamer.bot event alert's fixed identity instead of condition controls", async () => {
+    const user = userEvent.setup();
+    const identity = { providerKind: "streamerbot" as const, sourceKey: "General", eventType: "Custom" };
+    renderChannelPointEditor(channelPointDocument({
+      id: "alert-external",
+      providerKind: "streamerbot",
+      eventType: "external_event",
+      externalIdentity: identity,
+      name: "Custom event",
+      conditions: [],
+      templateVariables: [
+        { key: "summary", label: "Summary", description: "Sanitized event summary, at most 256 characters." },
+        { key: "userName", label: "User name", description: "Sanitized user name from the event, empty when absent." },
+        { key: "eventType", label: "Event type", description: "The Streamer.bot event type." }
+      ],
+      samplePayloads: [{ id: "normal", label: "Normal Example", kind: "built-in", payload: { summary: "Hello", userName: "Viewer", eventType: "Custom" } }]
+    }));
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    expect(await screen.findByText("Streamer.bot General · Custom")).toBeVisible();
+    expect(screen.queryByRole("group", { name: "Rule conditions" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add condition" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Sample selection explanation" })).toHaveTextContent("Default plays");
+  });
+
   it("explains inside and outside reward samples without disabling preview or send test", async () => {
     const user = userEvent.setup();
     const document = channelPointDocument({

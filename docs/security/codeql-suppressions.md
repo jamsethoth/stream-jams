@@ -2,6 +2,8 @@
 
 This file records intentional in-source CodeQL suppressions that rely on repository-specific controls.
 
+The CodeQL CLI does not turn in-source `codeql[rule-id]` comments into suppressions, so CI enforces each one through a rule-and-file entry in `.github/codeql-exceptions.json`. Pull-request analysis is diff-informed and reports only results near changed lines, so an exception is checked for staleness only on full `main` push scans.
+
 ## `js/missing-rate-limiting` on `GET /config/server`
 
 - Location: `apps/server/src/http/routes/config.ts`

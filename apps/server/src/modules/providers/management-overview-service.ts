@@ -60,7 +60,9 @@ export class ManagementOverviewService {
       this.#options.hasBrowserOutput()
     ]);
     const activeAlertSet = alertSets.find((set) => set.active) ?? null;
-    const activeEventSource = eventSources.find((provider) => provider.active) ?? null;
+    // Several event sources can be in use; readiness reports the first one needing attention, else the first healthy one.
+    const activeEventSources = eventSources.filter((provider) => provider.active);
+    const activeEventSource = activeEventSources.find((provider) => provider.liveStatus !== "healthy") ?? activeEventSources[0] ?? null;
     const activeTtsProvider = ttsProviders.find((provider) => provider.active) ?? null;
 
     return homeSetupSummarySchema.parse({

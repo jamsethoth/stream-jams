@@ -4,11 +4,13 @@ import {
   DefaultPlaybackDedupeService,
   createScreenEffectDocument,
   screenEffectDocumentSchema,
+  type BusEvent,
   type EffectContentSnapshot,
   type EffectTrigger,
   type ScreenEffectDocument
 } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
+import { canonicalBusEvent } from "../../test-support/bus-event-fixtures.js";
 import { EffectAdmissionService } from "./effect-admission-service.js";
 
 function trigger(eventId: string): EffectTrigger {
@@ -22,11 +24,30 @@ function trigger(eventId: string): EffectTrigger {
   };
 }
 
+function rewardEvent(eventId: string): BusEvent {
+  return canonicalBusEvent({
+    id: eventId,
+    providerId: "twitch",
+    sourcePlatform: "twitch",
+    ingestProvider: "twitch",
+    occurredAt: "2026-09-13T12:00:00.000Z",
+    actor: { id: "viewer", displayName: "Viewer" },
+    message: null,
+    metadata: {},
+    type: "channel_point_redemption",
+    amount: null,
+    rewardId: "reward-1",
+    rewardTitle: "Neutral reward",
+    userInput: null
+  }, [trigger(eventId)]);
+}
+
 function effect(
   id: string,
   options: {
     readonly priority?: number;
     readonly hasOutput?: boolean;
+    readonly selector?: ScreenEffectDocument["bindings"][number]["selector"];
   } = {}
 ): ScreenEffectDocument {
   const draft = createScreenEffectDocument({ id, name: `Effect ${id}`, defaultVariantId: `variant-${id}` });
@@ -36,9 +57,7 @@ function effect(
     priority: options.priority ?? 0,
     bindings: [{
       id: `binding-${id}`,
-      kind: "twitch-reward",
-      broadcasterId: "broadcaster-1",
-      rewardId: "reward-1"
+      selector: options.selector ?? { match: { kind: "twitch-reward", broadcasterId: "broadcaster-1", rewardId: "reward-1" }, sources: "any", conditions: [] }
     }],
     variants: [{
       ...draft.variants[0]!,
@@ -94,9 +113,9 @@ describe("EffectAdmissionService", () => {
       isEffectLive: (id) => id === active,
       validateReferences: async () => { active = "two"; return true; }
     });
-    await admission.handleTriggers([trigger("before-switch")]);
+    await admission.handleEvent(rewardEvent("before-switch"));
     expect(queue.snapshot().queued).toHaveLength(0);
-    await admission.handleTriggers([trigger("after-switch")]);
+    await admission.handleEvent(rewardEvent("after-switch"));
     expect(queue.snapshot().queued.map((item) => item.content.effectId)).toEqual(["two"]);
     active = "one";
     expect(queue.snapshot().queued[0]!.content.effectId).toBe("two");
@@ -107,8 +126,8 @@ describe("EffectAdmissionService", () => {
     const admission = service({ documents: () => [effect("one")], queue });
 
     const results = await Promise.all([
-      admission.handleTriggers([trigger("event-1")]),
-      admission.handleTriggers([trigger("event-1")])
+      admission.handleEvent(rewardEvent("event-1")),
+      admission.handleEvent(rewardEvent("event-1"))
     ]);
 
     expect(results.map((result) => result.status).sort()).toEqual(["duplicate", "processed"]);
@@ -122,7 +141,7 @@ describe("EffectAdmissionService", () => {
       queue
     });
 
-    const result = await admission.handleTriggers([trigger("event-order"), trigger("event-order")]);
+    const result = await admission.handleEvent(rewardEvent("event-order"));
 
     expect(result).toMatchObject({
       status: "processed",
@@ -139,7 +158,7 @@ describe("EffectAdmissionService", () => {
     const queue = new DefaultEffectQueue();
     const fillAdmission = service({ documents: () => [effect("fill")], queue });
     for (let index = 0; index < 100; index += 1) {
-      await fillAdmission.handleTriggers([trigger(`fill-${index}`)]);
+      await fillAdmission.handleEvent(rewardEvent(`fill-${index}`));
     }
     expect(queue.snapshot().queued).toHaveLength(100);
 
@@ -147,14 +166,14 @@ describe("EffectAdmissionService", () => {
       documents: () => [effect("blocked")],
       queue
     });
-    await expect(blockedAdmission.handleTriggers([trigger("overflow")])).resolves.toMatchObject({
+    await expect(blockedAdmission.handleEvent(rewardEvent("overflow"))).resolves.toMatchObject({
       outcomes: [{ effectId: "blocked", status: "full" }]
     });
     expect(queue.snapshot().queued).toHaveLength(100);
     expect(queue.snapshot().queued.some((item) => item.content.effectId === "blocked")).toBe(false);
 
     queue.clearPending();
-    await expect(blockedAdmission.handleTriggers([trigger("after-overflow")])).resolves.toMatchObject({
+    await expect(blockedAdmission.handleEvent(rewardEvent("after-overflow"))).resolves.toMatchObject({
       outcomes: [{ effectId: "blocked", status: "queued" }]
     });
   });
@@ -163,8 +182,8 @@ describe("EffectAdmissionService", () => {
     const queue = new DefaultEffectQueue();
     const admission = service({ documents: () => [effect("repeated")], queue });
 
-    await admission.handleTriggers([trigger("event-first")]);
-    await admission.handleTriggers([trigger("event-second")]);
+    await admission.handleEvent(rewardEvent("event-first"));
+    await admission.handleEvent(rewardEvent("event-second"));
 
     expect(queue.snapshot().queued.map((item) => item.content.effectId)).toEqual(["repeated", "repeated"]);
   });
@@ -175,13 +194,13 @@ describe("EffectAdmissionService", () => {
       moduleCooldownSeconds: () => 60
     });
 
-    await expect(admission.handleTriggers([trigger("first-event")])).resolves.toMatchObject({
+    await expect(admission.handleEvent(rewardEvent("first-event"))).resolves.toMatchObject({
       outcomes: [
         { effectId: "first", status: "queued" },
         { effectId: "second", status: "queued" }
       ]
     });
-    await expect(admission.handleTriggers([trigger("second-event")])).resolves.toMatchObject({
+    await expect(admission.handleEvent(rewardEvent("second-event"))).resolves.toMatchObject({
       outcomes: [
         { effectId: "first", status: "cooldown" },
         { effectId: "second", status: "cooldown" }
@@ -193,11 +212,11 @@ describe("EffectAdmissionService", () => {
     let document = effect("output", { hasOutput: false });
     const admission = service({ documents: () => [document] });
 
-    await expect(admission.handleTriggers([trigger("no-output")])).resolves.toMatchObject({
+    await expect(admission.handleEvent(rewardEvent("no-output"))).resolves.toMatchObject({
       outcomes: [{ effectId: "output", status: "no-output" }]
     });
     document = effect("output");
-    await expect(admission.handleTriggers([trigger("with-output")])).resolves.toMatchObject({
+    await expect(admission.handleEvent(rewardEvent("with-output"))).resolves.toMatchObject({
       outcomes: [{ effectId: "output", status: "queued" }]
     });
   });
@@ -211,7 +230,7 @@ describe("EffectAdmissionService", () => {
       isModuleEnabled: async () => enabled
     });
 
-    await expect(admission.handleTriggers([trigger("gated-event")])).resolves.toEqual({
+    await expect(admission.handleEvent(rewardEvent("gated-event"))).resolves.toEqual({
       status: "module-disabled",
       eventId: "gated-event",
       outcomes: []
@@ -221,7 +240,7 @@ describe("EffectAdmissionService", () => {
       status: "module-disabled"
     });
     enabled = true;
-    await expect(admission.handleTriggers([trigger("gated-event")])).resolves.toMatchObject({
+    await expect(admission.handleEvent(rewardEvent("gated-event"))).resolves.toMatchObject({
       status: "processed",
       outcomes: [{ effectId: "gated", status: "queued" }]
     });
@@ -233,7 +252,7 @@ describe("EffectAdmissionService", () => {
       documents: () => [effect("missing")],
       validateReferences: async () => false
     });
-    await expect(missing.handleTriggers([trigger("missing-event")])).resolves.toMatchObject({
+    await expect(missing.handleEvent(rewardEvent("missing-event"))).resolves.toMatchObject({
       outcomes: [{ effectId: "missing", status: "missing-reference" }]
     });
 
@@ -247,12 +266,20 @@ describe("EffectAdmissionService", () => {
     });
   });
 
-  it("rejects a trigger batch that mixes upstream event IDs", async () => {
-    const admission = service({ documents: () => [effect("one")] });
+  it("admits canonical selectors with conditions and records a canonical trigger", async () => {
+    const queue = new DefaultEffectQueue();
+    const raidSelector = { match: { kind: "canonical" as const, type: "raid" as const }, sources: "any" as const, conditions: [{ field: "raidViewers", operator: "min" as const, value: 10 }] };
+    const admission = service({ documents: () => [effect("raid", { selector: raidSelector })], queue });
+    const raid = (id: string, amount: number) => canonicalBusEvent({
+      id, providerId: "twitch", sourcePlatform: "twitch", ingestProvider: "streamerbot", occurredAt: "2026-09-13T12:00:00.000Z",
+      actor: { id: "raider", displayName: "Raider" }, message: null, metadata: {}, type: "raid", amount
+    });
 
-    await expect(admission.handleTriggers([trigger("event-1"), trigger("event-2")])).rejects.toThrow(
-      "one upstream event"
-    );
+    await expect(admission.handleEvent(raid("small-raid", 3))).resolves.toMatchObject({ status: "no-matches" });
+    await expect(admission.handleEvent(raid("big-raid", 25))).resolves.toMatchObject({ status: "processed", outcomes: [{ effectId: "raid", status: "queued" }] });
+    expect(queue.snapshot().queued[0]!.trigger).toEqual({
+      kind: "canonical-event", eventId: "big-raid", occurredAt: "2026-09-13T12:00:00.000Z", eventType: "raid", summary: "Raid from Raider"
+    });
   });
 
   it("snapshots selected content so later definition edits cannot retarget queued work", async () => {
@@ -260,7 +287,7 @@ describe("EffectAdmissionService", () => {
     let document = effect("snapshot");
     const admission = service({ documents: () => [document], queue });
 
-    await admission.handleTriggers([trigger("snapshot-event")]);
+    await admission.handleEvent(rewardEvent("snapshot-event"));
     document = screenEffectDocumentSchema.parse({
       ...document,
       name: "Edited later",
@@ -291,7 +318,7 @@ describe("EffectAdmissionService", () => {
         return 0;
       }
     });
-    const admitted = await admission.handleTriggers([trigger("replay-event")]);
+    const admitted = await admission.handleEvent(rewardEvent("replay-event"));
     const originalId = admitted.outcomes[0]!.occurrenceId!;
     queue.advance({ paused: false, muted: false, doNotDisturb: false });
     queue.complete(originalId, "completed", 2_000);
@@ -318,7 +345,7 @@ describe("EffectAdmissionService", () => {
     });
 
     await expect(admission.replayRecent("expired")).rejects.toThrow("not retained");
-    const admitted = await admission.handleTriggers([trigger("replay-missing")]);
+    const admitted = await admission.handleEvent(rewardEvent("replay-missing"));
     const originalId = admitted.outcomes[0]!.occurrenceId!;
     queue.advance({ paused: false, muted: false, doNotDisturb: false });
     queue.complete(originalId, "completed", 2_000);

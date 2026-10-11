@@ -8,7 +8,8 @@ import {
   type AlertCollection,
   type AlertEditorDocument,
   type AlertRepository,
-  type AlertRule
+  type AlertRule,
+  type ExternalAlertIdentity
 } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -255,6 +256,59 @@ describe("AlertSetManagementService", () => {
         expect.objectContaining({ id: "vertical", reviewState: "needs-review", layerLayouts: [] })
       ]
     });
+  });
+
+  it("creates a Streamer.bot external alert and warns while no event source subscribes to its identity", async () => {
+    let subscribed = false;
+    const fixture = createFixture({ subscribed: () => subscribed });
+    const [starter] = await fixture.service.listSets();
+    const identity = { providerKind: "streamerbot" as const, sourceKey: "General", eventType: "Custom" };
+
+    const created = await fixture.service.createAlert(starter!.id, alertCreateInputSchema.parse({
+      eventType: "external_event",
+      name: "Custom event",
+      externalIdentity: identity
+    }));
+
+    expect(created).toMatchObject({
+      providerKind: "streamerbot",
+      eventType: "external_event",
+      conditions: [],
+      previewText: "{summary}",
+      externalIdentity: identity,
+      externalIdentitySubscribed: false
+    });
+    expect(await fixture.documents.find(created.id)).toMatchObject({
+      eventType: "external_event",
+      externalIdentity: identity,
+      templateVariables: [
+        expect.objectContaining({ key: "summary" }),
+        expect.objectContaining({ key: "userName" }),
+        expect.objectContaining({ key: "eventType" })
+      ]
+    });
+    await fixture.alertService.setRuleEnabled(created.id, true);
+    const warning = expect.objectContaining({
+      code: "EXTERNAL_EVENT_NOT_SUBSCRIBED",
+      severity: "warning",
+      providerKind: "streamerbot",
+      alertId: created.id
+    });
+    expect((await fixture.service.getSet(starter!.id)).overview.validationIssues).toContainEqual(warning);
+
+    subscribed = true;
+    const detail = await fixture.service.getSet(starter!.id);
+    expect(detail.overview.validationIssues).not.toContainEqual(warning);
+    expect(detail.inventory.find((row) => row.id === created.id)?.externalIdentitySubscribed).toBe(true);
+  });
+
+  it("rejects external alerts without an identity and canonical alerts with one", async () => {
+    const fixture = createFixture();
+    const [starter] = await fixture.service.listSets();
+    const identity = { providerKind: "streamerbot" as const, sourceKey: "General", eventType: "Custom" };
+
+    await expect(fixture.service.createAlert(starter!.id, { eventType: "external_event", name: "Missing" })).rejects.toThrow(/external identity/u);
+    await expect(fixture.service.createAlert(starter!.id, { eventType: "follow", name: "Follow", externalIdentity: identity })).rejects.toThrow(/external identity/u);
   });
 
   it("creates an empty document in the same aggregate as its rule and metadata", async () => {
@@ -729,7 +783,7 @@ describe("AlertSetManagementService", () => {
   });
 });
 
-function createFixture() {
+function createFixture(options: { readonly subscribed?: (identity: ExternalAlertIdentity) => boolean } = {}) {
   const alertRepository = new InMemoryAlertRepository();
   let nextId = 0;
   const generateId = (kind: "collection" | "rule" | "variant") => `${kind}-${(nextId += 1)}`;
@@ -766,6 +820,7 @@ function createFixture() {
     getEditorDocument: (editorId) => alertEditorService.getDocument(editorId),
     generateId,
     mutationStore,
+    ...(options.subscribed === undefined ? {} : { isExternalIdentitySubscribed: async (identity: ExternalAlertIdentity) => options.subscribed!(identity) }),
     listBrowserSources: async () => [
       {
         id: "module:alerts:landscape:live",

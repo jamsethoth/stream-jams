@@ -147,3 +147,25 @@ test("Music appearance remains usable at desktop and narrow widths", async ({ pa
     await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible();
   } finally { await fixture.close(); }
 });
+
+test("Music preview follows the track playing in the connected source and falls back to the sample", async ({ page }) => {
+  test.setTimeout(90_000);
+  const fixture = await startMusicTestRuntime();
+  try {
+    fixture.pear.setSong({ status: 200, body: { videoId: "preview-song", title: "Preview Live Track", artist: "Fixture Artist", songDuration: 180, elapsedSeconds: 12, isPaused: false } });
+    await fixture.register();
+    await page.goto(`${fixture.url}/manage/modules/music`);
+    const status = page.getByRole("status").filter({ hasText: "Showing" });
+    await expect(status).toHaveText("Showing a sample track. Enable the Music module and play music in the selected source to preview it here.");
+    const saved = await fixture.request<{ config: MusicModuleConfig }>("/overlay-modules/music/config");
+    await fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: saved.config });
+    await page.reload();
+    await expect(status).toHaveText("Showing the track playing in the selected Music source.");
+    await expect(page.getByLabel("Full preview metadata")).toContainText("Preview Live Track");
+    await expect(page.getByLabel("Full preview metadata")).toContainText("Fixture Artist");
+    fixture.pear.setSong({ status: 200, body: { videoId: "preview-song-2", title: "Next Live Track", artist: "Fixture Artist", songDuration: 200, elapsedSeconds: 1, isPaused: false } });
+    await expect(page.getByLabel("Full preview metadata")).toContainText("Next Live Track", { timeout: 15_000 });
+    fixture.pear.setSong({ status: 204 });
+    await expect(status).toHaveText(/Showing a sample track/u, { timeout: 15_000 });
+  } finally { await fixture.close(); }
+});

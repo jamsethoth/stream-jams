@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define implemented authoritative follower sources and optional goal permissions. Production follow-event hints, Creator Goal lists, event convergence and native goal bindings remain pending in `add-twitch-overlay-data` until the central event bus exists.
+Define implemented authoritative follower sources and optional goal permissions. The central event bus is available. Production follow-event hints, Creator Goal lists, event convergence and native goal bindings remain pending implementation in `add-twitch-overlay-data`.
 
 ## Requirements
 

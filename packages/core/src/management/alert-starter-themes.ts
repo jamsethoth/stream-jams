@@ -1,5 +1,5 @@
 import type { AlertTextBoxStyle, AlertTextStyle } from "../alerts/text-style.js";
-import { streamEventTypeSchema } from "../alerts/schemas.js";
+import { alertEventTypeSchema } from "../alerts/schemas.js";
 import {
   alertEditorDocumentSchema,
   alertLayerSchema,
@@ -375,7 +375,7 @@ function compareIds(left: string, right: string): number {
 }
 
 function starterTemplate(eventType: AlertEditorDocument["eventType"]) {
-  const parsedEventType = streamEventTypeSchema.parse(eventType);
+  const parsedEventType = alertEventTypeSchema.parse(eventType);
   const template = alertStarterTemplates.find((candidate) => candidate.eventType === parsedEventType);
   if (template === undefined) {
     throw new Error(`Missing alert starter metadata for canonical event: ${parsedEventType}`);

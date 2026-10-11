@@ -4,13 +4,20 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { InMemorySecretStore } from "@stream-jams/test-support";
 import { WebSocket } from "ws";
+import type { DesktopVideoTransport } from "@stream-jams/core/videos";
 import { createDefaultAppConfig } from "../config/default-config.js";
 import { FileConfigStore } from "../config/file-config-store.js";
 import { startLocalRuntime, type StartedLocalRuntime } from "../runtime/start-local-runtime.js";
 
 export function createProviderSocket(url: string) { return new WebSocket(url); }
 
-export async function createProviderSecurityRuntimeFixture() {
+/** Acceptance runs never reach YouTube or Twitch: video detail lookups fail fast unless a test answers them. */
+const offlineVideoMetadataFetch: typeof fetch = async () => { throw new TypeError("Video detail lookups are offline in this fixture"); };
+
+export async function createProviderSecurityRuntimeFixture(options: {
+  readonly desktopVideoTransport?: DesktopVideoTransport;
+  readonly videoMetadataFetch?: typeof fetch;
+} = {}) {
   const homeDirectory = await mkdtemp(join(tmpdir(), "stream-jams-provider-security-"));
   const reservation = createServer();
   await new Promise<void>(resolveListening => reservation.listen(0, "127.0.0.1", resolveListening));
@@ -26,7 +33,9 @@ export async function createProviderSecurityRuntimeFixture() {
   const start = async () => {
     // Portable restore includes source server preferences; keep this fixture's isolated listener.
     await configStore.updateConfig({ server: { host: "127.0.0.1", port: address.port } });
-    runtime = await startLocalRuntime({ homeDirectory, configStore, secretStore, environment: {}, webBuildDirectory: resolve("apps/web/dist"), scheduleRecurring: () => 1, cancelRecurring: () => {} });
+    runtime = await startLocalRuntime({ homeDirectory, configStore, secretStore, environment: {}, webBuildDirectory: resolve("apps/web/dist"), scheduleRecurring: () => 1, cancelRecurring: () => {},
+      videoMetadataFetch: options.videoMetadataFetch ?? offlineVideoMetadataFetch,
+      ...(options.desktopVideoTransport === undefined ? {} : { desktopVideoTransport: options.desktopVideoTransport }) });
     const sessionResponse = await fetch(`${runtime.url}/auth/management/sessions`, { method: "POST" });
     if (sessionResponse.status !== 201) throw new Error(`Session bootstrap failed: ${sessionResponse.status}`);
     const session = await sessionResponse.json() as { id: string; csrfToken: string };

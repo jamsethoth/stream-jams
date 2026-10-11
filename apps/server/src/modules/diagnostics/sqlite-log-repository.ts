@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import {
+  alertSourceEventSchema,
   normalizedStreamEventSchema,
   type AlertMatchLogRecord,
   type DiagnosticsLogListOptions,
@@ -7,7 +8,7 @@ import {
   type DiagnosticsPruneCounts,
   type EventLogRecord,
   type EventLogStatus,
-  type NormalizedStreamEvent,
+  type AlertSourceEvent,
   type PlaybackLogRecord,
   type PlaybackLogStatus
 } from "@stream-jams/core";
@@ -248,9 +249,9 @@ function mapPlaybackLogRow(row: PlaybackLogRow): PlaybackLogRecord {
   };
 }
 
-function parseEvent(value: unknown): NormalizedStreamEvent {
+function parseEvent(value: unknown): AlertSourceEvent {
   const parsedJson = JSON.parse(String(value)) as unknown;
-  const currentEvent = normalizedStreamEventSchema.safeParse(parsedJson);
+  const currentEvent = alertSourceEventSchema.safeParse(parsedJson);
   if (currentEvent.success) {
     return currentEvent.data;
   }

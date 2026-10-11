@@ -9,7 +9,7 @@ afterEach(cleanup);
 it("lets keyboard users opt out of closing to tray", async () => {
   function Harness() {
     const [closeToTray, setCloseToTray] = useState(true);
-    return <DesktopSettingsPanel closeToTray={closeToTray} disabled={false} onChange={setCloseToTray} />;
+    return <DesktopSettingsPanel closeToTray={closeToTray} gpuAcceleration disabled={false} onCloseToTrayChange={setCloseToTray} onGpuAccelerationChange={() => { throw new Error("GPU must not change"); }} />;
   }
   render(<Harness />);
   const checkbox = screen.getByRole("checkbox", { name: "Close window to tray" });
@@ -20,7 +20,26 @@ it("lets keyboard users opt out of closing to tray", async () => {
   expect(checkbox).not.toBeChecked();
 });
 
-it("disables the close policy while a save is pending", () => {
-  render(<DesktopSettingsPanel closeToTray disabled onChange={() => { throw new Error("Must not change while saving"); }} />);
+it("lets keyboard users turn GPU acceleration off independently", async () => {
+  function Harness() {
+    const [gpuAcceleration, setGpuAcceleration] = useState(true);
+    return <DesktopSettingsPanel closeToTray gpuAcceleration={gpuAcceleration} disabled={false} onCloseToTrayChange={() => { throw new Error("Close policy must not change"); }} onGpuAccelerationChange={setGpuAcceleration} />;
+  }
+  render(<Harness />);
+  const checkbox = screen.getByRole("checkbox", { name: "Use GPU acceleration" });
+  expect(checkbox).toBeChecked();
+  expect(checkbox).toHaveAccessibleDescription(/Takes effect the next time Stream Jams starts\./);
+  await userEvent.tab();
+  await userEvent.tab();
+  expect(checkbox).toHaveFocus();
+  await userEvent.keyboard(" ");
+  expect(checkbox).not.toBeChecked();
+  expect(screen.getByRole("checkbox", { name: "Close window to tray" })).toBeChecked();
+});
+
+it("disables both desktop settings while a save is pending", () => {
+  const fail = () => { throw new Error("Must not change while saving"); };
+  render(<DesktopSettingsPanel closeToTray gpuAcceleration disabled onCloseToTrayChange={fail} onGpuAccelerationChange={fail} />);
   expect(screen.getByRole("checkbox", { name: "Close window to tray" })).toBeDisabled();
+  expect(screen.getByRole("checkbox", { name: "Use GPU acceleration" })).toBeDisabled();
 });

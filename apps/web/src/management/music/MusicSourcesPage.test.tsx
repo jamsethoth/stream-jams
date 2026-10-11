@@ -57,6 +57,20 @@ describe("MusicSourcesPage", () => {
     expect(JSON.stringify(vi.mocked(api.registerProvider).mock.calls)).not.toMatch(/accessToken|secretRef/u);
   });
 
+  it("labels the re-pair save action so a tested authorization can be saved", async () => {
+    const user = userEvent.setup();
+    const api = createApi({ listRegisteredProviders: vi.fn(async () => [provider]) });
+    render(<MusicSourcesPage api={api} />);
+    await screen.findByRole("heading", { name: "Re-pair Pear Studio" });
+    expect(screen.getByRole("button", { name: "Save new authorization" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Pair Pear Desktop" }));
+    await user.click(await screen.findByRole("button", { name: "Test connection" }));
+    expect(await screen.findByText("Connection test passed. Save the new authorization to use it.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save new authorization" }));
+    await waitFor(() => expect(api.replaceMusicCredential).toHaveBeenCalledWith("provider-1", { pairingAttemptId: "pair_123", configuration: { baseUrl: "http://127.0.0.1:26538", transport: "auto" } }));
+    expect(await screen.findByText("Music source saved and validated.")).toBeInTheDocument();
+  });
+
   it("ignores a late pairing result after unmount and cancels the approved attempt", async () => {
     let resolvePair!: (value: MusicPairingAttemptView) => void;
     const pending = new Promise<MusicPairingAttemptView>(resolve => { resolvePair = resolve; });
@@ -207,7 +221,7 @@ describe("MusicSourcesPage", () => {
   it("shows auth-required state independently from available source registration", async () => {
     const api = createApi({ listRegisteredProviders: vi.fn(async () => [provider]), getMusicStatus: vi.fn(async () => ({ ...status, enabled: true, selectedProviderId: provider.id, status: { state: "auth-required" as const, stale: false, diagnosticReference: "ref_123" } })) });
     render(<MusicSourcesPage api={api} />);
-    expect(await screen.findByRole("alert", { name: "" })).toHaveTextContent("Pear authorization is required");
+    expect(await screen.findByRole("alert", { name: "" })).toHaveTextContent("Pear needs to be paired again");
     expect(screen.getByRole("button", { name: "Reconnect source" })).toBeInTheDocument();
     expect(screen.getByText("ref_123")).toBeInTheDocument();
   });

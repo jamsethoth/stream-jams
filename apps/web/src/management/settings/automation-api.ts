@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { createManagementHttpClient, type HttpManagementClientOptions } from "../management-http-client.js";
 
-export const automationScopeSchema = z.enum(["timers:read", "timers:control", "playback:read", "playback:pause:alerts", "playback:pause:screen-effects", "playback:skip:alerts", "playback:skip:screen-effects", "playback:clear:alerts", "playback:clear:screen-effects", "playback:mute:alerts", "playback:mute:screen-effects"]);
+export const automationScopeSchema = z.enum(["timers:read", "timers:control", "playback:read", "playback:pause:alerts", "playback:pause:screen-effects", "playback:skip:alerts", "playback:skip:screen-effects", "playback:clear:alerts", "playback:clear:screen-effects", "playback:mute:alerts", "playback:mute:screen-effects", "videos:read", "videos:submit", "videos:control"]);
 export type AutomationScope = z.infer<typeof automationScopeSchema>;
 const pairingSchema = z.object({ id: z.uuid(), clientName: z.string(), scopes: z.array(automationScopeSchema), comparisonCode: z.string(), expiresAt: z.string(), approvalUrl: z.string(), status: z.enum(["pending", "approved", "denied"]) });
 const grantSchema = z.object({ id: z.uuid(), clientName: z.string(), scopes: z.array(automationScopeSchema), createdAt: z.string(), revokedAt: z.string().nullable() });

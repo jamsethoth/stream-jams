@@ -91,7 +91,13 @@ test("packaged management and browser-source renderers preserve CSP-safe warped 
     expect(alertDocument.layers[0]).toMatchObject({ type: "text", textStyle: { fontAssetId: font.id } });
     await management.goto(`${base}/manage/modules/alerts/editor/${alert.id}?profile=landscape`);
     const preview = management.getByRole("region", { name: "Landscape alert canvas" }).getByRole("img", { name: "Packaged Font" });
-    await expect(preview).toBeVisible();
+    try { await expect(preview).toBeVisible(); } catch (error) {
+      // Evidence for the intermittent cold-start failure: a late preview means slow preparation, an alert means it failed.
+      const started = Date.now();
+      const late = await preview.waitFor({ state: "visible", timeout: 20_000 }).then(() => Date.now() - started, () => null);
+      console.log("Warped preview evidence:", { visibleAfterExtraMs: late, alerts: await management.getByRole("alert").allTextContents(), canvases: await management.locator("canvas[role=img]").evaluateAll(nodes => nodes.map(node => ({ label: node.getAttribute("aria-label"), visibility: getComputedStyle(node).visibility }))) });
+      throw error;
+    }
     await expect.poll(() => preview.evaluate((canvas: HTMLCanvasElement) => [...canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height).data].some((value, index) => index % 4 === 3 && value > 0))).toBe(true);
     const output = await api("/management/overlay-outputs/keys", "POST", { scope: "module", moduleId: "alerts", purpose: "live", targetProfileId: "landscape" }) as { keyId: string; url: string };
     overlayKeyId = output.keyId;

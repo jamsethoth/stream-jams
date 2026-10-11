@@ -1,0 +1,51 @@
+.event-condition-list__conditions {
+  border: 1px solid var(--color-border);
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 8px;
+}
+
+.event-condition-list__conditions legend {
+  font-size: var(--font-size-xs);
+  font-weight: 800;
+  padding: 0 4px;
+}
+
+.event-condition-list__conditions > p,
+.event-condition-list__condition p {
+  font-size: var(--font-size-xs);
+  margin: 0;
+}
+
+.event-condition-list__condition {
+  align-items: end;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.event-condition-list__condition-controls,
+.event-condition-list__range {
+  display: grid;
+  gap: 8px;
+}
+
+.event-condition-list__range {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.event-condition-list__condition p {
+  grid-column: 1 / -1;
+}
+
+.event-condition-list__unknown-condition {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.event-condition-list__field-error {
+  color: var(--color-negative) !important;
+  font-weight: 700;
+}

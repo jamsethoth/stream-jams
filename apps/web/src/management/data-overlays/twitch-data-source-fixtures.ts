@@ -1,7 +1,7 @@
 import type { TwitchDataSourceStatus } from "@stream-jams/core";
 import { dataPreviewFixture } from "./data-preview-fixtures.js";
 import type { TwitchDataSourcesApi } from "./twitch-data-sources-api.js";
-export function twitchDataStatus(follower: TwitchDataSourceStatus["follower"]["state"] = "unconfigured", goals: TwitchDataSourceStatus["goals"]["state"] = "blocked-event-bus"): TwitchDataSourceStatus {
+export function twitchDataStatus(follower: TwitchDataSourceStatus["follower"]["state"] = "unconfigured", goals: TwitchDataSourceStatus["goals"]["state"] = "integration-pending"): TwitchDataSourceStatus {
   return { follower: { state: follower, broadcasterId: follower === "disconnected" ? null : "123", valueIds: follower === "unconfigured" ? [] : ["followers"], updatedAt: follower === "current" || follower === "stale" ? "2026-10-08T12:00:00.000Z" : null }, goals: { state: goals, missingScopes: goals === "reauthorization-required" ? ["channel:read:goals"] : [] } };
 }
 export function createTwitchDataFixture(status = twitchDataStatus()): TwitchDataSourcesApi {

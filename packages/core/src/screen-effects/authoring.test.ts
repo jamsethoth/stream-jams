@@ -135,9 +135,7 @@ function effectDocument() {
     ...draft,
     bindings: [{
       id: "binding-original",
-      kind: "twitch-reward",
-      broadcasterId: "broadcaster-1",
-      rewardId: "reward-1"
+      selector: { match: { kind: "twitch-reward", broadcasterId: "broadcaster-1", rewardId: "reward-1" }, sources: "any", conditions: [] }
     }],
     variants: [{
       ...draft.variants[0]!,

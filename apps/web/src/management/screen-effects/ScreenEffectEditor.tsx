@@ -13,6 +13,8 @@ import {
   createScreenEffectAuthoringState,
   createScreenEffectDocument,
   createVideoAudioSettings,
+  eventTriggerSelectorIdentity,
+  formatAlertConditionSummary,
   isStreamerBotSubscriptionAvailable,
   isScreenEffectAuthoringDirty,
   reconcileScreenEffectSaved,
@@ -20,13 +22,16 @@ import {
   redoScreenEffectEdit,
   revertScreenEffectEdits,
   screenEffectDocumentSchema,
+  streamEventTypes,
   undoScreenEffectEdit,
+  validateAuthoredAlertConditions,
   type AssetLibraryItem,
   type EffectBinding,
   type EffectVariant,
   type ScreenEffectAuthoringState,
   type ScreenEffectDocument,
   type ScreenEffectSet,
+  type StreamEventType,
   type StreamerBotSubscriptionCatalog,
   type TwitchCustomReward
 } from "@stream-jams/core";
@@ -45,6 +50,7 @@ import { removeEffectVariant, updateEffectVariant } from "./effect-editor-state.
 import type { ScreenEffectsApi } from "./screen-effects-api.js";
 import "./screen-effects.css";
 import { ScreenEffectTree } from "./ScreenEffectTree.js";
+import { EventConditionList, type EditableEventCondition } from "../conditions/EventConditionList.js";
 
 export interface ScreenEffectEditorProps {
   readonly api: ScreenEffectsApi;
@@ -678,11 +684,15 @@ function TriggerPanel({ context, document, edit, generateId }: {
   readonly edit: (update: (document: ScreenEffectDocument) => ScreenEffectDocument) => void;
   readonly generateId: (prefix: string) => string;
 }) {
-  function add(binding: EffectBinding) {
+  /** Adds a binding unless the effect already has one with the same trigger; returns whether it was added. */
+  function add(binding: EffectBinding): boolean {
+    const identity = eventTriggerSelectorIdentity(binding.selector);
+    if (document.bindings.some((existing) => eventTriggerSelectorIdentity(existing.selector) === identity)) return false;
     edit((current) => ({ ...current, bindings: [...current.bindings, binding] }));
+    return true;
   }
   return <section aria-labelledby="effect-triggers-title" className="management-card screen-effect-triggers">
-    <header><h2 id="effect-triggers-title">Trusted triggers</h2><p>Only saved Twitch rewards and explicitly configured Streamer.bot subscriptions can trigger effects.</p></header>
+    <header><h2 id="effect-triggers-title">Trusted triggers</h2><p>Stream events from any active event source, saved Twitch rewards, and explicitly configured Streamer.bot subscriptions can trigger effects.</p></header>
     <ul>{document.bindings.map((binding) => <li key={binding.id}>
       <span>{bindingLabel(binding)}</span>
       <strong>{bindingAvailable(binding, context) ? "Configured" : "Unavailable — review event source setup"}</strong>
@@ -694,8 +704,51 @@ function TriggerPanel({ context, document, edit, generateId }: {
   </section>;
 }
 
+type EventTriggerSource = "any" | "twitch" | "streamerbot";
+
 function AddTriggerControls({ add, context, generateId }: {
-  readonly add: (binding: EffectBinding) => void;
+  readonly add: (binding: EffectBinding) => boolean;
+  readonly context: EditorContext;
+  readonly generateId: (prefix: string) => string;
+}) {
+  const [duplicate, setDuplicate] = useState(false);
+  function addUnique(binding: EffectBinding): boolean {
+    const added = add(binding);
+    setDuplicate(!added);
+    return added;
+  }
+  return <>
+    <EventTriggerAdder add={addUnique} generateId={generateId} />
+    <IntegrationTriggerAdders add={addUnique} context={context} generateId={generateId} />
+    {duplicate ? <p role="status">This effect already has that trigger.</p> : null}
+  </>;
+}
+
+function EventTriggerAdder({ add, generateId }: {
+  readonly add: (binding: EffectBinding) => boolean;
+  readonly generateId: (prefix: string) => string;
+}) {
+  const [eventType, setEventType] = useState<StreamEventType>("follow");
+  const [source, setSource] = useState<EventTriggerSource>("any");
+  const [conditions, setConditions] = useState<readonly EditableEventCondition[]>([]);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const invalid = draftError !== null || validateAuthoredAlertConditions(eventType, conditions).length > 0;
+  return <fieldset className="screen-effect-event-trigger">
+    <legend>Stream event</legend>
+    <div className="screen-effect-trigger-adders">
+      <NativeSelect label="Event type" onChange={(event) => { setEventType(event.currentTarget.value as StreamEventType); setConditions([]); }} value={eventType}>{streamEventTypes.map((type) => <option key={type} value={type}>{formatStreamEventType(type)}</option>)}</NativeSelect>
+      <NativeSelect label="Event source" onChange={(event) => setSource(event.currentTarget.value as EventTriggerSource)} value={source}><option value="any">Any active source</option><option value="twitch">Twitch</option><option value="streamerbot">Streamer.bot</option></NativeSelect>
+    </div>
+    <EventConditionList conditions={conditions} eventType={eventType} heading="Event conditions" onChange={setConditions} onDraftError={setDraftError} />
+    <Button variant="default" disabled={invalid} onClick={() => {
+      if (invalid) return;
+      if (add({ id: generateId("binding"), selector: { match: { kind: "canonical", type: eventType }, sources: source === "any" ? "any" : [source], conditions } })) setConditions([]);
+    }} type="button">Add event trigger</Button>
+  </fieldset>;
+}
+
+function IntegrationTriggerAdders({ add, context, generateId }: {
+  readonly add: (binding: EffectBinding) => boolean;
   readonly context: EditorContext;
   readonly generateId: (prefix: string) => string;
 }) {
@@ -718,14 +771,14 @@ function AddTriggerControls({ add, context, generateId }: {
     <NativeSelect label="Twitch reward" aria-label="Twitch reward" onChange={(event) => setRewardId(event.currentTarget.value)} value={rewardId}><option value="">Choose a configured reward</option>{context.rewards.map((reward) => <option key={reward.id} value={reward.id}>{reward.title}</option>)}</NativeSelect>
     <Button variant="default" disabled={rewardId === "" || context.twitch?.connected !== true} onClick={() => {
       if (context.twitch?.connected !== true || rewardId === "") return;
-      add({ id: generateId("binding"), kind: "twitch-reward", broadcasterId: context.twitch.account.accountId, rewardId });
+      add({ id: generateId("binding"), selector: { match: { kind: "twitch-reward", broadcasterId: context.twitch.account.accountId, rewardId }, sources: "any", conditions: [] } });
       setRewardId("");
     }} type="button">Add reward trigger</Button>
     <NativeSelect label="Streamer.bot event" aria-label="Streamer.bot event" onChange={(event) => setStreamerSelection(event.currentTarget.value)} value={streamerSelection}><option value="">Choose a configured subscription</option>{streamerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</NativeSelect>
     <Button variant="default" disabled={streamerSelection === "" || context.streamerBot === null} onClick={() => {
       const option = streamerOptions.find((candidate) => candidate.value === streamerSelection);
       if (option === undefined || context.streamerBot === null) return;
-      add({ id: generateId("binding"), kind: "streamerbot-event", providerId: context.streamerBot.providerId, sourceKey: option.sourceKey, eventType: option.eventType });
+      add({ id: generateId("binding"), selector: { match: { kind: "external", providerKind: "streamerbot", sourceKey: option.sourceKey, eventType: option.eventType }, sources: "any", conditions: [] } });
       setStreamerSelection("");
     }} type="button">Add Streamer.bot trigger</Button>
   </div>;
@@ -841,19 +894,35 @@ async function loadStreamerBotContext(managementApi: ManagementApi): Promise<Str
 }
 
 function bindingLabel(binding: EffectBinding): string {
-  return binding.kind === "twitch-reward"
-    ? `Twitch reward ${binding.rewardId}`
-    : `Streamer.bot ${binding.sourceKey} / ${binding.eventType}`;
+  const { match, sources, conditions } = binding.selector;
+  switch (match.kind) {
+    case "canonical": return [
+      formatStreamEventType(match.type),
+      ...conditions.map((condition) => formatAlertConditionSummary(match.type, condition)),
+      ...(sources === "any" ? [] : [`${sources.map((source) => source === "twitch" ? "Twitch" : "Streamer.bot").join(" or ")} only`])
+    ].join(" · ");
+    case "twitch-reward": return `Twitch reward ${match.rewardId}`;
+    case "external": return `Streamer.bot ${match.sourceKey} / ${match.eventType}`;
+  }
+}
+
+function formatStreamEventType(type: StreamEventType): string {
+  const label = type.replaceAll("_", " ");
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 function bindingAvailable(binding: EffectBinding, context: EditorContext): boolean {
-  if (binding.kind === "twitch-reward") {
-    return context.twitch?.connected === true
-      && context.twitch.account.accountId === binding.broadcasterId
-      && context.rewards.some((reward) => reward.id === binding.rewardId);
+  const { match } = binding.selector;
+  switch (match.kind) {
+    case "canonical": return true;
+    case "twitch-reward":
+      return context.twitch?.connected === true
+        && context.twitch.account.accountId === match.broadcasterId
+        && context.rewards.some((reward) => reward.id === match.rewardId);
+    case "external":
+      return context.streamerBot !== null
+        && isStreamerBotSubscriptionAvailable(context.streamerBot, match.sourceKey, match.eventType);
   }
-  return context.streamerBot?.providerId === binding.providerId
-    && isStreamerBotSubscriptionAvailable(context.streamerBot, binding.sourceKey, binding.eventType);
 }
 
 function effectDestinationNames(variant: EffectVariant, routeNames: ReadonlyMap<string, string>): string[] {

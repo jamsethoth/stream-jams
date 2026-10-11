@@ -758,6 +758,26 @@ export const CommunityGiftSamplesAndConditions: Story = {
   }
 };
 
+export const StreamerBotEventAlert: Story = {
+  args: {
+    alertId: "alert-external",
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => streamerBotEventDocument(),
+      getAlertSet: async () => alertSetDetail()
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole("button", { name: "Insert {summary}" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Insert {eventType}" })).toBeVisible();
+    await expect(canvas.queryByRole("button", { name: "Insert {amount}" })).not.toBeInTheDocument();
+    await expect(await canvas.findByText("Viewer: Custom event from Viewer")).toBeVisible();
+    await userEvent.click(canvas.getByRole("tab", { name: "Event" }));
+    await expect(canvas.getByText("Streamer.bot General · Custom")).toBeVisible();
+    await expect(canvas.queryByRole("group", { name: "Rule conditions" })).not.toBeInTheDocument();
+  }
+};
+
 export const PausedPreview: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -1569,6 +1589,28 @@ function variationDocument(): AlertEditorDocument {
     samplePayloads: [
       { id: "normal", label: "Normal raid", kind: "built-in", payload: { userName: "Raider", raidViewers: 25, amount: 25 } },
       { id: "edge", label: "Large raid", kind: "built-in", payload: { userName: "A-Very-Long-Raider-Name", raidViewers: 5_000, amount: 5_000 } }
+    ]
+  };
+}
+
+function streamerBotEventDocument(): AlertEditorDocument {
+  return {
+    ...editorDocument(),
+    id: "alert-external",
+    providerKind: "streamerbot",
+    eventType: "external_event",
+    externalIdentity: { providerKind: "streamerbot", sourceKey: "General", eventType: "Custom" },
+    name: "Custom event",
+    conditions: [],
+    templateVariables: [
+      { key: "summary", label: "Summary", description: "Sanitized event summary, at most 256 characters." },
+      { key: "userName", label: "User name", description: "Sanitized user name from the event, empty when absent." },
+      { key: "eventType", label: "Event type", description: "The Streamer.bot event type." }
+    ],
+    layers: editorDocument().layers.map((layer) => layer.type === "text" ? { ...layer, template: "{userName}: {summary}" } : layer),
+    samplePayloads: [
+      { id: "normal", label: "Normal Example", kind: "built-in", payload: { summary: "Custom event from Viewer", userName: "Viewer", eventType: "Custom" } },
+      { id: "edge", label: "Edge Example", kind: "built-in", payload: { summary: "A".repeat(256), userName: "A-Very-Long-Display-Name-For-Layout-Review", eventType: "Custom" } }
     ]
   };
 }

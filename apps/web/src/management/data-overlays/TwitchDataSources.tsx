@@ -67,7 +67,7 @@ export function TwitchDataSources({ api = defaultTwitchDataSourcesApi, onCreated
       {status === null ? <p role="status">Loading Twitch data sources…</p> : <>
         <p>Follower total: {followerMessage(status.follower.state)}{status.follower.updatedAt === null ? "" : ` Last refreshed: ${status.follower.updatedAt}.`}</p>
         <p>Follower totals refresh every 60 seconds. Twitch owns this value; live corrections and resets are unavailable. You can use it in a custom saved-baseline goal.</p>
-        <p>Creator Goals: {status.goals.state === "reauthorization-required" ? `Reauthorization required (${status.goals.missingScopes.join(", ")}). Reconnect Twitch in Event sources. Existing alert intake remains available.` : status.goals.state === "disconnected" ? "Disconnected. Connect Twitch in Event sources." : "Unavailable until the central event bus is implemented."} Live Creator Goal selection is unavailable.</p>
+        <p>Creator Goals: {status.goals.state === "reauthorization-required" ? `Reauthorization required (${status.goals.missingScopes.join(", ")}). Reconnect Twitch in Event sources. Existing alert intake remains available.` : status.goals.state === "disconnected" ? "Disconnected. Connect Twitch in Event sources." : "Creator Goal integration pending."} Live Creator Goal selection is unavailable.</p>
         <Group><Button component="a" href="/manage/event-sources" variant="default" disabled={pending}>{status.follower.broadcasterId === null ? "Connect Twitch in Event sources" : "Review or reconnect Twitch"}</Button></Group>
         <form aria-label="Create Twitch follower value" onSubmit={event => { event.preventDefault(); void create(); }}>
           <Stack>

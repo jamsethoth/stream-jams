@@ -6,6 +6,8 @@
 
 **Architecture:** Core owns typed values, goal calculations, declarative rules and safe projections. Typed SQLite repositories commit shared state atomically; thin management/Operator routes and existing output transports expose the state. The central event bus owns all event ingestion and replay; the data module must not create a replacement intake.
 
+**October 11 integration note:** This dated plan preserves its October 8 baseline and evidence. The [main integration reassessment](../../verification/data-overlays-main-reassessment.md) supersedes its missing-bus blocker: event rules and follower hints are ready for implementation, and live Creator Goals need source integration. Only Streamer.bot globals remain fixture-blocked. Data migrations now append as 042/043 (backup schemas 41/42), replacing this plan's original candidate numbering.
+
 **Tech Stack:** Existing strict TypeScript/ESM, Zod, Node SQLite, Fastify, React, Mantine and Playwright/Vitest/Storybook. Use the locked pnpm runtime and no new dependency for canvas editing.
 
 **Specs:** `openspec/changes/add-custom-data-overlays/`, `add-data-overlay-event-rules/`, `add-twitch-overlay-data/`, `add-data-overlay-templates/`. Read the assigned slice's design and normative specs before changing code. The revised main spec supersedes the earlier proposal branch.

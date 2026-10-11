@@ -39,7 +39,7 @@ async function setup(withMedia = false) {
   await writeFile(join(webBuildDirectory, "assets", "index.js"), "");
   await writeFile(join(webBuildDirectory, ".vite", "manifest.json"), JSON.stringify({ "index.html": { file: "assets/index.js", isEntry: true } }));
   const config: AppConfig = {
-    desktop: { closeToTray: true }, server: { host: "127.0.0.1", port: 39187 },
+    desktop: { closeToTray: true, gpuAcceleration: true }, server: { host: "127.0.0.1", port: 39187 },
     storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") },
     logging: { level: "INFO", rollover: "hourly", retentionHours: 48 },
     playback: { paused: false, muted: false, doNotDisturb: false }

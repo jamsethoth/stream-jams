@@ -16,8 +16,8 @@ it("builds Open, authoritative Mute/Unmute, and Quit actions", () => {
   ]);
   expect(unavailable[1]).toMatchObject({ enabled: false });
 
-  const unmuted = trayTemplate(actions, { url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
-  const muted = trayTemplate(actions, { url: "http://127.0.0.1:39187", closeToTray: true, muted: true });
+  const unmuted = trayTemplate(actions, { url: "http://127.0.0.1:39187", closeToTray: true, gpuAcceleration: true, muted: false });
+  const muted = trayTemplate(actions, { url: "http://127.0.0.1:39187", closeToTray: true, gpuAcceleration: true, muted: true });
   expect(unmuted[1]).toMatchObject({ label: "Mute Alerts and Effects", enabled: true });
   expect(muted[1]).toMatchObject({ label: "Unmute Alerts and Effects", enabled: true });
 

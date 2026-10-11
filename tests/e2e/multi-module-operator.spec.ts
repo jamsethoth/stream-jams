@@ -109,6 +109,7 @@ function row(moduleId: string, occurrenceId: string, name: string, status: strin
     occurrenceId,
     name,
     summary: "Neutral fixture",
+    source: null,
     status,
     enqueuedAtMs: Date.parse("2026-09-13T12:00:00.000Z"),
     completedAtMs: status === "completed" ? Date.parse("2026-09-13T12:01:00.000Z") : null,

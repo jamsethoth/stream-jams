@@ -28,6 +28,10 @@ describe("authoritative Twitch follower source", () => {
     const f = await fixture(false); await f.runtime.connectionChanged();
     expect(f.getFollowerTotal).not.toHaveBeenCalled();
     expect(f.runtime.getStatus()).toMatchObject({ follower: { state: "unconfigured", broadcasterId: "broadcaster" }, goals: { state: "reauthorization-required", missingScopes: ["channel:read:goals"] } });
+    const account = await f.repository.findConnectedAccount();
+    f.setAccount({ ...account!, scopes: [...account!.scopes, "channel:read:goals"] });
+    await f.runtime.connectionChanged();
+    expect(f.runtime.getStatus().goals).toEqual({ state: "integration-pending", missingScopes: [] });
     await f.runtime.createFollowerSource("Follower total"); await vi.advanceTimersByTimeAsync(0);
     expect(f.getFollowerTotal).toHaveBeenCalledOnce();
     await f.runtime.close(); f.db.close();

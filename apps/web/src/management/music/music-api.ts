@@ -5,6 +5,8 @@ import {
   musicPairingAttemptViewSchema,
   musicPairingCertificateAcceptanceSchema,
   musicModuleConfigSchema,
+  musicSnapshotSchema,
+  musicStatusSchema,
   pearConfigurationSchema,
   type MusicCredentialReplacementInput,
   type MusicCredentialReplacementResult,
@@ -12,6 +14,8 @@ import {
   type MusicPairingAttemptView,
   type PearConfiguration,
   type MusicModuleConfig,
+  type MusicSnapshot,
+  type MusicStatus,
   type OverlayOutputView,
 } from "@stream-jams/core";
 import type { ManagementHttpClient } from "../management-http-client.js";
@@ -27,6 +31,15 @@ export interface MusicApi {
   getMusicStatus(): Promise<MusicManagementStatus>;
   reconnectMusicSource(providerId: string): Promise<MusicManagementStatus>;
   replaceMusicCredential(providerId: string, input: MusicCredentialReplacementInput): Promise<MusicCredentialReplacementResult>;
+  /** Live playback from the selected source; snapshot is null unless it is connected and fresh. */
+  getMusicNowPlaying(): Promise<MusicNowPlaying>;
+  /** Current live artwork bytes for an opaque artwork reference. */
+  getMusicArtwork(artworkRef: string): Promise<Blob>;
+}
+
+export interface MusicNowPlaying {
+  readonly status: MusicStatus;
+  readonly snapshot: MusicSnapshot | null;
 }
 
 export function createMusicApi(client: ManagementHttpClient): MusicApi {
@@ -65,6 +78,15 @@ export function createMusicApi(client: ManagementHttpClient): MusicApi {
     },
     async replaceMusicCredential(providerId, input) {
       return musicCredentialReplacementResultSchema.parse(await client.postJson<unknown>(`/management/music/providers/${encodeURIComponent(providerId)}/credential`, musicCredentialReplacementInputSchema.parse(input), "Unable to replace Pear authorization."));
+    },
+    async getMusicNowPlaying() {
+      const value = await client.getJson<unknown>("/management/music/now-playing", "Unable to load the playing Music track.");
+      if (typeof value !== "object" || value === null || !("status" in value) || !("snapshot" in value)) throw new Error("Music playback response is invalid. Reload the page and retry.");
+      return { status: musicStatusSchema.parse(value.status), snapshot: value.snapshot === null ? null : musicSnapshotSchema.parse(value.snapshot) };
+    },
+    async getMusicArtwork(artworkRef) {
+      const response = await client.request(`/management/music/artwork/${encodeURIComponent(artworkRef)}`, { fallbackMessage: "Unable to load Music artwork." });
+      return response.blob();
     }
   };
 }

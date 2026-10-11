@@ -2,7 +2,7 @@ import "../csp-schema-validation.js";
 import { createRoot } from "react-dom/client";
 import { DesktopOverlayApp } from "./DesktopOverlayApp.js";
 import { DesktopOverlayController } from "./desktop-overlay-controller.js";
-import { prepareDesktopVisualAsset } from "./desktop-overlay-api.js";
+import { createDesktopVideoMirrorConnector, prepareDesktopVisualAsset } from "./desktop-overlay-api.js";
 import "../App.css";
 
 const bridge = window.streamJamsOverlayHost;
@@ -14,6 +14,7 @@ if (bridge !== undefined && element !== null) {
     changed: () => { for (const listener of listeners) listener(); }, prepareAsset: prepareDesktopVisualAsset });
   const unsubscribe = bridge.onCommand(request => controller.receive(request));
   const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
-  createRoot(element).render(<DesktopOverlayApp controller={controller} subscribe={subscribe} />);
+  const videoMirror = bridge.videoMirror === undefined ? undefined : createDesktopVideoMirrorConnector(bridge.videoMirror);
+  createRoot(element).render(<DesktopOverlayApp controller={controller} subscribe={subscribe} videoMirror={videoMirror} />);
   window.addEventListener("beforeunload", () => { unsubscribe(); controller.dispose(); listeners.clear(); }, { once: true });
 }

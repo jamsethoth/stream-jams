@@ -1,8 +1,8 @@
 import { z } from "zod";
 import type { AlertRepository } from "./repository.js";
 import type { AlertActivationState, AlertCollection, AlertRule, AlertVariant } from "./types.js";
-import type { StreamEventType } from "../events/types.js";
-import { alertCollectionSchema, alertRuleSchema, alertVariantSchema } from "./schemas.js";
+import type { AlertEventType } from "../events/types.js";
+import { alertCollectionSchema, alertRuleExternalIdentityIssue, alertRuleSchema as baseAlertRuleSchema, alertVariantSchema } from "./schemas.js";
 
 export const createAlertCollectionInputSchema = z.object({
   name: alertCollectionSchema.shape.name,
@@ -19,14 +19,19 @@ export const createAlertVariantInputSchema = alertVariantSchema.omit({
 
 export const updateAlertVariantInputSchema = createAlertVariantInputSchema;
 
-export const createAlertRuleInputSchema = alertRuleSchema.omit({
+const alertRuleSchema = baseAlertRuleSchema.superRefine((rule, context) => {
+  const issue = alertRuleExternalIdentityIssue(rule);
+  if (issue !== null) context.addIssue({ code: "custom", path: ["externalIdentity"], message: issue });
+});
+
+export const createAlertRuleInputSchema = baseAlertRuleSchema.omit({
   id: true,
   variants: true
 }).extend({
   variants: z.array(createAlertVariantInputSchema).min(1)
 });
 
-export const updateAlertRuleInputSchema = alertRuleSchema.omit({
+export const updateAlertRuleInputSchema = baseAlertRuleSchema.omit({
   id: true
 });
 
@@ -46,7 +51,7 @@ export type UpdateAlertRuleInput = Omit<AlertRule, "id">;
 export type AlertConfigurationIdKind = "collection" | "rule" | "variant";
 
 export interface ListActiveAlertRulesInput {
-  readonly eventType?: StreamEventType;
+  readonly eventType?: AlertEventType;
 }
 
 export interface AlertService {
@@ -240,10 +245,10 @@ export class DefaultAlertService implements AlertService {
     assertUniqueVariantIds(variants);
     await this.#requireVariantIdsAvailable(ruleId, variants);
 
-    return this.#repository.saveRule({
+    return this.#repository.saveRule(alertRuleSchema.parse({
       ...rule,
       variants
-    });
+    }));
   }
 
   async saveVariant(ruleId: string, variant: AlertVariant): Promise<AlertRule> {

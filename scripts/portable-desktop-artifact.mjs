@@ -5,6 +5,7 @@ import { URL } from "node:url";
 
 const eligibleEvents = new Set(["pull_request", "push", "workflow_dispatch"]);
 const defaultPackageDirectory = resolve("apps/desktop/out/Stream Jams-win32-x64");
+const defaultInstallerPath = resolve("apps/desktop/out/installer/StreamJamsSetup.exe");
 
 function requireEnvironment(name) {
   const value = process.env[name]?.trim();
@@ -45,10 +46,7 @@ async function requireFile(packageDirectory, relativePath) {
 }
 
 async function prepare() {
-  const eventName = requireEnvironment("GITHUB_EVENT_NAME");
-  if (!eligibleEvents.has(eventName)) {
-    throw new Error(`${eventName} is not eligible for portable desktop artifact publication`);
-  }
+  requireEligibleEvent();
 
   const refName = requireEnvironment("GITHUB_REF_NAME");
   const sha = requireSha(requireEnvironment("GITHUB_SHA"), 40, "GITHUB_SHA");
@@ -70,6 +68,66 @@ async function prepare() {
     `Built, not desktop-test-verified.\nCommit: ${sha}\nCheck the separate windows-desktop job for runtime test results.\nThis unsigned application folder is not a certified release.\n`, "utf8");
   await appendFile(githubOutput, `artifact-name=${artifactName}\n`, "utf8");
   process.stdout.write(`Prepared portable desktop artifact metadata for ${artifactName}.\n`);
+}
+
+function requireEligibleEvent() {
+  const eventName = requireEnvironment("GITHUB_EVENT_NAME");
+  if (!eligibleEvents.has(eventName)) {
+    throw new Error(`${eventName} is not eligible for portable desktop artifact publication`);
+  }
+}
+
+async function prepareInstaller() {
+  requireEligibleEvent();
+  const refName = requireEnvironment("GITHUB_REF_NAME");
+  const sha = requireSha(requireEnvironment("GITHUB_SHA"), 40, "GITHUB_SHA");
+  const githubOutput = requireEnvironment("GITHUB_OUTPUT");
+  const installerPath = resolve(process.env.STREAM_JAMS_INSTALLER_PATH ?? defaultInstallerPath);
+  const details = await stat(installerPath).catch((error) => {
+    if (error.code === "ENOENT") throw new Error(`Missing installer: ${installerPath}`, { cause: error });
+    throw error;
+  });
+  if (!details.isFile()) throw new Error(`Installer path is not a file: ${installerPath}`);
+
+  const artifactName = `stream-jams-windows-x64-installer-${slugRef(refName)}-${sha}`;
+  await appendFile(githubOutput, `installer-artifact-name=${artifactName}\n`, "utf8");
+  process.stdout.write(`Prepared desktop installer artifact metadata for ${artifactName}.\n`);
+}
+
+async function summarizeInstaller() {
+  const artifactName = requireEnvironment("STREAM_JAMS_INSTALLER_ARTIFACT_NAME");
+  const artifactUrl = requireEnvironment("STREAM_JAMS_INSTALLER_ARTIFACT_URL");
+  const artifactDigest = requireSha(requireEnvironment("STREAM_JAMS_INSTALLER_ARTIFACT_DIGEST"), 64, "STREAM_JAMS_INSTALLER_ARTIFACT_DIGEST");
+  const refName = requireEnvironment("GITHUB_REF_NAME");
+  const sha = requireSha(requireEnvironment("GITHUB_SHA"), 40, "GITHUB_SHA");
+  const githubStepSummary = requireEnvironment("GITHUB_STEP_SUMMARY");
+
+  if (!/^stream-jams-windows-x64-installer-[A-Za-z0-9._-]+-[0-9a-f]{40}$/i.test(artifactName)) {
+    throw new Error("STREAM_JAMS_INSTALLER_ARTIFACT_NAME is not a traceable Windows x64 installer artifact name");
+  }
+  const parsedUrl = new URL(artifactUrl);
+  if (parsedUrl.protocol !== "https:" || parsedUrl.hostname !== "github.com") {
+    throw new Error("STREAM_JAMS_INSTALLER_ARTIFACT_URL must be an authenticated github.com URL");
+  }
+
+  const summary = [
+    "### Unsigned Windows desktop installer",
+    "",
+    `- Artifact: \`${markdownCode(artifactName)}\``,
+    "- Platform: `windows-x64`",
+    "- Validation: built, not desktop-test-verified; see the separate windows-desktop job",
+    `- Ref: \`${markdownCode(refName)}\``,
+    `- Commit: \`${sha}\``,
+    `- SHA-256: \`${artifactDigest}\``,
+    `- Download: [Authenticated artifact](${artifactUrl})`,
+    "- Retention: 30 days",
+    "- Signing: unsigned; Windows SmartScreen shows a warning (More info, then Run anyway)",
+    "- Install: setup wizard; just you (default, no administrator rights) or all users, with a choice of folder; uninstall from Windows Settings, Apps",
+    "- User data: kept outside the installation and preserved on uninstall",
+    ""
+  ].join("\n");
+  await appendFile(githubStepSummary, summary, "utf8");
+  process.stdout.write(`Recorded desktop installer artifact summary for ${artifactName}.\n`);
 }
 
 async function summarize() {
@@ -115,7 +173,9 @@ const command = process.argv[2];
 try {
   if (command === "prepare") await prepare();
   else if (command === "summarize") await summarize();
-  else throw new Error("Usage: node scripts/portable-desktop-artifact.mjs <prepare|summarize>");
+  else if (command === "prepare-installer") await prepareInstaller();
+  else if (command === "summarize-installer") await summarizeInstaller();
+  else throw new Error("Usage: node scripts/portable-desktop-artifact.mjs <prepare|summarize|prepare-installer|summarize-installer>");
 } catch (error) {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;

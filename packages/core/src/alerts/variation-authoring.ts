@@ -1,7 +1,10 @@
 import { normalizedStreamEventSchema } from "../events/schemas.js";
 import type {
   IngestProviderId,
+  AlertSourceEvent,
   NormalizedStreamEvent,
+  AlertEventType,
+  ExternalAlertIdentity,
   StreamEventType
 } from "../events/types.js";
 import {
@@ -185,17 +188,19 @@ const conditionCatalog = {
     ]),
     ingestProviderDefinition
   ],
-  stream_offline: [ingestProviderDefinition]
-} satisfies Record<StreamEventType, readonly AlertConditionFieldDefinition[]>;
+  stream_offline: [ingestProviderDefinition],
+  // External payload content is untrusted, so external alerts offer no conditions.
+  external_event: []
+} satisfies Record<AlertEventType, readonly AlertConditionFieldDefinition[]>;
 
 export function getAlertConditionFieldDefinitions(
-  eventType: StreamEventType
+  eventType: AlertEventType
 ): readonly AlertConditionFieldDefinition[] {
   return conditionCatalog[eventType];
 }
 
 export function validateAuthoredAlertConditions(
-  eventType: StreamEventType,
+  eventType: AlertEventType,
   conditions: readonly AlertCondition[]
 ): readonly AlertConditionValidationIssue[] {
   const definitions = new Map(
@@ -221,7 +226,7 @@ export function validateAuthoredAlertConditions(
 }
 
 export function formatAlertConditionSummary(
-  eventType: StreamEventType,
+  eventType: AlertEventType,
   condition: AlertCondition
 ): string {
   const definition = getAlertConditionFieldDefinitions(eventType).find(
@@ -252,14 +257,45 @@ export function formatAlertConditionSummary(
   }
 }
 
-export function createNormalizedAlertSampleEvent(input: {
-  readonly eventType: StreamEventType;
+interface AlertSampleEventInput<T extends AlertEventType> {
+  readonly eventType: T;
   readonly ingestProvider: IngestProviderId;
   readonly payload: Record<string, unknown>;
   readonly id: string;
   readonly occurredAt: string;
-}): NormalizedStreamEvent {
+  readonly externalIdentity?: ExternalAlertIdentity | undefined;
+}
+
+export function createNormalizedAlertSampleEvent(input: AlertSampleEventInput<StreamEventType>): NormalizedStreamEvent;
+export function createNormalizedAlertSampleEvent(input: AlertSampleEventInput<AlertEventType>): AlertSourceEvent;
+export function createNormalizedAlertSampleEvent(input: {
+  readonly eventType: AlertEventType;
+  readonly ingestProvider: IngestProviderId;
+  readonly payload: Record<string, unknown>;
+  readonly id: string;
+  readonly occurredAt: string;
+  /** Required to build an external sample; the rule's exact identity. */
+  readonly externalIdentity?: ExternalAlertIdentity | undefined;
+}): AlertSourceEvent {
   const { payload } = input;
+  if (input.eventType === "external_event") {
+    const identity = input.externalIdentity ?? { providerKind: "streamerbot" as const, sourceKey: "General", eventType: "Custom" };
+    const userName = typeof payload.userName === "string" ? payload.userName.slice(0, 100) : "";
+    return {
+      id: input.id,
+      type: "external_event",
+      providerId: "streamerbot",
+      ingestProvider: "streamerbot",
+      occurredAt: input.occurredAt,
+      actor: { id: null, displayName: userName === "" ? "Streamer.bot" : userName },
+      message: null,
+      metadata: {},
+      amount: null,
+      identity,
+      summary: typeof payload.summary === "string" ? payload.summary.slice(0, 256) : "",
+      userName
+    };
+  }
   const actorValue = payload.actor;
   const actorRecord = recordValue(actorValue);
   const displayName = String(actorRecord.displayName ?? payload.userName ?? "Sample user");
@@ -504,7 +540,7 @@ export function normalizeAlertPriorityGroups(
 }
 
 export function projectAlertVariationSelection<T extends AlertVariationSelectionCandidate>(
-  event: NormalizedStreamEvent,
+  event: AlertSourceEvent,
   candidates: readonly T[],
   conditionEvaluator: AlertConditionEvaluator = new DefaultAlertConditionEvaluator()
 ): AlertVariationSelectionProjection<T> {
@@ -541,7 +577,7 @@ export function chooseWeightedAlertVariation<T extends AlertVariationSelectionCa
 }
 
 export function evaluateAlertVariationSample(input: {
-  readonly event: NormalizedStreamEvent;
+  readonly event: AlertSourceEvent;
   readonly ruleConditions: readonly AlertCondition[];
   readonly candidates: readonly AlertVariationSelectionCandidate[];
   readonly defaultCandidateId: string;
@@ -685,7 +721,7 @@ function effectivePriority(candidate: AlertVariationSelectionCandidate): number 
 
 function candidateConditionsMatch(
   candidate: AlertVariationSelectionCandidate,
-  event: NormalizedStreamEvent,
+  event: AlertSourceEvent,
   conditionEvaluator: AlertConditionEvaluator
 ): boolean {
   return (candidate.conditions ?? []).every((condition) => conditionEvaluator.evaluate(condition, event));

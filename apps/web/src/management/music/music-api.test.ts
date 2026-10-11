@@ -30,6 +30,19 @@ describe("Music API", () => {
     expect(JSON.stringify(postJson.mock.calls)).not.toMatch(/accessToken|secretRef|Bearer/u);
   });
 
+  it("parses live playback and loads artwork through the authorized management client", async () => {
+    const snapshot = { providerId: "provider-1", generation: "music_1", revision: 2, track: { id: "song", title: "Live", artists: ["Artist"], album: null, artworkRef: "art_1" }, playbackState: "playing", positionMs: 1_000, durationMs: 9_000, observedAtEpochMs: 5_000, session: null };
+    const connected = { state: "connected", stale: false, diagnosticReference: null };
+    const request = vi.fn(async () => new Response("x"));
+    const api = createMusicApi({ getJson: async () => ({ status: connected, snapshot }), request } as unknown as ManagementHttpClient);
+    expect(await api.getMusicNowPlaying()).toEqual({ status: connected, snapshot });
+    expect((await api.getMusicArtwork("art/1")).size).toBe(1);
+    expect(request).toHaveBeenCalledWith("/management/music/artwork/art%2F1", expect.objectContaining({ fallbackMessage: expect.any(String) }));
+    for (const invalid of [{ status: connected }, { status: connected, snapshot: { ...snapshot, url: "https://i.ytimg.com/x.jpg" } }, null]) {
+      await expect(createMusicApi({ getJson: async () => invalid } as unknown as ManagementHttpClient).getMusicNowPlaying()).rejects.toThrow();
+    }
+  });
+
   it("rejects an invalid status response at the client boundary", async () => {
     const api = createMusicApi({ getJson: async () => ({ ...status, token: "private" }) } as unknown as ManagementHttpClient);
     await expect(api.getMusicStatus()).rejects.toThrow();

@@ -3,57 +3,49 @@ import type { ProviderRegistrationRecord } from "../modules/providers/sqlite-pro
 import { syncEventSourceRuntimes } from "./event-source-runtime-coordinator.js";
 
 describe("syncEventSourceRuntimes", () => {
-  it("disconnects Streamer.bot before connecting active Twitch", async () => {
+  it.each([
+    ["only direct Twitch", ["twitch"], ["twitch:connect", "streamerbot:sync"]],
+    ["only Streamer.bot", ["streamerbot"], ["twitch:disconnect", "streamerbot:sync"]],
+    ["both sources", ["twitch", "streamerbot"], ["twitch:connect", "streamerbot:sync"]],
+    ["no source", [], ["twitch:disconnect", "streamerbot:sync"]]
+  ] as const)("syncs each runtime from its own registration with %s active", async (_label, active, expected) => {
     const operations: string[] = [];
-    await syncEventSourceRuntimes({
-      repository: { findActive: async () => registration("twitch") },
-      twitchRuntime: {
-        connectStoredAccount: async () => { operations.push("twitch:connect"); },
-        disconnect: () => { operations.push("twitch:disconnect"); }
-      },
-      streamerBotRuntime: {
-        syncActiveRegistration: async () => { operations.push("streamerbot:connect"); },
-        disconnect: () => { operations.push("streamerbot:disconnect"); }
-      }
-    });
-
-    expect(operations).toEqual(["streamerbot:disconnect", "twitch:connect"]);
+    await syncEventSourceRuntimes(runtimes(active, operations));
+    expect(operations.sort()).toEqual([...expected].sort());
   });
 
-  it("disconnects Twitch before connecting active Streamer.bot", async () => {
+  it.each([
+    ["streamerbot", ["streamerbot:sync"]],
+    ["twitch", ["twitch:connect"]]
+  ] as const)("leaves the other runtime running when only %s changed", async (kind, expected) => {
     const operations: string[] = [];
-    await syncEventSourceRuntimes({
-      repository: { findActive: async () => registration("streamerbot") },
-      twitchRuntime: {
-        connectStoredAccount: async () => { operations.push("twitch:connect"); },
-        disconnect: () => { operations.push("twitch:disconnect"); }
-      },
-      streamerBotRuntime: {
-        syncActiveRegistration: async () => { operations.push("streamerbot:connect"); },
-        disconnect: () => { operations.push("streamerbot:disconnect"); }
-      }
-    });
-
-    expect(operations).toEqual(["twitch:disconnect", "streamerbot:connect"]);
+    await syncEventSourceRuntimes({ ...runtimes(["twitch", "streamerbot"], operations), kinds: [kind] });
+    expect(operations).toEqual(expected);
   });
 
-  it("disconnects both runtimes when no event source is active", async () => {
+  it("still syncs Streamer.bot when direct Twitch fails to connect, then reports the failure", async () => {
     const operations: string[] = [];
-    await syncEventSourceRuntimes({
-      repository: { findActive: async () => null },
-      twitchRuntime: {
-        connectStoredAccount: async () => { operations.push("twitch:connect"); },
-        disconnect: () => { operations.push("twitch:disconnect"); }
-      },
-      streamerBotRuntime: {
-        syncActiveRegistration: async () => { operations.push("streamerbot:connect"); },
-        disconnect: () => { operations.push("streamerbot:disconnect"); }
-      }
-    });
-
-    expect(operations).toEqual(["twitch:disconnect", "streamerbot:disconnect"]);
+    const options = runtimes(["twitch", "streamerbot"], operations);
+    await expect(syncEventSourceRuntimes({
+      ...options,
+      twitchRuntime: { ...options.twitchRuntime, connectStoredAccount: async () => { throw new Error("token expired"); } }
+    })).rejects.toThrow("token expired");
+    expect(operations).toEqual(["streamerbot:sync"]);
   });
 });
+
+function runtimes(active: readonly ("twitch" | "streamerbot")[], operations: string[]) {
+  return {
+    repository: { findActiveByKind: async (kind: string) => active.includes(kind as "twitch") ? registration(kind as "twitch") : null },
+    twitchRuntime: {
+      connectStoredAccount: async () => { operations.push("twitch:connect"); },
+      disconnect: () => { operations.push("twitch:disconnect"); }
+    },
+    streamerBotRuntime: {
+      syncActiveRegistration: async () => { operations.push("streamerbot:sync"); }
+    }
+  };
+}
 
 function registration(kind: "twitch" | "streamerbot"): ProviderRegistrationRecord {
   return {

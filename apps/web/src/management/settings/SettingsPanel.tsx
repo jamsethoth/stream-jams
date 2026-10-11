@@ -8,7 +8,7 @@ import {
   type ConfigurationRestorePreflight,
   type ConfigurationRestoreResult
 } from "@stream-jams/core";
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { AudioOutputsPanel, type AudioOutputsPanelHandle } from "../audio/AudioOutputsPanel.js";
 import { defaultAudioApi, type AudioApi } from "../audio/audio-api.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
@@ -16,12 +16,13 @@ import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } fro
 import { formatBytes, formatCount, formatHours } from "../foundation/formatters.js";
 import { MaskedValue } from "../foundation/MaskedValue.js";
 import { ThemeSwitcher } from "../foundation/ThemeSwitcher.js";
-import type { DesktopConfigView, ManagementApi, ServerConfigView } from "../management-api.js";
+import type { DesktopConfigInput, DesktopConfigView, ManagementApi, ServerConfigView } from "../management-api.js";
 import { DesktopSettingsPanel } from "./DesktopSettingsPanel.js";
 import { OverlaySurfacesPanel, type OverlaySurfacesPanelHandle } from "./OverlaySurfacesPanel.js";
 import type { SurfaceSettingsApi } from "./overlay-surfaces-api.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import { AutomationSettingsPanel } from "./AutomationSettingsPanel.js";
+import { EventReplaySettings, type EventReplaySettingsApi } from "./EventReplaySettings.js";
 import type { AutomationSettingsApi } from "./automation-api.js";
 import { SectionHeading } from "../foundation/ModulePageLayout.js";
 import { FocusFallback } from "../foundation/FocusFallback.js";
@@ -29,7 +30,7 @@ import "./settings-panel.css";
 
 type SettingsApi = Pick<
   ManagementApi,
-  "getDesktopConfig" | "updateDesktopConfig" | "getServerConfig" | "updateServerConfig" | "getConfigurationBackupSummary" | "exportConfigurationBackup" | "preflightConfigurationRestore" | "restoreConfiguration" | "openDataFolder" | "clearOldLogs"
+  "getDesktopConfig" | "updateDesktopConfig" | "getServerConfig" | "updateServerConfig" | "getConfigurationBackupSummary" | "exportConfigurationBackup" | "preflightConfigurationRestore" | "restoreConfiguration" | "openDataFolder" | "clearOldLogs" | "getEventBusSettings" | "saveEventBusSettings"
 >;
 
 export interface SettingsPanelProps {
@@ -40,6 +41,11 @@ export interface SettingsPanelProps {
 }
 
 const defaultServerConfig: ServerConfigView = { host: "127.0.0.1", port: 39187 };
+const defaultDesktopDraft: DesktopConfigInput = { closeToTray: true, gpuAcceleration: true };
+
+function desktopDraftOf(config: DesktopConfigView | null): DesktopConfigInput {
+  return config === null ? defaultDesktopDraft : { closeToTray: config.closeToTray, gpuAcceleration: config.gpuAcceleration };
+}
 
 export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfaceApi, managementApi }: SettingsPanelProps) {
   const audioPanelRef = useRef<AudioOutputsPanelHandle>(null);
@@ -48,7 +54,9 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
   const [savedConfig, setSavedConfig] = useState(defaultServerConfig);
   const [configDraft, setConfigDraft] = useState(defaultServerConfig);
   const [desktopConfig, setDesktopConfig] = useState<DesktopConfigView | null>(null);
-  const [closeToTray, setCloseToTray] = useState(true);
+  const [desktopDraft, setDesktopDraft] = useState(defaultDesktopDraft);
+  // GPU acceleration is fixed when the desktop app starts; the first loaded value stands in for it.
+  const [launchGpuAcceleration, setLaunchGpuAcceleration] = useState<boolean | null>(null);
   const [summary, setSummary] = useState<ConfigurationBackupSummary | null>(null);
   const [archive, setArchive] = useState<ConfigurationBackupArchive | null>(null);
   const [archiveName, setArchiveName] = useState<string | null>(null);
@@ -64,10 +72,17 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
   const [serverOpen, setServerOpen] = useState(false);
   const [audioOpen, setAudioOpen] = useState(window.location.hash === "#audio-outputs");
   const [surfacesOpen, setSurfacesOpen] = useState(window.location.hash === "#overlay-surfaces");
+  const [eventReplayOpen, setEventReplayOpen] = useState(window.location.hash === "#event-replay");
   const [dataOpen, setDataOpen] = useState(window.location.hash === "#backup-restore");
   const [audioSummary, setAudioSummary] = useState<{ readonly count: number; readonly state: "loading" | "ready" | "attention" }>({ count: 0, state: "loading" });
   const [surfaceSummary, setSurfaceSummary] = useState<{ readonly count: number; readonly state: "loading" | "ready" | "attention" }>({ count: 0, state: "loading" });
   const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
+  const eventReplayApi = useMemo<EventReplaySettingsApi | null>(() => {
+    const { getEventBusSettings, saveEventBusSettings } = managementApi;
+    return getEventBusSettings === undefined || saveEventBusSettings === undefined
+      ? null
+      : { getEventBusSettings: () => getEventBusSettings.call(managementApi), saveEventBusSettings: (settings) => saveEventBusSettings.call(managementApi, settings) };
+  }, [managementApi]);
   const [error, setError] = useState<ActionableManagementError | null>(null);
 
   const loadSettings = useCallback(async () => {
@@ -76,7 +91,8 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
     await Promise.all([managementApi.getServerConfig(), managementApi.getConfigurationBackupSummary(), managementApi.getDesktopConfig()])
       .then(([serverConfig, backupSummary, desktop]) => {
         setDesktopConfig(desktop);
-        setCloseToTray(desktop.closeToTray);
+        setDesktopDraft(desktopDraftOf(desktop));
+        setLaunchGpuAcceleration((current) => current ?? desktop.gpuAcceleration);
         setSavedConfig(serverConfig);
         setConfigDraft(serverConfig);
         if (backupSummary.state === "invalid" || backupSummary.blockers.length > 0) setDataOpen(true);
@@ -110,13 +126,16 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
   }, [loading]);
 
   const serverDirty = savedConfig.host !== configDraft.host || savedConfig.port !== configDraft.port;
-  const desktopDirty = desktopConfig?.available === true && desktopConfig.closeToTray !== closeToTray;
+  const desktopDirty = desktopConfig?.available === true &&
+    (desktopConfig.closeToTray !== desktopDraft.closeToTray || desktopConfig.gpuAcceleration !== desktopDraft.gpuAcceleration);
+
+  const gpuRestartPending = desktopConfig !== null && launchGpuAcceleration !== null && desktopConfig.gpuAcceleration !== launchGpuAcceleration;
 
   const saveDesktop = useCallback(async () => {
-    const saved = await managementApi.updateDesktopConfig({ closeToTray });
+    const saved = await managementApi.updateDesktopConfig(desktopDraft);
     setDesktopConfig(saved);
-    setCloseToTray(saved.closeToTray);
-  }, [closeToTray, managementApi]);
+    setDesktopDraft(desktopDraftOf(saved));
+  }, [desktopDraft, managementApi]);
 
   const saveServer = useCallback(async () => {
     const saved = await managementApi.updateServerConfig(configDraft);
@@ -138,7 +157,7 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
   }, [audioDirty, desktopDirty, surfacesDirty, saveDesktop, saveServer, serverDirty]);
 
   const discard = useCallback(() => {
-    setCloseToTray(desktopConfig?.closeToTray ?? true);
+    setDesktopDraft(desktopDraftOf(desktopConfig));
     setConfigDraft(savedConfig);
     setArchive(null);
     setArchiveName(null);
@@ -256,7 +275,7 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
       setSummary(await managementApi.getConfigurationBackupSummary());
       const desktop = await managementApi.getDesktopConfig();
       setDesktopConfig(desktop);
-      setCloseToTray(desktop.closeToTray);
+      setDesktopDraft(desktopDraftOf(desktop));
     } catch (cause) {
       setError(actionable("Configuration was not restored", cause, "Resolve the reported failure, validate the backup again, and retry."));
     } finally {
@@ -338,12 +357,19 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
 
       {desktopConfig?.available !== true ? null : (
         <section aria-labelledby="desktop-heading" className="settings-page__section">
-          <SectionHeading level={3} id="desktop-heading" title="Desktop app" description="Choose what happens when you close the management window." />
+          <SectionHeading level={3} id="desktop-heading" title="Desktop app" description="Choose what happens when you close the management window and whether the desktop app uses the GPU." />
           <form className="settings-page__form" onSubmit={submitDesktop}>
-            <DesktopSettingsPanel closeToTray={closeToTray} disabled={busy} onChange={setCloseToTray} />
+            <DesktopSettingsPanel
+              closeToTray={desktopDraft.closeToTray}
+              gpuAcceleration={desktopDraft.gpuAcceleration}
+              disabled={busy}
+              onCloseToTrayChange={(closeToTray) => setDesktopDraft((draft) => ({ ...draft, closeToTray }))}
+              onGpuAccelerationChange={(gpuAcceleration) => setDesktopDraft((draft) => ({ ...draft, gpuAcceleration }))}
+            />
             {desktopDirty ? <Button disabled={busy} type="submit">Save desktop settings</Button> : null}
             <FocusFallback visible={desktopDirty} target={() => document.querySelector<HTMLElement>(".desktop-settings input")} />
           </form>
+          {gpuRestartPending ? <p className="settings-page__hint" role="status">Restart Stream Jams to apply the GPU acceleration change.</p> : null}
         </section>
       )}
 
@@ -360,6 +386,13 @@ export function SettingsPanel({ automationApi, audioApi = defaultAudioApi, surfa
         <summary><span className="settings-page__summary-content"><strong>Automation</strong><small>Local client pairing and permissions</small></span></summary>
         {automationOpen ? <AutomationSettingsPanel api={automationApi} /> : null}
       </details>
+
+      {eventReplayApi === null ? null : (
+        <details className="settings-page__disclosure" id="event-replay" onToggle={event => setEventReplayOpen(event.currentTarget.open)} open={eventReplayOpen}>
+          <summary><span className="settings-page__summary-content"><strong>Event replay</strong><small>Events missed during a restart</small></span></summary>
+          {eventReplayOpen && eventReplayApi !== null ? <EventReplaySettings api={eventReplayApi} /> : null}
+        </details>
+      )}
 
       <details className="settings-page__disclosure" id="backup-restore" onToggle={(event) => setDataOpen(event.currentTarget.open)} open={dataOpen}>
         <summary><span className="settings-page__summary-content"><strong>Data and backup{dataNeedsAttention ? " · Needs attention" : ""}</strong><small>{summary === null ? "Loading storage details" : `${formatCount(summary.configurationRecordCount, { one: "configuration record", other: "configuration records" })} · ${formatCount(summary.assetCount, { one: "asset", other: "assets" })}`}</small></span></summary>

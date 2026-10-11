@@ -97,7 +97,7 @@ it("rejects unsupported retry fields before reaching the desktop host", async ()
 it("returns safe reference conflicts and requires confirmation before rebinding used routes", async () => {
   const { app, headers, routes, db, host } = await fixture();
   routes.save({ id: "route-a", name: "Me", deviceId: "headphones", deviceLabel: "Headphones", autoFollowDeviceName: false });
-  db.connection.exec("INSERT INTO alert_rules VALUES ('alert-a', 'Follow', 'follow', 0, 0, 0)");
+  db.connection.exec("INSERT INTO alert_rules (id, name, event_type, enabled, cooldown_seconds, priority) VALUES ('alert-a', 'Follow', 'follow', 0, 0, 0)");
   db.connection.prepare("INSERT INTO alert_editor_documents VALUES (?, ?, ?)").run("alert-a", JSON.stringify({ name: "Follow", outputs: { browserSource: false, deviceRouteIds: ["route-a"] } }), "2026-09-05");
   const deleted = await app.inject({ method: "DELETE", url: "/audio/routes/route-a", headers });
   expect(deleted.statusCode, deleted.body).toBe(409);

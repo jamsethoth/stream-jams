@@ -1,6 +1,8 @@
 import {
   alertCollectionSchema,
   alertInventoryRowSchema,
+  alertCreateInputSchema,
+  alertRuleExternalIdentityIssue,
   alertRuleSchema,
   alertVariantSchema,
   alertVariationCreateInputSchema,
@@ -29,7 +31,8 @@ import {
   type AlertVariationCreateInput,
   type AlertValidationIssue,
   type ProviderKind,
-  type StreamEventType,
+  type AlertEventType,
+  type ExternalAlertIdentity,
   type TargetProfileId
 } from "@stream-jams/core";
 import type { AlertAggregateMutationStore } from "./alert-aggregate-mutation-store.js";
@@ -87,9 +90,11 @@ export interface AlertSetManagementServiceOptions {
   readonly generateId: (kind: AlertConfigurationIdKind) => string;
   readonly mutationStore: AlertAggregateMutationStore;
   readonly listBrowserSources: () => Promise<readonly AlertBrowserSourceView[]>;
+  /** Whether a configured event source subscribes to the identity; external alerts warn when it does not. */
+  readonly isExternalIdentitySubscribed?: ((identity: ExternalAlertIdentity) => Promise<boolean>) | undefined;
 }
 
-const starterAlertEventTypes: readonly StreamEventType[] = ["follow", "raid", "subscription", "channel_point_redemption"];
+const starterAlertEventTypes: readonly AlertEventType[] = ["follow", "raid", "subscription", "channel_point_redemption"];
 const starterAlerts = alertStarterTemplates.filter((template) => starterAlertEventTypes.includes(template.eventType));
 
 export class AlertSetManagementService {
@@ -100,6 +105,7 @@ export class AlertSetManagementService {
   readonly #generateId: (kind: AlertConfigurationIdKind) => string;
   readonly #mutationStore: AlertAggregateMutationStore;
   readonly #listBrowserSources: () => Promise<readonly AlertBrowserSourceView[]>;
+  readonly #isExternalIdentitySubscribed: (identity: ExternalAlertIdentity) => Promise<boolean>;
 
   constructor(options: AlertSetManagementServiceOptions) {
     this.#alertService = options.alertService;
@@ -109,6 +115,7 @@ export class AlertSetManagementService {
     this.#generateId = options.generateId;
     this.#mutationStore = options.mutationStore;
     this.#listBrowserSources = options.listBrowserSources;
+    this.#isExternalIdentitySubscribed = options.isExternalIdentitySubscribed ?? (async () => false);
   }
 
   async listSets(): Promise<readonly AlertSetOverview[]> {
@@ -118,8 +125,9 @@ export class AlertSetManagementService {
     const browserSources = await this.#listBrowserSources();
     const metadata = await this.#setMetadataByIds(collections.map((collection) => collection.id));
     const documents = await this.#documentsForRules(rules);
+    const unsubscribed = await this.#unsubscribedExternalRuleIds(rules);
     return collections.map((collection) =>
-      this.#toOverview(collection, metadata.get(collection.id)!, rules, documents, browserSources)
+      this.#toOverview(collection, metadata.get(collection.id)!, rules, documents, browserSources, unsubscribed)
     );
   }
 
@@ -134,10 +142,11 @@ export class AlertSetManagementService {
     const setMetadata = await this.#setMetadata(setId);
     const ruleMetadata = await this.#ruleMetadataByIds(rules.map((rule) => rule.id));
     const documents = await this.#documentsForRules(rules);
+    const unsubscribed = await this.#unsubscribedExternalRuleIds(rules);
     return alertSetDetailSchema.parse({
-      overview: this.#toOverview(collection, setMetadata, rules, documents, browserSources),
+      overview: this.#toOverview(collection, setMetadata, rules, documents, browserSources, unsubscribed),
       inventory: rules.flatMap((rule) =>
-        this.#mapInventoryRows(setId, rule, ruleMetadata.get(rule.id)!, documents)
+        this.#mapInventoryRows(setId, rule, ruleMetadata.get(rule.id)!, documents, unsubscribed)
       ),
       browserSources
     });
@@ -165,13 +174,17 @@ export class AlertSetManagementService {
     if (template === undefined) {
       throw new Error(`No starter alert template exists for ${input.eventType}`);
     }
-    const conditions = input.eventType === "channel_point_redemption"
-      ? replaceChannelPointRewardSelection([], input.channelPointRewardSelection ?? { mode: "all" })
+    const parsed = alertCreateInputSchema.parse(input);
+    const conditions = parsed.eventType === "channel_point_redemption"
+      ? replaceChannelPointRewardSelection([], parsed.channelPointRewardSelection ?? { mode: "all" })
       : [];
-    const created = this.#materializeRule(starterRuleInput(setId, template, input.name, conditions));
+    const created = this.#materializeRule({
+      ...starterRuleInput(setId, template, parsed.name, conditions),
+      ...(parsed.externalIdentity === undefined ? {} : { externalIdentity: parsed.externalIdentity })
+    });
     const metadata = {
       ruleId: created.id,
-      providerKind: "twitch" as const,
+      providerKind: created.externalIdentity === undefined ? "twitch" as const : "streamerbot" as const,
       reviewState: "needs-review" as const,
       targetProfileIds: ["landscape", "vertical"] as const
     };
@@ -574,7 +587,8 @@ export class AlertSetManagementService {
     metadata: AlertSetMetadata,
     allRules: readonly AlertRule[],
     documents: ReadonlyMap<string, AlertEditorDocument>,
-    browserSources: readonly AlertBrowserSourceView[]
+    browserSources: readonly AlertBrowserSourceView[],
+    unsubscribedExternalRuleIds: ReadonlySet<string>
   ): AlertSetOverview {
     const rules = allRules.filter((rule) => rule.collectionIds.includes(collection.id));
     const enabledRules = rules.filter((rule) => rule.enabled);
@@ -597,6 +611,18 @@ export class AlertSetManagementService {
           code: "NO_ENABLED_VARIATION",
           message: `${rule.name} has no enabled default or variation.`,
           nextStep: "Open the alert and enable a valid default or variation.",
+          alertId: rule.id,
+          eventType: rule.eventType
+        }));
+      }
+      if (rule.externalIdentity !== undefined && unsubscribedExternalRuleIds.has(rule.id)) {
+        issues.push(validationIssue({
+          id: `${rule.id}:external-event-not-subscribed`,
+          severity: "warning",
+          code: "EXTERNAL_EVENT_NOT_SUBSCRIBED",
+          message: `${rule.name} waits for Streamer.bot ${rule.externalIdentity.sourceKey} · ${rule.externalIdentity.eventType}, which no event source subscribes to.`,
+          nextStep: "Open Event sources and subscribe Streamer.bot to this event.",
+          providerKind: "streamerbot",
           alertId: rule.id,
           eventType: rule.eventType
         }));
@@ -665,14 +691,29 @@ export class AlertSetManagementService {
       rule.id,
       ...rule.variants.slice(1).map((variant) => variant.id)
     ]);
-    return this.#mapInventoryRows(setId, rule, metadata, documents);
+    return this.#mapInventoryRows(setId, rule, metadata, documents, await this.#unsubscribedExternalRuleIds([rule]));
+  }
+
+  /** Probes each distinct external identity once; canonical rules are never probed. */
+  async #unsubscribedExternalRuleIds(rules: readonly AlertRule[]): Promise<ReadonlySet<string>> {
+    const results = new Map<string, Promise<boolean>>();
+    const unsubscribed = new Set<string>();
+    for (const rule of rules) {
+      const identity = rule.externalIdentity;
+      if (identity === undefined) continue;
+      const key = JSON.stringify([identity.providerKind, identity.sourceKey, identity.eventType]);
+      if (!results.has(key)) results.set(key, this.#isExternalIdentitySubscribed(identity));
+      if (!await results.get(key)!) unsubscribed.add(rule.id);
+    }
+    return unsubscribed;
   }
 
   #mapInventoryRows(
     setId: string,
     rule: AlertRule,
     metadata: AlertRuleManagementMetadata,
-    documents: ReadonlyMap<string, AlertEditorDocument>
+    documents: ReadonlyMap<string, AlertEditorDocument>,
+    unsubscribedExternalRuleIds: ReadonlySet<string>
   ): readonly AlertInventoryRow[] {
     return rule.variants.map((variant, index) => {
       const editorId = index === 0 ? rule.id : variant.id;
@@ -700,7 +741,11 @@ export class AlertSetManagementService {
         priority: variant.priority ?? null,
         reviewState,
         targetProfileIds,
-        previewText: variant.textTemplate
+        previewText: variant.textTemplate,
+        ...(rule.externalIdentity === undefined ? {} : {
+          externalIdentity: rule.externalIdentity,
+          externalIdentitySubscribed: !unsubscribedExternalRuleIds.has(rule.id)
+        })
       });
     });
   }
@@ -746,7 +791,7 @@ export class AlertSetManagementService {
   }
 
   #materializeRule(input: Parameters<ManagedAlertService["createRule"]>[0]): AlertRule {
-    return alertRuleSchema.parse({
+    const rule = alertRuleSchema.parse({
       ...input,
       id: this.#generateId("rule"),
       collectionIds: Array.from(new Set(input.collectionIds)),
@@ -755,6 +800,9 @@ export class AlertSetManagementService {
         id: this.#generateId("variant")
       }))
     });
+    const issue = alertRuleExternalIdentityIssue(rule);
+    if (issue !== null) throw new Error(issue);
+    return rule;
   }
 
   async #setMetadata(setId: string): Promise<AlertSetMetadata> {
@@ -955,7 +1003,7 @@ function validationIssue(input: {
   readonly nextStep: string;
   readonly targetProfileId?: TargetProfileId | undefined;
   readonly providerKind?: ProviderKind | undefined;
-  readonly eventType?: StreamEventType | undefined;
+  readonly eventType?: AlertEventType | undefined;
   readonly alertId?: string | undefined;
 }): AlertValidationIssue {
   return {

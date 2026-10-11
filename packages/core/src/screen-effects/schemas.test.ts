@@ -151,9 +151,7 @@ describe("screenEffectDocumentSchema", () => {
 
     const binding = {
       id: "binding-one",
-      kind: "twitch-reward" as const,
-      broadcasterId: "broadcaster-1",
-      rewardId: "reward-1"
+      selector: { match: { kind: "twitch-reward" as const, broadcasterId: "broadcaster-1", rewardId: "reward-1" }, sources: "any" as const, conditions: [] }
     };
     expect(screenEffectDocumentSchema.safeParse({
       ...document,
@@ -205,16 +203,19 @@ describe("effectBindingIdentity", () => {
   it("uses stable matching fields and excludes the storage ID", () => {
     expect(effectBindingIdentity({
       id: "binding-one",
-      kind: "twitch-reward",
-      broadcasterId: "broadcaster-1",
-      rewardId: "reward-1"
+      selector: { match: { kind: "twitch-reward", broadcasterId: "broadcaster-1", rewardId: "reward-1" }, sources: "any", conditions: [] }
     })).toBe('twitch-reward:["broadcaster-1","reward-1"]');
     expect(effectBindingIdentity({
       id: "binding-two",
-      kind: "streamerbot-event",
-      providerId: "provider-1",
-      sourceKey: "Custom",
-      eventType: "Jump"
-    })).toBe('streamerbot-event:["provider-1","Custom","Jump"]');
+      selector: { match: { kind: "external", providerKind: "streamerbot", sourceKey: "Custom", eventType: "Jump" }, sources: "any", conditions: [] }
+    })).toBe('external:["streamerbot","Custom","Jump"]');
+  });
+
+  it("keeps bindings with different conditions distinct", () => {
+    const raid = (min: number) => effectBindingIdentity({
+      id: "binding-raid",
+      selector: { match: { kind: "canonical", type: "raid" }, sources: "any", conditions: [{ field: "raidViewers", operator: "min", value: min }] }
+    });
+    expect(raid(10)).not.toBe(raid(20));
   });
 });

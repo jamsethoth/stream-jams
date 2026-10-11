@@ -109,7 +109,7 @@ test("production Twitch source creation uses authoritative totals and read-only 
     // Synthetic reconnection grants the optional scope but never unlocks absent goal production.
     await fixture.connect(true);
     await page.goto(`${fixture.runtime.url}/manage/data`);
-    await expect(sources.getByText(/Creator Goals:/u)).toContainText("central event bus");
+    await expect(sources.getByText(/Creator Goals:/u)).toContainText("Creator Goal integration pending");
     await expect(sources.getByRole("combobox")).toHaveCount(0);
     // Restart takes a fresh authoritative snapshot; totals can decrease.
     fixture.total = 980; await fixture.stop(); await fixture.start();

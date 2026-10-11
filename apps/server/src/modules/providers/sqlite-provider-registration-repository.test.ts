@@ -26,7 +26,7 @@ describe("SqliteProviderRegistrationRepository", () => {
     });
   });
 
-  it("atomically replaces the active provider for one capability only", async () => {
+  it("keeps other event-source kinds in use and replaces only the same kind", async () => {
     await repository.save(providerRecord());
     await repository.save(
       providerRecord({
@@ -66,10 +66,31 @@ describe("SqliteProviderRegistrationRepository", () => {
 
     const result = await repository.activate("provider-streamerbot");
 
-    expect(result.replacedProviderId).toBe("provider-twitch");
-    expect((await repository.findById("provider-streamerbot"))?.provider.active).toBe(true);
-    expect((await repository.findById("provider-twitch"))?.provider.active).toBe(false);
+    expect(result.replacedProviderId).toBeNull();
+    expect((await repository.listActive("event-source")).map((record) => record.provider.id)).toEqual(["provider-streamerbot", "provider-twitch"]);
+    expect((await repository.findActiveByKind("twitch"))?.provider.id).toBe("provider-twitch");
     expect((await repository.findById("provider-speakerbot"))?.provider.active).toBe(true);
+
+    await repository.save(providerRecord({
+      provider: { ...providerRecord().provider, id: "provider-streamerbot-2", name: "Second Streamer.bot", kind: "streamerbot", active: false, intakeState: "inactive" },
+      configuration: { protocol: "ws", host: "127.0.0.1", port: 8081, endpoint: "/" }
+    }));
+    const replaced = await repository.activate("provider-streamerbot-2");
+
+    expect(replaced.replacedProviderId).toBe("provider-streamerbot");
+    expect((await repository.findActiveByKind("streamerbot"))?.provider.id).toBe("provider-streamerbot-2");
+    expect((await repository.findById("provider-twitch"))?.provider.active).toBe(true);
+  });
+
+  it("still allows only one active provider per non-event-source capability and per event-source kind", async () => {
+    await repository.save(providerRecord());
+    const insert = (id: string, kind: string, capability: string) => database.connection.prepare(`INSERT INTO provider_registrations
+      (id, name, kind, capability, non_secret_config_json, active, connection_state, intake_state, available_voices_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, '{}', 1, 'connected', ?, '[]', 'now', 'now')`).run(id, id, kind, capability, capability === "event-source" ? "active" : null);
+
+    expect(() => insert("second-twitch", "twitch", "event-source")).toThrow(/UNIQUE/u);
+    insert("tts-1", "speakerbot", "tts");
+    expect(() => insert("tts-2", "browser-speech", "tts")).toThrow(/UNIQUE/u);
   });
 
   it("updates provider-owned TTS safety settings", async () => {

@@ -35,6 +35,7 @@ function row(moduleId: string, occurrenceId: string, status: "queued" | "playing
     occurrenceId,
     name: "Playback",
     summary: "Safe summary",
+    source: null,
     status,
     enqueuedAtMs: 1_000,
     completedAtMs: status === "completed" ? 2_000 : null,

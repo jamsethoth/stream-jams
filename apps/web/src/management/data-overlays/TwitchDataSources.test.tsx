@@ -10,7 +10,7 @@ afterEach(() => { cleanup(); vi.useRealTimers(); });
 it.each(["current", "stale", "invalid", "disconnected", "unconfigured"] as const)("shows actionable follower %s status and blocked goals", async follower => {
   renderManagement(<TwitchDataSources api={createTwitchDataFixture(twitchDataStatus(follower))} onCreated={() => undefined} />);
   expect(await screen.findByText(/Follower total:/u)).toHaveTextContent(follower === "current" ? "Current" : follower === "stale" ? "Stale" : follower === "invalid" ? "Awaiting a valid total" : follower === "disconnected" ? "Disconnected" : "Not configured");
-  expect(screen.getByText(/Creator Goals:/u)).toHaveTextContent("central event bus");
+  expect(screen.getByText(/Creator Goals:/u)).toHaveTextContent("Creator Goal integration pending");
   expect(screen.queryByRole("combobox")).toBeNull();
   expect(screen.getByRole("link")).toHaveAttribute("href", "/manage/event-sources");
 });

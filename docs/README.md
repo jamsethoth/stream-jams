@@ -10,9 +10,10 @@ Use this map to distinguish current behavior, pending work, and historical evide
 | How do I configure Timers or Stream Deck HTTP actions? | [Timers](timers.md); [implementation verification and remaining manual acceptance](verification/timers.md) |
 | How do I configure Music and brand its widget? | [Music provider setup](music-providers.md), [styling surface](music-styling.md), and [dated verification/acceptance](verification/music-widget-module.md) |
 | What Music behavior is required? | [Canonical Music source](../openspec/specs/music-source-providers/spec.md) and [widget/output](../openspec/specs/music-widget-overlay/spec.md) capabilities; [scenario trace](verification/music-widget-scenarios.md) records automated and physical evidence |
-| How do I send Streamer.bot video shoutouts? | [Video shoutouts](video-shoutout.md) |
+| How do I queue and play requested videos (Twitch, YouTube, Streamer.bot, rewards, REST)? | [Videos](videos.md); [mirror feasibility check](verification/video-mirror-feasibility.md) |
 | How do native integrations pair and control timers/queues? | [Local automation API v1](automation-api.md) |
 | How do I create shared counters, goals and canvases? | [Data overlays](data-overlays.md), [implementation plan](superpowers/plans/2026-10-08-data-overlays-implementation.md) and [scenario evidence](verification/data-overlays-scenarios.md) |
+| How does a module consume stream events? | [Event bus consumers](engineering/event-bus-consumers.md) |
 
 | What product boundaries are intentional? | [Product plan](product-plan.md); its MVP sections describe the first delivery boundary, and later sections describe approved additions |
 | What is still pending? | [Canonical backlog](backlog.md), including links to planned OpenSpec changes |
@@ -45,10 +46,9 @@ The following table preserves the October 5 reconciliation and records current d
 | Change | Remaining work |
 | --- | --- |
 | [add-main-branch-changelog](../openspec/changes/add-main-branch-changelog/tasks.md) | Unimplemented proposal, 22 unchecked tasks; no root changelog or enforcing workflow |
-| [add-video-shoutout-overlay-module](../openspec/changes/add-video-shoutout-overlay-module/tasks.md) | Unimplemented proposal, 23 unchecked tasks; no registered video-shoutout module |
 | [add-custom-data-overlays](../openspec/changes/add-custom-data-overlays/tasks.md) | Slice 1 implemented, canonical specs synchronized and automated gates passed; physical OBS/desktop acceptance unperformed |
-| [add-data-overlay-event-rules](../openspec/changes/add-data-overlay-event-rules/tasks.md) | Slice 2 blocked by the unimplemented central event bus; real Streamer.bot global fixtures also required |
-| [add-twitch-overlay-data](../openspec/changes/add-twitch-overlay-data/tasks.md) | Authoritative follower polling and optional scope/source UI implemented; production follow hints and Creator Goals blocked by the central bus; real-account acceptance pending |
+| [add-data-overlay-event-rules](../openspec/changes/add-data-overlay-event-rules/tasks.md) | Bus prerequisite available after October 11 main merge; rules ready for implementation, while Streamer.bot globals still need real fixtures |
+| [add-twitch-overlay-data](../openspec/changes/add-twitch-overlay-data/tasks.md) | Follower polling and optional scope/source UI implemented; follow hints and Creator Goal integration ready for implementation; real-account acceptance pending |
 | [add-data-overlay-templates](../openspec/changes/add-data-overlay-templates/tasks.md) | Slice 4 implemented with starters, atomic mapping, saved templates, insertion and missing-image repair; canonical specs and automated verification complete |
 
 Persistent event timer recovery and correction requirements are now in [the canonical capability](../openspec/specs/persistent-event-timers/spec.md). The base Timer change is now [archived](../openspec/changes/archive/2026-10-05-add-timer-overlay-module/tasks.md) after the [focused packaged output/cue matrix](verification/timers.md#focused-packaged-timer-output-acceptance-2026-10-05) passed. Its base capabilities are synchronized into [Timer overlay](../openspec/specs/timer-overlay-module/spec.md) and [Timer automation](../openspec/specs/timer-automation-api/spec.md) specifications; the original idle-on-restart wording was reconciled with implemented paused recovery. Physical HTTP-button testing was user-confirmed, and Stream Deck plugin/profile certification remains outside Stream Jams scope.

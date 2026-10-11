@@ -1,0 +1,229 @@
+import type { VideoSource, VideosLayout, VideosProjection } from "@stream-jams/core";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { parseYouTubeMessage, VideosOverlay } from "./VideosOverlay.js";
+
+let play: ReturnType<typeof vi.fn<() => Promise<void>>>;
+let pause: ReturnType<typeof vi.fn<() => void>>;
+beforeEach(() => {
+  play = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+  pause = vi.fn<() => void>();
+  vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(play);
+  vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(pause);
+});
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+
+const youtube: VideoSource = { provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 0 };
+const clip: VideoSource = { provider: "twitch-clip", clipSlug: "ClipOne" };
+const direct: VideoSource = { provider: "direct", url: "https://media.example.com/a.mp4" };
+
+function active(source: VideoSource, overrides: { clock?: { state: "playing" | "paused"; positionMs: number; atEpochMs: number }; obsAudio?: boolean; itemId?: string; layout?: VideosLayout } = {}): VideosProjection {
+  return {
+    status: "active", itemId: overrides.itemId ?? "item-1", title: "The big play", requester: "Viewer", layout: overrides.layout ?? { x: 269, y: 140, width: 1382, height: 876 },
+    delivery: { mode: "player", source, clock: overrides.clock ?? { state: "playing", positionMs: 0, atEpochMs: 1_000 }, obsAudio: overrides.obsAudio ?? true }
+  };
+}
+
+describe("VideosOverlay", () => {
+  it("renders nothing while idle or mirrored", () => {
+    const { container, rerender } = render(<VideosOverlay projection={{ status: "idle" }} />);
+    expect(container).toBeEmptyDOMElement();
+    rerender(<VideosOverlay projection={{ status: "active", itemId: "item-1", title: null, requester: null, layout: { x: 269, y: 140, width: 1382, height: 876 }, delivery: { mode: "mirror", paused: false, obsAudio: true } }} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("fails closed on invalid data and reports it once against the item", () => {
+    const events = vi.fn();
+    const invalid = active({ provider: "direct", url: "http://evil.example/a.mp4" });
+    const { container, rerender } = render(<VideosOverlay onPlaybackEvent={events} projection={invalid} />);
+    rerender(<VideosOverlay onPlaybackEvent={events} projection={invalid} />);
+    expect(container).toBeEmptyDOMElement();
+    expect(events).toHaveBeenCalledTimes(1);
+    expect(events).toHaveBeenCalledWith(expect.objectContaining({ instructionId: "video:item-1", status: "failed" }));
+    expect(JSON.stringify(events.mock.calls)).not.toContain("evil.example");
+  });
+
+  it("places the picture and caption in the saved box, the same for every delivery", () => {
+    const layout = { x: 1400, y: 40, width: 480, height: 320 };
+    const { rerender } = render(<VideosOverlay projection={active(clip, { layout })} />);
+    const box = screen.getByTestId("video-overlay");
+    expect(box).toHaveStyle({ left: "1400px", top: "40px", width: "480px", height: "320px" });
+    // A small box keeps a 16:9 picture with half-size caption spacing below it.
+    expect(box.querySelector(".video-overlay__frame")).toHaveStyle({ width: "480px", height: "270px" });
+    expect(box.querySelector(".video-overlay__context")).toHaveStyle({ width: "480px" });
+    expect(box.style.getPropertyValue("--video-scale")).toBe("0.5");
+    rerender(<VideosOverlay projection={{ status: "notice", noticeId: "n1", notice: "no-clip", displayName: null, layout }} />);
+    expect(screen.getByTestId("video-overlay")).toHaveStyle({ left: "1400px", top: "40px", width: "480px", height: "320px" });
+  });
+
+  it("fails closed on a box that leaves the canvas", () => {
+    const events = vi.fn();
+    const { container } = render(<VideosOverlay onPlaybackEvent={events} projection={active(clip, { layout: { x: 1700, y: 0, width: 480, height: 320 } })} />);
+    expect(container).toBeEmptyDOMElement();
+    expect(events).toHaveBeenCalledWith(expect.objectContaining({ instructionId: "video:item-1", status: "failed" }));
+    const notice = render(<VideosOverlay projection={{ status: "notice", noticeId: "n1", notice: "no-clip", displayName: null, layout: { x: 0, y: 0, width: 100, height: 100 } }} />);
+    expect(notice.container).toBeEmptyDOMElement();
+  });
+
+  it("shows the no-clip notice", () => {
+    render(<VideosOverlay projection={{ status: "notice", noticeId: "n1", notice: "no-clip", displayName: "Quiet Friend", layout: { x: 269, y: 140, width: 1382, height: 876 } }} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Quiet FriendNo clip to show right now");
+  });
+
+  it("builds the Twitch player for this page and reports started once on load", () => {
+    const events = vi.fn();
+    render(<VideosOverlay onPlaybackEvent={events} projection={active(clip, { obsAudio: false })} />);
+    const frame = screen.getByTitle("Video player");
+    const url = new URL(frame.getAttribute("src")!);
+    expect(url.origin).toBe("https://clips.twitch.tv");
+    expect(url.searchParams.get("parent")).toBe(window.location.hostname);
+    expect(url.searchParams.get("muted")).toBe("true");
+    fireEvent.load(frame);
+    fireEvent.load(frame);
+    expect(events.mock.calls).toEqual([[{ instructionId: "video:item-1", status: "started" }]]);
+    expect(screen.getByText("Requested by Viewer")).toBeVisible();
+  });
+
+  it("silences the fallback players under the mute policy even with OBS audio on", () => {
+    const { rerender } = render(<VideosOverlay muted projection={active(clip, { obsAudio: true })} />);
+    expect(new URL(screen.getByTitle("Video player").getAttribute("src")!).searchParams.get("muted")).toBe("true");
+    rerender(<VideosOverlay muted projection={active(direct, { obsAudio: true })} />);
+    expect(screen.getByTestId<HTMLVideoElement>("video-overlay-direct").muted).toBe(true);
+    rerender(<VideosOverlay projection={active(direct, { obsAudio: true })} />);
+    expect(screen.getByTestId<HTMLVideoElement>("video-overlay-direct").muted).toBe(false);
+  });
+
+  it("follows the shared clock for direct files and reports start and end", () => {
+    const events = vi.fn();
+    let now = 6_000;
+    const { rerender } = render(<VideosOverlay now={() => now} onPlaybackEvent={events} projection={active(direct, { obsAudio: false })} />);
+    const video = screen.getByTestId<HTMLVideoElement>("video-overlay-direct");
+    expect(video.muted).toBe(true);
+    Object.defineProperty(video, "duration", { configurable: true, value: 60 });
+    fireEvent.loadedMetadata(video);
+    expect(video.currentTime).toBe(5);
+    expect(play).toHaveBeenCalled();
+
+    now = 10_000;
+    rerender(<VideosOverlay now={() => now} onPlaybackEvent={events} projection={active(direct, { clock: { state: "paused", positionMs: 7_000, atEpochMs: 9_000 } })} />);
+    expect(video.currentTime).toBe(7);
+    expect(pause).toHaveBeenCalled();
+
+    fireEvent.playing(video);
+    fireEvent.ended(video);
+    expect(events.mock.calls.map(([event]) => event.status)).toEqual(["started", "completed"]);
+  });
+
+  it("steers YouTube by postMessage and only trusts messages from its own frame", () => {
+    const events = vi.fn();
+    render(<VideosOverlay now={() => 31_000} onPlaybackEvent={events} projection={active(youtube, { clock: { state: "playing", positionMs: 0, atEpochMs: 1_000 } })} />);
+    const frame = screen.getByTitle<HTMLIFrameElement>("Video player");
+    const posted = vi.spyOn(frame.contentWindow!, "postMessage").mockImplementation(() => undefined);
+    fireEvent.load(frame);
+    const commands = posted.mock.calls.map(call => ({ message: JSON.parse(String(call[0])) as { event: string; func?: string; args?: unknown[] }, origin: call[1] as unknown }));
+    expect(commands.every(command => command.origin === "https://www.youtube-nocookie.com")).toBe(true);
+    expect(commands.map(command => command.message.func ?? command.message.event)).toEqual(["listening", "seekTo", "playVideo"]);
+    expect(commands[1]?.message.args).toEqual([30, true]);
+    expect(events).not.toHaveBeenCalled();
+
+    act(() => {
+      window.dispatchEvent(new MessageEvent("message", { origin: "https://evil.example", source: frame.contentWindow, data: JSON.stringify({ event: "onStateChange", info: 1 }) }));
+      window.dispatchEvent(new MessageEvent("message", { origin: "https://www.youtube-nocookie.com", source: window, data: JSON.stringify({ event: "onStateChange", info: 1 }) }));
+    });
+    expect(events).not.toHaveBeenCalled();
+    act(() => {
+      window.dispatchEvent(new MessageEvent("message", { origin: "https://www.youtube-nocookie.com", source: frame.contentWindow, data: JSON.stringify({ event: "onStateChange", info: 1 }) }));
+      window.dispatchEvent(new MessageEvent("message", { origin: "https://www.youtube-nocookie.com", source: frame.contentWindow, data: JSON.stringify({ event: "onStateChange", info: 0 }) }));
+    });
+    expect(events.mock.calls.map(([event]) => event.status)).toEqual(["started", "completed"]);
+  });
+
+  it("reports the YouTube media length once per item, before or after it starts, and ignores unusable lengths", () => {
+    const events = vi.fn();
+    const { rerender } = render(<VideosOverlay onPlaybackEvent={events} projection={active(youtube)} />);
+    let frame = screen.getByTitle<HTMLIFrameElement>("Video player");
+    const deliver = (target: HTMLIFrameElement, info: object) => act(() => {
+      window.dispatchEvent(new MessageEvent("message", { origin: "https://www.youtube-nocookie.com", source: target.contentWindow, data: JSON.stringify({ event: "infoDelivery", info }) }));
+    });
+    // Live streams and unloaded players report no usable length.
+    deliver(frame, { duration: 0 });
+    deliver(frame, { currentTime: 1 });
+    expect(events).not.toHaveBeenCalled();
+    deliver(frame, { duration: 212.0405 });
+    deliver(frame, { playerState: 1, currentTime: 0, duration: 212.0405 });
+    deliver(frame, { duration: 300 });
+    expect(events.mock.calls).toEqual([
+      [{ instructionId: "video:item-1", status: "duration", mediaDurationMs: 212_041 }],
+      [{ instructionId: "video:item-1", status: "started" }]
+    ]);
+
+    // A new item reports its own length, here only after it started; longer than 24 hours is never sent.
+    events.mockClear();
+    rerender(<VideosOverlay onPlaybackEvent={events} projection={active(youtube, { itemId: "item-2" })} />);
+    frame = screen.getByTitle<HTMLIFrameElement>("Video player");
+    deliver(frame, { playerState: 1, currentTime: 0 });
+    deliver(frame, { duration: 24 * 60 * 60 + 1 });
+    deliver(frame, { duration: 95.5 });
+    deliver(frame, { duration: 95.5 });
+    expect(events.mock.calls).toEqual([
+      [{ instructionId: "video:item-2", status: "started" }],
+      [{ instructionId: "video:item-2", status: "duration", mediaDurationMs: 95_500 }]
+    ]);
+  });
+
+  it("reports a direct file's length once and never after the player finished", () => {
+    const events = vi.fn();
+    const { rerender } = render(<VideosOverlay onPlaybackEvent={events} projection={active(direct)} />);
+    let video = screen.getByTestId<HTMLVideoElement>("video-overlay-direct");
+    const setDuration = (target: HTMLVideoElement, seconds: number) => {
+      Object.defineProperty(target, "duration", { configurable: true, value: seconds });
+      fireEvent.durationChange(target);
+    };
+    setDuration(video, Number.NaN);
+    setDuration(video, Number.POSITIVE_INFINITY);
+    expect(events).not.toHaveBeenCalled();
+    setDuration(video, 61.25);
+    setDuration(video, 62);
+    fireEvent.playing(video);
+    expect(events.mock.calls).toEqual([
+      [{ instructionId: "video:item-1", status: "duration", mediaDurationMs: 61_250 }],
+      [{ instructionId: "video:item-1", status: "started" }]
+    ]);
+
+    events.mockClear();
+    rerender(<VideosOverlay onPlaybackEvent={events} projection={active(direct, { itemId: "item-2" })} />);
+    video = screen.getByTestId<HTMLVideoElement>("video-overlay-direct");
+    fireEvent.error(video);
+    setDuration(video, 30);
+    expect(events.mock.calls.map(([event]) => event.status)).toEqual(["failed"]);
+  });
+
+  it("reports no length for Twitch, which exposes none", () => {
+    const events = vi.fn();
+    render(<VideosOverlay onPlaybackEvent={events} projection={active(clip)} />);
+    fireEvent.load(screen.getByTitle("Video player"));
+    expect(events.mock.calls).toEqual([[{ instructionId: "video:item-1", status: "started" }]]);
+  });
+
+  it("reports a player that never loads as failed", () => {
+    vi.useFakeTimers();
+    const events = vi.fn();
+    render(<VideosOverlay onPlaybackEvent={events} playerLoadTimeoutMs={500} projection={active(clip)} />);
+    act(() => { vi.advanceTimersByTime(500); });
+    expect(events).toHaveBeenCalledWith(expect.objectContaining({ instructionId: "video:item-1", status: "failed", failure: expect.objectContaining({ stage: "source-load" }) }));
+  });
+});
+
+describe("parseYouTubeMessage", () => {
+  it("reads state and time and ignores anything else", () => {
+    expect(parseYouTubeMessage(JSON.stringify({ event: "infoDelivery", info: { playerState: 2, currentTime: 12.5 } }))).toEqual({ playerState: 2, currentTime: 12.5 });
+    expect(parseYouTubeMessage(JSON.stringify({ event: "onStateChange", info: 0 }))).toEqual({ playerState: 0, currentTime: null });
+    expect(parseYouTubeMessage("not json")).toBeNull();
+    expect(parseYouTubeMessage(JSON.stringify({ event: "other" }))).toBeNull();
+  });
+});

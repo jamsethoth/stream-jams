@@ -1,14 +1,14 @@
-import type { NormalizedStreamEvent } from "../events/types.js";
+import type { AlertSourceEvent } from "../events/types.js";
 import { DefaultAlertConditionEvaluator, type AlertConditionEvaluator } from "./condition-evaluator.js";
 import type { AlertRule } from "./types.js";
 
 export interface AlertMatch {
-  readonly event: NormalizedStreamEvent;
+  readonly event: AlertSourceEvent;
   readonly rule: AlertRule;
 }
 
 export interface FindAlertMatchesInput {
-  readonly event: NormalizedStreamEvent;
+  readonly event: AlertSourceEvent;
   readonly rules: readonly AlertRule[];
 }
 
@@ -36,7 +36,15 @@ export class DefaultAlertMatcher implements AlertMatcher {
         continue;
       }
 
-      const conditionsMatch = rule.conditions.every((condition) => this.#conditionEvaluator.evaluate(condition, input.event));
+      const { event } = input;
+      // External rules select an exact identity and never evaluate conditions against payload content.
+      const conditionsMatch = event.type === "external_event"
+        ? rule.externalIdentity !== undefined
+          && rule.externalIdentity.providerKind === event.identity.providerKind
+          && rule.externalIdentity.sourceKey === event.identity.sourceKey
+          && rule.externalIdentity.eventType === event.identity.eventType
+        : rule.externalIdentity === undefined
+          && rule.conditions.every((condition) => this.#conditionEvaluator.evaluate(condition, event));
       if (!conditionsMatch || seenRuleIds.has(rule.id)) {
         continue;
       }

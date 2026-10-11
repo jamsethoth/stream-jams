@@ -13,6 +13,7 @@ import {
   providerVoiceTestResultSchema,
   registeredProviderDetailSchema,
   streamerBotSubscriptionCatalogSchema,
+  streamerBotForwardingUpdateInputSchema,
   streamerBotSubscriptionUpdateInputSchema,
   ttsProviderSafetySettingsSchema,
   type ActionableManagementError,
@@ -33,6 +34,7 @@ import {
   type SecretRef,
   type StreamerBotSubscriptionCatalog,
   type StreamerBotSubscriptionSelection,
+  type StreamerBotForwardingUpdateInput,
   type StreamerBotSubscriptionUpdateInput,
   type TtsProviderSafetySettings
 } from "@stream-jams/core";
@@ -65,7 +67,8 @@ export interface ProviderManagementServiceOptions {
   readonly generateId: () => string;
   readonly generateReferenceId: () => string;
   readonly logger?: Pick<Logger, "error"> | undefined;
-  readonly onEventSourceChanged?: (() => void | Promise<void>) | undefined;
+  /** Called with the kind of the event source whose registration changed. */
+  readonly onEventSourceChanged?: ((kind: ProviderKind) => void | Promise<void>) | undefined;
   readonly onMusicSourceChanged?: (() => void | Promise<void>) | undefined;
   readonly streamerBotSubscriptions?: StreamerBotSubscriptionRuntime | undefined;
   readonly getVerifiedTwitchBroadcasterId?: (() => Promise<string | null>) | undefined;
@@ -162,7 +165,7 @@ export class ProviderManagementService {
   readonly #generateId: () => string;
   readonly #generateReferenceId: () => string;
   readonly #logger: Pick<Logger, "error"> | null;
-  readonly #onEventSourceChanged: () => void | Promise<void>;
+  readonly #onEventSourceChanged: (kind: ProviderKind) => void | Promise<void>;
   readonly #onMusicSourceChanged: () => void | Promise<void>;
   readonly #streamerBotSubscriptions: StreamerBotSubscriptionRuntime | null;
   readonly #getVerifiedTwitchBroadcasterId: () => Promise<string | null>;
@@ -259,7 +262,8 @@ export class ProviderManagementService {
     }
 
     const capability = providerCapabilityForKind(parsed.kind);
-    const active = (await this.#repository.findActive(capability)) === null;
+    // A new registration starts in use only when nothing of its capability is in use yet.
+    const active = (await this.#repository.listActive(capability)).length === 0;
     const providerId = this.#generateId();
     const now = this.#now().toISOString();
     const secret = parsed.kind === "pear-desktop"
@@ -315,7 +319,7 @@ export class ProviderManagementService {
     }
     try {
       if (saved.provider.capability === "event-source" && saved.provider.active) {
-        await this.#onEventSourceChanged();
+        await this.#onEventSourceChanged(saved.provider.kind);
       }
       if (saved.provider.capability === "music-source" && saved.provider.active) {
         await this.#onMusicSourceChanged();
@@ -482,7 +486,7 @@ export class ProviderManagementService {
     }
 
     if (target.provider.capability === "event-source") {
-      await this.#onEventSourceChanged();
+      await this.#onEventSourceChanged(target.provider.kind);
     }
     if (target.provider.capability === "music-source") {
       await this.#onMusicSourceChanged();
@@ -517,7 +521,7 @@ export class ProviderManagementService {
     });
     if (deactivated === null) throw new ProviderRegistrationNotFoundError(providerId);
     if (target.provider.capability === "event-source") {
-      await this.#onEventSourceChanged();
+      await this.#onEventSourceChanged(target.provider.kind);
     }
     if (target.provider.capability === "music-source" && target.provider.active) {
       await this.#onMusicSourceChanged();
@@ -588,7 +592,8 @@ export class ProviderManagementService {
           endpoint: configuration.endpoint,
           allowUnauthenticatedLocalConnection: configuration.allowUnauthenticatedLocalConnection,
           twitchBroadcasterId: parsed.twitchBroadcasterId,
-          externalSubscriptions: parsed.externalSubscriptions
+          externalSubscriptions: parsed.externalSubscriptions,
+          forwardTwitchEvents: configuration.forwardTwitchEvents
         },
         updatedAt: this.#now().toISOString()
       });
@@ -611,6 +616,44 @@ export class ProviderManagementService {
       twitchBroadcasterId: parsed.twitchBroadcasterId,
       externalSubscriptions: parsed.externalSubscriptions
     }, catalog);
+  }
+
+  /**
+   * Turns Streamer.bot Twitch forwarding on or off. Works whether or not the registration is in use; an active
+   * runtime reconnects with the new subscriptions.
+   */
+  setStreamerBotForwarding(providerId: string, input: StreamerBotForwardingUpdateInput): Promise<StreamerBotSubscriptionCatalog> {
+    const result = this.#pendingStreamerBotSubscriptionMutation.then(
+      () => this.#setStreamerBotForwarding(providerId, input)
+    );
+    this.#pendingStreamerBotSubscriptionMutation = result.catch(
+    // error-provenance: allow expected -- the caller receives this rejection; later mutations still run in order
+    () => undefined);
+    return result;
+  }
+
+  async #setStreamerBotForwarding(providerId: string, input: StreamerBotForwardingUpdateInput): Promise<StreamerBotSubscriptionCatalog> {
+    const parsed = streamerBotForwardingUpdateInputSchema.parse(input);
+    const record = await this.#requireStreamerBot(providerId);
+    const configuration = { ...readStreamerBotConfiguration(record), forwardTwitchEvents: parsed.forwardTwitchEvents };
+    const saved = await this.#repository.save({ ...record, configuration, updatedAt: this.#now().toISOString() });
+    if (saved.provider.active) {
+      try {
+        await this.#onEventSourceChanged(saved.provider.kind);
+      }
+      // error-provenance: allow expected -- the saved setting is durable; the runtime reports its own connection failure
+      catch {
+        // Live status on the Event sources page shows the reconnect outcome.
+      }
+    }
+    if (!saved.provider.active || this.#streamerBotSubscriptions === null) {
+      return toStreamerBotSubscriptionCatalog(providerId, configuration, null);
+    }
+    const subscriptions = this.#streamerBotSubscriptions;
+    const catalog = await subscriptions.getCatalog(providerId).catch(
+    // error-provenance: allow expected -- a reconnect still in progress or failed leaves the catalog unavailable, not the save
+    () => null);
+    return toStreamerBotSubscriptionCatalog(providerId, configuration, catalog);
   }
 
   async getTtsSafety(providerId: string): Promise<TtsProviderSafetySettings> {
@@ -771,6 +814,7 @@ function toStreamerBotSubscriptionCatalog(
         .map(([sourceKey, eventTypes]) => ({ sourceKey, eventTypes: [...eventTypes].sort() }));
   return streamerBotSubscriptionCatalogSchema.parse({
     providerId,
+    forwardTwitchEvents: configuration.forwardTwitchEvents,
     available: catalog !== null,
     sources,
     selected: configuration.externalSubscriptions,

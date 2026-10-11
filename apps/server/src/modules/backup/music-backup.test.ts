@@ -13,7 +13,7 @@ import { ConfigurationBackupService, ConfigurationRestoreBlockedError, type Conf
 import { SqliteConfigurationSnapshotRepository } from "./sqlite-configuration-snapshot-repository.js";
 
 const appConfig: AppConfig = {
-  desktop: { closeToTray: true }, server: { host: "127.0.0.1", port: 39187 },
+  desktop: { closeToTray: true, gpuAcceleration: true }, server: { host: "127.0.0.1", port: 39187 },
   storage: { dataDirectory: "C:/test/data", assetDirectory: "C:/test/assets" },
   logging: { level: "INFO", rollover: "hourly", retentionHours: 336 },
   playback: { paused: false, muted: false, doNotDisturb: false }

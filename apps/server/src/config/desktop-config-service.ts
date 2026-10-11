@@ -18,10 +18,14 @@ export class DesktopConfigService {
 
   updateConfig(candidate: unknown): Promise<DesktopConfig & { readonly available: boolean }> {
     const result = this.#pending.then(async () => {
-      if (this.apply === undefined) throw new DesktopConfigError(409, "DESKTOP_UNAVAILABLE", "Open Stream Jams in the desktop app to change its close behavior.");
+      if (this.apply === undefined) throw new DesktopConfigError(409, "DESKTOP_UNAVAILABLE", "Open Stream Jams in the desktop app to change its desktop settings.");
       const parsed = desktopConfigUpdateSchema.safeParse(candidate);
-      if (!parsed.success) throw new DesktopConfigError(400, "INVALID_DESKTOP_CONFIG", "Close window to tray must be a boolean.");
-      const config = await this.store.updateConfig({ desktop: parsed.data.closeToTray === undefined ? {} : { closeToTray: parsed.data.closeToTray } });
+      if (!parsed.success) throw new DesktopConfigError(400, "INVALID_DESKTOP_CONFIG", "Desktop settings must be booleans.");
+      const { closeToTray, gpuAcceleration } = parsed.data;
+      const config = await this.store.updateConfig({ desktop: {
+        ...(closeToTray === undefined ? {} : { closeToTray }),
+        ...(gpuAcceleration === undefined ? {} : { gpuAcceleration })
+      } });
       try { await this.apply(config.desktop); } catch (cause) {
         throw new DesktopConfigError(503, "DESKTOP_CONFIG_NOT_APPLIED", "The preference was saved but the desktop host could not apply it. Restart the desktop app to use the saved setting.", { cause });
       }

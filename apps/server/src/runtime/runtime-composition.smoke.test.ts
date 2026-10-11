@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import {
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
@@ -40,6 +41,7 @@ import type { StreamerBotSocket } from "../modules/streamerbot/streamerbot-clien
 import type { SpeakerBotSocket } from "../modules/tts/speakerbot-client.js";
 import { SqliteAssetRepository } from "../modules/assets/sqlite-asset-repository.js";
 import { SqliteEffectRepository } from "../modules/screen-effects/sqlite-effect-repository.js";
+import { SqliteEventBusJournalRepository } from "../modules/events/sqlite-event-bus-journal-repository.js";
 import { createRuntimeAppComposition, type RuntimeAppComposition } from "./runtime-composition.js";
 
 const temporaryDirectories: string[] = [];
@@ -265,7 +267,7 @@ describe("runtime app composition smoke", () => {
       webBuildDirectory: await createWebBuildFixture(testRoot),
       configStore: new StaticConfigStore({
         ...config,
-        desktop: { closeToTray: false },
+        desktop: { closeToTray: false, gpuAcceleration: true },
         playback: { ...config.playback, muted: true, moduleMutes: { alerts: true, "screen-effects": true } }
       }),
       desktopHost: { onConfigChanged: ({ closeToTray }) => { desktopChanges.push(closeToTray); }, onPlaybackStateChanged: () => {} },
@@ -322,7 +324,7 @@ describe("runtime app composition smoke", () => {
     expect(restored.statusCode, restored.body).toBe(200);
     expect(sinkMuteChanges.at(-1)).toBe(true);
     expect(desktopChanges.at(-1)).toBe(false);
-    expect((await composition.app.inject({ method: "GET", url: "/config/desktop", headers })).json()).toEqual({ available: true, closeToTray: false });
+    expect((await composition.app.inject({ method: "GET", url: "/config/desktop", headers })).json()).toEqual({ available: true, closeToTray: false, gpuAcceleration: true });
     expect((await composition.app.inject({ method: "GET", url: "/health" })).statusCode).toBe(200);
     expect(active.json()).toEqual({
       renderedText: { maxLength: 240, blockedTerms: [], stripUrls: false },
@@ -409,6 +411,81 @@ describe("runtime app composition smoke", () => {
       muted: false
     });
     await expect(configStore.readConfig()).resolves.toMatchObject({ playback: { muted: false } });
+  });
+
+  it("replays an event journaled before shutdown within the replay age under global pause, and expires older ones", async () => {
+    const testRoot = await createTemporaryDirectory();
+    const options = {
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot, { paused: true, muted: false, doNotDisturb: false })),
+      environment: { TWITCH_CLIENT_ID: "test-client" },
+      secretStore: new InMemorySecretStore(),
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket,
+      eventReplayDelayMs: 0
+    };
+    const first = await createRuntimeAppComposition(options);
+    const session = await first.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const authHeaders = managementAuthHeaders(session);
+    await first.app.inject({ method: "GET", url: "/management/home", headers: authHeaders });
+    const rules = (await first.app.inject({ method: "GET", url: "/alerts/rules", headers: authHeaders })).json() as AlertRule[];
+    const followRule = rules.find((rule) => rule.eventType === "follow")!;
+    const document = (await first.app.inject({ method: "GET", url: `/management/alerts/${followRule.id}/editor`, headers: authHeaders })).json() as AlertEditorDocument;
+    const layer = testTextLayer(`${followRule.id}-text`, "Thanks {actor.displayName}");
+    const saved = await first.app.inject({
+      method: "PUT",
+      url: `/management/alerts/${followRule.id}/editor`,
+      headers: authHeaders,
+      payload: {
+        confirmLiveImpact: true,
+        document: {
+          ...document,
+          enabled: true,
+          layers: [layer],
+          targetProfiles: document.targetProfiles.map((profile) => profile.id === "landscape"
+            ? { ...profile, enabled: true, reviewState: "ready", layerLayouts: [{ layerId: layer.id, x: 0, y: 0, width: 500, height: 100, zIndex: 1 }] }
+            : { ...profile, enabled: false, reviewState: "needs-review" })
+        }
+      }
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    // Journal two follows as if the app stopped after intake committed them but before any consumer ran.
+    const journal = new SqliteEventBusJournalRepository(first.database.connection);
+    const nowMs = Date.now();
+    for (const [id, ageMs] of [["follow-stale", 10 * 60_000], ["follow-pending", 5_000]] as const) {
+      const receivedAt = new Date(nowMs - ageMs).toISOString();
+      journal.append({
+        kind: "canonical", eventId: id, sourceKind: "twitch", sourceRegistrationId: null, receivedAt, correlationKey: null, effectTriggers: [],
+        event: {
+          id, providerId: "twitch", sourcePlatform: "twitch", ingestProvider: "twitch", occurredAt: receivedAt, type: "follow",
+          actor: { id: `viewer-${id}`, displayName: "Viewer" }, message: null, amount: null, metadata: {}
+        }
+      }, `bus-${id}`, { duplicateSinceMs: 0, correlationSinceMs: 0 });
+    }
+    await first.close();
+
+    const second = await createRuntimeAppComposition(options);
+    runtimeCompositions.push(second);
+    expect(second.playbackCoordinator.getSnapshot().queued).toEqual([]);
+    second.scheduleEventReplay();
+    await waitUntil(() => second.playbackCoordinator.getSnapshot().queued.length === 1);
+
+    const snapshot = second.playbackCoordinator.getSnapshot();
+    // Global pause applies to the replayed alert as to a live one: it waits in the queue.
+    expect(snapshot.paused).toBe(true);
+    expect(snapshot.current).toBeNull();
+    expect(snapshot.queued.map((item) => [item.sourceEvent.id, item.deliveredBy])).toEqual([["follow-pending", "twitch"]]);
+    const rows = second.database.connection.prepare(`SELECT j.event_id, o.consumer_id, o.outcome FROM event_bus_consumer_outcomes o
+      JOIN event_bus_journal j ON j.sequence = o.sequence WHERE o.consumer_id IN ('alerts', 'screen-effects') ORDER BY j.sequence, o.consumer_id`).all()
+      .map((row) => [row.event_id, row.consumer_id, row.outcome]);
+    expect(rows).toEqual([
+      ["follow-stale", "alerts", "expired"], ["follow-stale", "screen-effects", "expired"],
+      ["follow-pending", "alerts", "admitted"], ["follow-pending", "screen-effects", "no-match"]
+    ]);
+    const activity = await second.app.inject({ method: "GET", url: "/management/diagnostics/event-bus", headers: managementAuthHeaders(await second.app.inject({ method: "POST", url: "/auth/management/sessions" })) });
+    expect(activity.statusCode).toBe(200);
   });
 
   it("indexes server failures by the public error ID returned to the browser", async () => {
@@ -742,7 +819,7 @@ describe("runtime app composition smoke", () => {
     expect(log).not.toContain("must-not-be-logged");
   });
 
-  it("matches direct Twitch and Streamer.bot lifecycle and gift events while keeping intake running after malformed input", async () => {
+  it("merges the same lifecycle and gift events from direct Twitch and Streamer.bot while keeping intake running after malformed input", async () => {
     const testRoot = await createTemporaryDirectory();
     const streamerBotSockets: ControlledStreamerBotSocket[] = [];
     const composition = await createRuntimeAppComposition({
@@ -847,7 +924,7 @@ describe("runtime app composition smoke", () => {
           started_at: "2026-07-18T01:59:00.000Z"
         }
       }
-    })).resolves.toMatchObject({ status: "accepted", event: { type: "stream_online" } });
+    })).resolves.toEqual({ status: "duplicate", messageId: "twitch-stream-online" });
 
     await streamerBotSockets[1]!.emitEvent({
       timeStamp: "2026-07-18T02:00:00.000Z",
@@ -912,9 +989,9 @@ describe("runtime app composition smoke", () => {
           is_anonymous: false
         }
       }
-    })).resolves.toMatchObject({ status: "accepted", event: { type: "community_gift" } });
+    })).resolves.toEqual({ status: "duplicate", messageId: "twitch-community-gift" });
 
-    await waitFor(() => composition.eventIngestionService.getStatus().acceptedCount === acceptedBefore + 2);
+    await waitFor(() => composition.eventIngestionService.getStatus().acceptedCount === acceptedBefore + 1);
     const diagnostics = await composition.app.inject({
       method: "GET",
       url: "/diagnostics?limit=20",
@@ -925,17 +1002,42 @@ describe("runtime app composition smoke", () => {
     }).alertMatchLogs;
 
     expect(alertMatchLogs).toEqual(expect.arrayContaining([
-      expect.objectContaining({ sourceEventId: "twitch-stream-online", ruleId: streamOnlineAlertId }),
       expect.objectContaining({
         sourceEventId: "streamerbot:twitch:StreamOnline:streamerbot-stream-online",
         ruleId: streamOnlineAlertId
       }),
-      expect.objectContaining({ sourceEventId: "twitch-community-gift", ruleId: communityGiftAlertId }),
       expect.objectContaining({
         sourceEventId: "streamerbot:twitch:GiftBomb:gift-bomb-after-malformed",
         ruleId: communityGiftAlertId
       })
     ]));
+    expect(alertMatchLogs.map((log) => log.sourceEventId)).not.toEqual(expect.arrayContaining(["twitch-stream-online"]));
+    expect(alertMatchLogs.map((log) => log.sourceEventId)).not.toEqual(expect.arrayContaining(["twitch-community-gift"]));
+
+    const journal = new DatabaseSync(join(testRoot, "data", "stream-jams.sqlite"), { readOnly: true });
+    try {
+      const journaled = journal.prepare("SELECT event_id, source_kind FROM event_bus_journal ORDER BY sequence").all()
+        .map((row) => [String(row.event_id), String(row.source_kind)]);
+      expect(journaled).toEqual([
+        ["streamerbot:twitch:StreamOnline:streamerbot-stream-online", "streamerbot"],
+        ["streamerbot:twitch:GiftBomb:gift-bomb-after-malformed", "streamerbot"]
+      ]);
+      expect(journal.prepare(`SELECT journal.event_id AS kept, merges.merged_event_id AS merged, merges.source_kind AS source
+        FROM event_bus_correlation_merges AS merges JOIN event_bus_journal AS journal USING (sequence) ORDER BY merges.sequence`).all()
+        .map((row) => ({ ...row }))).toEqual([
+        { kept: "streamerbot:twitch:StreamOnline:streamerbot-stream-online", merged: "twitch-stream-online", source: "twitch" },
+        { kept: "streamerbot:twitch:GiftBomb:gift-bomb-after-malformed", merged: "twitch-community-gift", source: "twitch" }
+      ]);
+      const head = Number(journal.prepare("SELECT MAX(sequence) AS head FROM event_bus_journal").get()?.head);
+      expect(journal.prepare("SELECT consumer_id, last_sequence FROM event_bus_consumer_cursors ORDER BY consumer_id").all()).toEqual([
+        { consumer_id: "alerts", last_sequence: head },
+        { consumer_id: "screen-effects", last_sequence: head },
+        { consumer_id: "timers", last_sequence: head },
+        { consumer_id: "videos", last_sequence: head }
+      ]);
+    } finally {
+      journal.close();
+    }
   });
 
   it("exposes synchronized Twitch and Streamer.bot event-source runtimes", async () => {
@@ -962,15 +1064,22 @@ describe("runtime app composition smoke", () => {
     });
   }, 30_000);
 
-  it("routes Streamer.bot manual video shoutouts to the module browser source without event ingestion", async () => {
+  it("queues Streamer.bot and management video requests and plays them on the module browser source only when started", async () => {
     const testRoot = await createTemporaryDirectory();
     const streamerBotSockets: ControlledStreamerBotSocket[] = [];
+    // Video details come from a local stand-in; nothing reaches YouTube or Twitch.
+    const metadataRequests: string[] = [];
+    const videoMetadataFetch = (async (input: string | URL | Request) => {
+      metadataRequests.push(String(input));
+      return new Response(JSON.stringify({ title: "Never Gonna Give You Up", author_name: "Rick Astley" }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
     const composition = await createRuntimeAppComposition({
       homeDirectory: testRoot,
       webBuildDirectory: await createWebBuildFixture(testRoot),
       configStore: new StaticConfigStore(createConfig(testRoot)),
       environment: { TWITCH_CLIENT_ID: "test-client" },
       secretStore: new InMemorySecretStore(),
+      videoMetadataFetch,
       // Any Twitch API or EventSub use fails these doubles: Streamer.bot owns clip lookup.
       twitchApiClient: new ThrowingTwitchApiClient(),
       twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
@@ -1003,52 +1112,72 @@ describe("runtime app composition smoke", () => {
     await waitFor(() => composition.streamerBotRuntimeService.getStatus().state === "connected");
 
     const outputs = await composition.app.inject({ method: "GET", url: "/management/overlay-outputs", headers: authHeaders });
-    expect((outputs.json() as readonly { readonly moduleId: string | null; readonly purpose: string }[])
-      .filter(output => output.moduleId === "video-shoutout").map(output => output.purpose)).toEqual(["live", "test"]);
+    const outputModules = (outputs.json() as readonly { readonly moduleId: string | null; readonly purpose: string }[]).map(output => output.moduleId);
+    expect(outputModules).toContain("videos");
+    expect(outputModules).not.toContain("video-shoutout");
     const key = await composition.app.inject({
       method: "POST",
       url: "/management/overlay-outputs/keys",
       headers: authHeaders,
-      payload: { overlayId: "default", scope: "module", moduleId: "video-shoutout", purpose: "live", targetProfileId: null }
+      payload: { overlayId: "default", scope: "module", moduleId: "videos", purpose: "live", targetProfileId: null }
     });
     expect(key.statusCode, key.body).toBe(200);
     const compositionPath = `${new URL((key.json() as { readonly url: string }).url).pathname}/composition`;
-    expect(compositionPath).toMatch(/^\/overlay\/modules\/video-shoutout\/live\/[^/]+\/composition$/u);
-    const readShoutout = async () => ((await composition.app.inject({ url: compositionPath })).json() as {
-      readonly modules: readonly { readonly presentation?: { readonly shoutout: { readonly status: string; readonly clip?: { readonly clipId: string } } } }[];
-    }).modules[0]?.presentation?.shoutout;
-    expect(await readShoutout()).toEqual({ status: "idle" });
-
-    const clip = {
-      source: "StreamJams", type: "VideoShoutout", login: "friendly_streamer", displayName: "Friendly Streamer", clipId: "ClipOne",
-      embedUrl: "https://clips.twitch.tv/embed?clip=ClipOne&parent=127.0.0.1", title: "The big play", duration: 12
+    expect(compositionPath).toMatch(/^\/overlay\/modules\/videos\/live\/[^/]+\/composition$/u);
+    const readVideos = async () => ((await composition.app.inject({ url: compositionPath })).json() as {
+      readonly modules: readonly { readonly presentation?: { readonly videos: { readonly status: string; readonly itemId?: string; readonly delivery?: { readonly mode: string; readonly source?: unknown } } } }[];
+    }).modules[0]?.presentation?.videos;
+    const readQueue = async () => (await composition.app.inject({ url: "/videos/live", headers: authHeaders })).json() as {
+      readonly revision: number; readonly items: readonly { readonly id: string; readonly status: string; readonly submittedVia: string; readonly link: string;
+        readonly title: string | null; readonly providerTitle: string | null; readonly channelName: string | null }[];
     };
-    // Ordinary stream events never select clips, even when they carry clip-shaped data.
+    expect(await readVideos()).toEqual({ status: "idle" });
+
+    // Ordinary stream events never queue videos, even when they carry request-shaped data.
     await streamerBotSockets[1]!.emitEvent({
       timeStamp: "2026-10-07T12:00:01.000Z", event: { source: "Twitch", type: "Raid" },
-      data: { ...clip, user: { id: "user-raid", login: "raider", name: "Raider" }, viewers: 3 }
+      data: { source: "StreamJams", type: "VideoRequest", link: "https://youtu.be/dQw4w9WgXcQ", user: { id: "user-raid", login: "raider", name: "Raider" }, viewers: 3 }
     });
-    expect(await readShoutout()).toEqual({ status: "idle" });
+    await streamerBotSockets[1]!.emitEvent({ timeStamp: "2026-10-07T12:00:02.000Z", event: { source: "General", type: "Custom" }, data: { source: "StreamJams", type: "VideoRequest", link: "https://evil.example/private.mp4" } });
+    expect((await readQueue()).items).toEqual([]);
 
-    await streamerBotSockets[1]!.emitEvent({ timeStamp: "2026-10-07T12:00:02.000Z", event: { source: "General", type: "Custom" }, data: { ...clip, embedUrl: "https://evil.example/embed?clip=ClipOne&parent=x" } });
-    expect(await readShoutout()).toEqual({ status: "idle" });
+    // The retired shoutout payload is queued as a Twitch clip; nothing autoplays.
+    await streamerBotSockets[1]!.emitEvent({
+      timeStamp: "2026-10-07T12:00:03.000Z", event: { source: "General", type: "Custom" },
+      data: { source: "StreamJams", type: "VideoShoutout", login: "friendly_streamer", displayName: "Friendly Streamer", clipId: "ClipOne", title: "The big play", duration: 12 }
+    });
+    await waitFor(async () => (await readQueue()).items.length === 1);
+    expect((await readQueue()).items[0]).toMatchObject({ status: "queued", submittedVia: "streamerbot", link: "https://clips.twitch.tv/ClipOne" });
+    expect(await readVideos()).toEqual({ status: "idle" });
 
-    await streamerBotSockets[1]!.emitEvent({ timeStamp: "2026-10-07T12:00:03.000Z", event: { source: "General", type: "Custom" }, data: clip });
-    await waitFor(async () => (await readShoutout())?.status === "loading");
-    expect(await readShoutout()).toMatchObject({ status: "loading", clip: { clipId: "ClipOne", durationMs: 12_000 } });
+    const submitted = await composition.app.inject({ method: "POST", url: "/videos/live/requests?from=operator", headers: authHeaders, payload: { link: "https://www.youtube.com/watch?v=dQw4w9WgXcQ", durationSeconds: 30 } });
+    expect(submitted.statusCode, submitted.body).toBe(201);
+    // The request is answered first; its YouTube title and channel follow from oEmbed.
+    await waitFor(async () => (await readQueue()).items.some(item => item.providerTitle !== null));
+    expect((await readQueue()).items.find(item => item.submittedVia === "operator")).toMatchObject({ title: null, providerTitle: "Never Gonna Give You Up", channelName: "Rick Astley" });
+    // Only the YouTube request was looked up: without a connected Twitch account the clip is skipped.
+    expect(metadataRequests).toEqual(["https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DdQw4w9WgXcQ&format=json"]);
+    const started = await composition.app.inject({ method: "POST", url: "/videos/live/commands", headers: authHeaders, payload: { expectedRevision: (await readQueue()).revision, command: { kind: "play-next" } } });
+    expect(started.statusCode, started.body).toBe(200);
+    const first = (await readQueue()).items[0]!;
+    await waitFor(async () => (await readVideos())?.status === "active");
+    expect(await readVideos()).toMatchObject({ status: "active", itemId: first.id, delivery: { mode: "player", source: { provider: "twitch-clip", clipSlug: "ClipOne" } } });
+    expect((await composition.app.inject({ method: "POST", url: "/videos/live/commands", headers: { ...authHeaders, authorization: "Bearer wrong" }, payload: { expectedRevision: 0, command: { kind: "stop" } } })).statusCode).toBe(401);
 
-    await streamerBotSockets[1]!.emitEvent({ timeStamp: "2026-10-07T12:00:04.000Z", event: { source: "General", type: "Custom" }, data: { source: "StreamJams", type: "VideoShoutout", action: "clear" } });
-    await waitFor(async () => (await readShoutout())?.status === "idle");
+    await streamerBotSockets[1]!.emitEvent({ timeStamp: "2026-10-07T12:00:04.000Z", event: { source: "General", type: "Custom" }, data: { source: "StreamJams", type: "VideoRequest", action: "clear" } });
+    await waitFor(async () => (await readVideos())?.status === "idle");
+    // Play next consumes one item and stops; the YouTube request is still waiting.
+    expect((await readQueue()).items.find(item => item.submittedVia === "operator")?.status).toBe("queued");
 
     const logDirectory = join(testRoot, "data", "logs");
     const log = (await Promise.all((await readdir(logDirectory)).map(file => readFile(join(logDirectory, file), "utf8")))).join("\n");
-    expect(log).toContain("Streamer.bot video shoutout was rejected and not shown.");
-    expect(log).toContain("Streamer.bot video shoutout was accepted.");
+    expect(log).toContain("Streamer.bot video request was rejected and not queued.");
+    expect(log).toContain("Streamer.bot video request was queued.");
     expect(log).not.toContain("evil.example");
     expect(log).not.toContain((key.json() as { readonly url: string }).url.split("/").at(-1)!);
   }, 30_000);
 
-  it("switches persistent intake between Twitch and Streamer.bot without reauthorization", async () => {
+  it("runs Twitch and Streamer.bot together and resumes Twitch without reauthorization", async () => {
     const testRoot = await createTemporaryDirectory();
     const credentials = new RecordingCredentialAdapter();
     let currentTime = new Date("2026-07-17T12:00:00.000Z");
@@ -1165,39 +1294,40 @@ describe("runtime app composition smoke", () => {
       matchedAlertCount: 1,
       unmatchedAlertCount: 0,
       blockers: [],
-      warnings: []
+      warnings: [expect.objectContaining({
+        summary: "Twitch events will arrive from two sources",
+        correction: { label: "Review Twitch forwarding", route: `/manage/event-sources?provider=${streamerBotProviderId}` }
+      })]
     });
-
-    const activation = await composition.app.inject({
+    const unconfirmedActivation = await composition.app.inject({
       method: "POST",
       url: `/management/providers/${streamerBotProviderId}/activate`,
       headers: authHeaders,
       payload: { confirmWarnings: false }
     });
+    expect(unconfirmedActivation.statusCode).toBe(409);
+
+    const activation = await composition.app.inject({
+      method: "POST",
+      url: `/management/providers/${streamerBotProviderId}/activate`,
+      headers: authHeaders,
+      payload: { confirmWarnings: true }
+    });
     expect(activation.statusCode).toBe(200);
+    expect(activation.json()).toMatchObject({ replacedProviderId: null });
     await waitFor(() => streamerBotSockets.length === 2);
     await waitFor(() => composition.streamerBotRuntimeService.getStatus().state === "connected");
-    expect(composition.twitchEventSubRuntimeService.getStatus().state).toBe("idle");
+    expect(composition.twitchEventSubRuntimeService.getStatus().state).toBe("connected");
+    expect(twitchSockets).toHaveLength(2);
     const eventSources = await composition.app.inject({
       method: "GET",
       url: "/management/providers?capability=event-source",
       headers: authHeaders
     });
     expect(eventSources.json()).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: "twitch", active: false, liveStatus: "not-running" }),
+      expect.objectContaining({ kind: "twitch", active: true, liveStatus: "healthy" }),
       expect.objectContaining({ kind: "streamerbot", active: true, liveStatus: "healthy" })
     ]));
-    const inactiveTwitchAuth = await composition.app.inject({
-      method: "GET",
-      url: "/twitch/auth/status",
-      headers: authHeaders
-    });
-    expect(inactiveTwitchAuth.json()).toMatchObject({
-      connected: true,
-      account: { accountId: "141981764" }
-    });
-    expect(credentials.values.get("stream-jams:twitch:access_token:141981764")).toBe("access-token-2");
-    expect(credentials.values.get("stream-jams:twitch:refresh_token:141981764")).toBe("refresh-token-2");
 
     await streamerBotSockets[1]!.emitEvent({
       timeStamp: "2026-07-17T12:04:00.000Z",
@@ -1210,17 +1340,37 @@ describe("runtime app composition smoke", () => {
     });
     await waitFor(() => composition.eventIngestionService.getStatus().acceptedCount === 1);
 
+    const twitchDeactivation = await composition.app.inject({
+      method: "POST",
+      url: `/management/providers/${twitchProviderId}/deactivate`,
+      headers: authHeaders
+    });
+    expect(twitchDeactivation.statusCode, twitchDeactivation.body).toBe(200);
+    await waitFor(() => composition.twitchEventSubRuntimeService.getStatus().state === "idle");
+    expect(composition.streamerBotRuntimeService.getStatus().state).toBe("connected");
+    const inactiveTwitchAuth = await composition.app.inject({
+      method: "GET",
+      url: "/twitch/auth/status",
+      headers: authHeaders
+    });
+    expect(inactiveTwitchAuth.json()).toMatchObject({
+      connected: true,
+      account: { accountId: "141981764" }
+    });
+    expect(credentials.values.get("stream-jams:twitch:access_token:141981764")).toBe("access-token-2");
+    expect(credentials.values.get("stream-jams:twitch:refresh_token:141981764")).toBe("refresh-token-2");
+
     const twitchReactivation = await composition.app.inject({
       method: "POST",
       url: `/management/providers/${twitchProviderId}/activate`,
       headers: authHeaders,
-      payload: { confirmWarnings: false }
+      payload: { confirmWarnings: true }
     });
     expect(twitchReactivation.statusCode, twitchReactivation.body).toBe(200);
     await waitFor(() => twitchSockets.length === 3);
     twitchSockets[2]?.emitWelcome();
     await waitFor(() => composition.twitchEventSubRuntimeService.getStatus().state === "connected");
-    expect(composition.streamerBotRuntimeService.getStatus().state).toBe("idle");
+    expect(composition.streamerBotRuntimeService.getStatus().state).toBe("connected");
     expect(twitchApiClient.deviceStartRequests).toHaveLength(1);
     expect(twitchApiClient.devicePollRequests).toHaveLength(1);
     expect(twitchApiClient.refreshRequests).toHaveLength(1);
@@ -1231,7 +1381,7 @@ describe("runtime app composition smoke", () => {
     });
     expect(reactivatedSources.json()).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "twitch", active: true, liveStatus: "healthy" }),
-      expect.objectContaining({ kind: "streamerbot", active: false, liveStatus: "not-running" })
+      expect.objectContaining({ kind: "streamerbot", active: true, liveStatus: "healthy" })
     ]));
   });
 
@@ -1412,11 +1562,11 @@ describe("runtime app composition smoke", () => {
         })
       }),
       expect.objectContaining({
-        id: "video-shoutout",
-        displayName: "Video shoutout",
+        id: "videos",
+        displayName: "Videos",
         defaultEnabled: true,
         renderer: expect.objectContaining({
-          supportedOutputs: ["module"]
+          supportedOutputs: ["module", "unified"]
         })
       }),
       expect.objectContaining({
@@ -2150,7 +2300,7 @@ function createConfig(
   playback: PlaybackSafetyState = { paused: false, muted: false, doNotDisturb: false }
 ): AppConfig {
   return {
-    desktop: { closeToTray: true },
+    desktop: { closeToTray: true, gpuAcceleration: true },
     server: {
       host: "127.0.0.1",
       port: 39187
@@ -2507,6 +2657,14 @@ function createForbiddenTwitchSocket(): TwitchEventSubSocket {
 
 function secretKeyFromCredential(service: string, account: string): string {
   return `${service}:${account}`;
+}
+
+async function waitUntil(condition: () => boolean): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error("Timed out waiting for condition");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 }
 
 async function waitFor(condition: () => boolean | Promise<boolean>): Promise<void> {

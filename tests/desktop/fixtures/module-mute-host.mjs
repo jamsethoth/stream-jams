@@ -1,6 +1,7 @@
 import { app } from "electron";
 import process from "node:process";
 import console from "node:console";
+import { clearInterval, setInterval } from "node:timers";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 const build = process.argv.at(-1);
@@ -52,9 +53,11 @@ void app.whenReady().then(async () => {
     void host.play(payload).then(result => globalThis.muteResults.push({ playbackId, result }), error => globalThis.muteResults.push({ playbackId, error: error.message }));
   };
   host.beginOwnership();
+  // The supervised service renews this 10-second lease; without it a slow run loses audio ownership mid-test.
+  const lease = setInterval(() => host.refreshLease(), 1000);
   await host.setModuleMutes({ alerts: false, "screen-effects": false });
   await host.listOutputDevices();
   globalThis.muteReady = true;
-  app.on("before-quit", () => host.serviceLost());
+  app.on("before-quit", () => { clearInterval(lease); host.serviceLost(); });
 
 }).catch(error => { globalThis.muteFixtureError = `${error.stack} CAUSE: ${error.cause?.stack} DIAGNOSTICS: ${globalThis.muteDiagnostics?.map(item => item.exception?.stack ?? item.message).join("\n")}`; console.error(error); });

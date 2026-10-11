@@ -39,6 +39,7 @@ export interface AppConfigUpdate {
 
 export interface DesktopConfig {
   readonly closeToTray: boolean;
+  readonly gpuAcceleration: boolean;
 }
 
 export type DesktopConfigUpdate = Partial<DesktopConfig>;

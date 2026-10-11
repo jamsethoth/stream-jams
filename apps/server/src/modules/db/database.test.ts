@@ -42,9 +42,16 @@ const expectedMigrations = [
   "030-persistent-event-timers",
   "031-automation-grants",
   "032-music-source-providers",
-  "033-custom-data-overlays",
-  "034-data-overlay-templates"
-
+  "034-event-bus-journal",
+  "035-event-bus-correlation",
+  "036-event-source-active-per-kind",
+  "037-event-trigger-selectors",
+  "038-external-alert-identity",
+  "039-event-bus-outcomes",
+  "040-video-request-queue",
+  "041-video-request-metadata",
+  "042-custom-data-overlays",
+  "043-data-overlay-templates"
 ] as const;
 
 const expectedTables = [
@@ -71,6 +78,13 @@ const expectedTables = [
   "data_reset_groups",
   "data_templates",
   "data_values",
+  "event_bus_consumer_cursors",
+  "event_bus_consumer_outcomes",
+  "event_bus_correlation_merges",
+  "event_bus_delivery_failures",
+  "event_bus_intake_log",
+  "event_bus_journal",
+  "event_bus_settings",
   "event_logs",
   "module_playback_settings",
   "overlay_keys",
@@ -89,19 +103,51 @@ const expectedTables = [
   "timer_automation_credential",
   "timer_definitions",
   "timer_run_recovery",
-  "twitch_accounts"
+  "twitch_accounts",
+  "video_queue_state",
+  "video_requests"
 ];
 
 describe("Stream Jams SQLite database", () => {
   it("upgrades the exact pre-merge Music preview history without rebuilding provider rows", () => {
     using database = createInMemoryStreamJamsDatabase();
     removeDataOverlaySchema(database.connection);
-    database.connection.exec("DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; UPDATE schema_migrations SET id = '031-music-source-providers' WHERE id = '032-music-source-providers';");
+    database.connection.exec("DROP TABLE video_requests; DROP TABLE video_queue_state; DELETE FROM schema_migrations WHERE id = '041-video-request-metadata'; DELETE FROM schema_migrations WHERE id = '040-video-request-queue'; DROP TABLE event_bus_settings; DROP TABLE event_bus_intake_log; DROP TABLE event_bus_consumer_outcomes; DELETE FROM schema_migrations WHERE id = '039-event-bus-outcomes'; ALTER TABLE alert_rules DROP COLUMN external_identity_json; DELETE FROM schema_migrations WHERE id = '038-external-alert-identity'; DELETE FROM schema_migrations WHERE id = '037-event-trigger-selectors'; DROP INDEX provider_registrations_one_active_event_source_kind; DROP INDEX provider_registrations_one_active_capability; CREATE UNIQUE INDEX provider_registrations_one_active_capability ON provider_registrations (capability) WHERE active = 1; DELETE FROM schema_migrations WHERE id = '036-event-source-active-per-kind'; DROP TABLE event_bus_correlation_merges; DELETE FROM schema_migrations WHERE id = '035-event-bus-correlation'; DROP TABLE event_bus_delivery_failures; DROP TABLE event_bus_consumer_cursors; DROP TABLE event_bus_journal; DELETE FROM schema_migrations WHERE id = '034-event-bus-journal'; DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; UPDATE schema_migrations SET id = '031-music-source-providers' WHERE id = '032-music-source-providers';");
     database.connection.exec("INSERT INTO provider_registrations (id,name,kind,capability,non_secret_config_json,active,connection_state,available_voices_json,created_at,updated_at) VALUES ('pear-preview','Pear','pear-desktop','music-source','{}',1,'connected','[]','now','now')");
     database.runMigrations();
     expect(database.connection.prepare("SELECT id FROM schema_migrations ORDER BY rowid").all().map(row => row.id)).toEqual(expectedMigrations);
     expect(database.connection.prepare("SELECT id FROM provider_registrations WHERE kind = 'pear-desktop'").get()?.id).toBe("pear-preview");
     expect(() => database.runMigrations()).not.toThrow();
+  });
+
+  it("upgrades the pre-merge Videos history by running the event bus migrations and keeping its queue", () => {
+    using database = createInMemoryStreamJamsDatabase();
+    removeDataOverlaySchema(database.connection);
+    database.connection.exec("ALTER TABLE video_requests DROP COLUMN provider_title; ALTER TABLE video_requests DROP COLUMN channel_name; DELETE FROM schema_migrations WHERE id = '041-video-request-metadata';");
+    database.connection.exec("DROP TABLE event_bus_settings; DROP TABLE event_bus_intake_log; DROP TABLE event_bus_consumer_outcomes; DELETE FROM schema_migrations WHERE id = '039-event-bus-outcomes'; ALTER TABLE alert_rules DROP COLUMN external_identity_json; DELETE FROM schema_migrations WHERE id = '038-external-alert-identity'; DELETE FROM schema_migrations WHERE id = '037-event-trigger-selectors'; DROP INDEX provider_registrations_one_active_event_source_kind; DROP INDEX provider_registrations_one_active_capability; CREATE UNIQUE INDEX provider_registrations_one_active_capability ON provider_registrations (capability) WHERE active = 1; DELETE FROM schema_migrations WHERE id = '036-event-source-active-per-kind'; DROP TABLE event_bus_correlation_merges; DELETE FROM schema_migrations WHERE id = '035-event-bus-correlation'; DROP TABLE event_bus_delivery_failures; DROP TABLE event_bus_consumer_cursors; DROP TABLE event_bus_journal; DELETE FROM schema_migrations WHERE id = '034-event-bus-journal';");
+    // The pre-merge build recorded the queue migration under its old ID, after the Music providers migration.
+    database.connection.exec("DELETE FROM schema_migrations WHERE id = '040-video-request-queue'; INSERT INTO schema_migrations (id, applied_at) VALUES ('033-video-request-queue', '2026-10-05T00:00:00.000Z');");
+    database.connection.exec("UPDATE video_queue_state SET revision = 4 WHERE purpose = 'live'");
+    database.runMigrations();
+    expect(database.connection.prepare("SELECT id FROM schema_migrations ORDER BY rowid").all().map(row => row.id)).toEqual(expectedMigrations);
+    expect(database.connection.prepare("SELECT applied_at FROM schema_migrations WHERE id = '040-video-request-queue'").get()?.applied_at).toBe("2026-10-05T00:00:00.000Z");
+    expect(database.connection.prepare("SELECT revision FROM video_queue_state WHERE purpose = 'live'").get()?.revision).toBe(4);
+    expect(listTables(database.connection)).toEqual(expectedTables);
+    expect(() => database.runMigrations()).not.toThrow();
+  });
+
+  it("refuses the unreleased pre-merge Data migration history without changing it", () => {
+    using database = createInMemoryStreamJamsDatabase();
+    database.connection.exec("UPDATE schema_migrations SET id = '033-custom-data-overlays' WHERE id = '042-custom-data-overlays'");
+    const before = listAppliedMigrations(database.connection);
+    expect(() => database.runMigrations()).toThrow(/unknown or future migration "033-custom-data-overlays"/u);
+    expect(listAppliedMigrations(database.connection)).toEqual(before);
+  });
+
+  it("refuses a history with the pre-merge Videos migration anywhere but right after Music providers", () => {
+    using database = createInMemoryStreamJamsDatabase();
+    database.connection.exec("INSERT INTO schema_migrations (id, applied_at) VALUES ('033-video-request-queue', '2026-10-05T00:00:00.000Z');");
+    expect(() => database.runMigrations()).toThrow(/unknown or future migration "033-video-request-queue"/u);
   });
 
   it("adds constrained timer definitions, routes, and hash-only automation metadata after schema 27", () => {
@@ -177,8 +223,8 @@ describe("Stream Jams SQLite database", () => {
   it("removes stored Screen Effect animations when upgrading schema 24", () => {
     using database = createInMemoryStreamJamsDatabase();
     const db = database.connection;
-    removeDataOverlaySchema(db);
-    db.exec("DELETE FROM schema_migrations WHERE id = '032-music-source-providers'; DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements; DELETE FROM schema_migrations WHERE id = '029-asset-retirements'; DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; DROP TABLE timer_run_recovery; DELETE FROM schema_migrations WHERE id = '030-persistent-event-timers'; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;");
+    removeDataOverlaySchema(database.connection);
+    db.exec("DROP TABLE video_requests; DROP TABLE video_queue_state; DELETE FROM schema_migrations WHERE id = '041-video-request-metadata'; DELETE FROM schema_migrations WHERE id = '040-video-request-queue'; DROP TABLE event_bus_settings; DROP TABLE event_bus_intake_log; DROP TABLE event_bus_consumer_outcomes; DELETE FROM schema_migrations WHERE id = '039-event-bus-outcomes'; ALTER TABLE alert_rules DROP COLUMN external_identity_json; DELETE FROM schema_migrations WHERE id = '038-external-alert-identity'; DELETE FROM schema_migrations WHERE id = '037-event-trigger-selectors'; DROP INDEX provider_registrations_one_active_event_source_kind; DROP INDEX provider_registrations_one_active_capability; CREATE UNIQUE INDEX provider_registrations_one_active_capability ON provider_registrations (capability) WHERE active = 1; DELETE FROM schema_migrations WHERE id = '036-event-source-active-per-kind'; DROP TABLE event_bus_correlation_merges; DELETE FROM schema_migrations WHERE id = '035-event-bus-correlation'; DROP TABLE event_bus_delivery_failures; DROP TABLE event_bus_consumer_cursors; DROP TABLE event_bus_journal; DELETE FROM schema_migrations WHERE id = '034-event-bus-journal'; DELETE FROM schema_migrations WHERE id = '032-music-source-providers'; DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements; DELETE FROM schema_migrations WHERE id = '029-asset-retirements'; DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; DROP TABLE timer_run_recovery; DELETE FROM schema_migrations WHERE id = '030-persistent-event-timers'; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;");
 
     db.prepare("DELETE FROM schema_migrations WHERE id IN (?, ?, ?, ?)").run(
       "025-remove-screen-effect-animations",
@@ -318,8 +364,8 @@ describe("Stream Jams SQLite database", () => {
   it("defaults existing audio routes to automatic following disabled when migrating schema 25", () => {
     using database = createInMemoryStreamJamsDatabase();
     const db = database.connection;
-    removeDataOverlaySchema(db);
-    db.exec("DELETE FROM schema_migrations WHERE id = '032-music-source-providers'; DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements; DELETE FROM schema_migrations WHERE id = '029-asset-retirements'; DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; DROP TABLE timer_run_recovery; DELETE FROM schema_migrations WHERE id = '030-persistent-event-timers'; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;");
+    removeDataOverlaySchema(database.connection);
+    db.exec("DROP TABLE video_requests; DROP TABLE video_queue_state; DELETE FROM schema_migrations WHERE id = '041-video-request-metadata'; DELETE FROM schema_migrations WHERE id = '040-video-request-queue'; DROP TABLE event_bus_settings; DROP TABLE event_bus_intake_log; DROP TABLE event_bus_consumer_outcomes; DELETE FROM schema_migrations WHERE id = '039-event-bus-outcomes'; ALTER TABLE alert_rules DROP COLUMN external_identity_json; DELETE FROM schema_migrations WHERE id = '038-external-alert-identity'; DELETE FROM schema_migrations WHERE id = '037-event-trigger-selectors'; DROP INDEX provider_registrations_one_active_event_source_kind; DROP INDEX provider_registrations_one_active_capability; CREATE UNIQUE INDEX provider_registrations_one_active_capability ON provider_registrations (capability) WHERE active = 1; DELETE FROM schema_migrations WHERE id = '036-event-source-active-per-kind'; DROP TABLE event_bus_correlation_merges; DELETE FROM schema_migrations WHERE id = '035-event-bus-correlation'; DROP TABLE event_bus_delivery_failures; DROP TABLE event_bus_consumer_cursors; DROP TABLE event_bus_journal; DELETE FROM schema_migrations WHERE id = '034-event-bus-journal'; DELETE FROM schema_migrations WHERE id = '032-music-source-providers'; DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset; DROP TABLE asset_retirements; DELETE FROM schema_migrations WHERE id = '029-asset-retirements'; DROP TABLE automation_grants; DELETE FROM schema_migrations WHERE id = '031-automation-grants'; DROP TABLE timer_run_recovery; DELETE FROM schema_migrations WHERE id = '030-persistent-event-timers'; DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;");
 
     db.prepare("DELETE FROM schema_migrations WHERE id IN (?, ?, ?)").run(
       "026-automatic-output-rebinding",
@@ -594,7 +640,7 @@ describe("Stream Jams SQLite database", () => {
 
   it("recovers a valid schema-17 prefix without losing its text-style document changes", () => {
     using database = createInMemoryStreamJamsDatabase();
-    database.connection.exec("DROP TABLE data_templates; DELETE FROM schema_migrations WHERE id = '034-data-overlay-templates';");
+    database.connection.exec("DROP TABLE data_templates; DELETE FROM schema_migrations WHERE id = '043-data-overlay-templates';");
     database.connection.exec(`
       INSERT INTO alert_rules (id, name, event_type, enabled, cooldown_seconds, priority)
       VALUES ('text-style', 'Text style', 'follow', 1, 0, 0);
@@ -604,7 +650,8 @@ describe("Stream Jams SQLite database", () => {
     database.connection.exec(alertTextStyleDefaultsMigration.sql);
     database.connection.exec(`
       DROP TABLE data_element_refs; DROP TABLE data_pins; DROP TABLE data_goals; DROP TABLE data_values; DROP TABLE data_reset_groups; DROP TABLE data_canvases; DROP TABLE data_overlay_meta;
-      DELETE FROM schema_migrations WHERE id = '033-custom-data-overlays';
+      DELETE FROM schema_migrations WHERE id = '042-custom-data-overlays';
+      DROP TABLE video_requests; DROP TABLE video_queue_state; DELETE FROM schema_migrations WHERE id = '041-video-request-metadata'; DELETE FROM schema_migrations WHERE id = '040-video-request-queue'; DROP TABLE event_bus_settings; DROP TABLE event_bus_intake_log; DROP TABLE event_bus_consumer_outcomes; DELETE FROM schema_migrations WHERE id = '039-event-bus-outcomes'; ALTER TABLE alert_rules DROP COLUMN external_identity_json; DELETE FROM schema_migrations WHERE id = '038-external-alert-identity'; DELETE FROM schema_migrations WHERE id = '037-event-trigger-selectors'; DROP INDEX provider_registrations_one_active_event_source_kind; DROP INDEX provider_registrations_one_active_capability; CREATE UNIQUE INDEX provider_registrations_one_active_capability ON provider_registrations (capability) WHERE active = 1; DELETE FROM schema_migrations WHERE id = '036-event-source-active-per-kind'; DROP TABLE event_bus_correlation_merges; DELETE FROM schema_migrations WHERE id = '035-event-bus-correlation'; DROP TABLE event_bus_delivery_failures; DROP TABLE event_bus_consumer_cursors; DROP TABLE event_bus_journal; DELETE FROM schema_migrations WHERE id = '034-event-bus-journal';
       DELETE FROM schema_migrations WHERE id = '032-music-source-providers';
       DROP TRIGGER retain_replaced_asset; DROP TRIGGER retain_deleted_asset;
       DROP TABLE asset_retirements;
@@ -910,8 +957,8 @@ function listAppliedMigrations(connection: { prepare(sql: string): { all(): Reco
 }
 
 function removeDataOverlaySchema(connection: DatabaseSync): void {
-  connection.exec(`DROP TABLE data_templates; DELETE FROM schema_migrations WHERE id = '034-data-overlay-templates';
+  connection.exec(`DROP TABLE data_templates; DELETE FROM schema_migrations WHERE id = '043-data-overlay-templates';
     DROP TABLE data_element_refs; DROP TABLE data_pins; DROP TABLE data_goals;
     DROP TABLE data_values; DROP TABLE data_reset_groups; DROP TABLE data_canvases; DROP TABLE data_overlay_meta;
-    DELETE FROM schema_migrations WHERE id = '033-custom-data-overlays';`);
+    DELETE FROM schema_migrations WHERE id = '042-custom-data-overlays';`);
 }

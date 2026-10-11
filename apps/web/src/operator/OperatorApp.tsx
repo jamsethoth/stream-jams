@@ -1,6 +1,6 @@
 import { ActionIcon, Button } from "@mantine/core";
 import { formatTimerRemaining, type MergedOperationsSnapshot, type OperationRow, type TimerRunState } from "@stream-jams/core";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import "../App.css";
 import { getDesktopBridge } from "../management/desktop/desktop-bridge.js";
 import { formatDateTime } from "../management/foundation/formatters.js";
@@ -13,10 +13,13 @@ import {
   PlaybackOperationsConflictError,
   type PlaybackApi
 } from "./playback-api.js";
+import { OperatorItemCard } from "./OperatorItemCard.js";
 import { TimerAdjustmentControls } from "../management/timers/TimerAdjustmentControls.js";
 import { defaultOperatorTimersApi, type OperatorTimersApi } from "./timers-api.js";
 import { OperatorDataSection } from "./OperatorDataSection.js";
 import type { OperatorDataApi } from "./data-api.js";
+import type { VideoQueueApi } from "../management/videos/videos-api.js";
+const OperatorVideosPanel = lazy(() => import("../management/videos/VideosPage.js").then(module => ({ default: module.OperatorVideosPanel })));
 
 const normalPollDelayMs = 2_000;
 const maximumPollDelayMs = 15_000;
@@ -36,6 +39,8 @@ export interface OperatorAppProps {
   readonly api?: PlaybackApi;
   readonly timersApi?: OperatorTimersApi;
   readonly dataApi?: OperatorDataApi;
+  /** Defaults to the HTTP queue client created inside the lazily loaded panel, attributed to the Operator. */
+  readonly videosApi?: VideoQueueApi;
 }
 
 // Operator shares the management presentation provider so its commands, dialogs and theme match management.
@@ -43,7 +48,7 @@ export function OperatorApp(props: OperatorAppProps) {
   return <ManagementPresentationProvider><OperatorConsole {...props} /></ManagementPresentationProvider>;
 }
 
-function OperatorConsole({ api = defaultPlaybackApi, timersApi = defaultOperatorTimersApi, dataApi }: OperatorAppProps) {
+function OperatorConsole({ api = defaultPlaybackApi, timersApi = defaultOperatorTimersApi, dataApi, videosApi }: OperatorAppProps) {
   useEffect(() => {
     const bridge = getDesktopBridge();
     return bridge?.onQuitRequested((requestId) => bridge.resolveQuit(requestId, true));
@@ -348,6 +353,8 @@ function OperatorConsole({ api = defaultPlaybackApi, timersApi = defaultOperator
           event.currentTarget
         )}>Replay</Button>
       )} />
+
+      <Suspense fallback={<p role="status">Loading the video queue…</p>}><OperatorVideosPanel api={videosApi} recentCard={OperatorItemCard} /></Suspense>
     </main>
   );
 }
@@ -383,25 +390,20 @@ function OperationList({ heading, items, renderAction }: { readonly heading: str
 }
 
 function OperationCard({ action, item }: { readonly action: React.ReactNode; readonly item: OperationRow }) {
-  return (
-    <article className="operator-item">
-      <div className="operator-item__summary"><div><strong>{item.name}</strong><span>{item.summary}</span></div>{action}</div>
-      <dl>
-        <ItemDetail label="Module" value={moduleLabel(item.moduleId)} />
-        {item.moduleQueuePosition === null ? null : <ItemDetail label="Module position" value={`#${item.moduleQueuePosition}`} />}
-        <ItemDetail label="Status" value={formatStatus(item.status)} tone={statusTone(item.status)} />
-        <ItemDetail label="Received" value={formatDateTime(item.enqueuedAtMs)} />
-      </dl>
-    </article>
-  );
-}
-
-function ItemDetail({ label, tone, value }: { readonly label: string; readonly tone?: StatusBadgeTone; readonly value: string }) {
-  return <div><dt>{label}</dt><dd>{tone === undefined ? value : <StatusBadge label={value} tone={tone} />}</dd></div>;
+  return <OperatorItemCard action={action} title={item.name} summary={item.source === null ? item.summary : `${item.summary} · via ${sourceLabel(item.source)}`} details={[
+    { label: "Module", value: moduleLabel(item.moduleId) },
+    ...(item.moduleQueuePosition === null ? [] : [{ label: "Module position", value: `#${item.moduleQueuePosition}` }]),
+    { label: "Status", value: formatStatus(item.status), tone: statusTone(item.status) },
+    { label: "Received", value: formatDateTime(item.enqueuedAtMs) }
+  ]} />;
 }
 
 function moduleLabel(moduleId: string): string {
   return moduleId === "alerts" ? "Alerts" : moduleId === "screen-effects" ? "Screen Effects" : moduleId;
+}
+
+function sourceLabel(source: NonNullable<OperationRow["source"]>): string {
+  return source === "twitch" ? "Twitch" : "Streamer.bot";
 }
 
 function operationKey(item: OperationRow): string {

@@ -88,7 +88,8 @@ describe("effect trigger adapters", () => {
       providerId: "provider-streamerbot",
       sourceKey: "Twitch",
       eventType: "RewardRedemption",
-      summary: "Redeemed!"
+      summary: "Redeemed!",
+      userName: ""
     });
     expect(JSON.stringify(triggers)).not.toContain("do-not-trust");
     expect(JSON.stringify(triggers)).not.toContain("shutdown");
@@ -100,6 +101,24 @@ describe("effect trigger adapters", () => {
       twitchBroadcasterId: "verified-broadcaster",
       externalSubscriptions: [{ sourceKey: "twitch", eventTypes: ["RewardRedemption"] }]
     })).toHaveLength(1);
+  });
+
+  it("reads only a bounded, sanitized user name from user.name or userName", () => {
+    const context = {
+      providerId: "provider-streamerbot",
+      twitchBroadcasterId: null,
+      externalSubscriptions: [{ sourceKey: "General", eventTypes: ["Custom"] }]
+    };
+    const userName = (data: Record<string, unknown>) => {
+      const [trigger] = createStreamerBotEffectTriggers(streamerBotEnvelope("General", "Custom", data), null, context);
+      return trigger?.kind === "streamerbot-event" ? trigger.userName : undefined;
+    };
+
+    expect(userName({ user: { name: "Nested\u0000Viewer" }, userName: "Flat" })).toBe("NestedViewer");
+    expect(userName({ userName: "FlatViewer" })).toBe("FlatViewer");
+    expect(userName({ userName: "x".repeat(300) })).toHaveLength(100);
+    expect(userName({ user: { login: "not-a-name" }, displayName: "not-allowlisted" })).toBe("");
+    expect(userName({ userName: 42 })).toBe("");
   });
 
   it("sanitizes and bounds human-readable summaries", () => {

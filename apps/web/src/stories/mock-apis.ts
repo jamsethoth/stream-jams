@@ -51,6 +51,8 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async getMusicConfig() { return { enabled: false, config: createDefaultMusicModuleConfig() }; },
     async saveMusicConfig(enabled, config) { return { enabled, config }; },
     async listMusicOutputs() { return []; },
+    async getMusicNowPlaying() { return { status: { state: "disconnected" as const, stale: false, diagnosticReference: null }, snapshot: null }; },
+    async getMusicArtwork(): Promise<Blob> { throw new Error("No live Music artwork in stories."); },
     async getMusicStatus() { return { enabled: false, selectedProviderId: null, status: { state: "disconnected" as const, stale: false, diagnosticReference: null }, missingAssetIds: { landscape: [], vertical: [] } }; },
     async reconnectMusicSource() { return { enabled: false, selectedProviderId: null, status: { state: "disconnected" as const, stale: false, diagnosticReference: null }, missingAssetIds: { landscape: [], vertical: [] } }; },
     async replaceMusicCredential() { return { validation: { valid: true, connectionState: "connected" as const, intakeState: null, validatedAt: "2026-07-15T05:00:00.000Z", availableVoices: [], error: null }, runtimeReconcilePending: false, credentialRetirementPending: false }; },
@@ -73,6 +75,7 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async getStreamerBotSubscriptions(providerId) {
       return {
         providerId,
+        forwardTwitchEvents: true,
         available: false,
         sources: [],
         selected: [],
@@ -83,11 +86,23 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async updateStreamerBotSubscriptions(providerId, input) {
       return {
         providerId,
+        forwardTwitchEvents: true,
         available: true,
         sources: input.externalSubscriptions,
         selected: input.externalSubscriptions,
         unavailableSelections: [],
         twitchBroadcasterId: input.twitchBroadcasterId
+      };
+    },
+    async setStreamerBotForwarding(providerId, input) {
+      return {
+        providerId,
+        forwardTwitchEvents: input.forwardTwitchEvents,
+        available: false,
+        sources: [],
+        selected: [],
+        unavailableSelections: [],
+        twitchBroadcasterId: null
       };
     },
     async activateProvider() {
@@ -253,7 +268,7 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async getServerConfig() {
       return storyServerConfig;
     },
-    async getDesktopConfig() { return { available: false, closeToTray: true }; },
+    async getDesktopConfig() { return { available: false, closeToTray: true, gpuAcceleration: true }; },
     async updateDesktopConfig(input) { return { ...input, available: true }; },
     async updateServerConfig(input) {
       return input;

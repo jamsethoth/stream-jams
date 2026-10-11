@@ -13,8 +13,8 @@ import { createHttpManagementApi, type ManagementApi } from "./management-api.js
 import { HomePanel } from "./home/HomePanel.js";
 import { DirtyNavigationProvider, useManagementNavigation } from "./navigation/dirty-navigation.js";
 import { ManagementNavigation } from "./navigation/ManagementNavigation.js";
-import { EventSourcesPage } from "./providers/EventSourcesPage.js";
-import { TtsProvidersPage } from "./providers/TtsProvidersPage.js";
+const EventSourcesPage = lazy(() => import("./providers/EventSourcesPage.js").then(module => ({ default: module.EventSourcesPage })));
+const TtsProvidersPage = lazy(() => import("./providers/TtsProvidersPage.js").then(module => ({ default: module.TtsProvidersPage })));
 const MusicSourcesPage = lazy(() => import("./music/MusicSourcesPage.js").then(module => ({ default: module.MusicSourcesPage })));
 const MusicPage = lazy(() => import("./music/MusicPage.js").then(module => ({ default: module.MusicPage })));
 import {
@@ -33,6 +33,7 @@ import type { TwitchDataSourcesApi } from "./data-overlays/twitch-data-sources-a
 import type { DataOverlaysApi } from "./data-overlays/data-overlays-api.js";
 const DataPage = lazy(() => import("./data-overlays/DataPage.js").then(module => ({ default: module.DataPage })));
 const DataOverlaysPage = lazy(() => import("./data-overlays/DataOverlaysPage.js").then(module => ({ default: module.DataOverlaysPage })));
+const VideosPage = lazy(() => import("./videos/VideosPage.js").then(module => ({ default: module.VideosPage })));
 
 export interface ManagementAppProps {
   readonly dataTemplateApi?: DataTemplateApi | undefined;
@@ -165,9 +166,9 @@ function RouteContent({
     case "home":
       return <HomePanel managementApi={managementApi} />;
     case "event-sources":
-      return <EventSourcesPage initialProviderId={route.providerId} managementApi={managementApi} openSetupOnLoad={route.setup === "add"} />;
+      return <Suspense fallback={<p role="status">Loading Event Sources…</p>}><EventSourcesPage initialProviderId={route.providerId} managementApi={managementApi} openSetupOnLoad={route.setup === "add"} /></Suspense>;
     case "tts-providers":
-      return <TtsProvidersPage initialProviderId={route.providerId} managementApi={managementApi} openSetupOnLoad={route.setup === "add"} />;
+      return <Suspense fallback={<p role="status">Loading TTS providers…</p>}><TtsProvidersPage initialProviderId={route.providerId} managementApi={managementApi} openSetupOnLoad={route.setup === "add"} /></Suspense>;
     case "music-sources":
       return <Suspense fallback={<p role="status">Loading Music sources…</p>}><MusicSourcesPage api={managementApi} initialProviderId={route.providerId} /></Suspense>;
     case "modules-music":
@@ -178,6 +179,8 @@ function RouteContent({
       return <ScreenEffectsPage api={screenEffectsApi} initialSetId={route.setId} onEdit={(effectId, create, setId, variantId) => onNavigate({ id: "screen-effect-editor", effectId, ...(setId === undefined ? {} : { setId }), ...(variantId === undefined ? {} : { variantId }), ...(create ? { create: true as const } : {}) })} />;
     case "modules-timers":
       return <Suspense fallback={<p role="status">Loading Timers…</p>}><TimersPage api={timersApi} assetApi={assetApi} audioApi={audioApi} managementApi={managementApi} ownerId={route.ownerId} /></Suspense>;
+    case "modules-videos":
+      return <Suspense fallback={<p role="status">Loading Videos…</p>}><VideosPage audioApi={audioApi} managementApi={managementApi} /></Suspense>;
     case "alert-safety":
       return <AlertSafetyPage managementApi={managementApi} />;
     case "alert-editor":

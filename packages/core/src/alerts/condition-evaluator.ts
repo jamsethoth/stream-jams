@@ -1,13 +1,15 @@
-import type { NormalizedStreamEvent } from "../events/types.js";
+import type { AlertSourceEvent, NormalizedStreamEvent } from "../events/types.js";
 import { readOwnPath } from "../internal/read-own-path.js";
 import type { AlertCondition } from "./types.js";
 
 export interface AlertConditionEvaluator {
-  evaluate(condition: AlertCondition, event: NormalizedStreamEvent): boolean;
+  evaluate(condition: AlertCondition, event: AlertSourceEvent): boolean;
 }
 
 export class DefaultAlertConditionEvaluator implements AlertConditionEvaluator {
-  evaluate(condition: AlertCondition, event: NormalizedStreamEvent): boolean {
+  evaluate(condition: AlertCondition, event: AlertSourceEvent): boolean {
+    // External payload content is untrusted and never satisfies a condition.
+    if (event.type === "external_event") return false;
     const actual = readConditionField(event, condition.field);
 
     switch (condition.operator) {

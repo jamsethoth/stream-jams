@@ -59,7 +59,7 @@ export class TwitchDataSourceRuntime {
     if (account) this.dependencies.service.invalidateTwitchBindingsExcept(account.accountId);
     if (epoch !== this.#epoch) return;
     this.#status.goals = !account ? { state: "disconnected", missingScopes: [] }
-      : account.scopes.includes("channel:read:goals") ? { state: "blocked-event-bus", missingScopes: [] }
+      : account.scopes.includes("channel:read:goals") ? { state: "integration-pending", missingScopes: [] }
       : { state: "reauthorization-required", missingScopes: ["channel:read:goals"] };
     const matches = this.dependencies.service.getState().values.filter(value => value.source !== undefined && value.source.broadcasterId === account?.accountId && !value.source.invalidated);
     this.#status.follower = { state: sources.length === 0 ? "unconfigured" : !account ? "disconnected" : "invalid", broadcasterId: account?.accountId ?? null, valueIds: matches.map(value => value.id), updatedAt: null };

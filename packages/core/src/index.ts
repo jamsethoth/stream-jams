@@ -135,9 +135,14 @@ export {
   alertActivationStateSchema,
   alertCollectionSchema,
   alertConditionSchema,
+  alertEventTypeSchema,
+  alertRuleExternalIdentityIssue,
   alertRuleSchema,
+  alertSourceEventSchema,
   alertTtsConfigSchema,
   alertVariantSchema,
+  externalAlertEventSchema,
+  externalAlertIdentitySchema,
   streamEventTypeSchema
 } from "./alerts/schemas.js";
 
@@ -157,7 +162,7 @@ export { DefaultMediaImportPipeline, InvalidMediaImportError } from "./assets/me
 export { assetMediaTypeSchema, assetRecordSchema, assetValidationResultSchema } from "./assets/schemas.js";
 
 export type * from "./events/types.js";
-export { streamEventTypes } from "./events/types.js";
+export { alertEventTypes, externalAlertEventType, streamEventTypes } from "./events/types.js";
 export type { SubscriptionTier } from "./events/schemas.js";
 export {
   channelPointRedemptionEventSchema,
@@ -189,6 +194,14 @@ export {
   subscriptionEventSchema,
   subscriptionTierSchema
 } from "./events/schemas.js";
+
+export type * from "./event-bus/types.js";
+export { eventBusReplayAgeDefaultSeconds, eventBusReplayAgeMaxSeconds } from "./event-bus/types.js";
+export { twitchCorrelationKey } from "./event-bus/correlation.js";
+export { eventBusActivityViewSchema, eventBusSettingsSchema, externalEventPayloadMaxBytes, externalEventPayloadSchema } from "./event-bus/schemas.js";
+export type { EventBusActivityView, EventBusSettings } from "./event-bus/schemas.js";
+export type { EventTriggerMatch, EventTriggerSelector } from "./event-bus/selector.js";
+export { eventTriggerMatchSchema, eventTriggerSelectorIdentity, eventTriggerSelectorSchema, matchSelector } from "./event-bus/selector.js";
 
 export type * from "./overlay-modules/types.js";
 export type { OverlayModulePresentation } from "./overlay-modules/presentation.js";
@@ -353,7 +366,7 @@ export {
   screenEffectDocumentSchema
 } from "./screen-effects/schemas.js";
 export { chooseWeightedVariant, resolveEffectContent } from "./screen-effects/variant-resolver.js";
-export { matchesEffectBinding } from "./screen-effects/trigger-matcher.js";
+export { matchEffectBinding } from "./screen-effects/trigger-matcher.js";
 export * from "./screen-effects/effect-queue.js";
 export * from "./screen-effects/module-definition.js";
 export * from "./screen-effects/authoring.js";
@@ -373,9 +386,11 @@ export * from "./music/management.js";
 export * from "./music/module-definition.js";
 export * from "./music/projection.js";
 export * from "./music/asset-references.js";
-export type * from "./video-shoutout/types.js";
-export * from "./video-shoutout/schemas.js";
-export { videoShoutoutModuleDefinition } from "./video-shoutout/module-definition.js";
+export type * from "./videos/types.js";
+export * from "./videos/schemas.js";
+export * from "./videos/layout.js";
+export * from "./videos/placement-geometry.js";
+export { videosModuleDefinition } from "./videos/module-definition.js";
 
 export * from "./management/local-websocket-connection.js";
 export { moduleMuteStateSchema } from "./playback/schemas.js";

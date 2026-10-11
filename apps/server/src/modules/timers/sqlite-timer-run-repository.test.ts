@@ -8,7 +8,7 @@ import { snapshotTimerDefinition } from "./timer-management-service.js";
 it("persists rules and paused recovery snapshots, rolls back invalid references, and cascades deletion", () => {
   using database = createInMemoryStreamJamsDatabase();
   const definitions = new SqliteTimerDefinitionRepository(database.connection);
-  const definition: TimerDefinition = { id: "a", label: "Subathon", durationMs: 10000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: false, deviceRouteIds: [] }, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z", eventRules: [{ enabled: true, ingestProvider: "any", eventType: "cheer", rewardId: null, tier: null, action: "increment", amountMs: 30000, quantityUnit: 100, inactiveBehavior: "ignore" }] };
+  const definition: TimerDefinition = { id: "a", label: "Subathon", durationMs: 10000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: false, deviceRouteIds: [] }, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z", eventRules: [{ enabled: true, selector: { match: { kind: "canonical", type: "cheer" }, sources: "any", conditions: [] }, action: "increment", amountMs: 30000, quantityUnit: 100, inactiveBehavior: "ignore" }] };
   definitions.save(definition);
   expect(definitions.findById("a")).toEqual(definition);
   const runs = new SqliteTimerRunRepository(database.connection);

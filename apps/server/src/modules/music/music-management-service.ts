@@ -2,7 +2,9 @@ import {
   musicManagementStatusSchema,
   musicModuleConfigSchema,
   type MusicManagementStatus,
-  type MusicModuleConfig
+  type MusicModuleConfig,
+  type MusicSnapshot,
+  type MusicStatus
 } from "@stream-jams/core";
 import type { AssetLibraryService } from "../assets/asset-library-service.js";
 import type { SqliteProviderRegistrationRepository } from "../providers/sqlite-provider-registration-repository.js";
@@ -10,7 +12,7 @@ import type { MusicRuntimeCoordinator } from "./music-runtime-coordinator.js";
 
 export interface MusicManagementServiceOptions {
   readonly providers: Pick<SqliteProviderRegistrationRepository, "findActive" | "findById">;
-  readonly runtime: Pick<MusicRuntimeCoordinator, "getStatus" | "reconcile">;
+  readonly runtime: Pick<MusicRuntimeCoordinator, "getStatus" | "getLiveSnapshot" | "reconcile">;
   readonly getConfig: () => Promise<{ readonly enabled: boolean; readonly config: unknown }>;
   readonly assets: Pick<AssetLibraryService, "resolveMusicAssets">;
 }
@@ -39,6 +41,11 @@ export class MusicManagementService {
     });
   }
 
+  /** Live playback for the management layout preview. Never includes provider credentials or upstream artwork URLs. */
+  getNowPlaying(): MusicNowPlaying {
+    return { status: this.options.runtime.getStatus(), snapshot: this.options.runtime.getLiveSnapshot() };
+  }
+
   async reconnect(providerId: string): Promise<MusicManagementStatus> {
     const provider = await this.options.providers.findById(providerId);
     if (provider?.provider.capability !== "music-source") {
@@ -47,6 +54,11 @@ export class MusicManagementService {
     if (provider.provider.active) await this.options.runtime.reconcile();
     return this.getStatus();
   }
+}
+
+export interface MusicNowPlaying {
+  readonly status: MusicStatus;
+  readonly snapshot: MusicSnapshot | null;
 }
 
 export class MusicSourceNotFoundError extends Error {

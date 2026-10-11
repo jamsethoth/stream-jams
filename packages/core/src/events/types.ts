@@ -228,3 +228,41 @@ export interface StreamerBotSubscriptionSelection {
   readonly sourceKey: string;
   readonly eventTypes: readonly string[];
 }
+
+/** Alert-only event type for an exact external identity; never produced by intake normalizers. */
+export const externalAlertEventType = "external_event";
+
+export const alertEventTypes = [...streamEventTypes, externalAlertEventType] as const;
+
+export type AlertEventType = (typeof alertEventTypes)[number];
+
+/** Exact external identity an alert rule selects. Payload content never selects anything. */
+export interface ExternalAlertIdentity {
+  readonly providerKind: "streamerbot";
+  readonly sourceKey: string;
+  readonly eventType: string;
+}
+
+/**
+ * Built by the Alerts consumer from an external bus event so external alerts reuse the canonical queue,
+ * dedupe, cooldown, template and moderation path. Only allowlisted, sanitized fields are carried.
+ */
+export interface ExternalAlertEvent {
+  readonly id: string;
+  readonly type: typeof externalAlertEventType;
+  readonly providerId: "streamerbot";
+  readonly ingestProvider: "streamerbot";
+  readonly occurredAt: string;
+  readonly actor: StreamEventActor;
+  readonly message: null;
+  readonly metadata: Record<string, unknown>;
+  readonly amount: null;
+  readonly identity: ExternalAlertIdentity;
+  /** Existing sanitized external summary, at most 256 characters. */
+  readonly summary: string;
+  /** Bounded, sanitized payload user name; empty when absent. */
+  readonly userName: string;
+}
+
+/** Any event the Alerts consumer can admit. */
+export type AlertSourceEvent = NormalizedStreamEvent | ExternalAlertEvent;

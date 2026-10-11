@@ -62,6 +62,10 @@ export class MusicRuntimeCoordinator {
   get generation(): string | null { return this.#generation; }
   get revision(): number { return this.#revision; }
   getStatus(): MusicStatus { return { ...this.#status }; }
+  /** Current playback while the source is connected and fresh; management previews use it, never stale or failed state. */
+  getLiveSnapshot(): MusicSnapshot | null {
+    return this.#status.state === "connected" && !this.#status.stale ? this.#snapshot : null;
+  }
   getProjection(targetProfileId: OverlayTargetProfileId): MusicWidgetProjection | null {
     if (this.#config === null) return null;
     return projectMusicWidget(this.#snapshot, this.#status, this.#config, targetProfileId, this.#appearanceStartedAtEpochMs, this.#now());

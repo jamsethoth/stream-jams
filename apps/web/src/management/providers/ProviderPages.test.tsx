@@ -142,10 +142,10 @@ describe("provider pages", () => {
     let rejectSave!: (cause: unknown) => void;
     const updateStreamerBotSubscriptions = vi.fn<ProviderPageApi["updateStreamerBotSubscriptions"]>()
       .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectSave = reject; }))
-      .mockImplementationOnce(async (providerId, input) => ({ providerId, available: true, sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }], selected: input.externalSubscriptions, unavailableSelections: [], twitchBroadcasterId: input.twitchBroadcasterId }));
+      .mockImplementationOnce(async (providerId, input) => ({ providerId, forwardTwitchEvents: true, available: true, sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }], selected: input.externalSubscriptions, unavailableSelections: [], twitchBroadcasterId: input.twitchBroadcasterId }));
     const api = providerApi({
       listRegisteredProviders: vi.fn(async () => [activeBot]), getProvider: vi.fn(async () => detail(activeBot)),
-      getStreamerBotSubscriptions: vi.fn(async () => ({ providerId: activeBot.id, available: true, sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }], selected: [], unavailableSelections: [], twitchBroadcasterId: null })),
+      getStreamerBotSubscriptions: vi.fn(async () => ({ providerId: activeBot.id, forwardTwitchEvents: true, available: true, sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }], selected: [], unavailableSelections: [], twitchBroadcasterId: null })),
       updateStreamerBotSubscriptions
     });
     window.history.replaceState(null, "", "/manage/event-sources");
@@ -181,7 +181,7 @@ describe("provider pages", () => {
       .mockRejectedValue(Object.assign(new Error("Subscription store unavailable"), { referenceId: "ref-prior-save" }));
     const api = providerApi({
       listRegisteredProviders: vi.fn(async () => [activeBot]), getProvider: vi.fn(async () => detail(activeBot)),
-      getStreamerBotSubscriptions: vi.fn(async () => ({ providerId: activeBot.id, available: true, sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }], selected: [], unavailableSelections: [], twitchBroadcasterId: null })),
+      getStreamerBotSubscriptions: vi.fn(async () => ({ providerId: activeBot.id, forwardTwitchEvents: true, available: true, sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }], selected: [], unavailableSelections: [], twitchBroadcasterId: null })),
       updateStreamerBotSubscriptions
     });
     window.history.replaceState(null, "", "/manage/event-sources");
@@ -278,6 +278,7 @@ describe("provider pages", () => {
     const updateStreamerBotSubscriptions = vi.fn<ProviderPageApi["updateStreamerBotSubscriptions"]>(
       async (providerId, input) => ({
         providerId,
+        forwardTwitchEvents: true,
         available: true,
         sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
         selected: input.externalSubscriptions,
@@ -290,6 +291,7 @@ describe("provider pages", () => {
       getProvider: vi.fn(async () => detail(activeBot)),
       getStreamerBotSubscriptions: vi.fn(async () => ({
         providerId: activeBot.id,
+        forwardTwitchEvents: true,
         available: true,
         sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
         selected: [],
@@ -332,6 +334,7 @@ describe("provider pages", () => {
     const updateStreamerBotSubscriptions = vi.fn<ProviderPageApi["updateStreamerBotSubscriptions"]>(
       async (providerId, input) => ({
         providerId,
+        forwardTwitchEvents: true,
         available: true,
         sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
         selected: input.externalSubscriptions,
@@ -344,6 +347,7 @@ describe("provider pages", () => {
       getProvider: vi.fn(async () => detail(activeBot)),
       getStreamerBotSubscriptions: vi.fn(async () => ({
         providerId: activeBot.id,
+        forwardTwitchEvents: true,
         available: true,
         sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
         selected: [{ sourceKey: "OBS", eventTypes: ["MissingEvent"] }],
@@ -890,8 +894,124 @@ describe("provider pages", () => {
     await user.click(within(row).getByRole("button", { name: "Activate Local Streamer.bot" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Activate Local Streamer.bot?" });
-    expect(dialog).toHaveTextContent("Local Streamer.bot will become the active event source");
+    expect(dialog).toHaveTextContent("Local Streamer.bot will become the event source in use");
     expect(dialog).not.toHaveTextContent("current event source");
+  });
+
+  it("uses a second event source alongside the one in use and shows both as in use", async () => {
+    const user = userEvent.setup();
+    let providers = [activeTwitch, inactiveStreamerBot];
+    const overlap = {
+      ...validationError,
+      summary: "Twitch events will arrive from two sources",
+      cause: "Main Twitch and Local Streamer.bot both deliver the same Twitch events. Duplicates are merged, so each event plays once.",
+      severity: "warning" as const,
+      referenceId: null,
+      correction: { label: "Review Twitch forwarding", route: "/manage/event-sources?provider=streamerbot-local" }
+    };
+    const activateProvider = vi.fn(async () => {
+      providers = [activeTwitch, { ...inactiveStreamerBot, active: true, intakeState: "active" as const }];
+      return { provider: providers[1]!, replacedProviderId: null, impact: { matchedAlertCount: 0, unmatchedAlertCount: 0, blockers: [], warnings: [overlap] } };
+    });
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => providers),
+      getProvider: vi.fn(async (providerId: string) => detail(providers.find((candidate) => candidate.id === providerId) ?? providers[0]!)),
+      getProviderActivationImpact: vi.fn(async () => ({ matchedAlertCount: 0, unmatchedAlertCount: 0, blockers: [], warnings: [overlap] })),
+      activateProvider
+    });
+
+    render(<EventSourcesPage managementApi={api} />);
+    const row = await screen.findByRole("row", { name: /Local Streamer\.bot/u });
+    await user.click(within(row).getByRole("button", { name: "Activate Local Streamer.bot" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Activate Local Streamer.bot?" });
+    expect(dialog).toHaveTextContent("Local Streamer.bot will be used alongside Main Twitch");
+    expect(dialog).not.toHaveTextContent("will stop being used");
+    expect(dialog).toHaveTextContent("Twitch events will arrive from two sources");
+    await user.click(within(dialog).getByRole("button", { name: "Activate event source" }));
+
+    expect(activateProvider).toHaveBeenCalledWith("streamerbot-local", true);
+    await waitFor(() => expect(screen.getAllByText("In use", { selector: "table *" })).toHaveLength(2));
+  });
+
+  it("explains that a same-kind event source takes the place of the one in use", async () => {
+    const user = userEvent.setup();
+    const activeStreamerBot = { ...inactiveStreamerBot, id: "streamerbot-studio", name: "Studio Streamer.bot", active: true, intakeState: "active" as const };
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => [activeTwitch, activeStreamerBot, inactiveStreamerBot]),
+      getProvider: vi.fn(async () => detail(activeTwitch))
+    });
+
+    render(<EventSourcesPage managementApi={api} />);
+    const row = await screen.findByRole("row", { name: /Local Streamer\.bot/u });
+    await user.click(within(row).getByRole("button", { name: "Activate Local Streamer.bot" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Activate Local Streamer.bot?" });
+    expect(dialog).toHaveTextContent("Studio Streamer.bot will stop being used and Local Streamer.bot will take its place");
+    expect(dialog).not.toHaveTextContent("Main Twitch");
+  });
+
+  it("tells the user other sources keep running when one of two is deactivated", async () => {
+    const user = userEvent.setup();
+    const activeStreamerBot = { ...inactiveStreamerBot, active: true, intakeState: "active" as const };
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => [activeTwitch, activeStreamerBot]),
+      getProvider: vi.fn(async () => detail(activeTwitch))
+    });
+
+    render(<EventSourcesPage managementApi={api} />);
+    const row = await screen.findByRole("row", { name: /Main Twitch/u });
+    await user.click(within(row).getByRole("button", { name: "Deactivate Main Twitch" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Deactivate Main Twitch?" });
+    expect(dialog).toHaveTextContent("Other event sources in use keep running.");
+    expect(dialog).not.toHaveTextContent("Activate this or another event source");
+  });
+
+  it("saves Streamer.bot Twitch forwarding and explains the overlap with direct Twitch", async () => {
+    const user = userEvent.setup();
+    const activeStreamerBot = { ...inactiveStreamerBot, active: true, intakeState: "active" as const };
+    const setStreamerBotForwarding = vi.fn(async (providerId: string, input: { readonly forwardTwitchEvents: boolean }) => ({
+      providerId, forwardTwitchEvents: input.forwardTwitchEvents, available: false, sources: [], selected: [], unavailableSelections: [], twitchBroadcasterId: null
+    }));
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => [activeTwitch, activeStreamerBot]),
+      getProvider: vi.fn(async () => detail(activeStreamerBot)),
+      setStreamerBotForwarding
+    });
+
+    render(<EventSourcesPage initialProviderId="streamerbot-local" managementApi={api} />);
+    const section = await screen.findByRole("region", { name: "Twitch forwarding" });
+    expect(section).toHaveTextContent("Direct Twitch is also in use");
+    const save = within(section).getByRole("button", { name: "Save forwarding" });
+    expect(save).toBeDisabled();
+
+    await user.click(within(section).getByRole("checkbox", { name: "Forward Twitch events from Streamer.bot" }));
+    await user.click(save);
+
+    expect(setStreamerBotForwarding).toHaveBeenCalledWith("streamerbot-local", { forwardTwitchEvents: false });
+    expect(await screen.findByRole("status")).toHaveTextContent("Local Streamer.bot no longer forwards Twitch events.");
+    expect(section).toHaveTextContent("Twitch events come from direct Twitch");
+    expect(section).not.toHaveTextContent("Direct Twitch is also in use");
+  });
+
+  it("shows a forwarding save failure with its reference ID", async () => {
+    const user = userEvent.setup();
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => [inactiveStreamerBot]),
+      getProvider: vi.fn(async () => ({ ...detail(inactiveStreamerBot), configuration: { ...detail(inactiveStreamerBot).configuration, forwardTwitchEvents: false } })),
+      setStreamerBotForwarding: vi.fn(async () => { throw Object.assign(new Error("Unable to update Streamer.bot Twitch forwarding."), { referenceId: "ref-forwarding-1" }); })
+    });
+
+    render(<EventSourcesPage initialProviderId="streamerbot-local" managementApi={api} />);
+    const section = await screen.findByRole("region", { name: "Twitch forwarding" });
+    const checkbox = within(section).getByRole("checkbox", { name: "Forward Twitch events from Streamer.bot" });
+    expect(checkbox).not.toBeChecked();
+    await user.click(checkbox);
+    await user.click(within(section).getByRole("button", { name: "Save forwarding" }));
+
+    expect(await within(section).findByText(/Unable to update Twitch forwarding/u)).toBeInTheDocument();
+    expect(section).toHaveTextContent("ref-forwarding-1");
   });
 
   it("summarizes zero alert impact without raw zero counts", async () => {
@@ -1135,6 +1255,7 @@ function providerApi(overrides: Partial<ProviderPageApi> = {}): ProviderPageApi 
     getProvider: vi.fn(async () => detail(activeTwitch)),
     getStreamerBotSubscriptions: vi.fn(async (providerId) => ({
       providerId,
+      forwardTwitchEvents: true,
       available: false,
       sources: [],
       selected: [],
@@ -1143,11 +1264,21 @@ function providerApi(overrides: Partial<ProviderPageApi> = {}): ProviderPageApi 
     })),
     updateStreamerBotSubscriptions: vi.fn(async (providerId, input) => ({
       providerId,
+      forwardTwitchEvents: true,
       available: true,
       sources: input.externalSubscriptions,
       selected: input.externalSubscriptions,
       unavailableSelections: [],
       twitchBroadcasterId: input.twitchBroadcasterId
+    })),
+    setStreamerBotForwarding: vi.fn(async (providerId, input) => ({
+      providerId,
+      forwardTwitchEvents: input.forwardTwitchEvents,
+      available: false,
+      sources: [],
+      selected: [],
+      unavailableSelections: [],
+      twitchBroadcasterId: null
     })),
     activateProvider: vi.fn(async () => ({
       provider: activeTwitch,

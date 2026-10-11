@@ -1422,6 +1422,50 @@ describe("AlertEditorService", () => {
     }));
   });
 
+  it("tests and saves external alerts with only allowlisted variables and their fixed identity", async () => {
+    const identity = { providerKind: "streamerbot" as const, sourceKey: "General", eventType: "Custom" };
+    const externalRule: AlertRule = {
+      ...rule,
+      id: "alert-external",
+      eventType: "external_event",
+      externalIdentity: identity,
+      conditions: [],
+      variants: rule.variants.map((variant) => ({ ...variant, conditions: [] }))
+    };
+    const harness = createHarnessWithRule(externalRule);
+    const document = await harness.service.getDocument(externalRule.id);
+    expect(document).toMatchObject({ eventType: "external_event", externalIdentity: identity, conditions: [] });
+    expect(document.templateVariables?.map((variable) => variable.key)).toEqual(["summary", "userName", "eventType"]);
+    expect(document.samplePayloads.map((sample) => Object.keys(sample.payload).sort())).toEqual([
+      ["eventType", "summary", "userName"],
+      ["eventType", "summary", "userName"]
+    ]);
+    const candidate: AlertEditorDocument = {
+      ...document,
+      layers: document.layers.map((layer) => layer.type === "text" ? { ...layer, template: "{userName}|{summary}|{eventType}|{url}" } : layer)
+    };
+
+    await harness.service.sendTest(externalRule.id, {
+      document: candidate,
+      targetProfileId: "landscape",
+      samplePayload: { summary: "Hello", userName: "Viewer", eventType: "Custom", url: "https://example.invalid" },
+      includeAudio: false,
+      includeTts: false
+    });
+    expect(harness.enqueueTest).toHaveBeenCalledWith(expect.objectContaining({
+      sourceEvent: expect.objectContaining({ type: "external_event", identity }),
+      alerts: expect.arrayContaining([expect.objectContaining({
+        overlayInstruction: expect.objectContaining({ text: expect.objectContaining({ text: "Viewer|Hello|Custom|" }) })
+      })])
+    }));
+
+    await expect(harness.service.saveDocument(externalRule.id, { ...document, externalIdentity: { ...identity, eventType: "Other" } }))
+      .rejects.toThrow("external event identity does not match");
+    await expect(harness.service.saveDocument(externalRule.id, { ...document, conditions: [{ field: "summary", operator: "equals", value: "x" }] }))
+      .rejects.toBeInstanceOf(AlertEditorValidationError);
+    expect(harness.rules.saveRule).not.toHaveBeenCalled();
+  });
+
   it("uses the stored media type when testing a Video/GIF layer", async () => {
     const harness = createHarness(false, async (assetIds) => new Map(
       assetIds.includes("asset-gif") ? [["asset-gif", assetRecord("asset-gif", "gif", null)]] : []

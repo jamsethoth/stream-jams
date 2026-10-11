@@ -23,7 +23,7 @@ export class SqliteSurfaceRepository implements SurfaceRepository {
   }
 
   private reconcile(): SurfaceConfiguration[] {
-    // Module-only modules (such as Video shoutout) never join unified or desktop layering.
+    // Module-only modules never join unified or desktop layering.
     const modules = this.registry.listModules().filter(module => module.renderer.supportedOutputs.includes("unified"));
     const ids = modules.map(module => module.id);
     const rows = this.connection.prepare("SELECT configuration_json FROM overlay_surfaces ORDER BY id").all();

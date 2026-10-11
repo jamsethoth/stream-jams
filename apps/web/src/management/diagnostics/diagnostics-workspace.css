@@ -168,3 +168,8 @@
 }
 
 .diagnostics-workspace__views { display: grid; gap: 16px; }
+
+.diagnostics-bus-consumers { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.diagnostics-bus-consumers li { align-items: center; background: var(--color-surface-subtle); border: 1px solid var(--color-border); border-radius: 6px; display: flex; flex-wrap: wrap; gap: 8px 12px; padding: 8px 12px; }
+.diagnostics-bus-consumers li > span:first-child { flex: 1; min-width: 120px; }
+.diagnostics-bus-consumers code { overflow-wrap: anywhere; }

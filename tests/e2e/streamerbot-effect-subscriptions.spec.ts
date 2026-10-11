@@ -78,7 +78,8 @@ test("configures explicit Screen Effects events on the active Streamer.bot provi
           sources: [{ sourceKey: "OBS", eventTypes: ["RecordingStarted", "SceneChanged"] }],
           selected,
           unavailableSelections: [],
-          twitchBroadcasterId: body.twitchBroadcasterId
+          twitchBroadcasterId: body.twitchBroadcasterId,
+          forwardTwitchEvents: true
         }
       });
       return;
@@ -91,7 +92,8 @@ test("configures explicit Screen Effects events on the active Streamer.bot provi
         sources: [{ sourceKey: "OBS", eventTypes: ["RecordingStarted", "SceneChanged"] }],
         selected,
         unavailableSelections: [],
-        twitchBroadcasterId: null
+        twitchBroadcasterId: null,
+        forwardTwitchEvents: true
       }
     });
   });
@@ -111,7 +113,8 @@ test("configures explicit Screen Effects events on the active Streamer.bot provi
           sources: [{ sourceKey: "OBS", eventTypes: ["RecordingStarted", "SceneChanged"] }],
           selected,
           unavailableSelections: [],
-          twitchBroadcasterId: body.twitchBroadcasterId
+          twitchBroadcasterId: body.twitchBroadcasterId,
+          forwardTwitchEvents: true
         }
       });
       return;
@@ -124,7 +127,8 @@ test("configures explicit Screen Effects events on the active Streamer.bot provi
         sources: [{ sourceKey: "OBS", eventTypes: ["RecordingStarted", "SceneChanged"] }],
         selected,
         unavailableSelections: [],
-        twitchBroadcasterId: null
+        twitchBroadcasterId: null,
+        forwardTwitchEvents: true
       }
     });
   });

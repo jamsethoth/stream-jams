@@ -5,7 +5,8 @@ import type {
   DiagnosticsProblemArea,
   DiagnosticsProblemView,
   DiagnosticsRawLogView,
-  DiagnosticsWorkspaceView
+  DiagnosticsWorkspaceView,
+  EventBusActivityView
 } from "@stream-jams/core";
 import { StatusBadge, type StatusBadgeTone } from "../foundation/StatusBadge.js";
 import { ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
@@ -14,14 +15,16 @@ import type { DiagnosticsDebugExportView, DiagnosticsExportView, ManagementApi }
 import { SectionHeading } from "../foundation/ModulePageLayout.js";
 import "./diagnostics-workspace.css";
 
-type DiagnosticsTab = "problems" | "events" | "raw-logs";
+type DiagnosticsTab = "problems" | "events" | "raw-logs" | "event-bus";
+type BusEventView = EventBusActivityView["events"][number];
+type BusConsumerOutcome = BusEventView["consumers"][number]["outcome"];
 type SortOrder = "newest" | "oldest";
 
 export interface DiagnosticsPanelProps {
   readonly initialReferenceId?: string | undefined;
   readonly managementApi: Pick<
     ManagementApi,
-    "getDiagnosticsWorkspace" | "exportDiagnostics" | "exportDebugDiagnostics"
+    "getDiagnosticsWorkspace" | "exportDiagnostics" | "exportDebugDiagnostics" | "getEventBusActivity"
   >;
 }
 
@@ -34,6 +37,8 @@ export function DiagnosticsPanel({ initialReferenceId, managementApi }: Diagnost
   const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
+  const [busActivity, setBusActivity] = useState<EventBusActivityView | null>(null);
+  const [selectedBusEventId, setSelectedBusEventId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
@@ -73,8 +78,14 @@ export function DiagnosticsPanel({ initialReferenceId, managementApi }: Diagnost
     if (log !== undefined) {
       setActiveTab("raw-logs");
       setSelectedLogId(log.id);
+      return;
     }
-  }, [initialReferenceId, workspace]);
+    const busEvent = busActivity?.events.find((item) => busEventReferences(item).includes(initialReferenceId));
+    if (busEvent !== undefined) {
+      setActiveTab("event-bus");
+      setSelectedBusEventId(busEvent.id);
+    }
+  }, [initialReferenceId, workspace, busActivity]);
 
   const problems = useMemo(
     () => filterProblems(workspace?.problems ?? [], query, filter, sortOrder),
@@ -88,6 +99,12 @@ export function DiagnosticsPanel({ initialReferenceId, managementApi }: Diagnost
     () => filterRawLogs(workspace?.rawLogs ?? [], query, filter, sortOrder),
     [workspace, query, filter, sortOrder]
   );
+  const busEvents = useMemo(
+    () => filterBusEvents(busActivity?.events ?? [], query, filter, sortOrder),
+    [busActivity, query, filter, sortOrder]
+  );
+  const selectedBusEvent = busEvents.find((event) => event.id === selectedBusEventId) ?? busEvents[0] ?? null;
+  const tabs = managementApi.getEventBusActivity === undefined ? diagnosticsTabs : [...diagnosticsTabs, "event-bus" as const];
   const selectedProblem = problems.find((problem) => problem.id === selectedProblemId) ?? problems[0] ?? null;
   const selectedEvent = events.find((event) => event.id === selectedEventId) ?? events[0] ?? null;
   const selectedLog = rawLogs.find((log) => log.id === selectedLogId) ?? rawLogs[0] ?? null;
@@ -97,8 +114,17 @@ export function DiagnosticsPanel({ initialReferenceId, managementApi }: Diagnost
     setNotice(null);
     setLoadNotice(null);
     try {
-      const result = await managementApi.getDiagnosticsWorkspace();
-      if (mounted.current) setWorkspace(result);
+      const [result, activity] = await Promise.all([
+        managementApi.getDiagnosticsWorkspace(),
+        managementApi.getEventBusActivity?.().catch(
+          // error-provenance: allow expected -- bus activity is supplementary; the Event intake tab says it is unavailable and the workspace still loads
+          () => null
+        ) ?? Promise.resolve(null)
+      ]);
+      if (mounted.current) {
+        setWorkspace(result);
+        setBusActivity(activity);
+      }
     } catch (error) {
       if (mounted.current) {
         const failure = failureNotice("Diagnostics could not be loaded", error, "Check that the local service is running, then retry.");
@@ -175,11 +201,12 @@ export function DiagnosticsPanel({ initialReferenceId, managementApi }: Diagnost
       {loadNotice === null ? null : <NoticeBanner notice={loadNotice} />}
       {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
 
-      <Tabs className="diagnostics-workspace__views" value={activeTab} onChange={(value) => { if (value === "problems" || value === "events" || value === "raw-logs") selectTab(value); }} keepMounted={false}>
+      <Tabs className="diagnostics-workspace__views" value={activeTab} onChange={(value) => { const tab = tabs.find((candidate) => candidate === value); if (tab !== undefined) selectTab(tab); }} keepMounted={false}>
         <Tabs.List aria-label="Diagnostics views">
           <Tabs.Tab value="problems" onFocus={() => selectTab("problems")}>Problems <span>{workspace?.problems.length ?? 0}</span></Tabs.Tab>
           <Tabs.Tab value="events" onFocus={() => selectTab("events")}>Events <span>{workspace?.events.length ?? 0}</span></Tabs.Tab>
           <Tabs.Tab value="raw-logs" onFocus={() => selectTab("raw-logs")}>Raw logs <span>{workspace?.rawLogs.length ?? 0}</span></Tabs.Tab>
+          {tabs.includes("event-bus") ? <Tabs.Tab value="event-bus" onFocus={() => selectTab("event-bus")}>Event intake <span>{busActivity?.events.length ?? 0}</span></Tabs.Tab> : null}
         </Tabs.List>
 
       <div className="diagnostics-workspace__toolbar">
@@ -208,11 +235,12 @@ export function DiagnosticsPanel({ initialReferenceId, managementApi }: Diagnost
           <Button onClick={() => void loadWorkspace()} type="button">Retry</Button>
         </div>
       ) : null}
-      {diagnosticsTabs.map((tab) => <Tabs.Panel key={tab} value={tab} tabIndex={0}>
+      {tabs.map((tab) => <Tabs.Panel key={tab} value={tab} tabIndex={0}>
         {!loading && workspace !== null ? <div className="diagnostics-workspace__content">
           {tab === "problems" ? <ProblemsView onCopy={copyText} onSelect={setSelectedProblemId} problems={problems} selected={selectedProblem} /> : null}
           {tab === "events" ? <EventsView events={events} onSelect={setSelectedEventId} selected={selectedEvent} /> : null}
           {tab === "raw-logs" ? <RawLogsView logs={rawLogs} onCopy={copyText} onSelect={setSelectedLogId} selected={selectedLog} /> : null}
+          {tab === "event-bus" ? <BusEventsView available={busActivity !== null} events={busEvents} onSelect={setSelectedBusEventId} selected={selectedBusEvent} /> : null}
         </div> : null}
       </Tabs.Panel>)}
       </Tabs>
@@ -279,6 +307,19 @@ function RawLogsView(props: { readonly logs: readonly DiagnosticsRawLogView[]; r
   </>}</DetailPane></>;
 }
 
+function BusEventsView(props: { readonly available: boolean; readonly events: readonly BusEventView[]; readonly selected: BusEventView | null; readonly onSelect: (id: number) => void }) {
+  return <><section aria-label="Event intake" className="diagnostics-workspace__list-pane"><SectionHeading level={3} title="Event intake" />
+    {!props.available ? <EmptyState title="Event intake is unavailable" detail="Refresh to try loading bus activity again." /> : props.events.length === 0 ? <EmptyState title="No matching bus events" detail="Change the filters or wait for a connected event source." /> : <div className="management-table-wrap"><table className="management-table diagnostics-event-table"><thead><tr><th>Time</th><th>Source</th><th>Event</th><th>Intake</th><th>Modules</th></tr></thead><tbody>
+      {props.events.map((event) => <tr aria-selected={props.selected?.id === event.id} key={event.id}><td><time dateTime={event.receivedAt}>{formatTime(event.receivedAt)}</time></td><td>{sourceLabel(event.sourceKind)}</td><td><Button variant="subtle" className="diagnostics-event-table__select" onClick={() => props.onSelect(event.id)} type="button">{busEventLabel(event)}</Button></td><td><StatusBadge label={capitalize(event.outcome)} tone={intakeTone(event.outcome)} /></td><td>{consumerSummary(event)}</td></tr>)}
+    </tbody></table></div>}
+  </section><DetailPane label="Bus event detail">{props.selected === null ? <EmptyState title="No bus event selected" detail="Select a bus event to see what each module did with it." /> : <>
+    <StatusBadge label={capitalize(props.selected.outcome)} tone={intakeTone(props.selected.outcome)} /><h3>{busEventLabel(props.selected)}</h3>
+    <p>{intakeDescription(props.selected.outcome)}</p>
+    <dl className="diagnostics-workspace__facts"><div><dt>Source</dt><dd>{sourceLabel(props.selected.sourceKind)}</dd></div><div><dt>Kind</dt><dd>{props.selected.kind === null ? "Not published" : props.selected.kind === "canonical" ? "Stream event" : "Streamer.bot event"}</dd></div><div><dt>Received</dt><dd><time dateTime={props.selected.receivedAt}>{formatDateTime(props.selected.receivedAt)}</time></dd></div><div><dt>Reference ID</dt><dd>{props.selected.referenceId ?? "Not available"}</dd></div></dl>
+    {props.selected.consumers.length === 0 ? null : <><h4>Modules</h4><ul aria-label="Module outcomes" className="diagnostics-bus-consumers">{props.selected.consumers.map((consumer) => <li key={consumer.consumerId}><span>{consumerLabel(consumer.consumerId)}</span><StatusBadge label={consumerOutcomeLabel(consumer.outcome)} tone={consumerTone(consumer.outcome)} />{consumer.referenceId === null ? null : <code>{consumer.referenceId}</code>}</li>)}</ul></>}
+  </>}</DetailPane></>;
+}
+
 function DetailPane({ children, label }: { readonly children: React.ReactNode; readonly label: string }) {
   return <section aria-label={label} className="diagnostics-workspace__detail-pane">{children}</section>;
 }
@@ -327,6 +368,60 @@ function filterEvents(items: readonly DiagnosticsEventView[], query: string, fil
   return sortByDate(items.filter((item) => (filter === "all" || item.outcome === filter) && matches(query, item.referenceId, item.eventType, item.providerId, item.actorDisplayName, ...item.alertIds)), (item) => item.occurredAt, sortOrder);
 }
 
+function filterBusEvents(items: readonly BusEventView[], query: string, filter: string, sortOrder: SortOrder) {
+  return sortByDate(items.filter((item) => matchesBusFilter(item, filter) && matches(query, item.eventType, ...busEventReferences(item))), (item) => item.receivedAt, sortOrder);
+}
+
+function matchesBusFilter(item: BusEventView, filter: string): boolean {
+  if (filter === "all") return true;
+  if (filter === "failed" || filter === "expired") return item.consumers.some((consumer) => consumer.outcome === filter);
+  return item.outcome === filter;
+}
+
+function busEventReferences(item: BusEventView): string[] {
+  return [item.referenceId, ...item.consumers.map((consumer) => consumer.referenceId)].filter((value): value is string => value !== null);
+}
+
+function busEventLabel(event: BusEventView): string {
+  return event.eventType ?? "Rejected input";
+}
+
+function sourceLabel(sourceKind: BusEventView["sourceKind"]): string {
+  return sourceKind === "twitch" ? "Twitch" : "Streamer.bot";
+}
+
+function consumerLabel(consumerId: string): string {
+  return ({ alerts: "Alerts", "screen-effects": "Screen Effects", timers: "Timers", videos: "Videos" } as Record<string, string>)[consumerId] ?? consumerId;
+}
+
+function consumerOutcomeLabel(outcome: BusConsumerOutcome): string {
+  return ({ admitted: "Admitted", "no-match": "No match", failed: "Failed", expired: "Expired", pending: "Pending" })[outcome];
+}
+
+function consumerSummary(event: BusEventView): string {
+  if (event.consumers.length === 0) return "None";
+  const counts = new Map<BusConsumerOutcome, number>();
+  for (const consumer of event.consumers) counts.set(consumer.outcome, (counts.get(consumer.outcome) ?? 0) + 1);
+  return [...counts.entries()].map(([outcome, count]) => `${count} ${consumerOutcomeLabel(outcome).toLowerCase()}`).join(" · ");
+}
+
+function intakeDescription(outcome: BusEventView["outcome"]): string {
+  return ({
+    accepted: "Accepted and delivered to each module.",
+    duplicate: "Already received from this source, so it was not delivered again.",
+    merged: "The other source already delivered the same event, so this copy was merged into it.",
+    rejected: "The source sent input that failed validation. Use the reference ID to find the raw log."
+  })[outcome];
+}
+
+function intakeTone(outcome: BusEventView["outcome"]): StatusBadgeTone {
+  return outcome === "rejected" ? "negative" : outcome === "accepted" ? "positive" : "info";
+}
+
+function consumerTone(outcome: BusConsumerOutcome): StatusBadgeTone {
+  return outcome === "failed" ? "negative" : outcome === "expired" ? "warning" : outcome === "admitted" ? "positive" : "neutral";
+}
+
 function filterRawLogs(items: readonly DiagnosticsRawLogView[], query: string, filter: string, sortOrder: SortOrder) {
   return sortByDate(items.filter((item) => (filter === "all" || item.level === filter) && matches(query, item.referenceId, item.event, item.component, item.message)), (item) => item.timestamp, sortOrder);
 }
@@ -355,11 +450,12 @@ function groupProblems(problems: readonly DiagnosticsProblemView[]) {
 }
 
 function filterLabel(tab: DiagnosticsTab): string {
-  return tab === "problems" ? "Area" : tab === "events" ? "Outcome" : "Level";
+  return tab === "problems" ? "Area" : tab === "events" || tab === "event-bus" ? "Outcome" : "Level";
 }
 
 function filterOptions(tab: DiagnosticsTab) {
   if (tab === "problems") return [{ value: "all", label: "All areas" }, ...(["providers", "alerts", "assets", "outputs", "settings", "runtime"] as const).map((value) => ({ value, label: areaLabel(value) }))];
+  if (tab === "event-bus") return [{ value: "all", label: "All" }, ...["accepted", "duplicate", "merged", "rejected"].map((value) => ({ value, label: capitalize(value) })), { value: "failed", label: "Module failed" }, { value: "expired", label: "Module expired" }];
   if (tab === "events") return ["all", "received", "processed", "ignored", "failed"].map((value) => ({ value, label: capitalize(value) }));
   return ["all", "DEBUG", "INFO", "WARN", "ERROR"].map((value) => ({ value, label: value === "all" ? "All levels" : value }));
 }

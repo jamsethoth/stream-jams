@@ -37,6 +37,7 @@ export function registerTwitchAuthRoutes(app: FastifyInstance, dependencies: Twi
       throw error;
     }
   });
+  // codeql[js/missing-rate-limiting] Every Twitch auth route runs managementRateLimitPreHandler first.
   app.post("/twitch/auth/poll", { preHandler }, async (request, reply) => {
     const input = parsePollInput(request.body);
     if (input === null) {

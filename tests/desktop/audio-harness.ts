@@ -3,7 +3,11 @@ import { rm } from "node:fs/promises";
 import { expect, type ElectronApplication } from "@playwright/test";
 
 export async function windowByUrl<T extends { url(): string }>(desktop: { windows(): T[] }, url: string): Promise<T> {
-  await expect.poll(() => desktop.windows().some((page) => page.url() === url), { timeout: 25_000 }).toBe(true);
+  try { await expect.poll(() => desktop.windows().some((page) => page.url() === url), { timeout: 25_000 }).toBe(true); }
+  catch (error) {
+    // Name what was open instead, so a slow or failed service start is distinguishable from a wrong URL.
+    throw new Error(`No window reached ${url}; open windows: ${JSON.stringify(desktop.windows().map((page) => page.url()))}`, { cause: error });
+  }
   const page = desktop.windows().find((candidate) => candidate.url() === url);
   if (page === undefined) throw new Error(`Window disappeared: ${url}`);
   return page;
