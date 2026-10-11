@@ -1,6 +1,6 @@
 # Browser and desktop output layout design
 
-The maintained written design for this change is [OpenSpec design](../../../openspec/changes/separate-browser-desktop-output-layouts/design.md), with its [proposal](../../../openspec/changes/separate-browser-desktop-output-layouts/proposal.md) and [requirements](../../../openspec/changes/separate-browser-desktop-output-layouts/specs/output-specific-module-rendering/spec.md).
+The maintained written design for this change is [OpenSpec design](../../../openspec/changes/archive/2026-10-11-separate-browser-desktop-output-layouts/design.md), with its [proposal](../../../openspec/changes/archive/2026-10-11-separate-browser-desktop-output-layouts/proposal.md) and [requirements](../../../openspec/changes/archive/2026-10-11-separate-browser-desktop-output-layouts/specs/output-specific-module-rendering/spec.md).
 
 Status: written specification approved by the user on 2026-10-10. The [agent implementation plan](../plans/2026-10-10-browser-desktop-output-layouts.md) is being implemented in ordered slices with parent review and per-slice pushes.
 
