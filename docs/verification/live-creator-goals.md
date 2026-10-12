@@ -37,3 +37,5 @@ No real Twitch account, normal profile, OAuth token, OBS session or physical des
 Custom Data event-rule authoring, stream-online resets and Streamer.bot global-variable adapters are outside this integration. Streamer.bot globals still need sanitized real response/event fixtures. The PR remains a draft pending the broader Data work; this change does not merge it.
 
 Remote main advanced after the branch's earlier `4dc22d3c` merge, and GitHub reports conflicts for PR #182. This delivery completes the live-goal integration on its existing branch; it does not incorporate the later browser/desktop output refactor. The draft needs reconciliation with newer main before merge, and fresh remote CodeQL status cannot be inferred from local authorization tests.
+
+Implementation commit `64481812` was pushed to [PR #182](https://github.com/jamsethoth/stream-jams/pull/182), and its remote head, draft state and conflict status were verified. No fresh PR checks were present at that checkpoint; branch CI is requested separately. This delivery record does not claim remote checks have passed.
