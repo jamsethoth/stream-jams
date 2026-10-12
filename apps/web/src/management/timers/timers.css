@@ -119,6 +119,8 @@
 .timer-layout__preview {
   background: var(--color-canvas);
   border: 1px solid var(--color-border);
+  /* The border sits outside the output size, so an edge-to-edge stack is not clipped. */
+  box-sizing: content-box;
   max-width: 100%;
   overflow: hidden;
   position: relative;
