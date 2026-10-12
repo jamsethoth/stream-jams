@@ -46,6 +46,20 @@ describe("TimerStackEditor", () => {
       expect(latest.profiles.landscape.appearance).toEqual({ ...before, [field]: value });
     }
   });
+  it("edits the card shadow from the original default and turns it off without losing its shape", () => {
+    let latest = structuredClone(timersOverlayModuleDefinition.defaultConfig);
+    function Owner() {
+      const [value, setValue] = useState(latest);
+      return <TimerStackEditor assetApi={createTestMediaPreviewApi()} value={value} onChange={next => { latest = next; setValue(next); }} />;
+    }
+    render(<Owner />);
+    expect(screen.getByLabelText("Shadow blur (px)")).toHaveValue(24);
+    fireEvent.change(screen.getByLabelText("Shadow X (px)"), { target: { value: "6" } });
+    expect(latest.profiles.landscape.appearance.shadow).toEqual({ offsetX: 6, offsetY: 8, blur: 24, spread: 0, color: "#0000006B" });
+    fireEvent.change(screen.getByLabelText("Shadow", { selector: "select" }), { target: { value: "off" } });
+    expect(latest.profiles.landscape.appearance.shadow).toEqual({ offsetX: 6, offsetY: 8, blur: 24, spread: 0, color: "#00000000" });
+    expect(screen.getByLabelText("Shadow", { selector: "select" })).toHaveValue("off");
+  });
   it("round-trips fonts and placement, retains drafts and resets only the selected profile", async () => {
     const user = userEvent.setup();
     let latest = structuredClone(timersOverlayModuleDefinition.defaultConfig);
@@ -63,8 +77,14 @@ describe("TimerStackEditor", () => {
       fireEvent.change(screen.getByLabelText(`${label} color`), { target: { value: "#112233" } });
       expect(latest.profiles.landscape.appearance[field]).toEqual({ fontPreset: "serif", fontSizePx: 18, fontWeight: 500, color: "#112233" });
     }
-    await user.selectOptions(screen.getByLabelText("Orientation"), "horizontal");
-    expect(latest.profiles.landscape.appearance.orientation).toBe("horizontal");
+    await user.selectOptions(screen.getByLabelText("Stack direction"), "Right to left");
+    expect(latest.profiles.landscape.appearance).toMatchObject({ orientation: "horizontal", reverse: true });
+    await user.selectOptions(screen.getByLabelText("Desktop direction"), "Left to right");
+    expect(latest.profiles.landscape.desktopPlacement.reverse).toBe(false);
+    await user.selectOptions(screen.getByLabelText("Desktop direction"), "Same as browser");
+    expect(latest.profiles.landscape.desktopPlacement.reverse).toBeUndefined();
+    await user.selectOptions(screen.getByLabelText("Stack direction"), "Left to right");
+    expect(latest.profiles.landscape.appearance).toMatchObject({ orientation: "horizontal", reverse: false });
     for (const [label, field, value] of [["X", "x", 65], ["Y", "y", 100], ["Z order", "zIndex", 7], ["Desktop scale", "scale", .4]] as const) {
       const before = latest.profiles.landscape.desktopPlacement;
       fireEvent.change(screen.getByLabelText(label, { exact: true }), { target: { value: String(value) } });

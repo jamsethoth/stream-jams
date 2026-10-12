@@ -3,6 +3,7 @@ import { timerEventRulesSchema } from "./event-rules.js";
 import { timerOverflowGeometry } from "./output-geometry.js";
 import { isExactLegacyTimerAppearance } from "./legacy-appearance.js";
 import { alertAudioOutputsSchema } from "../audio/schemas.js";
+import { boxShadowSchema } from "../shared/box-shadow.js";
 import {
   isoDateTimeSchema,
   nonEmptyStringSchema,
@@ -125,11 +126,11 @@ export const timerTypographySchema = z.strictObject({
 }) satisfies z.ZodType<TimerTypography>;
 export const timerAppearanceSchema = z.strictObject({
   cardWidthPx: z.number().finite().positive().max(1920), cardHeightPx: z.number().finite().positive().max(1920),
-  orientation: z.enum(["vertical", "horizontal"]), maxVisible: z.number().int().min(1).max(12), stackGapPx: px(128),
+  orientation: z.enum(["vertical", "horizontal"]), reverse: z.boolean().optional(), maxVisible: z.number().int().min(1).max(12), stackGapPx: px(128),
   gapPx: px(128), blockPaddingPx: px(128), inlinePaddingPx: px(128), cornerRadiusPx: px(256), borderWidthPx: px(16),
   borderColor: color, backgroundColor: color, backgroundOpacity: z.number().finite().min(0).max(1),
   labelFont: timerTypographySchema, valueFont: timerTypographySchema, iconSizePx: px(256),
-  runningAccent: color.nullable(), pausedAccent: color, completedAccent: color
+  runningAccent: color.nullable(), pausedAccent: color, completedAccent: color, shadow: boxShadowSchema.optional()
 }).superRefine((a, context) => {
   const innerHeight = a.cardHeightPx - 2 * (a.blockPaddingPx + a.borderWidthPx);
   const textWidth = a.cardWidthPx - 2 * (a.inlinePaddingPx + a.borderWidthPx) - a.iconSizePx - a.gapPx * 2 - a.valueFont.fontSizePx * 2.4;
@@ -140,7 +141,7 @@ export const timerAppearanceSchema = z.strictObject({
   }
 }) satisfies z.ZodType<TimerAppearance>;
 export const timerProfileSchema = z.strictObject({ appearance: timerAppearanceSchema,
-  desktopPlacement: z.strictObject({ x: px(1920), y: px(1920), zIndex: z.number().int().min(-10000).max(10000), scale: z.number().finite().positive().max(10) })
+  desktopPlacement: z.strictObject({ x: px(1920), y: px(1920), zIndex: z.number().int().min(-10000).max(10000), scale: z.number().finite().positive().max(10), reverse: z.boolean().optional() })
 }) satisfies z.ZodType<TimerProfile>;
 function currentProfileFor(profile: keyof typeof timerProfileDimensions) {
   return timerProfileSchema.superRefine((value, context) => {

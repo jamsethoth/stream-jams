@@ -1,4 +1,5 @@
 import type { AlertAudioOutputs } from "../audio/types.js";
+import type { BoxShadow } from "../shared/box-shadow.js";
 import type { OverlayElementLayout, OverlayTargetProfileId } from "../shared/schemas.js";
 
 export interface TimerDefinitionSnapshot {
@@ -75,6 +76,8 @@ export interface TimerAppearance {
   readonly cardWidthPx: number;
   readonly cardHeightPx: number;
   readonly orientation: "vertical" | "horizontal";
+  /** Fill from the bottom (vertical) or right (horizontal); the overflow badge moves to the opposite end. */
+  readonly reverse?: boolean | undefined;
   readonly maxVisible: number;
   readonly stackGapPx: number;
   readonly gapPx: number;
@@ -91,11 +94,14 @@ export interface TimerAppearance {
   readonly runningAccent: string | null;
   readonly pausedAccent: string;
   readonly completedAccent: string;
+  /** Card shadow; absent uses `defaultTimerShadow`. The browser source margin is sized from it. */
+  readonly shadow?: BoxShadow | undefined;
 }
 
 export interface TimerProfile {
   readonly appearance: TimerAppearance;
-  readonly desktopPlacement: { readonly x: number; readonly y: number; readonly zIndex: number; readonly scale: number };
+  /** `reverse` overrides the appearance direction on the desktop only; absent follows the browser source. */
+  readonly desktopPlacement: { readonly x: number; readonly y: number; readonly zIndex: number; readonly scale: number; readonly reverse?: boolean | undefined };
 }
 
 export interface TimerOverflowGeometry {

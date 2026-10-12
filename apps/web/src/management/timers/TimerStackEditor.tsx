@@ -1,5 +1,5 @@
 import { Button, NativeSelect, SegmentedControl, TextInput } from "@mantine/core";
-import { alertFontPresets, projectTimerStack, resolveTimerOutputGeometry, timerProfileDimensions, timersOverlayModuleDefinition, timersOverlayModuleConfigSchema,
+import { alertFontPresets, boxShadowLimits, boxShadowVisible, defaultTimerShadow, projectTimerStack, resolveTimerOutputGeometry, timerProfileDimensions, timersOverlayModuleDefinition, timersOverlayModuleConfigSchema,
   type OverlayTargetProfileId, type TimerAppearance, type TimerDefinition, type TimerProfile, type TimerRunState, type TimersOverlayModuleConfig } from "@stream-jams/core";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { TimerStack } from "../../overlay/components/TimerStack.js";
@@ -15,6 +15,10 @@ const numericAppearance = [
 ] as const;
 const colorAppearance = [["borderColor", "Border color"], ["backgroundColor", "Background color"],
   ["runningAccent", "Running accent"], ["pausedAccent", "Paused accent"], ["completedAccent", "Completed accent"]] as const;
+const shadowFields = [["offsetX", "Shadow X (px)", boxShadowLimits.offsetPx.min, boxShadowLimits.offsetPx.max], ["offsetY", "Shadow Y (px)", boxShadowLimits.offsetPx.min, boxShadowLimits.offsetPx.max],
+  ["blur", "Shadow blur (px)", boxShadowLimits.blurPx.min, boxShadowLimits.blurPx.max], ["spread", "Shadow spread (px)", boxShadowLimits.spreadPx.min, boxShadowLimits.spreadPx.max]] as const;
+const directionOptions = [["vertical", "Top to bottom"], ["vertical-reverse", "Bottom to top"],
+  ["horizontal", "Left to right"], ["horizontal-reverse", "Right to left"]] as const;
 const previewNow = () => 0;
 
 export function TimerStackEditor({ assetApi, definitions, value, onChange, validationError }: {
@@ -35,7 +39,10 @@ export function TimerStackEditor({ assetApi, definitions, value, onChange, valid
     const invalidProfile = validationError.path.split(".")[1];
     if ((invalidProfile === "landscape" || invalidProfile === "vertical") && profile !== invalidProfile) { setProfile(invalidProfile); return; }
     const path = validationError.path.endsWith("desktopPlacement") ? `${validationError.path}.x` : validationError.path;
-    editorRoot.current?.querySelector<HTMLInputElement>(`[data-timer-field="${path}"]`)?.focus();
+    const input = editorRoot.current?.querySelector<HTMLInputElement>(`[data-timer-field="${path}"]`);
+    // Invalid fields can sit in a collapsed section; open it so focus lands on a visible input.
+    input?.closest("details")?.setAttribute("open", "");
+    input?.focus();
   }, [profile, validationError]);
   const errorFor = (field: string) => validationError?.path === field || (field.endsWith("desktopPlacement.x") && validationError?.path === field.slice(0, -2)) ? validationError?.message : undefined;
   const sourceKey = [...previewAssetUrls.values()].join("\u0000");
@@ -53,7 +60,7 @@ export function TimerStackEditor({ assetApi, definitions, value, onChange, valid
     const observer = new ResizeObserver(([entry]) => { if (entry !== undefined) setAvailableWidth(Math.min(960, Math.max(1, entry.contentRect.width))); });
     observer.observe(shell); return () => observer.disconnect();
   }, []);
-  const selected = value.profiles[profile]; const a = selected.appearance; const placement = selected.desktopPlacement;
+  const selected = value.profiles[profile]; const a = selected.appearance; const shadow = a.shadow ?? defaultTimerShadow; const placement = selected.desktopPlacement;
   const bounds = timerProfileDimensions[profile];
   const previewScale = Math.min(1, availableWidth / bounds.width, 620 / bounds.height);
   const preview = useMemo(() => {
@@ -89,31 +96,64 @@ export function TimerStackEditor({ assetApi, definitions, value, onChange, valid
     else updatePlacement({ scale: Math.max(.01, Math.min(10, (bounds.width - placement.x) / preview.geometry.footprint.width,
       (bounds.height - placement.y) / preview.geometry.footprint.height, placement.scale + (change[0] - change[1]) / 100)) });
   };
+  const numberFields = (fields: readonly (typeof numericAppearance)[number][0][]) => fields.map(field => {
+    const [, label, min, max] = numericAppearance.find(([candidate]) => candidate === field)!;
+    return <TextInput key={field} label={label} error={errorFor(`profiles.${profile}.appearance.${field}`)} data-timer-field={`profiles.${profile}.appearance.${field}`} type="number" min={min} max={max} step={field === "maxVisible" ? 1 : "any"} value={Number.isFinite(a[field]) ? a[field] : ""} onChange={event => updateAppearance({ [field]: event.currentTarget.value === "" ? NaN : Number(event.currentTarget.value) })} />;
+  });
+  const colorFields = (fields: readonly (typeof colorAppearance)[number][0][]) => fields.map(field => {
+    const [, label] = colorAppearance.find(([candidate]) => candidate === field)!;
+    return <TextInput key={field} label={label} error={errorFor(`profiles.${profile}.appearance.${field}`)} data-timer-field={`profiles.${profile}.appearance.${field}`} value={a[field] ?? a.borderColor} onChange={event => updateAppearance({ [field]: event.currentTarget.value })} />;
+  });
+  const fontField = (field: "labelFont" | "valueFont", part: "font" | "size" | "weight" | "color") => {
+    const label = field === "labelFont" ? "Label" : "Countdown"; const font = a[field]; const key = `${field}.${part}`;
+    if (part === "font") return <NativeSelect key={key} label={`${label} font`} value={font.fontPreset} onChange={event => { const next = { ...font, fontPreset: event.currentTarget.value as typeof font.fontPreset }; delete next.legacyFamily; updateAppearance({ [field]: next }); }}>
+      {alertFontPresets.map(preset => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+    </NativeSelect>;
+    if (part === "size") return <TextInput key={key} label={`${label} size (px)`} error={errorFor(`profiles.${profile}.appearance.${field}.fontSizePx`)} data-timer-field={`profiles.${profile}.appearance.${field}.fontSizePx`} min={8} max={128} type="number" value={Number.isFinite(font.fontSizePx) ? font.fontSizePx : ""} onChange={event => updateAppearance({ [field]: { ...font, fontSizePx: event.currentTarget.value === "" ? NaN : Number(event.currentTarget.value) } })} />;
+    if (part === "weight") return <NativeSelect key={key} label={`${label} weight`} value={font.fontWeight} onChange={event => updateAppearance({ [field]: { ...font, fontWeight: Number(event.currentTarget.value) as typeof font.fontWeight } })}>{[400, 500, 600, 700, 800, 900].map(weight => <option key={weight} value={weight}>{weight}</option>)}</NativeSelect>;
+    return <TextInput key={key} label={`${label} color`} error={errorFor(`profiles.${profile}.appearance.${field}.color`)} data-timer-field={`profiles.${profile}.appearance.${field}.color`} value={font.color} onChange={event => updateAppearance({ [field]: { ...font, color: event.currentTarget.value } })} />;
+  };
   const width = preview?.geometry.footprint.width ?? 0; const height = preview?.geometry.footprint.height ?? 0;
   return <section className="timer-layout" aria-labelledby="timer-layout-heading" ref={editorRoot}>
     <div className="timer-section-heading"><h3 id="timer-layout-heading">Timer stack</h3>
       <SegmentedControl aria-label="Timer profile" value={profile} onChange={next => { if (next === "landscape" || next === "vertical") setProfile(next); }} data={[{ value: "landscape", label: "Landscape" }, { value: "vertical", label: "Vertical" }]} /></div>
     <p>Appearance affects this browser profile and its content dimensions. Desktop output uses Landscape appearance.</p>
-    <fieldset><legend>Profile appearance</legend><div className="timer-layout__controls">
-      <NativeSelect label="Orientation" data-timer-field={`profiles.${profile}.appearance.orientation`} value={a.orientation} onChange={event => updateAppearance({ orientation: event.currentTarget.value as TimerAppearance["orientation"] })}><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option></NativeSelect>
-      {numericAppearance.map(([field, label, min, max]) => <TextInput key={field} label={label} error={errorFor(`profiles.${profile}.appearance.${field}`)} data-timer-field={`profiles.${profile}.appearance.${field}`} type="number" min={min} max={max} step={field === "maxVisible" ? 1 : "any"} value={Number.isFinite(a[field]) ? a[field] : ""} onChange={event => updateAppearance({ [field]: event.currentTarget.value === "" ? NaN : Number(event.currentTarget.value) })} />)}
-      {colorAppearance.map(([field, label]) => <TextInput key={field} label={label} error={errorFor(`profiles.${profile}.appearance.${field}`)} data-timer-field={`profiles.${profile}.appearance.${field}`} value={a[field] ?? a.borderColor} onChange={event => updateAppearance({ [field]: event.currentTarget.value })} />)}
-      {(["labelFont", "valueFont"] as const).map(field => {
-        const label = field === "labelFont" ? "Label" : "Countdown"; const font = a[field];
-        return <fieldset key={field}><legend>{label} text</legend>
-          <NativeSelect label={`${label} font`} value={font.fontPreset} onChange={event => { const next = { ...font, fontPreset: event.currentTarget.value as typeof font.fontPreset }; delete next.legacyFamily; updateAppearance({ [field]: next }); }}>
-            {alertFontPresets.map(preset => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
-          </NativeSelect>
-          <TextInput label={`${label} size (px)`} error={errorFor(`profiles.${profile}.appearance.${field}.fontSizePx`)} data-timer-field={`profiles.${profile}.appearance.${field}.fontSizePx`} min={8} max={128} type="number" value={Number.isFinite(font.fontSizePx) ? font.fontSizePx : ""} onChange={event => updateAppearance({ [field]: { ...font, fontSizePx: event.currentTarget.value === "" ? NaN : Number(event.currentTarget.value) } })} />
-          <NativeSelect label={`${label} weight`} value={font.fontWeight} onChange={event => updateAppearance({ [field]: { ...font, fontWeight: Number(event.currentTarget.value) as typeof font.fontWeight } })}>{[400, 500, 600, 700, 800, 900].map(weight => <option key={weight} value={weight}>{weight}</option>)}</NativeSelect>
-          <TextInput label={`${label} color`} error={errorFor(`profiles.${profile}.appearance.${field}.color`)} data-timer-field={`profiles.${profile}.appearance.${field}.color`} value={font.color} onChange={event => updateAppearance({ [field]: { ...font, color: event.currentTarget.value } })} />
-        </fieldset>;
-      })}
-    </div></fieldset>
-    <Button variant="default" type="button" onClick={() => update(structuredClone(timersOverlayModuleDefinition.defaultConfig.profiles[profile]))}>Reset selected profile</Button>
-    <fieldset><legend>Desktop placement</legend><p>{profile === "vertical" ? "Vertical placement is preserved for compatibility. The desktop still renders Landscape." : "Move or scale the desktop stack without changing the browser canvas."}</p>
-      <div className="timer-layout__controls">{(["x", "y", "zIndex", "scale"] as const).map(field => <TextInput key={field} label={field === "x" ? "X" : field === "y" ? "Y" : field === "scale" ? "Desktop scale" : "Z order"}
-        error={errorFor(`profiles.${profile}.desktopPlacement.${field}`)} data-timer-field={`profiles.${profile}.desktopPlacement.${field}`} type="number" step="any" value={Number.isFinite(placement[field]) ? placement[field] : ""} onChange={event => updatePlacement({ [field]: event.currentTarget.value === "" ? NaN : Number(event.currentTarget.value) })} />)}</div>
+    <fieldset className="timer-layout__group"><legend>Profile appearance</legend>
+      <div className="timer-layout__controls">
+        <NativeSelect label="Stack direction" data-timer-field={`profiles.${profile}.appearance.orientation`} value={`${a.orientation}${a.reverse === true ? "-reverse" : ""}`} onChange={event => {
+          const [orientation, reverse] = event.currentTarget.value.split("-"); updateAppearance({ orientation: orientation as TimerAppearance["orientation"], reverse: reverse !== undefined });
+        }}>{directionOptions.map(([optionValue, label]) => <option key={optionValue} value={optionValue}>{label}</option>)}</NativeSelect>
+        {numberFields(["maxVisible", "cardWidthPx", "cardHeightPx"])}
+        {fontField("labelFont", "size")}{fontField("valueFont", "size")}
+      </div>
+      <details className="timer-layout__more"><summary>Text style</summary><div className="timer-layout__controls">
+        {(["labelFont", "valueFont"] as const).flatMap(field => (["font", "weight", "color"] as const).map(part => fontField(field, part)))}
+      </div></details>
+      <details className="timer-layout__more"><summary>Colors</summary><div className="timer-layout__controls">
+        {colorFields(["backgroundColor"])}{numberFields(["backgroundOpacity"])}{colorFields(["borderColor", "runningAccent", "pausedAccent", "completedAccent"])}
+      </div></details>
+      <details className="timer-layout__more"><summary>Spacing and shape</summary><div className="timer-layout__controls">
+        {numberFields(["stackGapPx", "gapPx", "blockPaddingPx", "inlinePaddingPx", "cornerRadiusPx", "borderWidthPx", "iconSizePx"])}
+      </div></details>
+      <details className="timer-layout__more"><summary>Shadow</summary><div className="timer-layout__controls">
+        <NativeSelect label="Shadow" value={boxShadowVisible(shadow) ? "on" : "off"} onChange={event => updateAppearance({ shadow: event.currentTarget.value === "off"
+          ? { ...shadow, color: `${shadow.color.slice(0, 7)}00` } : defaultTimerShadow })}><option value="on">On</option><option value="off">Off</option></NativeSelect>
+        {shadowFields.map(([field, label, min, max]) => <TextInput key={field} label={label} error={errorFor(`profiles.${profile}.appearance.shadow.${field}`)} data-timer-field={`profiles.${profile}.appearance.shadow.${field}`} type="number" min={min} max={max} step={1}
+          value={Number.isFinite(shadow[field]) ? shadow[field] : ""} onChange={event => updateAppearance({ shadow: { ...shadow, [field]: event.currentTarget.value === "" ? NaN : Number(event.currentTarget.value) } })} />)}
+        <TextInput label="Shadow color" error={errorFor(`profiles.${profile}.appearance.shadow.color`)} data-timer-field={`profiles.${profile}.appearance.shadow.color`} value={shadow.color} onChange={event => updateAppearance({ shadow: { ...shadow, color: event.currentTarget.value } })} />
+      </div></details>
+      <Button className="timer-layout__reset" variant="default" type="button" onClick={() => update(structuredClone(timersOverlayModuleDefinition.defaultConfig.profiles[profile]))}>Reset selected profile</Button>
+    </fieldset>
+    <fieldset className="timer-layout__group"><legend>Desktop placement</legend><p>{profile === "vertical" ? "Vertical placement is preserved for compatibility. The desktop still renders Landscape." : "Move or scale the desktop stack without changing the browser canvas."}</p>
+      <div className="timer-layout__controls">
+        {(["x", "y", "scale", "zIndex"] as const).map(field => <TextInput key={field} label={field === "x" ? "X" : field === "y" ? "Y" : field === "scale" ? "Desktop scale" : "Z order"}
+          error={errorFor(`profiles.${profile}.desktopPlacement.${field}`)} data-timer-field={`profiles.${profile}.desktopPlacement.${field}`} type="number" step="any" value={Number.isFinite(placement[field]) ? placement[field] : ""} onChange={event => updatePlacement({ [field]: event.currentTarget.value === "" ? NaN : Number(event.currentTarget.value) })} />)}
+        <NativeSelect label="Desktop direction" data-timer-field={`profiles.${profile}.desktopPlacement.reverse`} value={placement.reverse === undefined ? "" : String(placement.reverse)}
+          onChange={event => updatePlacement({ reverse: event.currentTarget.value === "" ? undefined : event.currentTarget.value === "true" })}>
+          <option value="">Same as browser</option>
+          {directionOptions.filter(([optionValue]) => optionValue.startsWith(a.orientation)).map(([optionValue, label]) => <option key={optionValue} value={String(optionValue.endsWith("-reverse"))}>{label}</option>)}
+        </NativeSelect>
+      </div>
     </fieldset>
     <div className="timer-layout__preview-shell" ref={previewShell}>
       {preview === null ? <p role="status">Correct the appearance or placement values to preview the timer stack.</p> : <>

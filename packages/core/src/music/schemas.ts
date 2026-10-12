@@ -2,6 +2,7 @@ import { z } from "zod";
 import { alertTextStyleSchema, rgbaColorSchema } from "../alerts/text-style.js";
 import { mediaVersionSnapshotSchema } from "../assets/media-reference.js";
 import { targetProfileDefinitions } from "../management/contracts.js";
+import { boxShadowSchema } from "../shared/box-shadow.js";
 import { overlayElementLayoutSchema, overlayTargetProfileIdSchema } from "../shared/schemas.js";
 
 export const musicLimits = {
@@ -61,10 +62,7 @@ export const musicColorsSchema = z.object({
   backgroundStart: rgbaColorSchema, backgroundEnd: rgbaColorSchema, title: rgbaColorSchema, details: rgbaColorSchema,
   artworkPlaceholder: rgbaColorSchema, border: rgbaColorSchema, progressFill: rgbaColorSchema, progressTrack: rgbaColorSchema
 }).strict();
-export const musicShadowSchema = z.object({
-  offsetX: boundedInteger(musicLimits.shadowOffsetPx), offsetY: boundedInteger(musicLimits.shadowOffsetPx),
-  blur: boundedInteger(musicLimits.shadowBlurPx), spread: boundedInteger(musicLimits.shadowSpreadPx), color: rgbaColorSchema
-}).strict();
+export const musicShadowSchema = boxShadowSchema;
 export const musicInsetsSchema = z.object({
   top: boundedInteger(musicLimits.contentInsetPx), right: boundedInteger(musicLimits.contentInsetPx),
   bottom: boundedInteger(musicLimits.contentInsetPx), left: boundedInteger(musicLimits.contentInsetPx)

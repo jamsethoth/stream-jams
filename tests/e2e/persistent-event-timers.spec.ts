@@ -89,6 +89,7 @@ test("retains a subathon paused and applies saved event rules and live manual co
     await edit.getByRole("button", { name: "Cancel" }).click();
     const preservedRun = runtime.composition.timerRuntimeCoordinator.getState(definition.id);
     await page.getByRole("radiogroup", { name: "Timer profile" }).getByText("Vertical", { exact: true }).click();
+    await page.getByText("Text style", { exact: true }).click();
     await page.getByLabel("Label font", { exact: true }).selectOption("serif");
     await page.getByLabel("Label color").fill("#123456");
     await page.getByRole("button", { name: "Save overlay layout" }).click();

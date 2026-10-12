@@ -84,16 +84,43 @@
   overflow: hidden;
 }
 
-.timer-layout__controls {
+.timer-layout__group {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
   margin: 16px 0;
+}
+
+.timer-layout__group > p {
+  margin: 0;
+}
+
+/* One column size everywhere so fields line up across every section. */
+.timer-layout__controls {
+  align-items: end;
+  display: grid;
+  gap: 12px 16px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr));
+}
+
+.timer-layout__more > summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 4px 0;
+}
+
+.timer-layout__more[open] > summary {
+  margin-bottom: 8px;
+}
+
+.timer-layout__reset {
+  justify-self: start;
 }
 
 .timer-layout__preview {
   background: var(--color-canvas);
   border: 1px solid var(--color-border);
+  /* The border sits outside the output size, so an edge-to-edge stack is not clipped. */
+  box-sizing: content-box;
   max-width: 100%;
   overflow: hidden;
   position: relative;
