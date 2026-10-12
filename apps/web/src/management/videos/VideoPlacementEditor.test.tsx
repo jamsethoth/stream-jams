@@ -120,6 +120,8 @@ describe("VideoPlacementEditor", () => {
     expect(blur).toHaveValue(48);
     await user.clear(blur); await user.type(blur, "12{Enter}");
     expect(saved().shadow).toEqual({ offsetX: 0, offsetY: 18, blur: 12, spread: 0, color: "#00000073" });
+    // 2 x 12 blur: 24 px sides, 6 px top, 42 px bottom.
+    expect(screen.getByTestId("video-obs-size")).toHaveTextContent("OBS browser source size: 1430 x 924 (includes the shadow margin)");
     expect(frame()).toHaveStyle({ boxShadow: "0px 18px 12px 0px #00000073" });
     const color = screen.getByLabelText("Shadow color");
     await user.clear(color); await user.type(color, "red{Enter}");
@@ -127,6 +129,7 @@ describe("VideoPlacementEditor", () => {
     expect(saved().shadow?.color).toBe("#00000073");
     await user.selectOptions(screen.getByLabelText("Shadow"), "off");
     expect(saved().shadow).toEqual({ offsetX: 0, offsetY: 18, blur: 12, spread: 0, color: "#00000000" });
+    expect(screen.getByTestId("video-obs-size")).toHaveTextContent(/^OBS browser source size: 1382 x 876$/u);
     await user.click(screen.getByRole("button", { name: "Reset content and placement" }));
     expect(saved()).toEqual({ ...createDefaultVideosLayout(), shadow: { offsetX: 0, offsetY: 18, blur: 12, spread: 0, color: "#00000000" } });
   });

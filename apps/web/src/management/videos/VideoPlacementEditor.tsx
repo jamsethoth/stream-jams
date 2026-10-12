@@ -1,5 +1,5 @@
 import { Button, Checkbox, NativeSelect, TextInput } from "@mantine/core";
-import { alertFontPresets, boxShadowLimits, boxShadowVisible, createDefaultVideosLayout, defaultVideoShadow, isValidVideosLayout, videosCanvas, videosLayoutLimits, type BoxShadow, type VideoCaptionFont, type VideosLayout } from "@stream-jams/core";
+import { alertFontPresets, boxShadowLimits, boxShadowVisible, createDefaultVideosLayout, defaultVideoShadow, isValidVideosLayout, videosCanvas, videosShadowInsets, videosLayoutLimits, type BoxShadow, type VideoCaptionFont, type VideosLayout } from "@stream-jams/core";
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type KeyboardEvent, type PointerEvent, type Ref } from "react";
 import { VideoBox, VideoCaption, videoFrameStyle } from "../../overlay/components/OverlaySurface.js";
 import { snapEditorRect, type SnapGuide } from "../editor/snapping.js";
@@ -73,6 +73,7 @@ export function VideoPlacementEditor({ value, onChange, disabled = false, onInva
   const box = rect(value);
   const shadow = value.shadow ?? defaultVideoShadow;
   const setShadow = (next: BoxShadow) => onChange({ ...value, shadow: next });
+  const margin = videosShadowInsets(value);
 
   useEffect(() => {
     const element = viewport.current;
@@ -173,6 +174,9 @@ export function VideoPlacementEditor({ value, onChange, disabled = false, onInva
       <PlacementNumberField id="width" register={register} label="Video content width (px)" value={value.content.width} min={minWidth} max={bounds.width} whole onCommit={width => onChange({ ...value, content: { ...value.content, width } })} />
       <PlacementNumberField id="height" register={register} label="Video content height (px)" value={value.content.height} min={minHeight} max={bounds.height} whole onCommit={height => onChange({ ...value, content: { ...value.content, height } })} />
     </fieldset>
+    <p aria-live="polite" className="module-section-description" data-testid="video-obs-size">
+      OBS browser source size: <strong>{value.content.width + margin.left + margin.right} x {value.content.height + margin.top + margin.bottom}</strong>{margin.left + margin.top + margin.right + margin.bottom === 0 ? "" : " (includes the shadow margin)"}
+    </p>
     <fieldset className="video-placement__fields" disabled={disabled}>
       <legend>Desktop placement (1920 x 1080 scene)</legend>
       <PlacementNumberField id="x" register={register} label="Desktop Video X (px)" value={value.desktopPlacement.x} min={0} max={Math.max(0, bounds.width - box.width)} onCommit={x => onChange(moveLayout(value, x, box.y))} />
