@@ -79,6 +79,7 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 | BL-061 | Data overlay event rules as a central event bus consumer, plus Streamer.bot global values | Planned | P2 | BL-055 and the central event bus (implemented) | [OpenSpec change](../openspec/changes/add-data-overlay-event-rules/proposal.md); [consumer contract](engineering/event-bus-consumers.md) |
 | BL-062 | Twitch follower total and Creator Goals data sources | Planned | P2 | BL-055 | [OpenSpec change](../openspec/changes/add-twitch-overlay-data/proposal.md); follows the active goal of a type by default |
 | BL-063 | Data overlay canvas templates and starters | Planned | P2 | BL-055 | [OpenSpec change](../openspec/changes/add-data-overlay-templates/proposal.md) |
+| BL-070 | Chat display module: Twitch, YouTube and Kick chat from Streamer.bot (TikTok through TikFinity) on browser source and desktop overlay, with Operator controls | Planned | P2 | Maintainer request 2026-10-12; active Streamer.bot source | [add-chat-display-module](../openspec/changes/add-chat-display-module/proposal.md) |
 
 ## Known Issues
 
