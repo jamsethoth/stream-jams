@@ -1,5 +1,5 @@
 import { Button, Checkbox, NativeSelect, TextInput } from "@mantine/core";
-import { boxShadowLimits, boxShadowVisible, createDefaultVideosLayout, defaultVideoShadow, isValidVideosLayout, videosCanvas, videosLayoutLimits, type BoxShadow, type VideosLayout } from "@stream-jams/core";
+import { alertFontPresets, boxShadowLimits, boxShadowVisible, createDefaultVideosLayout, defaultVideoShadow, isValidVideosLayout, videosCanvas, videosLayoutLimits, type BoxShadow, type VideoCaptionFont, type VideosLayout } from "@stream-jams/core";
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type KeyboardEvent, type PointerEvent, type Ref } from "react";
 import { VideoBox, VideoCaption, videoFrameStyle } from "../../overlay/components/OverlaySurface.js";
 import { snapEditorRect, type SnapGuide } from "../editor/snapping.js";
@@ -159,7 +159,7 @@ export function VideoPlacementEditor({ value, onChange, disabled = false, onInva
         <div aria-hidden="true" className="video-placement__scaled" style={{ width: bounds.width, height: bounds.height, transform: `scale(${scale})` }}>
           <VideoBox data-testid="video-placement-preview" layout={value}>
             <div className="video-overlay__frame video-placement__picture" data-state="playing" style={videoFrameStyle(value)}><span>Video</span></div>
-            <VideoCaption layout={value} requester="Viewer" title="Example video title" />
+            <VideoCaption channel="Example channel" layout={value} requester="Viewer" title="Example video title" />
           </VideoBox>
         </div>
         <button aria-label="Move video box" className="video-placement__move" style={{ left: box.x * scale, top: box.y * scale, width: box.width * scale, height: box.height * scale }} {...handleProps("move")} />
@@ -180,6 +180,14 @@ export function VideoPlacementEditor({ value, onChange, disabled = false, onInva
       <PlacementNumberField id="scale" register={register} label="Desktop Video scale" value={value.desktopPlacement.scale} min={Number.EPSILON} max={Math.min((bounds.width - box.x) / value.content.width, (bounds.height - box.y) / value.content.height)}
         onCommit={next => onChange({ ...value, desktopPlacement: { ...value.desktopPlacement, scale: next } })} />
     </fieldset>
+    <fieldset className="video-placement__fields" disabled={disabled}>
+      <legend>Caption</legend>
+      <NativeSelect label="Caption font" value={value.captionFont ?? ""} onChange={event => {
+        const next: { -readonly [K in keyof VideosLayout]: VideosLayout[K] } = { ...value, captionFont: event.currentTarget.value as VideoCaptionFont };
+        if (event.currentTarget.value === "") delete next.captionFont;
+        onChange(next);
+      }}><option value="">Overlay default</option>{alertFontPresets.map(preset => <option key={preset.id} value={preset.id}>{preset.label}</option>)}</NativeSelect>
+    </fieldset>
     <details className="video-placement__more"><summary>Shadow</summary>
       <fieldset className="video-placement__fields" disabled={disabled}>
         <legend>Picture shadow (sizes the browser source margin)</legend>
@@ -199,7 +207,7 @@ export function VideoPlacementEditor({ value, onChange, disabled = false, onInva
         const placement = createDefaultVideosLayout().desktopPlacement;
         onChange(moveLayout({ ...value, desktopPlacement: placement }, placement.x, placement.y));
       }}>Reset desktop placement</Button>
-      <Button variant="default" disabled={disabled} onClick={() => { gesture.current = null; setGuides([]); onChange({ ...createDefaultVideosLayout(), ...(value.shadow === undefined ? {} : { shadow: value.shadow }) }); }}>Reset content and placement</Button>
+      <Button variant="default" disabled={disabled} onClick={() => { gesture.current = null; setGuides([]); onChange({ ...createDefaultVideosLayout(), ...(value.shadow === undefined ? {} : { shadow: value.shadow }), ...(value.captionFont === undefined ? {} : { captionFont: value.captionFont }) }); }}>Reset content and placement</Button>
     </div>
   </div>;
 }

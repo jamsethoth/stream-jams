@@ -90,3 +90,13 @@ export const ShadowEdited: Story = {
     await expect(args.onChange).toHaveBeenLastCalledWith({ ...createDefaultVideosLayout(), shadow: { offsetX: 0, offsetY: 18, blur: 24, spread: 0, color: "#00000000" } });
   }
 };
+
+/** The caption shows the video name, then the channel and requester, in the chosen font preset. */
+export const CaptionFont: Story = {
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText("Example channel · Requested by Viewer")).toBeInTheDocument();
+    await userEvent.selectOptions(canvas.getByLabelText("Caption font"), "serif");
+    await expect(args.onChange).toHaveBeenLastCalledWith({ ...createDefaultVideosLayout(), captionFont: "serif" });
+  }
+};

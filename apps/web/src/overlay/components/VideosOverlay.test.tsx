@@ -115,6 +115,14 @@ describe("VideosOverlay", () => {
     expect(screen.getByTestId("video-overlay").querySelector(".video-overlay__frame")).toHaveStyle({ boxShadow: "4px 6px 10px 2px #11223380" });
   });
 
+  it("shows the channel beside the requester and uses the saved caption font", () => {
+    const layout = { schemaVersion: 2 as const, content: { width: 1382, height: 876 }, desktopPlacement: { x: 0, y: 0, scale: 1 }, captionFont: "serif" as const };
+    render(<VideosOverlay projection={{ ...active(clip, { layout }), title: "Real clip name", channel: "SpeedyStreamer", requester: "viewer" } as VideosProjection} />);
+    expect(screen.getByText("Real clip name")).toBeInTheDocument();
+    expect(screen.getByText("SpeedyStreamer · Requested by viewer")).toBeInTheDocument();
+    expect(screen.getByTestId("video-overlay").querySelector<HTMLElement>(".video-overlay__context")!.style.fontFamily).toContain("Georgia");
+  });
+
   it("fails closed on a box that leaves the canvas", () => {
     const events = vi.fn();
     const { container } = render(<VideosOverlay onPlaybackEvent={events} projection={active(clip, { layout: { schemaVersion: 2 as const, content: { width: 480, height: 320 }, desktopPlacement: { x: 1700, y: 0, scale: 1 } } })} />);

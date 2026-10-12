@@ -34,6 +34,9 @@ describe("Videos content and placement", () => {
     }
     expect(browserVideosLayout(layout)).toEqual({ ...layout, desktopPlacement: { x: 0, y: 0, scale: 1 } });
     expect(browserVideosLayout(createDefaultVideosLayout())).not.toHaveProperty("shadow");
+    const serif = { ...createDefaultVideosLayout(), captionFont: "serif" };
+    expect(isValidVideosLayout(serif)).toBe(true); expect(accepts(serif)).toBe(true); expect(browserVideosLayout(serif as never)).toMatchObject({ captionFont: "serif" });
+    expect(isValidVideosLayout({ ...serif, captionFont: "comic" })).toBe(false); expect(accepts({ ...serif, captionFont: "comic" })).toBe(false);
   });
   it("fails transparent on invalid notice geometry without inventing a default", () => {
     const notice = { status: "notice", noticeId: "n1", notice: "no-clip", displayName: null };

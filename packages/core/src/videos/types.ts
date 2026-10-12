@@ -32,7 +32,7 @@ export interface VideoRequestItem {
   readonly reviewRequired: boolean;
   readonly migrationProvenance: { readonly kind: "test-queue-consolidation"; readonly originalPurpose: "test"; readonly originalStatus: VideoRequestStatus } | null;
   readonly source: VideoSource;
-  /** The title given with the submission. It wins over `providerTitle` and is the only title shown on stream. */
+  /** The title given with the submission. Shown on stream only while the provider title is unknown. */
   readonly title: string | null;
   /** The title the provider reported for the video after it was queued, or null when unknown. */
   readonly providerTitle: string | null;
@@ -83,7 +83,11 @@ export interface VideosLayout {
   readonly desktopPlacement: { readonly x: number; readonly y: number; readonly scale: number };
   /** Picture shadow; absent keeps the original CSS shadow with no browser source margin. */
   readonly shadow?: BoxShadow | undefined;
+  /** Caption font preset; absent keeps the overlay's default font. */
+  readonly captionFont?: VideoCaptionFont | undefined;
 }
+
+export type VideoCaptionFont = "system-sans" | "rounded-sans" | "serif" | "monospace";
 
 export interface VideosModuleConfig {
   readonly maxLengthSeconds: number;
@@ -124,7 +128,10 @@ export type VideosProjection =
   | {
       readonly status: "active";
       readonly itemId: string;
+      /** The provider title when known, else the submitted title. */
       readonly title: string | null;
+      /** The provider-reported channel; absent from projections that predate it. */
+      readonly channel?: string | null | undefined;
       readonly requester: string | null;
       readonly layout: VideosLayout;
       /** `mirror`: show the desktop primary player's stream. `player`: desktop app absent, play locally. */

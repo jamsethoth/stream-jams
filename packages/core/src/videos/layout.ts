@@ -1,5 +1,5 @@
 import { boxShadowInsets, boxShadowLimits, type BoxShadow, type BoxShadowInsets } from "../shared/box-shadow.js";
-import type { VideosLayout } from "./types.js";
+import type { VideoCaptionFont, VideosLayout } from "./types.js";
 
 /*
  * Videos placement on the landscape canvas. Plain data and arithmetic only, so the
@@ -22,6 +22,8 @@ export const defaultVideoShadow: BoxShadow = { offsetX: 0, offsetY: 18, blur: 48
 export const videosShadowInsets = (layout: VideosLayout): BoxShadowInsets =>
   layout.shadow === undefined ? { top: 0, right: 0, bottom: 0, left: 0 } : boxShadowInsets(layout.shadow);
 
+export const videoCaptionFonts = ["system-sans", "rounded-sans", "serif", "monospace"] as const satisfies readonly VideoCaptionFont[];
+
 const inLimit = (value: unknown, limit: { readonly min: number; readonly max: number }) =>
   Number.isSafeInteger(value) && (value as number) >= limit.min && (value as number) <= limit.max;
 function isValidShadow(value: unknown): boolean {
@@ -36,7 +38,9 @@ function isValidShadow(value: unknown): boolean {
 export function isValidVideosLayout(value: unknown): value is VideosLayout {
   if (typeof value !== "object" || value === null) return false;
   const layout = value as Partial<VideosLayout>;
-  if (Object.keys(layout).length !== ("shadow" in layout ? 4 : 3) || ("shadow" in layout && !isValidShadow(layout.shadow))) return false;
+  const optional = ["shadow", "captionFont"].filter(key => key in layout).length;
+  if (Object.keys(layout).length !== 3 + optional || ("shadow" in layout && !isValidShadow(layout.shadow))
+    || ("captionFont" in layout && !videoCaptionFonts.includes(layout.captionFont as VideoCaptionFont))) return false;
   if (layout.schemaVersion !== 2 || typeof layout.content !== "object" || layout.content === null
     || typeof layout.desktopPlacement !== "object" || layout.desktopPlacement === null
     || Object.keys(layout.content).length !== 2 || Object.keys(layout.desktopPlacement).length !== 3) return false;
@@ -53,5 +57,6 @@ export function isValidVideosLayout(value: unknown): value is VideosLayout {
 /** The trusted browser projection never inherits scene placement or scale. */
 export function browserVideosLayout(layout: VideosLayout): VideosLayout {
   return { schemaVersion: 2, content: { ...layout.content }, desktopPlacement: { x: 0, y: 0, scale: 1 },
-    ...(layout.shadow === undefined ? {} : { shadow: { ...layout.shadow } }) };
+    ...(layout.shadow === undefined ? {} : { shadow: { ...layout.shadow } }),
+    ...(layout.captionFont === undefined ? {} : { captionFont: layout.captionFont }) };
 }

@@ -1,4 +1,4 @@
-import { boxShadowCss, videosPlacementGeometry, type VideosLayout } from "@stream-jams/core";
+import { alertFontPresets, boxShadowCss, videosPlacementGeometry, type VideosLayout } from "@stream-jams/core";
 import type { CSSProperties, HTMLAttributes, ReactNode } from "react";
 import "../overlay.css";
 
@@ -23,13 +23,17 @@ export function videoFrameStyle(layout: VideosLayout): CSSProperties {
   return layout.shadow === undefined ? frame : { ...frame, boxShadow: boxShadowCss(layout.shadow) };
 }
 
-/** Title and requester under the picture, matching its width. Renders nothing without either. */
-export function VideoCaption({ layout, title, requester }: { readonly layout: VideosLayout; readonly title: string | null; readonly requester: string | null }) {
-  if (title === null && requester === null) return null;
+/** Title, then channel and requester, under the picture, matching its width. Renders nothing without any. */
+export function VideoCaption({ layout, title, channel = null, requester }: {
+  readonly layout: VideosLayout; readonly title: string | null; readonly channel?: string | null | undefined; readonly requester: string | null;
+}) {
+  const byline = [channel, requester === null ? null : `Requested by ${requester}`].filter(part => part !== null).join(" · ");
+  if (title === null && byline === "") return null;
+  const fontFamily = alertFontPresets.find(preset => preset.id === layout.captionFont)?.fontFamily;
   return (
-    <div className="video-overlay__context" style={{ width: videosPlacementGeometry(layout).frame.width }}>
+    <div className="video-overlay__context" style={{ width: videosPlacementGeometry(layout).frame.width, ...(fontFamily === undefined ? {} : { fontFamily }) }}>
       {title === null ? null : <span className="video-overlay__title">{title}</span>}
-      {requester === null ? null : <span className="video-overlay__requester">Requested by {requester}</span>}
+      {byline === "" ? null : <span className="video-overlay__requester">{byline}</span>}
     </div>
   );
 }

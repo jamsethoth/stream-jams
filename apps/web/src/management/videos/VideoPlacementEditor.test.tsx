@@ -130,4 +130,12 @@ describe("VideoPlacementEditor", () => {
     await user.click(screen.getByRole("button", { name: "Reset content and placement" }));
     expect(saved()).toEqual({ ...createDefaultVideosLayout(), shadow: { offsetX: 0, offsetY: 18, blur: 12, spread: 0, color: "#00000000" } });
   });
+  it("picks a caption font and returns to the overlay default", async () => {
+    const user = userEvent.setup(); render(<Fixture />);
+    await user.selectOptions(screen.getByLabelText("Caption font"), "monospace");
+    expect(saved().captionFont).toBe("monospace");
+    expect(screen.getByText("Example channel · Requested by Viewer")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Caption font"), "");
+    expect(saved()).toEqual(createDefaultVideosLayout());
+  });
 });
