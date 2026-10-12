@@ -26,7 +26,9 @@ export function toVideosProjection(view: VideoQueueView, config: Pick<VideosModu
     return {
       status: "active",
       itemId: item.id,
-      title: item.title,
+      // The real video name and channel once the provider lookup has them.
+      title: item.providerTitle ?? item.title,
+      channel: item.channelName,
       requester: item.requester,
       layout,
       // With the desktop app running, every output shows its primary player's mirror.

@@ -71,6 +71,13 @@ test("saved Video dimensions stay local across desktop moves, viewport resize, i
     await expect(page.getByTestId("overlay-content-canvas")).toHaveCSS("height", "460px");
     await page.setViewportSize({ width: 1920, height: 1080 });
     expect(await player!.evaluate(element => element === document.querySelector("iframe[title='Video player']"))).toBe(true); expect(loads()).toBe(1);
+    // A saved shadow widens the browser source by its margin and moves the box past it; the desktop scene is unaffected.
+    await save(fixture, { ...resized, layout: { ...resized.layout, shadow: { offsetX: 0, offsetY: 0, blur: 8, spread: 0, color: "#00000080" } } });
+    await expect(page.getByTestId("overlay-content-canvas")).toHaveCSS("width", "672px");
+    await expect(page.locator(".video-overlay__frame")).toHaveCSS("box-shadow", "rgba(0, 0, 0, 0.5) 0px 0px 8px 0px");
+    expect(await page.getByTestId("video-overlay").boundingBox()).toEqual({ x: 16, y: 16, width: 640, height: 460 });
+    expect((await composition(url)).canvas).toMatchObject({ width: 672, height: 492, origin: { x: 16, y: 16 } });
+    await save(fixture, resized); await expect(page.getByTestId("overlay-content-canvas")).toHaveCSS("width", "640px");
     const current = await composition(url); expect(current.canvas).toMatchObject({ width: 640, height: 460 });
     const state = await (await fixture.request("/videos/live")).json() as VideoQueueResponse; expect(state.current?.itemId).toBe(itemId);
     const invalid = await fixture.request("/overlay-modules/videos/config", "PUT", { enabled: true, config: { ...resized, layout: { ...resized.layout, desktopPlacement: { x: 1800, y: 0, scale: 1 } } } });

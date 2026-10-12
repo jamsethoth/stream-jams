@@ -1,5 +1,5 @@
-import { Button, Checkbox, TextInput } from "@mantine/core";
-import { createDefaultVideosLayout, isValidVideosLayout, videosCanvas, videosLayoutLimits, type VideosLayout } from "@stream-jams/core";
+import { Button, Checkbox, NativeSelect, TextInput } from "@mantine/core";
+import { alertFontPresets, boxShadowLimits, boxShadowVisible, createDefaultVideosLayout, defaultVideoShadow, isValidVideosLayout, videosCanvas, videosShadowInsets, videosLayoutLimits, type BoxShadow, type VideoCaptionFont, type VideosLayout } from "@stream-jams/core";
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type KeyboardEvent, type PointerEvent, type Ref } from "react";
 import { VideoBox, VideoCaption, videoFrameStyle } from "../../overlay/components/OverlaySurface.js";
 import { snapEditorRect, type SnapGuide } from "../editor/snapping.js";
@@ -19,8 +19,11 @@ export interface VideoPlacementEditorProps {
   readonly ref?: Ref<VideoPlacementEditorHandle> | undefined;
 }
 
-type FieldId = "width" | "height" | "x" | "y" | "scale";
-const fieldOrder: readonly FieldId[] = ["width", "height", "x", "y", "scale"];
+type ShadowNumber = "offsetX" | "offsetY" | "blur" | "spread";
+type FieldId = "width" | "height" | "x" | "y" | "scale" | ShadowNumber | "color";
+const fieldOrder: readonly FieldId[] = ["width", "height", "x", "y", "scale", "offsetX", "offsetY", "blur", "spread", "color"];
+const shadowFields = [["offsetX", "Shadow X (px)", boxShadowLimits.offsetPx], ["offsetY", "Shadow Y (px)", boxShadowLimits.offsetPx],
+  ["blur", "Shadow blur (px)", boxShadowLimits.blurPx], ["spread", "Shadow spread (px)", boxShadowLimits.spreadPx]] as const;
 interface FieldRegistration { readonly invalid: boolean; readonly reveal: () => void }
 
 type Gesture = { readonly pointerId: number; readonly mode: "move" | "resize"; readonly clientX: number; readonly clientY: number; readonly factor: number; readonly start: VideosLayout };
@@ -68,6 +71,9 @@ export function VideoPlacementEditor({ value, onChange, disabled = false, onInva
   const [guides, setGuides] = useState<readonly SnapGuide[]>([]);
   const scale = Math.min(1, availableWidth / bounds.width);
   const box = rect(value);
+  const shadow = value.shadow ?? defaultVideoShadow;
+  const setShadow = (next: BoxShadow) => onChange({ ...value, shadow: next });
+  const margin = videosShadowInsets(value);
 
   useEffect(() => {
     const element = viewport.current;
@@ -154,7 +160,7 @@ export function VideoPlacementEditor({ value, onChange, disabled = false, onInva
         <div aria-hidden="true" className="video-placement__scaled" style={{ width: bounds.width, height: bounds.height, transform: `scale(${scale})` }}>
           <VideoBox data-testid="video-placement-preview" layout={value}>
             <div className="video-overlay__frame video-placement__picture" data-state="playing" style={videoFrameStyle(value)}><span>Video</span></div>
-            <VideoCaption layout={value} requester="Viewer" title="Example video title" />
+            <VideoCaption channel="Example channel" layout={value} requester="Viewer" title="Example video title" />
           </VideoBox>
         </div>
         <button aria-label="Move video box" className="video-placement__move" style={{ left: box.x * scale, top: box.y * scale, width: box.width * scale, height: box.height * scale }} {...handleProps("move")} />
@@ -168,6 +174,9 @@ export function VideoPlacementEditor({ value, onChange, disabled = false, onInva
       <PlacementNumberField id="width" register={register} label="Video content width (px)" value={value.content.width} min={minWidth} max={bounds.width} whole onCommit={width => onChange({ ...value, content: { ...value.content, width } })} />
       <PlacementNumberField id="height" register={register} label="Video content height (px)" value={value.content.height} min={minHeight} max={bounds.height} whole onCommit={height => onChange({ ...value, content: { ...value.content, height } })} />
     </fieldset>
+    <p aria-live="polite" className="module-section-description" data-testid="video-obs-size">
+      OBS browser source size: <strong>{value.content.width + margin.left + margin.right} x {value.content.height + margin.top + margin.bottom}</strong>{margin.left + margin.top + margin.right + margin.bottom === 0 ? "" : " (includes the shadow margin)"}
+    </p>
     <fieldset className="video-placement__fields" disabled={disabled}>
       <legend>Desktop placement (1920 x 1080 scene)</legend>
       <PlacementNumberField id="x" register={register} label="Desktop Video X (px)" value={value.desktopPlacement.x} min={0} max={Math.max(0, bounds.width - box.width)} onCommit={x => onChange(moveLayout(value, x, box.y))} />
@@ -175,6 +184,24 @@ export function VideoPlacementEditor({ value, onChange, disabled = false, onInva
       <PlacementNumberField id="scale" register={register} label="Desktop Video scale" value={value.desktopPlacement.scale} min={Number.EPSILON} max={Math.min((bounds.width - box.x) / value.content.width, (bounds.height - box.y) / value.content.height)}
         onCommit={next => onChange({ ...value, desktopPlacement: { ...value.desktopPlacement, scale: next } })} />
     </fieldset>
+    <fieldset className="video-placement__fields" disabled={disabled}>
+      <legend>Caption</legend>
+      <NativeSelect label="Caption font" value={value.captionFont ?? ""} onChange={event => {
+        const next: { -readonly [K in keyof VideosLayout]: VideosLayout[K] } = { ...value, captionFont: event.currentTarget.value as VideoCaptionFont };
+        if (event.currentTarget.value === "") delete next.captionFont;
+        onChange(next);
+      }}><option value="">Overlay default</option>{alertFontPresets.map(preset => <option key={preset.id} value={preset.id}>{preset.label}</option>)}</NativeSelect>
+    </fieldset>
+    <details className="video-placement__more"><summary>Shadow</summary>
+      <fieldset className="video-placement__fields" disabled={disabled}>
+        <legend>Picture shadow (sizes the browser source margin)</legend>
+        <NativeSelect label="Shadow" value={boxShadowVisible(shadow) ? "on" : "off"} onChange={event => setShadow(event.currentTarget.value === "off"
+          ? { ...shadow, color: `${shadow.color.slice(0, 7)}00` } : defaultVideoShadow)}><option value="on">On</option><option value="off">Off</option></NativeSelect>
+        {shadowFields.map(([field, label, limit]) => <PlacementNumberField key={field} id={field} register={register} label={label} value={shadow[field]} min={limit.min} max={limit.max} whole
+          onCommit={next => setShadow({ ...shadow, [field]: next })} />)}
+        <ShadowColorField register={register} value={shadow.color} onCommit={color => setShadow({ ...shadow, color })} />
+      </fieldset>
+    </details>
     {isValidVideosLayout(value) ? null : <p className="videos-settings__error" role="alert">Keep content between 240 x 180 and 1920 x 1080 px, and reduce desktop scale or move the box to fit the scene before saving.</p>}
     <div className="video-placement__actions">
       <Checkbox label="Snap to grid" checked={grid} onChange={event => { setGrid(event.currentTarget.checked); setGuides([]); }} />
@@ -184,7 +211,7 @@ export function VideoPlacementEditor({ value, onChange, disabled = false, onInva
         const placement = createDefaultVideosLayout().desktopPlacement;
         onChange(moveLayout({ ...value, desktopPlacement: placement }, placement.x, placement.y));
       }}>Reset desktop placement</Button>
-      <Button variant="default" disabled={disabled} onClick={() => { gesture.current = null; setGuides([]); onChange(createDefaultVideosLayout()); }}>Reset content and placement</Button>
+      <Button variant="default" disabled={disabled} onClick={() => { gesture.current = null; setGuides([]); onChange({ ...createDefaultVideosLayout(), ...(value.shadow === undefined ? {} : { shadow: value.shadow }), ...(value.captionFont === undefined ? {} : { captionFont: value.captionFont }) }); }}>Reset content and placement</Button>
     </div>
   </div>;
 }
@@ -204,7 +231,7 @@ function PlacementNumberField({ id, register, label, value, min, max, whole = fa
   const next = Number(draft);
   const invalid = draft.trim() === "" || !Number.isFinite(next) || (whole && !Number.isInteger(next)) || next < min || next > max;
   useEffect(() => {
-    register(id, { invalid, reveal: () => { setError(true); input.current?.focus(); } });
+    register(id, { invalid, reveal: () => { setError(true); input.current?.closest("details")?.setAttribute("open", ""); input.current?.focus(); } });
   }, [id, invalid, register]);
   useEffect(() => () => register(id, null), [id, register]);
   const commit = () => {
@@ -212,5 +239,26 @@ function PlacementNumberField({ id, register, label, value, min, max, whole = fa
     setError(false); onCommit(next);
   };
   return <TextInput ref={input} label={label} error={error ? `Enter ${whole ? "a whole number" : "a number"} from ${min} to ${max}.` : false} errorProps={{ role: "alert" }} max={max} min={min} required withAsterisk={false} step={whole ? 1 : "any"} type="number" value={draft}
+    onBlur={commit} onChange={event => { setDraft(event.currentTarget.value); setError(false); }} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); } }} />;
+}
+
+/** 8-digit RGBA hex that commits on blur or Enter like the number fields; an invalid draft is never applied. */
+function ShadowColorField({ register, value, onCommit }: {
+  readonly register: (id: FieldId, registration: FieldRegistration | null) => void; readonly value: string; readonly onCommit: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [error, setError] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => { setDraft(value); setError(false); }, [value]);
+  const invalid = !/^#[0-9a-f]{8}$/iu.test(draft.trim());
+  useEffect(() => {
+    register("color", { invalid, reveal: () => { setError(true); input.current?.closest("details")?.setAttribute("open", ""); input.current?.focus(); } });
+  }, [invalid, register]);
+  useEffect(() => () => register("color", null), [register]);
+  const commit = () => {
+    if (invalid) { setError(true); return; }
+    setError(false); if (draft.trim().toUpperCase() !== value) onCommit(draft.trim().toUpperCase());
+  };
+  return <TextInput ref={input} label="Shadow color" description="RGBA hex, for example #00000073" error={error ? "Enter an 8-digit RGBA hex color." : false} errorProps={{ role: "alert" }} value={draft}
     onBlur={commit} onChange={event => { setDraft(event.currentTarget.value); setError(false); }} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); } }} />;
 }

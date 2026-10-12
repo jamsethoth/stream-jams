@@ -42,8 +42,10 @@ describe("VideosRuntime with the desktop mirror", () => {
     expect(toVideosProjection(queue.view("live"), config, true, "desktop")).toMatchObject({ itemId: item.id, delivery: { mode: "mirror" } });
     expect(queue.view("live").current?.clock).toEqual({ state: "paused", positionMs: 0, atEpochMs: 1000000 });
   });
-  it("returns provider details in queue and Recent responses but keeps them off the stream caption", async () => {
+  it("returns provider details in queue and Recent responses and shows the provider title and channel on stream", async () => {
     const { runtime, queue, item, snapshot } = setup();
+    // Until the lookup answers, the caption uses the submitted title.
+    expect(await snapshot()).toMatchObject({ videos: { status: "active", title: "Clip", channel: null } });
     queue.applyMetadata("live", item.id, { title: "Provider clip title", channelName: "SpeedyStreamer", durationMs: null });
     const waiting = queue.submit("live", { source: { provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 0 }, title: null, requester: null, durationMs: null, autoplay: false, via: "operator" });
     queue.applyMetadata("live", waiting.id, { title: "Never Gonna Give You Up", channelName: "Rick Astley", durationMs: null });
@@ -52,9 +54,7 @@ describe("VideosRuntime with the desktop mirror", () => {
       { id: item.id, title: "Clip", providerTitle: "Provider clip title", channelName: "SpeedyStreamer", link: "https://clips.twitch.tv/FunnyClip" },
       { id: waiting.id, title: null, providerTitle: "Never Gonna Give You Up", channelName: "Rick Astley", link: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" }
     ]);
-    // The overlay caption shows only the submitted title.
-    expect(await snapshot()).toMatchObject({ videos: { status: "active", title: "Clip" } });
-    expect(JSON.stringify(await snapshot())).not.toMatch(/Provider clip title|SpeedyStreamer/u);
+    expect(await snapshot()).toMatchObject({ videos: { status: "active", title: "Provider clip title", channel: "SpeedyStreamer" } });
     queue.reportStarted(item.id);
     queue.reportEnded(item.id);
     expect(runtime.response("live").recent[0]).toMatchObject({ id: item.id, providerTitle: "Provider clip title", channelName: "SpeedyStreamer" });

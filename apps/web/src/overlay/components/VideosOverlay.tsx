@@ -65,7 +65,7 @@ export function VideosOverlay({ projection, onPlaybackEvent, resolvePlayerUrl = 
     );
   }
   const { layout } = videos;
-  const context = <VideoCaption layout={layout} requester={videos.requester} title={videos.title} />;
+  const context = <VideoCaption channel={videos.channel} layout={layout} requester={videos.requester} title={videos.title} />;
   // Mirror delivery shows the desktop primary player's stream; it never plays the item here.
   if (videos.delivery.mode === "mirror") {
     if (mirror === undefined) return null;
