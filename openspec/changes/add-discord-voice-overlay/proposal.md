@@ -13,14 +13,14 @@ Discord only exposes call membership and speaking state through the desktop clie
 - A setup wizard detects Discord, walks the streamer through creating their application, needs only the Client ID when Discord's Public Client mode with PKCE works (secret fallback otherwise), and verifies the connection by showing their live call.
 - Voice renders through the shared module outputs (landscape/vertical browser sources and desktop surfaces) with the shared module editor: layouts, speaking highlight, filters, shared shadow, custom CSS, per-participant name/image overrides (including idle/speaking images) and desktop placement.
 - Operator panel shows the current call and can hide the overlay or a participant.
-- Backlog: BL-068 (this change) and BL-069 (apply for Discord RPC approval).
+- Backlog: BL-071 (this change) and BL-072 (apply for Discord RPC approval).
 
 ## Out Of Scope
 
 - Discord bots, client mods, impersonating StreamKit, scraping StreamKit, and the Discord Social SDK (all rejected in the research note).
 - Event bus events for joins or speaking (maintainer decision 2026-10-12).
 - Dual-PC companion relay of the Discord connection; it follows the existing dual-PC design when that is built.
-- A shared Stream Jams Discord application; BL-069 covers it after approval.
+- A shared Stream Jams Discord application; BL-072 covers it after approval.
 - Controlling Discord (muting, switching channels).
 
 ## Impact

@@ -2,7 +2,7 @@
 
 ## Discord access model
 
-Discord's local RPC server is the only supported source of another participant's speaking state outside a bot in the call. RPC scopes are "only available to approved partners", except that the `rpc` scope is allowed for the application owner ([Discord OAuth2](https://docs.discord.com/developers/topics/oauth2), [Userdoccers OAuth2](https://docs.discord.food/topics/oauth2)). Each streamer therefore creates and owns a Discord application; Stream Jams never ships a shared application ID until BL-069 succeeds.
+Discord's local RPC server is the only supported source of another participant's speaking state outside a bot in the call. RPC scopes are "only available to approved partners", except that the `rpc` scope is allowed for the application owner ([Discord OAuth2](https://docs.discord.com/developers/topics/oauth2), [Userdoccers OAuth2](https://docs.discord.food/topics/oauth2)). Each streamer therefore creates and owns a Discord application; Stream Jams never ships a shared application ID until BL-072 succeeds.
 
 Transport is IPC (`\\?\pipe\discord-ipc-0..9`). The WebSocket transport is deprecated and origin-restricted ([Discord RPC](https://docs.discord.com/developers/topics/rpc)). IPC is local to the PC running Discord, so the server process (same PC in single-PC mode) owns the connection.
 
@@ -65,6 +65,6 @@ Errors map to the step that fixes them: `INVALID_CLIENTID` → step 3; OAuth2 `i
 
 Not automated on purpose: creating the application or changing its settings. Discord offers no API for this without the user's own token, and automating the Developer Portal with a user session would be self-botting and against Discord's terms ([Discord Terms](https://discord.com/terms)).
 
-## Future approval (BL-069)
+## Future approval (BL-072)
 
 If Discord approves a Stream Jams application, a project Client ID becomes the default (like the Twitch project Client ID) and the wizard collapses to step 4. Approved apps that need a secret keep it on a hosted token service (Overlayed does this); PKCE with a public client would avoid that. User-owned applications remain supported.
