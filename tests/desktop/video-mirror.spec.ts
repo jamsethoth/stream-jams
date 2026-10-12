@@ -18,7 +18,8 @@ interface MainState {
   videoDiagnostics: { source: string }[];
   desktopSignals: { type: string; connection?: number; sdp?: string }[];
   desktopReceiver: { send(signal: unknown): void; detach(): void };
-  videoHost: { handle(command: unknown): void; serviceLost(): void };
+  videoHost: { handle(command: unknown): void };
+  loseVideoService(): void;
 }
 const playerUrl = "http://127.0.0.1:39999/__stream-jams/video-player/live";
 const devicesUrl = "stream-jams-audio://player/video-devices.html";
@@ -61,6 +62,9 @@ test("desktop primary player captures one hidden page and mirrors it to the devi
 
     await command(desktop, { type: "load", purpose: "live", itemId: "item-1", source: { provider: "direct", url: clipUrl }, positionMs: 0, paused: false });
     const player = await windowByUrl(desktop, playerUrl);
+    await command(desktop, { type: "load", purpose: "test", itemId: "retired-test", source: { provider: "direct", url: clipUrl }, positionMs: 0, paused: false } as never);
+    expect(await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(window => /video-player/u.test(window.webContents.getURL())).length)).toBe(1);
+    expect((await events(desktop)).some(event => event.itemId === "retired-test")).toBe(false);
     expect(await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().every(window => !window.isVisible()))).toBe(true);
     await expect.poll(async () => (await events(desktop)).find(event => event.state === "started"), { timeout: 15_000 })
       .toMatchObject({ type: "report", itemId: "item-1", controls: { pause: true, seek: true } });
@@ -126,7 +130,7 @@ test("desktop primary player captures one hidden page and mirrors it to the devi
     await expect.poll(async () => (await stageState(player)).children).toBe(0);
 
     // Losing the service destroys every player window and withdraws the mirror.
-    await desktop.evaluate(() => (globalThis as unknown as MainState).videoHost.serviceLost());
+    await desktop.evaluate(() => (globalThis as unknown as MainState).loseVideoService());
     await expect.poll(() => desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(window => !window.isDestroyed() && /video-player|video-devices/u.test(window.webContents.getURL())).length)).toBe(0);
     expect((await events(desktop)).at(-1)).toEqual({ type: "status", available: false });
     expect(await desktop.evaluate(() => (globalThis as unknown as MainState).videoDiagnostics.map(entry => entry.source))).toEqual([]);

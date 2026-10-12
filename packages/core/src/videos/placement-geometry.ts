@@ -29,8 +29,9 @@ export interface VideosPlacementGeometry {
  * from one video to the next; the overlay anchors picture and caption to the box's bottom center.
  */
 export function videosPlacementGeometry(layout: VideosLayout): VideosPlacementGeometry {
-  const scale = Math.min(1, Math.max(0.5, layout.width / fullSizeWidthPx));
+  const { width: contentWidth, height: contentHeight } = layout.content;
+  const scale = Math.min(1, Math.max(0.5, contentWidth / fullSizeWidthPx));
   const reserve = (captionPaddingPx * 2 + titleLinePx + captionLineGapPx + requesterLinePx + frameCaptionGapPx) * scale;
-  const width = Math.max(0, Math.min(layout.width, (layout.height - reserve) * 16 / 9));
+  const width = Math.max(0, Math.min(contentWidth, (contentHeight - reserve) * 16 / 9));
   return { scale, frame: { width, height: width * 9 / 16 }, gap: frameCaptionGapPx * scale };
 }

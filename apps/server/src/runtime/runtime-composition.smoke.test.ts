@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,7 +18,7 @@ import {
   type OverlayInstruction
 } from "@stream-jams/core";
 import { createSequence, InMemorySecretStore } from "@stream-jams/test-support";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   TwitchApiClient,
   TwitchCurrentUser,
@@ -123,7 +124,16 @@ describe("runtime app composition smoke", () => {
 
     const disabled = await composition.app.inject({ method: "POST", url: testUrl, headers, payload });
     expect(disabled.statusCode, disabled.body).toBe(200);
-    expect(disabled.json()).toMatchObject({ status: "module-disabled" });
+    const assertNoPlayback = async (response: typeof disabled, completedStatus: string) => {
+      const result = response.json<{ status: string; busId: string }>();
+      expect([completedStatus, "pending"]).toContain(result.status);
+      const journal = new SqliteEventBusJournalRepository(composition.database.connection);
+      const event = journal.findByBusId(result.busId);
+      expect(event).not.toBeNull();
+      await vi.waitFor(() => expect(journal.consumerOutcomes(event!.sequence).find(outcome => outcome.consumerId === "screen-effects")?.outcome).toBe("no-match"));
+      expect(composition.effectPlaybackCoordinator.getSnapshot()).toMatchObject({ current: null, queued: [] });
+    };
+    await assertNoPlayback(disabled, "module-disabled");
 
     const enabled = await composition.app.inject({
       method: "PATCH",
@@ -134,7 +144,7 @@ describe("runtime app composition smoke", () => {
     expect(enabled.statusCode, enabled.body).toBe(200);
     const unavailable = await composition.app.inject({ method: "POST", url: testUrl, headers, payload });
     expect(unavailable.statusCode, unavailable.body).toBe(200);
-    expect(unavailable.json()).toMatchObject({ status: "unavailable-output" });
+    await assertNoPlayback(unavailable, "unavailable-output");
     expect(composition.effectPlaybackCoordinator.getSnapshot()).toMatchObject({ current: null, queued: [] });
   });
 
@@ -1412,18 +1422,9 @@ describe("runtime app composition smoke", () => {
       url: "/auth/management/sessions"
     });
     const authHeaders = managementAuthHeaders(session);
-    const moduleKey = await composition.overlayAccessService.createKey({
-      overlayId: "default",
-      moduleId: "alerts",
-      purpose: "live",
-      scope: "module"
-    });
-    const unifiedKey = await composition.overlayAccessService.createKey({
-      overlayId: "default",
-      moduleId: null,
-      purpose: "live",
-      scope: "unified"
-    });
+    const moduleKey = await composition.overlayAccessService.createKey({ overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", targetProfileId: "landscape" });
+    const retiredRaw = "ovl_historical_unified";
+    composition.database.connection.prepare("INSERT INTO overlay_keys (id, overlay_id, module_id, purpose, scope, key_hash, created_at) VALUES ('historical-unified', 'default', NULL, 'live', 'unified', ?, '2026-05-30T12:00:00Z')").run(`sha256:${createHash("sha256").update(retiredRaw).digest("hex")}`);
 
     const health = await app.inject({ method: "GET", url: "/health" });
     const management = await app.inject({ method: "GET", url: "/manage" });
@@ -1432,11 +1433,11 @@ describe("runtime app composition smoke", () => {
     const viteSource = await app.inject({ method: "GET", url: "/src/main.tsx" });
     const moduleOverlay = await app.inject({
       method: "GET",
-      url: `/overlay/modules/alerts/live/${moduleKey.rawKey}`
+      url: `/overlay/modules/alerts/live/${moduleKey.rawKey}?profile=landscape`
     });
     const unifiedOverlay = await app.inject({
       method: "GET",
-      url: `/overlay/unified/live/${unifiedKey.rawKey}`
+      url: `/overlay/unified/live/${retiredRaw}`
     });
     const diagnostics = await app.inject({
       method: "GET",
@@ -1517,9 +1518,10 @@ describe("runtime app composition smoke", () => {
     expect(moduleOverlay.statusCode).toBe(200);
     expect(moduleOverlay.body).toContain('<script type="module" crossorigin src="/assets/index-smoke.js"></script>');
     expect(moduleOverlay.body).not.toContain(moduleKey.rawKey);
-    expect(unifiedOverlay.statusCode).toBe(200);
-    expect(unifiedOverlay.body).toContain('<script type="module" crossorigin src="/assets/index-smoke.js"></script>');
-    expect(unifiedOverlay.body).not.toContain(unifiedKey.rawKey);
+    expect(unifiedOverlay.statusCode).toBe(401);
+    expect(unifiedOverlay.body).not.toContain("script");
+    expect(unifiedOverlay.body).toContain("background:transparent");
+    expect(unifiedOverlay.body).not.toContain(retiredRaw);
     expect(diagnostics.statusCode).toBe(200);
     expect(diagnostics.json()).toMatchObject({
       eventLogs: [],
@@ -1543,7 +1545,7 @@ describe("runtime app composition smoke", () => {
         displayName: "Screen Effects",
         defaultEnabled: false,
         renderer: expect.objectContaining({
-          supportedOutputs: ["module", "unified"]
+          supportedOutputs: ["module"]
         })
       }),
       expect.objectContaining({
@@ -1551,7 +1553,7 @@ describe("runtime app composition smoke", () => {
         displayName: "Timers",
         defaultEnabled: false,
         renderer: expect.objectContaining({
-          supportedOutputs: ["module", "unified"]
+          supportedOutputs: ["module"]
         })
       }),
       expect.objectContaining({
@@ -1559,7 +1561,7 @@ describe("runtime app composition smoke", () => {
         displayName: "Music",
         defaultEnabled: false,
         renderer: expect.objectContaining({
-          supportedOutputs: ["module", "unified"]
+          supportedOutputs: ["module"]
         })
       }),
       expect.objectContaining({
@@ -1567,7 +1569,7 @@ describe("runtime app composition smoke", () => {
         displayName: "Videos",
         defaultEnabled: true,
         renderer: expect.objectContaining({
-          supportedOutputs: ["module", "unified"]
+          supportedOutputs: ["module"]
         })
       }),
       expect.objectContaining({
@@ -1575,7 +1577,7 @@ describe("runtime app composition smoke", () => {
         displayName: "Data Overlays",
         defaultEnabled: false,
         renderer: expect.objectContaining({
-          supportedOutputs: ["module", "unified"]
+          supportedOutputs: ["module"], supportsDesktopComposition: true
         })
       })
     ]);
@@ -1626,7 +1628,7 @@ describe("runtime app composition smoke", () => {
     const connectedMessage = new Promise((resolve) => {
       resolveConnectedMessage = resolve;
     });
-    const socket = await app.injectWS(`/overlay/ws/modules/alerts/live/${moduleKey.rawKey}`, {}, {
+    const socket = await app.injectWS(`/overlay/ws/modules/alerts/live/${moduleKey.rawKey}?profile=landscape`, {}, {
       onInit(webSocket) {
         webSocket.once("message", (data) => resolveConnectedMessage(JSON.parse(data.toString()) as unknown));
       }

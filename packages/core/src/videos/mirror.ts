@@ -1,12 +1,12 @@
 import { z } from "zod";
-import type { OverlayPurpose } from "../shared/schemas.js";
+import type { VideoQueuePurpose } from "./types.js";
 import type { VideoControlSupport, VideoSource } from "./types.js";
 import { videoSourceSchema } from "./source-schema.js";
 
 /*
  * Desktop mirror contract (OpenSpec add-video-request-queue D5).
  *
- * One primary player per purpose runs in the desktop app and publishes its captured
+ * One ordinary primary player runs in the desktop app and publishes its captured
  * frames and audio over loopback WebRTC. Receivers (module and unified browser sources,
  * the desktop overlay and the desktop device output) exchange offer, answer and ICE
  * messages with it. Browser sources relay these over their overlay WebSocket; desktop
@@ -123,7 +123,7 @@ export const videoDeviceDelayMaximumMs = 500;
 /** Fields the desktop host IPC schemas share; built on demand so browser routes never construct them. */
 function desktopVideoFields() {
   return {
-    purposeSchema: z.enum(["live", "test"]),
+    purposeSchema: z.literal("live"),
     itemIdSchema: z.string().min(1).max(128),
     positionSchema: z.number().int().min(0).max(24 * 60 * 60 * 1000)
   };
@@ -167,25 +167,25 @@ export const desktopVideoEventSchema = /* @__PURE__ */ (() => {
 })();
 
 export type DesktopVideoCommand =
-  | { readonly type: "load"; readonly purpose: OverlayPurpose; readonly itemId: string; readonly source: VideoSource; readonly positionMs: number; readonly paused: boolean }
-  | { readonly type: "play"; readonly purpose: OverlayPurpose; readonly itemId: string; readonly positionMs: number }
-  | { readonly type: "pause"; readonly purpose: OverlayPurpose; readonly itemId: string }
-  | { readonly type: "seek"; readonly purpose: OverlayPurpose; readonly itemId: string; readonly positionMs: number }
-  | { readonly type: "stop"; readonly purpose: OverlayPurpose }
-  | { readonly type: "set-output"; readonly purpose: OverlayPurpose; readonly muted: boolean; readonly devices: readonly { readonly deviceId: string; readonly delayMs: number }[] }
-  | { readonly type: "signal"; readonly purpose: OverlayPurpose; readonly receiverId: string; readonly signal: VideoMirrorReceiverSignal };
+  | { readonly type: "load"; readonly purpose: VideoQueuePurpose; readonly itemId: string; readonly source: VideoSource; readonly positionMs: number; readonly paused: boolean }
+  | { readonly type: "play"; readonly purpose: VideoQueuePurpose; readonly itemId: string; readonly positionMs: number }
+  | { readonly type: "pause"; readonly purpose: VideoQueuePurpose; readonly itemId: string }
+  | { readonly type: "seek"; readonly purpose: VideoQueuePurpose; readonly itemId: string; readonly positionMs: number }
+  | { readonly type: "stop"; readonly purpose: VideoQueuePurpose }
+  | { readonly type: "set-output"; readonly purpose: VideoQueuePurpose; readonly muted: boolean; readonly devices: readonly { readonly deviceId: string; readonly delayMs: number }[] }
+  | { readonly type: "signal"; readonly purpose: VideoQueuePurpose; readonly receiverId: string; readonly signal: VideoMirrorReceiverSignal };
 
 export type DesktopVideoEvent =
   | { readonly type: "status"; readonly available: boolean }
   | {
-      readonly type: "report"; readonly purpose: OverlayPurpose; readonly itemId: string;
+      readonly type: "report"; readonly purpose: VideoQueuePurpose; readonly itemId: string;
       readonly state: "started" | "progress" | "ended" | "failed";
       readonly positionMs?: number | undefined;
       readonly durationMs?: number | null | undefined;
       readonly controls?: VideoControlSupport | undefined;
       readonly reason?: string | undefined;
     }
-  | { readonly type: "signal"; readonly purpose: OverlayPurpose; readonly receiverId: string; readonly signal: VideoMirrorPublisherSignal };
+  | { readonly type: "signal"; readonly purpose: VideoQueuePurpose; readonly receiverId: string; readonly signal: VideoMirrorPublisherSignal };
 
 /**
  * Private transport between the server's videos runtime and the desktop player host.

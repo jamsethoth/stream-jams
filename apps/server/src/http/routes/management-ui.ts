@@ -1,4 +1,8 @@
 import type {
+  ManualEventSubmission,
+  ManualSubmissionReceipt,
+  ManualEventAction,
+  AlertEditorTestResult,
   AlertEditorErrorReportInput,
   AlertEditorErrorReportResult,
   ClearOldLogsResult,
@@ -15,6 +19,7 @@ import type { AssetLibraryService } from "../../modules/assets/asset-library-ser
 import type { ManagementOverviewService } from "../../modules/providers/management-overview-service.js";
 import type { ProviderManagementService } from "../../modules/providers/provider-management-service.js";
 import { registerManagementAlertRoutes } from "./management-alerts.js";
+import { registerManualEventRoutes } from "./manual-events.js";
 import { registerManagementAssetRoutes } from "./management-assets.js";
 import { registerManagementDiagnosticsRoutes, type ManagementDiagnosticsRouteDependencies } from "./management-diagnostics.js";
 import { registerManagementHomeRoutes } from "./management-home.js";
@@ -24,6 +29,8 @@ import type { PearPairingService } from "../../modules/music/pear-pairing-servic
 import type { MusicManagementService } from "../../modules/music/music-management-service.js";
 
 export interface ManagementUiRouteDependencies {
+  readonly submitManualSimulation?: (input: ManualEventSubmission) => Promise<ManualSubmissionReceipt>;
+  readonly sendSavedAlertTest?: (action: Extract<ManualEventAction, { kind: "alert-saved-test" }>) => Promise<AlertEditorTestResult>;
   readonly managementOverviewService: Pick<
     ManagementOverviewService,
     "getHomeSetupSummary" | "listRegisteredProviders" | "getRegisteredProvider"
@@ -93,6 +100,7 @@ export function registerManagementUiRoutes(
     dependencies.managementRateLimitPreHandler,
     dependencies.managementAuthPreHandler
   ];
+  if (dependencies.submitManualSimulation !== undefined) registerManualEventRoutes(app, dependencies.submitManualSimulation, preHandlers);
 
   registerManagementHomeRoutes(app, {
     overview: dependencies.managementOverviewService,
@@ -109,6 +117,7 @@ export function registerManagementUiRoutes(
   registerManagementAlertRoutes(app, {
     alertSets: dependencies.alertSetManagementService,
     alertEditor: dependencies.alertEditorService,
+    ...(dependencies.sendSavedAlertTest === undefined ? {} : { sendSavedAlertTest: dependencies.sendSavedAlertTest }),
     reportClientError: dependencies.reportAlertEditorError,
     preHandlers,
     ...(dependencies.generateServerErrorId === undefined

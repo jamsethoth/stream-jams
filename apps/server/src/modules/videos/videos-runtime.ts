@@ -1,12 +1,14 @@
-import type { OverlayModuleRuntime, OverlayModuleSnapshot, OverlayModuleSnapshotRequest, OverlayPurpose, VideoQueueResponse, VideosModuleConfig, VideosProjection } from "@stream-jams/core";
-import { videoInstructionPrefix } from "@stream-jams/core/videos";
+import type { OverlayModuleRuntime, OverlayModuleSnapshot, OverlayModuleSnapshotRequest, VideoQueuePurpose, VideoQueueResponse, VideoSubmissionResult, VideosModuleConfig, VideosProjection } from "@stream-jams/core";
+import { browserVideosLayout, videoInstructionPrefix } from "@stream-jams/core/videos";
 import type { VideoRequeueOutcome, VideoRouteService } from "../../http/routes/videos.js";
 import { toVideoQueueResponse } from "./video-queue-response.js";
 import type { VideoItemCommand, VideoPlaybackPhase, VideoQueueCommand, VideoQueueService, VideoQueueView } from "./video-queue-service.js";
-import type { VideoRequestContext, VideoRequestIntake, VideoRequestResult } from "./video-request-intake.js";
+import type { VideoRequestContext, VideoRequestIntake } from "./video-request-intake.js";
+import type { ManualVideoRequestService } from "./manual-video-request-service.js";
 import type { VideoMirrorDirector } from "./video-mirror-director.js";
 
 export interface VideosRuntimeOptions {
+  readonly submissions?: Pick<ManualVideoRequestService, "submit" | "submission">;
   readonly queue: VideoQueueService;
   readonly intake: Pick<VideoRequestIntake, "submit" | "requeue">;
   readonly getConfig: () => Promise<VideosModuleConfig>;
@@ -16,7 +18,9 @@ export interface VideosRuntimeOptions {
 }
 
 /** What browser sources render for the current queue state. A playing item wins over a notice. */
-export function toVideosProjection(view: VideoQueueView, config: Pick<VideosModuleConfig, "obsAudio" | "layout">, mirrorAvailable = false): VideosProjection {
+export function toVideosProjection(view: VideoQueueView, config: Pick<VideosModuleConfig, "obsAudio" | "layout">, mirrorAvailable = false,
+  recipientKind: "browser" | "desktop" = "browser"): VideosProjection {
+  const layout = recipientKind === "desktop" ? structuredClone(config.layout) : browserVideosLayout(config.layout);
   if (view.current !== null) {
     const { item, clock, phase } = view.current;
     return {
@@ -24,7 +28,7 @@ export function toVideosProjection(view: VideoQueueView, config: Pick<VideosModu
       itemId: item.id,
       title: item.title,
       requester: item.requester,
-      layout: { ...config.layout },
+      layout,
       // With the desktop app running, every output shows its primary player's mirror.
       // Without it, each browser source plays the item itself from the shared clock.
       delivery: mirrorAvailable
@@ -34,7 +38,7 @@ export function toVideosProjection(view: VideoQueueView, config: Pick<VideosModu
         : { mode: "player", source: item.source, clock: phase === "loading" ? { ...clock, state: "playing" } : { ...clock }, obsAudio: config.obsAudio }
     };
   }
-  if (view.notice !== null) return { status: "notice", noticeId: view.notice.id, notice: "no-clip", displayName: view.notice.displayName, layout: { ...config.layout } };
+  if (view.notice !== null) return { status: "notice", noticeId: view.notice.id, notice: "no-clip", displayName: view.notice.displayName, layout };
   return { status: "idle" };
 }
 
@@ -42,30 +46,34 @@ export function toVideosProjection(view: VideoQueueView, config: Pick<VideosModu
 export class VideosRuntime implements OverlayModuleRuntime, VideoRouteService {
   constructor(private readonly options: VideosRuntimeOptions) {}
 
-  response(purpose: OverlayPurpose): VideoQueueResponse {
+  response(purpose: VideoQueuePurpose): VideoQueueResponse {
     return this.toResponse(this.options.queue.view(purpose));
   }
 
-  submit(purpose: OverlayPurpose, input: unknown, context: VideoRequestContext): Promise<VideoRequestResult> {
-    return this.options.intake.submit(purpose, input, context);
+  submit(purpose: VideoQueuePurpose, input: unknown, context: VideoRequestContext): Promise<VideoSubmissionResult> {
+    if (this.options.submissions === undefined) throw new Error("Manual Video submission is unavailable.");
+    return this.options.submissions.submit(purpose, input, context);
   }
 
-  command(purpose: OverlayPurpose, expectedRevision: number, command: VideoQueueCommand): VideoQueueResponse {
+  submission(busId: string): VideoSubmissionResult | null { return this.options.submissions?.submission(busId) ?? null; }
+
+  command(purpose: VideoQueuePurpose, expectedRevision: number, command: VideoQueueCommand): VideoQueueResponse {
     return this.toResponse(this.options.queue.command(purpose, expectedRevision, command));
   }
 
-  control(purpose: OverlayPurpose, expectedItemId: string, command: VideoItemCommand): VideoQueueResponse {
+  control(purpose: VideoQueuePurpose, expectedItemId: string, command: VideoItemCommand): VideoQueueResponse {
     return this.toResponse(this.options.queue.control(purpose, expectedItemId, command));
   }
 
-  async requeue(purpose: OverlayPurpose, expectedRevision: number, itemId: string, context: Pick<VideoRequestContext, "via">): Promise<VideoRequeueOutcome> {
+  async requeue(purpose: VideoQueuePurpose, expectedRevision: number, itemId: string, context: Pick<VideoRequestContext, "via">): Promise<VideoRequeueOutcome> {
     const result = await this.options.intake.requeue(purpose, expectedRevision, itemId, context.via);
     return result.status === "rejected" ? result : { status: "accepted", queue: this.response(purpose) };
   }
 
   async getModuleSnapshot(request: OverlayModuleSnapshotRequest): Promise<OverlayModuleSnapshot> {
-    const config = await this.options.getConfig();
-    return { moduleId: "videos", enabled: true, instructions: [], presentation: { kind: "videos", videos: toVideosProjection(this.options.queue.view(request.purpose), config, this.options.mirror?.available === true) } };
+    if (request.purpose !== "live") return { moduleId: "videos", enabled: true, instructions: [], presentation: { kind: "videos", videos: { status: "idle" } } };
+    const config = request.savedConfig === undefined ? await this.options.getConfig() : request.savedConfig.config as VideosModuleConfig;
+    return { moduleId: "videos", enabled: true, instructions: [], presentation: { kind: "videos", videos: toVideosProjection(this.options.queue.view("live"), config, this.options.mirror?.available === true, request.recipientKind) } };
   }
 
   /**
@@ -94,7 +102,7 @@ export class VideosRuntime implements OverlayModuleRuntime, VideoRouteService {
   }
 
   private currentPhase(itemId: string): VideoPlaybackPhase | null {
-    for (const purpose of ["live", "test"] as const) {
+    for (const purpose of ["live"] as const) {
       const current = this.options.queue.view(purpose).current;
       if (current?.item.id === itemId) return current.phase;
     }

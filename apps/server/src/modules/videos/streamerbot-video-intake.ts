@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { overlayPurposeSchema, type BusEvent, type EventBusHandleOutcome, type OverlayPurpose } from "@stream-jams/core";
+import { type BusEvent, type BusEventInput, type EventBusHandleOutcome, type VideoQueuePurpose } from "@stream-jams/core";
 import { videoRequesterSchema } from "@stream-jams/core/videos";
-import { externalIdentityMatchesTrigger } from "../events/event-bus.js";
+import { EventBusInputRejectedError, externalIdentityMatchesTrigger } from "../events/event-bus.js";
 import type { VideoRequestIntake, VideoRequestRejection } from "./video-request-intake.js";
 import type { VideoQueueService } from "./video-queue-service.js";
 
@@ -34,26 +34,53 @@ export interface StreamerBotVideoIntakeOptions {
   readonly onDiagnostic?: ((entry: VideoIntakeDiagnostic) => void | Promise<void>) | undefined;
 }
 
-const envelopeSchema = z.object({ action: z.enum(["play", "no-clip", "clear"]).default("play"), purpose: overlayPurposeSchema.default("live") });
+const envelopeSchema = z.object({ action: z.enum(["play", "no-clip", "clear"]).default("play"), purpose: z.literal("live").default("live") });
 const twitchClipIdSchema = z.string().trim().regex(/^[A-Za-z0-9_-]{1,100}$/u);
+
+/** Ingress fence; consumer validation still rejects already-journaled legacy rows on replay. */
+export function validateVideoBusInput(input: BusEventInput): void {
+  const applies = input.kind === "external" ? input.effectTriggers.some(trigger => externalIdentityMatchesTrigger(videoExternalIdentity, trigger))
+    : input.kind === "manual" && input.action.kind === "simulate-external" && input.action.identity.providerKind === "streamerbot"
+      && input.action.identity.sourceKey.toLowerCase() === "general" && input.action.identity.eventType === "Custom";
+  if (!applies) return;
+  const payload = input.kind === "external" ? input.payload
+    : input.kind === "manual" && input.action.kind === "simulate-external" ? input.action.payload : undefined;
+  if (readMarker(payload) === null) return;
+  const data = payload as Record<string, unknown>;
+  if (data.purpose !== undefined && data.purpose !== "live") {
+    throw new EventBusInputRejectedError("VIDEO_TEST_RETIRED", "Videos test input was retired. Remove its purpose selector and refresh the ordinary queue before submitting.", "retired");
+  }
+}
 
 /**
  * Passive adapter for General/Custom bus events: it never calls Twitch, parses chat, or executes Streamer.bot
  * actions. Broadcasts without a Videos marker are left to the modules that select them.
  */
 export function createStreamerBotVideoIntake(options: StreamerBotVideoIntakeOptions) {
+  // Legacy clear/no-clip actions are commands, not queue admission. Preserve their process-local once-per-row guard.
+  let lastCommandSequence = 0;
   const report = async (entry: VideoIntakeDiagnostic) => { await options.onDiagnostic?.(entry); };
   return async (event: BusEvent): Promise<EventBusHandleOutcome> => {
-    if (event.kind !== "external" || !event.effectTriggers.some(trigger => externalIdentityMatchesTrigger(videoExternalIdentity, trigger))) return "no-match";
-    const marker = readMarker(event.payload);
+    const manual = event.kind === "manual" && event.action.kind === "simulate-external" ? event : null;
+    const manualAction = manual?.action;
+    const matches = manualAction?.kind === "simulate-external"
+      ? manualAction.identity.providerKind === "streamerbot" && manualAction.identity.sourceKey.toLowerCase() === videoExternalIdentity.sourceKey.toLowerCase() && manualAction.identity.eventType === videoExternalIdentity.eventType
+      : event.kind === "external" && event.effectTriggers.some(trigger => externalIdentityMatchesTrigger(videoExternalIdentity, trigger));
+    if (!matches) return "no-match";
+    const payload = manualAction?.kind === "simulate-external" ? manualAction.payload : event.kind === "external" ? event.payload : undefined;
+    const marker = readMarker(payload);
     if (marker === null) return "no-match";
-    const data = event.payload as Record<string, unknown>;
+    const data = payload as Record<string, unknown>;
     const parsedEnvelope = envelopeSchema.safeParse(data);
     if (!parsedEnvelope.success) {
-      await report({ level: "warn", message: "Streamer.bot video request was rejected.", metadata: { reason: "invalid-request", fields: ["action", "purpose"].filter(field => field in data) } });
+      await report({ level: "warn", message: "Streamer.bot video request was rejected.", metadata: { reason: "retired-video-test-or-invalid-request", fields: ["action", "purpose"].filter(field => field in data) } });
       return "failed";
     }
     const { action, purpose } = parsedEnvelope.data;
+    if (action === "clear" || action === "no-clip") {
+      if (event.sequence <= lastCommandSequence) return "no-match";
+      lastCommandSequence = event.sequence;
+    }
     if (action === "clear") {
       stopCurrent(options.queue, purpose);
       await report({ level: "info", message: "Streamer.bot stopped the current video.", metadata: { purpose } });
@@ -67,7 +94,10 @@ export function createStreamerBotVideoIntake(options: StreamerBotVideoIntakeOpti
     }
 
     const request = marker === "request" ? requestFields(data) : legacyRequestFields(data);
-    const result = await options.intake.submit(purpose, request, { via: "streamerbot", mayAutoplay: true });
+    const result = await options.intake.submit(purpose, request, {
+      via: manual?.submission.channel ?? "streamerbot", mayAutoplay: manual?.submission.mayAutoplay ?? true,
+      policy: "streamerbot", busIdentity: { busId: event.busId, eventId: event.eventId }
+    });
     if (result.status === "rejected") {
       await report({ level: "warn", message: "Streamer.bot video request was rejected and not queued.", metadata: { reason: result.reason, fields: result.fields, purpose } });
       return rejectionOutcome(result.reason);
@@ -114,7 +144,7 @@ function legacyRequestFields(data: Record<string, unknown>): Record<string, unkn
   };
 }
 
-function stopCurrent(queue: StreamerBotVideoIntakeOptions["queue"], purpose: OverlayPurpose): void {
+function stopCurrent(queue: StreamerBotVideoIntakeOptions["queue"], purpose: VideoQueuePurpose): void {
   const view = queue.view(purpose);
   if (view.current === null && view.gapEndsAtEpochMs === null) return;
   queue.command(purpose, view.revision, { kind: "stop" });

@@ -1,4 +1,5 @@
 import {
+  outputCanvasSchema,
   musicCredentialReplacementInputSchema,
   musicCredentialReplacementResultSchema,
   musicManagementStatusSchema,
@@ -94,7 +95,7 @@ export function createMusicApi(client: ManagementHttpClient): MusicApi {
 function isMusicOutput(value: unknown): value is OverlayOutputView {
   if (typeof value !== "object" || value === null) return false;
   const item = value as Record<string, unknown>;
-  return item.moduleId === "music" && item.scope === "module" && (item.purpose === "live" || item.purpose === "test")
+  return (item.canvas === undefined || outputCanvasSchema.safeParse(item.canvas).success) && item.moduleId === "music" && item.scope === "module" && (item.purpose === "live" || item.purpose === "test")
     && (item.targetProfileId === "landscape" || item.targetProfileId === "vertical")
     && typeof item.id === "string" && typeof item.label === "string" && typeof item.overlayId === "string" && typeof item.enabled === "boolean"
     && (item.keyId === null || typeof item.keyId === "string") && (item.url === null || typeof item.url === "string")

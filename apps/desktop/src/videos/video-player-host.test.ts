@@ -82,7 +82,7 @@ describe("VideoPlayerHost", () => {
     expect(players).toHaveLength(1);
   });
 
-  it("loads one long-lived player per purpose, captures before loading, and swaps providers inside it", async () => {
+  it("loads one ordinary player, captures before loading, and rejects retired test loads", async () => {
     const { host, players } = setup();
     host.handle({ type: "load", purpose: "live", itemId: "a", source: youtube, positionMs: 5000, paused: true });
     await vi.advanceTimersByTimeAsync(0);
@@ -95,9 +95,10 @@ describe("VideoPlayerHost", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(players).toHaveLength(1);
     expect(players[0]!.sent.at(-1)).toMatchObject({ type: "load", itemId: "b", url: "https://videos.example.com/b.mp4" });
-    host.handle({ type: "load", purpose: "test", itemId: "t", source: youtube, positionMs: 0, paused: false });
+    host.handle({ type: "load", purpose: "test", itemId: "t", source: youtube, positionMs: 0, paused: false } as never);
     await vi.advanceTimersByTimeAsync(0);
-    expect(players).toHaveLength(2);
+    expect(players).toHaveLength(1);
+    expect(players[0]!.sent.at(-1)).toMatchObject({ type: "load", itemId: "b" });
   });
 
   it("passes the service host as the Twitch embed parent", async () => {

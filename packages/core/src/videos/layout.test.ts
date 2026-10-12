@@ -2,55 +2,41 @@ import { describe, expect, it } from "vitest";
 import { videosProjectionSchema } from "./contract.js";
 import { createDefaultVideosLayout, isValidVideosLayout } from "./layout.js";
 import { videosPlacementGeometry } from "./placement-geometry.js";
-import { createDefaultVideosModuleConfig, videosModuleConfigSchema } from "./schemas.js";
+import { createDefaultVideosModuleConfig, currentVideosModuleConfigSchema } from "./schemas.js";
 
-const notice = { status: "notice", noticeId: "n1", notice: "no-clip", displayName: null } as const;
-
-describe("Videos placement", () => {
-  it("defaults to the look outputs had before placement existed", () => {
-    expect(createDefaultVideosLayout()).toEqual({ x: 269, y: 140, width: 1382, height: 876 });
-    const geometry = videosPlacementGeometry(createDefaultVideosLayout());
-    // 72% of the canvas wide with a 16:9 picture, the two-line caption below and 65 px above the bottom edge.
-    expect(geometry).toEqual({ scale: 1, frame: { width: 1382, height: 777.375 }, gap: 12 });
-  });
-
-  it("migrates saved config without placement to the default box", () => {
-    const legacy: Record<string, unknown> = { ...createDefaultVideosModuleConfig() };
-    delete legacy.layout;
-    expect(videosModuleConfigSchema.parse(legacy).layout).toEqual(createDefaultVideosLayout());
-  });
-
-  it("accepts boxes on the canvas and rejects partial, fractional, undersized or off-canvas boxes", () => {
+describe("Videos content and placement", () => {
+  it("rejects destination selectors in current configuration mappings", () => {
     const config = createDefaultVideosModuleConfig();
-    const accepts = (layout: unknown) => videosModuleConfigSchema.safeParse({ ...config, layout }).success;
-    expect(accepts({ x: 0, y: 0, width: 1920, height: 1080 })).toBe(true);
-    expect(accepts({ x: 1680, y: 900, width: 240, height: 180 })).toBe(true);
-    expect(accepts({ x: 0, y: 0, width: 239, height: 180 })).toBe(false);
-    expect(accepts({ x: 0, y: 0, width: 240, height: 179 })).toBe(false);
-    expect(accepts({ x: 1681, y: 0, width: 240, height: 180 })).toBe(false);
-    expect(accepts({ x: 0, y: 901, width: 240, height: 180 })).toBe(false);
-    expect(accepts({ x: -1, y: 0, width: 240, height: 180 })).toBe(false);
-    expect(accepts({ x: 0.5, y: 0, width: 240, height: 180 })).toBe(false);
-    expect(accepts({ x: 0, y: 0, width: 240 })).toBe(false);
-    expect(accepts({ x: 0, y: 0, width: 240, height: 180, zIndex: 1 })).toBe(false);
-    expect(accepts(null)).toBe(false);
-    expect(isValidVideosLayout({ x: Number.NaN, y: 0, width: 240, height: 180 })).toBe(false);
+    expect(currentVideosModuleConfigSchema.safeParse({ ...config, rewardMappings: [{ rewardId: "ordinary" }] }).success).toBe(true);
+    for (const purpose of ["live", "test"]) expect(currentVideosModuleConfigSchema.safeParse({ ...config, rewardMappings: [{ rewardId: "old", purpose }] }).success).toBe(false);
   });
-
-  it("makes the overlay projection fail closed on a missing or invalid box", () => {
+  it("retains the default desktop box and exact picture with two-line reserve", () => {
+    expect(createDefaultVideosLayout()).toEqual({ schemaVersion: 2, content: { width: 1382, height: 876 }, desktopPlacement: { x: 269, y: 140, scale: 1 } });
+    expect(videosPlacementGeometry(createDefaultVideosLayout())).toEqual({ scale: 1, frame: { width: 1382, height: 777.375 }, gap: 12 });
+  });
+  it("bounds integer content independently from scaled desktop footprint", () => {
+    const layout = createDefaultVideosLayout();
+    const accepts = (value: unknown) => currentVideosModuleConfigSchema.safeParse({ ...createDefaultVideosModuleConfig(), layout: value }).success;
+    expect(accepts({ ...layout, content: { width: 240, height: 180 }, desktopPlacement: { x: 1680, y: 900, scale: 1 } })).toBe(true);
+    expect(accepts({ ...layout, content: { width: 1920, height: 1080 }, desktopPlacement: { x: 960, y: 540, scale: 0.5 } })).toBe(true);
+    expect(accepts({ ...layout, desktopPlacement: { x: 0.5, y: 0.25, scale: 0.5 } })).toBe(true);
+    for (const content of [{ width: 239, height: 180 }, { width: 240, height: 179 }, { width: 1921, height: 180 }, { width: 240, height: 1081 }, { width: 240.5, height: 180 }]) expect(accepts({ ...layout, content })).toBe(false);
+    for (const desktopPlacement of [{ x: -1, y: 0, scale: 1 }, { x: 0, y: 0, scale: 0 }, { x: 0, y: 0, scale: -1 }, { x: 1000, y: 0, scale: 1 }, { x: 0, y: 0, scale: 2 }, { x: Infinity, y: 0, scale: 1 }, { x: 0, y: 0, scale: NaN }]) expect(accepts({ ...layout, desktopPlacement })).toBe(false);
+    expect(isValidVideosLayout({ ...layout, content: { width: 240, height: 180, extra: 1 } })).toBe(false);
+    expect(accepts({ x: 0, y: 0, width: 240, height: 180 })).toBe(false);
+  });
+  it("fails transparent on invalid notice geometry without inventing a default", () => {
+    const notice = { status: "notice", noticeId: "n1", notice: "no-clip", displayName: null };
     expect(videosProjectionSchema.safeParse({ ...notice, layout: createDefaultVideosLayout() }).success).toBe(true);
     expect(videosProjectionSchema.safeParse(notice).success).toBe(false);
-    expect(videosProjectionSchema.safeParse({ ...notice, layout: { x: 1800, y: 0, width: 1382, height: 876 } }).success).toBe(false);
+    expect(videosProjectionSchema.safeParse({ ...notice, layout: { ...createDefaultVideosLayout(), desktopPlacement: { x: 1800, y: 0, scale: 1 } } }).success).toBe(false);
   });
-
-  it("fits the largest 16:9 picture above the caption and shrinks captions for small boxes", () => {
-    // Wide and short: height limits the picture.
-    expect(videosPlacementGeometry({ x: 0, y: 0, width: 1920, height: 500 }).frame).toEqual({ width: (500 - 98) * 16 / 9, height: 402 });
-    // Small picture-in-picture: captions and spacing at half size.
-    const small = videosPlacementGeometry({ x: 1440, y: 40, width: 400, height: 300 });
-    expect(small.scale).toBe(0.5);
-    expect(small.gap).toBe(6);
-    expect(small.frame.width).toBe(400);
-    expect(small.frame.height).toBe(225);
+  it("uses the same aspect fit at minimum, short-wide and default size regardless of placement", () => {
+    const layout = createDefaultVideosLayout();
+    const minimum = videosPlacementGeometry({ ...layout, content: { width: 240, height: 180 } });
+    expect(minimum.scale).toBe(0.5); expect(minimum.gap).toBe(6);
+    expect(minimum.frame.width).toBeCloseTo(131 * 16 / 9, 12); expect(minimum.frame.height).toBeCloseTo(131, 12);
+    expect(videosPlacementGeometry({ ...layout, content: { width: 1920, height: 500 } }).frame).toEqual({ width: 402 * 16 / 9, height: 402 });
+    expect(videosPlacementGeometry({ ...layout, desktopPlacement: { x: 0, y: 0, scale: 0.5 } })).toEqual({ scale: 1, frame: { width: 1382, height: 777.375 }, gap: 12 });
   });
 });

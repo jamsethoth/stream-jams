@@ -148,7 +148,7 @@ Preview uses its own sample store. It can simulate zero, decrease, completion, o
 
 ### 7. Outputs and visibility
 
-The server publishes a projection for each canvas, tagged with the runtime ID and an increasing data revision. Module-specific and unified browser sources and the private desktop surface render the same projection.
+The server publishes a projection for each canvas, tagged with the runtime ID and an increasing data revision. Landscape and Vertical per-module live browser sources and the private desktop surface render the same projection for canvases assigned to that recipient. Selection uses the trusted recipient kind; retired public test and unified sources are not recreated.
 
 - Snapshot and subscription are ordered so that no update falls between them.
 - Clients discard frames with an older runtime or revision, and reconnect with bounded backoff.

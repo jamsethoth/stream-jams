@@ -44,7 +44,7 @@ async function privateRenderer(page: Page, fixture: Fixture) {
   await page.evaluate(command => (window as unknown as { fixtureCommand(value: unknown): void }).fixtureCommand(command), { protocolVersion: 1, generation: 1, requestId: crypto.randomUUID(), command: { type: "configure", config: { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "disposable-display", displayLabel: "Disposable", autoFollowDisplayName: false, opacity: 1, layers: [{ moduleId: "data-overlays", visible: true }] } } });
   let revision = 0;
   return async () => {
-    const snapshot: OverlayModuleSnapshot = await fixture.runtime.composition.dataOutputRuntime.getModuleSnapshot({ overlayId: "desktop:primary", purpose: "live", scope: "unified", moduleId: "data-overlays", targetProfileId: "landscape" });
+    const snapshot: OverlayModuleSnapshot = await fixture.runtime.composition.dataOutputRuntime.getModuleSnapshot({ recipientKind: "desktop", overlayId: "desktop:primary", purpose: "live", scope: "unified", moduleId: "data-overlays", targetProfileId: "landscape" });
     await page.evaluate(command => (window as unknown as { fixtureCommand(value: unknown): void }).fixtureCommand(command), { protocolVersion: 1, generation: 1, requestId: crypto.randomUUID(), command: { type: "sync-module", moduleId: "data-overlays", revision: ++revision, presentation: snapshot.presentation, assets: [] } });
   };
 }
@@ -54,11 +54,9 @@ test("disposable Operator commits reach both canvases, browser and private rende
     await fixture.start(); expect((await fixture.request("/health")).status).toBe(200); const seeded = await seed(fixture);
     const browser = await context.newPage(); await browser.goto(seeded.outputUrl);
     await expect(browser.getByText("Count 4", { exact: true })).toHaveCount(2);
-    const unifiedKey = await (await fixture.request("/management/overlay-outputs/keys", "POST", { overlayId: "default", scope: "unified", moduleId: null, purpose: "live" })).json() as OverlayOutputKeyResult;
+    const retired = await fixture.request("/overlay/unified/live/retired-source/composition"); expect(retired.status).toBe(401);
     const surfaces = surfaceSettingsViewSchema.parse(await (await fixture.request("/overlay-surfaces")).json());
-    const surface = surfaces.surfaces.find(surface => surface.kind === "unified-browser")!;
-    expect((await fixture.request(`/overlay-surfaces/${encodeURIComponent(surface.id)}`, "PUT", { ...surface, layers: surface.layers.some(layer => layer.moduleId === "data-overlays") ? surface.layers.map(layer => layer.moduleId === "data-overlays" ? { ...layer, visible: true } : layer) : [...surface.layers, { moduleId: "data-overlays", visible: true }] })).status).toBe(200);
-    const unified = await context.newPage(); await unified.goto(new URL(unifiedKey.url, fixture.runtime.url).toString()); await expect(unified.getByText("Count 4", { exact: true })).toHaveCount(2);
+    expect(surfaces.surfaces.every(surface => surface.kind === "desktop")).toBe(true);
     const desktop = await context.newPage(); const syncDesktop = await privateRenderer(desktop, fixture); await syncDesktop();
     await expect(desktop.getByText("Count 4", { exact: true })).toHaveCount(2);
     await page.setViewportSize({ width: 540, height: 960 }); await page.goto(`${fixture.runtime.url}/operator`);
@@ -66,7 +64,7 @@ test("disposable Operator commits reach both canvases, browser and private rende
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await data.getByRole("button", { name: "Add one to Count", exact: true }).click(); await expect(data.getByText("Current: 5", { exact: true })).toBeVisible();
     await expect(browser.getByText("Count 5", { exact: true })).toHaveCount(2); await syncDesktop(); await expect(desktop.getByText("Count 5", { exact: true })).toHaveCount(2);
-    await expect(unified.getByText("Count 5", { exact: true })).toHaveCount(2); await browser.reload(); await expect(browser.getByText("Count 5", { exact: true })).toHaveCount(2);
+    await browser.reload(); await expect(browser.getByText("Count 5", { exact: true })).toHaveCount(2);
     await data.getByRole("button", { name: "Reset Count", exact: true }).click(); await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
     expect((await state(fixture)).values.find(value => value.id === seeded.counter.id)?.content).toBe(5);
     // The live mutation occurs after the UI submits its revision: a real service conflict.
@@ -82,7 +80,7 @@ test("disposable Operator commits reach both canvases, browser and private rende
     await data.getByRole("button", { name: "Reset group Session", exact: true }).click(); await page.getByRole("dialog").getByRole("button", { name: "Confirm" }).click();
     await expect(data.getByText("Current: 4", { exact: true })).toBeVisible(); expect((await state(fixture)).goals[0]).toMatchObject({ baseline: 4 });
     expect((await fixture.request(`/data-overlays/values/${seeded.counter.id}`, "DELETE")).status).toBe(409);
-    const beforeRestart = await state(fixture); await browser.close(); await unified.close(); await desktop.close(); await fixture.stop(); await fixture.start(); expect((await fixture.request("/health")).status).toBe(200);
+    const beforeRestart = await state(fixture); await browser.close(); await desktop.close(); await fixture.stop(); await fixture.start(); expect((await fixture.request("/health")).status).toBe(200);
     expect(await state(fixture)).toEqual(beforeRestart); await page.reload(); await expect(page.getByText("Current: 4", { exact: true })).toBeVisible();
   } finally { await fixture.close(); }
 });

@@ -3,9 +3,7 @@
 ## Purpose
 
 Define registered Music source contracts, authenticated Pear Desktop delivery, authoritative playback state, bounded artwork, and secret-safe portability.
-
 ## Requirements
-
 ### Requirement: Music Sources Use Existing Provider Registration
 The system SHALL register validated music sources through the existing provider lifecycle under the `music-source` capability, permit at most one active music source, and keep music activation independent of event-source and TTS activation. The first successfully registered music source SHALL be selected when none is active; further registrations SHALL remain inactive until explicitly activated. Testing SHALL NOT activate a provider.
 
@@ -57,7 +55,7 @@ Pear setup SHALL use an explicit pairing action against `POST /auth/{id}`, durab
 - **THEN** setup can validate successfully with empty playback rather than requiring the user to play music
 
 ### Requirement: Authentication Failures Never Downgrade Transport Security
-Pear SHALL support `auto`, `ws` and `poll` modes. Auto fallback SHALL preserve authentication. WS close 1008 and HTTP 401/403 SHALL clear live music, stop automatic reconnect/pairing loops and request explicit credential recovery. Pear endpoints SHALL be loopback-only with validated ports and matched HTTP/WS or HTTPS/WSS schemes; TLS certificate validation SHALL remain enabled. Credential-bearing redirects SHALL be rejected.
+Pear SHALL support `auto`, `ws` and `poll` modes. Auto fallback SHALL preserve authentication. WS close 1008 and HTTP 401/403 SHALL clear live music, stop automatic reconnect/pairing loops and request explicit credential recovery. A TLS certificate the saved source does not trust, or Pear serving HTTPS where the source saved an HTTP address, SHALL likewise clear live music, stop reconnecting and request re-pairing. Pear endpoints SHALL be loopback-only with validated ports and matched HTTP/WS or HTTPS/WSS schemes; TLS certificate validation SHALL remain enabled. Credential-bearing redirects SHALL be rejected.
 
 #### Scenario: Auto falls back on transport unavailability
 - **WHEN** the WS endpoint is unavailable but authenticated REST is usable
@@ -73,6 +71,16 @@ Pear SHALL support `auto`, `ws` and `poll` modes. Auto fallback SHALL preserve a
 - **WHEN** setup receives a non-loopback host, embedded userinfo, invalid port or a TLS certificate validation failure
 - **THEN** it rejects the connection with a non-secret correction message
 - **AND** it does not disable TLS verification or change the Stream Jams listen address
+
+#### Scenario: Pear's secure connection changes after setup
+- **WHEN** a saved source's HTTP address now reaches Pear serving HTTPS, or Pear presents a certificate other than the one accepted while pairing
+- **THEN** live output becomes transparent, the status is auth-required and management asks the user to re-pair
+- **AND** no credential is sent to the changed endpoint and reconnecting stops until the user re-pairs
+- **AND** detecting HTTPS uses only a certificate-reading TLS handshake and does not disable verification for any data-bearing connection
+
+#### Scenario: Re-pairing an existing source
+- **WHEN** the user re-pairs a registered source and its connection test passes
+- **THEN** the save action is labelled "Save new authorization" and the passing-test message names it
 
 ### Requirement: Adapter Lifecycles Reject Obsolete Work
 The runtime SHALL bound requests, frame size, reconnect delays and pending state, serialize polling, and cancel outstanding work on stop, module disable or provider switch. Each adapter generation SHALL prevent prior requests, sockets, timers and artwork completions from publishing. Transient reconnects SHALL use bounded backoff; rate-limited requests SHALL honor `Retry-After`.
@@ -176,3 +184,4 @@ The server SHALL obtain a private artwork policy from the active provider genera
 - **WHEN** an adapter declares a configured-server origin
 - **THEN** only that exact origin can use private-address artwork fetching and no other origin inherits the exception
 - **AND** withdrawing the active policy makes existing cache and grants unavailable
+

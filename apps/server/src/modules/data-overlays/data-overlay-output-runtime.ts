@@ -48,7 +48,7 @@ export class DataOverlayOutputRuntime implements OverlayModuleRuntime {
       const generation = this.#generation;
       const enabled = await this.dependencies.getEnabled();
       const state = this.dependencies.getState();
-      const output = request.overlayId === "desktop:primary" ? "desktop" : "browser";
+      const output = request.recipientKind;
       const targetProfileId = request.targetProfileId ?? "landscape";
       const ids = enabled && !this.dependencies.outputPaused() ? [...new Set(state.canvases.filter(canvas => canvas.enabled && canvas.outputs[output] && canvas.targetProfileId === targetProfileId)
         .flatMap(canvas => canvas.elements.flatMap(element => element.visible && element.kind === "image" ? [element.assetId] : [])))] : [];

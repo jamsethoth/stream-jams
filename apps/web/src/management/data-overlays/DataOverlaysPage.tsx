@@ -69,7 +69,7 @@ export function DataOverlaysPage({ api = defaultDataOverlaysApi, templateApi = d
     <Checkbox label="Enable Data Overlays" checked={enabledDraft} disabled={busy} onChange={event => setEnabledDraft(event.currentTarget.checked)}/>
     <Button disabled={busy || enabledDraft === enabled} onClick={() => void mutate(async () => { setEnabled(await api.setEnabled(enabledDraft)); })}>Save enablement</Button>
   </ModuleControls>} outputs={<ModuleSection id="browser-sources" title="Outputs" label="Data Overlays outputs">
-    <p>Canvas browser assignments apply to module and unified browser sources. Desktop assignments use the configured private desktop surface.</p>
+    <p>Canvas browser assignments apply to the per-module Browser Source. Desktop assignments use the configured private desktop surface.</p>
     <DataOutputLinks outputs={sources} api={managementApi} onChanged={async () => setSources(await api.listOutputs())}/>
     <a href="/manage/settings">Configure outputs in Settings</a>
   </ModuleSection>}>

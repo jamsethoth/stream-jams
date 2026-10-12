@@ -1,8 +1,8 @@
 # CodeQL Suppressions
 
-This file records intentional in-source CodeQL suppressions that rely on repository-specific controls.
+This file records reviewed CodeQL false positives that rely on repository-specific controls.
 
-The CodeQL CLI does not turn in-source `codeql[rule-id]` comments into suppressions, so CI enforces each one through a rule-and-file entry in `.github/codeql-exceptions.json`. Pull-request analysis is diff-informed and reports only results near changed lines, so an exception is checked for staleness only on full `main` push scans.
+CodeQL results upload to the repository's Security tab (code scanning). GitHub does not honor in-source `codeql[rule-id]` comments, so each entry below is dismissed there as a false positive with a comment linking its section; the in-source comment stays next to the flagged code as the reviewer's pointer. Dismissed alerts stay dismissed on every branch, and a new finding in the same file still raises its own alert.
 
 ## `js/missing-rate-limiting` on `GET /config/server`
 
@@ -22,3 +22,23 @@ The CodeQL CLI does not turn in-source `codeql[rule-id]` comments into suppressi
 - Scope: The suppressed helper is used only to produce or test Streamer.bot's mandated WebSocket challenge response. Stream Jams does not persist this hash, log it, expose it in status output, or use it as an application password hash. Later connection-management slices store Streamer.bot passwords only through `SecretStore` and persist only secret references.
 - Control: Keep the suppression immediately adjacent to the SHA-256 helper and do not reuse that helper for application password storage or user credential verification.
 - Validation: `apps/server/src/modules/streamerbot/streamerbot-client.test.ts` asserts the `Authenticate` request value for known password/salt/challenge inputs and asserts connection status does not include password, salt, challenge, or generated authentication values.
+
+## `js/missing-rate-limiting` on Twitch auth routes
+
+- Location: `apps/server/src/http/routes/twitch-auth.ts`
+- Reason: CodeQL does not recognize the custom Fastify limiter, as for `GET /config/server` above.
+- Control: every Twitch auth route runs `managementRateLimitPreHandler` as its first pre-handler.
+
+## `js/missing-rate-limiting` on overlay asset routes
+
+- Location: `apps/server/src/http/routes/assets.ts`, both module and legacy unified asset endpoints.
+- Evidence: branch CI run `38196222906` reported these handlers despite the implemented limiter.
+- Reason: CodeQL does not recognize the custom Fastify pre-handler, as for the auth/config routes.
+- Control: `rateLimitPreHandler` runs before key verification and asset authorization. One 600-request/minute budget per IP spans route families, keys, asset IDs and GET/HEAD, independently of management limits. Retired unified routes still fail closed after this limiter.
+- Validation: `assets.test.ts` exhausts the budget across keys/routes/methods, verifies 429 precedes authorization, and confirms management requests retain their independent budget. This record does not dismiss a Security-tab alert; that status requires separate verification.
+
+## `js/disabling-certificate-validation` in Pear certificate inspection
+
+- Location: `apps/server/src/modules/music/pear-config.ts`
+- Reason: validation must be off to read a Pear certificate that fails it, so the operator can review it and consent.
+- Control: the inspection socket never writes data and is destroyed on `secureConnect`. Data-bearing Pear connections use `pearTlsOptions`, which keep validation on and pin the consented certificate.

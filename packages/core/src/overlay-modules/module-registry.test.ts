@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { alertsOverlayModuleDefinition } from "./module-definition.js";
 import { screenEffectsOverlayModuleDefinition } from "../screen-effects/module-definition.js";
-import { StaticOverlayModuleRegistry, createDefaultOverlayModuleRegistry, listUnifiedOverlayModuleIds } from "./module-registry.js";
+import { StaticOverlayModuleRegistry, createDefaultOverlayModuleRegistry, listUnifiedOverlayModuleIds, listDesktopOverlayModuleIds } from "./module-registry.js";
 import type { OverlayModuleDefinition } from "./types.js";
 
 const customModule: OverlayModuleDefinition = {
@@ -29,11 +29,26 @@ const customModule: OverlayModuleDefinition = {
   },
   renderer: {
     entryPoint: "overlay/modules/custom",
-    supportedOutputs: ["module"]
+    supportsDesktopComposition: false, supportedOutputs: ["module"]
   }
 };
 
 describe("overlay module registry", () => {
+  it.each([undefined, null, "true", 1])("requires an explicit boolean desktop composition capability: %j", capability => {
+    expect(() => new StaticOverlayModuleRegistry([{
+      ...customModule, renderer: { ...customModule.renderer, supportsDesktopComposition: capability }
+    } as unknown as OverlayModuleDefinition])).toThrow();
+  });
+  it("keeps public unified inventory independent of private desktop capability", () => {
+    const registry = new StaticOverlayModuleRegistry([
+      { ...customModule, renderer: { ...customModule.renderer, supportsDesktopComposition: true } },
+      { ...alertsOverlayModuleDefinition, renderer: { ...alertsOverlayModuleDefinition.renderer, supportsDesktopComposition: false, supportedOutputs: ["module", "unified"] } }
+    ]);
+    expect(listDesktopOverlayModuleIds(registry)).toEqual(["custom"]);
+    expect(listUnifiedOverlayModuleIds(registry)).toEqual(["alerts"]);
+    expect(listDesktopOverlayModuleIds(createDefaultOverlayModuleRegistry()))
+      .toEqual(["alerts", "screen-effects", "timers", "music", "videos", "data-overlays"]);
+  });
   it("registers Alerts, disabled Screen Effects, Timers, Music and Videos in stable built-in order", () => {
     const registry = createDefaultOverlayModuleRegistry();
 
@@ -50,24 +65,25 @@ describe("overlay module registry", () => {
     expect(registry.getModule("timers")).toMatchObject({
       id: "timers",
       defaultEnabled: false,
-      renderer: { supportedOutputs: ["module", "unified"] }
+      renderer: { supportedOutputs: ["module"], supportsDesktopComposition: true }
     });
     expect(alertsOverlayModuleDefinition.wizard.steps.map((step) => step.id)).toEqual(["alerts-canvas"]);
     expect(screenEffectsOverlayModuleDefinition).toMatchObject({
       defaultEnabled: false,
-      renderer: { supportedOutputs: ["module", "unified"] }
+      renderer: { supportedOutputs: ["module"], supportsDesktopComposition: true }
     });
   });
 
-  it("registers Videos for module-specific and unified outputs and retires Video shoutout", () => {
+  it("registers Videos for ordinary browser and private desktop outputs and retires Video shoutout", () => {
     const registry = createDefaultOverlayModuleRegistry();
 
     expect(registry.getModule("videos")).toMatchObject({
       id: "videos",
-      renderer: { supportedOutputs: ["module", "unified"] }
+      renderer: { supportedOutputs: ["module"], supportsDesktopComposition: true }
     });
     expect(registry.getModule("video-shoutout")).toBeNull();
-    expect(listUnifiedOverlayModuleIds(registry)).toEqual(["alerts", "screen-effects", "timers", "music", "videos", "data-overlays"]);
+    expect(listUnifiedOverlayModuleIds(registry)).toEqual([]);
+    expect(listDesktopOverlayModuleIds(registry)).toEqual(["alerts", "screen-effects", "timers", "music", "videos", "data-overlays"]);
   });
 
   it("returns null for unknown module ids", () => {

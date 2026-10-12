@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import type { SurfaceSettingsView, TimerDefinition, TimerRunState } from "../../packages/core/dist/index.js";
+import type { SurfaceSettingsView, TimerDefinition, TimerRunState, TimersOverlayModuleConfig } from "../../packages/core/dist/index.js";
 import { _electron, expect, test, type ElectronApplication } from "@playwright/test";
 import { windowByUrl } from "./audio-harness.js";
 
@@ -79,6 +79,22 @@ test("packaged desktop keeps Timer generations synchronized and quits with a lon
 
     await api(`/timers/${longTimer.id}/pause`, "POST");
     await expect(overlay.getByRole("listitem", { name: /Long mitts timer, paused/u })).toBeVisible();
+    const pausedBeforeAppearance = (await api<readonly TimerRunState[]>("/timers/state")).find(run => run.definitionId === longTimer.id);
+    const savedAppearance = (await api<{ config: TimersOverlayModuleConfig }>("/overlay-modules/timers/config")).config;
+    const updatedAppearance: TimersOverlayModuleConfig = { ...savedAppearance, profiles: { ...savedAppearance.profiles,
+      landscape: { ...savedAppearance.profiles.landscape, desktopPlacement: { x: 123, y: 456, scale: .75, zIndex: 9 },
+        appearance: { ...savedAppearance.profiles.landscape.appearance, backgroundOpacity: .4, valueFont: { ...savedAppearance.profiles.landscape.appearance.valueFont, fontSizePx: 29 } } } } };
+    await api("/overlay-modules/timers/config", "PUT", { enabled: true, config: updatedAppearance });
+    await expect(overlay.locator(".timer-stack")).toHaveCSS("transform", "matrix(0.75, 0, 0, 0.75, 0, 0)");
+    await expect(overlay.locator(".timer-stack")).toHaveCSS("transform-origin", "123px 456px");
+    await expect(overlay.getByRole("listitem").first()).toHaveCSS("left", "123px");
+    await expect(overlay.getByRole("listitem").first()).toHaveCSS("top", "456px");
+    const actualCard = await overlay.getByRole("listitem").first().boundingBox();
+    expect(actualCard).not.toBeNull();
+    expect(actualCard!.width / actualCard!.height).toBeCloseTo(640 / 70, 4);
+    await expect(overlay.getByTestId(`timer-value-${longTimer.id}`)).toHaveCSS("font-size", "29px");
+    expect((await api<readonly TimerRunState[]>("/timers/state")).find(run => run.definitionId === longTimer.id)).toEqual(pausedBeforeAppearance);
+    expect((await api<{ config: TimersOverlayModuleConfig }>("/overlay-modules/timers/config")).config.profiles.vertical).toEqual(savedAppearance.profiles.vertical);
     await expect(overlay.getByTestId(`timer-value-${shortTimer.id}`)).toHaveText("0:00", { timeout: 4_000 });
     await expect(overlay.getByText("Short reward timer", { exact: true })).toHaveCount(0, { timeout: 6_500 });
     await api(`/timers/${longTimer.id}/resume`, "POST");

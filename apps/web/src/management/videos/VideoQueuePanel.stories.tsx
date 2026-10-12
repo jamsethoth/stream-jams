@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
-import { createStaticVideoQueueApi, describedRecentVideos, describedVideos, failedVideos, heldVideos, playingVideo, queuedVideos, recentVideos, twitchClipPlaying, videoQueue } from "../../stories/video-queue-fixtures.js";
+import { createStaticVideoQueueApi, describedRecentVideos, describedVideos, failedVideos, heldVideos, playingVideo, queuedVideos, recentVideos, twitchClipPlaying, videoItem, videoQueue } from "../../stories/video-queue-fixtures.js";
 import { ManagementHttpError } from "../management-http-client.js";
 import { OperatorItemCard } from "../../operator/OperatorItemCard.js";
 import { VideoQueuePanel } from "./VideoQueuePanel.js";
@@ -16,11 +16,60 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+export const SubmissionPending: Story = {
+  tags: ["video-bus-admission"],
+  args: { api: createStaticVideoQueueApi(videoQueue(), {
+    submit: async () => ({ status: "pending", busId: "pending-video", eventId: "manual-video" }),
+    submission: async () => videoItem("late-video")
+  }) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.type(await canvas.findByLabelText("Video link"), "https://youtu.be/dQw4w9WgXcQ");
+    await userEvent.click(canvas.getByRole("button", { name: "Add video" }));
+    await expect(await canvas.findByText(/Admission pending.*pending-video/u)).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Add video" })).toBeDisabled();
+    await expect(canvas.queryByText("Video added to the queue.")).not.toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("button", { name: "Check submission outcome" }));
+    await expect(await canvas.findByText("Video added to the queue.")).toBeVisible();
+  }
+};
+
+export const PendingOutcomeUnavailable: Story = {
+  tags: ["video-bus-admission"],
+  args: { api: createStaticVideoQueueApi(videoQueue(), {
+    submit: async () => ({ status: "pending", busId: "unconfirmed-video", eventId: "manual-video" }),
+    submission: async () => { throw new ManagementHttpError("The video submission outcome is no longer available.", "VIDEO_SUBMISSION_NOT_FOUND", null, null, [], [], 404); }
+  }) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.type(await canvas.findByLabelText("Video link"), "https://youtu.be/dQw4w9WgXcQ");
+    await userEvent.click(canvas.getByRole("button", { name: "Add video" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Check submission outcome" }));
+    await waitFor(() => expect(canvas.getByLabelText("Video link")).toHaveAccessibleDescription(/Check Diagnostics before sending again/u));
+    await expect(canvas.getByRole("button", { name: "Add video" })).toBeDisabled();
+    await userEvent.click(canvas.getByRole("button", { name: "Dismiss pending notice" }));
+    await expect(canvas.getByRole("button", { name: "Add video" })).toBeEnabled();
+  }
+};
+
 export const EmptyQueue: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(await canvas.findByText("No videos are waiting. Add a link below or wait for requests.")).toBeVisible();
     await expect(canvas.getByRole("button", { name: "Play next" })).toBeDisabled();
+  }
+};
+
+export const MigratedRequestNeedsReview: Story = {
+  args: { api: createStaticVideoQueueApi(videoQueue({ items: [videoItem("migrated", { title: "Migrated clip", status: "held", reviewRequired: true,
+    migrationProvenance: { kind: "test-queue-consolidation", originalPurpose: "test", originalStatus: "queued" } })] })) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const row = await canvas.findByRole("article", { name: "Migrated clip" });
+    await expect(within(row).getByText("Migrated test request: review before Play")).toBeVisible();
+    await expect(within(row).getByRole("button", { name: "Play reviewed video: Migrated clip" })).toBeEnabled();
+    await expect(within(row).queryByRole("button", { name: "Play anyway: Migrated clip" })).not.toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Play all now" })).toBeDisabled();
   }
 };
 

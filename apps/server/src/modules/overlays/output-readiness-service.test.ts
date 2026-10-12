@@ -9,7 +9,7 @@ import type { OverlayGatewayClientState } from "../../websocket/overlay-gateway.
 import { OutputReadinessService } from "./output-readiness-service.js";
 
 describe("OutputReadinessService", () => {
-  it("applies module and unified browser readiness rules for visual and audio content", async () => {
+  it("requires an ordinary module source for browser visual and audio readiness", async () => {
     const harness = createHarness();
     harness.clients.push(client({ scope: "module", moduleId: "screen-effects", targetProfileId: null }));
 
@@ -24,12 +24,12 @@ describe("OutputReadinessService", () => {
     })).resolves.toBe(false);
     await expect(harness.service.isBrowserOutputReady({
       moduleId: "screen-effects", hasVisual: false, hasAudio: true, targetProfileId: null
-    })).resolves.toBe(true);
+    })).resolves.toBe(false);
 
     harness.surfaces[0] = unifiedSurface(true);
     await expect(harness.service.isBrowserOutputReady({
       moduleId: "screen-effects", hasVisual: true, hasAudio: false, targetProfileId: null
-    })).resolves.toBe(true);
+    })).resolves.toBe(false);
   });
 
   it("requires an enabled visible desktop surface on an available selected display", async () => {

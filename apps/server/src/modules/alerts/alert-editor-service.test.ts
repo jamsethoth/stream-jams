@@ -248,7 +248,7 @@ describe("AlertEditorService", () => {
             gifter: sample.payload.gifter
           }));
         }
-        await harness.service.sendTest(document.id, {
+        await harness.service.consumeTest(document.id, {
           document,
           targetProfileId: "landscape",
           samplePayload: eventType === "gift_subscription"
@@ -798,7 +798,7 @@ describe("AlertEditorService", () => {
     const harness = createHarnessWithRule(variationRule);
     const document = await harness.service.getDocument("variant-vip");
 
-    await harness.service.sendTest(document.id, {
+    await harness.service.consumeTest(document.id, {
       document,
       targetProfileId: "landscape",
       samplePayload: { userName: "James" },
@@ -1054,7 +1054,7 @@ describe("AlertEditorService", () => {
       includeTts: false
     };
 
-    await expect(harness.service.sendTest(rule.id, request)).resolves.toEqual({
+    await expect(harness.service.consumeTest(rule.id, request)).resolves.toEqual({
       status: "queued",
       targetProfileId: "landscape",
       referenceId: "ref-test-1",
@@ -1081,7 +1081,7 @@ describe("AlertEditorService", () => {
     });
 
     harness.hasConnectedOutput.mockResolvedValue(false);
-    await expect(harness.service.sendTest(rule.id, request)).rejects.toBeInstanceOf(AlertEditorDeliveryBlockedError);
+    await expect(harness.service.consumeTest(rule.id, request)).rejects.toBeInstanceOf(AlertEditorDeliveryBlockedError);
     expect(harness.enqueueTest).toHaveBeenCalledTimes(1);
   });
 
@@ -1091,7 +1091,7 @@ describe("AlertEditorService", () => {
     harness.hasReadyDesktopOutput.mockResolvedValue(true);
     const document = await harness.service.getDocument(rule.id);
 
-    await expect(harness.service.sendTest(rule.id, {
+    await expect(harness.service.consumeTest(rule.id, {
       document,
       targetProfileId: "landscape",
       samplePayload: { userName: "James", actor: { displayName: "James" } },
@@ -1135,7 +1135,7 @@ describe("AlertEditorService", () => {
       ]
     };
 
-    await expect(harness.service.sendTest(rule.id, {
+    await expect(harness.service.consumeTest(rule.id, {
       document: candidate,
       targetProfileId: null,
       samplePayload: { userName: "James" },
@@ -1185,7 +1185,7 @@ describe("AlertEditorService", () => {
       ]
     };
 
-    await expect(harness.service.sendTest(rule.id, {
+    await expect(harness.service.consumeTest(rule.id, {
       document: candidate,
       targetProfileId: "vertical",
       samplePayload: { userName: "James" },
@@ -1222,7 +1222,7 @@ describe("AlertEditorService", () => {
       ]
     };
 
-    await harness.service.sendTest(rule.id, {
+    await harness.service.consumeTest(rule.id, {
       document: candidate,
       targetProfileId: "landscape",
       samplePayload: { userName: "James" },
@@ -1240,7 +1240,7 @@ describe("AlertEditorService", () => {
     const harness = createHarness(false, undefined, new DefaultModerationService(), audioStatusFixture());
     const document = await harness.service.getDocument(rule.id);
 
-    await expect(harness.service.sendTest(rule.id, {
+    await expect(harness.service.consumeTest(rule.id, {
       document: { ...document, outputs: { browserSource: true, deviceRouteIds: ["route-stream"] } },
       targetProfileId: null,
       samplePayload: { userName: "James" },
@@ -1276,7 +1276,7 @@ describe("AlertEditorService", () => {
         : profile) as AlertEditorDocument["targetProfiles"]
     };
 
-    await harness.service.sendTest(rule.id, {
+    await harness.service.consumeTest(rule.id, {
       document: candidate,
       targetProfileId: "landscape",
       samplePayload: { userName: "James" },
@@ -1341,7 +1341,7 @@ describe("AlertEditorService", () => {
     };
     const raw = "badword https://example.test/secret ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-    await harness.service.sendTest(document.id, {
+    await harness.service.consumeTest(document.id, {
       document: candidate,
       targetProfileId: "landscape",
       samplePayload: { actor: { id: "viewer-1", displayName: raw }, userName: raw },
@@ -1398,7 +1398,7 @@ describe("AlertEditorService", () => {
         : layer)
     };
 
-    await harness.service.sendTest(communityRule.id, {
+    await harness.service.consumeTest(communityRule.id, {
       document: candidate,
       targetProfileId: "landscape",
       samplePayload: {
@@ -1445,7 +1445,7 @@ describe("AlertEditorService", () => {
       layers: document.layers.map((layer) => layer.type === "text" ? { ...layer, template: "{userName}|{summary}|{eventType}|{url}" } : layer)
     };
 
-    await harness.service.sendTest(externalRule.id, {
+    await harness.service.consumeTest(externalRule.id, {
       document: candidate,
       targetProfileId: "landscape",
       samplePayload: { summary: "Hello", userName: "Viewer", eventType: "Custom", url: "https://example.invalid" },
@@ -1496,7 +1496,7 @@ describe("AlertEditorService", () => {
         : profile)
     };
 
-    await harness.service.sendTest(rule.id, {
+    await harness.service.consumeTest(rule.id, {
       document: candidate,
       targetProfileId: "landscape",
       samplePayload: { userName: "James" },
@@ -1549,7 +1549,7 @@ describe("AlertEditorService", () => {
         : profile)
     };
 
-    await harness.service.sendTest(rule.id, {
+    await harness.service.consumeTest(rule.id, {
       document: candidate,
       targetProfileId: "landscape",
       samplePayload: { userName: "James" },
@@ -1587,7 +1587,7 @@ describe("AlertEditorService", () => {
       volume: 0.65
     };
 
-    await harness.service.sendTest(rule.id, {
+    await harness.service.consumeTest(rule.id, {
       document: { ...document, layers: [...document.layers, audioLayer] },
       targetProfileId: "landscape",
       samplePayload: { userName: "James" },
@@ -1638,7 +1638,7 @@ describe("AlertEditorService", () => {
       } : profile)
     };
 
-    await harness.service.sendTest(rule.id, {
+    await harness.service.consumeTest(rule.id, {
       document,
       targetProfileId: "landscape",
       samplePayload: { userName: "James" },
@@ -1690,7 +1690,7 @@ describe("AlertEditorService", () => {
       } : profile)
     };
 
-    await harness.service.sendTest(rule.id, {
+    await harness.service.consumeTest(rule.id, {
       document,
       targetProfileId: "landscape",
       samplePayload: { userName: "James", actor: { id: "viewer-1", displayName: "James" } },
@@ -1768,7 +1768,7 @@ describe("AlertEditorService", () => {
       }
     ];
 
-    await harness.service.sendTest(rule.id, {
+    await harness.service.consumeTest(rule.id, {
       document: { ...document, layers: configuredLayers },
       targetProfileId: "landscape",
       samplePayload: { userName: "James", actor: { displayName: "James" } },
@@ -2102,3 +2102,40 @@ function createAtomicHarness(
   });
   return { service, documents, rules, metadata, saveAtomically, storedDocuments };
 }
+
+
+describe("manual test reference gate", () => {
+  it("validates only included device content when visual profiles need review", async () => {
+    const status = audioStatusFixture();
+    const h = createHarness(false, async ids => new Map(ids.filter(id => id === "asset-chime").map(id => [id, assetRecord(id, "audio", 500)])), new DefaultModerationService(), status);
+    const original = await h.service.getDocument(rule.id);
+    const document = deviceOnlyDocument(original);
+    const candidate: AlertEditorTestRequest = { document: { ...document, outputs: { browserSource: false, deviceRouteIds: ["route-headphones"] }, layers: [...document.layers, { id: "unselected-image", name: "Unavailable visual", type: "image", assetId: "missing-image", visible: true, order: 100, animation: original.layers[0]!.animation }] }, targetProfileId: null, samplePayload: {}, includeAudio: true, includeTts: false };
+    await expect(h.service.validateTestReferences(candidate)).resolves.toBeUndefined();
+    const result = await h.service.consumeTest(rule.id, candidate, { eventId: "manual-device", receivedAt: "2026-10-10T12:00:00.000Z" });
+    expect(result.deliveredDestinations).toEqual([{ kind: "device-route", id: "route-headphones", name: "Headphones" }]);
+    expect(h.enqueueTest).toHaveBeenCalledWith(expect.objectContaining({ alerts: [], deliveredBy: "manual" }));
+  });
+
+  it("rejects missing included media without admitting", async () => {
+    const h = createHarness(false, async () => new Map());
+    const original = await h.service.getDocument(rule.id);
+    const document = { ...original, layers: [...original.layers, { id: "missing-image", name: "Image", type: "image" as const, assetId: "missing", visible: true, order: 100, animation: original.layers[0]!.animation }], targetProfiles: original.targetProfiles.map(profile => ({ ...profile, enabled: true, reviewState: "ready" as const, layerLayouts: [...profile.layerLayouts, { layerId: "missing-image", x: 0, y: 0, width: 100, height: 100, zIndex: 0 }] })) };
+    await expect(h.service.validateTestReferences({ document, targetProfileId: "landscape", samplePayload: {}, includeAudio: false, includeTts: false })).rejects.toThrow("asset is missing or incompatible");
+    expect(h.enqueueTest).not.toHaveBeenCalled();
+  });
+
+  it("keeps valid unsaved provider selection usable as sample data", async () => {
+    const h = createHarness();
+    const document = await h.service.getDocument(rule.id);
+    await expect(h.service.validateTestReferences({ document: { ...document, providerKind: "streamerbot" }, targetProfileId: null, samplePayload: {}, includeAudio: false, includeTts: false })).resolves.toBeUndefined();
+  });
+});
+
+
+it("public sendTest fails closed without a manual publication adapter", async () => {
+  const h = createHarness();
+  const document = await h.service.getDocument(rule.id);
+  await expect(h.service.sendTest(rule.id, { document, targetProfileId: "landscape", samplePayload: {}, includeAudio: false, includeTts: false })).rejects.toThrow("Manual event submission is unavailable");
+  expect(h.enqueueTest).not.toHaveBeenCalled();
+});

@@ -5,6 +5,7 @@ import {
   dataTemplateCatalogSchema,
   bundledDataTemplates,
   alertCollectionSchema,
+  isOrdinaryOverlayOutput,
   eventBusReplayAgeDefaultSeconds,
   eventBusSettingsSchema,
   parseStoredAlertEditorDocument,
@@ -32,6 +33,8 @@ import {
   screenEffectSetSchema,
   targetProfileIdSchema,
   timerDefinitionSchema,
+  timersOverlayModuleConfigSchema,
+  currentVideosModuleConfigSchema,
   type ConfigurationBackupArchive,
   type ConfigurationBackupOutput,
   type ModerationSettings
@@ -136,7 +139,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
     for (const definition of tableDefinitions) {
       const select = definition.select ?? `SELECT ${definition.columns.join(", ")} FROM ${definition.name}`;
       const rows = this.connection.prepare(`${select} ORDER BY ${definition.orderBy.join(", ")}`).all();
-      tables[definition.name] = rows.map(row => {
+      tables[definition.name] = rows.filter(row => definition.name !== "overlay_surfaces" || (row as Record<string, unknown>).kind !== "unified-browser").map(row => {
         const record = toPlainRecord(row);
         if (definition.name === "overlay_surfaces") return portableSurfaceRow(record);
         if (definition.name === "screen_effects") return { ...record, enabled: 0 };
@@ -158,11 +161,11 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
       .prepare(
         `SELECT DISTINCT overlay_id, scope, module_id, purpose, target_profile_id
          FROM overlay_keys
-         WHERE revoked_at IS NULL
+         WHERE revoked_at IS NULL AND (module_id IS NOT 'videos' OR purpose <> 'test')
          ORDER BY overlay_id, scope, module_id, target_profile_id, purpose`
       )
       .all()
-      .map(mapOutput);
+      .map(mapOutput).filter(output => isOrdinaryOverlayOutput(output));
     return { tables, providerReconnectMetadata, overlayOutputs };
   }
 
@@ -258,6 +261,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
     errors.push(...validateDomainRows(configuration.tables));
     errors.push(...validateProviderConnections(configuration.tables));
     for (const [index, output] of configuration.overlayOutputs.entries()) {
+      if (!isOrdinaryOverlayOutput(output)) errors.push(`overlayOutputs[${index}] is not an ordinary module/profile source.`);
       if (output.scope !== "unified" && output.scope !== "module") errors.push(`overlayOutputs[${index}].scope is invalid.`);
       if (output.scope === "module" && output.moduleId === null) errors.push(`overlayOutputs[${index}].moduleId is required for module scope.`);
       if (output.scope === "unified" && (output.moduleId !== null || output.targetProfileId !== null)) errors.push(`overlayOutputs[${index}] contains module-only fields for unified scope.`);
@@ -556,6 +560,8 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
     const parsed = surfaceConfigurationSchema.safeParse(parseJsonValue(row.configuration_json));
     if (!parsed.success || parsed.data.id !== row.id || parsed.data.kind !== row.kind) {
       errors.push(`overlay_surfaces[${index}] contains invalid surface configuration or identity.`);
+    } else if (parsed.data.kind !== "desktop") {
+      errors.push(`overlay_surfaces[${index}] is a retired public surface.`);
     } else if (parsed.data.kind === "desktop" && (
       parsed.data.enabled || parsed.data.displayId !== null || parsed.data.displayLabel !== null || parsed.data.autoFollowDisplayName
     )) {
@@ -608,6 +614,12 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
         const validation = validateMusicCss(css.source, css.styleContractVersion);
         if (!validation.valid) errors.push(`overlay_module_config[${index}].config_json contains invalid Music CSS: ${validation.errors[0]?.message ?? "invalid stylesheet"}.`);
       }
+    }
+    if (row.module_id === "timers") {
+      pushSchemaError(errors, `overlay_module_config[${index}].config_json Timer appearance`, timersOverlayModuleConfigSchema.safeParse(parseJsonValue(row.config_json)));
+    }
+    if (row.module_id === "videos") {
+      pushSchemaError(errors, `overlay_module_config[${index}].config_json Videos layout`, currentVideosModuleConfigSchema.safeParse(parseJsonValue(row.config_json)));
     }
   }
 

@@ -1,3 +1,4 @@
+import { outputCanvasSchema, type OutputCanvas } from "@stream-jams/core";
 import {
   overlayModuleConfigSchema,
   timerCommandResultSchema,
@@ -24,6 +25,7 @@ export interface TimerAutomationCredentialStatus {
 export interface TimerAutomationCredentialIssue extends TimerAutomationCredentialStatus { readonly token: string; }
 export type TimerCommand = "start" | "pause" | "resume" | "stop" | "restart";
 export interface TimerBrowserSource {
+  readonly canvas?: OutputCanvas;
   readonly id: string;
   readonly label: string;
   readonly purpose: "live";
@@ -130,6 +132,7 @@ function parseBrowserSource(candidate: unknown): TimerBrowserSource {
     || !["connected", "disconnected", "never-connected"].includes(String(value.connectionState))
     || !nullableDate(value.lastConnectedAt)) throw new TypeError("Invalid Timers Browser Source response");
   return {
+    ...(value.canvas === undefined ? {} : { canvas: outputCanvasSchema.parse(value.canvas) }),
     id: value.id, label: value.label, purpose: "live", overlayId: value.overlayId, scope: "module", moduleId: "timers",
     targetProfileId: value.targetProfileId, enabled: value.enabled, keyId: value.keyId as string | null, url: value.url as string | null,
     status: String(value.copyableUrlStatus ?? value.status) as TimerBrowserSource["status"],

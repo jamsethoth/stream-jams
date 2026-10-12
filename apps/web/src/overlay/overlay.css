@@ -97,9 +97,10 @@ body.overlay-shell {
 }
 
 .timer-stack__label {
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--timer-label-family, Inter, ui-sans-serif, system-ui, sans-serif);
   font-size: var(--timer-label-size);
-  font-weight: 700;
+  font-weight: var(--timer-label-weight, 700);
+  color: var(--timer-label-color, #fff);
   line-height: 1;
   min-width: 0;
   overflow: hidden;
@@ -109,10 +110,15 @@ body.overlay-shell {
 }
 
 .timer-stack__value {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  width: var(--timer-value-width, auto);
+  max-width: var(--timer-value-max-width);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--timer-value-family, ui-monospace, SFMono-Regular, Consolas, monospace);
   font-size: var(--timer-value-size);
   font-variant-numeric: tabular-nums;
-  font-weight: 800;
+  font-weight: var(--timer-value-weight, 800);
+  color: var(--timer-value-color, #fff);
   justify-self: end;
   line-height: 1;
   text-align: right;
@@ -128,6 +134,7 @@ body.overlay-shell {
   border-radius: 999px;
   color: #ffffff;
   font: 700 var(--timer-overflow-font-size, 20px)/1 Inter, ui-sans-serif, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
   margin-left: var(--timer-overflow-offset, 10px);
   padding: var(--timer-overflow-block-padding, 8px) var(--timer-overflow-inline-padding, 12px);
   position: absolute;

@@ -1,0 +1,44 @@
+{
+  "package": {
+    "sha256": "c82a6563359fbd93e412673b65441fefaa78d0c7b396a9f98ec673d141b5a2a3",
+    "asarBytes": 41878732,
+    "fresh": true
+  },
+  "packagedHost": {
+    "phase": "native-exit-confirmed",
+    "exitCode": 0,
+    "capturedProcessCount": 10,
+    "startedAt": "2026-10-11T10:22:14.702Z",
+    "observedAt": "2026-10-11T10:22:32.936Z"
+  },
+  "silentTimerDestinations": {
+    "packageSha256": "c82a6563359fbd93e412673b65441fefaa78d0c7b396a9f98ec673d141b5a2a3",
+    "physicalAudibility": false,
+    "countdownAgreement": true,
+    "managementHidden": true,
+    "overlayRendererRecreated": true,
+    "pausedGenerationPreserved": true,
+    "cueReplayOnResumeOrOverlayRecovery": 0,
+    "healthyDeviceCues": 3,
+    "failedSelectedRecipients": 2,
+    "explicitBrowserOnlyAndDeviceOnly": true,
+    "alertsEffectsMutePreservesCurrentAndFutureTimerCues": true,
+    "quitMs": 941,
+    "exitCode": 0,
+    "passed": true
+  },
+  "workspaceMirrorAndWindow": {
+    "testsPassed": 2,
+    "renderer": "software",
+    "scope": "rebuilt production modules in workspace/copied Electron probe; separate from full ASAR",
+    "nativeMediaFramesPerDisplay": 10,
+    "droppedFramesPerDisplay": 1,
+    "quitMs": 187
+  },
+  "limits": [
+    "No original user profiles opened or changed.",
+    "Silent PCM routing observations are not physical audibility.",
+    "Workspace software renderer observations do not measure native GPU/encoding resources.",
+    "Foreground/input/real-game observations and old native baseline metrics are absent."
+  ]
+}

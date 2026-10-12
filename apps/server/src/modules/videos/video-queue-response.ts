@@ -13,7 +13,6 @@ export function videoControlSupport(source: VideoSource, twitchControlAvailable:
 
 export function toVideoQueueResponse(view: VideoQueueView, now: number, twitchControlAvailable = false, mirrorAvailable = false): VideoQueueResponse {
   return {
-    purpose: view.purpose,
     revision: view.revision,
     queuePaused: view.queuePaused,
     runRemaining: view.run?.remainingIds.length ?? 0,

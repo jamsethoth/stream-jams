@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { createDefaultMusicModuleConfig, projectMusicWidget, type MusicAppearance, type MusicSnapshot } from "@stream-jams/core";
+import { applyMusicContentGeometry, createDefaultMusicModuleConfig, projectMusicWidget, resolveMusicOutputGeometry, type MusicAppearance, type MusicSnapshot } from "@stream-jams/core";
 import { useState } from "react";
 import { expect, fn, userEvent, within } from "storybook/test";
 import { MusicLayoutEditor } from "./MusicLayoutEditor.js";
@@ -15,11 +15,12 @@ function Example({ customCss = false }: { readonly customCss?: boolean }) {
   const config = createDefaultMusicModuleConfig();
   config.profiles.landscape.views.full = appearance;
   if (customCss) config.css = { source: ".sj-title { color: #FFFFFFFF; }", enabled: true, styleContractVersion: 1 };
-  const projection = projectMusicWidget(snapshot, { state: "connected", stale: false, diagnosticReference: null }, config, "landscape", now, now);
+  const scene = projectMusicWidget(snapshot, { state: "connected", stale: false, diagnosticReference: null }, config, "landscape", now, now);
+  const projection = scene === null ? null : applyMusicContentGeometry(scene, resolveMusicOutputGeometry(config, "landscape"));
   return <div style={{ maxWidth: 780 }}><MusicLayoutEditor appearance={appearance} onChange={setAppearance} projection={projection} resolveAsset={resolver} /></div>;
 }
 
-const meta = { title: "Management/Music component layout", component: MusicLayoutEditor, tags: ["mantine-stage6d", "mantine-stage6d-closure", "music-editor-refinement"],
+const meta = { title: "Management/Music component layout", component: MusicLayoutEditor, tags: ["mantine-stage6d", "mantine-stage6d-closure", "music-editor-refinement", "music-content-canvas"],
   args: { projection: null, appearance: createDefaultMusicModuleConfig().profiles.landscape.views.full, resolveAsset: resolver, onChange: fn() },
   parameters: { layout: "padded" }
 } satisfies Meta<typeof MusicLayoutEditor>;

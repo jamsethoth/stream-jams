@@ -27,7 +27,7 @@ describe("overlay module routes", () => {
         defaultEnabled: true,
         renderer: {
           entryPoint: "overlay/modules/alerts",
-          supportedOutputs: ["module", "unified"]
+          supportsDesktopComposition: true, supportedOutputs: ["module"]
         }
       }),
       expect.objectContaining({
@@ -36,7 +36,7 @@ describe("overlay module routes", () => {
         defaultEnabled: false,
         renderer: {
           entryPoint: "overlay/modules/screen-effects",
-          supportedOutputs: ["module", "unified"]
+          supportsDesktopComposition: true, supportedOutputs: ["module"]
         }
       }),
       expect.objectContaining({
@@ -45,7 +45,7 @@ describe("overlay module routes", () => {
         defaultEnabled: false,
         renderer: {
           entryPoint: "overlay/modules/timers",
-          supportedOutputs: ["module", "unified"]
+          supportsDesktopComposition: true, supportedOutputs: ["module"]
         }
       }),
       expect.objectContaining({
@@ -54,7 +54,7 @@ describe("overlay module routes", () => {
         defaultEnabled: false,
         renderer: {
           entryPoint: "overlay/modules/music",
-          supportedOutputs: ["module", "unified"]
+          supportsDesktopComposition: true, supportedOutputs: ["module"]
         }
       }),
       expect.objectContaining({
@@ -63,7 +63,7 @@ describe("overlay module routes", () => {
         defaultEnabled: true,
         renderer: {
           entryPoint: "overlay/modules/videos",
-          supportedOutputs: ["module", "unified"]
+          supportsDesktopComposition: true, supportedOutputs: ["module"]
         }
       }),
       expect.objectContaining({
@@ -72,7 +72,8 @@ describe("overlay module routes", () => {
         defaultEnabled: false,
         renderer: {
           entryPoint: "overlay/modules/data-overlays",
-          supportedOutputs: ["module", "unified"]
+          supportedOutputs: ["module"],
+          supportsDesktopComposition: true
         }
       })
     ]);

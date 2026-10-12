@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { startPearProtocolFixture } from "../../packages/test-support/dist/pear-protocol-fixture.js";
 import type { MusicModuleConfig, SurfaceSettingsView } from "../../packages/core/dist/index.js";
+import { createDefaultMusicModuleConfig, resolveMusicOutputGeometry } from "../../packages/core/dist/index.js";
 import { finishDesktop, windowByUrl, withCleanup } from "./audio-harness.js";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -30,8 +31,10 @@ test("packaged Music crosses the preload boundary with desktop scaling", async (
     await management.goto(`${origin}/manage/modules/music`);
     await expect(management.getByLabel("Initial view")).toBeVisible();
     await management.getByRole("button", { name: "Expand browser sources" }).click();
-    await expect(management.getByRole("article", { name: "Landscape browser source" })).toContainText("1920 x 1080");
-    await expect(management.getByRole("article", { name: "Vertical browser source" })).toContainText("1080 x 1920");
+    for (const [profile, label] of [["landscape", "Landscape"], ["vertical", "Vertical"]] as const) {
+      const geometry = resolveMusicOutputGeometry(createDefaultMusicModuleConfig(), profile);
+      await expect(management.getByRole("article", { name: `${label} browser source` })).toContainText(`${geometry.width} x ${geometry.height}`);
+    }
     await management.getByRole("button", { name: "Collapse browser sources" }).click();
     await expect(management.getByRole("button", { name: "Enable Music module" })).toBeVisible();
     await expect(management.getByLabel("Enable Music module after saving")).toHaveCount(0);
@@ -111,14 +114,28 @@ test("packaged Music crosses the preload boundary with desktop scaling", async (
     const preview = management.getByRole("region", { name: "Music preview" }).getByTestId("music-widget");
     await expect(preview.locator(".sj-brand-image")).toHaveCSS("opacity", "0.35");
     await expect(preview.locator(".sj-progress-track")).toHaveCSS("position", "absolute");
-    for (const scope of ["module", "unified"] as const) {
+    for (const targetProfileId of ["landscape", "vertical"] as const) {
+      const scope = "module";
       const key = await api<{ url: string }>("/management/overlay-outputs/keys", "POST", {
-        overlayId: "default", moduleId: scope === "module" ? "music" : null, scope,
-        purpose: "live", targetProfileId: scope === "module" ? "landscape" : null
+        overlayId: "default", moduleId: "music", scope,
+        purpose: "live", targetProfileId
       });
       await management.goto(key.url);
-      await expect(management.getByTestId("music-widget").locator(".sj-brand-image")).toHaveCSS("opacity", "0.35");
-      await expect(management.getByTestId("music-widget").locator(".sj-progress-track")).toHaveCSS("position", "absolute");
+      {
+        const geometry = resolveMusicOutputGeometry(settings.config, targetProfileId);
+        await expect(management.getByTestId("overlay-content-canvas")).toHaveCSS("width", `${geometry.width}px`);
+        await expect(management.getByTestId("overlay-content-canvas")).toHaveCSS("height", `${geometry.height}px`);
+        await expect(management.getByTestId("music-widget")).toHaveCSS("left", `${geometry.insets.left}px`);
+        await expect(management.getByTestId("music-widget")).toHaveCSS("top", `${geometry.insets.top}px`);
+        await expect(management.getByTestId("music-widget")).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
+      }
+      if (targetProfileId !== "vertical") {
+        await expect(management.getByTestId("music-widget").locator(".sj-brand-image")).toHaveCSS("opacity", "0.35");
+        await expect(management.getByTestId("music-widget").locator(".sj-progress-track")).toHaveCSS("position", "absolute");
+      }
+      await expect(overlay.getByTestId("music-widget")).toHaveCSS("left", "1472px");
+      await expect(overlay.getByTestId("music-widget")).toHaveCSS("top", "955px");
+      await expect(overlay.getByTestId("music-widget")).toHaveCSS("transform", "matrix(0.7, 0, 0, 0.7, 0, 0)");
     }
     const previousBrand = await widget.locator(".sj-brand-image").getAttribute("src");
     const replaced = await fetch(`${origin}/assets/${brandId}/replace`, { method: "POST", headers: {
@@ -156,6 +173,9 @@ test("packaged Music crosses the preload boundary with desktop scaling", async (
     // Restore removes this disposable provider's keyring credential as well as playback.
     await retireCredential(); retireCredential = undefined;
     const restored = await api<{ config: MusicModuleConfig }>("/overlay-modules/music/config");
+    expect(restored.config.desktopPlacement).toEqual(settings.config.desktopPlacement);
+    expect(restored.config.desktopScale).toEqual(settings.config.desktopScale);
+    expect(restored.config.profiles.vertical).toEqual(settings.config.profiles.vertical);
     expect(restored.config.profiles.landscape.views.full.branding).toEqual(appearance.branding);
     expect(restored.config.profiles.landscape.views.full.titleFont.fontAssetId).toBe(fontId);
     expect(restored.config.css).toEqual(settings.config.css);

@@ -69,7 +69,7 @@ test("built Music Sources page pairs, tests and saves against disposable Pear", 
   } finally { await fixture.close(); }
 });
 
-test("live, test and unified outputs follow Pear state, restart and route revocation", async ({ page, context }) => {
+test("ordinary profile outputs follow Pear state, restart and route revocation while retired key minting fails", async ({ page, context }) => {
   test.setTimeout(120_000);
   const fixture = await startMusicTestRuntime();
   try {
@@ -81,18 +81,15 @@ test("live, test and unified outputs follow Pear state, restart and route revoca
     await fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: saved.config });
     await expect.poll(() => fixture.runtime.composition.musicRuntimeCoordinator.getProjection("landscape")?.snapshot.track?.title).toBe(song.title);
     const live = await fixture.request<Key>("/management/overlay-outputs/keys", "POST", output("live"));
-    const testKey = await fixture.request<Key>("/management/overlay-outputs/keys", "POST", output("test"));
-    const unified = await fixture.request<Key>("/management/overlay-outputs/keys", "POST", output("live", "unified"));
+    await expect(fixture.request("/management/overlay-outputs/keys", "POST", output("test"))).rejects.toThrow(/404/u);
+    await expect(fixture.request("/management/overlay-outputs/keys", "POST", output("live", "unified"))).rejects.toThrow(/404/u);
     const vertical = await fixture.request<Key>("/management/overlay-outputs/keys", "POST", output("live", "module", "vertical"));
     await page.goto(live.url);
     await expect(page.getByTestId("music-widget").locator(".sj-title")).toContainText(song.title);
     const another = await context.newPage(); await another.goto(live.url);
     await expect(another.getByTestId("music-widget").locator(".sj-title")).toContainText(song.title);
-    const testPage = await context.newPage(); await testPage.goto(testKey.url);
-    await expect(testPage.getByTestId("music-widget")).toBeVisible();
-    await expect(testPage.getByTestId("music-widget").locator(".sj-title")).not.toContainText(song.title);
-    const unifiedPage = await context.newPage(); await unifiedPage.goto(unified.url);
-    await expect(unifiedPage.getByTestId("music-widget").locator(".sj-title")).toContainText(song.title);
+    const testPage = await context.newPage(); await testPage.goto(`${fixture.url}/manage/modules/music`);
+    await expect(testPage.getByRole("region", { name: "Music preview" }).getByTestId("music-widget")).toBeVisible();
     const verticalPage = await context.newPage(); await verticalPage.goto(vertical.url);
     await expect(verticalPage.getByTestId("music-widget").locator(".sj-title")).toContainText(song.title);
     fixture.pear.setSong({ status: 204 });
@@ -107,7 +104,7 @@ test("live, test and unified outputs follow Pear state, restart and route revoca
     await fixture.request(`/management/overlay-outputs/keys/${live.keyId}`, "DELETE");
     const revoked = await page.request.get(live.url);
     expect([401, 403, 404]).toContain(revoked.status());
-    await another.close(); await testPage.close(); await unifiedPage.close(); await verticalPage.close();
+    await another.close(); await testPage.close(); await verticalPage.close();
   } finally { await fixture.close(); }
 });
 
@@ -303,7 +300,7 @@ test("failed restore excludes a concurrent credential replacement and retains th
   } finally { await fixture.close(); }
 });
 
-test("blocked production desktop sync coalesces revisions and retains a pending test-output config refresh", async ({ page }) => {
+test("blocked production desktop sync coalesces revisions while the local editor preview refresh stays isolated", async ({ page }) => {
   test.setTimeout(90_000);
   let blocked = false;
   let release!: () => void;
@@ -323,8 +320,7 @@ test("blocked production desktop sync coalesces revisions and retains a pending 
     await fixture.register();
     const saved = await fixture.request<{ config: MusicModuleConfig }>("/overlay-modules/music/config");
     await fixture.request("/overlay-modules/music/config", "PUT", { enabled: true, config: saved.config });
-    const testKey = await fixture.request<Key>("/management/overlay-outputs/keys", "POST", output("test"));
-    await page.goto(testKey.url);
+    await page.goto(`${fixture.url}/manage/modules/music`);
     await expect(page.getByTestId("music-widget")).toBeVisible();
     blocked = true;
     const first = fixture.runtime.composition.musicRuntimeCoordinator.reconcile();
@@ -339,6 +335,7 @@ test("blocked production desktop sync coalesces revisions and retains a pending 
     release();
     await Promise.all([first, saving]);
     await expect.poll(() => musicSyncs).toBe(2);
+    await page.reload();
     await expect(page.getByTestId("music-widget").locator(".sj-title")).toHaveCSS("color", "rgb(17, 34, 51)");
   } finally { release(); await fixture.close(); }
 });

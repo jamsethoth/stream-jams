@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { TimerStackProjection } from "@stream-jams/core";
+import { projectTimerStack, timersOverlayModuleDefinition, type TimerStackProjection } from "@stream-jams/core";
 import { TimerStack } from "./TimerStack.js";
 
 afterEach(() => {
@@ -30,6 +30,31 @@ function stack(overrides: Partial<TimerStackProjection> = {}): TimerStackProject
 }
 
 describe("TimerStack", () => {
+  it("consumes cached intrinsic legacy countdown width without recognizing configuration in React", () => {
+    const profile = timersOverlayModuleDefinition.defaultConfig.profiles.landscape;
+    const projected = projectTimerStack({ nowEpochMs: 0, targetProfileId: "landscape", profile, runs: [{ status: "paused", definitionId: "saved", generation: "same", remainingMs: 600000,
+      snapshot: { id: "saved", label: "Saved", durationMs: 600000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: false, deviceRouteIds: [] } } }] });
+    const { rerender } = render(<TimerStack stack={projected} resolveAssetUrl={() => null} />);
+    expect(screen.getByRole("listitem").style.getPropertyValue("--timer-value-max-width")).toBe("8ch");
+    expect(screen.getByText("10:00")).toHaveStyle({ overflow: "visible" });
+    rerender(<TimerStack stack={{ ...projected, cards: [{ ...projected.cards[0]!, status: "paused", remainingMs: Number.MAX_SAFE_INTEGER }] }} resolveAssetUrl={() => null} />);
+    expect(screen.getByTestId("timer-value-saved").style.overflow).toBe("");
+  });
+  it("renders saved profile typography, background opacity, state accents and a fixed bounded badge", () => {
+    const profile = timersOverlayModuleDefinition.defaultConfig.profiles.landscape;
+    const appearance = { ...profile.appearance, backgroundColor: "#112233", backgroundOpacity: .4, labelFont: { ...profile.appearance.labelFont, color: "#AABBCC", fontWeight: 500 as const }, pausedAccent: "#123456" };
+    const projected = projectTimerStack({ nowEpochMs: 0, targetProfileId: "landscape", profile: { ...profile, appearance }, runs: [{ status: "paused", definitionId: "saved", generation: "same", remainingMs: 30000,
+      snapshot: { id: "saved", label: "Saved", durationMs: 30000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: false, deviceRouteIds: [] } } }], recipientKind: "browser" });
+    render(<TimerStack stack={{ ...projected, overflowCount: 9_999_999 }} resolveAssetUrl={() => null} />);
+    const card = screen.getByRole("listitem");
+    expect(card.style.background).toBe("color-mix(in srgb, rgb(17, 34, 51) 40%, transparent)");
+    expect(card.style.borderColor).toBe("rgb(18, 52, 86)");
+    expect(card.style.opacity).toBe("");
+    expect(card.style.getPropertyValue("--timer-label-family")).toBe("Inter, ui-sans-serif, system-ui, sans-serif");
+    expect(card.style.getPropertyValue("--timer-label-weight")).toBe("500");
+    expect(screen.getByLabelText("9999999 more active timers")).toHaveTextContent("+9m more");
+    expect(screen.getByText("+9m more")).toHaveStyle({ width: "152px" });
+  });
   it("keeps concurrent runs of the same timer icon pinned independently", () => {
     const base = stack().cards[0]!;
     const value = stack({ cards: [{ ...base, generation: "old", iconVersion: "a".repeat(64) },

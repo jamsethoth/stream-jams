@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eventTriggerSelectorSchema, matchSelector } from "../event-bus/selector.js";
+import { canonicalEventForSelector, eventTriggerSelectorSchema, matchSelector } from "../event-bus/selector.js";
 import type { BusEvent } from "../event-bus/types.js";
 
 // Thirty days is ample for a subathon and keeps all duration arithmetic bounded.
@@ -30,7 +30,7 @@ export function matchesTimerEventRule(rule: TimerEventRule, event: BusEvent): bo
   return rule.enabled && matchSelector(rule.selector, event);
 }
 export function timerEventAdjustmentMs(rule: TimerEventRule, event: BusEvent): number {
-  const amount = event.kind === "canonical" ? event.event.amount ?? 0 : 0;
+  const amount = canonicalEventForSelector(event)?.amount ?? 0;
   const quantity = rule.quantityUnit === null ? 1 : Math.floor(Math.max(0, amount) / rule.quantityUnit);
   return Math.min(MAX_TIMER_REMAINING_MS, rule.amountMs * quantity);
 }

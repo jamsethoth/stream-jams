@@ -5,6 +5,7 @@ import { videoSourceSchema } from "./source-schema.js";
 import { videosLayoutSchema } from "./layout-schema.js";
 
 export * from "./providers.js";
+export * from "./admission-schema.js";
 export * from "./mirror.js";
 export * from "./mirror-receiver.js";
 export { videoSourceSchema } from "./source-schema.js";
@@ -18,8 +19,9 @@ export * from "./placement-geometry.js";
  * desktop player and the server, not the management bundle.
  */
 
-export const videoTitleSchema = z.string().trim().min(1).max(200);
-export const videoRequesterSchema = z.string().trim().min(1).max(64);
+export { videoTitleSchema, videoRequesterSchema, videoRequestInputSchema } from "./request-schema.js";
+export type { VideoRequestInput } from "./request-schema.js";
+import { videoTitleSchema, videoRequesterSchema } from "./request-schema.js";
 /** A provider-reported uploader or broadcaster name. */
 export const videoChannelNameSchema = /* @__PURE__ */ z.string().trim().min(1).max(100);
 const itemIdSchema = z.string().min(1).max(128);

@@ -1,18 +1,18 @@
 import { Button, Checkbox, NativeSelect, TextInput } from "@mantine/core";
-import { isValidVideosLayout, type ActionableManagementError, type AudioRouteStatus, type OverlayPurpose, type TwitchCustomReward, type TwitchCustomRewardCatalog, type VideosLayout, type VideosModuleConfig } from "@stream-jams/core";
+import { isValidVideosLayout, type ActionableManagementError, type AudioRouteStatus, type TwitchCustomReward, type TwitchCustomRewardCatalog, type VideosLayout, type VideosModuleConfig } from "@stream-jams/core";
 import { useCallback, useEffect, useRef, useState, type ComponentType, type FormEvent } from "react";
 import type { OperatorItemCardProps } from "../../operator/OperatorItemCard.js";
 import type { AudioApi } from "../audio/audio-api.js";
 import { actionableError } from "../foundation/actionable-error.js";
 import { BrowserSourceRow } from "../foundation/BrowserSourceRow.js";
-import { BrowserSourcesPanel } from "../foundation/BrowserSourcesPanel.js";
+import { BrowserSourceSetupNotice, BrowserSourcesPanel, browserSourceSizesShown } from "../foundation/BrowserSourcesPanel.js";
 import { DestructiveConfirmationDialog } from "../foundation/DestructiveConfirmationDialog.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import { MaskedValue } from "../foundation/MaskedValue.js";
 import { ModuleControls, ModulePageLayout, ModuleSection } from "../foundation/ModulePageLayout.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
-import { VideoPlacementEditor } from "./VideoPlacementEditor.js";
+import { VideoPlacementEditor, type VideoPlacementEditorHandle } from "./VideoPlacementEditor.js";
 import { VideoQueuePanel } from "./VideoQueuePanel.js";
 import { createHttpVideosApi, type VideoQueueApi, type VideosApi, type VideosBrowserSource } from "./videos-api.js";
 
@@ -60,6 +60,8 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
   const [routes, setRoutes] = useState<readonly AudioRouteStatus[]>([]);
   const [routesError, setRoutesError] = useState(false);
   const [sources, setSources] = useState<readonly VideosBrowserSource[]>([]);
+  const [placementDraftInvalid, setPlacementDraftInvalid] = useState(false);
+  const placementEditor = useRef<VideoPlacementEditorHandle>(null);
   const [sourcesExpanded, setSourcesExpanded] = useState(window.location.hash === "#browser-sources");
   const [catalog, setCatalog] = useState<RewardCatalog>({ status: "loading" });
   const [loadError, setLoadError] = useState<ActionableManagementError | null>(null);
@@ -67,7 +69,7 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
   const [actionError, setActionError] = useState<ActionableManagementError | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [hostDraft, setHostDraft] = useState("");
-  const [rewardDraft, setRewardDraft] = useState({ rewardId: "", purpose: "live" as OverlayPurpose });
+  const [rewardDraft, setRewardDraft] = useState({ rewardId: "" });
   const [regenerate, setRegenerate] = useState<VideosBrowserSource | null>(null);
   const [confirmationError, setConfirmationError] = useState<ActionableManagementError | null>(null);
   const [busy, setBusy] = useState(false);
@@ -83,7 +85,7 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
       setLoadError(actionableError(reason, "Videos settings could not be loaded", "Check that Stream Jams is running, then reopen Videos."));
     }
     // The queue reports whether the desktop primary player is running.
-    try { setMirrorAvailable((await api.getQueue("live")).mirror.available); }
+    try { setMirrorAvailable((await api.getQueue()).mirror.available); }
     // error-provenance: allow expected -- the mirror note falls back to an unknown state; the queue panel reports load failures
     catch { setMirrorAvailable(null); }
     try { setRoutes((await audioApi.getStatus()).routes); setRoutesError(false); }
@@ -117,6 +119,9 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
   function save(event: FormEvent) {
     event.preventDefault();
     if (draft === null || enabled === null) return;
+    // Placement number fields preserve raw invalid drafts without committing them into config.
+    // Do not report a successful save of the old committed value while such a draft is visible.
+    if (placementDraftInvalid) { placementEditor.current?.focusFirstInvalid(); return; }
     const errors: FieldErrors = {};
     const maxLength = Number(draft.maxLengthSeconds);
     const gap = Number(draft.gapSeconds);
@@ -131,7 +136,7 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
       if (!Number.isInteger(delay) || delay < 0 || delay > limits.deviceDelayMs) errors[`delay:${id}`] = `Enter whole milliseconds from 0 to ${limits.deviceDelayMs}.`;
       else if (delay > 0) audioDeviceDelaysMs[id] = delay;
     }
-    if (!isValidVideosLayout(draft.layout)) errors.layout = "Keep the video box at least 240 x 180 px and inside the 1920 x 1080 canvas.";
+    if (!isValidVideosLayout(draft.layout)) errors.layout = "Keep Video content within 240 x 180 to 1920 x 1080 px and fit its scaled desktop box inside the scene.";
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
     const config: VideosModuleConfig = { maxLengthSeconds: maxLength, gapSeconds: gap, allowedDirectHosts: draft.allowedDirectHosts, obsAudio: draft.obsAudio,
@@ -139,6 +144,8 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
     void mutate(async () => {
       const saved = await api.saveModuleConfig(enabled, config);
       setEnabled(saved.enabled); setDraft(toDraft(saved.config));
+      try { setSources(await api.listBrowserSources()); }
+      catch (reason) { setActionError(actionableError(reason, "Videos settings saved; source dimensions could not be refreshed", "Reopen Videos to load the saved OBS dimensions.")); }
       setNotice({ tone: "success", message: "Videos settings saved. They apply to later requests and runs." });
     }, "Videos settings could not be saved");
   }
@@ -161,7 +168,7 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
       : draft.rewardMappings.length >= limits.rewards ? `Up to ${limits.rewards} rewards can be mapped.` : null;
     setFieldErrors(current => withField(current, "reward", error));
     if (error !== null) return;
-    setDraft({ ...draft, rewardMappings: [...draft.rewardMappings, { rewardId, purpose: rewardDraft.purpose }] }); setRewardDraft({ rewardId: "", purpose: "live" });
+    setDraft({ ...draft, rewardMappings: [...draft.rewardMappings, { rewardId }] }); setRewardDraft({ rewardId: "" });
   }
 
   async function confirmRegenerate() {
@@ -197,9 +204,11 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
             ? <><strong>Mirroring unavailable:</strong> desktop app not running. Each Browser Source plays the current video in its own player, following the queue clock.</>
             : <><strong>Mirror status:</strong> unknown until the queue loads.</>}</p>
         <BrowserSourcesPanel id="browser-sources" detailsId="videos-sources-content" expanded={sourcesExpanded} onToggle={() => setSourcesExpanded(value => !value)}
-        readyCount={sources.filter(source => source.status === "available").length} needsSetupCount={sources.filter(source => source.status !== "available").length} description="Module live and test outputs.">
-        <p>Add the Videos URL as an OBS Browser Source at 1920 x 1080. To show videos on the desktop overlay, turn on Videos in <a href="/manage/settings#overlay-surfaces">Overlay surfaces</a>.</p>
-        {sources.length === 0 ? <p>No Videos Browser Source output is registered.</p> : sources.map(source => <BrowserSourceRow key={source.id} label={source.label} ready={source.status === "available"}
+        readyCount={sources.filter(source => source.status === "available").length} needsSetupCount={sources.filter(source => source.status !== "available").length} description="One live URL for this module.">
+        <BrowserSourceSetupNotice sizesShown={browserSourceSizesShown(sources)} />
+        <p>Position the Videos source in OBS; desktop placement affects only the desktop overlay.
+          To show videos on the desktop overlay, turn on Videos in <a href="/manage/settings#overlay-surfaces">Overlay surfaces</a>.</p>
+        {sources.length === 0 ? <p>No Videos Browser Source output is registered.</p> : sources.map(source => <BrowserSourceRow key={source.id} label={source.label} canvas={source.canvas} ready={source.status === "available"}
           telemetry={source.status === "available" ? "URL available" : source.status.replace("-", " ")} metadata={<span>Module source · {source.purpose === "live" ? "Live" : "Test"}</span>}
           url={source.url === null ? <p>Create a URL before adding this output.</p> : <MaskedValue label={`${source.label} Browser Source URL`} value={source.url} />}
           actions={source.status === "create-required"
@@ -209,8 +218,8 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
       </>}
       secondary={draft === null ? (loadError === null ? <p className="management-empty" role="status">Loading Videos settings…</p> : null) : <form className="videos-settings" onSubmit={save} noValidate>
         <ModuleSection title="Placement" label="Video placement" id="video-placement"
-          description="Where the video appears on browser sources, the desktop overlay and the mirror. Changes apply after Save Videos settings.">
-          <VideoPlacementEditor value={draft.layout} disabled={busy} onChange={layout => { setDraft(current => current === null ? current : { ...current, layout }); setFieldErrors(current => withField(current, "layout", null)); }} />
+          description="Content size controls browser dimensions. Desktop position and scale are independent. Changes apply after Save Videos settings.">
+          <VideoPlacementEditor ref={placementEditor} onInvalidDraftChange={setPlacementDraftInvalid} value={draft.layout} disabled={busy} onChange={layout => { setDraft(current => current === null ? current : { ...current, layout }); setFieldErrors(current => withField(current, "layout", null)); }} />
           {fieldErrors.layout === undefined ? null : <p className="videos-settings__error" role="alert">{fieldErrors.layout}</p>}
         </ModuleSection>
         <ModuleSection title="Limits and audio" label="Limits and audio" description="Videos longer than the limit, or of unknown length, wait as held until you choose Play anyway.">
@@ -255,12 +264,10 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
           </fieldset>
           <fieldset className="videos-settings__fieldset">
             <legend>Channel point rewards</legend>
-            <p className="module-section-description">A redemption of a mapped reward queues the link the viewer typed. It never autoplays.</p>
+            <p className="module-section-description">Mapped rewards queue the viewer's link in the live Videos queue and never autoplay. Former test mappings now use this queue; review them after upgrading.</p>
             {draft.rewardMappings.length === 0 ? <p className="management-empty">No rewards are mapped.</p> : <ul className="videos-settings__list" aria-label="Mapped rewards">
               {draft.rewardMappings.map(mapping => { const name = rewardTitle(mapping.rewardId) ?? mapping.rewardId; return <li key={mapping.rewardId}>
                 <span>{name}</span>
-                <NativeSelect aria-label={`Queue for ${name}`} value={mapping.purpose} data={[{ value: "live", label: "Live queue" }, { value: "test", label: "Test queue" }]}
-                  onChange={event => setDraft({ ...draft, rewardMappings: draft.rewardMappings.map(row => row.rewardId === mapping.rewardId ? { ...row, purpose: event.currentTarget.value === "test" ? "test" : "live" } : row) })} />
                 <Button size="xs" variant="subtle" color="red" aria-label={`Remove reward ${name}`} onClick={() => setDraft({ ...draft, rewardMappings: draft.rewardMappings.filter(row => row.rewardId !== mapping.rewardId) })}>Remove</Button>
               </li>; })}
             </ul>}
@@ -269,8 +276,6 @@ export function VideosPage({ api = resolveDefaultApi(), audioApi, managementApi 
               {catalog.status === "loaded" ? <NativeSelect label="Reward" value={rewardDraft.rewardId} error={fieldErrors.reward} onChange={event => setRewardDraft({ ...rewardDraft, rewardId: event.currentTarget.value })}
                 data={[{ value: "", label: unmappedRewards.length === 0 ? "No more rewards" : "Choose a reward" }, ...unmappedRewards.map(reward => ({ value: reward.id, label: reward.title }))]} />
                 : <TextInput label="Reward ID" disabled={catalog.status === "loading"} value={rewardDraft.rewardId} error={fieldErrors.reward} onChange={event => setRewardDraft({ ...rewardDraft, rewardId: event.currentTarget.value })} />}
-              <NativeSelect label="Queue" value={rewardDraft.purpose} data={[{ value: "live", label: "Live queue" }, { value: "test", label: "Test queue" }]}
-                onChange={event => setRewardDraft({ ...rewardDraft, purpose: event.currentTarget.value === "test" ? "test" : "live" })} />
               <Button variant="default" disabled={catalog.status === "loading"} onClick={addReward}>Add reward</Button>
             </div>
           </fieldset>

@@ -28,7 +28,8 @@ test("module Browser Sources share Alerts presentation and keyboard disclosure",
         await toggle.focus(); await toggle.press("Enter");
         await expect(panel.getByRole("button", { name: "Collapse browser sources" })).toHaveAttribute("aria-expanded", "true");
         await expect(details).toBeVisible();
-        await expect(details.getByRole("article")).toHaveCount(2);
+        // Screen Effects has one profile-less ordinary output now that its test output is retired.
+        await expect(details.getByRole("article")).toHaveCount(moduleId === "screen-effects" ? 1 : 2);
         await panel.getByRole("button", { name: "Collapse browser sources" }).press("Space");
         await expect(details).toHaveCount(0);
         expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);

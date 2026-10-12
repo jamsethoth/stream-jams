@@ -1,3 +1,4 @@
+import { HistoricalOverlayKeyFixture } from "../test-support/historical-overlay-key-fixture.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,7 +15,6 @@ import { createAssetRouteTestApp as createServerApp } from "./test-support/route
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import { LocalAssetStore } from "../../modules/assets/local-asset-store.js";
 import { LocalMediaService, mediaVersion } from "../../modules/assets/local-media-service.js";
-import { LocalOverlayAccessService } from "../../modules/overlays/overlay-access-service.js";
 import { createLocalManagementRateLimitPreHandler, LocalManagementRateLimiter } from "../middleware/local-management-rate-limit.js";
 import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 
@@ -27,7 +27,7 @@ const replacementPngBytes = Buffer.concat([pngSignature, Buffer.from([9, 8, 7])]
 describe("asset routes", () => {
   it("uses the persisted key scope for Data authorization and denies missing or unreferenced grants", async () => {
     const access = createOverlayAccessService(["ovl_data"]);
-    const key = await access.createKey({ overlayId: "default", moduleId: "data-overlays", scope: "module", purpose: "test", targetProfileId: "vertical" });
+    const key = await access.createKey({ overlayId: "default", moduleId: "data-overlays", scope: "module", purpose: "live", targetProfileId: "vertical" });
     const authorize = vi.fn<NonNullable<AssetRouteDependencies["authorizeDataOverlayAsset"]>>().mockResolvedValue(false);
     // A trusted verifier's record is the authority even if URL fields differ.
     const verifier = { verifyRouteAccess: vi.fn().mockResolvedValue({ authorized: true, record: key.record }) };
@@ -35,12 +35,12 @@ describe("asset routes", () => {
     try {
       const denied = await app.inject({ url: `/overlay/modules/alerts/live/${key.rawKey}/assets/asset_1` });
       expect(denied.statusCode).toBe(404);
-      expect(authorize).toHaveBeenCalledWith({ overlayId: "default", moduleId: "data-overlays", scope: "module", purpose: "test", targetProfileId: "vertical", rawKey: key.rawKey }, "asset_1");
+      expect(authorize).toHaveBeenCalledWith({ overlayId: "default", moduleId: "data-overlays", scope: "module", purpose: "live", targetProfileId: "vertical", rawKey: key.rawKey }, "asset_1");
       expect(store.activeReaders).toBe(0);
     } finally { await app.close(); }
     const missing = await createAppWithAssets({ overlayAccessService: access });
     try {
-      expect((await missing.app.inject({ url: `/overlay/modules/data-overlays/test/${key.rawKey}/assets/asset_1?profile=vertical` })).statusCode).toBe(404);
+      expect((await missing.app.inject({ url: `/overlay/modules/data-overlays/live/${key.rawKey}/assets/asset_1?profile=vertical` })).statusCode).toBe(404);
     } finally { await missing.app.close(); }
   });
 
@@ -67,19 +67,14 @@ describe("asset routes", () => {
     } finally { await app.close(); }
   });
 
-  it("preserves legacy unified assets while rejecting assets outside the Data projection", async () => {
+  it("rejects retired unified assets even when a historical key and Data grant exist", async () => {
     const access = createOverlayAccessService(["ovl_unified"]);
-    const key = await access.createKey({ overlayId: "default", moduleId: null, scope: "unified", purpose: "live" });
-    const authorize = vi.fn<NonNullable<AssetRouteDependencies["authorizeDataOverlayAsset"]>>().mockResolvedValue(null);
-    const { app, authHeaders } = await createAppWithAssets({ overlayAccessService: access, authorizeDataOverlayAsset: authorize });
+    const key = await access.seedHistoricalKey({ overlayId: "default", moduleId: null, scope: "unified", purpose: "live" });
+    const authorize = vi.fn<NonNullable<AssetRouteDependencies["authorizeDataOverlayAsset"]>>().mockResolvedValue(true);
+    const { app } = await createAppWithAssets({ overlayAccessService: access, authorizeDataOverlayAsset: authorize });
     try {
-      await app.inject({ method: "POST", url: "/assets/import", headers: { ...authHeaders, "content-type": "application/octet-stream", "x-stream-jams-file-name": "test.png", "x-stream-jams-mime-type": "image/png" }, payload: pngBytes });
-      const url = `/overlay/unified/live/${key.rawKey}/assets/asset_1`;
-      expect((await app.inject({ url })).rawPayload).toEqual(pngBytes);
-      authorize.mockResolvedValue(false);
-      expect((await app.inject({ url })).statusCode).toBe(404);
-      authorize.mockResolvedValue(true);
-      expect((await app.inject({ url })).rawPayload).toEqual(pngBytes);
+      expect((await app.inject({ url: `/overlay/unified/live/${key.rawKey}/assets/asset_1` })).statusCode).toBe(401);
+      expect(authorize).not.toHaveBeenCalled();
     } finally { await app.close(); }
   });
 
@@ -94,13 +89,14 @@ describe("asset routes", () => {
       const limited = await app.inject({ url: "/overlay/unified/live/another_key/assets/another_asset" });
       expect(limited.statusCode).toBe(429);
       expect(limited.headers["retry-after"]).toBeDefined();
-      expect(verifyRouteAccess).toHaveBeenCalledTimes(600);
+      // Retired unified requests are rejected before key verification but consume the same budget.
+      expect(verifyRouteAccess).toHaveBeenCalledTimes(300);
       expect((await app.inject({ url: "/assets", headers: authHeaders })).statusCode).toBe(200);
     } finally { await app.close(); }
   });
   it("serves scoped grants and exact owned overlay versions without granting management access", async () => {
     const access = createOverlayAccessService(["ovl_versions"]);
-    const key = await access.createKey({ overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module" });
+    const key = await access.seedHistoricalKey({ overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module" });
     const { app, authHeaders, store, repository, media } = await createAppWithAssets({ enableMedia: true, overlayAccessService: access });
     try {
       await app.inject({ method: "POST", url: "/assets/import", headers: { ...authHeaders, "content-type": "application/octet-stream", "x-stream-jams-file-name": "test.png", "x-stream-jams-mime-type": "image/png" }, payload: pngBytes });
@@ -157,13 +153,12 @@ describe("asset routes", () => {
       await app.close();
     }
   });
-  it.each(["management", "module", "unified"] as const)("serves authorized %s asset ranges and HEAD without widening access", async kind => {
+  it.each(["management", "module"] as const)("serves authorized %s asset ranges and HEAD without widening access", async kind => {
     const access = createOverlayAccessService(["ovl_ranges"]);
-    const key = await access.createKey({ overlayId: "default", moduleId: kind === "unified" ? null : "alerts", purpose: "live", scope: kind === "unified" ? "unified" : "module" });
+    const key = await access.seedHistoricalKey({ overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module" });
     const { app, authHeaders } = await createAppWithAssets({ overlayAccessService: access });
     await app.inject({ method: "POST", url: "/assets/import", headers: { ...authHeaders, "content-type": "application/octet-stream", "x-stream-jams-file-name": "test.png", "x-stream-jams-mime-type": "image/png" }, payload: pngBytes });
-    const url = kind === "management" ? "/assets/asset_1/file" : kind === "module"
-      ? `/overlay/modules/alerts/live/${key.rawKey}/assets/asset_1` : `/overlay/unified/live/${key.rawKey}/assets/asset_1`;
+    const url = kind === "management" ? "/assets/asset_1/file" : `/overlay/modules/alerts/live/${key.rawKey}/assets/asset_1`;
     const headers = kind === "management" ? authHeaders : {};
     for (const [range, start, end] of [["bytes=1-3", 1, 3], ["bytes=8-", 8, 10], ["bytes=-3", 8, 10], ["bytes=8-99", 8, 10], ["bytes=-99", 0, 10]] as const) {
       const response = await app.inject({ method: "GET", url, headers: { ...headers, range } });
@@ -543,13 +538,13 @@ describe("asset routes", () => {
       scope: "module",
       targetProfileId: "landscape"
     });
-    const revokedKey = await overlayAccessService.createKey({
+    const revokedKey = await overlayAccessService.seedHistoricalKey({
       overlayId: "default",
       moduleId: "alerts",
       purpose: "live",
       scope: "module"
     });
-    const unifiedKey = await overlayAccessService.createKey({
+    const unifiedKey = await overlayAccessService.seedHistoricalKey({
       overlayId: "default",
       moduleId: null,
       purpose: "live",
@@ -715,10 +710,10 @@ async function createAppWithAssets(options: {
   };
 }
 
-function createOverlayAccessService(rawKeys: readonly string[]): LocalOverlayAccessService {
+function createOverlayAccessService(rawKeys: readonly string[]): HistoricalOverlayKeyFixture {
   let rawKeyIndex = 0;
   let id = 0;
-  return new LocalOverlayAccessService({
+  return new HistoricalOverlayKeyFixture({
     clock: () => new Date("2026-05-30T12:00:00.000Z"),
     generateId: () => {
       id += 1;

@@ -1,4 +1,7 @@
 import { AutomationControlService } from "../modules/automation/automation-control-service.js";
+import { cleanupRetiredOutputSecrets } from "../modules/overlays/retired-output-secrets.js";
+import { RetiredOutputAttemptTracker } from "../modules/overlays/retired-output-attempts.js";
+import { isOrdinaryOverlayOutput } from "@stream-jams/core";
 import { AutomationCredentialService } from "../modules/automation/automation-credential-service.js";
 import { SqliteAutomationGrantRepository } from "../modules/automation/sqlite-automation-grant-repository.js";
 import { createAutomationMachinePreHandler, createAutomationSecurityPreHandler } from "../http/middleware/automation-security.js";
@@ -24,13 +27,13 @@ import {
   createAppVersion,
   createDefaultOverlayModuleRegistry,
   listUnifiedOverlayModuleIds,
+  listDesktopOverlayModuleIds,
   isStreamerBotSubscriptionAvailable,
   overlayScopeSchema,
   pearConfigurationSchema,
   musicModuleConfigSchema,
   resolveAudioDestinations,
   type ActionableManagementError,
-  type OverlayPurpose,
   type VideosModuleConfig,
   type AlertEditorErrorReportInput,
   type AudioDeviceHost,
@@ -110,6 +113,8 @@ import {
 } from "../modules/events/event-ingestion-service.js";
 import { EventBus } from "../modules/events/event-bus.js";
 import { EventBusSettingsService } from "../modules/events/event-bus-settings-service.js";
+import { hasExternalSimulationConsumer, ManualEventService } from "../modules/events/manual-event-service.js";
+import { ManualAlertEffectService } from "../modules/events/manual-alert-effect-service.js";
 import { EventPipeline } from "../modules/events/event-pipeline.js";
 import { SqliteEventBusJournalRepository } from "../modules/events/sqlite-event-bus-journal-repository.js";
 import { SqliteTimerRunRepository } from "../modules/timers/sqlite-timer-run-repository.js";
@@ -143,12 +148,14 @@ import { VideoRequestIntake } from "../modules/videos/video-request-intake.js";
 import { VideosRuntime } from "../modules/videos/videos-runtime.js";
 import { VideoMirrorDirector } from "../modules/videos/video-mirror-director.js";
 import type { DesktopVideoTransport } from "@stream-jams/core/videos";
-import { createStreamerBotVideoIntake, type VideoIntakeDiagnostic } from "../modules/videos/streamerbot-video-intake.js";
+import { createStreamerBotVideoIntake, validateVideoBusInput, type VideoIntakeDiagnostic } from "../modules/videos/streamerbot-video-intake.js";
 import { VideoMetadataLookup } from "../modules/videos/video-metadata-lookup.js";
 import { VideoMetadataEnricher } from "../modules/videos/video-metadata-enricher.js";
 import { createTwitchConnectedAccessReader } from "../modules/twitch/twitch-connected-access.js";
 import { createChannelPointVideoIntake } from "../modules/videos/channel-point-video-intake.js";
 import { createVideosBusConsumer } from "../modules/videos/videos-bus-consumer.js";
+import { SqliteVideoBusAdmissionRepository } from "../modules/videos/video-bus-admission-repository.js";
+import { ManualVideoRequestService } from "../modules/videos/manual-video-request-service.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
 import { evaluateProviderActivationImpact, findOverlappingTwitchSources } from "../modules/providers/provider-activation-impact.js";
 import { SqliteProviderRegistrationRepository } from "../modules/providers/sqlite-provider-registration-repository.js";
@@ -450,6 +457,10 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   await localMaintenanceService.clearOldLogs();
   const overlayOutputManagementService = new OverlayOutputManagementService({
+    listLegacyKeys: () => overlayKeyRepository.list(),
+    onKeyRevoked: () => overlayGateway.recheckRecipientPolicy(),
+    onCleanupFailure: async () => logRetiredSecretCleanupFailure(1),
+    getCanvas: (moduleId, targetProfileId): Promise<import("@stream-jams/core").OutputCanvas> => overlayCompositionService.getModuleOutputCanvas({ moduleId, ...(targetProfileId === undefined ? {} : { targetProfileId }) }),
     overlayAccessService,
     overlayKeyRepository,
     overlayModuleRegistry,
@@ -457,6 +468,14 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     secretStore
   });
   const generateRuntimeReferenceId = () => `ref_${randomBytes(12).toString("base64url")}`;
+  async function logRetiredSecretCleanupFailure(count: number): Promise<void> {
+    await runtimeLogger.warn("Overlay credentials were revoked, but credential-store cleanup needs attention. Restart to retry retired-output cleanup.", {
+      module: "overlays", source: "overlay.retired-secret.cleanup-failed", correlationId: generateRuntimeReferenceId(), processingId: null,
+      metadata: { count, nextStep: "Restart the app to retry cleanup. Retired sources remain unauthorized." }
+    });
+  }
+  const retiredSecretFailures = await cleanupRetiredOutputSecrets(overlayKeyRepository, secretStore);
+  if (retiredSecretFailures > 0) await logRetiredSecretCleanupFailure(retiredSecretFailures);
   function trackRuntimeWork(work: () => Promise<void>): Promise<void> {
     if (closing) return Promise.resolve();
     const pending = trackRuntimeTask({
@@ -505,6 +524,16 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const readVideosConfig = async () => (await overlayModuleConfigService.getModuleConfig("videos")).config as VideosModuleConfig;
   // The queue reads limits synchronously; saves through the runtime config service refresh this copy.
   let videosConfig = await readVideosConfig();
+  const videoAdmissions = new SqliteVideoBusAdmissionRepository(database.connection, () => now().getTime());
+  videoAdmissions.prune();
+  const videoAdmissionCleanup = setInterval(() => {
+    void trackRuntimeWork(async () => videoAdmissions.prune()).catch(
+      // error-provenance: allow expected -- failed background receipt cleanup is reported and retried on the next bounded pass
+      (error: unknown) => runtimeLogger.error("Video admission receipt cleanup failed", { module: "videos", source: "videos.admission-cleanup", correlationId: generateRuntimeReferenceId(), processingId: null }, error)
+    );
+  }, 60_000);
+  videoAdmissionCleanup.unref();
+  cleanups.push(() => clearInterval(videoAdmissionCleanup));
   const videoQueueService = new VideoQueueService({
     repository: new SqliteVideoQueueRepository(database.connection),
     getConfig: () => videosConfig,
@@ -523,6 +552,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   const videoRequestIntake = new VideoRequestIntake({
     queue: videoQueueService,
+    admissions: videoAdmissions,
     getConfig: () => videosConfig,
     isModuleEnabled: async () => (await overlayModuleConfigService.getModuleConfig("videos")).enabled,
     // Queue first, describe after: the submitter never waits on YouTube or Twitch.
@@ -532,6 +562,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const videoMirror: { director?: VideoMirrorDirector } = {};
   let videoOutputsReady = false;
   const videosRuntime = new VideosRuntime({
+    submissions: { submit: (purpose, input, context) => manualVideoService.submit(purpose, input, context), submission: busId => manualVideoService.submission(busId) },
     queue: videoQueueService, intake: videoRequestIntake, getConfig: async () => videosConfig, now: () => now().getTime(),
     mirror: { get available() { return videoMirror.director?.available === true; }, controlsFor: itemId => videoMirror.director?.controlsFor(itemId) }
   });
@@ -550,7 +581,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         ? runtimeLogger.info("Overlay transport connection changed.", { module: "overlay", source: "overlay.transport.connection", correlationId: diagnostic.clientId, processingId: null, metadata })
         : runtimeLogger.error("Overlay transport failed.", { module: "overlay", source: "overlay.transport.failed", correlationId: diagnostic.clientId, processingId: null, metadata }, exception));
     },
-    onVideoMirrorSignal(client, signal) { videoMirror.director?.receiveBrowserSignal(client, signal); },
+    onVideoMirrorSignal(client, signal) { if (client.purpose === "live") videoMirror.director?.receiveBrowserSignal({ id: client.id, purpose: "live" }, signal); },
     onClientDisconnected(clientId) {
       videoMirror.director?.browserClientDisconnected(clientId);
       playbackCoordinator.reportClientDisconnected(clientId);
@@ -588,6 +619,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         );
       }
       // Video players report as `video:<itemId>` through the same path.
+      if (report.instructionId.startsWith("video:") && !overlayGateway.canReceiveVideos(report.clientId)) return;
       if (videosRuntime.reportPlayback(report.instructionId, report.status, report.mediaDurationMs)) return;
       if (report.status === "completed" || report.status === "failed") {
         playbackCoordinator.reportInstructionFinished(report.clientId, report.instructionId);
@@ -627,6 +659,16 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateId: () => `data-template-${randomUUID()}`,
     runMutation: work => maintenanceGate.runConfigurationMutation(work)
   });
+  const retiredOutputAttempts = new RetiredOutputAttemptTracker();
+  function refreshRecipientPolicy(): void {
+    overlayGateway.setRecipientPolicy(client => {
+      const row = overlayKeyRepository.findActiveRecipientIdentity(client.keyId);
+      return row !== null && isOrdinaryOverlayOutput(client, true) && row.overlayId === client.overlayId
+        && row.moduleId === client.moduleId && row.purpose === client.purpose && row.scope === client.scope
+        && row.targetProfileId === (client.targetProfileId ?? null);
+    });
+  }
+  refreshRecipientPolicy();
   let desktopAudioSink: DesktopAudioSink | undefined;
   if (options.desktopAudioTransport !== undefined) {
     try {
@@ -680,7 +722,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     },
     deliverSignal: (clientId, signal) => overlayGateway.sendVideoMirrorSignal(clientId, signal),
     // Outputs connect only after composition; until then they read the current mode on connect.
-    onAvailabilityChanged: () => { if (videoOutputsReady) void trackRuntimeWork(() => Promise.all([queueVideoOutputSync("live"), queueVideoOutputSync("test")]).then(() => undefined)); },
+    onAvailabilityChanged: () => { if (videoOutputsReady) void trackRuntimeWork(() => Promise.all([queueVideoOutputSync("live")]).then(() => undefined)); },
     onError: (message, error) => { void runtimeLogger.error(message, { module: "videos", source: "videos.mirror.failed", correlationId: generateRuntimeReferenceId(), processingId: null, metadata: {} }, error); },
     now: () => now().getTime()
   });
@@ -954,15 +996,17 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const automationAuthPreHandler = createAutomationSecurityPreHandler({ credentials: automationCredentialService, limiter: automationLimiter });
   const automationControlService = new AutomationControlService({ timers: timerRuntimeCoordinator, definitions: timerManagementService, playback: playbackOperationsService, now: () => now().getTime(), runCommand: work => maintenanceGate.runIntake(work) });
   const eventPipeline = new EventPipeline({
+    isAlertsEnabled: async () => (await overlayModuleConfigService.getModuleConfig("alerts")).enabled,
+    manualAlertSink: { handleEvent: event => manualDispatchService.handleAlert(event) },
     timerEventSink: new TimerEventService(timerDefinitionRepository, timerRuntimeCoordinator),
     onTimerError: (error, event) => runtimeLogger.error("Timer event handling failed", {
       module: "timers", source: "timers.event-admission", correlationId: `event:${event.sourceKind}:${event.eventId}`,
-      processingId: null, metadata: { eventType: event.kind === "canonical" ? event.event.type : "external" }
+      processingId: null, metadata: { eventType: event.kind === "canonical" ? event.event.type : event.kind }
     }, error),
     playbackCoordinator,
     effectEventSink: {
       async handleEvent(event) {
-        const result = await effectAdmissionService.handleEvent(event);
+        const result = await manualDispatchService.handleEffect(event);
         await effectPlaybackCoordinator.startNext();
         return result;
       }
@@ -986,11 +1030,13 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const eventBusJournal = new SqliteEventBusJournalRepository(database.connection);
   const twitchDataSourceRef: { current: TwitchDataSourceRuntime | null } = { current: null };
   const eventBus = new EventBus({
+    validateInput: validateVideoBusInput,
     journal: eventBusJournal,
     consumers: [
       ...eventPipeline.consumers(),
       { id: "twitch-data-sources", handle: async event => twitchDataSourceRef.current?.handleBusEvent(event) ?? "no-match" },
       createVideosBusConsumer({
+        intake: videoRequestIntake,
         streamerBot: createStreamerBotVideoIntake({
           intake: videoRequestIntake,
           queue: videoQueueService,
@@ -1003,11 +1049,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         }),
         onError: (error, event) => runtimeLogger.error("Video request handling failed", {
           module: "videos", source: "videos.event-admission", correlationId: `event:${event.sourceKind}:${event.eventId}`,
-          processingId: null, metadata: { eventType: event.kind === "canonical" ? event.event.type : "external" }
+          processingId: null, metadata: { eventType: event.kind === "canonical" ? event.event.type : event.kind }
         }, error)
       })
     ],
     generateReferenceId: generateEventSourceReferenceId,
+    onManualDeliveryWork: work => { void trackRuntimeWork(() => work); },
     resolveSourceRegistrationId: async (kind) => (await providerRegistrationRepository.findActiveByKind(kind))?.provider.id ?? null,
     now,
     onDeliveryFailure: (failure) => runtimeLogger.error("Event bus consumer failed", {
@@ -1035,7 +1082,6 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       metadata: { consumerId }
     }, error)
   });
-  await eventBus.start();
   let eventReplayTimer: ReturnType<typeof setTimeout> | undefined;
   const scheduleEventReplay = () => {
     clearTimeout(eventReplayTimer);
@@ -1271,6 +1317,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     hasReadyDesktopOutput: () => outputReadinessService.isDesktopVisualReady("alerts"),
     getAudioOutputStatus: () => audioOutputService.getStatus(),
     listAudioOutputRoutes: () => audioOutputService.listRoutes(),
+    submitTest: request => maintenanceGate.runIntake(() => manualDispatchService.sendAlert(request)),
+    isModuleEnabled: async () => (await overlayModuleConfigService.getModuleConfig("alerts")).enabled,
     async enqueueTest(playback) {
       playbackCoordinator.enqueueResolvedTest(playback);
     },
@@ -1309,6 +1357,42 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       return false;
     }
   }
+  const manualEventService = new ManualEventService({
+    bus: eventBus, now,
+    async validateReferences(action) {
+      switch (action.kind) {
+        case "alert-draft-test":
+          await alertEditorService.validateTestReferences(action.request);
+          return true;
+        case "alert-saved-test":
+          await alertEditorService.validateTestReferences({ document: await alertEditorService.getDocument(action.alertId), targetProfileId: action.targetProfileId, samplePayload: action.samplePayload, includeAudio: action.includeAudio, includeTts: action.includeTts });
+          return true;
+        case "effect-test": {
+          const document = await effectRepository.find(action.effectId);
+          const variant = document?.variants.find(candidate => candidate.id === action.variantId && candidate.enabled);
+          return document?.enabled === true && variant !== undefined && await effectPlaybackEligibilityService.referencesExist({ effectId: document.id, effectName: document.name, variant, priority: document.priority });
+        }
+        case "simulate-canonical": return true;
+        case "simulate-external": {
+          const identity = action.identity;
+          const [alerts, effects, timers] = await Promise.all([alertRepository.listRules(), effectRepository.list(), timerDefinitionRepository.list()]);
+          const selectors = [...effects.flatMap(effect => effect.bindings.map(binding => binding.selector)), ...timers.flatMap(timer => (timer.eventRules ?? []).map(rule => rule.selector))];
+          return hasExternalSimulationConsumer(identity, {
+            payloadIdentities: eventBus.externalPayloadIdentities(),
+            exactIdentities: [
+              ...alerts.flatMap(rule => rule.externalIdentity === undefined ? [] : [rule.externalIdentity]),
+              ...selectors.flatMap(selector => selector.match.kind === "external" ? [selector.match] : [])
+            ]
+          });
+        }
+        // A Video action references no local asset or saved target. Link/module/allowlist/capacity policy is owned by its validated consumer intake.
+        case "video-request": return true;
+      }
+    }
+  });
+  const manualDispatchService: ManualAlertEffectService = new ManualAlertEffectService({ manualEvents: manualEventService, alerts: alertEditorService, effects: effectAdmissionService });
+  const manualVideoService: ManualVideoRequestService = new ManualVideoRequestService({ manualEvents: manualEventService, admissions: videoAdmissions, journal: eventBusJournal });
+  await eventBus.start();
   const alertSetManagementService = new AlertSetManagementService({
     alertService,
     metadataRepository: alertSetMetadataRepository,
@@ -1460,6 +1544,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       return { label: regenerated.output.label, url: regenerated.url };
     },
     reloadRuntimeConfiguration: async () => {
+      overlayCompositionService.resetConfigurationCache();
       moderationService.reloadSettings();
       eventBusSettingsService.reload();
       // Events journaled before the restore belong to the replaced configuration; never play them late.
@@ -1476,6 +1561,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       automationControlService.invalidateRuntime();
       await playbackOperationsService.restoreSafety(playback);
       refreshDataOutputs();
+      refreshRecipientPolicy();
+      await refreshBrowserConfigurations();
     },
     assetDurationCatalog,
     twitchCredentials: {
@@ -1512,6 +1599,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       },
       deleteOldSecret: ref => secretStore.deleteSecret(ref)
     },
+    retireOverlayRecipients: () => overlayGateway.setRecipientPolicy(() => false),
+    restoreOverlayRecipients: refreshRecipientPolicy,
     runExclusive: async (work) => {
       twitchDataSourceRef.current?.suspendForMaintenance();
       try { return await maintenanceGate.runMaintenance(() => localMediaService.maintenance(work)); }
@@ -1581,8 +1670,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const musicOutputRuntime = new MusicOutputRuntime({
     runtime: musicRuntimeCoordinator,
     assets: assetLibraryService,
-    getConfig: async () => (await overlayModuleConfigService.getModuleConfig("music")).config as import("@stream-jams/core").MusicModuleConfig,
-    now: () => now().getTime()
+    getConfig: async () => (await overlayModuleConfigService.getModuleConfig("music")).config as import("@stream-jams/core").MusicModuleConfig
   });
   const dataOutputRuntime = new DataOverlayOutputRuntime({
     runtimeId: `data-runtime-${randomUUID()}`, getState: () => dataOverlayService.getState(),
@@ -1649,6 +1737,15 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     logger: runtimeLogger,
     generateReferenceId: generateRuntimeReferenceId
   });
+  const refreshBrowserConfigurations = async () => {
+    await Promise.all(overlayGateway.clients.map(async client => {
+      const composition = client.moduleId === null
+        ? await overlayCompositionService.resolveUnifiedOutput({ overlayId: client.overlayId, purpose: client.purpose, enabledModuleIds: listUnifiedOverlayModuleIds(overlayModuleRegistry) })
+        : await overlayCompositionService.resolveModuleOutput({ moduleId: client.moduleId, overlayId: client.overlayId, purpose: client.purpose,
+          ...(client.targetProfileId == null ? {} : { targetProfileId: client.targetProfileId }) });
+      overlayGateway.deliverComposition(client.id, composition);
+    }));
+  };
   const syncBrowserTimerCompositions = async () => {
     const moduleIds = listUnifiedOverlayModuleIds(overlayModuleRegistry);
     await Promise.all(overlayGateway.clients
@@ -1742,7 +1839,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       }));
   const queueDataOutputSync = () => dataOutputRefreshQueue.enqueue();
   const unsubscribeDataOutputs = dataOutputRuntime.subscribe(() => { void queueDataOutputSync(); });
-  const syncVideoOutputs = async (purpose: OverlayPurpose) => {
+  const syncVideoOutputs = async (purpose: "live") => {
     const moduleIds = listUnifiedOverlayModuleIds(overlayModuleRegistry);
     await Promise.all(overlayGateway.clients
       .filter(client => client.purpose === purpose && (client.scope === "unified" || client.moduleId === "videos"))
@@ -1759,7 +1856,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   };
   let videoOutputSyncTail = Promise.resolve();
   videoOutputsReady = true;
-  const queueVideoOutputSync = (purpose: OverlayPurpose) => {
+  const queueVideoOutputSync = (purpose: "live") => {
     const pending = videoOutputSyncTail.then(() => syncVideoOutputs(purpose));
     videoOutputSyncTail = pending.catch(
       // error-provenance: allow expected -- pending preserves the rejection for tracked diagnostics; the tail only keeps later syncs ordered
@@ -1776,12 +1873,15 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   }
   const surfaceSettingsService = new SurfaceSettingsService({
     surfaces: surfaceRepository,
+    retiredOutputAttempts: () => retiredOutputAttempts.list(),
     ...(options.desktopOverlayTransport === undefined ? {} : { host: {
       configure: config => desktopVisualSink!.configure(config),
       retry: () => options.desktopOverlayTransport!.retry(),
       ...(options.desktopOverlayTransport.getStatus === undefined ? {} : { getStatus: () => options.desktopOverlayTransport!.getStatus!() })
     } }),
-    moduleIds: () => listUnifiedOverlayModuleIds(overlayModuleRegistry),
+    moduleIds: kind => kind === "desktop"
+      ? listDesktopOverlayModuleIds(overlayModuleRegistry)
+      : listUnifiedOverlayModuleIds(overlayModuleRegistry),
     changed: async surface => {
       dataOutputRuntime.refresh();
       if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
@@ -1810,9 +1910,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     isInActiveSet: (id) => effectRepository.isInActiveSet(id),
     repository: effectRepository,
     async testEffectVariant(effectId, variantId) {
-      const outcome = await effectAdmissionService.testEffectVariant(effectId, variantId);
-      if (outcome.status === "queued") await effectPlaybackCoordinator.startNext();
-      return outcome;
+      return manualDispatchService.sendEffect(effectId, variantId);
     },
     runMutation: work => maintenanceGate.runIntake(work),
     async isTwitchRewardAvailable(broadcasterId, rewardId) {
@@ -1842,12 +1940,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     videoMirror.director?.refreshOutput();
     // Turning the module off ends playback; queued requests stay for later.
     if (!enabled) {
-      for (const purpose of ["live", "test"] as const) {
+      for (const purpose of ["live"] as const) {
         const view = videoQueueService.view(purpose);
         if (view.current !== null || view.gapEndsAtEpochMs !== null) videoQueueService.command(purpose, view.revision, { kind: "stop" });
       }
     }
-    await Promise.allSettled([queueVideoOutputSync("live"), queueVideoOutputSync("test")]);
+    await Promise.allSettled([queueVideoOutputSync("live")]);
   };
   const runtimeOverlayModuleConfigService: OverlayModuleConfigService = {
     getModuleConfig: (moduleId) => overlayModuleConfigService.getModuleConfig(moduleId),
@@ -1863,6 +1961,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       if (config.moduleId === "screen-effects" && !config.enabled) {
         await effectPlaybackCoordinator.disable();
       }
+      if (config.moduleId === "alerts" || config.moduleId === "screen-effects") await refreshBrowserConfigurations();
       if (config.moduleId === "timers") await queueTimerOutputSync();
       if (config.moduleId === "music") await refreshCommittedMusicConfig(config.enabled);
       if (config.moduleId === "data-overlays") { dataOutputRuntime.refresh(); await queueDataOutputSync(); }
@@ -1876,6 +1975,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       if (config.moduleId === "screen-effects" && !config.enabled) {
         await effectPlaybackCoordinator.disable();
       }
+      if (config.moduleId === "alerts" || config.moduleId === "screen-effects") await refreshBrowserConfigurations();
       if (config.moduleId === "timers") await queueTimerOutputSync();
       if (config.moduleId === "music") await refreshCommittedMusicConfig(config.enabled);
       if (config.moduleId === "data-overlays") { dataOutputRuntime.refresh(); await queueDataOutputSync(); }
@@ -1888,21 +1988,10 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     dataTemplateService,
     twitchDataSourceRuntime,
     authorizeDataOverlayAsset: async (access: import("@stream-jams/core").OverlayRouteAccessRequest, assetId: string) => {
-      if (access.scope === "unified") {
-        const referenced = dataOverlayService.getState().canvases.some(canvas => canvas.elements.some(element => element.kind === "image" && element.assetId === assetId));
-        if (!referenced) return null;
-        // Shared registered assets retain the existing module authorization boundary.
-        const impact = await assetLibraryService.getChangeImpact(assetId);
-        if (impact.owners.some(owner => owner.moduleId !== "data-overlays")) return null;
-      }
-      const snapshot = await dataOutputRuntime.getModuleSnapshot({ moduleId: "data-overlays", overlayId: access.overlayId, purpose: access.purpose, scope: access.scope,
+      if (access.scope !== "module" || access.moduleId !== "data-overlays" || access.purpose !== "live") return false;
+      const snapshot = await dataOutputRuntime.getModuleSnapshot({ moduleId: "data-overlays", overlayId: access.overlayId, purpose: "live", scope: "module", recipientKind: "browser",
         ...(access.targetProfileId == null ? {} : { targetProfileId: access.targetProfileId }) });
-      if (snapshot.presentation?.kind !== "data-overlays") return false;
-      if (access.scope === "unified") {
-        const surface = (await surfaceRepository.list()).find(candidate => candidate.kind === "unified-browser" && candidate.overlayId === access.overlayId);
-        if (!surface?.layers.some(layer => layer.moduleId === "data-overlays" && layer.visible)) return false;
-      }
-      return snapshot.presentation.projection.canvases.some(canvas => canvas.elements.some(element => element.kind === "image" && element.assetId === assetId));
+      return snapshot.presentation?.kind === "data-overlays" && snapshot.presentation.projection.canvases.some(canvas => canvas.elements.some(element => element.kind === "image" && element.assetId === assetId));
     },
     surfaceSettingsService,
     metadata: {
@@ -1932,6 +2021,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     musicManagementService,
     alertSetManagementService,
     alertEditorService,
+    submitManualSimulation: input => maintenanceGate.runIntake(() => manualEventService.submit(input, { channel: "management" })),
+    sendSavedAlertTest: action => maintenanceGate.runIntake(() => manualDispatchService.sendSavedAlert(action)),
     managementAssetLibraryService: assetLibraryService,
     reportAlertEditorError,
     reportClientException,
@@ -1940,15 +2031,16 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     getConfigurationBackupSummary: () => configurationBackupService.summary(),
     openDataFolder: () => localMaintenanceService.openDataFolder(),
     clearOldLogs: () => localMaintenanceService.clearOldLogs(),
-    getEventBusActivity: () => ({ events: eventBusJournal.recentActivity(100).map((record) => ({ id: record.id, receivedAt: record.receivedAt, sourceKind: record.sourceKind, kind: record.kind, eventType: record.eventType, outcome: record.outcome, referenceId: record.referenceId, consumers: record.consumers.map((consumer) => ({ ...consumer })) })) }),
+    getEventBusActivity: () => ({ events: eventBusJournal.recentActivity(100).map((record) => ({ id: record.id, receivedAt: record.receivedAt, sourceKind: record.sourceKind, ...(record.submissionChannel === undefined ? {} : { submissionChannel: record.submissionChannel }), kind: record.kind, eventType: record.eventType, outcome: record.outcome, referenceId: record.referenceId, consumers: record.consumers.map((consumer) => ({ ...consumer })) })) }),
     getEventBusSettings: () => eventBusSettingsService.get(),
     saveEventBusSettings: (settings) => eventBusSettingsService.save(settings),
     overlayAccessService,
     overlayCompositionService,
     overlayOutputManagementService,
     overlayGateway,
+    recordRetiredOutputAttempt: kind => retiredOutputAttempts.record(kind),
     alertService,
-    alertTestPlaybackCoordinator: playbackCoordinator,
+    submitAlertSimulation: input => maintenanceGate.runIntake(() => manualEventService.submit(input, { channel: "management" })),
     assetRepository,
     mediaImportPipeline,
     assetStore,

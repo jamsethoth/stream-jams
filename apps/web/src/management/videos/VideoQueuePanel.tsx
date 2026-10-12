@@ -1,5 +1,5 @@
 import { Button, TextInput } from "@mantine/core";
-import type { OverlayPurpose, VideoQueueResponse } from "@stream-jams/core";
+import type { VideoQueueResponse, VideoSubmissionPending } from "@stream-jams/core";
 import { useCallback, useEffect, useId, useRef, useState, type ComponentType, type FormEvent, type ReactNode, type RefObject } from "react";
 import { ManagementModalSurface, ManagementModalTitle } from "../foundation/ManagementModalSurface.js";
 import { StatusBadge, type StatusBadgeTone } from "../foundation/StatusBadge.js";
@@ -14,7 +14,6 @@ const maximumPollDelayMs = 15_000;
 
 export interface VideoQueuePanelProps {
   readonly api: VideoQueueApi;
-  readonly initialPurpose?: OverlayPurpose;
   readonly pollIntervalMs?: number;
   /** Heading level of the panel title; nested headings follow it. */
   readonly headingLevel?: 2 | 3;
@@ -32,29 +31,24 @@ interface QueueSnapshot {
 }
 
 /** Shared management and Operator queue tools. The server owns queue state; this component polls and sends guarded commands. */
-export function VideoQueuePanel({ api, initialPurpose = "live", pollIntervalMs = defaultPollIntervalMs, headingLevel = 2, recentCard }: VideoQueuePanelProps) {
+export function VideoQueuePanel({ api, pollIntervalMs = defaultPollIntervalMs, headingLevel = 2, recentCard }: VideoQueuePanelProps) {
   const headingId = useId();
-  const [purpose, setPurpose] = useState<OverlayPurpose>(initialPurpose);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const HeadingTag = headingLevel === 2 ? "h2" : "h3";
   return (
     <section aria-labelledby={headingId} className="video-queue">
       <div className="video-queue__heading">
         <HeadingTag id={headingId} ref={headingRef} tabIndex={-1}>Video queue</HeadingTag>
-        <div aria-label="Queue purpose" className="video-queue__purpose" role="group">
-          {(["live", "test"] as const).map(value => <Button key={value} size="xs" variant={purpose === value ? "filled" : "default"} aria-pressed={purpose === value}
-            onClick={() => setPurpose(value)}>{value === "live" ? "Live queue" : "Test queue"}</Button>)}
-        </div>
+
       </div>
-      {/* Each purpose owns its own snapshot, poll and pending command; switching remounts instead of mixing them. */}
-      <QueueWorkspace key={purpose} api={api} headingLevel={headingLevel} headingRef={headingRef} pollIntervalMs={pollIntervalMs} purpose={purpose} recentCard={recentCard} />
+      <QueueWorkspace api={api} headingLevel={headingLevel} headingRef={headingRef} pollIntervalMs={pollIntervalMs} recentCard={recentCard} />
     </section>
   );
 }
 
-function QueueWorkspace({ api, headingLevel, headingRef, pollIntervalMs, purpose, recentCard }: {
+function QueueWorkspace({ api, headingLevel, headingRef, pollIntervalMs, recentCard }: {
   readonly api: VideoQueueApi; readonly headingLevel: 2 | 3; readonly headingRef: RefObject<HTMLHeadingElement | null>;
-  readonly pollIntervalMs: number; readonly purpose: OverlayPurpose; readonly recentCard: ComponentType<OperatorItemCardProps> | undefined;
+  readonly pollIntervalMs: number; readonly recentCard: ComponentType<OperatorItemCardProps> | undefined;
 }) {
   const [snapshot, setSnapshot] = useState<QueueSnapshot | null>(null);
   const [loadError, setLoadError] = useState<QueueError | null>(null);
@@ -97,7 +91,7 @@ function QueueWorkspace({ api, headingLevel, headingRef, pollIntervalMs, purpose
       if (document.hidden || pendingRef.current) { schedule(delay); return; }
       const revision = requestRevisionRef.current;
       try {
-        const queue = await api.getQueue(purpose);
+        const queue = await api.getQueue();
         if (disposed || revision !== requestRevisionRef.current) return;
         apply(queue);
         setLoadError(null); setRefreshError(null);
@@ -126,7 +120,7 @@ function QueueWorkspace({ api, headingLevel, headingRef, pollIntervalMs, purpose
       schedulePollRef.current = null;
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [api, apply, pollIntervalMs, purpose]);
+  }, [api, apply, pollIntervalMs]);
 
   const phase = snapshot?.queue.current?.phase ?? null;
   useEffect(() => {
@@ -150,7 +144,7 @@ function QueueWorkspace({ api, headingLevel, headingRef, pollIntervalMs, purpose
     } catch (error) {
       if (isVideoQueueConflict(error)) {
         setConflict(true);
-        try { apply(await api.getQueue(purpose)); }
+        try { apply(await api.getQueue()); }
         catch (refreshFailure) { setRefreshError(queueError(refreshFailure, "The video queue could not be refreshed", "Refresh retries automatically.")); }
       } else {
         reportError(queueError(error, "The video command failed", "Review the queue and retry. Open Diagnostics if it keeps failing."));
@@ -164,9 +158,9 @@ function QueueWorkspace({ api, headingLevel, headingRef, pollIntervalMs, purpose
   }
 
   const command = (key: string, value: VideoQueueCommand, message: string, reportError?: (error: QueueError) => void) =>
-    run(key, queue => api.command(purpose, queue.revision, value), message, reportError);
+    run(key, queue => api.command(queue.revision, value), message, reportError);
   const control = (action: VideoCurrentAction, itemId: string, message: string, positionMs?: number) =>
-    run(`current:${action}`, () => api.control(purpose, action, itemId, positionMs), message);
+    run(`current:${action}`, () => api.control(action, itemId, positionMs), message);
 
   async function confirmClear(): Promise<void> {
     setClearError(null);
@@ -220,7 +214,9 @@ function QueueWorkspace({ api, headingLevel, headingRef, pollIntervalMs, purpose
         {waiting.length === 0 ? <p className="management-empty">No videos are waiting. Add a link below or wait for requests.</p> : (
           <ol className="video-queue__list">
             {waiting.map((item, index) => <li key={item.id}><QueueItem item={item} actions={<>
-              {item.status === "held" ? <Button size="xs" aria-label={`Play anyway: ${itemName(item)}`} disabled={busy}
+              {item.reviewRequired ? <Button size="xs" aria-label={`Play reviewed video: ${itemName(item)}`} disabled={busy}
+                onClick={() => void command(`play:${item.id}`, { kind: "play", itemId: item.id }, `${itemName(item)} reviewed; normal length rules apply.`)}>Play</Button> : null}
+              {item.status === "held" && !item.reviewRequired ? <Button size="xs" aria-label={`Play anyway: ${itemName(item)}`} disabled={busy}
                 onClick={() => void command(`play-anyway:${item.id}`, { kind: "play-anyway", itemId: item.id }, `Playing ${itemName(item)} despite the hold.`)}>Play anyway</Button> : null}
               <Button size="xs" variant="default" aria-label={`Move up: ${itemName(item)}`} disabled={busy || index === 0} onClick={() => move(index, -1, item)}>Move up</Button>
               <Button size="xs" variant="default" aria-label={`Move down: ${itemName(item)}`} disabled={busy || index === waiting.length - 1} onClick={() => move(index, 1, item)}>Move down</Button>
@@ -229,22 +225,22 @@ function QueueWorkspace({ api, headingLevel, headingRef, pollIntervalMs, purpose
             </>} /></li>)}
           </ol>
         )}
-        {recentCard !== undefined ? <RecentVideos busy={busy} card={recentCard} headingTag={SubheadingTag} items={queue.recent} onReplay={item => void run(`replay:${item.id}`, current => api.requeue(purpose, current.revision, item.id),
-          `${itemName(item)} added to the ${purpose === "live" ? "live" : "test"} video queue.`)} /> : failed.length === 0 ? null : <>
+        {recentCard !== undefined ? <RecentVideos busy={busy} card={recentCard} headingTag={SubheadingTag} items={queue.recent} onReplay={item => void run(`replay:${item.id}`, current => api.requeue(current.revision, item.id),
+          `${itemName(item)} added to the live video queue.`)} /> : failed.length === 0 ? null : <>
           <SubheadingTag>Failed recently ({failed.length})</SubheadingTag>
           <p className="video-queue__hint">These videos did not load in time. Check the link, then add it again if needed.</p>
           <ol className="video-queue__list">{failed.map(item => <li key={item.id}><QueueItem item={item} actions={null} /></li>)}</ol>
         </>}
-        <AddVideoForm api={api} busy={busy} purpose={purpose} onAdded={(message) => {
+        <AddVideoForm api={api} busy={busy} onAdded={(message) => {
           setAnnouncement(message);
           requestRevisionRef.current += 1;
-          void api.getQueue(purpose).then(apply).catch((error: unknown) => setRefreshError(queueError(error, "The video queue could not be refreshed", "Refresh retries automatically.")));
+          void api.getQueue().then(apply).catch((error: unknown) => setRefreshError(queueError(error, "The video queue could not be refreshed", "Refresh retries automatically.")));
         }} />
       </>}
       {/* Operator and management share this modal surface; the review keeps a failure for explicit retry and locks dismissal while pending. */}
       <ManagementModalSurface labelledBy={clearTitleId} onCancel={() => setClearOpen(false)} open={clearOpen} pending={busy} restoreFocusFallbackRef={headingRef}>
         <ManagementModalTitle>{`Clear ${waiting.length} waiting video${waiting.length === 1 ? "" : "s"}?`}</ManagementModalTitle>
-        <p>Every queued and held video in the {purpose === "live" ? "live" : "test"} queue is removed. The current video keeps playing. Removed requests cannot be restored.</p>
+        <p>Every queued and held video in the live queue is removed. The current video keeps playing. Removed requests cannot be restored.</p>
         {clearError === null || busy ? null : <QueueErrorBanner error={clearError} />}
         <div className="management-modal__actions">
           <Button variant="default" disabled={busy} onClick={() => setClearOpen(false)}>Cancel</Button>
@@ -330,7 +326,7 @@ function QueueItem({ actions, item }: { readonly actions: ReactNode; readonly it
         <strong className="video-queue__title"><ItemTitle item={item} /></strong>
         <span className="video-queue__byline">{byline.join(" · ")}</span>
         <span>{details.join(" · ")}</span>
-        {item.status === "held" ? <span className="video-queue__hold">Over the length limit</span> : null}
+        {item.reviewRequired ? <span className="video-queue__hold">Migrated test request: review before Play</span> : item.status === "held" ? <span className="video-queue__hold">Over the length limit</span> : null}
       </div>
       <StatusBadge label={statusLabel(item.status)} tone={statusTone(item.status)} />
       {actions === null ? null : <div className="video-queue__item-actions">{actions}</div>}
@@ -374,35 +370,68 @@ function linkHost(link: string): string | null {
   return URL.canParse(link) ? new URL(link).hostname : null;
 }
 
-function AddVideoForm({ api, busy, onAdded, purpose }: {
-  readonly api: VideoQueueApi; readonly busy: boolean; readonly purpose: OverlayPurpose; readonly onAdded: (message: string) => void;
+function AddVideoForm({ api, busy, onAdded }: {
+  readonly api: VideoQueueApi; readonly busy: boolean; readonly onAdded: (message: string) => void;
 }) {
   const [link, setLink] = useState("");
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingSubmission, setPendingSubmission] = useState<VideoSubmissionPending | null>(null);
   const submittingRef = useRef(false);
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (submittingRef.current) return;
-    if (link.trim() === "") { setError("Paste a Twitch, YouTube or direct video link."); return; }
+  const generationRef = useRef(0);
+  useEffect(() => {
+    submittingRef.current = false;
+    setSubmitting(false); setPendingSubmission(null); setError(null);
+    return () => { generationRef.current += 1; };
+  }, [api]);
+
+  function admitted(item: VideoQueueItem) {
+    setPendingSubmission(null);
+    onAdded(item.status === "held"
+      ? "Video added and held: it is over the length limit."
+      : item.status === "playing" ? "Video added and playing." : "Video added to the queue.");
+  }
+
+  async function checkSubmission() {
+    if (submittingRef.current || pendingSubmission === null) return;
+    const generation = generationRef.current;
     submittingRef.current = true; setSubmitting(true); setError(null);
     try {
-      const item = await api.submit(purpose, { link: link.trim(), title });
-      setLink(""); setTitle("");
-      onAdded(item.status === "held"
-        ? "Video added and held: it is over the length limit."
-        : item.status === "playing" ? "Video added and playing." : "Video added to the queue.");
+      const result = await api.submission(pendingSubmission.busId);
+      if (generation !== generationRef.current) return;
+      if (result.status !== "pending") admitted(result);
     } catch (reason) {
-      setError(requestMessage(reason));
-    } finally { submittingRef.current = false; setSubmitting(false); }
+      if (generation === generationRef.current) setError(`${requestMessage(reason)} Check Diagnostics before sending again.`);
+    } finally { if (generation === generationRef.current) { submittingRef.current = false; setSubmitting(false); } }
+  }
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (submittingRef.current || pendingSubmission !== null) return;
+    if (link.trim() === "") { setError("Paste a Twitch, YouTube or direct video link."); return; }
+    submittingRef.current = true; setSubmitting(true); setError(null);
+    const generation = generationRef.current;
+    try {
+      const item = await api.submit({ link: link.trim(), title });
+      if (generation !== generationRef.current) return;
+      setLink(""); setTitle("");
+      if (item.status === "pending") setPendingSubmission(item);
+      else admitted(item);
+    } catch (reason) {
+      if (generation === generationRef.current) setError(requestMessage(reason));
+    } finally { if (generation === generationRef.current) { submittingRef.current = false; setSubmitting(false); } }
   }
   return (
     <form aria-label="Add video" className="video-queue__add" onSubmit={event => void submit(event)} noValidate>
-      <TextInput label="Video link" placeholder="https://www.youtube.com/watch?v=…" value={link} error={error ?? undefined} disabled={submitting}
+      {pendingSubmission !== null && <div>
+        <p role="status">Admission pending. Reference: {pendingSubmission.busId}. Check the queue and Diagnostics; do not submit this request again.</p>
+        <Button type="button" variant="default" disabled={submitting} onClick={() => void checkSubmission()}>Check submission outcome</Button>
+        <Button type="button" variant="subtle" disabled={submitting} onClick={() => { setPendingSubmission(null); setError(null); }}>Dismiss pending notice</Button>
+      </div>}
+      <TextInput label="Video link" placeholder="https://www.youtube.com/watch?v=…" value={link} error={error ?? undefined} disabled={submitting || pendingSubmission !== null}
         onChange={event => { setLink(event.currentTarget.value); setError(null); }} />
-      <TextInput label="Title (optional)" maxLength={200} value={title} disabled={submitting} onChange={event => setTitle(event.currentTarget.value)} />
-      <Button type="submit" variant="default" disabled={busy || submitting} loading={submitting}>Add video</Button>
+      <TextInput label="Title (optional)" maxLength={200} value={title} disabled={submitting || pendingSubmission !== null} onChange={event => setTitle(event.currentTarget.value)} />
+      <Button type="submit" variant="default" disabled={busy || submitting || pendingSubmission !== null} loading={submitting}>Add video</Button>
     </form>
   );
 }

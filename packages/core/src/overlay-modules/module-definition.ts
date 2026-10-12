@@ -52,6 +52,6 @@ export const alertsOverlayModuleDefinition = {
   },
   renderer: {
     entryPoint: "overlay/modules/alerts",
-    supportedOutputs: ["module", "unified"]
+    supportsDesktopComposition: true, supportedOutputs: ["module"]
   }
 } as const satisfies OverlayModuleDefinition<AlertsOverlayModuleConfig>;

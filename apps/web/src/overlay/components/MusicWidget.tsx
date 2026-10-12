@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
-import { alertFontPresets, getMusicPositionMs, musicLimits, musicWidgetProjectionSchema } from "@stream-jams/core";
+import { alertFontPresets, boxShadowCss, getMusicPositionMs, musicLimits, musicWidgetProjectionSchema } from "@stream-jams/core";
 import type { MusicAssetResolver, MusicPublicAssetReference, MusicTypography, MusicWidgetProjection } from "@stream-jams/core";
 import nativeCss from "./music-widget.css?inline";
 
@@ -52,16 +52,21 @@ function ClockedMusicWidget({ frame, resolveAsset, nowEpochMs, reducedMotion }: 
   const elapsedMs = Math.min(musicLimits.staleAfterMs + 1, Math.max(0, clock - receipt.current.monotonicMs));
   const now = nowEpochMs ?? frame.clockReferenceEpochMs + elapsedMs;
   if (!Number.isFinite(now) || now < 0 || now - frame.snapshot.observedAtEpochMs > musicLimits.staleAfterMs) return null;
-  return <div className="music-widget-host" data-testid="music-widget" style={{
+  const widget = <div className="music-widget-host" data-testid="music-widget" style={{
     position: "absolute", left: frame.layout.x, top: frame.layout.y,
     width: frame.layout.width, height: frame.layout.height,
     transform: `scale(${frame.renderScale ?? 1})`, transformOrigin: "top left",
-    zIndex: frame.layout.zIndex, overflow: "hidden", contain: "layout paint style",
+    zIndex: frame.layout.zIndex, overflow: frame.contentCanvas === undefined ? "hidden" : "visible",
+    contain: frame.contentCanvas === undefined ? "layout paint style" : "layout style",
     isolation: "isolate", pointerEvents: "none", visibility: "visible"
   }} ref={attachHost}>
     {shadow === null ? null : createPortal(<MusicContents key={`${frame.snapshot.providerId}:${frame.snapshot.generation}`} projection={frame}
       resolveAsset={resolveAsset} nowEpochMs={now} reducedMotion={reducedMotion} />, shadow)}
   </div>;
+  return frame.contentCanvas === undefined ? widget : <div data-testid="music-content-canvas" style={{
+    position: "absolute", left: 0, top: 0, width: frame.contentCanvas.width, height: frame.contentCanvas.height,
+    overflow: "hidden", contain: "layout paint style", pointerEvents: "none"
+  }}>{widget}</div>;
 }
 
 function MusicContents({ projection, resolveAsset, nowEpochMs, reducedMotion }: Required<Omit<MusicWidgetProps, "projection">> & { readonly projection: MusicWidgetProjection }) {
@@ -138,7 +143,7 @@ function MusicContents({ projection, resolveAsset, nowEpochMs, reducedMotion }: 
     {compiled?.key !== cssKey || compiled.css === "" ? null : <style>{`@layer sj-custom { ${compiled.css} }`}</style>}
     <div className="sj-frame" style={{
       borderRadius: appearance.cornerRadiusPx, border: `${appearance.borderWidthPx}px solid ${colors.border}`,
-      boxShadow: `${appearance.shadow.offsetX}px ${appearance.shadow.offsetY}px ${appearance.shadow.blur}px ${appearance.shadow.spread}px ${appearance.shadow.color}`,
+      boxShadow: boxShadowCss(appearance.shadow),
       background: `linear-gradient(135deg, ${colors.backgroundStart}, ${colors.backgroundEnd})`,
       opacity: projection.profile.backgroundOpacity / 100
     }} />

@@ -1079,7 +1079,7 @@ describe("createHttpManagementApi", () => {
       overlayId: "default",
       scope: "module" as const,
       moduleId: "alerts",
-      purpose: "live" as const
+      purpose: "live" as const, targetProfileId: "landscape" as const
     };
     const output = {
       id: "module:alerts:live",
@@ -1087,10 +1087,10 @@ describe("createHttpManagementApi", () => {
       label: "Alerts Live",
       scope: "module",
       moduleId: "alerts",
-      purpose: "live",
+      purpose: "live", targetProfileId: "landscape",
       enabled: true,
       keyId: "key-1",
-      url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_first",
+      url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_first?profile=landscape",
       copyableUrlStatus: "available"
     };
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -1111,7 +1111,7 @@ describe("createHttpManagementApi", () => {
         });
         return jsonResponse({
           keyId: "key-1",
-          url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_first",
+          url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_first?profile=landscape",
           output
         });
       }
@@ -1128,11 +1128,11 @@ describe("createHttpManagementApi", () => {
         });
         return jsonResponse({
           keyId: "key-2",
-          url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_second",
+          url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_second?profile=landscape",
           output: {
             ...output,
             keyId: "key-2",
-            url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_second"
+            url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_second?profile=landscape"
           }
         });
       }

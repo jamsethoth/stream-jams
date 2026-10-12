@@ -19,6 +19,7 @@ import { MediaUnavailableError, type LocalMediaService } from "../assets/local-m
 import { effectOccurrenceKey } from "./effect-playback-coordinator.js";
 
 export type EffectAdmissionOutcomeStatus =
+  | "pending"
   | "queued"
   | "cooldown"
   | "full"
@@ -31,6 +32,8 @@ export interface EffectAdmissionOutcome {
   readonly effectId: string;
   readonly status: EffectAdmissionOutcomeStatus;
   readonly occurrenceId?: string;
+  readonly busId?: string;
+  readonly eventId?: string;
 }
 
 export type EffectAdmissionResult =
@@ -130,6 +133,12 @@ export class EffectAdmissionService {
   /** Admits every enabled effect with a binding whose selector matches the journal-validated bus event. */
   async handleEvent(event: BusEvent): Promise<EffectAdmissionResult> {
     const { eventId } = event;
+    if (event.kind === "manual" && event.action.kind === "effect-test") {
+      if (!this.#dedupe.acceptKey(EFFECT_DEDUPE_NAMESPACE, eventId)) return this.#report({ status: "duplicate", eventId, outcomes: [] });
+      const outcome = await this.testEffectVariant(event.action.effectId, event.action.variantId, "manual");
+      return this.#report({ status: "processed", eventId, outcomes: [outcome] });
+    }
+    if (event.kind === "manual" && event.action.kind !== "simulate-canonical" && event.action.kind !== "simulate-external") return this.#report({ status: "no-matches", eventId, outcomes: [] });
     if (!await this.#isModuleEnabled()) {
       return this.#report({ status: "module-disabled", eventId, outcomes: [] });
     }
@@ -171,7 +180,7 @@ export class EffectAdmissionService {
     return this.#enqueueExplicit(content, null);
   }
 
-  async testEffectVariant(effectId: string, variantId: string): Promise<EffectAdmissionOutcome> {
+  async testEffectVariant(effectId: string, variantId: string, sourceKind: IngestProviderId | "manual" | null = null): Promise<EffectAdmissionOutcome> {
     if (!await this.#isModuleEnabled()) return { effectId, status: "module-disabled" };
     const document = await this.#repository.find(effectId);
     if (document === null) {
@@ -189,7 +198,7 @@ export class EffectAdmissionService {
       effectName: document.name,
       variant: structuredClone(variant),
       priority: document.priority
-    }, null);
+    }, null, false, sourceKind);
   }
 
   async replayRecent(occurrenceId: string): Promise<EffectAdmissionOutcome> {
@@ -210,7 +219,7 @@ export class EffectAdmissionService {
     content: EffectContentSnapshot,
     trigger: EffectTrigger | null,
     requireLive = false,
-    sourceKind: IngestProviderId | null = null
+    sourceKind: IngestProviderId | "manual" | null = null
   ): Promise<EffectAdmissionOutcome> {
     const work = () => this.#enqueueCaptured(content, trigger, requireLive, sourceKind);
     try { return this.#localMediaService === undefined ? await work() : await this.#localMediaService.runAdmission(work); }
@@ -224,7 +233,7 @@ export class EffectAdmissionService {
     content: EffectContentSnapshot,
     trigger: EffectTrigger | null,
     requireLive: boolean,
-    sourceKind: IngestProviderId | null
+    sourceKind: IngestProviderId | "manual" | null
   ): Promise<EffectAdmissionOutcome> {
     content = await this.#resolveContentDuration(content);
     if (!await this.#isModuleEnabled()) {
@@ -254,7 +263,7 @@ export class EffectAdmissionService {
 
   async #admitMatches(
     eventId: string,
-    sourceKind: IngestProviderId,
+    sourceKind: IngestProviderId | "manual",
     matches: readonly MatchedEffect[],
     moduleCooldownSeconds: number
   ): Promise<EffectAdmissionResult> {
@@ -325,7 +334,7 @@ export class EffectAdmissionService {
     occurrenceId: string,
     content: EffectContentSnapshot,
     trigger: EffectTrigger | null,
-    sourceKind: IngestProviderId | null
+    sourceKind: IngestProviderId | "manual" | null
   ): EffectOccurrence {
     return {
       id: occurrenceId,

@@ -1,6 +1,6 @@
 import type { StreamJamsMigration } from "../database.js";
 export const customDataOverlaysMigration: StreamJamsMigration = {
-  id: "042-custom-data-overlays",
+  id: "048-custom-data-overlays",
   sql: `
     CREATE TABLE data_overlay_meta (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL CHECK(revision>=0));
     INSERT INTO data_overlay_meta VALUES (1,0);

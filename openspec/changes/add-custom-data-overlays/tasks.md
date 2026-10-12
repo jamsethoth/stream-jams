@@ -27,7 +27,7 @@
 - [x] 5.2 Implement core formatting and the shared text, image, shape and progress renderers. Test plain-text rendering, overflow, missing bindings and stale policy.
 - [x] 5.3 Build the canvas list and editor with layer controls, pointer, keyboard and numeric positioning, resize, styling, binding picker and explicit save. Add empty, loading, error and populated stories.
 - [x] 5.4 Add the isolated preview sample store and simulation controls. Verify that live values and outputs never change.
-- [x] 5.5 Publish scoped projections to module-specific, unified browser and private desktop surfaces. Test the snapshot and subscription race, stale-frame discard, reconnect, output scope and preservation of other modules' media.
+- [x] 5.5 Publish scoped projections to profiled per-module live browser sources and the private desktop surface, preserving main's public test/unified retirement. Test the snapshot and subscription race, stale-frame discard, reconnect, output scope and preservation of other modules' media.
 
 ## 6. Backup
 

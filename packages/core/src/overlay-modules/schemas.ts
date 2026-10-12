@@ -20,7 +20,8 @@ export const overlayModuleWizardDefinitionSchema = z.object({
 
 export const overlayModuleRendererDefinitionSchema = z.object({
   entryPoint: nonEmptyStringSchema,
-  supportedOutputs: z.array(z.enum(["module", "unified"])).min(1)
+  supportedOutputs: z.array(z.enum(["module", "unified"])).min(1),
+  supportsDesktopComposition: z.boolean()
 });
 
 export const overlayModuleDefinitionSchema = z.object({

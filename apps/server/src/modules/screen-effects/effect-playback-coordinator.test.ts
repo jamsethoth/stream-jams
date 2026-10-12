@@ -178,7 +178,7 @@ describe("EffectPlaybackCoordinator", () => {
     const h = harness(occurrence("reconnect"));
     await h.coordinator.startNext(); await vi.advanceTimersByTimeAsync(0);
     expect(h.delivered.length).toBeGreaterThan(0);
-    expect(await h.coordinator.getModuleSnapshot({ moduleId: "screen-effects", overlayId: "default", purpose: "live", scope: "module" })).toEqual({ moduleId: "screen-effects", enabled: true, instructions: [] });
+    expect(await h.coordinator.getModuleSnapshot({ recipientKind: "browser", moduleId: "screen-effects", overlayId: "default", purpose: "live", scope: "module" })).toEqual({ moduleId: "screen-effects", enabled: true, instructions: [] });
     await h.coordinator.close();
   });
 
@@ -295,7 +295,7 @@ describe("EffectPlaybackCoordinator", () => {
 
     expect(setup.queue.snapshot()).toMatchObject({ current: null, queued: [{ id: "disabled" }] });
     expect(setup.browser.deliverPlaybackInstruction).not.toHaveBeenCalled();
-    await expect(setup.coordinator.getModuleSnapshot({
+    await expect(setup.coordinator.getModuleSnapshot({ recipientKind: "browser",
       overlayId: "default",
       moduleId: "screen-effects",
       purpose: "live",
@@ -387,7 +387,7 @@ describe("EffectPlaybackCoordinator", () => {
 
     await expect(setup.coordinator.skip("current")).rejects.toThrow("silence not acknowledged");
 
-    await expect(setup.coordinator.getModuleSnapshot({
+    await expect(setup.coordinator.getModuleSnapshot({ recipientKind: "browser",
       overlayId: "default",
       moduleId: "screen-effects",
       purpose: "live",

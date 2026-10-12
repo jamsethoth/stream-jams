@@ -1,5 +1,6 @@
 import {
   alertEditorDocumentSchema,
+  sceneOutputCanvas,
   type AlertEditorDocument
 } from "@stream-jams/core";
 import { expect, test } from "@playwright/test";
@@ -90,6 +91,7 @@ test("management alerts reviews the starter set and safely manages its landscape
     browserSources: [
       {
         id: "module:alerts:landscape:live",
+        canvas: sceneOutputCanvas(),
         targetProfileId: "landscape",
         purpose: "live",
         connectionState: listening ? "connected" : "disconnected",
@@ -100,6 +102,7 @@ test("management alerts reviews the starter set and safely manages its landscape
       },
       {
         id: "module:alerts:vertical:live",
+        canvas: sceneOutputCanvas(0, 1080, 1920),
         targetProfileId: "vertical",
         purpose: "live",
         connectionState: "never-connected",
@@ -133,7 +136,7 @@ test("management alerts reviews the starter set and safely manages its landscape
   await page.route("**/management/alerts/alert-follow/editor", async (route) => {
     await route.fulfill({ contentType: "application/json", json: editorDocument });
   });
-  await page.route("**/management/alerts/alert-follow/editor/test", async (route) => {
+  await page.route("**/management/alerts/alert-follow/editor/test-saved", async (route) => {
     const request = route.request().postDataJSON() as { readonly targetProfileId: "landscape" | "vertical" | null };
     testRequests.push(request);
     await route.fulfill({
@@ -341,6 +344,7 @@ test("management alerts creates and tests a disabled community-gift alert", asyn
     ],
     browserSources: [{
       id: "module:alerts:landscape:live",
+      canvas: sceneOutputCanvas(),
       targetProfileId: "landscape",
       purpose: "live",
       connectionState: "connected",

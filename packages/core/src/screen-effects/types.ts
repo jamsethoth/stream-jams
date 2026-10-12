@@ -77,6 +77,14 @@ export interface CreateScreenEffectDocumentInput {
 
 export type EffectTrigger =
   | {
+      readonly kind: "manual-external";
+      readonly eventId: string;
+      readonly occurredAt: string;
+      readonly sourceKey: string;
+      readonly eventType: string;
+      readonly summary: string;
+    }
+  | {
       readonly kind: "twitch-reward";
       readonly eventId: string;
       readonly occurredAt: string;

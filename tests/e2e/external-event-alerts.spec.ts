@@ -76,7 +76,7 @@ test("authors a Streamer.bot event alert that plays only allowlisted, moderated 
     await management(`/management/alert-sets/${set.overview.id}/starter-review`);
     await management(`/management/alert-sets/${set.overview.id}/activate`, { confirmWarnings: true });
 
-    const output = await management("/management/overlay-outputs/keys", { overlayId: "default", moduleId: null, purpose: "live", scope: "unified" }) as { url: string };
+    const output = await management("/management/overlay-outputs/keys", { overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", targetProfileId: "landscape" }) as { url: string };
     const overlay = await page.context().newPage();
     const registered = overlay.waitForEvent("websocket").then(socket => socket.waitForEvent("framereceived"));
     await overlay.goto(output.url);

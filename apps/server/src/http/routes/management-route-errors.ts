@@ -1,3 +1,4 @@
+import { ManualSubmissionRejectedError } from "../../modules/events/manual-event-service.js";
 import {
   alertSetMutationInputSchema,
   type AlertEditorErrorReportInput,
@@ -73,6 +74,9 @@ export async function sendAlertEditorCommandError(
   error: unknown,
   context: AlertEditorErrorContext
 ) {
+  if (error instanceof ManualSubmissionRejectedError) {
+    return recordAlertEditorError(reply, { ...context, generateErrorId: () => error.referenceId }, 422, "MANUAL_SUBMISSION_REJECTED", error.message);
+  }
   if (error instanceof AlertEditorNotFoundError) {
     return recordAlertEditorError(
       reply,

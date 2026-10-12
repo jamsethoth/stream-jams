@@ -1,3 +1,4 @@
+import { moduleOutputCanvas } from "@stream-jams/core";
 import { createDefaultMusicModuleConfig } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fireEvent, userEvent, waitFor, within } from "storybook/test";
@@ -15,13 +16,13 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const BrowserSources: Story = {
-  args: { api: createStoryManagementApi({ listMusicOutputs: async () => (["landscape", "vertical"] as const).map(targetProfileId => ({ id: targetProfileId, overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId, label: targetProfileId, enabled: true, keyId: null, url: null, copyableUrlStatus: "create-required" })) }) },
+export const BrowserSources: Story = { tags: ["music-content-canvas", "public-output-retirement"],
+  args: { api: createStoryManagementApi({ listMusicOutputs: async () => (["landscape", "vertical"] as const).map(targetProfileId => ({ canvas: moduleOutputCanvas({ moduleId: "music", enabled: true, config: createDefaultMusicModuleConfig(), updatedAt: "2026-10-11T00:00:00Z" }, targetProfileId, "browser", 0), id: targetProfileId, overlayId: "default", scope: "module", moduleId: "music", purpose: "live", targetProfileId, label: targetProfileId, enabled: true, keyId: null, url: null, copyableUrlStatus: "create-required" })) }) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Expand browser sources" }));
-    await expect(canvas.getByRole("article", { name: "Landscape browser source" })).toHaveTextContent("1920 x 1080");
-    await expect(canvas.getByRole("article", { name: "Vertical browser source" })).toHaveTextContent("1080 x 1920");
+    await expect(canvas.getByRole("article", { name: "Landscape browser source" })).toHaveTextContent("840 x 378");
+    await expect(canvas.getByRole("article", { name: "Vertical browser source" })).toHaveTextContent("840 x 378");
     await expect(canvas.getByRole("button", { name: "Create Landscape URL" })).toBeVisible();
   }
 };

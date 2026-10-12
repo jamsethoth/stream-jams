@@ -74,8 +74,12 @@ test("rebuilt Effects and Timer editors preserve saved drafts, preview and event
     await expect(timer).toHaveCount(0);
     const timers = await (await fixture.request("/timers")).json() as TimerDefinition[];
     expect(timers[0]).toMatchObject({ durationMs: 75000, outputs: { browserSource: false }, eventRules: [{ action: "increment", amountMs: 15000, quantityUnit: null }] });
-    await page.getByRole("combobox", { name: "Orientation" }).selectOption("horizontal");
+    await page.getByRole("combobox", { name: "Stack direction" }).selectOption("Left to right");
     await page.getByRole("spinbutton", { name: "Maximum shown" }).fill("4");
+    // Cards keep their native 640 px width, so four horizontal cards must be scaled to fit the desktop scene.
+    await page.getByRole("button", { name: "Save overlay layout" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "Desktop Timer footprint must fit the landscape scene; reduce scale or move it" })).toBeVisible();
+    await page.getByLabel("Desktop scale", { exact: true }).fill("0.5");
     await page.getByRole("button", { name: "Save overlay layout" }).click();
     await expect(page.getByText("Timer overlay layout saved.", { exact: true })).toBeVisible();
     await page.getByRole("radiogroup", { name: "Timer profile" }).getByText("Vertical", { exact: true }).click();

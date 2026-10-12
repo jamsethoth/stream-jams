@@ -15,3 +15,5 @@
 .overlay-surfaces__actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .overlay-surfaces__message { overflow-wrap: anywhere; }
 @media (max-width: 760px) { .overlay-surfaces__desktop-fields { grid-template-columns: 1fr; } .overlay-surfaces__actions > button { flex: 1 1 200px; } }
+.retired-outputs-banner__attempts { margin: 4px 0; padding-inline-start: 20px; }
+.retired-outputs-banner__links { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; }

@@ -39,3 +39,5 @@ Custom Data event-rule authoring, stream-online resets and Streamer.bot global-v
 Remote main advanced after the branch's earlier `4dc22d3c` merge, and GitHub reports conflicts for PR #182. This delivery completes the live-goal integration on its existing branch; it does not incorporate the later browser/desktop output refactor. The draft needs reconciliation with newer main before merge, and fresh remote CodeQL status cannot be inferred from local authorization tests.
 
 Implementation commit `64481812` was pushed to [PR #182](https://github.com/jamsethoth/stream-jams/pull/182), and its remote head, draft state and conflict status were verified. No fresh PR checks were present at that checkpoint; branch CI is requested separately. This delivery record does not claim remote checks have passed.
+
+The later [main reconciliation record](data-overlays-latest-main-merge.md) supersedes this checkpoint's conflict status and documents verification after incorporating the output refactor.

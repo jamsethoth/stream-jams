@@ -402,7 +402,7 @@ function moduleLabel(moduleId: string): string {
 }
 
 function sourceLabel(source: NonNullable<OperationRow["source"]>): string {
-  return source === "twitch" ? "Twitch" : "Streamer.bot";
+  return source === "manual" ? "Manual" : source === "twitch" ? "Twitch" : "Streamer.bot";
 }
 
 function operationKey(item: OperationRow): string {

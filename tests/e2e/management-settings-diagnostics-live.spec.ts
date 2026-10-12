@@ -1,16 +1,23 @@
 import { createHash } from "node:crypto";
+import type { DesktopOverlayTransport } from "@stream-jams/core";
 import { expect, test } from "@playwright/test";
 import { createProviderSecurityRuntimeFixture } from "../../apps/server/src/test-support/provider-security-runtime-fixture.js";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
 test("rebuilt Settings and Diagnostics retain disposable drafts, scope decisions and filtered evidence", async ({ page }, testInfo) => {
-  const fixture = await createProviderSecurityRuntimeFixture();
+  const desktopOverlayTransport: DesktopOverlayTransport = {
+    configure: async () => {}, syncModule: async () => {}, prepare: async () => "ready", start: async () => {},
+    stop: async () => {}, retry: async () => {}, close: async () => {},
+    getStatus: async () => ({ available: true, state: "ready", message: null,
+      displays: [{ id: "fixture-monitor", label: "Disposable monitor", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }] })
+  };
+  const fixture = await createProviderSecurityRuntimeFixture({ desktopOverlayTransport });
   try {
     await fixture.start();
     expect((await fixture.request("/health")).status).toBe(200);
     expect((await fixture.request("/management/alert-sets")).status).toBe(200);
-    expect((await fixture.request("/management/overlay-outputs/keys", "POST", { overlayId: "default", moduleId: null, purpose: "live", scope: "unified" })).status).toBe(200);
+    expect((await fixture.request("/management/overlay-outputs/keys", "POST", { overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", targetProfileId: "landscape" })).status).toBe(200);
     const errors: string[] = [];
     page.on("pageerror", error => errors.push(error.message));
     page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
@@ -39,14 +46,14 @@ test("rebuilt Settings and Diagnostics retain disposable drafts, scope decisions
 
     await page.goto(`${fixture.runtime.url}/manage/settings#overlay-surfaces`);
     await page.reload();
-    const surface = page.getByRole("form", { name: "Unified browser: default" });
-    const visibility = surface.getByRole("checkbox", { name: "Show Alerts on Unified browser: default" });
+    const surface = page.getByRole("form", { name: "Desktop overlay" });
+    const visibility = surface.getByRole("checkbox", { name: "Show Alerts on Desktop overlay" });
     const originalVisibility = await visibility.isChecked();
     await visibility.setChecked(!originalVisibility);
-    await surface.getByRole("button", { name: "Save Unified browser: default" }).click();
-    await expect(surface.getByRole("button", { name: "Save Unified browser: default" })).toHaveCount(0);
+    await surface.getByRole("button", { name: "Save Desktop overlay" }).click();
+    await expect(surface.getByRole("button", { name: "Save Desktop overlay" })).toHaveCount(0);
     const surfaces = await (await fixture.request("/overlay-surfaces")).json() as { surfaces: { kind: string; layers: { moduleId: string; visible: boolean }[] }[] };
-    expect(surfaces.surfaces.find(item => item.kind === "unified-browser")?.layers.find(layer => layer.moduleId === "alerts")?.visible).toBe(!originalVisibility);
+    expect(surfaces.surfaces.find(item => item.kind === "desktop")?.layers.find(layer => layer.moduleId === "alerts")?.visible).toBe(!originalVisibility);
     await page.screenshot({ path: testInfo.outputPath("settings-surfaces-desktop-light.png") });
 
     await page.goto(`${fixture.runtime.url}/manage/settings#backup-restore`);
@@ -145,7 +152,7 @@ test("compact Settings owners remain readable in dark RTL after their disposable
   try {
     await fixture.start();
     expect((await fixture.request("/management/alert-sets")).status).toBe(200);
-    expect((await fixture.request("/management/overlay-outputs/keys", "POST", { overlayId: "default", moduleId: null, purpose: "live", scope: "unified" })).status).toBe(200);
+    expect((await fixture.request("/management/overlay-outputs/keys", "POST", { overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", targetProfileId: "landscape" })).status).toBe(200);
     expect((await fixture.request("/audio/routes", "POST", { name: "Disposable retained output with a long name for compact layout", deviceId: null, autoFollowDeviceName: false })).status).toBe(201);
     await page.goto(`${fixture.runtime.url}/manage/settings`);
     await page.evaluate(() => localStorage.setItem("stream-jams-theme", "dark"));
@@ -161,14 +168,14 @@ test("compact Settings owners remain readable in dark RTL after their disposable
       await expect(page.getByRole(sentinelRole, { name: sentinel, exact: true })).toBeVisible();
       await page.evaluate(() => { document.documentElement.dir = "rtl"; });
       if (hash === "audio-outputs") await expect(page.getByRole("textbox", { name: "New output name" })).toBeVisible();
-      if (hash === "overlay-surfaces") await expect(page.getByRole("checkbox", { name: "Show Alerts on Unified browser: default" })).toBeVisible();
+      if (hash === "overlay-surfaces") await expect(page.getByRole("checkbox", { name: "Show Alerts on Desktop overlay" })).toBeVisible();
       if (hash === "automation") await expect(page.getByText("No paired clients.")).toBeVisible();
       if (hash === "backup-restore") await expect(page.getByRole("button", { name: "Export backup" })).toBeEnabled();
       await page.getByRole(sentinelRole, { name: sentinel, exact: true }).scrollIntoViewIfNeeded();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await page.screenshot({ path: testInfo.outputPath(`settings-${filename}-390-dark-rtl.png`) });
       if (hash === "audio-outputs") await page.getByRole("textbox", { name: "New output name" }).scrollIntoViewIfNeeded();
-      if (hash === "overlay-surfaces") await page.getByRole("form", { name: "Unified browser: default" }).scrollIntoViewIfNeeded();
+      if (hash === "overlay-surfaces") await page.getByRole("form", { name: "Desktop overlay" }).scrollIntoViewIfNeeded();
       if (hash === "backup-restore") await page.getByLabel("Backup file").scrollIntoViewIfNeeded();
       if (hash !== "automation") await page.screenshot({ path: testInfo.outputPath(`settings-${filename}-fields-390-dark-rtl.png`) });
     }

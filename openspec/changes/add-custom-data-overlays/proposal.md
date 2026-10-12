@@ -20,7 +20,7 @@ Slices 2, 3 and 4 depend on this change and are independent of each other. Slice
 - Add goals over integer values, with a fixed target or a saved baseline ("50 more followers from here").
 - Add reset groups, such as "Session", so one action resets several values together.
 - Add Operator controls for live use: +1, −1, set and reset for pinned values, reset for a whole group, and show/hide for each canvas. Management keeps definitions and layout.
-- Render the same projection on module-specific and unified browser sources and on the private desktop overlay.
+- Render the same projection on profiled per-module live browser sources and the private desktop overlay. Keep main's public test and unified source retirement.
 - Keep values across restarts. Nothing resets on its own in this slice.
 - Include values, goals, groups and canvases in backup and restore.
 

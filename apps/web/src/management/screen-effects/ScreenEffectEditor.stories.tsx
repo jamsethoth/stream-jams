@@ -296,6 +296,20 @@ export const LiveTestConfirmation: Story = {
     await expect(dialog).toHaveTextContent("OBS Browser Source visual");
     await expect(dialog).toHaveTextContent("OBS Browser Source audio");
     await expect(dialog).toHaveTextContent("Private headphones");
+    await expect(dialog).toHaveTextContent("Plays on your live sources and OBS.");
+  }
+};
+
+export const ManualDeliveryPending: Story = {
+  tags: ["manual-event-delivery"],
+  args: { api: createApi(effect({ enabled: true, separateSound: true }), { test: async effectId => ({ effectId, status: "pending", busId: "effect-bus-pending", eventId: "manual-effect-pending" }) }) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Test saved…" }));
+    const dialog = within(document.body).getByRole("dialog", { name: "Test saved Screen Effect?" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Confirm live test" }));
+    await expect(await canvas.findByText(/Manual event accepted; delivery is pending/u)).toBeVisible();
+    await expect(canvas.queryByText(/Saved test queued as/u)).not.toBeInTheDocument();
   }
 };
 

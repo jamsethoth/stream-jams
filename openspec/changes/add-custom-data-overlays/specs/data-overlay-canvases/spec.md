@@ -44,7 +44,7 @@ Layout drafts SHALL apply only on explicit save. Preview SHALL use a separate sa
 - **THEN** only the preview changes and the live value and outputs are unchanged
 
 ### Requirement: Coherent output projections
-Module-specific browser sources, unified browser sources and the private desktop surface SHALL render the same projection for a canvas. Projections SHALL carry the runtime ID and an increasing data revision, and clients SHALL discard older frames. Snapshot delivery SHALL leave no gap between the initial snapshot and the subscription.
+Per-module live browser sources and the private desktop surface SHALL render the same projection for a canvas enabled for that recipient. Data SHALL expose Landscape and Vertical ordinary sources and an explicit private desktop capability; it SHALL NOT recreate retired public test or unified sources. Projection selection SHALL use the trusted recipient kind. Projections SHALL carry the runtime ID and an increasing data revision, and clients SHALL discard older frames. Snapshot delivery SHALL leave no gap between the initial snapshot and the subscription.
 
 #### Scenario: Browser source and desktop agree
 - **WHEN** an operator changes a value while a canvas is on a browser source and the desktop overlay
@@ -65,7 +65,7 @@ Overlay keys SHALL reveal only the values and goals referenced by canvases on th
 Data overlay updates SHALL NOT remount or restart other modules' active media on shared surfaces.
 
 #### Scenario: Update during an alert video
-- **WHEN** a value changes while an alert video plays on the unified browser source
+- **WHEN** a value changes while an alert video plays on the private desktop surface
 - **THEN** the video continues from its current position
 
 ### Requirement: Fail-closed bindings

@@ -1,19 +1,21 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { expect, test } from "@playwright/test";
 import { Buffer } from "node:buffer";
 import { resolve } from "node:path";
+import { createProviderSecurityRuntimeFixture } from "../../apps/server/src/test-support/provider-security-runtime-fixture.js";
 import { installOverlayWebSocketMock } from "./e2e-helpers.js";
 
-test("module test overlay renders a test alert without displaying its route key", async ({ page }) => {
+test("ordinary module overlay renders an alert without displaying its route key", async ({ page }) => {
   const browserErrors: string[] = [];
   page.on("console", (message) => { if (message.type() === "error") browserErrors.push(message.text()); });
   page.on("pageerror", (error) => browserErrors.push(error.message));
   await installOverlayWebSocketMock(page);
-  await page.route("**/overlay/modules/alerts/test/ovl_test/composition", async (route) => {
+  await page.route("**/overlay/modules/alerts/live/ovl_test/composition", async (route) => {
     await route.fulfill({
       contentType: "application/json",
-      json: {
+      json: { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
         overlayId: "default",
-        purpose: "test",
+        purpose: "live",
         scope: "module",
         modules: [
           {
@@ -24,7 +26,7 @@ test("module test overlay renders a test alert without displaying its route key"
                 id: "test-alert",
                 overlayId: "default",
                 moduleId: "alerts",
-                purpose: "test",
+                purpose: "live",
                 scope: "module",
                 visual: null,
                 audio: null,
@@ -48,7 +50,7 @@ test("module test overlay renders a test alert without displaying its route key"
     });
   });
 
-  await page.goto("/overlay/modules/alerts/test/ovl_test");
+  await page.goto("/overlay/modules/alerts/live/ovl_test");
 
   await expect(page.getByText("Test alert rendered")).toBeVisible();
   await expect(page.locator("body")).toHaveClass(/overlay-shell/u);
@@ -67,7 +69,10 @@ test("module test overlay renders a test alert without displaying its route key"
   expect(browserErrors).toEqual([]);
 });
 
-test("management test audio can be enabled after the browser blocks autoplay", async ({ page }) => {
+test("ordinary manual audio fails transparently on autoplay denial and a later explicit occurrence recovers", async ({ page }) => {
+  const fixture = await createProviderSecurityRuntimeFixture();
+  await fixture.start();
+  try {
   await installOverlayWebSocketMock(page);
   await page.addInitScript(() => {
     const state = window as Window & {
@@ -90,9 +95,9 @@ test("management test audio can be enabled after the browser blocks autoplay", a
       }
     });
   });
-  await page.route("**/overlay/modules/alerts/live/ovl_audio/composition*", (route) => route.fulfill({
+  await page.route("**/overlay/modules/alerts/live/*/composition*", (route) => route.fulfill({
     contentType: "application/json",
-    json: {
+    json: { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
       overlayId: "default",
       purpose: "live",
       scope: "module",
@@ -122,18 +127,33 @@ test("management test audio can be enabled after the browser blocks autoplay", a
     contentType: "audio/wav"
   }));
 
-  await page.goto("/overlay/modules/alerts/live/ovl_audio?profile=landscape");
+  const created = await fixture.request("/management/overlay-outputs/keys", "POST", { overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", targetProfileId: "landscape" });
+  expect(created.status, await created.clone().text()).toBe(200);
+  const output = await created.json() as { url: string };
+  await page.goto(output.url);
 
   const enableAudio = page.getByRole("button", { name: "Enable alert audio" });
-  await expect(enableAudio).toBeVisible();
-  await enableAudio.click();
+  await expect.poll(() => page.evaluate(() => (window as Window & { __overlaySocketMessages?: { type: string }[] }).__overlaySocketMessages?.filter(message => message.type === "overlay.playback.failed").length ?? 0)).toBe(1);
   await expect(enableAudio).toHaveCount(0);
+  await expect(page.locator("body")).toHaveText("");
+  expect(await page.evaluate(() => (window as Window & { __audioPlayAttempts?: number }).__audioPlayAttempts)).toBe(1);
+  await page.mouse.click(10, 10);
+  await page.evaluate(() => {
+    const socket = (window as Window & { __overlaySockets?: EventTarget[] }).__overlaySockets?.at(-1);
+    if (socket === undefined) throw new Error("Overlay socket unavailable");
+    socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "overlay.playback", instruction: {
+      id: "explicit-recovery", moduleId: "alerts", overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", operatorTest: true,
+      audio: { assetId: "asset-audio", volume: 0.5 }, visual: null, text: null, tts: null, durationMs: 4000
+    } }) }));
+  });
+  await expect.poll(() => page.evaluate(() => (window as Window & { __audioPlaySucceeded?: boolean }).__audioPlaySucceeded)).toBe(true);
   const audioState = await page.evaluate(() => {
     const state = window as Window & { __audioPlayAttempts?: number; __audioPlaySucceeded?: boolean };
     return { attempts: state.__audioPlayAttempts ?? 0, succeeded: state.__audioPlaySucceeded === true };
   });
   expect(audioState.attempts).toBeGreaterThan(1);
   expect(audioState.succeeded).toBe(true);
+  } finally { await page.goto("about:blank"); await fixture.close(); }
 });
 
 for (const scenario of [
@@ -166,7 +186,7 @@ for (const scenario of [
     }, { mode: scenario.mode });
     await page.route("**/overlay/modules/alerts/live/ovl_failure/composition*", route => {
       const now = scenario.mode === "readiness" ? testTime.getTime() : Date.now();
-      return route.fulfill({ contentType: "application/json", json: {
+      return route.fulfill({ contentType: "application/json", json: { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
         overlayId: "default", purpose: "live", scope: "module", targetProfileId: "vertical",
         modules: [{ moduleId: "alerts", enabled: true, instructions: [{
           id: `video-${scenario.mode}`, overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", targetProfileId: "vertical",

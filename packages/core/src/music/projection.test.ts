@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultMusicModuleConfig, musicSnapshotSchema } from "./schemas.js";
-import { applyMusicDesktopPlacement, getMusicPositionMs, projectMusicWidget } from "./projection.js";
+import { applyMusicContentGeometry, applyMusicDesktopPlacement, getMusicPositionMs, projectMusicWidget } from "./projection.js";
+import { resolveMusicOutputGeometry } from "./output-geometry.js";
 import type { MusicSnapshot, MusicStatus } from "./types.js";
 
 const snapshot: MusicSnapshot = { providerId: "provider-1", generation: "generation-1", revision: 1, track: { id: "track-1", title: "Title", artists: ["Artist"], album: null, artworkRef: null }, playbackState: "playing", positionMs: 1000, durationMs: null, observedAtEpochMs: 10000, session: null };
@@ -123,4 +124,35 @@ it("scales desktop footprint, preserves browser geometry and clamps to canvas", 
   expect(browser.renderScale).toBeUndefined();
   expect(browser.layout).toMatchObject({ x: 0, y: 902 });
   expect(desktop.profile).toEqual(browser.profile);
+});
+
+it.each(["landscape", "vertical"] as const)("keeps %s browser bounds and anchor across full, compact and metadata changes", target => {
+  const config = createDefaultMusicModuleConfig();
+  const geometry = resolveMusicOutputGeometry(config, target);
+  for (const view of ["full", "compact"] as const) for (const title of ["Title", "Long ".repeat(100)]) {
+    config.profiles[target].initialView = view;
+    const projected = projectMusicWidget({ ...snapshot, track: { ...snapshot.track!, title, artworkRef: null } }, status, config, target, 10000, 10000)!;
+    const content = applyMusicContentGeometry(projected, geometry);
+    expect(content.contentCanvas).toEqual({ width: 840, height: 378 });
+    expect(content.layout).toMatchObject({ x: 100, y: 82, width: view === "full" ? 640 : 480 });
+    expect(content.renderScale).toBeUndefined();
+  }
+  config.profiles[target].idleMode = "hide"; config.profiles[target].idleAfterSeconds = 1;
+  expect(projectMusicWidget(snapshot, status, config, target, 10000, 11000)).toBeNull();
+  expect(resolveMusicOutputGeometry(config, target)).toEqual(geometry);
+});
+
+it("preserves desktop default alignment and exact saved position/scale after content projection", () => {
+  const config = createDefaultMusicModuleConfig();
+  const scene = projectMusicWidget(snapshot, status, config, "landscape", 10000, 10000)!;
+  const browser = applyMusicContentGeometry(scene, resolveMusicOutputGeometry(config, "landscape"));
+  expect(applyMusicDesktopPlacement(scene, config)).toEqual(scene);
+  const fallback = applyMusicDesktopPlacement(browser, config);
+  expect(fallback.layout).toEqual({ x: 0, y: 902, width: 640, height: 178, zIndex: 0 });
+  expect(fallback.contentCanvas).toBeUndefined();
+  config.desktopPlacement.full = { x: 1472, y: 955 }; config.desktopScale.full = 0.7;
+  const desktop = applyMusicDesktopPlacement(browser, config);
+  expect(desktop.layout).toMatchObject({ x: 1472, y: 955, width: 640, height: 178 });
+  expect(desktop.renderScale).toBe(0.7); expect(desktop.contentCanvas).toBeUndefined();
+  expect(applyMusicContentGeometry(desktop, resolveMusicOutputGeometry(config, "landscape")).renderScale).toBeUndefined();
 });

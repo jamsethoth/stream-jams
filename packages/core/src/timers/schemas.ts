@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { timerEventRulesSchema } from "./event-rules.js";
+import { timerOverflowGeometry } from "./output-geometry.js";
+import { isExactLegacyTimerAppearance } from "./legacy-appearance.js";
 import { alertAudioOutputsSchema } from "../audio/schemas.js";
+import { boxShadowSchema } from "../shared/box-shadow.js";
 import {
   isoDateTimeSchema,
   nonEmptyStringSchema,
@@ -18,6 +21,10 @@ import type {
   TimerRunState,
   TimerStackProjection,
   TimerStackRegion,
+  TimerAppearance,
+  TimerProfile,
+  TimerTypography,
+  TimerOverflowGeometry,
   TimersOverlayModuleConfig
 } from "./types.js";
 
@@ -103,12 +110,54 @@ function regionFor(profile: keyof typeof timerProfileDimensions) {
   });
 }
 
-export const timersOverlayModuleConfigSchema = z.object({
+export const legacyTimersOverlayModuleConfigSchema = z.object({
   profiles: z.object({
     landscape: regionFor("landscape"),
     vertical: regionFor("vertical")
   }).strict()
-}).strict() satisfies z.ZodType<TimersOverlayModuleConfig>;
+}).strict();
+
+const color = z.string().regex(/^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/iu, "Use a six or eight digit hex color");
+const px = (maximum: number) => z.number().finite().min(0).max(maximum);
+export const timerTypographySchema = z.strictObject({
+  fontPreset: z.enum(["system-sans", "rounded-sans", "serif", "monospace"]), fontSizePx: z.number().int().min(8).max(128),
+  fontWeight: z.union([z.literal(400), z.literal(500), z.literal(600), z.literal(700), z.literal(800), z.literal(900)]), color,
+  legacyFamily: z.enum(["Inter, ui-sans-serif, system-ui, sans-serif", "ui-monospace, SFMono-Regular, Consolas, monospace"]).optional()
+}) satisfies z.ZodType<TimerTypography>;
+export const timerAppearanceSchema = z.strictObject({
+  cardWidthPx: z.number().finite().positive().max(1920), cardHeightPx: z.number().finite().positive().max(1920),
+  orientation: z.enum(["vertical", "horizontal"]), reverse: z.boolean().optional(), maxVisible: z.number().int().min(1).max(12), stackGapPx: px(128),
+  gapPx: px(128), blockPaddingPx: px(128), inlinePaddingPx: px(128), cornerRadiusPx: px(256), borderWidthPx: px(16),
+  borderColor: color, backgroundColor: color, backgroundOpacity: z.number().finite().min(0).max(1),
+  labelFont: timerTypographySchema, valueFont: timerTypographySchema, iconSizePx: px(256),
+  runningAccent: color.nullable(), pausedAccent: color, completedAccent: color, shadow: boxShadowSchema.optional()
+}).superRefine((a, context) => {
+  const innerHeight = a.cardHeightPx - 2 * (a.blockPaddingPx + a.borderWidthPx);
+  const textWidth = a.cardWidthPx - 2 * (a.inlinePaddingPx + a.borderWidthPx) - a.iconSizePx - a.gapPx * 2 - a.valueFont.fontSizePx * 2.4;
+  if (innerHeight < Math.max(a.iconSizePx, a.labelFont.fontSizePx, a.valueFont.fontSizePx) || textWidth < 1) {
+    if (!isExactLegacyTimerAppearance(a)) {
+      context.addIssue({ code: "custom", message: "Card dimensions must fit icon, padding and countdown text", path: ["cardWidthPx"] });
+    }
+  }
+}) satisfies z.ZodType<TimerAppearance>;
+export const timerProfileSchema = z.strictObject({ appearance: timerAppearanceSchema,
+  desktopPlacement: z.strictObject({ x: px(1920), y: px(1920), zIndex: z.number().int().min(-10000).max(10000), scale: z.number().finite().positive().max(10), reverse: z.boolean().optional() })
+}) satisfies z.ZodType<TimerProfile>;
+function currentProfileFor(profile: keyof typeof timerProfileDimensions) {
+  return timerProfileSchema.superRefine((value, context) => {
+    const footprint = timerOverflowGeometry(value.appearance).footprint;
+    const { x, y, scale } = value.desktopPlacement;
+    const bounds = timerProfileDimensions[profile];
+    if (x + footprint.width * scale > bounds.width + 1e-8 || y + footprint.height * scale > bounds.height + 1e-8) {
+      context.addIssue({ code: "custom", path: ["desktopPlacement"], message: `Desktop Timer footprint must fit the ${profile} scene; reduce scale or move it` });
+    }
+  });
+}
+export const timersOverlayModuleConfigSchema = z.strictObject({ schemaVersion: z.literal(2), profiles: z.strictObject({
+  landscape: currentProfileFor("landscape"), vertical: currentProfileFor("vertical")
+}) }) satisfies z.ZodType<TimersOverlayModuleConfig>;
+const timerOverflowSchema = z.strictObject({ x: z.number().finite(), y: z.number().finite(), width: z.number().finite().positive(), height: z.number().finite().positive(),
+  fontSizePx: px(42), blockPaddingPx: px(10), inlinePaddingPx: px(16), offsetPx: px(14) }) satisfies z.ZodType<TimerOverflowGeometry>;
 
 const cardBase = {
   iconVersion: z.string().regex(/^[a-f0-9]{64}$/).optional(),
@@ -129,7 +178,9 @@ export const timerStackProjectionSchema = z.object({
   targetProfileId: overlayTargetProfileIdSchema,
   region: timerStackRegionSchema,
   cards: z.array(timerOverlayCardSchema),
-  overflowCount: nonNegativeIntegerSchema
+  overflowCount: nonNegativeIntegerSchema,
+  appearance: timerAppearanceSchema.optional(), overflow: timerOverflowSchema.optional(), renderScale: z.number().finite().positive().max(10).optional(),
+  countdownMaxWidth: z.union([z.literal("8ch"), z.number().finite().min(0).max(1920)]).optional()
 }).strict().superRefine((projection, context) => {
   if (projection.cards.length > projection.region.maxVisible) {
     context.addIssue({ code: "custom", path: ["cards"], message: "Timer card count exceeds visible capacity" });

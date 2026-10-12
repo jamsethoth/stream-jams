@@ -27,6 +27,45 @@ it("renders Data with only prepared private image grants and preserves image ide
   controller.dispose();
 });
 
+it("preserves private multi-module occurrences through timer refresh, layer reorder and targeted stop without replay", async () => {
+  vi.useFakeTimers(); vi.setSystemTime(1000);
+  const listeners = new Set<() => void>(); const report = vi.fn();
+  const controller = new DesktopOverlayController({ report, changed: () => { for (const listener of listeners) listener(); }, prepareAsset: async () => ({ url: "blob:private", dispose() {} }) });
+  const receive = (command: unknown) => controller.receive({ protocolVersion: 1, generation: 1, requestId: crypto.randomUUID(), command });
+  const config = { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "monitor", opacity: 1,
+    layers: ["alerts", "screen-effects", "timers"].map(moduleId => ({ moduleId, visible: true })) };
+  const key = (moduleId: string) => ({ surfaceId: "desktop:primary", moduleId, occurrenceId: moduleId, generation: 1 });
+  render(<DesktopOverlayApp controller={controller} subscribe={listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }} />);
+  try {
+    act(() => receive({ type: "configure", config: { ...config, layers: config.layers.map(layer => ({ ...layer, visible: false })) } }));
+    await act(async () => {
+      for (const moduleId of ["alerts", "screen-effects", "timers"]) receive({ type: "prepare", batch: { key: key(moduleId), timing: { startsAtEpochMs: 1000, endsAtEpochMs: 2000 }, assets: [], instructions: [
+        { id: moduleId, overlayId: "default", moduleId, purpose: "live", scope: "unified", visual: null, audio: null, tts: null,
+          text: { text: `Playing ${moduleId}`, layout: { x: 0, y: 0, width: 300, height: 80, zIndex: 1 } }, durationMs: 1000 }
+      ] } });
+    });
+    act(() => { for (const moduleId of ["alerts", "screen-effects", "timers"]) receive({ type: "start", key: key(moduleId) }); });
+    const nodes = ["alerts", "screen-effects", "timers"].map(moduleId => screen.getByText(`Playing ${moduleId}`));
+    for (const node of nodes) expect(node).not.toBeVisible();
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    await act(async () => {
+      receive({ type: "sync-module", moduleId: "timers", revision: 1, presentation: null, assets: [] });
+      receive({ type: "configure", config: { ...config, layers: [...config.layers].reverse() } });
+    });
+    for (const [index, moduleId] of ["alerts", "screen-effects", "timers"].entries()) { expect(screen.getByText(`Playing ${moduleId}`)).toBe(nodes[index]); expect(nodes[index]).toBeVisible(); }
+    act(() => receive({ type: "stop", key: key("screen-effects") }));
+    expect(screen.queryByText("Playing screen-effects")).toBeNull();
+    act(() => { receive({ type: "configure", config }); receive({ type: "start", key: key("screen-effects") }); });
+    expect(screen.queryByText("Playing screen-effects")).toBeNull();
+    expect(screen.getByText("Playing alerts")).toBe(nodes[0]);
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(screen.queryByText("Playing alerts")).toBeNull(); expect(screen.queryByText("Playing timers")).toBeNull();
+    expect(report.mock.calls.filter(([reply]) => reply.result?.type === "complete")).toHaveLength(2);
+    act(() => { receive({ type: "configure", config: { ...config, enabled: false } }); receive({ type: "configure", config }); });
+    expect(screen.queryByText("Playing alerts")).toBeNull();
+  } finally { controller.dispose(); }
+});
+
 it("loads each occurrence's uploaded font from its own prepared private URL", async () => {
   const originalFonts = Object.getOwnPropertyDescriptor(document, "fonts");
   Object.defineProperty(document, "fonts", { configurable: true, value: { add: vi.fn(), delete: vi.fn() } });

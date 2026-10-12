@@ -149,4 +149,3 @@ export function DataTemplatePicker({ api, state, canvas, assetApi, onApplied, on
   </ManagementModalSurface>;
 
 }
-

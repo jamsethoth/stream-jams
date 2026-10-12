@@ -53,6 +53,7 @@ export interface AlertEditorDocumentRepository {
 }
 
 export interface AlertEditorTestPlayback {
+  readonly deliveredBy?: "manual";
   readonly replayDocuments?: readonly AlertEditorDocument[];
   readonly sourceEvent: AlertSourceEvent;
   readonly alerts: readonly ResolvedAlert[];
@@ -76,6 +77,8 @@ export interface AlertEditorServiceOptions {
   readonly getAudioOutputStatus?: () => Promise<AudioOutputStatus>;
   readonly listAudioOutputRoutes?: () => readonly AudioOutputRoute[];
   readonly enqueueTest: (playback: AlertEditorTestPlayback) => Promise<void>;
+  readonly submitTest?: (request: AlertEditorTestRequest) => Promise<AlertEditorTestResult>;
+  readonly isModuleEnabled?: () => Promise<boolean>;
   readonly moderationService: ModerationService;
   readonly findAssets?: (assetIds: readonly string[]) => Promise<ReadonlyMap<string, AssetRecord>>;
   readonly generateId: () => string;
@@ -306,10 +309,51 @@ export class AlertEditorService {
   }
 
   async sendTest(alertId: string, candidate: AlertEditorTestRequest): Promise<AlertEditorTestResult> {
-    return this.#options.localMediaService === undefined ? this.#sendTest(alertId, candidate) : this.#options.localMediaService.runAdmission(() => this.#sendTest(alertId, candidate));
+    if (candidate.document.id !== alertId) throw new AlertEditorValidationError(["The test document does not match the selected alert."]);
+    if (this.#options.submitTest === undefined) throw new AlertEditorDeliveryBlockedError("Manual event submission is unavailable. Restart the local service and review Diagnostics before sending a test.");
+    return this.#options.submitTest(candidate);
   }
 
-  async #sendTest(alertId: string, candidate: AlertEditorTestRequest): Promise<AlertEditorTestResult> {
+  /** Pre-journal saved identity, profile, asset and route gate; never admits playback. */
+  async validateTestReferences(candidate: AlertEditorTestRequest): Promise<void> {
+    const request = alertEditorTestRequestSchema.parse(candidate);
+    await this.getDocument(request.document.id);
+    if (request.targetProfileId !== null) {
+      const profile = profileById(request.document, request.targetProfileId);
+      if (profile !== null && profile.enabled && profile.reviewState === "ready") {
+        const issues = validateProfile(request.document, profile);
+        if (issues.length > 0) throw new AlertEditorValidationError(issues);
+      }
+    }
+    const selectedProfile = request.targetProfileId === null ? null : profileById(request.document, request.targetProfileId);
+    const visualEligible = selectedProfile !== null && selectedProfile.enabled && selectedProfile.reviewState === "ready";
+    const selectedLayers = testAssetLayers(request, visualEligible);
+    const assetIds = selectedLayers.flatMap(layer => layer.type === "image" || layer.type === "video" || layer.type === "audio" ? [layer.assetId] : layer.type === "text" && layer.textStyle.fontAssetId ? [layer.textStyle.fontAssetId] : []);
+    const assets = await this.#options.findAssets?.(assetIds) ?? new Map<string, AssetRecord>();
+    for (const layer of selectedLayers) {
+      const assetId = layer.type === "image" || layer.type === "video" || layer.type === "audio" ? layer.assetId
+        : layer.type === "text" ? layer.textStyle.fontAssetId : undefined;
+      if (assetId == null) continue;
+      const mediaType = assets.get(assetId)?.mediaType;
+      const compatible = layer.type === "image" ? mediaType === "image" || mediaType === "gif"
+        : layer.type === "text" ? mediaType === "font" : mediaType === layer.type;
+      if (!compatible) throw new AlertEditorValidationError(["A test asset is missing or incompatible. Review the selected layer asset."]);
+    }
+    const routes = this.#options.listAudioOutputRoutes?.();
+    if (request.includeAudio && routes !== undefined && request.document.outputs.deviceRouteIds.some(id => !routes.some(route => route.id === id))) {
+      throw new AlertEditorValidationError(["A selected audio route no longer exists. Review Audio outputs in Settings."]);
+    }
+    createNormalizedAlertSampleEvent({ eventType: request.document.eventType, ingestProvider: request.document.providerKind === "streamerbot" ? "streamerbot" : "twitch", payload: request.samplePayload, id: "manual-validation", occurredAt: this.#now().toISOString(), externalIdentity: request.document.externalIdentity });
+  }
+
+  /** Consumer-only admission; a bus adapter must never call sendTest recursively. */
+  async consumeTest(alertId: string, candidate: AlertEditorTestRequest, identity?: { eventId: string; receivedAt: string }): Promise<AlertEditorTestResult> {
+    const work = () => this.#sendTest(alertId, candidate, identity);
+    return this.#options.localMediaService === undefined ? work() : this.#options.localMediaService.runAdmission(work);
+  }
+
+  async #sendTest(alertId: string, candidate: AlertEditorTestRequest, identity?: { eventId: string; receivedAt: string }): Promise<AlertEditorTestResult> {
+    if (this.#options.isModuleEnabled !== undefined && !await this.#options.isModuleEnabled()) throw new AlertEditorDeliveryBlockedError("Enable the Alerts module before sending a test.");
     const request = alertEditorTestRequestSchema.parse(candidate);
     if (request.document.id !== alertId) {
       throw new AlertEditorValidationError(["The test document does not match the selected alert."]);
@@ -327,16 +371,16 @@ export class AlertEditorService {
       && this.#options.hasReadyDesktopOutput !== undefined
       && await this.#options.hasReadyDesktopOutput();
 
-    const referenceId = this.#options.generateReferenceId();
+    const referenceId = identity?.eventId ?? this.#options.generateReferenceId();
     const sourceEvent = createNormalizedAlertSampleEvent({
       eventType: request.document.eventType,
       ingestProvider: request.document.providerKind === "streamerbot" ? "streamerbot" : "twitch",
       payload: request.samplePayload,
       id: referenceId,
-      occurredAt: this.#now().toISOString(),
+      occurredAt: identity?.receivedAt ?? this.#now().toISOString(),
       externalIdentity: request.document.externalIdentity
     });
-    const assets = await this.#resolveAssets(request.document);
+    const assets = await this.#resolveAssets(request.document, testAssetLayers(request, profileReady));
     const document = this.#resolveTestDuration(request.document, assets);
     const resolvedRequest = { ...request, document };
     const visualAssetMediaTypes = this.#resolveVisualAssetMediaTypes(document, assets);
@@ -363,7 +407,7 @@ export class AlertEditorService {
       );
     }
 
-    await this.#options.enqueueTest({ sourceEvent, alerts, audio, replayDocuments: [request.document] });
+    await this.#options.enqueueTest({ sourceEvent, alerts, audio, replayDocuments: [request.document], ...(identity === undefined ? {} : { deliveredBy: "manual" as const }) });
     return {
       status: "queued",
       targetProfileId: request.targetProfileId,
@@ -513,9 +557,9 @@ export class AlertEditorService {
     });
   }
 
-  async #resolveAssets(document: AlertEditorDocument): Promise<ReadonlyMap<string, AssetRecord>> {
+  async #resolveAssets(document: AlertEditorDocument, layers: readonly AlertLayer[] = document.layers): Promise<ReadonlyMap<string, AssetRecord>> {
     if (this.#options.findAssets === undefined) return new Map();
-    const assetIds = [...new Set(document.layers.flatMap((layer) =>
+    const assetIds = [...new Set(layers.flatMap((layer) =>
       layer.type === "image" || layer.type === "video" || layer.type === "audio" ? [layer.assetId] : layer.type === "text" && layer.textStyle.fontAssetId ? [layer.textStyle.fontAssetId] : []
     ))];
     return this.#options.localMediaService === undefined ? this.#options.findAssets(assetIds) : this.#options.localMediaService.captureAdmission(assetIds);
@@ -1212,4 +1256,10 @@ function builtInSamples(normal: Record<string, unknown>, edge: Record<string, un
     { id: "normal", label: `Normal ${label}`, kind: "built-in" as const, payload: normal },
     { id: "edge", label: `Edge ${label}`, kind: "built-in" as const, payload: edge }
   ];
+}
+
+function testAssetLayers(request: AlertEditorTestRequest, visualEligible: boolean): readonly AlertLayer[] {
+  return request.document.layers.filter(layer => layer.visible && (layer.type === "audio" ? request.includeAudio
+    : layer.type === "video" ? visualEligible || (request.includeAudio && layer.playEmbeddedAudio)
+    : visualEligible));
 }

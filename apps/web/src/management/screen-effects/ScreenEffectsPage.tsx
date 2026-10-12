@@ -6,7 +6,7 @@ import { actionableError } from "../foundation/actionable-error.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import type { ActionableManagementError } from "@stream-jams/core";
-import { BrowserSourcesPanel } from "../foundation/BrowserSourcesPanel.js";
+import { BrowserSourceSetupNotice, BrowserSourcesPanel, browserSourceSizesShown } from "../foundation/BrowserSourcesPanel.js";
 import {
   duplicateScreenEffect,
   type ScreenEffectSet,
@@ -70,7 +70,7 @@ export function ScreenEffectsPage({ api, onEdit, initialSetId, generateId = defa
         api.listSets()
       ]);
       setDocuments(loadedDocuments);
-      setBrowserSources(loadedSources);
+      setBrowserSources(loadedSources.filter(source => source.purpose === "live"));
       setModuleEnabled(loadedModuleEnabled);
       setSets(loadedSets);
       setExpandedSetId((current) => loadedSets.some((set) => set.id === current) ? current : loadedSets.find((set) => set.active)?.id ?? null);
@@ -207,9 +207,10 @@ export function ScreenEffectsPage({ api, onEdit, initialSetId, generateId = defa
     <ModulePageLayout className="screen-effects-page"
       feedback={<>{feedbackOwner === "page" ? feedback : null}{loadError === null ? null : <ManagementErrorBanner error={loadError} />}{loading ? <p role="status">Loading Screen Effects…</p> : null}</>}
       controls={<ModuleControls status={moduleEnabled === null ? <p>Module status unavailable</p> : <StatusBadge label={moduleEnabled ? "Module enabled" : "Module disabled"} tone={moduleEnabled ? "positive" : "neutral"} />} description="Coordinate one visual and one optional sound from trusted stream events."><Button ref={fallbackRef} variant="default" disabled={busy || moduleEnabled === null} onClick={() => reviewConfirmation({ kind: "module", enabled: !moduleEnabled })}>{moduleEnabled ? "Disable Screen Effects module" : "Enable Screen Effects module"}</Button></ModuleControls>}
-      outputs={<BrowserSourcesPanel id="browser-sources" detailsId="screen-effects-sources-content" expanded={sourcesExpanded} onToggle={() => setSourcesExpanded(value => !value)} readyCount={browserSources.filter(source => source.status === "available").length} needsSetupCount={browserSources.filter(source => source.status !== "available").length} description="Module live and test outputs.">
-        <p>Screen Effects uses its own module source or an enabled unified source. Keep Browser Source audio separate from visual surface membership.</p>
-        {browserSources.length === 0 ? <p>No Screen Effects Browser Source output is registered.</p> : browserSources.map(source => <BrowserSourceRow key={source.id} label={source.label} ready={source.status === "available"} telemetry={source.status === "available" ? "URL available" : source.status.replace("-", " ")} metadata={<span>Module source · {source.purpose === "live" ? "Live" : "Test"}</span>} url={source.url === null ? <p>Create a URL before adding this output.</p> : <MaskedValue label={`${source.label} Browser Source URL`} value={source.url} />} actions={source.status === "create-required" ? <Button disabled={busy} onClick={() => void createBrowserSource(source)}>Create URL</Button> : <Button color="red" variant="light" disabled={busy} onClick={() => reviewConfirmation({ kind: "regenerate", source })}>Regenerate URL</Button>} />)}
+      outputs={<BrowserSourcesPanel id="browser-sources" detailsId="screen-effects-sources-content" expanded={sourcesExpanded} onToggle={() => setSourcesExpanded(value => !value)} readyCount={browserSources.filter(source => source.status === "available").length} needsSetupCount={browserSources.filter(source => source.status !== "available").length} description="One live URL for this module.">
+        <BrowserSourceSetupNotice sizesShown={browserSourceSizesShown(browserSources)} />
+        <p>Screen Effects uses one live module source. Selected audio devices remain independent of desktop visibility.</p>
+        {browserSources.length === 0 ? <p>No Screen Effects Browser Source output is registered.</p> : browserSources.map(source => <BrowserSourceRow key={source.id} label={source.label} canvas={source.canvas} ready={source.status === "available"} telemetry={source.status === "available" ? "URL available" : source.status.replace("-", " ")} metadata={<span>Module source · Live</span>} url={source.url === null ? <p>Create a URL before adding this output.</p> : <MaskedValue label={`${source.label} Browser Source URL`} value={source.url} />} actions={source.status === "create-required" ? <Button disabled={busy} onClick={() => void createBrowserSource(source)}>Create URL</Button> : <Button color="red" variant="light" disabled={busy} onClick={() => reviewConfirmation({ kind: "regenerate", source })}>Regenerate URL</Button>} />)}
       </BrowserSourcesPanel>}
     >
     <ModuleSection title="Screen Effect sets" label="Screen Effect sets" actions={<Button disabled={busy} onClick={() => { setSetName(""); reviewName({ kind: "create" }); }}>Create set</Button>}>

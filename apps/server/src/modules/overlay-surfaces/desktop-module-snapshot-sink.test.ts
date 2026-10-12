@@ -122,7 +122,7 @@ it("keeps a newer Data image owner when an older clear acknowledgement finishes 
 it("shows the Videos mirror on a visible desktop layer and never a second browser-style player", async () => {
   const syncModule = vi.fn<(sync: DesktopModuleSync) => Promise<void>>(async () => {});
   let surfaces: SurfaceConfiguration[] = [{ ...desktop(), layers: [{ moduleId: "videos", visible: true }] } as SurfaceConfiguration];
-  let videos: OverlayModulePresentation = { kind: "videos", videos: { status: "active", itemId: "a", title: "Clip", requester: null, layout: { x: 269, y: 140, width: 1382, height: 876 }, delivery: { mode: "mirror", paused: false, obsAudio: true } } };
+  let videos: OverlayModulePresentation = { kind: "videos", videos: { status: "active", itemId: "a", title: "Clip", requester: null, layout: { schemaVersion: 2, content: { width: 1382, height: 876 }, desktopPlacement: { x: 269, y: 140, scale: 1 } }, delivery: { mode: "mirror", paused: false, obsAudio: true } } };
   const getModuleSnapshot = vi.fn(async () => ({ moduleId: "videos", enabled: true, instructions: [], presentation: videos }));
   const sink = new DesktopModuleSnapshotSink({ transport: { syncModule }, surfaces: { list: async () => surfaces },
     runtime: { getModuleSnapshot: async () => ({ moduleId: "timers", enabled: true, instructions: [], presentation }) },
@@ -131,7 +131,7 @@ it("shows the Videos mirror on a visible desktop layer and never a second browse
   expect(getModuleSnapshot).toHaveBeenCalledWith(expect.objectContaining({ moduleId: "videos", purpose: "live" }));
   expect(syncModule).toHaveBeenLastCalledWith({ moduleId: "videos", revision: 1, presentation: videos, assets: [] });
   // Without the desktop player, browser sources play on their own; the desktop layer clears.
-  videos = { kind: "videos", videos: { status: "active", itemId: "a", title: "Clip", requester: null, layout: { x: 269, y: 140, width: 1382, height: 876 },
+  videos = { kind: "videos", videos: { status: "active", itemId: "a", title: "Clip", requester: null, layout: { schemaVersion: 2, content: { width: 1382, height: 876 }, desktopPlacement: { x: 269, y: 140, scale: 1 } },
     delivery: { mode: "player", source: { provider: "youtube", videoId: "dQw4w9WgXcQ", startAtMs: 0 }, clock: { state: "playing", positionMs: 0, atEpochMs: 1 }, obsAudio: true } } };
   await sink.syncVideos();
   expect(syncModule).toHaveBeenLastCalledWith({ moduleId: "videos", revision: 2, presentation: null, assets: [] });

@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import type {
   OverlayAccessService,
   OverlayAccessVerification,
@@ -143,7 +144,7 @@ describe("OverlayGateway", () => {
     const registration = { overlayId: "default", moduleId: "timers", purpose: "live", scope: "module", targetProfileId: "landscape", rawKey: "timer-key" } as const;
     const gateway = createGateway({ allowed: [registration] }); const socket = new RecordingSocket();
     const result = await gateway.registerClient(socket, registration); expect(result.authorized).toBe(true);
-    const composition = { overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", modules: [
+    const composition = { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(), overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", modules: [
       { moduleId: "timers", enabled: true, instructions: [] }
     ] } as const;
     expect(gateway.deliverComposition(result.authorized ? result.clientId : "", composition)).toBe(true);
@@ -151,7 +152,7 @@ describe("OverlayGateway", () => {
     expect(gateway.deliverComposition(result.authorized ? result.clientId : "", { ...composition, overlayId: "other" })).toBe(false);
   });
 
-  it("sends saved layers only to matching unified outputs, including reconnects", async () => {
+  it("never sends retired unified surface layers, including reconnects", async () => {
     const unified = { overlayId: "default", moduleId: null, purpose: "live", scope: "unified", rawKey: "test-unified" } as const;
     const module = { ...unified, moduleId: "alerts", scope: "module", rawKey: "test-module" } as const;
     const other = { ...unified, overlayId: "other" };
@@ -163,12 +164,14 @@ describe("OverlayGateway", () => {
     const surface = { id: "unified-browser:default", kind: "unified-browser", overlayId: "default", layers: [{ moduleId: "alerts", visible: false }] } as const;
     gateway.setSurfaceLayers(surface);
     const message = { type: "overlay.surface-layers", layers: surface.layers };
-    expect(sockets[0]!.messages.at(-1)).toEqual(message);
+    expect(sockets[0]!.closed).toMatchObject({ code: 1008 });
+    expect(sockets[0]!.messages).not.toContainEqual(message);
     expect(sockets[1]!.messages).not.toContainEqual(message);
     expect(sockets[2]!.messages).not.toContainEqual(message);
     const reconnect = new RecordingSocket();
     await gateway.registerClient(reconnect, unified);
-    expect(reconnect.messages.at(-1)).toEqual(message);
+    expect(reconnect.closed).toMatchObject({ code: 1008 });
+    expect(reconnect.messages).not.toContainEqual(message);
   });
 
   it("sends authoritative audio state on connect and broadcasts mute and targeted stop changes", async () => {
@@ -254,7 +257,7 @@ describe("OverlayGateway", () => {
 
     expect(result).toEqual({
       deliveredClientIds: ["client-1"],
-      skippedClientIds: ["client-2"]
+      skippedClientIds: []
     });
     expect(matchingClient.messages).toContainEqual({
       type: "overlay.playback",
@@ -269,7 +272,7 @@ describe("OverlayGateway", () => {
     );
   });
 
-  it("delivers unified playback only to matching unified clients", async () => {
+  it("rejects retired unified and test clients without delivering playback", async () => {
     const gateway = createGateway({
       allowed: [
         {
@@ -308,12 +311,11 @@ describe("OverlayGateway", () => {
 
     const result = gateway.deliverPlaybackInstruction(createInstruction({ purpose: "test", scope: "unified" }));
 
-    expect(result.deliveredClientIds).toEqual(["client-1"]);
-    expect(result.skippedClientIds).toEqual(["client-2"]);
-    expect(unifiedClient.messages).toContainEqual({
-      type: "overlay.playback",
-      instruction: createInstruction({ purpose: "test", scope: "unified" })
-    });
+    expect(result.deliveredClientIds).toEqual([]);
+    expect(result.skippedClientIds).toEqual([]);
+    expect(unifiedClient.closed).toMatchObject({ code: 1008 });
+    expect(moduleClient.closed).toMatchObject({ code: 1008 });
+    expect(unifiedClient.messages).not.toContainEqual(expect.objectContaining({ type: "overlay.playback" }));
     expect(moduleClient.messages).not.toContainEqual(
       expect.objectContaining({
         type: "overlay.playback"
@@ -775,7 +777,7 @@ it("drops an initial composition superseded by a live refresh and clears tickets
   const gateway = createGateway({ allowed: [route] }); const socket = new RecordingSocket();
   const registration = await gateway.registerClient(socket, route); if (!registration.authorized) throw new Error("unauthorized");
   const initial = gateway.reserveComposition(registration.clientId); const live = gateway.reserveComposition(registration.clientId);
-  const composition = { overlayId: "default", purpose: "live", scope: "module", modules: [{ moduleId: "data-overlays", enabled: true, instructions: [], presentation: { kind: "data-overlays", projection: { runtimeId: "runtime", revision: 2, canvases: [] } } }] };
+  const composition = { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(), overlayId: "default", purpose: "live", scope: "module", modules: [{ moduleId: "data-overlays", enabled: true, instructions: [], presentation: { kind: "data-overlays", projection: { runtimeId: "runtime", revision: 2, canvases: [] } } }] };
   expect(gateway.deliverComposition(registration.clientId, composition, live)).toBe(true);
   expect(gateway.deliverComposition(registration.clientId, composition, initial)).toBe(false);
   gateway.unregisterClient(registration.clientId);
@@ -790,6 +792,85 @@ describe("Videos mirror signaling", () => {
   const unifiedRoute = { overlayId: "default", moduleId: null, purpose: "test", scope: "unified", rawKey: "ovl_unifiedTest" } as const;
   const hello = (connection = 1) => JSON.stringify({ type: "videos.mirror.signal", signal: { type: "hello", connection } });
 
+  it("rejects test registrations and video reports from other modules or connected unified-test clients", async () => {
+    const retired = { ...videosRoute, purpose: "test" as const, rawKey: "retired" };
+    const ordinaryUnified = { ...unifiedRoute, purpose: "live" as const, rawKey: "ordinary-unified" };
+    const onPlaybackReport = vi.fn(); const onVideoMirrorSignal = vi.fn();
+    const gateway = createGateway({ allowed: [videosRoute, alertsRoute, unifiedRoute, retired, ordinaryUnified], onPlaybackReport, onVideoMirrorSignal });
+    for (const route of [videosRoute, alertsRoute, unifiedRoute, ordinaryUnified]) await gateway.registerClient(new RecordingSocket(), route);
+    const rejected = new RecordingSocket(); expect((await gateway.registerClient(rejected, retired)).authorized).toBe(false);
+    expect(rejected.closed?.code).toBe(1008);
+    for (const id of ["client-1", "client-2", "client-3", "client-4"]) {
+      gateway.handleClientMessage(id, JSON.stringify({ type: "overlay.playback.completed", instructionId: "video:item" }));
+      gateway.handleClientMessage(id, hello());
+    }
+    expect(onPlaybackReport.mock.calls.map(([report]) => report.clientId)).toEqual(["client-1"]);
+    expect(onVideoMirrorSignal.mock.calls.map(([client]) => client.id)).toEqual(["client-1"]);
+    expect(gateway.sendVideoMirrorSignal("client-3", { type: "not-ready", connection: 1 })).toBe(false);
+  });
+
+  it("retirement disconnects already connected identities and rejects stale reports/signals and racing registration", async () => {
+    const access = new StubOverlayAccessService([videosRoute, unifiedRoute]);
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    let wait = false; let id = 0;
+    const onPlaybackReport = vi.fn(); const onVideoMirrorSignal = vi.fn();
+    const gateway = new OverlayGateway({ overlayAccessService: { verifyRouteAccess: async request => { if (wait) await pending; return access.verifyRouteAccess(request); } },
+      generateClientId: () => `retire-${++id}`, onPlaybackReport, onVideoMirrorSignal });
+    const ordinary = new RecordingSocket(); const test = new RecordingSocket();
+    await gateway.registerClient(ordinary, videosRoute); await gateway.registerClient(test, unifiedRoute);
+    wait = true; const racing = new RecordingSocket(); const registration = gateway.registerClient(racing, videosRoute);
+    const trusted: string[] = [];
+    gateway.setRecipientPolicy(client => { trusted.push(client.keyId); return false; });
+    expect(trusted.every(key => typeof key === "string" && key.length > 0)).toBe(true);
+    expect(ordinary.closed?.code).toBe(1008); expect(test.closed?.code).toBe(1008);
+    release(); expect((await registration).authorized).toBe(false);
+    for (const clientId of ["retire-1", "retire-2"]) {
+      gateway.handleClientMessage(clientId, hello());
+      gateway.handleClientMessage(clientId, JSON.stringify({ type: "overlay.playback.completed", instructionId: "video:item" }));
+      expect(gateway.canReceiveVideos(clientId)).toBe(false);
+    }
+    expect(onPlaybackReport).not.toHaveBeenCalled(); expect(onVideoMirrorSignal).not.toHaveBeenCalled();
+    expect(racing.closed?.code).toBe(1008);
+  });
+
+  it("selective revocation preserves unrelated connected and racing ordinary recipients", async () => {
+    const access = new StubOverlayAccessService([videosRoute, alertsRoute]);
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    let wait = false;
+    let clientId = 0;
+    const gateway = new OverlayGateway({ generateClientId: () => `selective-${++clientId}`, overlayAccessService: { verifyRouteAccess: async request => {
+      const result = await access.verifyRouteAccess(request);
+      if (wait) await pending;
+      return result;
+    } } });
+    let videosRevoked = false;
+    gateway.setRecipientPolicy(client => !videosRevoked || client.moduleId !== "videos");
+    const revoked = new RecordingSocket(); const unrelated = new RecordingSocket();
+    await gateway.registerClient(revoked, videosRoute); await gateway.registerClient(unrelated, alertsRoute);
+    wait = true;
+    const revokedRace = new RecordingSocket(); const unrelatedRace = new RecordingSocket();
+    const registrations = [gateway.registerClient(revokedRace, videosRoute), gateway.registerClient(unrelatedRace, alertsRoute)];
+    videosRevoked = true; gateway.recheckRecipientPolicy();
+    expect(revoked.closed?.code).toBe(1008); expect(unrelated.closed).toBeNull();
+    release();
+    expect((await registrations[0]!).authorized).toBe(false);
+    expect((await registrations[1]!).authorized).toBe(true);
+    expect(revokedRace.closed?.code).toBe(1008); expect(unrelatedRace.closed).toBeNull();
+  });
+
+  it("a revocation recheck cannot reopen a maintenance deny-all policy", async () => {
+    const gateway = createGateway({ allowed: [alertsRoute] });
+    gateway.setRecipientPolicy(() => false);
+    gateway.recheckRecipientPolicy();
+    const duringMaintenance = new RecordingSocket();
+    expect((await gateway.registerClient(duringMaintenance, alertsRoute)).authorized).toBe(false);
+    expect(duringMaintenance.closed?.code).toBe(1008);
+    gateway.setRecipientPolicy(() => true);
+    expect((await gateway.registerClient(new RecordingSocket(), alertsRoute)).authorized).toBe(true);
+  });
+
   it("relays validated signals only from outputs whose overlay key covers Videos", async () => {
     const onVideoMirrorSignal = vi.fn();
     const gateway = createGateway({ allowed: [videosRoute, alertsRoute, unifiedRoute], onVideoMirrorSignal });
@@ -800,8 +881,7 @@ describe("Videos mirror signaling", () => {
     gateway.handleClientMessage("client-2", hello());
     gateway.handleClientMessage("client-3", hello(4));
     expect(onVideoMirrorSignal.mock.calls).toEqual([
-      [expect.objectContaining({ id: "client-1", moduleId: "videos", purpose: "live" }), { type: "hello", connection: 1 }],
-      [expect.objectContaining({ id: "client-3", scope: "unified", purpose: "test" }), { type: "hello", connection: 4 }]
+      [expect.objectContaining({ id: "client-1", moduleId: "videos", purpose: "live" }), { type: "hello", connection: 1 }]
     ]);
     // The overlay key never reaches the relay.
     expect(JSON.stringify(onVideoMirrorSignal.mock.calls)).not.toContain("ovl_");

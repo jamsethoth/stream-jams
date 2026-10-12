@@ -2,7 +2,7 @@ import { actionableError } from "../foundation/actionable-error.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import type { ActionableManagementError } from "@stream-jams/core";
-import { Button, Checkbox, NativeSelect, Tabs, TextInput, Textarea } from "@mantine/core";
+import { Button, Checkbox, NativeSelect, Tabs, TextInput, Textarea, Tooltip } from "@mantine/core";
 import { ScreenEffectPreview } from "./ScreenEffectPreview.js";
 import { ManagementHttpError } from "../management-http-client.js";
 import {
@@ -496,8 +496,9 @@ function EditorHeader(props: {
       <Button variant="default" disabled={!props.canUndo} onClick={props.onUndo} type="button">Undo</Button>
       <Button variant="default" disabled={!props.canRedo} onClick={props.onRedo} type="button">Redo</Button>
       <Button variant="default" onClick={props.onPreview} type="button">Preview</Button>
-      <Button variant="default" disabled={props.testDisabled} onClick={props.onTest} type="button">Test saved…</Button>
+      <Tooltip label="Plays on your live sources and OBS" events={{ hover: true, focus: true, touch: false }} openDelay={300} withinPortal><Button aria-describedby="screen-effect-live-test-hint" variant="default" disabled={props.testDisabled} onClick={props.onTest} type="button">Test saved…</Button></Tooltip>
       <Button disabled={props.busy || !props.canSave} onClick={props.onSave} type="button">Save</Button>
+      <small className="screen-effect-editor__live-test-hint" id="screen-effect-live-test-hint">Test saved plays on your live sources and OBS.</small>
     </div>
   </header>;
 }
@@ -811,6 +812,10 @@ function LiveTestDialog({ api, document, feedback, onCancel, onClose, onError, o
         onNotice({ tone: "warning", message: `Saved test queued as ${result.occurrenceId ?? "a new occurrence"}. Pause or DND may hold it; review Operator for authoritative state.` });
         onError(null);
         onClose();
+      } else if (result.status === "pending") {
+        onNotice({ tone: "warning", message: `Manual event accepted; delivery is pending. Reference ${result.busId}.`, detail: "Review Event intake in Diagnostics. Do not resend while this accepted event's outcome is unknown." });
+        onError(null);
+        onClose();
       } else {
         onError(actionableError(new Error(`Saved test was not queued: ${result.status.replace("-", " ")}.`), "Saved test was not queued", "Review module enablement, outputs and Operator state before testing again."));
       }
@@ -826,6 +831,7 @@ function LiveTestDialog({ api, document, feedback, onCancel, onClose, onError, o
       {feedback}
       <p className="management-eyebrow">Explicit live output</p>
       <ManagementModalTitle>Test saved Screen Effect?</ManagementModalTitle>
+      <p className="screen-effect-editor__live-test-warning" role="note"><strong>Plays on your live sources and OBS.</strong> Viewers will see and hear this test, including its audio.</p>
       <p>Saved input · The saved {variant.name} variant is used exactly; weighted selection is not rerun.</p>
       <p>Selected destinations (current connection and device readiness are checked when you confirm):</p>
       {destinations.length === 0 ? <p role="alert">No destination is selected.</p> : <ul>{destinations.map((destination) => <li key={destination}>{destination}</li>)}</ul>}

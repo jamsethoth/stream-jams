@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   connectOverlayClient,
@@ -20,7 +21,7 @@ describe("overlay-client", () => {
     const onMessage = vi.fn(); connectClient(onMessage); await vi.advanceTimersByTimeAsync(0); onMessage.mockClear();
     const socket = FakeWebSocket.instances[0]!;
     const send = (runtimeId: string, revision: number) => socket.emitMessage(JSON.stringify({ type: "overlay.composition", composition: {
-      overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", modules: [
+      runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(), overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", modules: [
         { moduleId: "data-overlays", enabled: true, instructions: [], presentation: { kind: "data-overlays", projection: { runtimeId, revision, canvases: [] } } },
         { moduleId: "alerts", enabled: revision % 2 === 0, instructions: [] }
       ]
@@ -45,7 +46,7 @@ describe("overlay-client", () => {
     expect(createOverlayMusicArtworkUrl(parseOverlayRoute("/overlay/modules/music/live/ovl_music?profile=vertical")!, "art_safe"))
       .toBe("/overlay/modules/music/live/ovl_music/artwork/art_safe?profile=vertical");
     expect(createOverlayMusicArtworkUrl(parseOverlayRoute("/overlay/unified/live/ovl_unified")!, "art_safe"))
-      .toBe("/overlay/unified/live/ovl_unified/music/artwork/art_safe");
+      .toBe("");
     expect(createOverlayMusicArtworkUrl(parseOverlayRoute("/overlay/modules/music/test/ovl_test")!, "art_safe")).toBe("");
     expect(createOverlayMusicArtworkUrl(parseOverlayRoute("/overlay/modules/alerts/live/ovl_alert")!, "art_safe")).toBe("");
     expect(createOverlayMusicArtworkUrl(parseOverlayRoute("/overlay/modules/music/live/ovl_music")!, "https://remote/")).toBe("");
@@ -57,15 +58,42 @@ describe("overlay-client", () => {
     expect(createOverlayAssetUrl(parseOverlayRoute("/overlay/modules/alerts/live/ovl_profile")!, "clip", version))
       .toBe(`/overlay/modules/alerts/live/ovl_profile/assets/clip?version=${version}`);
     expect(createOverlayAssetUrl(parseOverlayRoute("/overlay/unified/live/ovl_profile")!, "clip", version))
-      .toBe(`/overlay/unified/live/ovl_profile/assets/clip?version=${version}`);
+      .toBe("");
   });
   it("parses validated composition updates from the live socket", async () => {
     const onMessage = vi.fn(); connectClient(onMessage); await vi.advanceTimersByTimeAsync(0); onMessage.mockClear();
-    const composition = { overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape",
+    const composition = { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(), overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape",
       modules: [{ moduleId: "alerts", enabled: true, instructions: [] }] };
     FakeWebSocket.instances[0]!.emitMessage(JSON.stringify({ type: "overlay.composition", composition }));
     FakeWebSocket.instances[0]!.emitMessage(JSON.stringify({ type: "overlay.composition", composition: { ...composition, modules: "bad" } }));
     expect(onMessage).toHaveBeenCalledExactlyOnceWith({ type: "composition", composition });
+  });
+
+  it("rejects delayed pre-reset geometry on the same socket and reconnect initializes current canvas", async () => {
+    const onMessage = vi.fn();
+    const connection = connectClient(onMessage);
+    const oldSocket = FakeWebSocket.instances[0]!;
+    oldSocket.emit("open");
+    await vi.advanceTimersByTimeAsync(0);
+    onMessage.mockClear();
+    const composition = { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(10, 800, 600), overlayId: "default", purpose: "live", scope: "module", modules: [] };
+    oldSocket.emitMessage(JSON.stringify({ type: "overlay.composition", composition }));
+    oldSocket.emitMessage(JSON.stringify({ type: "overlay.composition", composition: { ...composition, canvas: sceneOutputCanvas(9, 1920, 1080) } }));
+    oldSocket.emitMessage(JSON.stringify({ type: "overlay.composition", composition: { ...composition, runtimeId: "unrelated-runtime" } }));
+    expect(onMessage.mock.calls.filter(([message]) => message.type === "composition")).toEqual([[{ type: "composition", composition }]]);
+    oldSocket.emitClose(1006);
+    await vi.advanceTimersByTimeAsync(1000);
+    const currentSocket = FakeWebSocket.instances[1]!;
+    currentSocket.emit("open");
+    onMessage.mockClear();
+    const current = { ...composition, runtimeId: "new-runtime", canvas: sceneOutputCanvas(0, 400, 300) };
+    // A service restart is accepted only by a fresh connection, before its initial HTTP capture pins identity.
+    currentSocket.emitMessage(JSON.stringify({ type: "overlay.composition", composition: current }));
+    oldSocket.emitMessage(JSON.stringify({ type: "overlay.composition", composition }));
+    expect(onMessage).toHaveBeenCalledExactlyOnceWith({ type: "composition", composition: current });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onMessage).toHaveBeenCalledTimes(1);
+    connection.close();
   });
 
   it("validates complete layer control payloads and rejects duplicate or malformed rows", () => {
@@ -77,27 +105,13 @@ describe("overlay-client", () => {
     }
     expect(onMessage).toHaveBeenCalledExactlyOnceWith({ type: "surface-layers", layers });
   });
-  it("parses module and unified overlay routes without query-string credentials", () => {
-    expect(parseOverlayRoute("/overlay/modules/alerts/test/ovl_moduleKey?key=ovl_queryKey")).toEqual({
-      overlayId: "default",
-      moduleId: "alerts",
-      purpose: "test",
-      scope: "module",
-      targetProfileId: null,
-      rawKey: "ovl_moduleKey",
-      compositionPath: "/overlay/modules/alerts/test/ovl_moduleKey/composition",
-      webSocketPath: "/overlay/ws/modules/alerts/test/ovl_moduleKey"
+  it("parses ordinary module paths without query-string credentials and rejects retired paths", () => {
+    expect(parseOverlayRoute("/overlay/modules/alerts/live/ovl_moduleKey?key=ovl_queryKey")).toMatchObject({
+      overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", targetProfileId: null, rawKey: "ovl_moduleKey",
+      compositionPath: "/overlay/modules/alerts/live/ovl_moduleKey/composition", webSocketPath: "/overlay/ws/modules/alerts/live/ovl_moduleKey"
     });
-    expect(parseOverlayRoute("/overlay/unified/live/ovl_unifiedKey")).toEqual({
-      overlayId: "default",
-      moduleId: null,
-      purpose: "live",
-      scope: "unified",
-      targetProfileId: null,
-      rawKey: "ovl_unifiedKey",
-      compositionPath: "/overlay/unified/live/ovl_unifiedKey/composition",
-      webSocketPath: "/overlay/ws/unified/live/ovl_unifiedKey"
-    });
+    expect(parseOverlayRoute("/overlay/modules/alerts/test/ovl_moduleKey?key=ovl_queryKey")).toBeNull();
+    expect(parseOverlayRoute("/overlay/unified/live/ovl_unifiedKey")).toBeNull();
   });
 
   it("carries a fixed target profile through composition, WebSocket, and asset requests", () => {
@@ -137,7 +151,7 @@ describe("overlay-client", () => {
       "/overlay/modules/alerts/live/ovl_moduleKey/assets/asset%20image"
     );
     expect(createOverlayAssetUrl(parseOverlayRoute("/overlay/unified/test/ovl_unifiedKey")!, "asset-audio")).toBe(
-      "/overlay/unified/test/ovl_unifiedKey/assets/asset-audio"
+      ""
     );
   });
 
@@ -223,7 +237,7 @@ describe("overlay-client", () => {
 
   it("fetches a fresh authoritative composition after every successful connection", async () => {
     const onMessage = vi.fn();
-    const fetcher = vi.fn().mockResolvedValue({ ok: true, json: vi.fn().mockResolvedValue({
+    const fetcher = vi.fn().mockResolvedValue({ ok: true, json: vi.fn().mockResolvedValue({ runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
       overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", modules: []
     }) });
     connectOverlayClient({
@@ -372,7 +386,7 @@ function connectClient(onMessage = vi.fn()) {
     route: parseOverlayRoute("/overlay/modules/alerts/live/ovl_reconnect?profile=landscape")!,
     fetcher: vi.fn().mockResolvedValue({
       ok: true,
-      json: vi.fn().mockResolvedValue({
+      json: vi.fn().mockResolvedValue({ runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(),
         overlayId: "default",
         purpose: "live",
         scope: "module",

@@ -22,6 +22,8 @@ export interface OverlayModuleWizardDefinition {
 export interface OverlayModuleRendererDefinition {
   readonly entryPoint: string;
   readonly supportedOutputs: ReadonlyArray<"module" | "unified">;
+  /** Eligibility for the trusted private desktop composition, independent of public outputs. */
+  readonly supportsDesktopComposition: boolean;
 }
 
 export interface OverlayModuleDefinition<TConfig = unknown> {

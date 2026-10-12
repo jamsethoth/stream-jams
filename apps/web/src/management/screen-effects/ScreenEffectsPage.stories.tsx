@@ -1,3 +1,4 @@
+import { sceneOutputCanvas } from "@stream-jams/core";
 import { createStoryEffectSets } from "../../stories/screen-effect-set-fixtures.js";
 import {
   createScreenEffectDocument,
@@ -11,7 +12,7 @@ import type { ScreenEffectsApi } from "./screen-effects-api.js";
 
 const savedEffect = effect();
 
-const meta = { tags: ["mantine-feedback-tabs", "mantine-stage5"],
+const meta = { tags: ["mantine-feedback-tabs", "mantine-stage5", "public-output-retirement"],
   title: "Management/Screen Effects/Inventory",
   component: ScreenEffectsPage,
   args: {
@@ -37,8 +38,8 @@ export const Inventory: Story = {
     const controls = canvas.getByLabelText("Module controls");
     await expect(Boolean(controls.compareDocumentPosition(browserSources) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     await expect(within(browserSources).getByText("URL available")).toBeVisible();
-    await expect(within(browserSources).getByText("Screen Effects Test")).toBeVisible();
-    await expect(within(browserSources).getByText("create required")).toBeVisible();
+    await expect(within(browserSources).queryByText("Screen Effects Test")).toBeNull();
+    await expect(within(browserSources).queryByText("create required")).toBeNull();
     await userEvent.type(canvas.getByRole("searchbox", { name: "Search effects" }), "missing effect");
     await expect(canvas.getByRole("status")).toHaveTextContent("No effects match your search.");
     await userEvent.clear(canvas.getByRole("searchbox", { name: "Search effects" }));
@@ -115,7 +116,7 @@ function createApi(
     ...createStoryEffectSets(documents.map((document) => document.id)),
     list: async () => documents,
     listBrowserSources: async () => [
-      {
+      { canvas: sceneOutputCanvas(0, 1920, 1080),
         id: "effects-live",
         label: "Screen Effects Live",
         purpose: "live",
@@ -128,7 +129,7 @@ function createApi(
         url: "http://127.0.0.1:39187/overlay/modules/screen-effects/live/ovl_story",
         status: "available"
       },
-      {
+      { canvas: sceneOutputCanvas(0, 1920, 1080),
         id: "effects-test",
         label: "Screen Effects Test",
         purpose: "test",

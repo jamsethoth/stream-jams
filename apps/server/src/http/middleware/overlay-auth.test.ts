@@ -1,3 +1,4 @@
+import { HistoricalOverlayKeyFixture } from "../test-support/historical-overlay-key-fixture.js";
 import type { FastifyRequest } from "fastify";
 import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
@@ -9,28 +10,28 @@ const now = new Date("2026-05-29T12:00:00.000Z");
 describe("createOverlayAuthPreHandler", () => {
   it("reports the persisted record only after successful verification", async () => {
     const overlayAccessService = new LocalOverlayAccessService({ clock: () => now, generateId: () => "key-1", generateRawKey: () => "ovl_record" });
-    const created = await overlayAccessService.createKey({ overlayId: "default", moduleId: "alerts", scope: "module", purpose: "live" });
+    const created = await overlayAccessService.createKey({ overlayId: "default", moduleId: "screen-effects", scope: "module", purpose: "live" });
     const onAuthorized = vi.fn();
     const app = Fastify({ logger: false });
     app.get("/overlay/modules/:moduleId/:purpose/:overlayKey", { preHandler: createOverlayAuthPreHandler({ overlayAccessService, resolveAccessRequest: resolveModuleOverlayAccessRequest, onAuthorized }) }, async () => ({ ok: true }));
     try {
-      expect((await app.inject({ url: "/overlay/modules/alerts/test/ovl_record" })).statusCode).toBe(401);
+      expect((await app.inject({ url: "/overlay/modules/screen-effects/test/ovl_record" })).statusCode).toBe(401);
       expect(onAuthorized).not.toHaveBeenCalled();
-      expect((await app.inject({ url: "/overlay/modules/alerts/live/ovl_record" })).statusCode).toBe(200);
+      expect((await app.inject({ url: "/overlay/modules/screen-effects/live/ovl_record" })).statusCode).toBe(200);
       expect(onAuthorized).toHaveBeenCalledWith(expect.anything(), created.record, created.rawKey);
       await overlayAccessService.revokeKey(created.record.id);
       onAuthorized.mockClear();
-      expect((await app.inject({ url: "/overlay/modules/alerts/live/ovl_record" })).statusCode).toBe(401);
+      expect((await app.inject({ url: "/overlay/modules/screen-effects/live/ovl_record" })).statusCode).toBe(401);
       expect(onAuthorized).not.toHaveBeenCalled();
     } finally { await app.close(); }
   });
   it("authorizes a module overlay from the route segment key and ignores query-string keys", async () => {
-    const overlayAccessService = new LocalOverlayAccessService({
+    const overlayAccessService = new HistoricalOverlayKeyFixture({
       clock: () => now,
       generateId: () => "key-1",
       generateRawKey: () => "ovl_segmentKey"
     });
-    await overlayAccessService.createKey({
+    await overlayAccessService.seedHistoricalKey({
       overlayId: "default",
       moduleId: "alerts",
       purpose: "live",
@@ -59,13 +60,13 @@ describe("createOverlayAuthPreHandler", () => {
     });
   });
 
-  it("authorizes a unified overlay from the route segment key", async () => {
-    const overlayAccessService = new LocalOverlayAccessService({
+  it("rejects a historical unified overlay even with its correct route segment key", async () => {
+    const overlayAccessService = new HistoricalOverlayKeyFixture({
       clock: () => now,
       generateId: () => "key-1",
       generateRawKey: () => "ovl_unifiedSegmentKey"
     });
-    const created = await overlayAccessService.createKey({
+    const created = await overlayAccessService.seedHistoricalKey({
       overlayId: "default",
       moduleId: null,
       purpose: "test",
@@ -78,29 +79,29 @@ describe("createOverlayAuthPreHandler", () => {
       url: `/overlay/unified/test/${created.rawKey}`
     });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ ok: true });
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({ error: { code: "OVERLAY_ROUTE_KEY_UNAUTHORIZED" } });
   });
 
   it("rejects live/test, module/unified, wrong-module, and revoked key mismatches", async () => {
-    const overlayAccessService = new LocalOverlayAccessService({
+    const overlayAccessService = new HistoricalOverlayKeyFixture({
       clock: () => now,
       generateId: createSequentialIdGenerator(),
       generateRawKey: createSequentialRawKeyGenerator(["ovl_testKey", "ovl_unifiedKey", "ovl_revokedKey"])
     });
-    const testKey = await overlayAccessService.createKey({
+    const testKey = await overlayAccessService.seedHistoricalKey({
       overlayId: "default",
       moduleId: "alerts",
       purpose: "test",
       scope: "module"
     });
-    const unifiedKey = await overlayAccessService.createKey({
+    const unifiedKey = await overlayAccessService.seedHistoricalKey({
       overlayId: "default",
       moduleId: null,
       purpose: "live",
       scope: "unified"
     });
-    const revokedKey = await overlayAccessService.createKey({
+    const revokedKey = await overlayAccessService.seedHistoricalKey({
       overlayId: "default",
       moduleId: "alerts",
       purpose: "live",

@@ -52,9 +52,16 @@ export function createDefaultOverlayModuleRegistry(): OverlayModuleRegistry {
   ]);
 }
 
-/** Module ids that participate in unified browser sources and surface layering, in registry order. */
+/** Module ids that participate in public unified browser sources, in registry order. */
 export function listUnifiedOverlayModuleIds(registry: Pick<OverlayModuleRegistry, "listModules">): string[] {
   return registry.listModules()
     .filter(moduleDefinition => moduleDefinition.renderer.supportedOutputs.includes("unified"))
+    .map(moduleDefinition => moduleDefinition.id);
+}
+
+/** Module ids eligible for trusted private desktop composition, in registry order. */
+export function listDesktopOverlayModuleIds(registry: Pick<OverlayModuleRegistry, "listModules">): string[] {
+  return registry.listModules()
+    .filter(moduleDefinition => moduleDefinition.renderer.supportsDesktopComposition)
     .map(moduleDefinition => moduleDefinition.id);
 }

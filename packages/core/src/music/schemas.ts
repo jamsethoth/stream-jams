@@ -2,6 +2,7 @@ import { z } from "zod";
 import { alertTextStyleSchema, rgbaColorSchema } from "../alerts/text-style.js";
 import { mediaVersionSnapshotSchema } from "../assets/media-reference.js";
 import { targetProfileDefinitions } from "../management/contracts.js";
+import { boxShadowSchema } from "../shared/box-shadow.js";
 import { overlayElementLayoutSchema, overlayTargetProfileIdSchema } from "../shared/schemas.js";
 
 export const musicLimits = {
@@ -61,10 +62,7 @@ export const musicColorsSchema = z.object({
   backgroundStart: rgbaColorSchema, backgroundEnd: rgbaColorSchema, title: rgbaColorSchema, details: rgbaColorSchema,
   artworkPlaceholder: rgbaColorSchema, border: rgbaColorSchema, progressFill: rgbaColorSchema, progressTrack: rgbaColorSchema
 }).strict();
-export const musicShadowSchema = z.object({
-  offsetX: boundedInteger(musicLimits.shadowOffsetPx), offsetY: boundedInteger(musicLimits.shadowOffsetPx),
-  blur: boundedInteger(musicLimits.shadowBlurPx), spread: boundedInteger(musicLimits.shadowSpreadPx), color: rgbaColorSchema
-}).strict();
+export const musicShadowSchema = boxShadowSchema;
 export const musicInsetsSchema = z.object({
   top: boundedInteger(musicLimits.contentInsetPx), right: boundedInteger(musicLimits.contentInsetPx),
   bottom: boundedInteger(musicLimits.contentInsetPx), left: boundedInteger(musicLimits.contentInsetPx)
@@ -155,9 +153,10 @@ export const musicWidgetProjectionSchema = z.object({
   appearanceStartedAtEpochMs: milliseconds, clockReferenceEpochMs: milliseconds.max(Number.MAX_SAFE_INTEGER),
   profile: musicProfileConfigSchema, view: musicViewSchema,
   renderScale: z.number().min(0.1).max(3).optional(),
+  contentCanvas: z.object({ width: z.int().positive(), height: z.int().positive() }).strict().optional(),
   layout: overlayElementLayoutSchema.strict(), css: musicCssConfigSchema, assets: z.array(musicPublicAssetReferenceSchema)
 }).strict().superRefine((projection, context) => {
-  const bounds = targetProfileDefinitions.find(profile => profile.id === projection.targetProfileId)!;
+  const bounds = projection.contentCanvas ?? targetProfileDefinitions.find(profile => profile.id === projection.targetProfileId)!;
   const { layout } = projection;
   const scale = projection.renderScale ?? 1;
   if (!projection.snapshot.track || layout.x < 0 || layout.y < 0 || layout.x + layout.width * scale > bounds.width || layout.y + layout.height * scale > bounds.height) {

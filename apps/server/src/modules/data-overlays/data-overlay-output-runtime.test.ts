@@ -4,7 +4,7 @@ import { DataOverlayOutputRuntime, createDataOutputRefreshQueue } from "./data-o
 import { DesktopModuleSnapshotSink } from "../overlay-surfaces/desktop-module-snapshot-sink.js";
 
 const seed = (): DataOverlayState => dataOverlayStateSchema.parse({ revision: 7, values: [{ id: "value", name: "Private definition", kind: "integer", content: 42, resetDefault: 0, revision: 3, createdAt: "2026-10-08T12:00:00Z", updatedAt: "2026-10-08T12:00:00Z", resetGroupId: null }], goals: [], resetGroups: [], pinnedValueIds: [], canvases: [{ id: "canvas", name: "Private canvas", enabled: true, order: 0, targetProfileId: "landscape", outputs: { browser: true, desktop: true }, elements: [{ id: "text", order: 0, kind: "text", x: 0, y: 0, width: 100, height: 40, visible: true, binding: { kind: "value", valueId: "value" }, format: { prefix: "", suffix: "", thousandsSeparator: false, overflow: "wrap" }, style: { color: "#FFFFFFFF", fontSizePx: 24, fontWeight: 400, align: "left" } }, { id: "image", kind: "image", order: 1, x: 100, y: 0, width: 40, height: 40, visible: true, assetId: "asset", fit: "contain" }] }] });
-const request = { moduleId: "data-overlays", overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape" } as const;
+const request = { recipientKind: "browser", moduleId: "data-overlays", overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape" } as const;
 const projection = (snapshot: OverlayModuleSnapshot) => { if (snapshot.presentation?.kind !== "data-overlays") throw new Error("Expected data projection"); return snapshot.presentation.projection; };
 afterEach(() => vi.useRealTimers());
 
@@ -63,7 +63,7 @@ it("projects scoped browser/desktop profiles and hides unavailable images withou
   expect(projection(await runtime.getModuleSnapshot({ ...request, targetProfileId: "vertical" })).canvases).toEqual([]);
   state.canvases[0]!.outputs.browser = false;
   expect(projection(await runtime.getModuleSnapshot(request)).canvases).toEqual([]);
-  expect(projection(await runtime.getModuleSnapshot({ ...request, overlayId: "desktop:primary", scope: "unified" })).canvases).toHaveLength(1);
+  expect(projection(await runtime.getModuleSnapshot({ ...request, overlayId: "desktop:primary", scope: "unified", recipientKind: "desktop" })).canvases).toHaveLength(1);
   runtime.close();
 });
 

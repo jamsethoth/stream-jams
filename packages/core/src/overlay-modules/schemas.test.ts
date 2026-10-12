@@ -48,7 +48,8 @@ describe("overlay module schemas", () => {
     ).toBe(false);
   });
 
-  it("requires the Alerts renderer to support module-specific and unified outputs", () => {
-    expect(alertsOverlayModuleDefinition.renderer.supportedOutputs).toEqual(["module", "unified"]);
+  it("supports ordinary Alerts browser outputs and private desktop composition independently", () => {
+    expect(alertsOverlayModuleDefinition.renderer.supportedOutputs).toEqual(["module"]);
+    expect(alertsOverlayModuleDefinition.renderer.supportsDesktopComposition).toBe(true);
   });
 });

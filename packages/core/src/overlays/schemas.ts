@@ -1,3 +1,4 @@
+import { outputCanvasSchema } from "../overlay-modules/output-canvas.js";
 import { z } from "zod";
 import { playbackTimingSchema } from "./playback-timing.js";
 import {
@@ -98,6 +99,8 @@ export const overlayModuleSnapshotSchema = z.object({
 }).strict();
 
 export const overlayCompositionSchema = z.object({
+  runtimeId: nonEmptyStringSchema,
+  canvas: outputCanvasSchema,
   overlayId: nonEmptyStringSchema,
   purpose: overlayPurposeSchema,
   scope: overlayScopeSchema,

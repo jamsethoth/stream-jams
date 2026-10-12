@@ -7,7 +7,7 @@ Data overlays display shared integer or plain-text values and goals on freeform 
 1. Open **Data** in Management and create an integer or text value. Set its reset default, optionally assign a reset group, and pin it for Operator access.
 2. Optionally create a goal over an integer value. A fixed-target goal uses an absolute target. A saved-baseline goal measures an additional amount from a saved starting count; restarting the goal captures a new baseline.
 3. Open **Modules → Data overlays**, create a canvas and choose its output profile. Add text, registered images, rectangles, ellipses or progress bars. Bind text or progress to a compatible value or goal.
-4. Save the canvas and explicitly enable the module, canvas and desired outputs. New Data rows on shared surfaces start hidden; include and show the Data row when using a unified browser source or desktop surface.
+4. Save the canvas and explicitly enable the module, canvas and desired outputs. Use the module's Landscape or Vertical Browser Source in OBS. New Data rows on the private desktop surface start hidden; include and show the Data row there when using desktop output. Public test and unified sources are retired.
 5. Use **Operator** for live increments, decrements, guarded sets, resets, group resets, goal restarts and canvas visibility. Management edits definitions and displays current content read-only.
 
 One value can feed several elements and canvases. Goal text and bars share the same calculation. Counts beyond the target remain visible while bar fill is capped; a count below a saved baseline can show negative achieved progress. Values must be safe integers; text is limited to 2 KiB of UTF-8. Money and decimal values are deferred.

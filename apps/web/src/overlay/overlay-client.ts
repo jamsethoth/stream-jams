@@ -1,4 +1,4 @@
-import { moduleMuteStateSchema } from "@stream-jams/core";
+import { moduleMuteStateSchema, isOrdinaryOverlayOutput } from "@stream-jams/core";
 import { serializeException, overlayInstructionSchema, overlayCompositionSchema, surfaceLayersSchema, type SurfaceLayer } from "@stream-jams/core";
 import { overlayVideoDurationMessageType, videoMirrorPublisherSignalSchema, videoMirrorSignalMessageType, type VideoMirrorPublisherSignal } from "@stream-jams/core/videos";
 import type { VideoMirrorConnector } from "@stream-jams/core/videos";
@@ -102,6 +102,7 @@ export function parseOverlayRoute(pathWithOptionalQuery: string): ParsedOverlayR
     if (targetProfileId === undefined) {
       return null;
     }
+    if (!isOrdinaryOverlayOutput({ moduleId, purpose, scope: "module", targetProfileId }, true)) return null;
     const profileQuery = targetProfileQuery(targetProfileId);
 
     return {
@@ -116,24 +117,6 @@ export function parseOverlayRoute(pathWithOptionalQuery: string): ParsedOverlayR
     };
   }
 
-  if (segments[1] === "unified" && segments.length === 4) {
-    const [, , purpose, rawKey] = segments;
-    if (rawKey === undefined || !isOverlayPurpose(purpose) || url.searchParams.has("profile")) {
-      return null;
-    }
-
-    return {
-      overlayId: "default",
-      moduleId: null,
-      purpose,
-      scope: "unified",
-      targetProfileId: null,
-      rawKey,
-      compositionPath: `/overlay/unified/${purpose}/${rawKey}/composition`,
-      webSocketPath: `/overlay/ws/unified/${purpose}/${rawKey}`
-    };
-  }
-
   return null;
 }
 
@@ -143,7 +126,8 @@ export function createOverlayWebSocketUrl(origin: string, route: Pick<ParsedOver
   return url.toString();
 }
 
-export function createOverlayAssetUrl(route: ParsedOverlayRoute, assetId: string, version?: string): string {
+export function createOverlayAssetUrl(route: ParsedOverlayRoute | null, assetId: string, version?: string): string {
+  if (route === null || !isOrdinaryOverlayOutput(route, true)) return "";
   const encodedAssetId = encodeURIComponent(assetId);
   const versionQuery = version === undefined ? "" : `version=${encodeURIComponent(version)}`;
   if (route.scope === "module") {
@@ -151,17 +135,17 @@ export function createOverlayAssetUrl(route: ParsedOverlayRoute, assetId: string
     return `/overlay/modules/${encodeURIComponent(route.moduleId ?? "")}/${route.purpose}/${encodeURIComponent(route.rawKey)}/assets/${encodedAssetId}${profileQuery}${versionQuery === "" ? "" : `${profileQuery === "" ? "?" : "&"}${versionQuery}`}`;
   }
 
-  return `/overlay/unified/${route.purpose}/${encodeURIComponent(route.rawKey)}/assets/${encodedAssetId}${versionQuery === "" ? "" : `?${versionQuery}`}`;
+  return "";
 }
 
 /** Opaque provider artwork is served only by a live, purpose-scoped output. */
-export function createOverlayMusicArtworkUrl(route: ParsedOverlayRoute, artworkRef: string): string {
-  if (route.purpose !== "live" || !/^[-_A-Za-z0-9]{1,512}$/.test(artworkRef)) return "";
+export function createOverlayMusicArtworkUrl(route: ParsedOverlayRoute | null, artworkRef: string): string {
+  if (route === null || !isOrdinaryOverlayOutput(route, true) || !/^[-_A-Za-z0-9]{1,512}$/.test(artworkRef)) return "";
   if (route.scope === "module") {
     if (route.moduleId !== "music") return "";
     return `/overlay/modules/music/live/${encodeURIComponent(route.rawKey)}/artwork/${encodeURIComponent(artworkRef)}${targetProfileQuery(route.targetProfileId)}`;
   }
-  return `/overlay/unified/live/${encodeURIComponent(route.rawKey)}/music/artwork/${encodeURIComponent(artworkRef)}`;
+  return "";
 }
 
 export function createOverlayPlaybackReporter(socket: OverlaySocketLike): OverlayPlaybackReporter {
@@ -245,6 +229,13 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
 
     const nextSocket = new WebSocketCtor(webSocketUrl);
     let generation = 0;
+    let acceptedComposition: OverlayComposition | null = null;
+    const acceptCanvas = (composition: OverlayComposition): boolean => {
+      if (acceptedComposition !== null && (composition.runtimeId !== acceptedComposition.runtimeId ||
+        composition.canvas.configRevision < acceptedComposition.canvas.configRevision)) return false;
+      acceptedComposition = composition;
+      return true;
+    };
     socket = nextSocket;
     nextSocket.addEventListener("open", () => {
       if (socket !== nextSocket) return;
@@ -257,6 +248,7 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
         })
         .then((composition) => {
           if (disposed || socket !== nextSocket || settledCompositionGeneration >= generation) return;
+          if (!acceptCanvas(composition)) return;
           settledCompositionGeneration = generation;
           options.onMessage({ type: "composition", composition: acceptComposition(composition) });
         })
@@ -271,7 +263,10 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
       const signal = parseVideoMirrorSignal(event.data);
       if (signal !== null) { for (const listener of [...videoMirrorListeners]) listener(signal); return; }
       const message = parseOverlaySocketMessage(event.data, (instructionId, failure) => reporter.reportFailed(instructionId, failure));
-      if (message?.type === "composition" && generation > 0) settledCompositionGeneration = Math.max(settledCompositionGeneration, generation);
+      if (message?.type === "composition") {
+        if (!acceptCanvas(message.composition)) return;
+        if (generation > 0) settledCompositionGeneration = Math.max(settledCompositionGeneration, generation);
+      }
       if (message !== null) options.onMessage(message.type === "composition" ? { ...message, composition: acceptComposition(message.composition) } : message);
     });
     // Browsers expose no cause on WebSocket error; close carries the diagnostic

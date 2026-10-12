@@ -200,11 +200,11 @@ export class PlaybackCoordinator {
     return this.#closePromise;
   }
 
-  async enqueueEvent(event: AlertSourceEvent): Promise<PlaybackEnqueueResult> {
-    return this.#localMediaService === undefined ? this.#enqueueEvent(event) : this.#localMediaService.runAdmission(() => this.#enqueueEvent(event));
+  async enqueueEvent(event: AlertSourceEvent, deliveredBy: import("@stream-jams/core").BusEventSourceKind = event.ingestProvider): Promise<PlaybackEnqueueResult> {
+    return this.#localMediaService === undefined ? this.#enqueueEvent(event, deliveredBy) : this.#localMediaService.runAdmission(() => this.#enqueueEvent(event, deliveredBy));
   }
 
-  async #enqueueEvent(event: AlertSourceEvent): Promise<PlaybackEnqueueResult> {
+  async #enqueueEvent(event: AlertSourceEvent, deliveredBy: import("@stream-jams/core").BusEventSourceKind): Promise<PlaybackEnqueueResult> {
     if (this.#closed) throw new Error("Playback has stopped.");
     if (!this.#dedupeService.accept(event)) {
       return this.#result("duplicate", [], []);
@@ -273,7 +273,7 @@ export class PlaybackCoordinator {
     );
     const snapshot = this.enqueueResolvedTest({
       sourceEvent: event,
-      deliveredBy: event.ingestProvider,
+      deliveredBy,
       replayDocuments: [...editorDocuments.values()],
       alerts: resolvedAlerts,
       audio,

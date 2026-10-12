@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createScreenEffectDocument, screenEffectDocumentSchema, timerEventRulesSchema } from "@stream-jams/core";
-import { createInMemoryStreamJamsDatabase } from "../database.js";
+import { applyStreamJamsMigration, runInTransaction, type StreamJamsDatabase } from "../database.js";
+import { createPreMigrationDatabase } from "../../../test-support/pre-migration-database.js";
+import { eventTriggerSelectorsMigration } from "./037-event-trigger-selectors.js";
 import { upgradeLegacyEffectBindingRows, upgradeLegacyTimerEventRules } from "../../events/legacy-trigger-selectors.js";
 import { SqliteAssetRepository } from "../../assets/sqlite-asset-repository.js";
 import { SqliteEffectRepository } from "../../screen-effects/sqlite-effect-repository.js";
 import { SqliteTimerDefinitionRepository } from "../../timers/sqlite-timer-definition-repository.js";
-import { screenEffectsMigration } from "./022-screen-effects.js";
-
-const legacyBindingsTable = /CREATE TABLE screen_effect_bindings \([\s\S]*?\n\);/u.exec(screenEffectsMigration.sql)![0];
 
 const legacyBindings = [
   { id: "binding-reward", position: 0, kind: "twitch-reward", canonical_identity: 'twitch-reward:["broadcaster-1","reward-1"]', document: { id: "binding-reward", kind: "twitch-reward", broadcasterId: "broadcaster-1", rewardId: "reward-1" } },
@@ -22,7 +21,7 @@ const legacyRules = [
 ];
 
 async function legacyDatabase() {
-  const database = createInMemoryStreamJamsDatabase();
+  const database = createPreMigrationDatabase("037-event-trigger-selectors");
   const db = database.connection;
   await new SqliteAssetRepository(db).save({
     id: "asset-tone", originalFileName: "tone.wav", mediaType: "audio", mimeType: "audio/wav", sizeBytes: 4,
@@ -37,28 +36,22 @@ async function legacyDatabase() {
     id: "timer-legacy", label: "Legacy", durationMs: 10000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null,
     outputs: { browserSource: false, deviceRouteIds: [] }, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z", eventRules: []
   });
-  db.exec(`DROP TABLE data_templates; DROP TABLE data_element_refs; DROP TABLE data_pins; DROP TABLE data_goals; DROP TABLE data_values; DROP TABLE data_reset_groups; DROP TABLE data_canvases; DROP TABLE data_overlay_meta; DELETE FROM schema_migrations WHERE id IN ('042-custom-data-overlays', '043-data-overlay-templates');
-    DROP TABLE screen_effect_bindings; ${legacyBindingsTable}
-    CREATE INDEX screen_effect_bindings_effect_order ON screen_effect_bindings(effect_id, position);
-    DROP TABLE video_requests; DROP TABLE video_queue_state; DELETE FROM schema_migrations WHERE id = '041-video-request-metadata'; DELETE FROM schema_migrations WHERE id = '040-video-request-queue';
-    DROP TABLE event_bus_settings; DROP TABLE event_bus_intake_log; DROP TABLE event_bus_consumer_outcomes; DELETE FROM schema_migrations WHERE id = '039-event-bus-outcomes'; ALTER TABLE alert_rules DROP COLUMN external_identity_json; DELETE FROM schema_migrations WHERE id = '038-external-alert-identity';
-    DELETE FROM schema_migrations WHERE id = '037-event-trigger-selectors';`);
   const insert = db.prepare("INSERT INTO screen_effect_bindings (id, effect_id, position, kind, canonical_identity, document_json) VALUES (?, 'effect-legacy', ?, ?, ?, ?)");
   for (const binding of legacyBindings) insert.run(binding.id, binding.position, binding.kind, binding.canonical_identity, JSON.stringify(binding.document));
   db.prepare("UPDATE timer_definitions SET event_rules_json = ? WHERE id = 'timer-legacy'").run(JSON.stringify(legacyRules));
   return database;
 }
 
-function bindingRows(database: ReturnType<typeof createInMemoryStreamJamsDatabase>) {
+function bindingRows(database: Pick<StreamJamsDatabase, "connection">) {
   return database.connection.prepare("SELECT id, effect_id, position, kind, canonical_identity, document_json FROM screen_effect_bindings ORDER BY position").all()
     .map((row) => ({ ...row }) as Record<string, unknown>);
 }
 
 describe("037-event-trigger-selectors", () => {
   it("converts bindings to selectors, keeping the first of bindings that become identical", async () => {
-    using database = await legacyDatabase();
-    const before = bindingRows(database);
-    database.runMigrations();
+    using fixture = await legacyDatabase();
+    const before = bindingRows(fixture);
+    const database = fixture.upgrade();
     const after = bindingRows(database);
 
     expect(after.map((row) => [row.id, row.kind, row.canonical_identity])).toEqual([
@@ -75,8 +68,8 @@ describe("037-event-trigger-selectors", () => {
   });
 
   it("converts timer rules to source-restricted canonical selectors with reward and tier conditions", async () => {
-    using database = await legacyDatabase();
-    database.runMigrations();
+    using fixture = await legacyDatabase();
+    const database = fixture.upgrade();
     const stored = String(database.connection.prepare("SELECT event_rules_json FROM timer_definitions WHERE id = 'timer-legacy'").get()?.event_rules_json);
     const rules = timerEventRulesSchema.parse(JSON.parse(stored));
 
@@ -92,12 +85,11 @@ describe("037-event-trigger-selectors", () => {
   });
 
   it("leaves rows already in selector form unchanged when run again", async () => {
-    using database = await legacyDatabase();
-    database.runMigrations();
+    using fixture = await legacyDatabase();
+    const database = fixture.upgrade();
     const bindings = bindingRows(database);
     const rules = database.connection.prepare("SELECT event_rules_json FROM timer_definitions").all();
-    database.connection.exec("DROP TABLE data_templates; DROP TABLE data_element_refs; DROP TABLE data_pins; DROP TABLE data_goals; DROP TABLE data_values; DROP TABLE data_reset_groups; DROP TABLE data_canvases; DROP TABLE data_overlay_meta; DELETE FROM schema_migrations WHERE id IN ('042-custom-data-overlays', '043-data-overlay-templates'); DROP TABLE video_requests; DROP TABLE video_queue_state; DELETE FROM schema_migrations WHERE id = '041-video-request-metadata'; DELETE FROM schema_migrations WHERE id = '040-video-request-queue'; DROP TABLE event_bus_settings; DROP TABLE event_bus_intake_log; DROP TABLE event_bus_consumer_outcomes; DELETE FROM schema_migrations WHERE id = '039-event-bus-outcomes'; ALTER TABLE alert_rules DROP COLUMN external_identity_json; DELETE FROM schema_migrations WHERE id IN ('037-event-trigger-selectors', '038-external-alert-identity', '039-event-bus-outcomes')");
-    database.runMigrations();
+    runInTransaction(database.connection, () => applyStreamJamsMigration(database.connection, eventTriggerSelectorsMigration));
     expect(bindingRows(database)).toEqual(bindings);
     expect(database.connection.prepare("SELECT event_rules_json FROM timer_definitions").all()).toEqual(rules);
   });

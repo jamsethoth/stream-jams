@@ -37,6 +37,6 @@ export const screenEffectsOverlayModuleDefinition = {
   },
   renderer: {
     entryPoint: "overlay/modules/screen-effects",
-    supportedOutputs: ["module", "unified"]
+    supportsDesktopComposition: true, supportedOutputs: ["module"]
   }
 } as const satisfies OverlayModuleDefinition<ScreenEffectsOverlayModuleConfig>;

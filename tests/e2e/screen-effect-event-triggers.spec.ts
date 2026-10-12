@@ -55,7 +55,7 @@ test("authors a stream event trigger that plays the effect only for matching eve
 
     const saved = await management("/screen-effects/raid-effect", undefined, "GET") as Record<string, unknown>;
     await management("/screen-effects/raid-effect", { document: { ...saved, enabled: true }, confirmLiveImpact: true }, "PUT");
-    const output = await management("/management/overlay-outputs/keys", { overlayId: "default", moduleId: null, purpose: "live", scope: "unified" }) as { url: string };
+    const output = await management("/management/overlay-outputs/keys", { overlayId: "default", moduleId: "screen-effects", purpose: "live", scope: "module", targetProfileId: null }) as { url: string };
     const overlay = await page.context().newPage();
     // The effect only admits events once a live browser source is registered.
     const registered = overlay.waitForEvent("websocket").then(socket => socket.waitForEvent("framereceived"));

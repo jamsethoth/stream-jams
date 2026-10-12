@@ -6,7 +6,7 @@ import { actionableError } from "../foundation/actionable-error.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import type { ActionableManagementError } from "@stream-jams/core";
-import { BrowserSourcesPanel } from "../foundation/BrowserSourcesPanel.js";
+import { BrowserSourceSetupNotice, BrowserSourcesPanel, browserSourceSizesShown } from "../foundation/BrowserSourcesPanel.js";
 import { formatTimerRemaining, timerDefinitionInputSchema, timersOverlayModuleConfigSchema, type TimerDefinition, type TimerDefinitionInput, type TimerRunState, type TimersOverlayModuleConfig } from "@stream-jams/core";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { AudioApi } from "../audio/audio-api.js";
@@ -24,7 +24,6 @@ import "./timers.css";
 type AssetRole = "iconAssetId" | "startAudioAssetId" | "endAudioAssetId";
 const emptyDraft: TimerDefinitionInput = { label: "", durationMs: 60_000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null,
   outputs: { browserSource: true, deviceRouteIds: [] } };
-const profileDimensions = { landscape: { width: 1920, height: 1080 }, vertical: { width: 1080, height: 1920 } } as const;
 
 export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTimersApi, ownerId }: {
   readonly ownerId?: string | undefined;
@@ -48,6 +47,7 @@ export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTim
   const [actionError, setActionError] = useState<ActionableManagementError | null>(null);
   const [definitionError, setDefinitionError] = useState<string | null>(null);
   const [layoutError, setLayoutError] = useState<string | null>(null);
+  const [layoutErrorPath, setLayoutErrorPath] = useState<string | null>(null);
   const openedOwnerRef = useRef<string | undefined>(undefined);
   const stateRevisionRef = useRef(0);
   const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false); const [notice, setNotice] = useState<ManagementToastNotice | null>(null); const [error, setError] = useState<ActionableManagementError | null>(null);
@@ -140,10 +140,19 @@ export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTim
   async function saveLayout() {
     if (layout === null || mutationRef.current) return;
     const parsed = timersOverlayModuleConfigSchema.safeParse(layout);
-    if (!parsed.success) { setLayoutError(parsed.error.issues[0]?.message ?? "Correct the overlay layout before saving."); return; }
-    setLayoutError(null);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      setLayoutError(issue?.message ?? "Correct the overlay layout before saving.");
+      setLayoutErrorPath(issue?.path.join(".") ?? null);
+      return;
+    }
+    setLayoutError(null); setLayoutErrorPath(null);
     mutationRef.current = true; setBusy(true); clearFeedback();
-    try { const saved = await api.saveModuleConfig(enabled, parsed.data); setLayout(saved.config); showNotice("Timer overlay layout saved."); }
+    try { const saved = await api.saveModuleConfig(enabled, parsed.data); setLayout(saved.config);
+      stateRevisionRef.current += 1;
+      try { setBrowserSources(await api.listBrowserSources()); setRefreshError(null); }
+      catch (reason) { setRefreshError(actionableError(reason, "Timer layout saved; source dimensions could not be refreshed", "Reopen Timers to load the saved OBS dimensions.")); }
+      showNotice("Timer overlay layout saved."); }
     catch (reason) { showError(reason); } finally { mutationRef.current = false; setBusy(false); }
   }
   async function confirmModuleEnablement() {
@@ -201,7 +210,7 @@ export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTim
     <ModuleSection title="Timer definitions" label="Timer definitions" actions={<Button disabled={busy} onClick={openCreate}>New timer</Button>}>
       {definitions.length === 0 ? <div className="timers-empty"><h3>No timers yet</h3><p>Create one for a recurring stream activity.</p><Button onClick={openCreate} type="button">Create timer</Button></div> : <div className="timers-list">{definitions.map(item => { const state = stateById.get(item.id); return <article aria-label={`${item.label} timer`} className="timer-row" key={item.id}><Button variant="subtle" className="timer-row__identity" onClick={() => openEdit(item.id)} type="button"><span className="timer-row__identity-label"><strong>{item.label}</strong><span>{formatTimerRemaining(item.durationMs)}</span></span></Button><StatusBadge label={state?.status ?? "Idle"} tone={state?.status === "running" ? "positive" : state?.status === "completed" ? "warning" : "neutral"} /><div className="timer-row__actions"><Button variant="default" onClick={() => openEdit(item.id)} type="button">Edit</Button><Button variant="default" disabled={busy} onClick={() => void command(state?.status === "paused" ? "resume" : "start", item.id)} type="button">{state?.status === "paused" ? "Resume" : "Start"}</Button></div></article>; })}</div>}
     </ModuleSection>
-    {layout === null ? null : <ModuleSection title="Overlay layout" label="Overlay layout" id="timer-presentation" description="Position the timer stack independently for each output profile."><TimerStackEditor assetApi={assetApi} definitions={definitions} value={layout} onChange={setLayout} /><div className="timer-layout-save">{layoutError === null ? null : <p role="alert">{layoutError}</p>}<Button disabled={busy} onClick={() => void saveLayout()} type="button">Save overlay layout</Button></div></ModuleSection>}
+    {layout === null ? null : <ModuleSection title="Overlay layout" label="Overlay layout" id="timer-presentation" description="Edit independent profile appearance and desktop placement."><TimerStackEditor assetApi={assetApi} definitions={definitions} value={layout} validationError={layoutError === null || layoutErrorPath === null ? null : { path: layoutErrorPath, message: layoutError }} onChange={next => { setLayout(next); setLayoutError(null); setLayoutErrorPath(null); }} /><div className="timer-layout-save">{layoutError === null ? null : <p role="alert">{layoutError}</p>}<Button disabled={busy} onClick={() => void saveLayout()} type="button">Save overlay layout</Button></div></ModuleSection>}
     <ModuleSection title="Automation credential" label="Automation credential" id="timer-credential" description={credential?.configured ? "Configured. Rotating invalidates the previous credential immediately." : "Not configured."}>{issuedToken === null ? null : <div className="timer-token"><label>Copy this credential now<input readOnly value={issuedToken} /></label><Button onClick={() => void navigator.clipboard?.writeText(issuedToken)} type="button">Copy</Button><Button variant="default" onClick={() => setIssuedToken(null)} type="button">Dismiss</Button></div>}<div className="timer-credential__actions"><Button disabled={busy} onClick={() => { if (!reviewConfirmation()) return; if (credential?.configured) setRotateConfirmation(true); else void rotateCredential(); }} type="button">{credential?.configured ? "Rotate credential" : "Create credential"}</Button><Button color="red" variant="subtle" disabled={busy || !credential?.configured} onClick={() => { if (reviewConfirmation()) setRevokeConfirmation(true); }} type="button">Revoke</Button></div></ModuleSection>
     </ModulePageLayout>
     <ModalSurface labelledBy="timer-editor-title" onCancel={closeEditor} open={editorOpen} pending={busy} restoreFocusFallbackRef={fallbackRef}><form className="timer-editor" onSubmit={save}>{feedbackOwner === "editor" ? feedback : null}<div className="timer-section-heading"><div><p className="management-eyebrow">Definition</p><ManagementModalTitle>{selected === null ? "Create timer" : `Edit ${selected.label}`}</ManagementModalTitle></div>{active === null ? null : <StatusBadge label={active.status} tone={active.status === "running" ? "positive" : "warning"} />}</div>
@@ -230,7 +239,8 @@ function BrowserSources({ busy, expanded, refreshFailed, onCopy, onCreate, onReg
 }) {
   const ready = sources.filter(source => source.status === "available").length; const needsSetup = sources.length - ready;
   return <BrowserSourcesPanel id="browser-sources" refreshFailed={refreshFailed} detailsId="timer-browser-source-details" expanded={expanded} onToggle={onToggle} readyCount={ready} needsSetupCount={needsSetup}>
-    <div className="timer-browser-sources__list">{sources.map(source => { const label = profileLabel(source.targetProfileId); const dimensions = profileDimensions[source.targetProfileId]; const revealed = revealedSourceIds.has(source.id); return <BrowserSourceRow key={source.id} label={label} ready={source.status === "available"} telemetry={source.connectionState === "connected" ? "Listening now" : source.lastConnectedAt === null ? "Not listening. No connection recorded." : `Not listening. Last seen ${formatDateTime(source.lastConnectedAt)}`} metadata={<strong><bdi dir="ltr">{dimensions.width} x {dimensions.height}</bdi></strong>} guidance={<>Add a Browser Source in OBS at <bdi dir="ltr">{dimensions.width} x {dimensions.height}</bdi>, then paste this URL.</>} url={source.url === null ? <p>Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source URL`} readOnly value={source.url} /> : <code>{maskRouteKey(source.url)}</code>} actions={<>{source.status === "create-required" ? <Button disabled={busy} onClick={() => onCreate(source)}>Create {label} URL</Button> : null}{source.url === null ? null : <><Button aria-label={`${revealed ? "Hide" : "Reveal"} ${label} URL`} variant="default" onClick={() => onToggleReveal(source)}>{revealed ? "Hide" : "Reveal"}</Button><Button aria-label={`Copy ${label} URL`} variant="default" onClick={() => onCopy(source)}>Copy</Button></>}{source.status !== "create-required" ? <Button aria-label={`Regenerate ${label} URL`} color="red" variant="light" disabled={busy} onClick={() => onRegenerate(source)}>Regenerate</Button> : null}</>} />; })}</div>
+    <BrowserSourceSetupNotice sizesShown={browserSourceSizesShown(sources)} />
+    <div className="timer-browser-sources__list">{sources.map(source => { const label = profileLabel(source.targetProfileId); const dimensions = source.canvas; const revealed = revealedSourceIds.has(source.id); return <BrowserSourceRow key={source.id} label={label} ready={source.status === "available"} telemetry={source.connectionState === "connected" ? "Listening now" : source.lastConnectedAt === null ? "Not listening. No connection recorded." : `Not listening. Last seen ${formatDateTime(source.lastConnectedAt)}`} canvas={dimensions} guidance={dimensions === undefined ? undefined : <>Add a Browser Source in OBS at <bdi dir="ltr">{dimensions.width} x {dimensions.height}</bdi>, then paste this URL.</>} url={source.url === null ? <p>Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source URL`} readOnly value={source.url} /> : <code>{maskRouteKey(source.url)}</code>} actions={<>{source.status === "create-required" ? <Button disabled={busy} onClick={() => onCreate(source)}>Create {label} URL</Button> : null}{source.url === null ? null : <><Button aria-label={`${revealed ? "Hide" : "Reveal"} ${label} URL`} variant="default" onClick={() => onToggleReveal(source)}>{revealed ? "Hide" : "Reveal"}</Button><Button aria-label={`Copy ${label} URL`} variant="default" onClick={() => onCopy(source)}>Copy</Button></>}{source.status !== "create-required" ? <Button aria-label={`Regenerate ${label} URL`} color="red" variant="light" disabled={busy} onClick={() => onRegenerate(source)}>Regenerate</Button> : null}</>} />; })}</div>
   </BrowserSourcesPanel>;
 }
 
