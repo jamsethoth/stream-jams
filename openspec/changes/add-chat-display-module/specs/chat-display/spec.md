@@ -62,15 +62,19 @@ Deleted messages, Twitch chat clears, bans and timeouts SHALL hide the matching 
 - **THEN** Twitch messages are hidden and YouTube, Kick and TikTok messages stay
 
 ### Requirement: Chat Filters Apply Before Display
-The Chat service SHALL drop messages from hidden accounts, commands starting with `!` while Hide commands is on (default on), and Twitch Shared Chat guest messages while Show Shared Chat guests is off (default off), and SHALL apply the active moderation blocked-term and link rules to message text while moderation is on (default on). Streamer.bot test messages SHALL appear only in the management preview.
+The Chat service SHALL drop messages from hidden accounts, commands starting with `!` while Hide commands is on (default off), and Twitch Shared Chat messages from other channels while Show Shared Chat guests is off (default on, with the origin channel's name shown), and SHALL apply the active moderation blocked-term and link rules to message text while moderation is on (default on). Streamer.bot test messages SHALL appear only in the management preview.
 
 #### Scenario: Bot account is hidden
 - **WHEN** the Streamer.bot bot account is in the hidden-accounts list and posts a message
 - **THEN** no output shows it
 
 #### Scenario: Command message
-- **WHEN** a viewer sends `!discord` with Hide commands on
-- **THEN** no output shows it
+- **WHEN** a viewer sends `!discord`
+- **THEN** outputs show it by default, and hide it once Hide commands is turned on
+
+#### Scenario: Shared Chat guest message
+- **WHEN** a viewer in a Twitch Shared Chat partner's channel sends a message
+- **THEN** outputs show it marked with that channel's name, unless Show Shared Chat guests is off
 
 #### Scenario: Blocked term
 - **WHEN** a message contains a moderation blocked term with moderation on

@@ -50,6 +50,7 @@ interface ChatMessage {
     avatar: ChatImageRef | null;
   };
   parts: Array<{ kind: "text"; text: string } | { kind: "emote"; name: string; image: ChatImageRef }>; // text total max 500
+  sharedChatChannel: string | null; // Twitch Shared Chat origin channel name, when from another channel
   hidden: false | "operator" | "removed";
 }
 ```
@@ -67,9 +68,9 @@ Rendering uses React text nodes and `<img>` elements only. Message text is never
 Applied in the Chat service before a message is stored or shown, in this order:
 
 1. Platform turned off in Chat settings: dropped (it should not be subscribed anyway).
-2. Twitch Shared Chat message from another channel (`isFromSharedChatGuest`): dropped while "Show Shared Chat guests" is off (default off).
+2. Twitch Shared Chat message from another channel (`isFromSharedChatGuest`): shown by default and marked with the origin channel's name from `sharedChatSource`; dropped while "Show Shared Chat guests" is off. Their removals arrive as the `SharedChat*` events above.
 3. Author in the hidden-accounts list (case-insensitive login or display name, per platform or any platform): dropped. Default list is empty; the editor suggests adding the Streamer.bot bot account.
-4. Text starting with `!`: dropped while "Hide commands" is on (default on).
+4. Text starting with `!`: dropped while "Hide commands" is on (default off).
 5. Moderation (default on): the active moderation settings' blocked-term replacement and URL stripping (`packages/core/src/moderation/moderation-service.ts`) apply to each text part. Emote names are not moderated.
 
 `isTest` messages from Streamer.bot's test buttons are shown only in the management preview, never on outputs.
@@ -135,7 +136,7 @@ Layout settings:
 | Maximum visible messages | 10 (1 to 50) | main |
 | Message lifetime | 0 (stay until pushed out); 5 to 600 seconds | main |
 | Font size | 20 px | main |
-| Show avatars | off | main |
+| Show avatars | on (Twitch avatars need the connected Twitch account) | main |
 | Show badges | on | main |
 | Show platform icon | on | collapsed "Appearance" |
 | Message background color and opacity | dark, 70 % | collapsed "Appearance" |
