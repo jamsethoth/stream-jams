@@ -49,6 +49,7 @@ Seven changes remain active:
 | --- | --- |
 | [add-live-music-layout-preview](../openspec/changes/add-live-music-layout-preview/tasks.md) | Implemented (PR #180); only task 3.4, the maintainer's Windows check that the preview follows Pear playback, is open |
 | [add-event-source-maintenance](../openspec/changes/add-event-source-maintenance/proposal.md) | Edit, replace and delete event sources (BL-067); spec only, awaiting review |
+| [add-discord-voice-overlay](../openspec/changes/add-discord-voice-overlay/proposal.md) | Discord voice overlay with a setup wizard for the streamer's own Discord application (BL-068); spec only, awaiting review |
 | [add-main-branch-changelog](../openspec/changes/add-main-branch-changelog/tasks.md) | Unimplemented proposal, 22 unchecked tasks; no root changelog or enforcing workflow |
 | [add-custom-data-overlays](../openspec/changes/add-custom-data-overlays/proposal.md) | Slice 1 of 4 for data overlays: values, goals, reset groups, canvases, outputs and Operator controls; 21 unchecked tasks, awaiting approval |
 | [add-data-overlay-event-rules](../openspec/changes/add-data-overlay-event-rules/proposal.md) | Slice 2: data rules as a central event bus consumer, plus Streamer.bot globals; 19 unchecked tasks; depends on slice 1 and the bus change |
