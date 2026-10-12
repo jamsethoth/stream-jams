@@ -26,12 +26,13 @@ export function instantiateDataTemplateElements(template: DataTemplate, mappings
       else if (mapping.kind === "new-goal") {
         value = mapping.value.kind === "existing" ? find(state.values, mapping.value.valueId) : createValue(mapping.value.definition);
         if (value.kind !== "integer") throw new TypeError("Goals require integer values");
+        if (value.source?.kind === "creator-goal") throw new DataOverlayError("SOURCE_READ_ONLY", "Creator Goal values require their native read-only goal");
         name(state.goals, mapping.goal.name); reference = id();
         state.goals.push(mapping.goal.mode === "fixed-target" ? { ...mapping.goal, id: reference, valueId: value.id } : { ...mapping.goal, id: reference, valueId: value.id, baseline: value.content });
       } else throw new TypeError("Goal template slot requires a goal mapping");
       if (value.kind !== "integer") throw new TypeError("Goals require integer values");
     }
-    if (slot.requiredSource && (!value.source || value.source.invalidated || value.source.provider !== slot.requiredSource.provider || value.source.kind !== slot.requiredSource.kind || !options.isTemplateSourceReady?.(value))) throw new DataOverlayError("SOURCE_NOT_READY", "Configure or reconnect the matching Twitch follower source before mapping this slot");
+    if (slot.requiredSource && (!value.source || value.source.invalidated || value.source.provider !== slot.requiredSource.provider || value.source.kind !== slot.requiredSource.kind || !options.isTemplateSourceReady?.(value))) throw new DataOverlayError("SOURCE_NOT_READY", "Configure or reconnect the matching Twitch source before mapping this slot");
     resolved.set(slotId, reference);
   }
   return [...template.elements].sort((a,b) => a.order - b.order || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).map((original,index) => {

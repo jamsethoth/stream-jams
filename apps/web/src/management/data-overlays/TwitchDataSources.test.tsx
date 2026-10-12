@@ -4,14 +4,14 @@ import { afterEach, expect, it, vi } from "vitest";
 import { renderManagement } from "../../test-support/render-management.js";
 import { ManagementHttpError } from "../management-http-client.js";
 import { TwitchDataSources } from "./TwitchDataSources.js";
-import { createTwitchDataFixture, twitchDataStatus } from "./twitch-data-source-fixtures.js";
+import { createTwitchDataFixture, twitchDataStatus, creatorGoalsStatus } from "./twitch-data-source-fixtures.js";
 import type { TwitchDataSourceStatus } from "@stream-jams/core";
 afterEach(() => { cleanup(); vi.useRealTimers(); });
-it.each(["current", "stale", "invalid", "disconnected", "unconfigured"] as const)("shows actionable follower %s status and blocked goals", async follower => {
+it.each(["current", "stale", "invalid", "disconnected", "unconfigured"] as const)("shows actionable follower %s status and waiting goals", async follower => {
   renderManagement(<TwitchDataSources api={createTwitchDataFixture(twitchDataStatus(follower))} onCreated={() => undefined} />);
   expect(await screen.findByText(/Follower total:/u)).toHaveTextContent(follower === "current" ? "Current" : follower === "stale" ? "Stale" : follower === "invalid" ? "Awaiting a valid total" : follower === "disconnected" ? "Disconnected" : "Not configured");
-  expect(screen.getByText(/Creator Goals:/u)).toHaveTextContent("Creator Goal integration pending");
-  expect(screen.queryByRole("combobox")).toBeNull();
+  expect(screen.getByText(/Creator Goals:/u)).toHaveTextContent("Waiting for Twitch goal subscriptions");
+  expect(screen.getByRole("button", { name: "Create Creator Goal" })).toBeDisabled();
   expect(screen.getByRole("link")).toHaveAttribute("href", "/manage/event-sources");
 });
 it("keeps optional missing goal scope separate from alert availability", async () => {
@@ -55,4 +55,27 @@ it("labels failed status refresh stale and prevents creation until refreshed", a
   const getStatus = vi.fn().mockRejectedValue(new Error("offline"));
   renderManagement(<TwitchDataSources api={{ ...createTwitchDataFixture(), getStatus }} onCreated={() => undefined} />);
   await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("may be stale"));
+});
+
+it("creates latest-of-type by default and labels unsupported goals and sub points", async () => {
+  const user = userEvent.setup(); const fixture = createTwitchDataFixture(creatorGoalsStatus()); const createGoal = vi.fn(fixture.createGoal);
+  renderManagement(<TwitchDataSources api={{ ...fixture, createGoal }} onCreated={() => undefined} />);
+  expect(await screen.findByRole("list", { name: "Active Twitch goals" })).toHaveTextContent("75 / 200 sub points");
+  expect(screen.getByRole("button", { name: "Pin Future goal" })).toBeDisabled();
+  await user.type(screen.getByRole("textbox", { name: "Creator Goal name" }), "Live followers");
+  await user.click(screen.getByRole("button", { name: "Create Creator Goal" }));
+  expect(createGoal).toHaveBeenCalledWith({ name: "Live followers", binding: { mode: "active-type", type: "follower" } });
+});
+it("pins an active goal explicitly and offers rebind after it ends", async () => {
+  const user = userEvent.setup(); const fixture = createTwitchDataFixture(creatorGoalsStatus()); const createGoal = vi.fn(fixture.createGoal); const rebindGoal = vi.fn(fixture.rebindGoal);
+  renderManagement(<TwitchDataSources api={{ ...fixture, createGoal, rebindGoal }} onCreated={() => undefined} />);
+  await user.click(await screen.findByRole("button", { name: "Pin Community points" }));
+  expect(screen.getByRole("combobox", { name: "Pinned Twitch goal" })).toHaveValue("points-goal");
+  await user.click(screen.getByRole("button", { name: "Create Creator Goal" }));
+  expect(createGoal).toHaveBeenCalledWith({ name: "Community points", binding: { mode: "pinned", goalId: "points-goal" } });
+  await screen.findByText("Creator Goal created.");
+  await user.click(screen.getByRole("button", { name: "Rebind goal" }));
+  await user.selectOptions(screen.getByRole("combobox", { name: "Goal binding" }), "active-type");
+  await user.click(screen.getByRole("button", { name: "Save Creator Goal rebind" }));
+  expect(rebindGoal).toHaveBeenCalledWith("goal", { name: "Twitch goal", binding: { mode: "active-type", type: "follower" } });
 });

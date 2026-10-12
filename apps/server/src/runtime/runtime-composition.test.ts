@@ -26,7 +26,8 @@ import type {
 } from "../modules/twitch/twitch-api-client.js";
 import type {
   TwitchEventSubApiClient,
-  TwitchEventSubCreateSubscriptionResult
+  TwitchEventSubCreateSubscriptionResult,
+  TwitchEventSubSocket
 } from "../modules/twitch/twitch-eventsub-client.js";
 import * as runtimeComposition from "./runtime-composition.js";
 import { createRuntimeAppComposition } from "./runtime-composition.js";
@@ -35,6 +36,66 @@ import { SqliteAssetRepository } from "../modules/assets/sqlite-asset-repository
 import { SqliteAssetRetirementRepository } from "../modules/assets/sqlite-asset-retirement-repository.js";
 import { SqliteTwitchAccountRepository } from "../modules/twitch/sqlite-twitch-account-repository.js";
 import { createTwitchTokenSecretRef, defaultTwitchOAuthScopes, defaultTwitchClientId } from "../modules/twitch/twitch-oauth-service.js";
+
+it("reconciles Creator Goals through the real central bus and resnapshots persisted bindings on restart", async () => {
+  const root = await mkdtemp(join(tmpdir(), "stream-jams-goal-runtime-"));
+  let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
+  let nowMs = Date.parse("2026-10-11T12:00:01Z");
+  const scopes = [...defaultTwitchOAuthScopes, "channel:read:goals"];
+  const account = { accountId: "synthetic-goal-account", login: "synthetic", displayName: "Synthetic", scopes, connectedAt: "2026-10-11T12:00:00Z", updatedAt: "2026-10-11T12:00:00Z" };
+  const goal = { id: "synthetic-goal", broadcaster_id: account.accountId, broadcaster_name: "Synthetic", broadcaster_login: "synthetic", type: "follower", description: "Synthetic goal", current_amount: 4, target_amount: 20, started_at: account.connectedAt };
+  const snapshot = deferred<{ goals: typeof goal[]; rateResetEpochMs: null }>();
+  const getCreatorGoals = vi.fn(async () => ({ goals: [goal], rateResetEpochMs: null })); getCreatorGoals.mockReturnValueOnce(snapshot.promise);
+  const sockets: RuntimeGoalSocket[] = [];
+  const secretStore = new TestSecretStore();
+  const options = { homeDirectory: root, webBuildDirectory: await createWebBuildFixture(root), configStore: new StaticConfigStore(createConfig(root)), environment: {}, secretStore,
+    now: () => new Date(nowMs), scheduleRecurring: () => ({}), cancelRecurring: () => {},
+    twitchApiClient: { startDeviceAuthorization: vi.fn(), pollDeviceAuthorization: vi.fn(), refreshUserToken: vi.fn(), getCurrentUser: vi.fn(), validateToken: async () => ({ clientId: defaultTwitchClientId, login: account.login, scopes, userId: account.accountId, expiresIn: 3600 }) },
+    twitchDataApiClient: { getFollowerTotal: vi.fn(), getCreatorGoals },
+    twitchEventSubApiClient: { createSubscription: async ({ subscription }: Parameters<TwitchEventSubApiClient["createSubscription"]>[0]) => ({ id: subscription.type, status: "enabled", type: subscription.type }) },
+    twitchEventSubSocketFactory: () => { const socket = new RuntimeGoalSocket(); sockets.push(socket); return socket; } };
+  const welcome = () => ({ metadata: { message_type: "session_welcome", message_timestamp: new Date(nowMs).toISOString() }, payload: { session: { id: `session-${sockets.length}`, status: "connected", connected_at: new Date(nowMs).toISOString(), keepalive_timeout_seconds: 60 } } });
+  try {
+    composition = await createRuntimeAppComposition(options);
+    await new SqliteTwitchAccountRepository(composition.database.connection).saveAccount(account);
+    await secretStore.setSecret(createTwitchTokenSecretRef(account.accountId, "access_token"), "synthetic-token");
+    let headers = managementAuthHeaders(await composition.app.inject({ method: "POST", url: "/auth/management/sessions" }));
+    const created = await composition.app.inject({ method: "POST", url: "/data-overlays/sources/twitch/goals", headers, payload: { name: "Creator goal", binding: { mode: "active-type", type: "follower" } } });
+    expect(created.statusCode, created.body).toBe(201); expect(getCreatorGoals).not.toHaveBeenCalled();
+    await composition.twitchEventSubRuntimeService.connectStoredAccount(); await sockets[0]!.emitMessage(welcome());
+    await vi.waitFor(() => expect(getCreatorGoals).toHaveBeenCalledOnce());
+    nowMs += 1000;
+    const notification = (phase: "progress" | "end") => ({ metadata: { message_id: `goal-${phase}`, message_type: "notification", message_timestamp: new Date(nowMs).toISOString(), subscription_type: `channel.goal.${phase}`, subscription_version: "1" }, payload: { subscription: { id: `subscription-${phase}`, type: `channel.goal.${phase}`, version: "1", condition: { broadcaster_user_id: account.accountId } }, event: { id: goal.id, broadcaster_user_id: account.accountId, broadcaster_user_name: account.displayName, type: goal.type, description: goal.description, current_amount: 8, target_amount: 20, started_at: goal.started_at, ...(phase === "end" ? { ended_at: new Date(nowMs).toISOString(), is_achieved: false } : {}) } } });
+    const progress = await composition.eventIngestionService.ingestTwitchEventSubNotification(notification("progress"));
+    expect(progress.status, JSON.stringify(progress)).toBe("accepted");
+    snapshot.resolve({ goals: [goal], rateResetEpochMs: null });
+    await vi.waitFor(() => expect(composition!.dataOverlayService.getState().values[0]?.content).toBe(8));
+    const status = (await composition.app.inject({ url: "/data-overlays/sources/twitch", headers })).json();
+    expect(status.goals.bindings[0]).toMatchObject({ state: "current", selectedGoalId: goal.id });
+    nowMs += 1000;
+    expect((await composition.eventIngestionService.ingestTwitchEventSubNotification(notification("end"))).status).toBe("accepted");
+    await vi.waitFor(async () => expect((await composition!.app.inject({ url: "/data-overlays/sources/twitch", headers })).json().goals.bindings[0].state).toBe("ended"));
+    await composition.close(); composition = undefined;
+    getCreatorGoals.mockResolvedValue({ goals: [{ ...goal, id: "replacement", current_amount: 2 }], rateResetEpochMs: null });
+    composition = await createRuntimeAppComposition(options);
+    headers = managementAuthHeaders(await composition.app.inject({ method: "POST", url: "/auth/management/sessions" }));
+    expect((await composition.app.inject({ url: "/data-overlays/sources/twitch", headers })).json().goals.state).not.toBe("current");
+    await composition.twitchEventSubRuntimeService.connectStoredAccount(); await sockets[1]!.emitMessage(welcome());
+    await vi.waitFor(() => expect(composition!.dataOverlayService.getState().values[0]?.content).toBe(2));
+    expect(composition.dataOverlayService.getState().goals[0]?.id).toBe(created.json().goals[0].id);
+  } finally { snapshot.resolve({ goals: [], rateResetEpochMs: null }); await composition?.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+class RuntimeGoalSocket implements TwitchEventSubSocket {
+  #message: ((event: { readonly data: unknown }) => void | Promise<void>) | undefined;
+  addEventListener(event: "open", listener: () => void): void;
+  addEventListener(event: "message", listener: (event: { readonly data: unknown }) => void | Promise<void>): void;
+  addEventListener(event: "close", listener: (event: { readonly code?: number; readonly reason?: string }) => void): void;
+  addEventListener(event: "error", listener: (event: unknown) => void): void;
+  addEventListener(event: string, listener: unknown): void { if (event === "message") this.#message = listener as (event: { readonly data: unknown }) => void | Promise<void>; }
+  close(): void {}
+  async emitMessage(message: unknown): Promise<void> { await this.#message?.({ data: JSON.stringify(message) }); }
+}
 
 it("serves explicit provider source selection and readonly commands through real disposable runtime then revalidates on restart", async () => {
   const root = await mkdtemp(join(tmpdir(), "stream-jams-twitch-data-"));

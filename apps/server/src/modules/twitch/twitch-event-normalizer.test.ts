@@ -591,3 +591,30 @@ function notification(messageId: string, type: string, version: string, event: R
     }
   };
 }
+
+// Synthetic fixtures derived from https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/#channelgoalbegin .
+describe("Creator Goal canonical notifications", () => {
+  function goalNotification(phase: "begin" | "progress" | "end", fields: Record<string, unknown> = {}) {
+    return { metadata: { message_id: "synthetic-goal-" + phase, message_type: "notification",
+      message_timestamp: "2026-10-11T12:01:00Z", subscription_type: "channel.goal." + phase, subscription_version: "1" },
+      payload: { subscription: { id: "synthetic-subscription", type: "channel.goal." + phase, version: "1",
+        condition: { broadcaster_user_id: "synthetic-broadcaster" } },
+        event: { id: "synthetic-goal", broadcaster_user_id: "synthetic-broadcaster", broadcaster_user_name: "Synthetic Streamer",
+          type: "follower", description: "Reach 100 followers", current_amount: 42, target_amount: 100,
+          started_at: "2026-10-11T12:00:00Z", ...(phase === "end" ? { ended_at: "2026-10-11T12:01:00Z", is_achieved: false } : {}), ...fields } } };
+  }
+  it.each(["begin", "progress", "end"] as const)("normalizes %s through the canonical schema with original notification time", (phase) => {
+    const event = normalizeTwitchEventSubNotification(goalNotification(phase));
+    expect(event).toMatchObject({ type: "goal_" + phase, broadcasterId: "synthetic-broadcaster", goalId: "synthetic-goal",
+      goalType: "follower", currentAmount: 42, targetAmount: 100, occurredAt: "2026-10-11T12:01:00Z", startedAt: "2026-10-11T12:00:00Z" });
+    expect(normalizedStreamEventSchema.safeParse(event).success).toBe(true);
+  });
+  it("preserves bounded unknown goal types for display without silently binding them", () => {
+    expect(normalizeTwitchEventSubNotification(goalNotification("progress", { type: "future_goal_type" }))).toMatchObject({ goalType: "future_goal_type" });
+  });
+  it.each([{ current_amount: -1 }, { current_amount: Number.MAX_SAFE_INTEGER + 1 }, { current_amount: 1.5 },
+    { target_amount: 0 }, { type: "x".repeat(129) }, { description: "x".repeat(257) },
+    { broadcaster_user_id: "other-account" }, { started_at: "invalid" }])("rejects malformed or wrong-account goals: %j", (fields) => {
+    expect(() => normalizeTwitchEventSubNotification(goalNotification("progress", fields))).toThrow(TwitchEventNormalizationError);
+  });
+});

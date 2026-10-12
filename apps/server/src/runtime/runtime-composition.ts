@@ -984,10 +984,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const generateEventSourceReferenceId = generateRuntimeReferenceId;
   const eventBusSettingsService = new EventBusSettingsService(database.connection, now);
   const eventBusJournal = new SqliteEventBusJournalRepository(database.connection);
+  const twitchDataSourceRef: { current: TwitchDataSourceRuntime | null } = { current: null };
   const eventBus = new EventBus({
     journal: eventBusJournal,
     consumers: [
       ...eventPipeline.consumers(),
+      { id: "twitch-data-sources", handle: async event => twitchDataSourceRef.current?.handleBusEvent(event) ?? "no-match" },
       createVideosBusConsumer({
         streamerBot: createStreamerBotVideoIntake({
           intake: videoRequestIntake,
@@ -1069,7 +1071,6 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     now
   });
   const twitchAuthServiceRef: { current: TwitchOAuthService | null } = { current: null };
-  const twitchDataSourceRef: { current: TwitchDataSourceRuntime | null } = { current: null };
   const twitchEventSubClient = new TwitchEventSubClient({
     apiClient: options.twitchEventSubApiClient ?? new DefaultTwitchEventSubApiClient(),
     socketFactory: options.twitchEventSubSocketFactory ?? createNodeWebSocket,
@@ -1079,6 +1080,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       }
       await maintenanceGate.runIntake(() => eventIngestionService.ingestTwitchEventSubNotification(message));
     },
+    onStatusChanged: status => twitchDataSourceRef.current?.eventSubStatusChanged(status),
     onAuthorizationFailure: async () => {
       const authService = twitchAuthServiceRef.current;
       if (authService === null) throw new Error("Twitch authorization service is unavailable");
@@ -1604,11 +1606,13 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   twitchDataSourceRef.current = twitchDataSourceRuntime;
   isTemplateSourceReady = value => {
+    if (value.source?.kind === "creator-goal") return !value.source.invalidated && twitchDataSourceRuntime.getStatus().goals.bindings.some(binding => binding.valueId === value.id && (binding.state === "current" || binding.state === "stale"));
     const status = twitchDataSourceRuntime.getStatus().follower;
     return value.source !== undefined && !value.source.invalidated && (status.state === "current" || status.state === "stale") && value.source.broadcasterId === status.broadcasterId && status.valueIds.includes(value.id);
   };
   reconcileTwitchSources = () => twitchDataSourceRuntime.reconcile();
   await twitchDataSourceRuntime.connectionChanged();
+  twitchDataSourceRuntime.eventSubStatusChanged(twitchEventSubClient.getStatus());
   const overlayModuleRuntimes = new Map<string, OverlayModuleRuntime>([
     ["alerts", {
       async getModuleSnapshot() {

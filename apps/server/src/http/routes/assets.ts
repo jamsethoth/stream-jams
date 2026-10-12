@@ -6,6 +6,7 @@ import {
   type AssetRepository,
   type MediaImportPipeline,
   type OverlayAccessService,
+  type OverlayAccessKey,
   type OverlayRouteAccessRequest
 } from "@stream-jams/core";
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerHookHandler } from "fastify";
@@ -18,6 +19,7 @@ import {
   parseOverlayTargetProfileQuery
 } from "../middleware/overlay-auth.js";
 import { sendHttpError } from "../errors.js";
+import { LocalManagementRateLimiter } from "../middleware/local-management-rate-limit.js";
 import { sendMediaFile } from "../media-response.js";
 import { readModuleOverlayParams, readUnifiedOverlayParams } from "./overlay-route-params.js";
 import { isTimerAssetCompatible } from "../../modules/timers/timer-asset-role.js";
@@ -233,42 +235,63 @@ function registerOverlayAssetRoutes(
     readonly overlayAccessService: Pick<OverlayAccessService, "verifyRouteAccess">;
   }
 ): void {
+  const authorizedAccess = new WeakMap<FastifyRequest, OverlayRouteAccessRequest>();
+  const onAuthorized = (request: FastifyRequest, record: OverlayAccessKey, rawKey: string): void => {
+    authorizedAccess.set(request, {
+      overlayId: record.overlayId,
+      moduleId: record.moduleId,
+      scope: record.scope,
+      purpose: record.purpose,
+      targetProfileId: record.targetProfileId ?? null,
+      rawKey
+    });
+  };
+  // Share the budget across keys and asset URLs, independently of operator requests.
+  const limiter = new LocalManagementRateLimiter({ maxRequests: 600, windowMs: 60_000 });
+  const rateLimitPreHandler: preHandlerHookHandler = async (request, reply) => {
+    const decision = limiter.consume({ clientId: request.ip, routeId: "overlay-assets" });
+    if (!decision.allowed) {
+      reply.header("retry-after", String(decision.retryAfterSeconds));
+      return sendHttpError(reply, 429, { code: "OVERLAY_ASSET_RATE_LIMITED", message: "Too many overlay asset requests" });
+    }
+  };
   const modulePreHandler = createOverlayAuthPreHandler({
     overlayAccessService: dependencies.overlayAccessService,
-    resolveAccessRequest: resolveModuleOverlayAccessRequest
+    resolveAccessRequest: resolveModuleOverlayAccessRequest,
+    onAuthorized
   });
   const unifiedPreHandler = createOverlayAuthPreHandler({
     overlayAccessService: dependencies.overlayAccessService,
-    resolveAccessRequest: resolveUnifiedOverlayAccessRequest
+    resolveAccessRequest: resolveUnifiedOverlayAccessRequest,
+    onAuthorized
   });
 
-  app.get("/overlay/modules/:moduleId/:purpose/:overlayKey/assets/:assetId", { preHandler: modulePreHandler }, async (request, reply) =>
-    sendOverlayAsset(request, reply, dependencies)
+  app.get("/overlay/modules/:moduleId/:purpose/:overlayKey/assets/:assetId", { preHandler: [rateLimitPreHandler, modulePreHandler] }, async (request, reply) =>
+    sendOverlayAsset(request, reply, dependencies, authorizedAccess.get(request))
   );
-  app.get("/overlay/unified/:purpose/:overlayKey/assets/:assetId", { preHandler: unifiedPreHandler }, async (request, reply) =>
-    sendOverlayAsset(request, reply, dependencies)
+  app.get("/overlay/unified/:purpose/:overlayKey/assets/:assetId", { preHandler: [rateLimitPreHandler, unifiedPreHandler] }, async (request, reply) =>
+    sendOverlayAsset(request, reply, dependencies, authorizedAccess.get(request))
   );
 }
 
 async function sendOverlayAsset(
   request: FastifyRequest,
   reply: FastifyReply,
-  dependencies: Pick<AssetRouteDependencies, "assetRepository" | "assetStore" | "localMediaService" | "authorizeDataOverlayAsset">
+  dependencies: Pick<AssetRouteDependencies, "assetRepository" | "assetStore" | "localMediaService" | "authorizeDataOverlayAsset">,
+  access: OverlayRouteAccessRequest | undefined
 ) {
+  if (access === undefined) return sendOverlayAssetNotFound(reply);
   const assetId = readAssetId(request.params);
-  const moduleId = (request.params as { moduleId?: string }).moduleId;
-  if (moduleId === "data-overlays") {
-    const access = resolveModuleOverlayAccessRequest(request);
-    if (access === null || dependencies.authorizeDataOverlayAsset === undefined || await dependencies.authorizeDataOverlayAsset(access, assetId) !== true) return sendOverlayAssetNotFound(reply);
-  } else if (moduleId === undefined && dependencies.authorizeDataOverlayAsset !== undefined) {
-    const access = resolveUnifiedOverlayAccessRequest(request);
-    if (access !== null && await dependencies.authorizeDataOverlayAsset(access, assetId) === false) return sendOverlayAssetNotFound(reply);
+  if (access.moduleId === "data-overlays") {
+    if (dependencies.authorizeDataOverlayAsset === undefined || await dependencies.authorizeDataOverlayAsset(access, assetId) !== true) return sendOverlayAssetNotFound(reply);
+  } else if (access.scope === "unified" && dependencies.authorizeDataOverlayAsset !== undefined) {
+    if (await dependencies.authorizeDataOverlayAsset(access, assetId) === false) return sendOverlayAssetNotFound(reply);
   }
   const version = (request.query as { version?: unknown }).version;
   if (version !== undefined && dependencies.localMediaService !== undefined) {
     try {
       if (typeof version !== "string") throw new MediaUnavailableError();
-      const moduleId = (request.params as { moduleId?: string }).moduleId ?? null;
+      const moduleId = access.moduleId;
       const owner = `http:${randomUUID()}`;
       const record = await dependencies.localMediaService.acquireVersion(owner, assetId, version, moduleId);
       try {

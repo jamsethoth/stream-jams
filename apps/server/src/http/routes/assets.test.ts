@@ -5,9 +5,11 @@ import {
   DefaultAssetValidator,
   DefaultMediaImportPipeline,
   type AssetRecord,
-  type AssetRepository
+  type AssetRepository,
+  type OverlayAccessService
 } from "@stream-jams/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AssetRouteDependencies } from "./assets.js";
 import { createAssetRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import { LocalAssetStore } from "../../modules/assets/local-asset-store.js";
@@ -23,6 +25,79 @@ const invalidBytes = Buffer.from("not a png", "utf8");
 const replacementPngBytes = Buffer.concat([pngSignature, Buffer.from([9, 8, 7])]);
 
 describe("asset routes", () => {
+  it("uses the persisted key scope for Data authorization and denies missing or unreferenced grants", async () => {
+    const access = createOverlayAccessService(["ovl_data"]);
+    const key = await access.createKey({ overlayId: "default", moduleId: "data-overlays", scope: "module", purpose: "test", targetProfileId: "vertical" });
+    const authorize = vi.fn<NonNullable<AssetRouteDependencies["authorizeDataOverlayAsset"]>>().mockResolvedValue(false);
+    // A trusted verifier's record is the authority even if URL fields differ.
+    const verifier = { verifyRouteAccess: vi.fn().mockResolvedValue({ authorized: true, record: key.record }) };
+    const { app, store } = await createAppWithAssets({ overlayAccessService: verifier, authorizeDataOverlayAsset: authorize });
+    try {
+      const denied = await app.inject({ url: `/overlay/modules/alerts/live/${key.rawKey}/assets/asset_1` });
+      expect(denied.statusCode).toBe(404);
+      expect(authorize).toHaveBeenCalledWith({ overlayId: "default", moduleId: "data-overlays", scope: "module", purpose: "test", targetProfileId: "vertical", rawKey: key.rawKey }, "asset_1");
+      expect(store.activeReaders).toBe(0);
+    } finally { await app.close(); }
+    const missing = await createAppWithAssets({ overlayAccessService: access });
+    try {
+      expect((await missing.app.inject({ url: `/overlay/modules/data-overlays/test/${key.rawKey}/assets/asset_1?profile=vertical` })).statusCode).toBe(404);
+    } finally { await missing.app.close(); }
+  });
+
+  it("rejects Data key purpose, profile, module and revocation mismatches before projection authorization", async () => {
+    const access = createOverlayAccessService(["ovl_data"]);
+    const key = await access.createKey({ overlayId: "default", moduleId: "data-overlays", scope: "module", purpose: "live", targetProfileId: "landscape" });
+    const authorize = vi.fn<NonNullable<AssetRouteDependencies["authorizeDataOverlayAsset"]>>().mockResolvedValue(true);
+    const { app, authHeaders } = await createAppWithAssets({ overlayAccessService: access, authorizeDataOverlayAsset: authorize });
+    try {
+      await app.inject({ method: "POST", url: "/assets/import", headers: { ...authHeaders, "content-type": "application/octet-stream", "x-stream-jams-file-name": "test.png", "x-stream-jams-mime-type": "image/png" }, payload: pngBytes });
+      for (const path of ["data-overlays/test", "alerts/live", "data-overlays/live"]) {
+        const profile = path === "data-overlays/live" ? "vertical" : "landscape";
+        expect((await app.inject({ url: `/overlay/modules/${path}/${key.rawKey}/assets/asset_1?profile=${profile}` })).statusCode).toBe(401);
+      }
+      expect(authorize).not.toHaveBeenCalled();
+      const url = `/overlay/modules/data-overlays/live/${key.rawKey}/assets/asset_1?profile=landscape`;
+      expect((await app.inject({ url })).rawPayload).toEqual(pngBytes);
+      authorize.mockResolvedValue(false);
+      expect((await app.inject({ url })).statusCode).toBe(404);
+      await access.revokeKey(key.record.id);
+      authorize.mockClear();
+      expect((await app.inject({ url })).statusCode).toBe(401);
+      expect(authorize).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+
+  it("preserves legacy unified assets while rejecting assets outside the Data projection", async () => {
+    const access = createOverlayAccessService(["ovl_unified"]);
+    const key = await access.createKey({ overlayId: "default", moduleId: null, scope: "unified", purpose: "live" });
+    const authorize = vi.fn<NonNullable<AssetRouteDependencies["authorizeDataOverlayAsset"]>>().mockResolvedValue(null);
+    const { app, authHeaders } = await createAppWithAssets({ overlayAccessService: access, authorizeDataOverlayAsset: authorize });
+    try {
+      await app.inject({ method: "POST", url: "/assets/import", headers: { ...authHeaders, "content-type": "application/octet-stream", "x-stream-jams-file-name": "test.png", "x-stream-jams-mime-type": "image/png" }, payload: pngBytes });
+      const url = `/overlay/unified/live/${key.rawKey}/assets/asset_1`;
+      expect((await app.inject({ url })).rawPayload).toEqual(pngBytes);
+      authorize.mockResolvedValue(false);
+      expect((await app.inject({ url })).statusCode).toBe(404);
+      authorize.mockResolvedValue(true);
+      expect((await app.inject({ url })).rawPayload).toEqual(pngBytes);
+    } finally { await app.close(); }
+  });
+
+  it("rate limits asset bursts across module, unified, keys and HEAD before authentication without consuming management limits", async () => {
+    const verifyRouteAccess = vi.fn<OverlayAccessService["verifyRouteAccess"]>().mockResolvedValue({ authorized: false, reason: "not-found" });
+    const { app, authHeaders } = await createAppWithAssets({ overlayAccessService: { verifyRouteAccess } });
+    try {
+      for (let index = 0; index < 600; index += 1) {
+        const url = index % 2 === 0 ? `/overlay/modules/alerts/live/key_${index}/assets/asset_${index}` : `/overlay/unified/live/key_${index}/assets/asset_${index}`;
+        expect((await app.inject({ method: index % 3 === 0 ? "HEAD" : "GET", url })).statusCode).toBe(401);
+      }
+      const limited = await app.inject({ url: "/overlay/unified/live/another_key/assets/another_asset" });
+      expect(limited.statusCode).toBe(429);
+      expect(limited.headers["retry-after"]).toBeDefined();
+      expect(verifyRouteAccess).toHaveBeenCalledTimes(600);
+      expect((await app.inject({ url: "/assets", headers: authHeaders })).statusCode).toBe(200);
+    } finally { await app.close(); }
+  });
   it("serves scoped grants and exact owned overlay versions without granting management access", async () => {
     const access = createOverlayAccessService(["ovl_versions"]);
     const key = await access.createKey({ overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module" });
@@ -548,7 +623,8 @@ describe("asset routes", () => {
 
 async function createAppWithAssets(options: {
   readonly enableMedia?: boolean;
-  readonly overlayAccessService?: LocalOverlayAccessService;
+  readonly overlayAccessService?: Pick<OverlayAccessService, "verifyRouteAccess">;
+  readonly authorizeDataOverlayAsset?: AssetRouteDependencies["authorizeDataOverlayAsset"];
   readonly replacementRequiresConfirmation?: boolean;
   readonly timerRole?: "icon" | "start-audio" | "end-audio";
   readonly musicRole?: "branding" | "title-font" | "details-font";
@@ -626,7 +702,8 @@ async function createAppWithAssets(options: {
     ...(options.onAssetReplaced === undefined ? {} : { onAssetReplaced: options.onAssetReplaced }),
     managementAuthPreHandler: createTestManagementSecurity(managementSessionService),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
-    ...(options.overlayAccessService === undefined ? {} : { overlayAccessService: options.overlayAccessService })
+    ...(options.overlayAccessService === undefined ? {} : { overlayAccessService: options.overlayAccessService }),
+    ...(options.authorizeDataOverlayAsset === undefined ? {} : { authorizeDataOverlayAsset: options.authorizeDataOverlayAsset })
   });
 
   return {

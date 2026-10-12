@@ -3,12 +3,12 @@ import { overlayTargetProfileIdSchema } from "../shared/schemas.js";
 import { dataCanvasInputSchema, dataCanvasElementSchema, dataIdSchema, dataIntegerSchema, dataNameSchema, dataValueCreateInputSchema } from "./schemas.js";
 
 export const dataTemplateLimits = { userTemplates: 100, slots: 100 } as const;
-const requirement = z.object({ provider: z.literal("twitch"), kind: z.literal("follower-total") }).strict();
+const requirement = z.object({ provider: z.literal("twitch"), kind: z.enum(["follower-total", "creator-goal"]) }).strict();
 const slot = { id: dataIdSchema, name: dataNameSchema, requiredSource: requirement.optional() };
 export const dataTemplateSlotSchema = z.discriminatedUnion("kind", [
   z.object({ ...slot, kind: z.literal("value"), valueKind: z.enum(["integer", "text"]) }).strict(),
   z.object({ ...slot, kind: z.literal("goal") }).strict()
-]).refine(s => !s.requiredSource || s.kind === "goal" || s.valueKind === "integer", "Follower slots require integers");
+]).refine(s => !s.requiredSource || s.kind === "goal" || s.valueKind === "integer", "Provider slots require integers");
 export const dataTemplateSchema = z.object({ id: dataIdSchema, origin: z.enum(["bundled", "user"]), schemaVersion: z.literal(1), name: dataNameSchema,
   targetProfileId: overlayTargetProfileIdSchema, elements: z.array(dataCanvasElementSchema).max(100), slots: z.array(dataTemplateSlotSchema).max(dataTemplateLimits.slots)
 }).strict().superRefine((template, context) => {

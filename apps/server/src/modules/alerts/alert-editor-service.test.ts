@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   alertEditorDocumentSchema,
   normalizedStreamEventSchema,
-  streamEventTypes,
+  canonicalAlertEventTypes,
   validateAlertSamplePayload,
   DefaultAlertResolver,
   DefaultModerationService,
@@ -234,7 +234,7 @@ describe("AlertEditorService", () => {
   });
 
   it("builds valid normal and edge test events for every canonical event type", async () => {
-    for (const eventType of streamEventTypes) {
+    for (const eventType of canonicalAlertEventTypes) {
       const eventRule: AlertRule = { ...rule, id: `alert-${eventType}`, eventType };
       const harness = createHarnessWithRule(eventRule);
       const document = await harness.service.getDocument(eventRule.id);

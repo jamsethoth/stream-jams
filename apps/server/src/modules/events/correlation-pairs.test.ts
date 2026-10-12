@@ -178,9 +178,27 @@ const pairedCases: readonly PairedCase[] = [
   }
 ];
 
+/** Synthetic documented Creator Goals fixtures; direct Twitch intake only. */
+const directOnlyCases = (["begin", "progress", "end"] as const).map((phase) => ({
+  type: `goal_${phase}` as StreamEventType,
+  eventSub: { type: `channel.goal.${phase}`, version: "1", event: {
+    ...broadcaster, id: "goal-1", type: "follower", description: "Reach 100 followers",
+    current_amount: 25, target_amount: 100, started_at: "2026-10-08T11:55:00.000Z",
+    ...(phase === "end" ? { ended_at: "2026-10-08T12:00:00.000Z", is_achieved: false } : {})
+  } }
+}));
+
 describe("Twitch correlation keys across sources", () => {
   it("covers every canonical Twitch event type", () => {
-    expect(new Set(pairedCases.map((pair) => pair.type))).toEqual(new Set(streamEventTypes));
+    expect(new Set([...pairedCases, ...directOnlyCases].map((pair) => pair.type))).toEqual(new Set(streamEventTypes));
+  });
+
+  it.each(directOnlyCases)("normalizes direct-only $type with an account, goal and occurrence correlation key", (fixture) => {
+    const direct = normalizeEventSub(fixture);
+    expect(direct.type).toBe(fixture.type);
+    expect(direct.ingestProvider).toBe("twitch");
+    expect(twitchCorrelationKey(direct)).toBe(`twitch:${fixture.type}:broadcaster-1:goal-1:2026-10-08T12%3A00%3A00.000Z`);
+    expect(twitchCorrelationKey({ ...direct, occurredAt: "2026-10-08T12:00:01.000Z" })).not.toBe(twitchCorrelationKey(direct));
   });
 
   it.each(pairedCases.map((pair) => [pair.label === undefined ? pair.type : `${pair.type} (${pair.label})`, pair] as const))(
@@ -226,7 +244,7 @@ describe("Twitch correlation keys across sources", () => {
 
 let nextMessage = 1;
 
-function normalizeEventSub(pair: PairedCase): NormalizedStreamEvent {
+function normalizeEventSub(pair: Pick<PairedCase, "eventSub">): NormalizedStreamEvent {
   const { type, version, event } = pair.eventSub;
   return normalizeTwitchEventSubNotification({
     metadata: {

@@ -189,18 +189,21 @@ const conditionCatalog = {
     ingestProviderDefinition
   ],
   stream_offline: [ingestProviderDefinition],
+  goal_begin: [ingestProviderDefinition],
+  goal_progress: [ingestProviderDefinition],
+  goal_end: [ingestProviderDefinition],
   // External payload content is untrusted, so external alerts offer no conditions.
   external_event: []
-} satisfies Record<AlertEventType, readonly AlertConditionFieldDefinition[]>;
+} satisfies Record<StreamEventType | AlertEventType, readonly AlertConditionFieldDefinition[]>;
 
 export function getAlertConditionFieldDefinitions(
-  eventType: AlertEventType
+  eventType: StreamEventType | AlertEventType
 ): readonly AlertConditionFieldDefinition[] {
   return conditionCatalog[eventType];
 }
 
 export function validateAuthoredAlertConditions(
-  eventType: AlertEventType,
+  eventType: StreamEventType | AlertEventType,
   conditions: readonly AlertCondition[]
 ): readonly AlertConditionValidationIssue[] {
   const definitions = new Map(
@@ -226,7 +229,7 @@ export function validateAuthoredAlertConditions(
 }
 
 export function formatAlertConditionSummary(
-  eventType: AlertEventType,
+  eventType: StreamEventType | AlertEventType,
   condition: AlertCondition
 ): string {
   const definition = getAlertConditionFieldDefinitions(eventType).find(
@@ -257,7 +260,7 @@ export function formatAlertConditionSummary(
   }
 }
 
-interface AlertSampleEventInput<T extends AlertEventType> {
+interface AlertSampleEventInput<T extends StreamEventType | AlertEventType> {
   readonly eventType: T;
   readonly ingestProvider: IngestProviderId;
   readonly payload: Record<string, unknown>;
@@ -269,7 +272,7 @@ interface AlertSampleEventInput<T extends AlertEventType> {
 export function createNormalizedAlertSampleEvent(input: AlertSampleEventInput<StreamEventType>): NormalizedStreamEvent;
 export function createNormalizedAlertSampleEvent(input: AlertSampleEventInput<AlertEventType>): AlertSourceEvent;
 export function createNormalizedAlertSampleEvent(input: {
-  readonly eventType: AlertEventType;
+  readonly eventType: StreamEventType | AlertEventType;
   readonly ingestProvider: IngestProviderId;
   readonly payload: Record<string, unknown>;
   readonly id: string;
@@ -428,6 +431,13 @@ export function createNormalizedAlertSampleEvent(input: {
           ),
           winningOutcomeId: input.eventType === "prediction_end" ? "outcome-1" : null
         };
+      case "goal_begin":
+      case "goal_progress":
+      case "goal_end":
+        return { ...base, type: input.eventType, amount: null,
+          broadcasterId: "broadcaster-1", goalId: "goal-1", goalType: "follower", description: "Follower goal",
+          currentAmount: 10, targetAmount: 100, startedAt: input.occurredAt,
+          ...(input.eventType === "goal_end" ? { endedAt: input.occurredAt, isAchieved: false } : {}) };
       case "stream_online":
         return {
           ...base,

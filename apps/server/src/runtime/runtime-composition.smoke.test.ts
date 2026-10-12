@@ -1033,6 +1033,7 @@ describe("runtime app composition smoke", () => {
         { consumer_id: "alerts", last_sequence: head },
         { consumer_id: "screen-effects", last_sequence: head },
         { consumer_id: "timers", last_sequence: head },
+        { consumer_id: "twitch-data-sources", last_sequence: head },
         { consumer_id: "videos", last_sequence: head }
       ]);
     } finally {

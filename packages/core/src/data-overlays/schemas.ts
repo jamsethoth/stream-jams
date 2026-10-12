@@ -17,18 +17,36 @@ export const dataValueCreateInputSchema = z.discriminatedUnion("kind", [
 export const dataValueUpdateInputSchema = z.object({ name: dataNameSchema.optional(), resetGroupId: dataIdSchema.nullable().optional(), resetDefault: z.union([dataIntegerSchema, dataTextSchema]).optional() }).strict();
 export const dataValueSetInputSchema = z.object({ content: z.union([dataIntegerSchema, dataTextSchema]), expectedRevision: revision }).strict();
 export const dataValueDeltaInputSchema = z.object({ amount: dataIntegerSchema.positive() }).strict();
-export const dataValueSourceSchema = z.object({ provider: z.literal("twitch"), kind: z.literal("follower-total"), broadcasterId: dataIdSchema, invalidated: z.literal(true).optional() }).strict();
+export const supportedTwitchGoalTypeSchema = z.enum(["follower", "subscription", "subscription_count", "new_subscription", "new_subscription_count"]);
+export const twitchGoalBindingSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("active-type"), type: supportedTwitchGoalTypeSchema }).strict(),
+  z.object({ mode: z.literal("pinned"), goalId: dataIdSchema }).strict()
+]);
+export const twitchGoalSourceInputSchema = z.object({ name: dataNameSchema, binding: twitchGoalBindingSchema }).strict();
+export const dataValueSourceSchema = z.discriminatedUnion("kind", [
+  z.object({ provider: z.literal("twitch"), kind: z.literal("follower-total"), broadcasterId: dataIdSchema, invalidated: z.literal(true).optional() }).strict(),
+  z.object({ provider: z.literal("twitch"), kind: z.literal("creator-goal"), broadcasterId: dataIdSchema, binding: twitchGoalBindingSchema, invalidated: z.literal(true).optional() }).strict()
+]);
 export const twitchFollowerSourceInputSchema = z.object({ name: dataNameSchema }).strict();
+export const twitchCreatorGoalRecordSchema = z.object({
+  id: dataIdSchema, broadcaster_id: dataIdSchema, broadcaster_name: z.string().max(256), broadcaster_login: z.string().max(256),
+  type: z.string().min(1).max(120), description: dataTextSchema, current_amount: dataIntegerSchema.nonnegative(), target_amount: dataIntegerSchema.positive(), started_at: isoDateTimeSchema
+}).strict();
+export const twitchGoalSourceStateSchema = z.enum(["waiting", "current", "stale", "ended", "invalid", "error", "reauthorization-required", "disconnected"]);
+export const twitchGoalBindingStatusSchema = z.object({
+  goalId: dataIdSchema, valueId: dataIdSchema, selectedGoalId: dataIdSchema.nullable(), state: twitchGoalSourceStateSchema,
+  units: z.enum(["followers", "sub points", "subscriptions", "unsupported"])
+}).strict();
 export const twitchDataSourceStatusSchema = z.object({
   follower: z.object({ state: z.enum(["unconfigured", "current", "stale", "invalid", "disconnected"]), broadcasterId: dataIdSchema.nullable(), valueIds: z.array(dataIdSchema), updatedAt: isoDateTimeSchema.nullable() }).strict(),
-  goals: z.object({ state: z.enum(["integration-pending", "reauthorization-required", "disconnected"]), missingScopes: z.array(z.string()) }).strict()
+  goals: z.object({ state: twitchGoalSourceStateSchema, missingScopes: z.array(z.string().min(1).max(256)), broadcasterId: dataIdSchema.nullable(), updatedAt: isoDateTimeSchema.nullable(), activeGoals: z.array(twitchCreatorGoalRecordSchema).max(dataOverlayLimits.goals), bindings: z.array(twitchGoalBindingStatusSchema).max(dataOverlayLimits.goals) }).strict()
 }).strict();
 const valueDocument = { ...valueDefinition, id: dataIdSchema, revision, createdAt: isoDateTimeSchema, updatedAt: isoDateTimeSchema, source: dataValueSourceSchema.optional() };
 export const dataValueSchema = z.discriminatedUnion("kind", [
   z.object({ ...valueDocument, kind: z.literal("integer"), content: dataIntegerSchema, resetDefault: dataIntegerSchema }).strict(),
   z.object({ ...valueDocument, kind: z.literal("text"), content: dataTextSchema, resetDefault: dataTextSchema }).strict()
 ]).superRefine((value, context) => {
-  if (value.source && (value.kind !== "integer" || value.resetGroupId !== null || value.content < 0 || value.resetDefault !== 0)) context.addIssue({ code: "custom", path: ["source"], message: "Follower sources require a nonnegative integer and no reset membership" });
+  if (value.source && (value.kind !== "integer" || value.resetGroupId !== null || value.content < 0 || value.resetDefault !== 0)) context.addIssue({ code: "custom", path: ["source"], message: "Provider sources require a nonnegative integer and no reset membership" });
 });
 const goalDefinition = { name: dataNameSchema, valueId: dataIdSchema };
 const goalVariants = [
@@ -36,7 +54,8 @@ const goalVariants = [
   z.object({ ...goalDefinition, mode: z.literal("saved-baseline"), baseline: dataIntegerSchema, additionalAmount: dataIntegerSchema.positive() }).strict()
 ] as const;
 export const dataGoalInputSchema = z.discriminatedUnion("mode", goalVariants).refine(goal => goal.mode === "fixed-target" || Number.isSafeInteger(goal.baseline + goal.additionalAmount), "Goal target exceeds safe integer range");
-export const dataGoalSchema = z.discriminatedUnion("mode", [goalVariants[0].extend({ id: dataIdSchema }), goalVariants[1].extend({ id: dataIdSchema })]).refine(goal => goal.mode === "fixed-target" || Number.isSafeInteger(Number(goal.baseline) + Number(goal.additionalAmount)), "Goal target exceeds safe integer range");
+export const dataGoalSourceSchema = z.object({ provider: z.literal("twitch"), kind: z.literal("creator-goal") }).strict();
+export const dataGoalSchema = z.discriminatedUnion("mode", [goalVariants[0].extend({ id: dataIdSchema, source: dataGoalSourceSchema.optional() }), goalVariants[1].extend({ id: dataIdSchema, source: z.never().optional() })]).refine(goal => goal.mode === "fixed-target" || Number.isSafeInteger(Number(goal.baseline) + Number(goal.additionalAmount)), "Goal target exceeds safe integer range");
 export const dataResetGroupInputSchema = z.object({ name: dataNameSchema }).strict();
 export const dataResetGroupSchema = dataResetGroupInputSchema.extend({ id: dataIdSchema });
 export const dataGoalFieldSchema = z.enum(["current", "baseline", "target", "achieved", "remaining", "percentage", "completed", "fill"]);
@@ -83,7 +102,17 @@ export const dataOverlayStateSchema = z.object({ revision, values: z.array(dataV
     if (value.resetGroupId !== null && !groups.has(value.resetGroupId)) issue(["values", index, "resetGroupId"], "Missing reset group");
     if (value.source && (value.kind !== "integer" || value.resetGroupId !== null)) issue(["values", index, "source"], "Follower sources require an integer without reset membership");
   });
-  state.goals.forEach((goal, index) => { if (values.get(goal.valueId)?.kind !== "integer") issue(["goals", index, "valueId"], "Goals require an integer value"); });
+  const providerGoalValues = new Set<string>();
+  state.goals.forEach((goal, index) => {
+    const value = values.get(goal.valueId);
+    if (value?.kind !== "integer") issue(["goals", index, "valueId"], "Goals require an integer value");
+    const native = goal.mode === "fixed-target" && goal.source !== undefined;
+    if (native !== (value?.source?.kind === "creator-goal")) issue(["goals", index, "source"], "Creator goals require matching value provenance");
+    if (native) {
+      if (providerGoalValues.has(goal.valueId)) issue(["goals", index, "valueId"], "Creator goal values can have only one native goal");
+      providerGoalValues.add(goal.valueId);
+    }
+  });
   const pins = new Set<string>();
   state.pinnedValueIds.forEach((id, index) => { if (!values.has(id) || pins.has(id)) issue(["pinnedValueIds", index], "Missing or duplicate value pin"); pins.add(id); });
   state.canvases.forEach((canvas, ci) => canvas.elements.forEach((element, ei) => {

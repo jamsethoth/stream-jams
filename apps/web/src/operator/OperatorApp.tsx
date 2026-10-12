@@ -217,7 +217,6 @@ function OperatorConsole({ api = defaultPlaybackApi, timersApi = defaultOperator
     return (
       <main className="operator-console">
         <OperatorHeader />
-        <OperatorDataSection {...(dataApi === undefined ? {} : { api: dataApi })} />
         {initialError === null ? <p aria-live="polite" role="status">Loading playback state…</p> : (
           <OperatorErrorBanner error={initialError} title="Unable to load playback state">
             <Button variant="default" onClick={retry}>Retry loading playback state</Button>
@@ -231,7 +230,6 @@ function OperatorConsole({ api = defaultPlaybackApi, timersApi = defaultOperator
   return (
     <main className="operator-console">
       <OperatorHeader />
-      <OperatorDataSection {...(dataApi === undefined ? {} : { api: dataApi })} />
       <section aria-label="Playback safety status" className="operator-status-strip">
         <StatusBadge label={snapshot.paused ? "All queues paused" : "Global playback active"} tone={snapshot.paused ? "warning" : "positive"} />
         <StatusBadge label={(snapshot.moduleMutes?.alerts ?? snapshot.muted) ? "Alerts muted" : "Alerts audio on"} tone={(snapshot.moduleMutes?.alerts ?? snapshot.muted) ? "warning" : "positive"} />
@@ -354,6 +352,7 @@ function OperatorConsole({ api = defaultPlaybackApi, timersApi = defaultOperator
         )}>Replay</Button>
       )} />
 
+      <OperatorDataSection {...(dataApi === undefined ? {} : { api: dataApi })} />
       <Suspense fallback={<p role="status">Loading the video queue…</p>}><OperatorVideosPanel api={videosApi} recentCard={OperatorItemCard} /></Suspense>
     </main>
   );

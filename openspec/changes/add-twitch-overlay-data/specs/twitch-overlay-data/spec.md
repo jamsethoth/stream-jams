@@ -16,7 +16,7 @@ The system SHALL provide a read-only follower-total value from Twitch's follower
 - **THEN** the older response is discarded
 
 ### Requirement: Rate-limit-aware refresh
-Follower refresh SHALL back off exponentially on 429 and 5xx responses, honor Twitch's rate-limit reset, and wait no more than 5 minutes between attempts. A failed refresh SHALL mark the source stale until the next success.
+Follower refresh SHALL back off exponentially on 429 and 5xx responses and honor Twitch's rate-limit reset. The nominal delay SHALL cap at five minutes; a later provider deadline SHALL take precedence. A failed refresh SHALL mark a previously validated source stale until the next success; an initial failure SHALL keep saved content hidden.
 
 #### Scenario: Rate limited
 - **WHEN** Twitch returns 429 with a reset 30 seconds away

@@ -162,7 +162,8 @@ export { DefaultMediaImportPipeline, InvalidMediaImportError } from "./assets/me
 export { assetMediaTypeSchema, assetRecordSchema, assetValidationResultSchema } from "./assets/schemas.js";
 
 export type * from "./events/types.js";
-export { alertEventTypes, externalAlertEventType, streamEventTypes } from "./events/types.js";
+export { alertEventTypes, canonicalAlertEventTypes, externalAlertEventType, streamEventTypes } from "./events/types.js";
+export type { CanonicalAlertEventType } from "./events/types.js";
 export type { SubscriptionTier } from "./events/schemas.js";
 export {
   channelPointRedemptionEventSchema,
@@ -171,6 +172,7 @@ export {
   externalStreamEventSchema,
   followEventSchema,
   giftSubscriptionEventSchema,
+  goalBeginEventSchema, goalProgressEventSchema, goalEndEventSchema,
   hypeTrainEndEventSchema,
   hypeTrainProgressEventSchema,
   hypeTrainStartEventSchema,

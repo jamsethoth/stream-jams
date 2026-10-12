@@ -533,7 +533,143 @@ describe("TwitchEventSubClient", () => {
   });
 });
 
+describe("optional Creator Goal subscriptions", () => {
+  function inputWithGoals() { const input = connectionInput(); return { ...input, account: { ...input.account, scopes: [...input.account.scopes, "channel:read:goals"] } }; }
+  it("omits all goal subscriptions without optional scope", async () => {
+    const harness = createClientHarness(); harness.client.connect(connectionInput());
+    await harness.sockets[0]?.emitMessage(sessionWelcome("session-1"));
+    expect(harness.client.getStatus().state).toBe("connected");
+    expect(harness.client.getStatus().subscriptionTypes.filter((type) => type.startsWith("channel.goal."))).toEqual([]);
+  });
+  it("reports disconnect boundaries without awaiting a slow status observer", async () => {
+    const statuses: string[] = [];
+    const neverCompletes = new Promise<void>(() => {});
+    const harness = createClientHarness({ onStatusChanged(status) { statuses.push(status.state); return neverCompletes; } });
+    harness.client.connect(inputWithGoals()); await harness.sockets[0]?.emitMessage(sessionWelcome("session-1"));
+    await harness.sockets[0]?.emitMessage(notification("while-observer-pending"));
+    expect(harness.notifications).toHaveLength(1);
+    harness.client.disconnect(); harness.client.connect(inputWithGoals());
+    expect(statuses.slice(-2)).toEqual(["idle", "connecting"]);
+  });
+  it("isolates an optional setup failure and reports only successful subscriptions", async () => {
+    const statuses: import("./twitch-eventsub-client.js").TwitchEventSubStatus[] = [];
+    const harness = createClientHarness({ onStatusChanged(status) { statuses.push(status); } });
+    harness.apiClient.failSubscriptionType = "channel.goal.progress";
+    harness.apiClient.subscriptionFailure = new TwitchEventSubApiError(403);
+    harness.client.connect(inputWithGoals()); await harness.sockets[0]?.emitMessage(sessionWelcome("session-1"));
+    expect(harness.client.getStatus()).toMatchObject({ state: "connected", message: null });
+    expect(harness.client.getStatus().subscriptionTypes).toContain("channel.follow");
+    expect(harness.client.getStatus().subscriptionTypes).toContain("channel.goal.begin");
+    expect(harness.client.getStatus().subscriptionTypes).not.toContain("channel.goal.progress");
+    expect(harness.sockets[0]?.closeCount).toBe(0);
+    expect(harness.client.getStatus()).toMatchObject({ goalSubscriptionFailure: "reauthorization-required" });
+    expect(harness.scheduled).toEqual([]);
+    await harness.sockets[0]?.emitMessage(notification("alert-still-arrives"));
+    expect(harness.notifications).toHaveLength(1); expect(statuses.at(-1)?.state).toBe("connected");
+  });
+  it("retries only failed optional subscriptions with bounded backoff on the same session", async () => {
+    const harness = createClientHarness();
+    harness.apiClient.failSubscriptionType = "channel.goal.progress";
+    harness.apiClient.subscriptionFailure = new TwitchEventSubApiError(503);
+    harness.client.connect(inputWithGoals());
+    await harness.sockets[0]?.emitMessage(sessionWelcome("session-1"));
+    expect(harness.client.getStatus()).toMatchObject({ state: "connected", goalSubscriptionFailure: "temporary" });
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const requests = harness.apiClient.requests.length;
+      harness.runScheduled();
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+      expect(harness.apiClient.requests.slice(requests).map((request) => request.subscription.type)).toEqual(["channel.goal.progress"]);
+    }
+    expect(harness.scheduled).toEqual([1000, 2000, 5000, 10000, 10000, 10000]);
+    harness.apiClient.failSubscriptionType = null;
+    harness.runScheduled();
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(harness.client.getStatus()).toMatchObject({ state: "connected", goalSubscriptionFailure: null });
+    expect(harness.client.getStatus().subscriptionTypes.filter((type) => type.startsWith("channel.goal."))).toHaveLength(3);
+    expect(harness.sockets).toHaveLength(1);
+    expect(harness.sockets[0]?.closeCount).toBe(0);
+  });
+  it("ignores optional retry callbacks after replacement or goal revocation", async () => {
+    const harness = createClientHarness();
+    harness.apiClient.failSubscriptionType = "channel.goal.progress";
+    harness.client.connect(inputWithGoals());
+    await harness.sockets[0]?.emitMessage(sessionWelcome("session-1"));
+    const revoked = revocation(); revoked.payload.subscription.type = "channel.goal.begin";
+    await harness.sockets[0]?.emitMessage(revoked);
+    const requests = harness.apiClient.requests.length;
+    harness.runScheduled(); await Promise.resolve();
+    expect(harness.apiClient.requests).toHaveLength(requests);
+    expect(harness.client.getStatus()).toMatchObject({ goalSubscriptionFailure: "reauthorization-required" });
+    harness.client.connect(inputWithGoals());
+    await harness.sockets[1]?.emitMessage(sessionWelcome("session-2"));
+    harness.client.disconnect(); harness.runScheduled(); await Promise.resolve();
+    expect(harness.apiClient.requests).toHaveLength(requests * 2);
+  });
+  it("stops a temporary retry when Twitch reports lost authorization", async () => {
+    const harness = createClientHarness();
+    harness.apiClient.failSubscriptionType = "channel.goal.progress";
+    harness.client.connect(inputWithGoals());
+    await harness.sockets[0]?.emitMessage(sessionWelcome("session-1"));
+    harness.apiClient.subscriptionFailure = new TwitchEventSubApiError(401);
+    harness.runScheduled();
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(harness.client.getStatus()).toMatchObject({ state: "connected", goalSubscriptionFailure: "reauthorization-required" });
+    expect(harness.scheduled).toEqual([1000]);
+    expect(harness.sockets[0]?.closeCount).toBe(0);
+  });
+  it("discards an optional retry response from a replaced account connection", async () => {
+    const harness = createClientHarness();
+    harness.apiClient.failSubscriptionType = "channel.goal.progress";
+    harness.client.connect(inputWithGoals());
+    await harness.sockets[0]?.emitMessage(sessionWelcome("session-1"));
+    let release!: () => void;
+    harness.apiClient.beforeSubscription = () => new Promise<void>((resolve) => { release = resolve; });
+    harness.apiClient.failSubscriptionType = null;
+    harness.runScheduled();
+    await harness.sockets[0]?.emitMessage(notification("while-retry-pending"));
+    expect(harness.notifications).toHaveLength(1);
+    harness.client.connect(connectionInput());
+    release();
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(harness.client.getStatus().state).toBe("connecting");
+    expect(harness.client.getStatus().subscriptionTypes).not.toContain("channel.goal.progress");
+    expect(harness.scheduled).toEqual([1000]);
+  });
+  it("transfers missing goal retries to the reconnect session without recreating enabled alerts", async () => {
+    const harness = createClientHarness();
+    harness.apiClient.failSubscriptionType = "channel.goal.progress";
+    harness.client.connect(inputWithGoals());
+    await harness.sockets[0]?.emitMessage(sessionWelcome("session-1"));
+    await harness.sockets[0]?.emitMessage(sessionReconnect("wss://eventsub.wss.twitch.tv/reconnect"));
+    await harness.sockets[1]?.emitMessage(sessionWelcome("session-2"));
+    const requests = harness.apiClient.requests.length;
+    harness.runScheduled(); await Promise.resolve();
+    expect(harness.apiClient.requests).toHaveLength(requests);
+    harness.apiClient.failSubscriptionType = null;
+    harness.runScheduled();
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(harness.apiClient.requests.slice(requests).map((request) => request.subscription)).toEqual([
+      expect.objectContaining({ type: "channel.goal.progress", transport: { method: "websocket", session_id: "session-2" } })
+    ]);
+    expect(harness.client.getStatus().goalSubscriptionFailure).toBeNull();
+  });
+  it("removes a revoked goal subscription while retaining alerts, then restores readiness on reconnect", async () => {
+    const harness = createClientHarness(); harness.client.connect(inputWithGoals());
+    await harness.sockets[0]?.emitMessage(sessionWelcome("session-1"));
+    const revoked = revocation(); revoked.payload.subscription.type = "channel.goal.progress";
+    await harness.sockets[0]?.emitMessage(revoked);
+    expect(harness.client.getStatus().state).toBe("connected");
+    expect(harness.client.getStatus().subscriptionTypes).not.toContain("channel.goal.progress");
+    await harness.sockets[0]?.emitMessage(notification("after-revocation"));
+    expect(harness.notifications).toHaveLength(1);
+    harness.client.connect(inputWithGoals()); await harness.sockets[1]?.emitMessage(sessionWelcome("session-2"));
+    expect(harness.client.getStatus().subscriptionTypes.filter((type) => type.startsWith("channel.goal."))).toHaveLength(3);
+    harness.client.disconnect(); expect(harness.client.getStatus().state).toBe("idle");
+  });
+});
+
 function createClientHarness(options: {
+  readonly onStatusChanged?: ((status: import("./twitch-eventsub-client.js").TwitchEventSubStatus) => void | Promise<void>) | undefined;
   readonly onNotification?: ((message: unknown) => void | Promise<void>) | undefined;
   readonly onAuthorizationFailure?: (() => void | Promise<void>) | undefined;
 } = {}) {
@@ -560,6 +696,7 @@ function createClientHarness(options: {
       await options.onNotification?.(message);
     },
     onAuthorizationFailure: options.onAuthorizationFailure,
+    onStatusChanged: options.onStatusChanged,
     schedule(callback, delayMs) {
       scheduled.push(delayMs);
       scheduledCallbacks.push(callback);

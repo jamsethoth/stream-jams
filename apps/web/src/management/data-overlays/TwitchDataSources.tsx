@@ -1,6 +1,7 @@
 import { Button, Group, Stack, TextInput } from "@mantine/core";
 import { twitchFollowerSourceInputSchema, type DataOverlayState, type TwitchDataSourceStatus } from "@stream-jams/core";
 import { useEffect, useRef, useState } from "react";
+import { TwitchGoalControls } from "./TwitchGoalControls.js";
 import { ModuleSection } from "../foundation/ModulePageLayout.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import { actionableError } from "../foundation/actionable-error.js";
@@ -8,7 +9,7 @@ import type { ActionableManagementError } from "@stream-jams/core";
 import { ManagementHttpError } from "../management-http-client.js";
 import { defaultTwitchDataSourcesApi, type TwitchDataSourcesApi } from "./twitch-data-sources-api.js";
 
-export function TwitchDataSources({ api = defaultTwitchDataSourcesApi, onCreated, onPendingChange, disabled = false }: { readonly api?: TwitchDataSourcesApi | undefined; readonly onCreated: (state: DataOverlayState) => void; readonly onPendingChange?: (pending: boolean) => void; readonly disabled?: boolean }) {
+export function TwitchDataSources({ api = defaultTwitchDataSourcesApi, onCreated, onPendingChange, disabled = false, dataState }: { readonly api?: TwitchDataSourcesApi | undefined; readonly onCreated: (state: DataOverlayState) => void; readonly onPendingChange?: (pending: boolean) => void; readonly disabled?: boolean; readonly dataState?: DataOverlayState | null }) {
   const [status, setStatus] = useState<TwitchDataSourceStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -67,7 +68,19 @@ export function TwitchDataSources({ api = defaultTwitchDataSourcesApi, onCreated
       {status === null ? <p role="status">Loading Twitch data sources…</p> : <>
         <p>Follower total: {followerMessage(status.follower.state)}{status.follower.updatedAt === null ? "" : ` Last refreshed: ${status.follower.updatedAt}.`}</p>
         <p>Follower totals refresh every 60 seconds. Twitch owns this value; live corrections and resets are unavailable. You can use it in a custom saved-baseline goal.</p>
-        <p>Creator Goals: {status.goals.state === "reauthorization-required" ? `Reauthorization required (${status.goals.missingScopes.join(", ")}). Reconnect Twitch in Event sources. Existing alert intake remains available.` : status.goals.state === "disconnected" ? "Disconnected. Connect Twitch in Event sources." : "Creator Goal integration pending."} Live Creator Goal selection is unavailable.</p>
+        <TwitchGoalControls status={status.goals} dataState={dataState} disabled={pending || disabled || loadError !== null} onSave={async (id, input) => {
+          if (busy.current) return;
+          busy.current = true; epoch.current++; const generation = epoch.current;
+          pendingCallback.current?.(true); setPending(true); setActionError(null); setNotice(null);
+          try {
+            const state = await (id === null ? api.createGoal(input) : api.rebindGoal(id, input));
+            if (!mounted.current || generation !== epoch.current) return;
+            onCreated(state); setNotice({ tone: "success", message: id === null ? "Creator Goal created." : "Creator Goal rebound." });
+            try { const next = await api.getStatus(); if (mounted.current && generation === epoch.current) { setStatus(next); setLoadError(null); } }
+            catch (cause) { if (mounted.current && generation === epoch.current) setLoadError(errorMessage(cause)); }
+          } catch (cause) { if (mounted.current && generation === epoch.current) setActionError(actionableError(cause, "Creator Goal was not saved", errorMessage(cause))); }
+          finally { if (generation === epoch.current) { busy.current = false; pendingCallback.current?.(false); if (mounted.current) setPending(false); } }
+        }} />
         <Group><Button component="a" href="/manage/event-sources" variant="default" disabled={pending}>{status.follower.broadcasterId === null ? "Connect Twitch in Event sources" : "Review or reconnect Twitch"}</Button></Group>
         <form aria-label="Create Twitch follower value" onSubmit={event => { event.preventDefault(); void create(); }}>
           <Stack>

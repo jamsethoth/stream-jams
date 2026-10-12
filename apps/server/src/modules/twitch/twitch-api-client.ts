@@ -1,5 +1,6 @@
 import {
   twitchCustomRewardCatalogSchema,
+  twitchCreatorGoalRecordSchema,
   type TwitchCustomRewardCatalog
 } from "@stream-jams/core";
 import { z } from "zod";
@@ -80,11 +81,7 @@ export interface TwitchCustomRewardsRequest {
 export interface TwitchRewardApiClient {
   getCustomRewards(input: TwitchCustomRewardsRequest): Promise<TwitchCustomRewardCatalog>;
 }
-export const twitchCreatorGoalSchema = z.object({
-  id: z.string().min(1), broadcaster_id: z.string().min(1), broadcaster_name: z.string(), broadcaster_login: z.string(),
-  type: z.string().min(1), description: z.string(), current_amount: z.number().int().nonnegative().safe(),
-  target_amount: z.number().int().positive().safe(), started_at: z.string().datetime({ offset: true })
-});
+export const twitchCreatorGoalSchema = twitchCreatorGoalRecordSchema;
 export type TwitchCreatorGoal = z.infer<typeof twitchCreatorGoalSchema>;
 export interface TwitchDataApiClient {
   getFollowerTotal(input: TwitchCustomRewardsRequest): Promise<{ total: number; rateResetEpochMs: number | null }>;
@@ -244,7 +241,8 @@ export class DefaultTwitchApiClient implements TwitchApiClient, TwitchRewardApiC
   }
   async getCreatorGoals(input: TwitchCustomRewardsRequest): Promise<{ goals: TwitchCreatorGoal[]; rateResetEpochMs: number | null }> {
     const response = await this.#requestData("/goals", input);
-    const parsed = z.object({ data: z.array(twitchCreatorGoalSchema).refine(goals => new Set(goals.map(goal => goal.id)).size === goals.length, "Duplicate goal IDs") }).safeParse(await readJsonResponse(response));
+    const helixGoal = twitchCreatorGoalSchema.omit({ started_at: true }).extend({ created_at: z.string().datetime({ offset: true }) }).transform(({ created_at, ...goal }) => ({ ...goal, started_at: created_at }));
+    const parsed = z.object({ data: z.array(helixGoal).refine(goals => new Set(goals.map(goal => goal.id)).size === goals.length, "Duplicate goal IDs") }).safeParse(await readJsonResponse(response));
     if (!parsed.success || parsed.data.data.some(goal => goal.broadcaster_id !== input.broadcasterId)) throw new TwitchApiResponseError();
     return { goals: parsed.data.data, rateResetEpochMs: rateReset(response) };
   }

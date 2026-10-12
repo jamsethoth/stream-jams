@@ -10,6 +10,10 @@ import type { NormalizedStreamEvent } from "../events/types.js";
 export function twitchCorrelationKey(event: NormalizedStreamEvent): string {
   const actor = event.actor.id ?? "anon";
   switch (event.type) {
+    case "goal_begin":
+    case "goal_progress":
+    case "goal_end":
+      return key(event.type, event.broadcasterId, event.goalId, event.occurredAt);
     case "follow":
     case "subscription":
     case "stream_online":

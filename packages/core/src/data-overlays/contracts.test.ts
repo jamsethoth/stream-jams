@@ -70,6 +70,10 @@ describe("deterministic output projection", () => {
     expect(formatDataContent(-1234, text.format)).toBe("-1,234");
     expect(formatDataContent("<b>hi</b>", text.format)).toBe("<b>hi</b>");
   });
+  it("preserves decimal, scientific notation and literal grouping semantics", () => {
+    for (const [content, expected] of [[1234567.89, "1,234,567.89"], [-1234567.89, "-1,234,567.89"], [1e21, "1e+21"], [1e-7, "1e-7"], [Number.MAX_SAFE_INTEGER, "9,007,199,254,740,991"], [0, "0"], [true, "true"], ["1234567", "1234567"]] as const) expect(formatDataContent(content, text.format)).toBe(expected);
+    expect(formatDataContent(12345, { ...text.format, thousandsSeparator: false })).toBe("12345");
+  });
   it("includes only rendered content, runtime and revision, never catalog definitions", () => {
     const result = project();
     expect(result).toMatchObject({ runtimeId: "runtime", revision: 7, canvases: [{ id: "canvas", elements: [{ id: "text", text: "970" }] }] });

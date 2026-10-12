@@ -4,7 +4,7 @@ import {
   alertEditorDocumentSchema,
   DefaultAlertService,
   DefaultModerationService,
-  streamEventTypes,
+  canonicalAlertEventTypes,
   type AlertCollection,
   type AlertEditorDocument,
   type AlertRepository,
@@ -470,7 +470,7 @@ describe("AlertSetManagementService", () => {
     const fixture = createFixture();
     const [starter] = await fixture.service.listSets();
 
-    for (const eventType of streamEventTypes) {
+    for (const eventType of canonicalAlertEventTypes) {
       const created = await fixture.service.createAlert(starter!.id, alertCreateInputSchema.parse({
         eventType,
         name: `Alert for ${eventType}`
@@ -478,7 +478,7 @@ describe("AlertSetManagementService", () => {
       expect(created).toMatchObject({ eventType, enabled: false, reviewState: "needs-review" });
     }
 
-    expect((await fixture.service.getSet(starter!.id)).inventory).toHaveLength(streamEventTypes.length + 4);
+    expect((await fixture.service.getSet(starter!.id)).inventory).toHaveLength(canonicalAlertEventTypes.length + 4);
   });
 
   it("keeps save and activation distinct and atomically replaces the active set", async () => {

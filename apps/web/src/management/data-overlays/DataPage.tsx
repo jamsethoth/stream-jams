@@ -42,6 +42,7 @@ export function DataPage({ api = defaultDataOverlaysApi, twitchSourcesApi }: {
         name: string;
     } | null>(null);
     const editingSource = editing?.type === "value" && state?.values.find(value => value.id === editing.id)?.source !== undefined;
+    const editingNativeGoal = editing?.type === "goal" && state?.goals.find(goal => goal.id === editing.id)?.source !== undefined;
     async function load() { try {
         setState(await api.getState());
         setError(null);
@@ -112,7 +113,7 @@ export function DataPage({ api = defaultDataOverlaysApi, twitchSourcesApi }: {
             errors.name = "Enter a name.";
         if (editing.type === "value" && !editingSource && kind === "integer" && (defaultContent.trim() === "" || !Number.isSafeInteger(Number(defaultContent))))
             errors.defaultContent = "Enter a safe integer reset default.";
-        if (editing.type === "goal") {
+        if (editing.type === "goal" && !editingNativeGoal) {
             if (amount.trim() === "" || !Number.isSafeInteger(Number(amount)) || Number(amount) <= 0)
                 errors.amount = "Enter a positive safe integer.";
             if (mode === "saved-baseline" && (baseline.trim() === "" || !Number.isSafeInteger(Number(baseline))))
@@ -124,13 +125,18 @@ export function DataPage({ api = defaultDataOverlaysApi, twitchSourcesApi }: {
         return mutate(() => {
             if (editing.type === "group")
                 return api.saveGroup(editing.id, { name });
+            if (editingNativeGoal && editing.id !== null) {
+                const original = state?.goals.find(goal => goal.id === editing.id);
+                if (original?.mode !== "fixed-target") throw new Error("Reload the Creator Goal and retry.");
+                return api.saveGoal(editing.id, { name, valueId: original.valueId, mode: original.mode, target: original.target });
+            }
             if (editing.type === "goal")
                 return api.saveGoal(editing.id, mode === "fixed-target" ? { name, valueId, mode, target: Number(amount) } : { name, valueId, mode, baseline: Number(baseline), additionalAmount: Number(amount) });
             const resetDefault = kind === "integer" ? Number(defaultContent) : defaultContent;
             if (editingSource && editing.id !== null) return api.updateValue(editing.id, { name });
             return editing.id === null ? api.createValue(kind === "integer" ? { name, kind, resetDefault: Number(resetDefault), resetGroupId: groupId || null } : { name, kind, resetDefault: String(resetDefault), resetGroupId: groupId || null }) : api.updateValue(editing.id, { name, resetDefault, resetGroupId: groupId || null });
         }, true, navigation);
-    }, [editing, editingSource, name, kind, defaultContent, groupId, valueId, mode, amount, baseline, mutate, api]);
+    }, [editing, editingSource, editingNativeGoal, state, name, kind, defaultContent, groupId, valueId, mode, amount, baseline, mutate, api]);
     const saveNavigation = useCallback(() => save(true), [save]);
     const discard = useCallback(() => setEditing(null), []);
     useDirtyNavigationSource({ id: "data-definitions", summary: "Unsaved Data definition", dirty: editing !== null, save: saveNavigation, discard });
@@ -172,7 +178,7 @@ export function DataPage({ api = defaultDataOverlaysApi, twitchSourcesApi }: {
     </div>}
     {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)}/>}
     {actionError === null || deleting !== null ? null : <ManagementErrorToast error={actionError} onDismiss={() => setActionError(null)}/>}
-    <TwitchDataSources api={twitchSourcesApi} disabled={busy || editing !== null || deleting !== null || state === null || state.values.length >= dataOverlayLimits.values} onPendingChange={value => { sourcePending.current = value; setSourceBusy(value); }} onCreated={next => setState(current => current !== null && current.revision > next.revision ? current : next)} />
+    <TwitchDataSources dataState={state} api={twitchSourcesApi} disabled={busy || editing !== null || deleting !== null || state === null || state.values.length >= dataOverlayLimits.values} onPendingChange={value => { sourcePending.current = value; setSourceBusy(value); }} onCreated={next => setState(current => current !== null && current.revision > next.revision ? current : next)} />
     {state === null ? <p role="status">Loading Data…</p> : <>
       <ModuleSection title="Values" label="Values" description={`${state.values.length} / ${dataOverlayLimits.values} values. Integer or plain text up to ${dataOverlayLimits.textBytes} UTF-8 bytes.`} actions={<Button disabled={busy || editing !== null || state.values.length >= dataOverlayLimits.values} onClick={() => edit("value")}>Add value</Button>}>
         {state.values.length === 0 ? <p>No values yet. Add a value to share between canvases.</p> : <Table>
@@ -188,11 +194,16 @@ export function DataPage({ api = defaultDataOverlaysApi, twitchSourcesApi }: {
           </Table.Thead>
           <Table.Tbody>{state.values.map(value => <Table.Tr key={value.id}>
             <Table.Td>{value.name}</Table.Td>
-            <Table.Td>{value.kind}{value.source === undefined ? "" : value.source.invalidated ? " · Twitch follower total (read-only, account changed; create a new source)" : " · Twitch follower total (read-only)"}</Table.Td>
+            <Table.Td>{value.kind}{value.source === undefined ? "" : ` · Twitch ${value.source.kind === "creator-goal" ? "Creator Goal" : "follower total"} (read-only${value.source.invalidated ? ", account changed" : ""})`}</Table.Td>
             <Table.Td className="data-current-content">{String(value.content)}</Table.Td>
             <Table.Td>{definitionReferences(state, "value", value.id).join(", ") || "No references"}</Table.Td>
             <Table.Td>
-              <Checkbox aria-label={`Pin ${value.name}`} checked={state.pinnedValueIds.includes(value.id)} disabled={busy} onChange={event => { const checked = event.currentTarget.checked; void mutate(() => api.setPins(checked ? [...state.pinnedValueIds, value.id] : state.pinnedValueIds.filter(id => id !== value.id)), false); }}/>
+              <Checkbox aria-label={`Pin ${value.name}`} checked={state.pinnedValueIds.includes(value.id)} disabled={busy} onChange={event => { const checked = event.currentTarget.checked;
+                if (pending.current || sourcePending.current) return;
+                const previous = state;
+                const pins = checked ? [...state.pinnedValueIds, value.id] : state.pinnedValueIds.filter(id => id !== value.id);
+                setState({ ...state, pinnedValueIds: pins });
+                void mutate(() => api.setPins(pins), false).then(result => { if (result !== true) setState(previous); }); }}/>
             </Table.Td>
             <Table.Td>
               <Group>
@@ -223,12 +234,12 @@ export function DataPage({ api = defaultDataOverlaysApi, twitchSourcesApi }: {
         <Stack>
           <h2>{editing.id === null ? "Add" : "Edit"} {editing.type}</h2>
           <TextInput required label="Name" error={fieldErrors.name} value={name} onChange={event => setName(event.currentTarget.value)}/>
-          {editing.type !== "value" ? null : editingSource ? <p>Twitch follower total is read-only. You can rename this value; Twitch controls its content and it cannot join a reset group.</p> : <>
+          {editing.type !== "value" ? null : editingSource ? <p>Twitch {state?.values.find(value => value.id === editing.id)?.source?.kind === "creator-goal" ? "Creator Goal" : "follower total"} is read-only. You can rename this value; Twitch controls its content and it cannot join a reset group.</p> : <>
             <NativeSelect label="Kind" disabled={editing.id !== null} value={kind} data={[{ value: "integer", label: "Integer" }, { value: "text", label: "Plain text" }]} onChange={event => setKind(event.currentTarget.value as typeof kind)}/>
             <TextInput required={kind === "integer"} type={kind === "integer" ? "number" : "text"} label="Reset default" error={fieldErrors.defaultContent} value={defaultContent} onChange={event => setDefaultContent(event.currentTarget.value)}/>
             <NativeSelect label="Reset group" value={groupId} data={[{ value: "", label: "No group" }, ...(state?.resetGroups.map(group => ({ value: group.id, label: group.name })) ?? [])]} onChange={event => setGroupId(event.currentTarget.value)}/>
           </>}
-          {editing.type !== "goal" ? null : <>
+          {editing.type !== "goal" ? null : editingNativeGoal ? <p>Twitch Creator Goal is read-only. You can rename it here; Twitch controls its value and target. Use Twitch data sources to rebind.</p> : <>
             <NativeSelect required label="Integer value" value={valueId} data={state?.values.filter(value => value.kind === "integer").map(value => ({ value: value.id, label: value.name })) ?? []} onChange={event => setValueId(event.currentTarget.value)}/>
             <NativeSelect label="Goal mode" value={mode} data={[{ value: "fixed-target", label: "Fixed target" }, { value: "saved-baseline", label: "Saved baseline" }]} onChange={event => setMode(event.currentTarget.value as typeof mode)}/>{mode === "saved-baseline" ? <TextInput required type="number" label="Saved baseline" error={fieldErrors.baseline} value={baseline} onChange={event => setBaseline(event.currentTarget.value)}/> : null}<TextInput required type="number" min={1} label={mode === "fixed-target" ? "Target" : "Additional amount"} error={fieldErrors.amount} value={amount} onChange={event => setAmount(event.currentTarget.value)}/>
           </>}

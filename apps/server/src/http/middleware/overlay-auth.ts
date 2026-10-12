@@ -1,5 +1,6 @@
 import type {
   OverlayAccessService,
+  OverlayAccessKey,
   OverlayRouteAccessRequest,
   OverlayTargetProfileId
 } from "@stream-jams/core";
@@ -9,6 +10,7 @@ import { sendHttpError } from "../errors.js";
 export interface OverlayAuthPreHandlerOptions {
   readonly overlayAccessService: Pick<OverlayAccessService, "verifyRouteAccess">;
   readonly resolveAccessRequest: (request: FastifyRequest) => OverlayRouteAccessRequest | null;
+  readonly onAuthorized?: (request: FastifyRequest, record: OverlayAccessKey, rawKey: string) => void;
 }
 
 export function createOverlayAuthPreHandler(options: OverlayAuthPreHandlerOptions): preHandlerHookHandler {
@@ -29,6 +31,7 @@ export function createOverlayAuthPreHandler(options: OverlayAuthPreHandlerOption
         reason: verification.reason
       });
     }
+    options.onAuthorized?.(request, verification.record, accessRequest.rawKey);
   };
 }
 

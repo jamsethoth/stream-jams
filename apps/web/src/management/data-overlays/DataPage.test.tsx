@@ -77,3 +77,25 @@ describe("Data definitions", () => {
     expect(screen.getByText(/Goal: Challenge goal/u)).toHaveTextContent("Canvas: Challenge display");
   });
 });
+
+it("checks pins immediately while persistence is pending, then rolls back a failed request", async () => {
+  const api = createDataManagementFixture(); let reject!: (cause: Error) => void;
+  api.setPins = vi.fn(() => new Promise<Awaited<ReturnType<typeof api.setPins>>>((_resolve, fail) => { reject = fail; }));
+  renderManagement(<DataPage twitchSourcesApi={createTwitchDataFixture()} api={api} />);
+  const checkbox = await screen.findByRole("checkbox", { name: "Pin Community challenge" });
+  fireEvent.click(checkbox); expect(checkbox).not.toBeChecked(); expect(api.setPins).toHaveBeenCalledWith([]);
+  reject(new Error("Pin save failed. Retry."));
+  await waitFor(() => expect(checkbox).toBeChecked());
+  expect(await screen.findByRole("alert")).toHaveTextContent("Pin save failed");
+});
+it("offers name-only editing for native Creator Goals", async () => {
+  const state = dataPreviewFixture(); state.values[0]!.source = { provider: "twitch", kind: "creator-goal", broadcasterId: "123", binding: { mode: "active-type", type: "follower" } };
+  state.goals[0]!.source = { provider: "twitch", kind: "creator-goal" };
+  const api = createDataManagementFixture(state); api.saveGoal = vi.fn(api.saveGoal);
+  const user = userEvent.setup(); renderManagement(<DataPage twitchSourcesApi={createTwitchDataFixture()} api={api} />);
+  await user.click(await screen.findByRole("button", { name: "Edit Challenge goal" }));
+  expect(screen.queryByLabelText("Target")).toBeNull(); expect(screen.queryByLabelText("Integer value")).toBeNull();
+  await user.clear(screen.getByRole("textbox", { name: "Name" })); await user.type(screen.getByRole("textbox", { name: "Name" }), "Renamed native goal");
+  await user.click(screen.getByRole("button", { name: "Save definition" }));
+  expect(api.saveGoal).toHaveBeenCalledWith("goal", { name: "Renamed native goal", valueId: "counter", mode: "fixed-target", target: 100 });
+});

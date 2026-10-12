@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { DefaultTwitchApiClient, TwitchApiHttpError } from "./twitch-api-client.js";
 // Synthetic documentation-derived fixtures, never recorded from Twitch accounts.
 const request = { accessToken: "synthetic-secret", clientId: "synthetic-client", broadcasterId: "synthetic-user" };
-const goal = { id: "goal-1", broadcaster_id: "synthetic-user", broadcaster_name: "Synthetic", broadcaster_login: "synthetic", type: "follower", description: "Synthetic follower goal", current_amount: 4, target_amount: 20, started_at: "2026-10-08T00:00:00Z" };
+const goal = { id: "goal-1", broadcaster_id: "synthetic-user", broadcaster_name: "Synthetic", broadcaster_login: "synthetic", type: "follower", description: "Synthetic follower goal", current_amount: 4, target_amount: 20, created_at: "2026-10-08T00:00:00Z" };
 describe("Twitch documented data APIs", () => {
   it("uses total rather than page length and sends credentials only in headers", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ total: 1000, data: [], pagination: {} }, { headers: { "ratelimit-reset": "100" } }));
@@ -17,7 +17,10 @@ describe("Twitch documented data APIs", () => {
       await expect(client.getFollowerTotal(request)).rejects.toThrow("invalid");
     }
     const client = new DefaultTwitchApiClient({ fetch: async () => Response.json({ data: [goal, { ...goal, id: "goal-2", type: "future-goal" }] }) });
-    await expect(client.getCreatorGoals(request)).resolves.toMatchObject({ goals: [goal, { id: "goal-2", type: "future-goal" }] });
+    const { created_at, ...fields } = goal;
+    await expect(client.getCreatorGoals(request)).resolves.toMatchObject({ goals: [{ ...fields, started_at: created_at }, { id: "goal-2", type: "future-goal" }] });
+    const misspelled = new DefaultTwitchApiClient({ fetch: async () => Response.json({ data: [{ ...fields, started_at: created_at }] }) });
+    await expect(misspelled.getCreatorGoals(request)).rejects.toThrow("invalid");
     const wrong = new DefaultTwitchApiClient({ fetch: async () => Response.json({ data: [{ ...goal, broadcaster_id: "other" }] }) });
     await expect(wrong.getCreatorGoals(request)).rejects.toThrow("invalid");
   });

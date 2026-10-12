@@ -1,12 +1,29 @@
 import type { FastifyRequest } from "fastify";
 import Fastify from "fastify";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { LocalOverlayAccessService } from "../../modules/overlays/overlay-access-service.js";
 import { createOverlayAuthPreHandler } from "./overlay-auth.js";
 
 const now = new Date("2026-05-29T12:00:00.000Z");
 
 describe("createOverlayAuthPreHandler", () => {
+  it("reports the persisted record only after successful verification", async () => {
+    const overlayAccessService = new LocalOverlayAccessService({ clock: () => now, generateId: () => "key-1", generateRawKey: () => "ovl_record" });
+    const created = await overlayAccessService.createKey({ overlayId: "default", moduleId: "alerts", scope: "module", purpose: "live" });
+    const onAuthorized = vi.fn();
+    const app = Fastify({ logger: false });
+    app.get("/overlay/modules/:moduleId/:purpose/:overlayKey", { preHandler: createOverlayAuthPreHandler({ overlayAccessService, resolveAccessRequest: resolveModuleOverlayAccessRequest, onAuthorized }) }, async () => ({ ok: true }));
+    try {
+      expect((await app.inject({ url: "/overlay/modules/alerts/test/ovl_record" })).statusCode).toBe(401);
+      expect(onAuthorized).not.toHaveBeenCalled();
+      expect((await app.inject({ url: "/overlay/modules/alerts/live/ovl_record" })).statusCode).toBe(200);
+      expect(onAuthorized).toHaveBeenCalledWith(expect.anything(), created.record, created.rawKey);
+      await overlayAccessService.revokeKey(created.record.id);
+      onAuthorized.mockClear();
+      expect((await app.inject({ url: "/overlay/modules/alerts/live/ovl_record" })).statusCode).toBe(401);
+      expect(onAuthorized).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
   it("authorizes a module overlay from the route segment key and ignores query-string keys", async () => {
     const overlayAccessService = new LocalOverlayAccessService({
       clock: () => now,

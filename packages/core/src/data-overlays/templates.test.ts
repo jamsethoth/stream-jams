@@ -97,6 +97,22 @@ describe("safe independent data templates", () => {
     for (const forbidden of [value.id,"private-account-42","9381","resetDefault","additionalAmount","baseline"]) expect(JSON.stringify(saved)).not.toContain(forbidden);
     expect(() => service.instantiate(saved.id, createInput([{slotId:saved.slots[0]!.id,mapping:{kind:"new-goal",value:{kind:"new",definition:{name:"Manual substitute",kind:"integer",resetDefault:0,resetGroupId:null}},goal:{name:"Manual goal",mode:"fixed-target",target:100}}}],"Bad provider"))).toThrow("source");
   });
+  it("retains Creator Goal template requirements without live account/binding or target metadata", () => {
+    const { overlays, service } = fixture(true); const starter = bundledDataTemplates[1]!;
+    const bound = overlays.createTwitchGoalBinding({ name: "Creator", binding: { mode: "pinned", goalId: "private-twitch-goal" } }, "private-account");
+    const value = bound.values[0]!; const goal = bound.goals[0]!;
+    overlays.applyTwitchCreatorGoals("private-account", [{ valueId: value.id, currentAmount: 6789, targetAmount: 9876 }]);
+    const state = service.instantiate(starter.id, createInput([{ slotId: "goal", mapping: { kind: "goal", goalId: goal.id } }]));
+    const saved = service.save({ name: "Creator template", canvasId: state.canvases[0]!.id }).templates.find(t => t.origin === "user")!;
+    expect(saved.slots[0]).toMatchObject({ requiredSource: { provider: "twitch", kind: "creator-goal" } });
+    for (const forbidden of ["private-twitch-goal", "private-account", "6789", "9876", "broadcasterId", "selectedGoalId", "resetDefault"]) expect(JSON.stringify(saved)).not.toContain(forbidden);
+    expect(service.instantiate(saved.id, createInput([{ slotId: saved.slots[0]!.id, mapping: { kind: "goal", goalId: goal.id } }], "Mapped Creator")).canvases).toHaveLength(2);
+    const before = overlays.getState();
+    expect(() => overlays.instantiateTemplate(saved, createInput([{ slotId: saved.slots[0]!.id, mapping: { kind: "new-goal", value: { kind: "existing", valueId: value.id }, goal: { name: "Forged Creator", mode: "fixed-target", target: 10 } } }], "Forged"))).toThrow("read-only");
+    expect(overlays.getState()).toEqual(before);
+    overlays.invalidateTwitchBindingsExcept("new-account");
+    expect(() => service.instantiate(saved.id, createInput([{ slotId: saved.slots[0]!.id, mapping: { kind: "goal", goalId: goal.id } }], "Invalid Creator"))).toThrow("source");
+  });
   it("checks arithmetic, limits and insertion profile/orders before committing", () => {
     const {overlays,service,publish}=fixture(); const t=bundledDataTemplates[1]!;
     const overflow:DataTemplateMapping={slotId:"goal",mapping:{kind:"new-goal",value:{kind:"new",definition:{name:"Max",kind:"integer",resetDefault:Number.MAX_SAFE_INTEGER,resetGroupId:null}},goal:{name:"Overflow",mode:"saved-baseline",additionalAmount:1}}};

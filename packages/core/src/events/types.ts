@@ -4,13 +4,21 @@ export type IngestProviderId = "twitch" | "streamerbot";
 
 export type SourcePlatformId = "twitch";
 
-export const streamEventTypes = [
+export const canonicalAlertEventTypes = [
   "follow", "subscription", "resubscription", "cheer", "raid", "channel_point_redemption",
   "gift_subscription", "community_gift",
   "hype_train_start", "hype_train_progress", "hype_train_end",
   "poll_start", "poll_progress", "poll_end",
   "prediction_start", "prediction_progress", "prediction_lock", "prediction_end",
   "stream_online", "stream_offline"
+] as const;
+
+export type CanonicalAlertEventType = (typeof canonicalAlertEventTypes)[number];
+
+// Creator Goal events update Data sources and are not alert authoring types.
+export const streamEventTypes = [
+  ...canonicalAlertEventTypes,
+  "goal_begin", "goal_progress", "goal_end"
 ] as const;
 
 export type StreamEventType = (typeof streamEventTypes)[number];
@@ -190,6 +198,25 @@ export interface StreamOfflineEvent extends BaseNormalizedStreamEvent, StreamFie
   readonly type: "stream_offline";
 }
 
+interface GoalFields {
+  readonly amount: null;
+  readonly broadcasterId: string;
+  readonly goalId: string;
+  readonly goalType: string;
+  readonly description: string;
+  readonly currentAmount: number;
+  readonly targetAmount: number;
+  readonly startedAt: string;
+}
+
+export interface GoalBeginEvent extends BaseNormalizedStreamEvent, GoalFields { readonly type: "goal_begin"; }
+export interface GoalProgressEvent extends BaseNormalizedStreamEvent, GoalFields { readonly type: "goal_progress"; }
+export interface GoalEndEvent extends BaseNormalizedStreamEvent, GoalFields {
+  readonly type: "goal_end";
+  readonly endedAt: string;
+  readonly isAchieved: boolean;
+}
+
 export type NormalizedStreamEvent =
   | FollowEvent
   | SubscriptionEvent
@@ -210,7 +237,10 @@ export type NormalizedStreamEvent =
   | PredictionLockEvent
   | PredictionEndEvent
   | StreamOnlineEvent
-  | StreamOfflineEvent;
+  | StreamOfflineEvent
+  | GoalBeginEvent
+  | GoalProgressEvent
+  | GoalEndEvent;
 
 export interface ExternalStreamEvent {
   readonly id: string;
@@ -232,7 +262,7 @@ export interface StreamerBotSubscriptionSelection {
 /** Alert-only event type for an exact external identity; never produced by intake normalizers. */
 export const externalAlertEventType = "external_event";
 
-export const alertEventTypes = [...streamEventTypes, externalAlertEventType] as const;
+export const alertEventTypes = [...canonicalAlertEventTypes, externalAlertEventType] as const;
 
 export type AlertEventType = (typeof alertEventTypes)[number];
 

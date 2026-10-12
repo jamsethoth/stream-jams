@@ -15,6 +15,19 @@ function fixture() {
   return { database, repository, service, publish };
 }
 describe("durable data overlay commands", () => {
+  it("rolls back native Creator Goal creation and target updates on actual SQLite write failure", () => {
+    const { service, repository, database, publish } = fixture();
+    const before = repository.read();
+    database.connection.exec("CREATE TRIGGER reject_creator_goal BEFORE INSERT ON data_goals BEGIN SELECT RAISE(ABORT,'goal write failed'); END;");
+    expect(() => service.createTwitchGoalBinding({ name: "Creator", binding: { mode: "active-type", type: "follower" } }, "synthetic-account")).toThrow("goal write failed");
+    expect(repository.read()).toEqual(before); expect(publish).not.toHaveBeenCalled();
+    database.connection.exec("DROP TRIGGER reject_creator_goal;");
+    const bound = service.createTwitchGoalBinding({ name: "Creator", binding: { mode: "active-type", type: "follower" } }, "synthetic-account");
+    publish.mockClear();
+    database.connection.exec("CREATE TRIGGER reject_creator_goal BEFORE INSERT ON data_goals BEGIN SELECT RAISE(ABORT,'goal write failed'); END;");
+    expect(() => service.applyTwitchCreatorGoals("synthetic-account", [{ valueId: bound.values[0]!.id, currentAmount: 42, targetAmount: 100 }])).toThrow("goal write failed");
+    expect(repository.read()).toEqual(bound); expect(publish).not.toHaveBeenCalled(); database.close();
+  });
   it("keeps immutable kinds, names, CAS and serialized safe deltas", () => {
     const { service, repository, database } = fixture();
     const value = service.createValue({ name: " Deaths ", kind: "integer", resetDefault: 0, resetGroupId: null }).values[0]!;

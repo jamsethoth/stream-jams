@@ -1,5 +1,5 @@
 import Fastify from "fastify";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DataOverlayService } from "@stream-jams/core";
 import { createInMemoryStreamJamsDatabase } from "../../modules/db/database.js";
 import { SqliteDataOverlayRepository } from "../../modules/data-overlays/sqlite-data-overlay-repository.js";
@@ -7,6 +7,9 @@ import { LocalManagementSessionService } from "../../modules/auth/management-ses
 import { RuntimeMaintenanceGate } from "../../modules/backup/runtime-maintenance-gate.js";
 import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 import { registerDataOverlayRoutes } from "./data-overlays.js";
+import { TwitchDataSourceRuntime } from "../../modules/twitch/twitch-data-source-runtime.js";
+import { InMemorySecretStore } from "@stream-jams/test-support";
+import { createTwitchTokenSecretRef } from "../../modules/twitch/twitch-oauth-service.js";
 it("protects definitions and Operator commands with session/CSRF and returns current conflicts", async () => {
   const db = createInMemoryStreamJamsDatabase();
   let next = 0;
@@ -30,6 +33,8 @@ it("protects definitions and Operator commands with session/CSRF and returns cur
   expect((await app.inject({ method: "POST", url: "/data-overlays/goals", headers, payload: { name: "Missing value", valueId: "missing", mode: "fixed-target", target: 3 } })).statusCode).toBe(400);
   const goal = await app.inject({ method: "POST", url: "/data-overlays/goals", headers, payload: { name: "Target", valueId: "id-1", mode: "saved-baseline", baseline: 0, additionalAmount: 3 } });
   expect(goal.statusCode).toBe(201);
+  expect((await app.inject({ method: "PUT", url: "/data-overlays/goals/id-3", headers, payload: { name: "Missing value", valueId: "missing", mode: "fixed-target", target: 3 } })).statusCode).toBe(400);
+  expect((await app.inject({ method: "PUT", url: "/data-overlays/goals/missing", headers, payload: { name: "Missing goal", valueId: "id-1", mode: "fixed-target", target: 3 } })).statusCode).toBe(404);
   const deletion = await app.inject({ method: "DELETE", url: "/data-overlays/values/id-1", headers });
   expect(deletion.statusCode).toBe(409); expect(deletion.json().error.references).toContain("goal:id-3");
   const restart = await app.inject({ method: "POST", url: "/operator/data-overlays/goals/id-3/restart", headers, payload: {} });
@@ -46,4 +51,37 @@ describe("data route binding validation", () => {
     expect(() => service.createGoal({ name: "Goal", valueId: "id-1", mode: "fixed-target", target: 3 })).toThrow();
     expect(service.getState().goals).toEqual([]); db.close();
   });
+});
+
+it("creates and rebinds native Twitch goals with auth, CSRF, ownership and maintenance guards", async () => {
+  const db = createInMemoryStreamJamsDatabase(); let next = 0;
+  const gate = new RuntimeMaintenanceGate();
+  const service = new DataOverlayService(new SqliteDataOverlayRepository(db), { generateId: () => `id-${++next}`, now: () => "2026-10-11T00:00:00.000Z", runMutation: work => gate.runConfigurationMutation(work) });
+  const account = { accountId: "synthetic", login: "synthetic", displayName: "Synthetic", scopes: ["channel:read:goals"], connectedAt: "2026-10-11T00:00:00Z", updatedAt: "2026-10-11T00:00:00Z" };
+  const secretStore = new InMemorySecretStore(); await secretStore.setSecret(createTwitchTokenSecretRef(account.accountId, "access_token"), "synthetic");
+  const runtime = new TwitchDataSourceRuntime({ service, repository: { findConnectedAccount: async () => account, saveAccount: async value => value, deleteAccount: async () => {} }, secretStore, clientId: "synthetic", apiClient: { getFollowerTotal: async () => ({ total: 1, rateResetEpochMs: null }), getCreatorGoals: async () => ({ goals: [{ id: "twitch-native", broadcaster_id: "synthetic", broadcaster_name: "Synthetic", broadcaster_login: "synthetic", type: "follower", description: "Synthetic", current_amount: 4, target_amount: 20, started_at: account.connectedAt }, { id: "unsupported", broadcaster_id: "synthetic", broadcaster_name: "Synthetic", broadcaster_login: "synthetic", type: "unknown-type", description: "Synthetic", current_amount: 4, target_amount: 20, started_at: account.connectedAt }], rateResetEpochMs: null }) }, setStatus: () => {} });
+  const sessions = new LocalManagementSessionService(); const session = await sessions.createSession();
+  const headers = managementTestHeaders(session, "POST");
+  const app = Fastify(); registerDataOverlayRoutes(app, { dataOverlayService: service, twitchDataSourceRuntime: runtime, managementAuthPreHandler: createTestManagementSecurity(sessions), managementRateLimitPreHandler: (_req, _reply, done) => done() });
+  const input = { name: "Creator goal", binding: { mode: "active-type", type: "follower" } };
+  try {
+    expect((await app.inject({ method: "POST", url: "/data-overlays/sources/twitch/goals", payload: input })).statusCode).toBe(401);
+    expect((await app.inject({ method: "POST", url: "/data-overlays/sources/twitch/goals", headers: managementTestHeaders(session), payload: input })).statusCode).toBe(403);
+    expect((await app.inject({ method: "POST", url: "/data-overlays/sources/twitch/goals", headers, payload: { ...input, broadcasterId: "forged" } })).statusCode).toBe(400);
+    const created = await app.inject({ method: "POST", url: "/data-overlays/sources/twitch/goals", headers, payload: input });
+    expect(created.statusCode, created.body).toBe(201);
+    const goal = created.json().goals[0] as { id: string; valueId: string };
+    const value = created.json().values[0] as { id: string };
+    expect(goal.valueId).toBe(value.id);
+    expect((await app.inject({ method: "POST", url: `/operator/data-overlays/values/${value.id}/reset`, headers, payload: {} })).statusCode).toBe(409);
+    expect((await app.inject({ method: "POST", url: `/operator/data-overlays/goals/${goal.id}/restart`, headers, payload: {} })).statusCode).toBe(409);
+    runtime.eventSubStatusChanged({ state: "connected", sessionId: "synthetic", message: null, connectedAt: null, lastMessageAt: null, lastErrorAt: null, referenceId: null, subscriptionTypes: ["channel.goal.begin", "channel.goal.progress", "channel.goal.end"] });
+    await vi.waitFor(() => expect(runtime.getStatus().goals.state).toBe("current"));
+    for (const goalId of ["unsupported", "unknown-id"]) expect((await app.inject({ method: "PUT", url: `/data-overlays/sources/twitch/goals/${goal.id}`, headers, payload: { name: "Invalid pin", binding: { mode: "pinned", goalId } } })).statusCode).toBe(400);
+    const rebound = await app.inject({ method: "PUT", url: `/data-overlays/sources/twitch/goals/${goal.id}`, headers, payload: { name: "Pinned", binding: { mode: "pinned", goalId: "twitch-native" } } });
+    expect(rebound.statusCode, rebound.body).toBe(200); expect(rebound.json().goals[0].id).toBe(goal.id); expect(rebound.json().values[0].id).toBe(value.id);
+    expect(rebound.json().values[0].source.binding).toEqual({ mode: "pinned", goalId: "twitch-native" });
+    expect((await app.inject({ method: "PUT", url: "/data-overlays/sources/twitch/goals/missing", headers, payload: input })).statusCode).toBe(404);
+    await gate.runMaintenance(async () => { expect((await app.inject({ method: "POST", url: "/data-overlays/sources/twitch/goals", headers, payload: { ...input, name: "Blocked" } })).statusCode).toBe(409); });
+  } finally { await runtime.close(); await app.close(); db.close(); }
 });

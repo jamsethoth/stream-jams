@@ -83,6 +83,9 @@ describe("OperatorApp", () => {
     expect(screen.getByText("Large raid")).toBeVisible();
     expect(screen.getByText("Flash sweep")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Pending (2)" })).toBeVisible();
+    const recent = screen.getByRole("heading", { name: "Recent (1)" });
+    const data = screen.getByRole("heading", { name: "Data" });
+    expect(recent.compareDocumentPosition(data) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText("Cheer burst").closest("article")).toHaveTextContent("#2");
     expect(screen.getByText("Follow alert").closest("article")).toHaveTextContent("#1");
     expect(screen.queryByText("occ-alert")).not.toBeInTheDocument();

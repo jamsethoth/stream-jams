@@ -1,4 +1,4 @@
-import { DataOverlayService, projectDataOverlays, type DataSourceStatus } from "@stream-jams/core";
+import { DataOverlayService, projectDataOverlays, type BusEvent, type DataSourceStatus } from "@stream-jams/core";
 import { InMemorySecretStore } from "@stream-jams/test-support";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryStreamJamsDatabase } from "../db/database.js";
@@ -24,6 +24,14 @@ async function fixture(configured = true) {
 }
 afterEach(() => vi.useRealTimers());
 describe("authoritative Twitch follower source", () => {
+  it("refreshes canonical Streamer.bot follow hints and rejects explicit wrong-account hints", async () => {
+    const f = await fixture(); await f.runtime.connectionChanged();
+    const event: BusEvent = { kind: "canonical", sequence: 1, busId: "synthetic-bus", eventId: "synthetic-follow", sourceKind: "streamerbot", sourceRegistrationId: null, receivedAt: new Date().toISOString(), correlationKey: null, effectTriggers: [], event: { id: "synthetic-follow", type: "follow", providerId: "twitch", sourcePlatform: "twitch", ingestProvider: "streamerbot", occurredAt: new Date().toISOString(), actor: { id: "synthetic-viewer", displayName: "Synthetic" }, amount: null, message: null, metadata: {} } };
+    expect(f.runtime.handleBusEvent(event)).toBe("admitted");
+    if (event.kind === "canonical") expect(f.runtime.handleBusEvent({ ...event, event: { ...event.event, metadata: { twitchBroadcasterUserId: "wrong-account" } } })).toBe("no-match");
+    await vi.advanceTimersByTimeAsync(10_000); expect(f.getFollowerTotal).toHaveBeenCalledTimes(2);
+    await f.runtime.close(); f.db.close();
+  });
   it("does no network work without an explicitly configured source and keeps optional goal scope separate", async () => {
     const f = await fixture(false); await f.runtime.connectionChanged();
     expect(f.getFollowerTotal).not.toHaveBeenCalled();
@@ -31,7 +39,7 @@ describe("authoritative Twitch follower source", () => {
     const account = await f.repository.findConnectedAccount();
     f.setAccount({ ...account!, scopes: [...account!.scopes, "channel:read:goals"] });
     await f.runtime.connectionChanged();
-    expect(f.runtime.getStatus().goals).toEqual({ state: "integration-pending", missingScopes: [] });
+    expect(f.runtime.getStatus().goals).toMatchObject({ state: "waiting", missingScopes: [] });
     await f.runtime.createFollowerSource("Follower total"); await vi.advanceTimersByTimeAsync(0);
     expect(f.getFollowerTotal).toHaveBeenCalledOnce();
     await f.runtime.close(); f.db.close();

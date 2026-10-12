@@ -45,6 +45,13 @@ describe("busEventSchema", () => {
     }).kind).toBe("external");
   });
 
+  it.each(["goal_begin", "goal_progress", "goal_end"])("journals canonical %s without an unrelated effect trigger", (type) => {
+    const event = { ...follow, type, broadcasterId: "synthetic-broadcaster", goalId: "synthetic-goal",
+      goalType: "follower", description: "Synthetic documented fixture", currentAmount: 4, targetAmount: 10,
+      startedAt: follow.occurredAt, ...(type === "goal_end" ? { endedAt: follow.occurredAt, isAchieved: false } : {}) };
+    expect(busEventSchema.parse({ ...base, kind: "canonical", event }).effectTriggers).toEqual([]);
+  });
+
   it("rejects mismatched identities and unknown fields", () => {
     expect(busEventSchema.safeParse({ ...base, kind: "canonical", eventId: "other", event: follow }).success).toBe(false);
     expect(busEventSchema.safeParse({ ...base, kind: "external", effectTriggers: [trigger] }).success).toBe(false);

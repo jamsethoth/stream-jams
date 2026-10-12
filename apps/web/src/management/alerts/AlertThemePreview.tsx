@@ -2,7 +2,7 @@ import {
   materializeAlertStarterTheme,
   targetProfileDefinitions,
   type AlertStarterThemeId,
-  type StreamEventType,
+  type CanonicalAlertEventType,
   type TargetProfileId
 } from "@stream-jams/core";
 import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
@@ -10,7 +10,7 @@ import { alertTextLayerStyle } from "../../overlay/components/alert-text-style.j
 import { renderAlertTemplatePreview } from "./editor/template-preview.js";
 
 interface AlertThemePreviewProps {
-  readonly eventType: StreamEventType;
+  readonly eventType: CanonicalAlertEventType;
   readonly profileId: TargetProfileId;
   readonly templateContext: Readonly<Record<string, unknown>>;
   readonly themeId: AlertStarterThemeId;

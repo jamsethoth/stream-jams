@@ -2,6 +2,8 @@
 
 Scope: merge `origin/main` at `4dc22d3c` into `codex/data-overlays-implementation` and reassess the remaining Data work. The October 8 [scenario trace](data-overlays-scenarios.md) remains a historical record of the candidate before this merge.
 
+Later implementation: the [live Creator Goals integration record](live-creator-goals.md) supersedes the Creator Goals and follower-hint status below. This document preserves the earlier dependency assessment.
+
 ## Decision
 
 The central event bus is implemented on main. Data event rules and follower refresh hints are ready for implementation against its actual contracts. Live Creator Goals can also proceed, but need additional Twitch event support and end-to-end source integration. None of those pending features became functional merely by merging main.

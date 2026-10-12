@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { streamEventTypeSchema } from "../events/schemas.js";
 import { localWebSocketConnectionSchema } from "./local-websocket-connection.js";
 import { alertAudioOutputsSchema, mediaVolumeSchema } from "../audio/schemas.js";
 import { channelPointRewardSelectionSchema } from "../alerts/channel-point-reward-selection.js";
@@ -851,7 +852,7 @@ export const diagnosticsEventViewSchema = z.object({
   id: nonEmptyStringSchema,
   providerId: nonEmptyStringSchema,
   providerKind: providerKindSchema,
-  eventType: alertEventTypeSchema,
+  eventType: z.union([streamEventTypeSchema, alertEventTypeSchema]),
   occurredAt: isoDateTimeSchema,
   outcome: z.enum(["received", "processed", "ignored", "failed"]),
   test: z.boolean(),

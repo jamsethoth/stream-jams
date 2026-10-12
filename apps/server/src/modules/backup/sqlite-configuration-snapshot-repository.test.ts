@@ -72,6 +72,29 @@ describe("SqliteConfigurationSnapshotRepository", () => {
     row.document = JSON.stringify({ ...JSON.parse(String(row.document)), source: { provider: "twitch", kind: "follower-total", broadcasterId: "synthetic-broadcaster", accessToken: "forged" } });
     expect(repository.validate({ ...forged, appConfig: {} }).length).toBeGreaterThan(0);
   });
+  it("roundtrips creator ownership and rejects stripped/forged provider metadata during preflight", () => {
+    let id = 0;
+    const service = new DataOverlayService(new SqliteDataOverlayRepository(database), { generateId: () => `creator-${++id}`, now: () => "2026-10-11T00:00:00Z" });
+    const bound = service.createTwitchGoalBinding({ name: "Synthetic Creator Goal", binding: { mode: "pinned", goalId: "synthetic-twitch-goal" } }, "synthetic-account");
+    service.applyTwitchCreatorGoals("synthetic-account", [{ valueId: bound.values[0]!.id, currentAmount: 42, targetAmount: 100 }]);
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection); const snapshot = repository.snapshot();
+    const expected = service.getState();
+    expect(repository.validate({ ...snapshot, appConfig: {} })).toEqual([]);
+    repository.replace({ tables: snapshot.tables, assets: [seededAsset()] });
+    expect(service.getState()).toEqual(expected);
+    for (const mutate of [
+      (document: Record<string, unknown>) => { delete document.source; },
+      (document: Record<string, unknown>) => { document.source = { provider: "twitch", kind: "creator-goal", token: "forged" }; }
+    ]) {
+      const forged = structuredClone(snapshot); const row = forged.tables.data_goals![0]!;
+      const document = JSON.parse(String(row.document)); mutate(document); row.document = JSON.stringify(document);
+      expect(repository.validate({ ...forged, appConfig: {} }).length).toBeGreaterThan(0);
+      expect(service.getState()).toEqual(expected);
+    }
+    const invalidated = service.invalidateTwitchBindingsExcept("new-account");
+    const invalidSnapshot = repository.snapshot(); repository.replace({ tables: invalidSnapshot.tables, assets: [seededAsset()] });
+    expect(service.getState()).toEqual(invalidated);
+  });
   it("rejects malformed state, mismatched or foreign references, duplicate names and incompatible images before mutation", () => {
     const data = seedData(database);
     const repository = new SqliteConfigurationSnapshotRepository(database.connection);

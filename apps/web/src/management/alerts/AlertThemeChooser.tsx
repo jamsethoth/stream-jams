@@ -3,7 +3,7 @@ import {
   createAlertTemplateContext,
   targetProfileDefinitions,
   type AlertStarterThemeId,
-  type StreamEventType
+  type CanonicalAlertEventType
 } from "@stream-jams/core";
 import { useId } from "react";
 import { AlertThemePreview } from "./AlertThemePreview.js";
@@ -11,7 +11,7 @@ import "./alert-theme-chooser.css";
 
 export interface AlertThemeChooserProps {
   readonly disabled?: boolean;
-  readonly eventType: StreamEventType;
+  readonly eventType: CanonicalAlertEventType;
   readonly onChange: (themeId: AlertStarterThemeId) => void;
   readonly value: AlertStarterThemeId;
 }
@@ -46,7 +46,7 @@ const previewSamples = {
   prediction_end: { ...commonSample, title: "Will we win?", totalPoints: 12_000, totalUsers: 120, status: "resolved" },
   stream_online: { ...commonSample, streamType: "live" },
   stream_offline: commonSample
-} as const satisfies Readonly<Record<StreamEventType, Readonly<Record<string, unknown>>>>;
+} as const satisfies Readonly<Record<CanonicalAlertEventType, Readonly<Record<string, unknown>>>>;
 
 export function AlertThemeChooser(props: AlertThemeChooserProps) {
   const chooserId = useId();

@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, within } from "storybook/test";
 import { TwitchDataSources } from "./TwitchDataSources.js";
-import { createTwitchDataFixture, twitchDataStatus } from "./twitch-data-source-fixtures.js";
+import { createTwitchDataFixture, twitchDataStatus, creatorGoalsStatus } from "./twitch-data-source-fixtures.js";
 import { ManagementHttpError } from "../management-http-client.js";
 const meta = { title: "Management/Data/Twitch Sources", component: TwitchDataSources, tags: ["twitch-data-sources"], args: { api: createTwitchDataFixture(), onCreated: () => undefined } } satisfies Meta<typeof TwitchDataSources>;
 export default meta;
@@ -43,3 +43,18 @@ export const CreationFailure: Story = { beforeEach: () => {
 } };
 export const Loading: Story = { args: { api: { ...createTwitchDataFixture(), getStatus: () => new Promise(() => {}) } } };
 export const Unavailable: Story = { args: { api: { ...createTwitchDataFixture(), getStatus: async () => { throw new Error("Local service unavailable."); } } } };
+
+export const ActiveCreatorGoals: Story = { args: { api: createTwitchDataFixture(creatorGoalsStatus()) }, play: async ({ canvasElement }) => {
+  const canvas = within(canvasElement);
+  await expect(await canvas.findByRole("list", { name: "Active Twitch goals" })).toHaveTextContent("75 / 200 sub points");
+  await expect(canvas.getByRole("button", { name: "Pin Future goal" })).toBeDisabled();
+  await userEvent.type(canvas.getByRole("textbox", { name: "Creator Goal name" }), "Live followers");
+  await expect(canvas.getByRole("combobox", { name: "Goal binding" })).toHaveValue("active-type");
+  await userEvent.click(canvas.getByRole("button", { name: "Create Creator Goal" }));
+  await expect(await canvas.findByText("Creator Goal created.")).toBeVisible();
+} };
+export const CreatorGoalsWaiting: Story = { args: { api: createTwitchDataFixture(twitchDataStatus("current", "waiting")) } };
+export const CreatorGoalsStale: Story = { args: { api: createTwitchDataFixture(creatorGoalsStatus("stale")) } };
+export const PinnedGoalEnded: Story = { args: { api: createTwitchDataFixture(creatorGoalsStatus("ended")) } };
+export const CreatorGoalsAccountChanged: Story = { args: { api: createTwitchDataFixture(creatorGoalsStatus("invalid")) } };
+export const CreatorGoalsError: Story = { args: { api: createTwitchDataFixture(twitchDataStatus("current", "error")) } };

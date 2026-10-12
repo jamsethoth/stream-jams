@@ -1,4 +1,4 @@
-import { DataOverlayError, dataCanvasInputSchema, dataGoalInputSchema, dataIdSchema, dataResetGroupInputSchema, dataValueCreateInputSchema, dataValueDeltaInputSchema, dataValueSetInputSchema, dataValueUpdateInputSchema, twitchFollowerSourceInputSchema, type DataOverlayService } from "@stream-jams/core";
+import { DataOverlayError, dataCanvasInputSchema, dataGoalInputSchema, dataIdSchema, dataResetGroupInputSchema, dataValueCreateInputSchema, dataValueDeltaInputSchema, dataValueSetInputSchema, dataValueUpdateInputSchema, twitchFollowerSourceInputSchema, twitchGoalSourceInputSchema, type DataOverlayService } from "@stream-jams/core";
 import { z } from "zod";
 import type { FastifyInstance, FastifyReply, preHandlerHookHandler } from "fastify";
 import { RuntimeMaintenanceUnavailableError } from "../../modules/backup/runtime-maintenance-gate.js";
@@ -40,6 +40,8 @@ export function registerDataOverlayRoutes(app: FastifyInstance, dependencies: Da
     const runtime = dependencies.twitchDataSourceRuntime;
     app.get("/data-overlays/sources/twitch", { preHandler }, async () => runtime.getStatus());
     app.post("/data-overlays/sources/twitch/followers", { preHandler }, async (request, reply) => handle(reply, () => runtime.createFollowerSource(twitchFollowerSourceInputSchema.parse(request.body).name), 201));
+    app.post("/data-overlays/sources/twitch/goals", { preHandler }, async (request, reply) => handle(reply, () => runtime.createGoalSource(twitchGoalSourceInputSchema.parse(request.body)), 201));
+    app.put("/data-overlays/sources/twitch/goals/:id", { preHandler }, async (request, reply) => handle(reply, () => runtime.createGoalSource(twitchGoalSourceInputSchema.parse(request.body), id(request.params))));
   }
   app.put("/data-overlays/pins", { preHandler }, async (request,reply) => handle(reply,() => service.setPins(z.object({ valueIds: z.array(dataIdSchema) }).strict().parse(request.body).valueIds)));
   app.post("/data-overlays/values", { preHandler }, async (request,reply) => handle(reply,() => service.createValue(dataValueCreateInputSchema.parse(request.body)),201));

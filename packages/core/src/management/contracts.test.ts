@@ -153,6 +153,14 @@ describe("management target and provider contracts", () => {
 });
 
 describe("management alert contracts and rules", () => {
+  it("keeps Creator Goal bus events outside alert authoring contracts", () => {
+    for (const eventType of ["goal_begin", "goal_progress", "goal_end"]) {
+      expect(core.streamEventTypes).toContain(eventType);
+      expect(core.alertEventTypes).not.toContain(eventType);
+      expect(schema("alertCreateInputSchema").safeParse({ eventType, name: "Unsupported goal alert" }).success).toBe(false);
+      expect(schema("alertEventTypeSchema").safeParse(eventType).success).toBe(false);
+    }
+  });
   it("keeps the dormant starter-theme catalog while alert creation has no theme field", () => {
     const themeId = schema("alertStarterThemeIdSchema");
     const createAlert = schema("alertCreateInputSchema");
@@ -620,14 +628,14 @@ describe("management alert contracts and rules", () => {
     );
   });
 
-  it("groups one template for every alert event type and exposes stable normalized fields", () => {
+  it("groups one template for every starter alert event type and exposes stable normalized fields", () => {
     const templates = core.alertStarterTemplates as readonly {
       readonly eventType: string;
       readonly group: string;
       readonly label: string;
       readonly text: string;
     }[];
-    const eventTypes = core.alertEventTypes as readonly string[];
+    const eventTypes = core.alertEventTypes;
     const variableCatalog = exportedFunction("getAlertTemplateVariableCatalog") as unknown as (
       eventType: string
     ) => readonly { readonly key: string }[];
