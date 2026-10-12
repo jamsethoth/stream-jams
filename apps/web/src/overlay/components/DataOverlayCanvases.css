@@ -1,0 +1,7 @@
+.data-overlay-canvases { position: absolute; inset: 0; pointer-events: none; }
+.data-overlay-canvas { position: absolute; top: 0; left: 0; overflow: hidden; isolation: isolate; }
+.data-overlay-element { position: absolute; box-sizing: border-box; overflow: hidden; }
+.data-overlay-text { font-family: Inter, system-ui, "Segoe UI", sans-serif; line-height: 1.2; }
+.data-overlay-text[data-overflow="wrap"] { white-space: pre-wrap; overflow-wrap: anywhere; }
+.data-overlay-text[data-overflow="ellipsis"] { white-space: nowrap; text-overflow: ellipsis; }
+.data-overlay-progress-fill { position: absolute; }

@@ -36,11 +36,15 @@ describe("DiagnosticsPanel", () => {
       ["Streamer.bot", "Rejected input", "Rejected", "None"],
       ["Streamer.bot", "follow", "Merged", "1 admitted"],
       ["Twitch", "cheer", "Accepted", "1 expired · 1 failed"],
-      ["Twitch", "follow", "Accepted", "1 admitted · 2 no match · 1 pending"]
+      ["Twitch", "follow", "Accepted", "1 admitted · 3 no match · 1 pending"]
     ]);
     const detail = screen.getByLabelText("Bus event detail");
     expect(detail).toHaveTextContent("The source sent input that failed validation.");
     expect(detail).toHaveTextContent("ref-bus-rejected");
+
+    await user.click(within(table).getAllByRole("button", { name: "follow" }).at(-1)!);
+    expect(within(detail).getByRole("list", { name: "Module outcomes" })).toHaveTextContent("Twitch Data");
+    expect(detail).not.toHaveTextContent("twitch-data-sources");
 
     await user.selectOptions(screen.getByLabelText("Outcome"), "failed");
     expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2);
@@ -396,7 +400,8 @@ function busActivity(): EventBusActivityView {
         { consumerId: "alerts", outcome: "admitted", referenceId: null },
         { consumerId: "screen-effects", outcome: "no-match", referenceId: null },
         { consumerId: "timers", outcome: "no-match", referenceId: null },
-        { consumerId: "videos", outcome: "pending", referenceId: null }
+        { consumerId: "videos", outcome: "pending", referenceId: null },
+        { consumerId: "twitch-data-sources", outcome: "no-match", referenceId: null }
       ] }
     ]
   };

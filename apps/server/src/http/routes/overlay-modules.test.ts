@@ -65,6 +65,16 @@ describe("overlay module routes", () => {
           entryPoint: "overlay/modules/videos",
           supportsDesktopComposition: true, supportedOutputs: ["module"]
         }
+      }),
+      expect.objectContaining({
+        id: "data-overlays",
+        displayName: "Data Overlays",
+        defaultEnabled: false,
+        renderer: {
+          entryPoint: "overlay/modules/data-overlays",
+          supportedOutputs: ["module"],
+          supportsDesktopComposition: true
+        }
       })
     ]);
     expect(response.json()).toEqual(

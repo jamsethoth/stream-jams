@@ -173,6 +173,20 @@ const streamFields = {
 export const streamOnlineEventSchema = baseEventSchema.extend({ type: z.literal("stream_online"), ...streamFields });
 export const streamOfflineEventSchema = baseEventSchema.extend({ type: z.literal("stream_offline"), ...streamFields });
 
+const goalFields = {
+  amount: z.null(),
+  broadcasterId: z.string().trim().min(1).max(128),
+  goalId: z.string().trim().min(1).max(128),
+  goalType: z.string().trim().min(1).max(128),
+  description: z.string().max(256),
+  currentAmount: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  targetAmount: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  startedAt: isoDateTimeSchema
+};
+export const goalBeginEventSchema = baseEventSchema.extend({ type: z.literal("goal_begin"), ...goalFields });
+export const goalProgressEventSchema = baseEventSchema.extend({ type: z.literal("goal_progress"), ...goalFields });
+export const goalEndEventSchema = baseEventSchema.extend({ type: z.literal("goal_end"), ...goalFields, endedAt: isoDateTimeSchema, isAchieved: z.boolean() });
+
 export const normalizedStreamEventSchema = z.discriminatedUnion("type", [
   followEventSchema,
   subscriptionEventSchema,
@@ -193,7 +207,8 @@ export const normalizedStreamEventSchema = z.discriminatedUnion("type", [
   predictionLockEventSchema,
   predictionEndEventSchema,
   streamOnlineEventSchema,
-  streamOfflineEventSchema
+  streamOfflineEventSchema,
+  goalBeginEventSchema, goalProgressEventSchema, goalEndEventSchema
 ]);
 
 export const externalStreamEventSchema = z.object({

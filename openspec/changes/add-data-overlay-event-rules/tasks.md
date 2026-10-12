@@ -1,8 +1,10 @@
 ## 1. Preparation
 
+October 11 reassessment at merged `origin/main` `4dc22d3c`: the bus journal, shared selector, transactional checkpoint and no-expiry consumer contracts are implemented. Rules, automatic resets and pause/replay are ready for implementation. Only Streamer.bot global sources remain [blocked] on real sanitized response/event fixtures. The slice 1 implementation is on this branch, awaiting PR merge. See the [current reassessment](../../../docs/verification/data-overlays-main-reassessment.md); the [October 8 scenario trace](../../../docs/verification/data-overlays-scenarios.md) preserves the earlier missing-bus checkpoint.
+
 - [ ] 1.1 Confirm slice 1 and the central event bus change have merged, fetch remote state, and branch from `origin/main`.
 - [ ] 1.2 Capture sanitized fixtures from a real Streamer.bot for `GetGlobal`, `GetGlobals` and the global-variable created, updated and deleted events. If the payloads prove unusable, defer global-variable values and record why.
-- [ ] 1.3 Write a requirement-to-test trace for this change.
+- [x] 1.3 Write a requirement-to-test trace for this change.
 
 ## 2. Core
 

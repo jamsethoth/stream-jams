@@ -31,7 +31,7 @@ describe("normalizedStreamEventSchema", () => {
       "hype_train_start", "hype_train_progress", "hype_train_end",
       "poll_start", "poll_progress", "poll_end",
       "prediction_start", "prediction_progress", "prediction_lock", "prediction_end",
-      "stream_online", "stream_offline"
+      "stream_online", "stream_offline", "goal_begin", "goal_progress", "goal_end"
     ] as const;
 
     expect(streamEventTypes).toEqual(eventTypes);
@@ -63,6 +63,16 @@ describe("normalizedStreamEventSchema", () => {
     for (const payload of payloads) {
       expect(normalizedStreamEventSchema.safeParse(payload).success).toBe(true);
     }
+  });
+
+  it.each(["goal_begin", "goal_progress", "goal_end"] as const)("validates bounded Creator Goal fields for %s", (type) => {
+    const goal = { ...baseEvent, type, amount: null, broadcasterId: "broadcaster-1", goalId: "goal-1",
+      goalType: "follower", description: "100 followers", currentAmount: 25, targetAmount: 100,
+      startedAt: baseEvent.occurredAt, ...(type === "goal_end" ? { endedAt: baseEvent.occurredAt, isAchieved: false } : {}) };
+    expect(normalizedStreamEventSchema.safeParse(goal).success).toBe(true);
+    expect(normalizedStreamEventSchema.safeParse({ ...goal, broadcasterId: "" }).success).toBe(false);
+    expect(normalizedStreamEventSchema.safeParse({ ...goal, currentAmount: Number.MAX_SAFE_INTEGER + 1 }).success).toBe(false);
+    expect(normalizedStreamEventSchema.safeParse({ ...goal, currentAmount: -1 }).success).toBe(false);
   });
 
   it("rejects missing required event identity", () => {

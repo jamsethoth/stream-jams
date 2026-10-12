@@ -48,6 +48,9 @@ export const EventIntake: Story = {
     const detail = canvas.getByLabelText("Bus event detail");
     await expect(detail).toHaveTextContent("Screen Effects");
     await expect(detail).toHaveTextContent("ref-bus-effects");
+    await userEvent.click(canvas.getAllByRole("button", { name: "follow" }).at(-1)!);
+    await expect(detail).toHaveTextContent("Twitch Data");
+    await expect(detail).not.toHaveTextContent("twitch-data-sources");
   }
 };
 
@@ -258,7 +261,8 @@ function busActivity(): EventBusActivityView {
         { consumerId: "alerts", outcome: "admitted", referenceId: null },
         { consumerId: "screen-effects", outcome: "no-match", referenceId: null },
         { consumerId: "timers", outcome: "no-match", referenceId: null },
-        { consumerId: "videos", outcome: "pending", referenceId: null }
+        { consumerId: "videos", outcome: "pending", referenceId: null },
+        { consumerId: "twitch-data-sources", outcome: "no-match", referenceId: null }
       ] }
     ]
   };

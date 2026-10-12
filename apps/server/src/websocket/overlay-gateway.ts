@@ -163,6 +163,7 @@ export class OverlayGateway {
   #playbackMuted: boolean;
   #moduleMutes: ModuleMuteState | undefined;
   readonly #surfaceLayers = new Map<string, readonly SurfaceLayer[]>();
+  readonly #compositionTickets = new Map<string, number>();
 
   constructor(dependencies: OverlayGatewayDependencies) {
     this.#onTransportDiagnostic = dependencies.onTransportDiagnostic ?? (() => undefined);
@@ -290,6 +291,7 @@ export class OverlayGateway {
     if (close !== undefined) this.#onTransportDiagnostic({ clientId, operation: "close", exception: null,
       closeCode: close.code, closeReason: client.sanitize(close.reason), outcome: "disconnected" });
     this.#clients.delete(clientId);
+    this.#compositionTickets.delete(clientId);
     this.#compositionRevisions.delete(clientId);
     this.#videoSignalBudgets.delete(clientId);
     for (const [instructionId, preparation] of this.#preparations) {
@@ -403,7 +405,14 @@ export class OverlayGateway {
     };
   }
 
-  deliverComposition(clientId: string, candidate: unknown): boolean {
+  reserveComposition(clientId: string): number {
+    const ticket = (this.#compositionTickets.get(clientId) ?? 0) + 1;
+    if (this.#clients.has(clientId)) this.#compositionTickets.set(clientId, ticket);
+    return ticket;
+  }
+
+  deliverComposition(clientId: string, candidate: unknown, ticket?: number): boolean {
+    if (ticket !== undefined && ticket !== this.#compositionTickets.get(clientId)) return false;
     const client = this.#clients.get(clientId);
     if (client === undefined) return false;
     const composition = overlayCompositionSchema.parse(candidate) as OverlayComposition;

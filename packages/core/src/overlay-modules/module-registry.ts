@@ -1,4 +1,5 @@
 import { alertsOverlayModuleDefinition } from "./module-definition.js";
+import { dataOverlaysModuleDefinition } from "../data-overlays/module-definition.js";
 import { screenEffectsOverlayModuleDefinition } from "../screen-effects/module-definition.js";
 import { timersOverlayModuleDefinition } from "../timers/module-definition.js";
 import { musicModuleDefinition } from "../music/module-definition.js";
@@ -46,7 +47,8 @@ export function createDefaultOverlayModuleRegistry(): OverlayModuleRegistry {
     screenEffectsOverlayModuleDefinition,
     timersOverlayModuleDefinition,
     musicModuleDefinition,
-    videosModuleDefinition
+    videosModuleDefinition,
+    dataOverlaysModuleDefinition
   ]);
 }
 

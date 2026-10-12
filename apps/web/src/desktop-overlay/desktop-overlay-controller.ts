@@ -44,6 +44,9 @@ export class DesktopOverlayController {
   #moduleLoads = new Map<string, ModuleLoad>();
   #moduleRevisions = new Map<string, number>();
   #recent = new Set<string>();
+  #dataRuntime: string | null = null;
+  #dataRevision = -1;
+  #retiredDataRuntimes = new Set<string>();
   readonly #now: () => number;
 
   constructor(private readonly dependencies: DesktopOverlayControllerDependencies) { this.#now = dependencies.now ?? Date.now; }
@@ -128,6 +131,14 @@ export class DesktopOverlayController {
   }
 
   async #syncModule(envelope: Envelope, sync: DesktopModuleSync): Promise<void> {
+    if (sync.presentation?.kind === "data-overlays") {
+      const { runtimeId, revision } = sync.presentation.projection;
+      if (this.#retiredDataRuntimes.has(runtimeId) || (runtimeId === this.#dataRuntime && revision < this.#dataRevision)) {
+        this.#report(envelope, { type: "ok" }); return;
+      }
+      if (this.#dataRuntime !== null && runtimeId !== this.#dataRuntime) this.#retiredDataRuntimes.add(this.#dataRuntime);
+      this.#dataRuntime = runtimeId; this.#dataRevision = revision;
+    }
     const latest = this.#moduleRevisions.get(sync.moduleId) ?? -1;
     if (sync.revision < latest) { this.#report(envelope, { type: "ok" }); return; }
     const existing = this.#modules.get(sync.moduleId);
@@ -139,6 +150,13 @@ export class DesktopOverlayController {
     this.#moduleRevisions.set(sync.moduleId, sync.revision);
     const previousLoad = this.#moduleLoads.get(sync.moduleId);
     if (previousLoad !== undefined) this.#cancelModuleLoad(sync.moduleId, previousLoad);
+    // Data content changes must not release unchanged mounted image grants.
+    if (sync.presentation?.kind === "data-overlays" && existing !== undefined && this.#snapshot.config.enabled &&
+      sync.assets.length === existing.assetUrls.size && sync.assets.every(asset =>
+        existing.assetUrls.get(moduleAssetKey(asset.assetId, asset.reference.snapshot.version)) === privateVisualMediaUrl(asset.reference))) {
+      this.#modules.set(sync.moduleId, { ...existing, revision: sync.revision, presentation: sync.presentation });
+      this.#publish(); this.#report(envelope, { type: "ok" }); return;
+    }
     if (sync.presentation === null) {
       this.#removeModule(sync.moduleId); this.#publish(); this.#report(envelope, { type: "ok" }); return;
     }
@@ -164,7 +182,8 @@ export class DesktopOverlayController {
       if (load.cancelled || this.#disposed || this.#moduleLoads.get(sync.moduleId) !== load) return;
       if (this.#moduleLoads.get(sync.moduleId) === load) this.#moduleLoads.delete(sync.moduleId);
       this.#releaseModuleLoad(load);
-      this.#report(envelope, null, failure(sync.moduleId === "timers" ? "Desktop timer icons could not be prepared." : "Desktop Music assets could not be prepared.", error));
+      if (sync.moduleId === "data-overlays") { this.#removeModule(sync.moduleId); this.#publish(); }
+      this.#report(envelope, null, failure(sync.moduleId === "timers" ? "Desktop timer icons could not be prepared." : sync.moduleId === "data-overlays" ? "Desktop Data images could not be prepared." : "Desktop Music assets could not be prepared.", error));
     }
   }
 

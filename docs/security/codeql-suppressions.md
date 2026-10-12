@@ -29,6 +29,14 @@ CodeQL results upload to the repository's Security tab (code scanning). GitHub d
 - Reason: CodeQL does not recognize the custom Fastify limiter, as for `GET /config/server` above.
 - Control: every Twitch auth route runs `managementRateLimitPreHandler` as its first pre-handler.
 
+## `js/missing-rate-limiting` on overlay asset routes
+
+- Location: `apps/server/src/http/routes/assets.ts`, both module and legacy unified asset endpoints.
+- Evidence: branch CI run `38196222906` reported these handlers despite the implemented limiter.
+- Reason: CodeQL does not recognize the custom Fastify pre-handler, as for the auth/config routes.
+- Control: `rateLimitPreHandler` runs before key verification and asset authorization. One 600-request/minute budget per IP spans route families, keys, asset IDs and GET/HEAD, independently of management limits. Retired unified routes still fail closed after this limiter.
+- Validation: `assets.test.ts` exhausts the budget across keys/routes/methods, verifies 429 precedes authorization, and confirms management requests retain their independent budget. This record does not dismiss a Security-tab alert; that status requires separate verification.
+
 ## `js/disabling-certificate-validation` in Pear certificate inspection
 
 - Location: `apps/server/src/modules/music/pear-config.ts`

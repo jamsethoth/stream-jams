@@ -963,6 +963,17 @@ describe("PlaybackCoordinator", () => {
     expect(result.snapshot.current).toBeNull();
   });
 
+  it("ignores Creator Goal events without querying alert rules or enqueueing playback", async () => {
+    const alertService = new RecordingAlertService([]);
+    const coordinator = createCoordinator({ alertService });
+    const result = await coordinator.enqueueEvent({ ...createCheerEvent(), type: "goal_progress", amount: null,
+      broadcasterId: "broadcaster-1", goalId: "goal-1", goalType: "follower", description: "100 followers",
+      currentAmount: 25, targetAmount: 100, startedAt: "2026-05-30T12:00:00.000Z" });
+    expect(result.status).toBe("no-matches");
+    expect(alertService.listActiveRuleCalls).toBe(0);
+    expect(result.snapshot.current).toBeNull();
+  });
+
   it("does not resolve or enqueue cooldown-suppressed matches", async () => {
     const clock = new MutableClock("2026-05-30T12:00:00.000Z");
     const cooldownService = new DefaultPlaybackCooldownService({ clock: () => clock.now() });

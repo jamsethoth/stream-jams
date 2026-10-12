@@ -37,7 +37,7 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 
 | ID | Feature | Status | Priority | Dependency or trigger | Detail |
 | --- | --- | --- | --- | --- | --- |
-| BL-020 | Third-party donations, Twitch charity, and related monetary alerts and money data-overlay values | Deferred | P2 | Currency-safe normalized values and explicit integration identities | [Future-feature notes](future-features.md#third-party-and-charity-donation-events); Creator Goals moved to BL-062; money and decimal data values wait for a real money source |
+| BL-020 | Third-party donations, Twitch charity, and related monetary alerts and money data-overlay values | Deferred | P2 | Currency-safe normalized values and explicit integration identities | [Future-feature notes](future-features.md#third-party-and-charity-donation-events); money and decimal data values wait for a real money source |
 | BL-021 | Additional event providers | Deferred | P3 | A named provider and canonical event mapping | [Product plan](product-plan.md) |
 | BL-022 | Additional TTS providers | Deferred | P3 | A named provider and capability-mapping need | [Product plan](product-plan.md) |
 | BL-023 | Non-local Streamer.bot connections | Deferred | P3 | Authentication, transport security, warnings, and updated threat model | [Future-feature notes](future-features.md#streamerbot-non-local-connections) |
@@ -75,10 +75,7 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 | --- | --- | --- | --- | --- | --- |
 | BL-052 | Main-branch changelog and validation | Planned | P2 | Existing proposal; 0/22 implementation tasks at the September 23 audit | [OpenSpec change](../openspec/changes/add-main-branch-changelog/proposal.md) |
 | BL-060 | Audit modules for output parity (desktop overlay and browser source), management and operator tools, and persisted queues | Planned | P1 | Project rule from 2026-10-08 | Covers Alerts, Screen Effects, Timers and Music; findings become per-module changes |
-| BL-055 | Custom data overlays: shared values, goals, reset groups, canvases, outputs and Operator controls | Planned | P2 | Proposal review before implementation; slice 1 of 4 | [OpenSpec change](../openspec/changes/add-custom-data-overlays/proposal.md); [review](design/2026-10-08-custom-data-overlays-review.md) |
-| BL-061 | Data overlay event rules as a central event bus consumer, plus Streamer.bot global values | Planned | P2 | BL-055 and the central event bus (implemented) | [OpenSpec change](../openspec/changes/add-data-overlay-event-rules/proposal.md); [consumer contract](engineering/event-bus-consumers.md) |
-| BL-062 | Twitch follower total and Creator Goals data sources | Planned | P2 | BL-055 | [OpenSpec change](../openspec/changes/add-twitch-overlay-data/proposal.md); follows the active goal of a type by default |
-| BL-063 | Data overlay canvas templates and starters | Planned | P2 | BL-055 | [OpenSpec change](../openspec/changes/add-data-overlay-templates/proposal.md) |
+| BL-061 | Data overlay event rules as a central event bus consumer, plus Streamer.bot global values | Ready for rules implementation; globals blocked | P2 | Bus contracts now available; globals still need real sanitized response/event fixtures | [Tasks](../openspec/changes/add-data-overlay-event-rules/tasks.md); [October 11 reassessment](verification/data-overlays-main-reassessment.md) |
 
 ## Known Issues
 

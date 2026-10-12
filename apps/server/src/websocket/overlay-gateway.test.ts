@@ -772,6 +772,20 @@ it("reports failed mute delivery and bootstraps replacement clients with the sav
   expect(replacement.messages.at(-1)).toEqual({ type: "overlay.playback.audio-state", muted: false, moduleMutes });
 });
 
+it("drops an initial composition superseded by a live refresh and clears tickets on disconnect", async () => {
+  const route = { overlayId: "default", moduleId: "data-overlays", purpose: "live", scope: "module", rawKey: "ovl_data" } as const;
+  const gateway = createGateway({ allowed: [route] }); const socket = new RecordingSocket();
+  const registration = await gateway.registerClient(socket, route); if (!registration.authorized) throw new Error("unauthorized");
+  const initial = gateway.reserveComposition(registration.clientId); const live = gateway.reserveComposition(registration.clientId);
+  const composition = { runtimeId: "fixture-runtime", canvas: sceneOutputCanvas(), overlayId: "default", purpose: "live", scope: "module", modules: [{ moduleId: "data-overlays", enabled: true, instructions: [], presentation: { kind: "data-overlays", projection: { runtimeId: "runtime", revision: 2, canvases: [] } } }] };
+  expect(gateway.deliverComposition(registration.clientId, composition, live)).toBe(true);
+  expect(gateway.deliverComposition(registration.clientId, composition, initial)).toBe(false);
+  gateway.unregisterClient(registration.clientId);
+  expect(gateway.deliverComposition(registration.clientId, composition, live)).toBe(false);
+  const reconnect = await gateway.registerClient(new RecordingSocket(), route); if (!reconnect.authorized) throw new Error("unauthorized");
+  expect(gateway.reserveComposition(reconnect.clientId)).toBe(1);
+});
+
 describe("Videos mirror signaling", () => {
   const videosRoute = { overlayId: "default", moduleId: "videos", purpose: "live", scope: "module", rawKey: "ovl_videosLive" } as const;
   const alertsRoute = { overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", rawKey: "ovl_alertsLive" } as const;

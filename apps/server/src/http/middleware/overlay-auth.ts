@@ -1,6 +1,7 @@
 import { isOrdinaryOverlayOutput } from "@stream-jams/core";
 import type {
   OverlayAccessService,
+  OverlayAccessKey,
   OverlayRouteAccessRequest,
   OverlayTargetProfileId,
   RetiredOverlayOutputKind
@@ -11,6 +12,7 @@ import { sendHttpError } from "../errors.js";
 export interface OverlayAuthPreHandlerOptions {
   readonly overlayAccessService: Pick<OverlayAccessService, "verifyRouteAccess">;
   readonly resolveAccessRequest: (request: FastifyRequest) => OverlayRouteAccessRequest | null;
+  readonly onAuthorized?: (request: FastifyRequest, record: OverlayAccessKey, rawKey: string) => void;
   readonly shell?: boolean;
   /** Names the retired test/unified family a request's route targets, whether or not its key is valid. */
   readonly classifyRetiredRoute?: (request: FastifyRequest) => RetiredOverlayOutputKind | null;
@@ -52,6 +54,7 @@ export function createOverlayAuthPreHandler(options: OverlayAuthPreHandlerOption
         reason: verification.reason
       });
     }
+    options.onAuthorized?.(request, verification.record, accessRequest.rawKey);
   };
 }
 

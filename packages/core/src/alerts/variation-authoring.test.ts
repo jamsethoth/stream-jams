@@ -38,7 +38,8 @@ describe("alert condition authoring catalog", () => {
     prediction_lock: ["predictionPoints", "totalUsers", "ingestProvider"],
     prediction_end: ["predictionPoints", "totalUsers", "terminalStatus", "ingestProvider"],
     stream_online: ["streamType", "ingestProvider"],
-    stream_offline: ["ingestProvider"]
+    stream_offline: ["ingestProvider"],
+    goal_begin: ["ingestProvider"], goal_progress: ["ingestProvider"], goal_end: ["ingestProvider"]
   } as const satisfies Record<StreamEventType, readonly string[]>;
 
   it("defines only approved normalized fields for every event type", () => {
@@ -173,7 +174,8 @@ describe("normalized alert sample events", () => {
     prediction_lock: { predictionId: "prediction-1", title: "Win?", totalPoints: 750, totalUsers: 12, status: "locked" },
     prediction_end: { predictionId: "prediction-1", title: "Win?", totalPoints: 1000, totalUsers: 15, status: "resolved" },
     stream_online: { streamId: "stream-1", streamType: "live" },
-    stream_offline: { streamId: "stream-1", streamType: "live" }
+    stream_offline: { streamId: "stream-1", streamType: "live" },
+    goal_begin: {}, goal_progress: {}, goal_end: {}
   } satisfies Record<StreamEventType, Record<string, unknown>>;
 
   it("creates schema-valid events for every built-in and session sample shape", () => {

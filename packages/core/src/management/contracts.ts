@@ -1,5 +1,6 @@
 import { outputCanvasSchema } from "../overlay-modules/output-canvas-contract.js";
 import { z } from "zod";
+import { streamEventTypeSchema } from "../events/schemas.js";
 import { localWebSocketConnectionSchema } from "./local-websocket-connection.js";
 import { alertAudioOutputsSchema, mediaVolumeSchema } from "../audio/schemas.js";
 import { channelPointRewardSelectionSchema } from "../alerts/channel-point-reward-selection.js";
@@ -859,7 +860,7 @@ export const diagnosticsEventViewSchema = z.object({
   id: nonEmptyStringSchema,
   providerId: nonEmptyStringSchema,
   providerKind: providerKindSchema,
-  eventType: alertEventTypeSchema,
+  eventType: z.union([streamEventTypeSchema, alertEventTypeSchema]),
   occurredAt: isoDateTimeSchema,
   outcome: z.enum(["received", "processed", "ignored", "failed"]),
   test: z.boolean(),
@@ -1010,6 +1011,12 @@ export const configurationBackupAssetSchema = z.object({
 });
 
 export const currentConfigurationBackupArchiveVersion = 2 as const;
+
+/** Schema 33 persists only saved Data Overlays state, never runtime source status. */
+export const dataOverlayBackupTables = [
+  "data_overlay_meta", "data_reset_groups", "data_values", "data_goals",
+  "data_canvases", "data_pins", "data_element_refs"
+] as const;
 
 export const legacyConfigurationBackupArchiveEnvelopeSchema = z.object({
   manifest: z.object({

@@ -16,7 +16,7 @@ const ordinary = [
 ];
 async function canvas(url: string) { const endpoint = new URL(url); endpoint.pathname += "/composition"; return overlayCompositionSchema.parse(await checked(await fetch(endpoint))); }
 async function outputs(fixture: Fixture) {
-  return (await checked<OverlayOutputView[]>(await fixture.request("/management/overlay-outputs"))).map(output => {
+  return (await checked<OverlayOutputView[]>(await fixture.request("/management/overlay-outputs"))).filter(output => ordinary.some(choice => choice.moduleId === output.moduleId && choice.targetProfileId === output.targetProfileId)).map(output => {
     if (output.url === null) throw new Error(`Ordinary ${output.moduleId} source has no available URL`);
     return { ...output, url: output.url };
   });
@@ -94,7 +94,7 @@ test("I2 mixed provenance and independent consumer outcomes retain one queued Vi
     const receipts: { busId: string; eventId: string; consumers: { consumerId: string; outcome: string }[] }[] = [];
     for (let index = 0; index < 2; index++) receipts.push(await checked(await fixture.request("/management/events/manual", "POST", { action: { kind: "simulate-canonical", event } })));
     expect(receipts[0]!.busId).not.toBe(receipts[1]!.busId); expect(receipts[0]!.eventId).not.toBe(receipts[1]!.eventId);
-    for (const receipt of receipts) expect(receipt.consumers.map(value => value.consumerId).sort()).toEqual(["alerts", "screen-effects", "timers", "videos"]);
+    for (const receipt of receipts) expect(receipt.consumers.map(value => value.consumerId).sort()).toEqual(["alerts", "screen-effects", "timers", "twitch-data-sources", "videos"]);
     const rows = db.prepare("SELECT source_kind,source_registration_id,correlation_key FROM event_bus_journal ORDER BY sequence").all();
     expect(rows).toHaveLength(3); expect(rows[0]!.source_kind).toBe("twitch");
     expect(rows.slice(1)).toEqual([{ source_kind: "manual", source_registration_id: null, correlation_key: null }, { source_kind: "manual", source_registration_id: null, correlation_key: null }]);

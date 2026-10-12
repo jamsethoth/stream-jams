@@ -1,7 +1,9 @@
 import {
   twitchCustomRewardCatalogSchema,
+  twitchCreatorGoalRecordSchema,
   type TwitchCustomRewardCatalog
 } from "@stream-jams/core";
+import { z } from "zod";
 
 export interface TwitchDeviceAuthorizationRequest {
   readonly clientId: string;
@@ -79,6 +81,12 @@ export interface TwitchCustomRewardsRequest {
 export interface TwitchRewardApiClient {
   getCustomRewards(input: TwitchCustomRewardsRequest): Promise<TwitchCustomRewardCatalog>;
 }
+export const twitchCreatorGoalSchema = twitchCreatorGoalRecordSchema;
+export type TwitchCreatorGoal = z.infer<typeof twitchCreatorGoalSchema>;
+export interface TwitchDataApiClient {
+  getFollowerTotal(input: TwitchCustomRewardsRequest): Promise<{ total: number; rateResetEpochMs: number | null }>;
+  getCreatorGoals(input: TwitchCustomRewardsRequest): Promise<{ goals: TwitchCreatorGoal[]; rateResetEpochMs: number | null }>;
+}
 
 export interface TwitchApiClientOptions {
   readonly fetch?: typeof fetch | undefined;
@@ -89,7 +97,7 @@ export interface TwitchApiClientOptions {
 export class TwitchApiHttpError extends Error {
   readonly code = "TWITCH_API_REQUEST_FAILED";
 
-  constructor(readonly status: number) {
+  constructor(readonly status: number, readonly rateResetEpochMs: number | null = null, readonly retryAfterMs: number | null = null) {
     super("Twitch API request failed");
     this.name = "TwitchApiHttpError";
   }
@@ -113,7 +121,7 @@ export class TwitchApiTransportError extends Error {
   }
 }
 
-export class DefaultTwitchApiClient implements TwitchApiClient, TwitchRewardApiClient {
+export class DefaultTwitchApiClient implements TwitchApiClient, TwitchRewardApiClient, TwitchDataApiClient {
   readonly #fetch: typeof fetch;
   readonly #authBaseUrl: string;
   readonly #apiBaseUrl: string;
@@ -225,6 +233,26 @@ export class DefaultTwitchApiClient implements TwitchApiClient, TwitchRewardApiC
 
     return parseTokenGrant(responseBody);
   }
+  async getFollowerTotal(input: TwitchCustomRewardsRequest): Promise<{ total: number; rateResetEpochMs: number | null }> {
+    const response = await this.#requestData("/channels/followers", input);
+    const parsed = z.object({ total: z.number().int().nonnegative().safe(), data: z.array(z.unknown()) }).safeParse(await readJsonResponse(response));
+    if (!parsed.success) throw new TwitchApiResponseError({ cause: parsed.error });
+    return { total: parsed.data.total, rateResetEpochMs: rateReset(response) };
+  }
+  async getCreatorGoals(input: TwitchCustomRewardsRequest): Promise<{ goals: TwitchCreatorGoal[]; rateResetEpochMs: number | null }> {
+    const response = await this.#requestData("/goals", input);
+    const helixGoal = twitchCreatorGoalSchema.omit({ started_at: true }).extend({ created_at: z.string().datetime({ offset: true }) }).transform(({ created_at, ...goal }) => ({ ...goal, started_at: created_at }));
+    const parsed = z.object({ data: z.array(helixGoal).refine(goals => new Set(goals.map(goal => goal.id)).size === goals.length, "Duplicate goal IDs") }).safeParse(await readJsonResponse(response));
+    if (!parsed.success || parsed.data.data.some(goal => goal.broadcaster_id !== input.broadcasterId)) throw new TwitchApiResponseError();
+    return { goals: parsed.data.data, rateResetEpochMs: rateReset(response) };
+  }
+  async #requestData(path: string, input: TwitchCustomRewardsRequest): Promise<Response> {
+    let response: Response;
+    try { response = await this.#fetch(`${this.#apiBaseUrl}${path}?${new URLSearchParams({ broadcaster_id: input.broadcasterId })}`, { signal: AbortSignal.timeout(15_000), headers: { authorization: `Bearer ${input.accessToken}`, "client-id": input.clientId } }); }
+    catch (cause) { throw new TwitchApiTransportError({ cause }); }
+    if (!response.ok) throw new TwitchApiHttpError(response.status, rateReset(response), retryAfter(response));
+    return response;
+  }
 
   async #requestJson(url: string, init: RequestInit): Promise<unknown> {
     let response: Response;
@@ -239,6 +267,19 @@ export class DefaultTwitchApiClient implements TwitchApiClient, TwitchRewardApiC
 
     return readJsonResponse(response);
   }
+}
+function rateReset(response: Response): number | null {
+  const header = response.headers.get("ratelimit-reset");
+  const number = header === null ? NaN : Number(header);
+  return Number.isSafeInteger(number * 1000) && number >= 0 ? number * 1000 : null;
+}
+function retryAfter(response: Response): number | null {
+  const header = response.headers.get("retry-after");
+  if (header === null) return null;
+  const seconds = Number(header);
+  if (Number.isSafeInteger(seconds * 1000) && seconds >= 0) return seconds * 1000;
+  const date = Date.parse(header);
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : null;
 }
 
 function parseDeviceAuthorization(body: unknown): TwitchDeviceAuthorization {

@@ -29,6 +29,21 @@ function harness() {
 }
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0); });
 afterEach(() => vi.useRealTimers());
+it("rejects lower Data projection revisions and retired runtimes without replacing other module state", async () => {
+  const { controller, send, configure } = harness(); configure();
+  send({ type: "sync-module", ...moduleSync(1, false) }); await vi.advanceTimersByTimeAsync(0);
+  const timers = controller.getSnapshot().modules[0];
+  const data = (revision: number, runtimeId: string, outputRevision: number): PrivateDesktopModuleSync => ({ moduleId: "data-overlays", revision, assets: [], presentation: { kind: "data-overlays", projection: { runtimeId, revision: outputRevision, canvases: [] } } });
+  send({ type: "sync-module", ...data(1, "first", 5) }); await vi.advanceTimersByTimeAsync(0);
+  send({ type: "sync-module", ...data(2, "first", 4) }); await vi.advanceTimersByTimeAsync(0);
+  expect(controller.getSnapshot().modules.find(module => module.moduleId === "data-overlays")?.presentation).toMatchObject({ projection: { runtimeId: "first", revision: 5 } });
+  send({ type: "sync-module", ...data(3, "second", 0) }); await vi.advanceTimersByTimeAsync(0);
+  send({ type: "sync-module", ...data(4, "first", 8) }); await vi.advanceTimersByTimeAsync(0);
+  expect(controller.getSnapshot().modules.find(module => module.moduleId === "data-overlays")?.presentation).toMatchObject({ projection: { runtimeId: "second", revision: 0 } });
+  expect(controller.getSnapshot().modules.find(module => module.moduleId === "timers")?.presentation).toBe(timers?.presentation);
+  expect(controller.getSnapshot().modules.find(module => module.moduleId === "timers")?.assetUrls).toBe(timers?.assetUrls);
+  controller.dispose();
+});
 it("returns the original active media failure once and keeps future occurrences usable", async () => {
   const { controller, report, send, configure } = harness(); configure();
   const value = batch(); send({ type: "prepare", batch: value });

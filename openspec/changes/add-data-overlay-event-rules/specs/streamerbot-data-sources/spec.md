@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Custom data event types
-Management SHALL define custom event types with a stable ID, a name, a schema version and up to 32 flat fields typed integer, text or boolean, each required or optional. The data consumer SHALL accept external bus events with the identity `StreamJams`/`Data` and validate each payload against its event type.
+Management SHALL define custom event types with a stable ID, a name, a schema version and up to 32 flat fields typed integer, text or boolean, each required or optional. The data consumer SHALL declare and select the external transport identity `General`/`Custom`, recognize the `StreamJams`/`Data` marker inside its payload, and validate each Data payload against its event type. Custom broadcasts without the Data marker SHALL return no-match without changing values.
 
 #### Scenario: Valid custom event
 - **WHEN** Streamer.bot broadcasts a `game.death` data event that matches its schema

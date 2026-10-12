@@ -1,6 +1,6 @@
 # Stream Jams MVP Runbook
 
-This runbook covers the local application and its implemented post-MVP Windows, Screen Effects, and Timers additions. See the [documentation map](README.md) for current specifications and historical verification boundaries.
+This runbook covers the local application and its implemented post-MVP additions. See [Data overlays](data-overlays.md) for shared counters, goals, freeform canvases and Operator controls, and the [documentation map](README.md) for current specifications and historical verification boundaries.
 
 ## Startup
 

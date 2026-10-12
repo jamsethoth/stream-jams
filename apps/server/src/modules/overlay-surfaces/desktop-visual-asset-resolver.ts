@@ -114,5 +114,38 @@ export class DesktopVisualAssetResolver {
   }
 
   releaseMusicOwner(ownerId: string): Promise<void> { return this.dependencies.media.release(ownerId); }
+
+  async resolveDataModule(candidate: OverlayModulePresentation): Promise<{
+    presentation: Extract<OverlayModulePresentation, { kind: "data-overlays" }>;
+    assets: DesktopModuleSync["assets"]; ownerId: string | null;
+  }> {
+    const presentation = overlayModulePresentationSchema.parse(candidate);
+    if (presentation.kind !== "data-overlays") throw unavailable();
+    const ids = [...new Set(presentation.projection.canvases.flatMap(canvas => canvas.elements.flatMap(element => element.kind === "image" ? [element.assetId] : [])))];
+    if (ids.length === 0) return { presentation, assets: [], ownerId: null };
+    const ownerId = JSON.stringify(["data-overlays", "desktop:primary", randomUUID()]);
+    const assets: DesktopModuleSync["assets"][number][] = [];
+    const available = new Set<string>();
+    try {
+      await this.dependencies.media.acquire(ownerId, ids, this.#now() + 3600000, true);
+      for (const id of ids) {
+        try {
+          const record = this.dependencies.media.records(ownerId, [id]).get(id);
+          if (record?.mediaType !== "image") continue;
+          await this.dependencies.media.verifyGroup(ownerId, [id], AbortSignal.timeout(5000));
+          assets.push({ assetId: id, grant: this.dependencies.media.issueTrustedGrant(ownerId, id, "desktop-data:desktop:primary", this.#now() + 3600000) });
+          available.add(id);
+        }
+        // error-provenance: allow expected -- unavailable images are omitted transparently; other elements survive
+        catch { /* missing image */ }
+      }
+      if (assets.length === 0) { await this.dependencies.media.release(ownerId); }
+      return { presentation: { ...presentation, projection: { ...presentation.projection, canvases: presentation.projection.canvases.map(canvas => ({ ...canvas,
+        elements: canvas.elements.filter(element => element.kind !== "image" || available.has(element.assetId)) })) } }, assets,
+        ownerId: assets.length === 0 ? null : ownerId };
+    } catch (error) { await this.dependencies.media.release(ownerId); throw error; }
+  }
+
+  releaseDataOwner(ownerId: string): Promise<void> { return this.dependencies.media.release(ownerId); }
 }
 function unavailable(): Error { return new Error("Desktop visual asset is unavailable or invalid"); }

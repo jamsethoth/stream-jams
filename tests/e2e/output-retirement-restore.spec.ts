@@ -61,7 +61,7 @@ test("historical credentials retire atomically; ordinary profiles, transparent s
     await fixture.start();
     const db = fixture.runtime.composition.database.connection;
     expect(db.prepare("SELECT * FROM overlay_keys WHERE revoked_at IS NULL ORDER BY id").all()).toEqual([...ordinaryRows].sort((a, b) => String((a as { id: string }).id).localeCompare(String((b as { id: string }).id))));
-    expect(JSON.parse(String(db.prepare("SELECT configuration_json FROM overlay_surfaces WHERE id='desktop:primary'").get()?.configuration_json))).toEqual(desktop);
+    expect(JSON.parse(String(db.prepare("SELECT configuration_json FROM overlay_surfaces WHERE id='desktop:primary'").get()?.configuration_json))).toEqual({ ...desktop, layers: [...desktop.layers, { moduleId: "data-overlays", visible: false }] });
     expect(db.prepare("SELECT * FROM overlay_surfaces WHERE kind='unified-browser'").all()).toEqual([]);
     for (const [index, output] of standard.entries()) {
       const url = `${fixture.runtime.url}/overlay/modules/${output.moduleId}/live/ovl_fixture_${index}${output.targetProfileId === null ? "" : `?profile=${output.targetProfileId}`}`;

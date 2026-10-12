@@ -1,3 +1,4 @@
+import { normalizedStreamEventSchema } from "@stream-jams/core";
 import type {
   CheerEvent,
   CommunityGiftEvent,
@@ -41,7 +42,10 @@ export type TwitchEventSubNotificationType =
   | "channel.prediction.lock"
   | "channel.prediction.end"
   | "stream.online"
-  | "stream.offline";
+  | "stream.offline"
+  | "channel.goal.begin"
+  | "channel.goal.progress"
+  | "channel.goal.end";
 
 export interface TwitchEventSubNotificationMessage {
   readonly metadata: {
@@ -108,6 +112,9 @@ export function normalizeTwitchEventSubNotification(input: unknown): NormalizedS
       return normalizePrediction(message, "lock");
     case "channel.prediction.end":
       return normalizePrediction(message, "end");
+    case "channel.goal.begin": return normalizeGoal(message, "goal_begin");
+    case "channel.goal.progress": return normalizeGoal(message, "goal_progress");
+    case "channel.goal.end": return normalizeGoal(message, "goal_end");
     case "stream.online":
       return normalizeStreamOnline(message);
     case "stream.offline":
@@ -138,6 +145,24 @@ export function getTwitchEventSubDiagnosticContext(input: unknown): {
     source: "EventSub",
     ...(subscriptionType === undefined ? {} : { subscriptionType })
   };
+}
+
+function normalizeGoal(message: TwitchEventSubNotificationMessage, type: "goal_begin" | "goal_progress" | "goal_end"): NormalizedStreamEvent {
+  const event = message.payload.event;
+  const broadcasterId = requiredString(event.broadcaster_user_id);
+  if (message.payload.subscription.condition.broadcaster_user_id !== broadcasterId
+    || message.metadata.subscription_version !== "1" || message.payload.subscription.version !== "1") {
+    throw new TwitchEventNormalizationError();
+  }
+  const result = normalizedStreamEventSchema.safeParse({
+    ...baseEvent(message, broadcasterId, requiredString(event.broadcaster_user_name)),
+    type, amount: null, broadcasterId, goalId: event.id, goalType: event.type,
+    description: event.description, currentAmount: event.current_amount,
+    targetAmount: event.target_amount, startedAt: event.started_at,
+    ...(type === "goal_end" ? { endedAt: event.ended_at, isAchieved: event.is_achieved } : {})
+  });
+  if (!result.success) throw new TwitchEventNormalizationError();
+  return result.data;
 }
 
 function normalizeFollow(message: TwitchEventSubNotificationMessage): FollowEvent {
@@ -433,7 +458,8 @@ function isNotificationType(value: unknown): value is TwitchEventSubNotification
     value === "channel.prediction.lock" ||
     value === "channel.prediction.end" ||
     value === "stream.online" ||
-    value === "stream.offline"
+    value === "stream.offline" ||
+    value === "channel.goal.begin" || value === "channel.goal.progress" || value === "channel.goal.end"
   );
 }
 

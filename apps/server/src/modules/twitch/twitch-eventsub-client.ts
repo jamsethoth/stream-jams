@@ -12,6 +12,7 @@ export interface TwitchEventSubStatus {
   readonly lastErrorAt: string | null;
   readonly subscriptionTypes: readonly string[];
   readonly referenceId: string | null;
+  readonly goalSubscriptionFailure?: "temporary" | "reauthorization-required" | null;
 }
 
 export interface TwitchEventSubDiagnostic {
@@ -69,6 +70,7 @@ export interface TwitchEventSubClientOptions {
   readonly apiClient: TwitchEventSubApiClient;
   readonly socketFactory: (url: string) => TwitchEventSubSocket;
   readonly onNotification: (message: unknown) => void | Promise<void>;
+  readonly onStatusChanged?: ((status: TwitchEventSubStatus) => void | Promise<void>) | undefined;
   readonly baseUrl?: string | undefined;
   readonly now?: (() => Date) | undefined;
   readonly schedule?: ((callback: () => void, delayMs: number) => unknown) | undefined;
@@ -173,6 +175,7 @@ export class TwitchEventSubClient {
   readonly #apiClient: TwitchEventSubApiClient;
   readonly #socketFactory: (url: string) => TwitchEventSubSocket;
   readonly #onNotification: (message: unknown) => void | Promise<void>;
+  readonly #onStatusChanged: NonNullable<TwitchEventSubClientOptions["onStatusChanged"]>;
   readonly #baseUrl: string;
   readonly #now: () => Date;
   readonly #schedule: (callback: () => void, delayMs: number) => unknown;
@@ -202,11 +205,15 @@ export class TwitchEventSubClient {
   #stopped = true;
   #watchdogHandle: unknown | null = null;
   #watchdogDelayMs: number | null = null;
+  #goalRetryEpoch = 0;
+  #goalRetryAttempt = 0;
+  #failedGoalSubscriptions: TwitchEventSubSubscriptionRequest[] = [];
 
   constructor(options: TwitchEventSubClientOptions) {
     this.#apiClient = options.apiClient;
     this.#socketFactory = options.socketFactory;
     this.#onNotification = options.onNotification;
+    this.#onStatusChanged = options.onStatusChanged ?? (() => {});
     this.#baseUrl = options.baseUrl ?? "wss://eventsub.wss.twitch.tv/ws";
     this.#now = options.now ?? (() => new Date());
     this.#schedule = options.schedule ?? ((callback, delayMs) => setTimeout(callback, delayMs));
@@ -238,7 +245,7 @@ export class TwitchEventSubClient {
     this.#clearWatchdog();
     this.#socket?.close();
     this.#socket = null;
-    this.#status = {
+    this.#setStatus({
       state: "idle",
       sessionId: null,
       message: null,
@@ -246,8 +253,9 @@ export class TwitchEventSubClient {
       lastMessageAt: null,
       lastErrorAt: null,
       subscriptionTypes: [],
+      goalSubscriptionFailure: null,
       referenceId: null
-    };
+    });
     this.#recoverableFailureReferenceId = null;
     this.#persistentFailure = null;
     this.#messageQueue = Promise.resolve();
@@ -258,12 +266,13 @@ export class TwitchEventSubClient {
   }
 
   #openSocket(url: string, recreateSubscriptions: boolean, connectionGeneration: number): void {
+    this.#goalRetryEpoch += 1;
     this.#clearWatchdog();
-    this.#status = {
+    this.#setStatus({
       ...this.#status,
       state: "connecting",
       message: null
-    };
+    });
     const socket = this.#socketFactory(url);
     this.#socket = socket;
     socket.addEventListener("message", (event) => {
@@ -318,6 +327,13 @@ export class TwitchEventSubClient {
         await this.#onNotification(rawMessage);
         return;
       case "revocation":
+        if (message.payload.subscription?.type.startsWith("channel.goal.")) {
+          this.#goalRetryEpoch += 1;
+          this.#setStatus({ ...this.#status, lastMessageAt: timestamp,
+            goalSubscriptionFailure: "reauthorization-required",
+            subscriptionTypes: this.#status.subscriptionTypes.filter((type) => type !== message.payload.subscription?.type) });
+          return;
+        }
         this.#recordPersistentFailure(
           "Twitch EventSub subscription was revoked: " + String(message.payload.subscription?.status ?? "unknown"),
           timestamp,
@@ -346,7 +362,12 @@ export class TwitchEventSubClient {
             sessionId: session.id
           });
     const pendingFailure = recreateSubscriptions ? this.#persistentFailure : null;
-    this.#status = {
+    this.#goalRetryEpoch += 1;
+    if (recreateSubscriptions) {
+      this.#failedGoalSubscriptions = [];
+      this.#goalRetryAttempt = 0;
+    }
+    this.#setStatus({
       state: recreateSubscriptions ? (pendingFailure === null ? "connecting" : "error") : "connected",
       sessionId: session.id,
       message: pendingFailure?.message ?? null,
@@ -354,16 +375,25 @@ export class TwitchEventSubClient {
       lastMessageAt: occurredAt,
       lastErrorAt: pendingFailure?.occurredAt ?? null,
       subscriptionTypes: recreateSubscriptions ? [] : this.#status.subscriptionTypes,
+      goalSubscriptionFailure: recreateSubscriptions ? null : this.#status.goalSubscriptionFailure ?? null,
       referenceId: pendingFailure?.referenceId ?? null
-    };
+    });
+    const activeSubscriptionTypes: string[] = [];
     if (connection !== null && recreateSubscriptions) {
       try {
         for (const subscription of subscriptionRequests) {
-          await this.#apiClient.createSubscription({
-            accessToken: connection.accessToken,
-            clientId: connection.clientId,
-            subscription
-          });
+          try {
+            const created = await this.#apiClient.createSubscription({
+              accessToken: connection.accessToken, clientId: connection.clientId, subscription
+            });
+            if (created.status !== "enabled" || created.type !== subscription.type) throw new TwitchEventSubResponseError();
+            activeSubscriptionTypes.push(subscription.type);
+          } catch (error) {
+            if (!this.#isCurrentConnection(connectionGeneration, socket)) return;
+            if (!subscription.type.startsWith("channel.goal.")) throw error;
+            this.#failedGoalSubscriptions.push(subscription);
+            this.#recordGoalSubscriptionFailure(error);
+          }
           if (!this.#isCurrentConnection(connectionGeneration, socket)) {
             return;
           }
@@ -400,18 +430,80 @@ export class TwitchEventSubClient {
     this.#recoverableFailureReferenceId = null;
     if (recreateSubscriptions) {
       this.#persistentFailure = null;
-      this.#status = {
+      this.#setStatus({
         ...this.#status,
         state: "connected",
         message: null,
         lastErrorAt: null,
-        subscriptionTypes: subscriptionRequests.map((request) => request.type),
+        subscriptionTypes: activeSubscriptionTypes,
         referenceId: null
-      };
+      });
     } else if (this.#persistentFailure !== null) {
       this.#restorePersistentFailure(occurredAt);
     }
     this.#startWatchdog(session.keepalive_timeout_seconds, connectionGeneration, socket);
+    // A transferred session keeps enabled subscriptions; retry missing goals on its new session ID.
+    this.#failedGoalSubscriptions = this.#failedGoalSubscriptions.map((subscription) => ({
+      ...subscription, transport: { method: "websocket", session_id: session.id }
+    }));
+    this.#scheduleGoalRetry(connectionGeneration, socket);
+  }
+
+  #recordGoalSubscriptionFailure(error: unknown): void {
+    const requiresAuthorization = error instanceof TwitchEventSubApiError && (error.status === 401 || error.status === 403);
+    this.#setStatus({ ...this.#status, goalSubscriptionFailure:
+      requiresAuthorization || this.#status.goalSubscriptionFailure === "reauthorization-required"
+        ? "reauthorization-required" : "temporary" });
+    void Promise.resolve().then(() => this.#onDiagnostic({ message: "Optional Twitch goal subscription setup failed", referenceId: this.#generateReferenceId(), exception: error })).catch(
+      // error-provenance: allow expected -- diagnostics are best effort and cannot disable alert intake
+      () => {}
+    );
+  }
+
+  #scheduleGoalRetry(connectionGeneration: number, socket: TwitchEventSubSocket): void {
+    if (this.#failedGoalSubscriptions.length === 0 || this.#status.goalSubscriptionFailure === "reauthorization-required") return;
+    const epoch = this.#goalRetryEpoch;
+    const delayMs = this.#backoffMs[Math.min(this.#goalRetryAttempt++, this.#backoffMs.length - 1)] ?? 1_000;
+    this.#schedule(() => {
+      if (epoch === this.#goalRetryEpoch && this.#isCurrentConnection(connectionGeneration, socket)) {
+        void this.#retryGoalSubscriptions(connectionGeneration, socket, epoch);
+      }
+    }, delayMs);
+  }
+
+  async #retryGoalSubscriptions(connectionGeneration: number, socket: TwitchEventSubSocket, epoch: number): Promise<void> {
+    const connection = this.#connection;
+    if (connection === null) return;
+    for (const subscription of [...this.#failedGoalSubscriptions]) {
+      try {
+        const created = await this.#apiClient.createSubscription({ accessToken: connection.accessToken, clientId: connection.clientId, subscription });
+        if (created.status !== "enabled" || created.type !== subscription.type) throw new TwitchEventSubResponseError();
+        if (epoch !== this.#goalRetryEpoch || !this.#isCurrentConnection(connectionGeneration, socket)) return;
+        this.#failedGoalSubscriptions = this.#failedGoalSubscriptions.filter((pending) => pending.type !== subscription.type);
+        this.#setStatus({ ...this.#status, subscriptionTypes: [...this.#status.subscriptionTypes, subscription.type],
+          goalSubscriptionFailure: this.#failedGoalSubscriptions.length === 0 ? null : this.#status.goalSubscriptionFailure ?? null });
+      } catch (error) {
+        if (epoch !== this.#goalRetryEpoch || !this.#isCurrentConnection(connectionGeneration, socket)) return;
+        this.#recordGoalSubscriptionFailure(error);
+        if (this.#status.goalSubscriptionFailure === "reauthorization-required") return;
+      }
+    }
+    this.#scheduleGoalRetry(connectionGeneration, socket);
+  }
+
+  #setStatus(status: TwitchEventSubStatus): void {
+    this.#status = status;
+    // Notify each boundary immediately, but never await a source snapshot in intake.
+    try {
+      void Promise.resolve(this.#onStatusChanged(status)).catch(
+        // error-provenance: allow expected -- source observers cannot interrupt EventSub intake
+        () => {}
+      );
+    }
+    // error-provenance: allow expected -- a synchronous source observer cannot interrupt EventSub intake
+    catch {
+      // The observer cannot change the owned EventSub status.
+    }
   }
 
   #retrySubscriptionSetup(connectionGeneration: number, socket: TwitchEventSubSocket): void {
@@ -440,16 +532,17 @@ export class TwitchEventSubClient {
       return;
     }
 
-    this.#status = {
+    this.#setStatus({
       ...this.#status,
       state: "reconnecting",
       message: null,
       lastMessageAt: requiredString(message.metadata.message_timestamp)
-    };
+    });
     this.#openSocket(session.reconnect_url, false, connectionGeneration);
   }
 
   #handleClose(event: { readonly code?: number; readonly reason?: string }, connectionGeneration: number): void {
+    this.#goalRetryEpoch += 1;
     if (this.#stopped || this.#connection === null) {
       return;
     }
@@ -457,7 +550,7 @@ export class TwitchEventSubClient {
 
     if (this.#status.state === "error" && this.#status.message === "Twitch EventSub WebSocket error") {
       this.#recoverableFailureReferenceId = null;
-      this.#status = { ...this.#status, state: "reconnecting" };
+      this.#setStatus({ ...this.#status, state: "reconnecting" });
     } else {
       this.#recordIssue(
         "reconnecting",
@@ -540,14 +633,14 @@ export class TwitchEventSubClient {
     exception?: unknown
   ): void {
     if (this.#persistentFailure?.message === message) {
-      this.#status = {
+      this.#setStatus({
         ...this.#status,
         ...status,
         state: "error",
         message,
         lastErrorAt: this.#persistentFailure.occurredAt,
         referenceId: this.#persistentFailure.referenceId
-      };
+      });
       return;
     }
     const referenceId = this.#recordIssue("error", message, occurredAt, status, false, exception);
@@ -563,14 +656,14 @@ export class TwitchEventSubClient {
     exception?: unknown
   ): string {
     const referenceId = this.#generateReferenceId();
-    this.#status = {
+    this.#setStatus({
       ...this.#status,
       ...status,
       state,
       lastErrorAt: occurredAt,
       message,
       referenceId
-    };
+    });
     this.#recoverableFailureReferenceId = recoverable ? referenceId : null;
     void Promise.resolve(this.#onDiagnostic({
       message,
@@ -580,7 +673,7 @@ export class TwitchEventSubClient {
     // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
     () => {
       if (this.#status.referenceId === referenceId) {
-        this.#status = { ...this.#status, message: "Twitch EventSub diagnostics logging failed" };
+        this.#setStatus({ ...this.#status, message: "Twitch EventSub diagnostics logging failed" });
       }
     });
     return referenceId;
@@ -597,31 +690,31 @@ export class TwitchEventSubClient {
         return;
       }
     } else if (this.#status.referenceId !== null) {
-      this.#status = { ...this.#status, lastMessageAt: timestamp };
+      this.#setStatus({ ...this.#status, lastMessageAt: timestamp });
       return;
     }
-    this.#status = {
+    this.#setStatus({
       ...this.#status,
       ...(this.#status.sessionId === null ? {} : { state: "connected" as const }),
       lastMessageAt: timestamp,
       lastErrorAt: null,
       message: null,
       referenceId: null
-    };
+    });
     this.#recoverableFailureReferenceId = null;
   }
 
   #restorePersistentFailure(lastMessageAt: string): void {
     const failure = this.#persistentFailure;
     if (failure === null) return;
-    this.#status = {
+    this.#setStatus({
       ...this.#status,
       state: "error",
       lastMessageAt,
       lastErrorAt: failure.occurredAt,
       message: failure.message,
       referenceId: failure.referenceId
-    };
+    });
   }
 }
 
@@ -731,6 +824,11 @@ const subscriptionDefinitions = [
     type: `channel.prediction.${phase}`,
     version: "1",
     requiredScope: "channel:read:predictions",
+    condition: (accountId: string) => ({ broadcaster_user_id: accountId })
+  })),
+  ...(["begin", "progress", "end"] as const).map((phase) => ({
+    type: `channel.goal.${phase}`,
+    version: "1", requiredScope: "channel:read:goals",
     condition: (accountId: string) => ({ broadcaster_user_id: accountId })
   })),
   {

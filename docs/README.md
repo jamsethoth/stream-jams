@@ -12,6 +12,8 @@ Use this map to distinguish current behavior, pending work, and historical evide
 | What Music behavior is required? | [Canonical Music source](../openspec/specs/music-source-providers/spec.md) and [widget/output](../openspec/specs/music-widget-overlay/spec.md) capabilities; [scenario trace](verification/music-widget-scenarios.md) records automated and physical evidence |
 | How do I queue and play requested videos (Twitch, YouTube, Streamer.bot, rewards, REST)? | [Videos](videos.md); [mirror feasibility check](verification/video-mirror-feasibility.md) |
 | How do native integrations pair and control timers/queues? | [Local automation API v1](automation-api.md) |
+| How do I create shared counters, goals and canvases? | [Data overlays](data-overlays.md), [implementation plan](superpowers/plans/2026-10-08-data-overlays-implementation.md) and [scenario evidence](verification/data-overlays-scenarios.md) |
+
 | How do ordinary browser canvases differ from desktop placement, and what verifies retired sources? | [Output layout verification and exact requirement trace](verification/browser-desktop-output-layouts.md); [legacy credential inventory/revocation](mvp-runbook.md#retired-sources-and-hidden-legacy-credentials) |
 | How does a module consume stream events? | [Event bus consumers](engineering/event-bus-consumers.md) |
 
@@ -31,7 +33,7 @@ Use this map to distinguish current behavior, pending work, and historical evide
 - `apps/server` owns Fastify, SQLite repositories and migrations, secrets, providers, assets, diagnostics, and runtime composition.
 - `apps/web` serves route-based management, `/operator`, browser-source overlays, and the private desktop-overlay renderer.
 - `apps/desktop` owns the Electron service process, management window, tray, private audio player, and private desktop overlay. Windows x64 runnable-folder packaging and short-lived verified CI artifacts are implemented.
-- Alerts, Screen Effects, Timers, and Music are registered modules. Music is disabled by default and uses an authenticated selected source with server-authoritative snapshots. Alerts and Screen Effects retain independent playback queues; Timers use an independent server-authoritative lifecycle. Shared surfaces and global safety controls coordinate their outputs without combining their schedulers.
+- Alerts, Screen Effects, Timers, Music and Data Overlays are registered modules. Music and Data Overlays are disabled by default. Music uses an authenticated selected source with server-authoritative snapshots. Data values persist independently of canvases and use explicit Operator commands or configured authoritative follower polling. Alerts and Screen Effects retain independent playback queues; Timers use an independent server-authoritative lifecycle. Shared surfaces and global safety controls coordinate their outputs without combining their schedulers.
 - Screen Effects supports one active set, unified weighted variants, draft variant removal, media-based duration, fades, and percentage media gain. Per-effect cooldown, default/weighted authoring kinds, and Screen Effect animation controls are no longer current authoring features.
 - Registered local media uses version-pinned bounded streams for management previews, browser sources and private desktop recipients. The [local media specification](../openspec/specs/local-media-streaming/spec.md) defines integrity, ownership and resource bounds; [streaming acceptance](../openspec/changes/archive/2026-10-05-stream-local-media/final-acceptance.md) records validation and measurement limits for the change.
 
@@ -40,6 +42,8 @@ Installers, signing, automatic updates, non-Windows desktop delivery, LAN mode, 
 ## Active Change Reconciliation
 
 The October 5, 2026 UTC reconciliation archived 21 completed changes under [the change archive](../openspec/changes/archive), using the `2026-10-05-` prefix. Before archival, canonical requirements were synchronized for automatic local-output rebinding, persistent event timers, repository error provenance, and the compact Operator panel. Other completed changes were already synchronized; newer timing, streaming, variant-removal and menu requirements were preserved rather than overwritten by older deltas. Historical acceptance limits remain with their archived records.
+
+The following table preserves the October 5 reconciliation and records current data-overlay work; use the active change directory for the complete current inventory:
 
 The October 11, 2026 UTC reconciliation archived three completed changes with the `2026-10-11-` prefix. The Pear re-pair fix and the NSIS installer switch synchronized their deltas into [Music source providers](../openspec/specs/music-source-providers/spec.md) and [Windows desktop runtime](../openspec/specs/windows-desktop-runtime/spec.md). The browser/desktop output layouts change was archived without a spec update because its slices had already synchronized canonical requirements, and the canonical specs carry newer scenarios its deltas lack.
 
@@ -50,10 +54,10 @@ Seven changes remain active:
 | [add-live-music-layout-preview](../openspec/changes/add-live-music-layout-preview/tasks.md) | Implemented (PR #180); only task 3.4, the maintainer's Windows check that the preview follows Pear playback, is open |
 | [add-event-source-maintenance](../openspec/changes/add-event-source-maintenance/proposal.md) | Edit, replace and delete event sources (BL-067); spec only, awaiting review |
 | [add-main-branch-changelog](../openspec/changes/add-main-branch-changelog/tasks.md) | Unimplemented proposal, 22 unchecked tasks; no root changelog or enforcing workflow |
-| [add-custom-data-overlays](../openspec/changes/add-custom-data-overlays/proposal.md) | Slice 1 of 4 for data overlays: values, goals, reset groups, canvases, outputs and Operator controls; 21 unchecked tasks, awaiting approval |
-| [add-data-overlay-event-rules](../openspec/changes/add-data-overlay-event-rules/proposal.md) | Slice 2: data rules as a central event bus consumer, plus Streamer.bot globals; 19 unchecked tasks; depends on slice 1 and the bus change |
-| [add-twitch-overlay-data](../openspec/changes/add-twitch-overlay-data/proposal.md) | Slice 3: Twitch follower total and Creator Goals; 11 unchecked tasks; depends on slice 1 |
-| [add-data-overlay-templates](../openspec/changes/add-data-overlay-templates/proposal.md) | Slice 4: canvas templates and starters; 10 unchecked tasks; depends on slice 1 |
+| [add-custom-data-overlays](../openspec/changes/add-custom-data-overlays/tasks.md) | Slice 1 implemented, canonical specs synchronized and automated gates passed; physical OBS/desktop acceptance unperformed |
+| [add-data-overlay-event-rules](../openspec/changes/add-data-overlay-event-rules/tasks.md) | Bus prerequisite available after October 11 main merge; rules ready for implementation, while Streamer.bot globals still need real fixtures |
+| [add-twitch-overlay-data](../openspec/changes/add-twitch-overlay-data/tasks.md) | Follower polling/hints and live Creator Goals implemented; [integration evidence](verification/live-creator-goals.md), [latest main reconciliation](verification/data-overlays-latest-main-merge.md); real-account acceptance pending |
+| [add-data-overlay-templates](../openspec/changes/add-data-overlay-templates/tasks.md) | Slice 4 implemented with starters, atomic mapping, saved templates, insertion and missing-image repair; canonical specs and automated verification complete |
 
 Persistent event timer recovery and correction requirements are now in [the canonical capability](../openspec/specs/persistent-event-timers/spec.md). The base Timer change is now [archived](../openspec/changes/archive/2026-10-05-add-timer-overlay-module/tasks.md) after the [focused packaged output/cue matrix](verification/timers.md#focused-packaged-timer-output-acceptance-2026-10-05) passed. Its base capabilities are synchronized into [Timer overlay](../openspec/specs/timer-overlay-module/spec.md) and [Timer automation](../openspec/specs/timer-automation-api/spec.md) specifications; the original idle-on-restart wording was reconciled with implemented paused recovery. Physical HTTP-button testing was user-confirmed, and Stream Deck plugin/profile certification remains outside Stream Jams scope.
 

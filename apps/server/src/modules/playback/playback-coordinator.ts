@@ -20,7 +20,7 @@ import type {
   Logger,
   TtsService
 } from "@stream-jams/core";
-import { collectAlertDurationAssetIds, PlaybackQueueItemNotFoundError, resolveAlertAudio, resolveMediaDuration } from "@stream-jams/core";
+import { alertEventTypeSchema, collectAlertDurationAssetIds, PlaybackQueueItemNotFoundError, resolveAlertAudio, resolveMediaDuration } from "@stream-jams/core";
 import type { AudioPlaybackSink, DeviceAudioBatch, DeviceAudioResult, PlaybackQueueItem } from "@stream-jams/core";
 import type { AudioOutputService } from "../audio/audio-output-service.js";
 import { effectOccurrenceKey } from "../screen-effects/effect-playback-coordinator.js";
@@ -210,7 +210,9 @@ export class PlaybackCoordinator {
       return this.#result("duplicate", [], []);
     }
 
-    const rules = await this.#alertService.listActiveRules({ eventType: event.type });
+    const alertType = alertEventTypeSchema.safeParse(event.type);
+    if (!alertType.success) return this.#result("no-matches", [], []);
+    const rules = await this.#alertService.listActiveRules({ eventType: alertType.data });
     const matches = this.#matcher.findMatches({
       event,
       rules
@@ -222,7 +224,7 @@ export class PlaybackCoordinator {
     const cooldownSubjects = matches.map((match) => ({
       match,
       ruleId: match.rule.id,
-      eventType: match.event.type,
+      eventType: match.rule.eventType,
       cooldownSeconds: match.rule.cooldownSeconds
     }));
     const readySubjects = this.#cooldownService.filterReady(cooldownSubjects);

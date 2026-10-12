@@ -8,12 +8,28 @@ import {
   type AlertRule,
   type AssetRecord,
   type ScreenEffectDocument,
-  type TimerDefinition
+  type TimerDefinition,
+  type DataOverlayState
 } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
 import { AssetLibraryInUseError, AssetLibraryService, InvalidMusicAssetReferenceError, type AssetLibraryMetadata } from "./asset-library-service.js";
 
 describe("AssetLibraryService", () => {
+  it("lists hidden disabled Data Overlay image owners and prevents retiring their assets", async () => {
+    const data: DataOverlayState = { revision: 4, values: [], goals: [], resetGroups: [], pinnedValueIds: [], canvases: [{
+      id: "data-canvas", name: "Saved scoreboard", enabled: false, order: 0, targetProfileId: "landscape", outputs: { browser: false, desktop: false },
+      elements: [{ id: "logo", kind: "image", order: 0, x: 0, y: 0, width: 100, height: 100, visible: false, stalePolicy: "retain-last", assetId: "asset-image-1", fit: "contain" }]
+    }] };
+    const fixture = createFixture({ rules: [], data });
+    fixture.store.health = "missing";
+    await expect(fixture.service.getChangeImpact("asset-image-1")).resolves.toMatchObject({
+      canDelete: false, owners: [{ moduleId: "data-overlays", ownerId: "data-canvas", ownerName: "Saved scoreboard", variantId: "logo" }],
+      warnings: ["1 Data Overlay image usage will update everywhere."]
+    });
+    await expect(fixture.service.deleteAsset("asset-image-1")).rejects.toBeInstanceOf(AssetLibraryInUseError);
+    data.canvases = [];
+    await expect(fixture.service.getChangeImpact("asset-image-1")).resolves.toMatchObject({ canDelete: true, owners: [] });
+  });
   it("builds searchable metadata, health, and set/event/profile usage summaries", async () => {
     const fixture = createFixture();
 
@@ -250,6 +266,7 @@ function createFixture(options: {
   readonly timers?: readonly TimerDefinition[];
   readonly documents?: ReadonlyMap<string, AlertEditorDocument>;
   readonly music?: ReturnType<typeof createDefaultMusicModuleConfig>;
+  readonly data?: DataOverlayState;
 } = {}) {
   const assets = new MemoryAssetRepository([asset], options.deleteError);
   const metadata = new MemoryMetadataRepository();
@@ -284,6 +301,7 @@ function createFixture(options: {
       list() { return options.timers ?? []; }
     },
     getMusicConfig: async () => options.music ?? null,
+    getDataOverlayState: () => options.data ?? { revision: 0, values: [], goals: [], resetGroups: [], pinnedValueIds: [], canvases: [] },
     clock: () => new Date("2026-07-15T08:00:00.000Z")
   });
   return { service, assets, metadata, store };

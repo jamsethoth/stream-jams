@@ -16,6 +16,8 @@ import {
 import { OperatorItemCard } from "./OperatorItemCard.js";
 import { TimerAdjustmentControls } from "../management/timers/TimerAdjustmentControls.js";
 import { defaultOperatorTimersApi, type OperatorTimersApi } from "./timers-api.js";
+import { OperatorDataSection } from "./OperatorDataSection.js";
+import type { OperatorDataApi } from "./data-api.js";
 import type { VideoQueueApi } from "../management/videos/videos-api.js";
 const OperatorVideosPanel = lazy(() => import("../management/videos/VideosPage.js").then(module => ({ default: module.OperatorVideosPanel })));
 
@@ -36,6 +38,7 @@ interface ClearRequest {
 export interface OperatorAppProps {
   readonly api?: PlaybackApi;
   readonly timersApi?: OperatorTimersApi;
+  readonly dataApi?: OperatorDataApi;
   /** Defaults to the HTTP queue client created inside the lazily loaded panel, attributed to the Operator. */
   readonly videosApi?: VideoQueueApi;
 }
@@ -45,7 +48,7 @@ export function OperatorApp(props: OperatorAppProps) {
   return <ManagementPresentationProvider><OperatorConsole {...props} /></ManagementPresentationProvider>;
 }
 
-function OperatorConsole({ api = defaultPlaybackApi, timersApi = defaultOperatorTimersApi, videosApi }: OperatorAppProps) {
+function OperatorConsole({ api = defaultPlaybackApi, timersApi = defaultOperatorTimersApi, dataApi, videosApi }: OperatorAppProps) {
   useEffect(() => {
     const bridge = getDesktopBridge();
     return bridge?.onQuitRequested((requestId) => bridge.resolveQuit(requestId, true));
@@ -349,6 +352,7 @@ function OperatorConsole({ api = defaultPlaybackApi, timersApi = defaultOperator
         )}>Replay</Button>
       )} />
 
+      <OperatorDataSection {...(dataApi === undefined ? {} : { api: dataApi })} />
       <Suspense fallback={<p role="status">Loading the video queue…</p>}><OperatorVideosPanel api={videosApi} recentCard={OperatorItemCard} /></Suspense>
     </main>
   );

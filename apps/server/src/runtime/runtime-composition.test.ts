@@ -26,13 +26,124 @@ import type {
 } from "../modules/twitch/twitch-api-client.js";
 import type {
   TwitchEventSubApiClient,
-  TwitchEventSubCreateSubscriptionResult
+  TwitchEventSubCreateSubscriptionResult,
+  TwitchEventSubSocket
 } from "../modules/twitch/twitch-eventsub-client.js";
 import * as runtimeComposition from "./runtime-composition.js";
 import { createRuntimeAppComposition } from "./runtime-composition.js";
 import { LocalAssetStore } from "../modules/assets/local-asset-store.js";
 import { SqliteAssetRepository } from "../modules/assets/sqlite-asset-repository.js";
 import { SqliteAssetRetirementRepository } from "../modules/assets/sqlite-asset-retirement-repository.js";
+import { SqliteTwitchAccountRepository } from "../modules/twitch/sqlite-twitch-account-repository.js";
+import { createTwitchTokenSecretRef, defaultTwitchOAuthScopes, defaultTwitchClientId } from "../modules/twitch/twitch-oauth-service.js";
+
+it("reconciles Creator Goals through the real central bus and resnapshots persisted bindings on restart", async () => {
+  const root = await mkdtemp(join(tmpdir(), "stream-jams-goal-runtime-"));
+  let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
+  let nowMs = Date.parse("2026-10-11T12:00:01Z");
+  const scopes = [...defaultTwitchOAuthScopes, "channel:read:goals"];
+  const account = { accountId: "synthetic-goal-account", login: "synthetic", displayName: "Synthetic", scopes, connectedAt: "2026-10-11T12:00:00Z", updatedAt: "2026-10-11T12:00:00Z" };
+  const goal = { id: "synthetic-goal", broadcaster_id: account.accountId, broadcaster_name: "Synthetic", broadcaster_login: "synthetic", type: "follower", description: "Synthetic goal", current_amount: 4, target_amount: 20, started_at: account.connectedAt };
+  const snapshot = deferred<{ goals: typeof goal[]; rateResetEpochMs: null }>();
+  const getCreatorGoals = vi.fn(async () => ({ goals: [goal], rateResetEpochMs: null })); getCreatorGoals.mockReturnValueOnce(snapshot.promise);
+  const sockets: RuntimeGoalSocket[] = [];
+  const secretStore = new TestSecretStore();
+  const options = { homeDirectory: root, webBuildDirectory: await createWebBuildFixture(root), configStore: new StaticConfigStore(createConfig(root)), environment: {}, secretStore,
+    now: () => new Date(nowMs), scheduleRecurring: () => ({}), cancelRecurring: () => {},
+    twitchApiClient: { startDeviceAuthorization: vi.fn(), pollDeviceAuthorization: vi.fn(), refreshUserToken: vi.fn(), getCurrentUser: vi.fn(), validateToken: async () => ({ clientId: defaultTwitchClientId, login: account.login, scopes, userId: account.accountId, expiresIn: 3600 }) },
+    twitchDataApiClient: { getFollowerTotal: vi.fn(), getCreatorGoals },
+    twitchEventSubApiClient: { createSubscription: async ({ subscription }: Parameters<TwitchEventSubApiClient["createSubscription"]>[0]) => ({ id: subscription.type, status: "enabled", type: subscription.type }) },
+    twitchEventSubSocketFactory: () => { const socket = new RuntimeGoalSocket(); sockets.push(socket); return socket; } };
+  const welcome = () => ({ metadata: { message_type: "session_welcome", message_timestamp: new Date(nowMs).toISOString() }, payload: { session: { id: `session-${sockets.length}`, status: "connected", connected_at: new Date(nowMs).toISOString(), keepalive_timeout_seconds: 60 } } });
+  try {
+    composition = await createRuntimeAppComposition(options);
+    await new SqliteTwitchAccountRepository(composition.database.connection).saveAccount(account);
+    await secretStore.setSecret(createTwitchTokenSecretRef(account.accountId, "access_token"), "synthetic-token");
+    let headers = managementAuthHeaders(await composition.app.inject({ method: "POST", url: "/auth/management/sessions" }));
+    const created = await composition.app.inject({ method: "POST", url: "/data-overlays/sources/twitch/goals", headers, payload: { name: "Creator goal", binding: { mode: "active-type", type: "follower" } } });
+    expect(created.statusCode, created.body).toBe(201); expect(getCreatorGoals).not.toHaveBeenCalled();
+    await composition.twitchEventSubRuntimeService.connectStoredAccount(); await sockets[0]!.emitMessage(welcome());
+    await vi.waitFor(() => expect(getCreatorGoals).toHaveBeenCalledOnce());
+    nowMs += 1000;
+    const notification = (phase: "progress" | "end") => ({ metadata: { message_id: `goal-${phase}`, message_type: "notification", message_timestamp: new Date(nowMs).toISOString(), subscription_type: `channel.goal.${phase}`, subscription_version: "1" }, payload: { subscription: { id: `subscription-${phase}`, type: `channel.goal.${phase}`, version: "1", condition: { broadcaster_user_id: account.accountId } }, event: { id: goal.id, broadcaster_user_id: account.accountId, broadcaster_user_name: account.displayName, type: goal.type, description: goal.description, current_amount: 8, target_amount: 20, started_at: goal.started_at, ...(phase === "end" ? { ended_at: new Date(nowMs).toISOString(), is_achieved: false } : {}) } } });
+    const progress = await composition.eventIngestionService.ingestTwitchEventSubNotification(notification("progress"));
+    expect(progress.status, JSON.stringify(progress)).toBe("accepted");
+    snapshot.resolve({ goals: [goal], rateResetEpochMs: null });
+    await vi.waitFor(() => expect(composition!.dataOverlayService.getState().values[0]?.content).toBe(8));
+    const status = (await composition.app.inject({ url: "/data-overlays/sources/twitch", headers })).json();
+    expect(status.goals.bindings[0]).toMatchObject({ state: "current", selectedGoalId: goal.id });
+    nowMs += 1000;
+    expect((await composition.eventIngestionService.ingestTwitchEventSubNotification(notification("end"))).status).toBe("accepted");
+    await vi.waitFor(async () => expect((await composition!.app.inject({ url: "/data-overlays/sources/twitch", headers })).json().goals.bindings[0].state).toBe("ended"));
+    await composition.close(); composition = undefined;
+    getCreatorGoals.mockResolvedValue({ goals: [{ ...goal, id: "replacement", current_amount: 2 }], rateResetEpochMs: null });
+    composition = await createRuntimeAppComposition(options);
+    headers = managementAuthHeaders(await composition.app.inject({ method: "POST", url: "/auth/management/sessions" }));
+    expect((await composition.app.inject({ url: "/data-overlays/sources/twitch", headers })).json().goals.state).not.toBe("current");
+    await composition.twitchEventSubRuntimeService.connectStoredAccount(); await sockets[1]!.emitMessage(welcome());
+    await vi.waitFor(() => expect(composition!.dataOverlayService.getState().values[0]?.content).toBe(2));
+    expect(composition.dataOverlayService.getState().goals[0]?.id).toBe(created.json().goals[0].id);
+  } finally { snapshot.resolve({ goals: [], rateResetEpochMs: null }); await composition?.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+class RuntimeGoalSocket implements TwitchEventSubSocket {
+  #message: ((event: { readonly data: unknown }) => void | Promise<void>) | undefined;
+  addEventListener(event: "open", listener: () => void): void;
+  addEventListener(event: "message", listener: (event: { readonly data: unknown }) => void | Promise<void>): void;
+  addEventListener(event: "close", listener: (event: { readonly code?: number; readonly reason?: string }) => void): void;
+  addEventListener(event: "error", listener: (event: unknown) => void): void;
+  addEventListener(event: string, listener: unknown): void { if (event === "message") this.#message = listener as (event: { readonly data: unknown }) => void | Promise<void>; }
+  close(): void {}
+  async emitMessage(message: unknown): Promise<void> { await this.#message?.({ data: JSON.stringify(message) }); }
+}
+
+it("serves explicit provider source selection and readonly commands through real disposable runtime then revalidates on restart", async () => {
+  const root = await mkdtemp(join(tmpdir(), "stream-jams-twitch-data-"));
+  let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
+  const secretStore = new TestSecretStore();
+  const getFollowerTotal = vi.fn(async () => ({ total: 990, rateResetEpochMs: null }));
+  const twitchApiClient: TwitchApiClient = {
+    startDeviceAuthorization: vi.fn(), pollDeviceAuthorization: vi.fn(), refreshUserToken: vi.fn(), getCurrentUser: vi.fn(),
+    validateToken: async () => ({ clientId: defaultTwitchClientId, login: "synthetic", scopes: defaultTwitchOAuthScopes, userId: "synthetic-broadcaster", expiresIn: 3600 })
+  };
+  const options = { homeDirectory: root, webBuildDirectory: await createWebBuildFixture(root), configStore: new StaticConfigStore(createConfig(root)), environment: {}, secretStore,
+    scheduleRecurring: () => ({}), cancelRecurring: () => {}, twitchApiClient, twitchDataApiClient: { getFollowerTotal, getCreatorGoals: vi.fn() } };
+  try {
+    composition = await createRuntimeAppComposition(options);
+    let headers = managementAuthHeaders(await composition.app.inject({ method: "POST", url: "/auth/management/sessions" }));
+    expect((await composition.app.inject({ url: "/data-overlays/sources/twitch", headers })).json()).toMatchObject({ follower: { state: "unconfigured", broadcasterId: null }, goals: { state: "disconnected" } });
+    const account = { accountId: "synthetic-broadcaster", login: "synthetic", displayName: "Synthetic", scopes: defaultTwitchOAuthScopes, connectedAt: "2026-10-08T00:00:00Z", updatedAt: "2026-10-08T00:00:00Z" };
+    await new SqliteTwitchAccountRepository(composition.database.connection).saveAccount(account);
+    await secretStore.setSecret(createTwitchTokenSecretRef(account.accountId, "access_token"), "synthetic-token");
+    const forged = await composition.app.inject({ method: "POST", url: "/data-overlays/values", headers, payload: { name: "Forged", kind: "integer", resetDefault: 0, resetGroupId: null, source: { provider: "twitch", kind: "follower-total", broadcasterId: "other" } } });
+    expect(forged.statusCode).toBe(400);
+    const created = await composition.app.inject({ method: "POST", url: "/data-overlays/sources/twitch/followers", headers, payload: { name: "Synthetic followers" } });
+    expect(created.statusCode, created.body).toBe(201);
+    const id = created.json().values[0].id as string;
+    await vi.waitFor(() => expect(composition!.dataOverlayService.getState().values[0]?.content).toBe(990));
+    expect((await composition.app.inject({ url: "/data-overlays/sources/twitch", headers })).json()).toMatchObject({ follower: { state: "current", broadcasterId: account.accountId, valueIds: [id] }, goals: { state: "reauthorization-required" } });
+    expect((await composition.app.inject({ url: "/data-overlays/templates", headers })).json().templates).toHaveLength(4);
+    const canvasInput = { name: "Follower badge", enabled: false, order: 0, outputs: { browser: true, desktop: false }, mappings: [{slotId:"count",mapping:{kind:"value",valueId:id}}] };
+    const badge = await composition.app.inject({method:"POST",url:"/data-overlays/templates/counter-badge/instantiate",headers,payload:canvasInput});
+    expect(badge.statusCode,badge.body).toBe(201);
+    const saved = await composition.app.inject({method:"POST",url:"/data-overlays/templates/save",headers,payload:{name:"Configured follower badge",canvasId:badge.json().canvases[0].id}});
+    expect(saved.statusCode,saved.body).toBe(201);
+    const providerTemplate = saved.json().templates.find((template:{origin:string})=>template.origin==="user");
+    expect(providerTemplate.slots[0].requiredSource).toEqual({provider:"twitch",kind:"follower-total"});
+    expect(JSON.stringify(providerTemplate)).not.toContain(account.accountId);expect(JSON.stringify(providerTemplate)).not.toContain(id);
+    const reused = await composition.app.inject({method:"POST",url:`/data-overlays/templates/${providerTemplate.id}/instantiate`,headers,payload:{...canvasInput,name:"Reused follower badge",mappings:[{slotId:providerTemplate.slots[0].id,mapping:{kind:"value",valueId:id}}]}});
+    expect(reused.statusCode,reused.body).toBe(201);
+    const readonly = await composition.app.inject({ method: "POST", url: `/operator/data-overlays/values/${id}/reset`, headers, payload: {} });
+    expect(readonly.statusCode).toBe(409); expect(readonly.json().error.code).toBe("DATA_SOURCE_READ_ONLY");
+    await composition.close(); composition = undefined;
+    getFollowerTotal.mockResolvedValue({ total: 980, rateResetEpochMs: null });
+    composition = await createRuntimeAppComposition(options);
+    headers = managementAuthHeaders(await composition.app.inject({ method: "POST", url: "/auth/management/sessions" }));
+    expect(composition.dataOverlayService.getState().values[0]).toMatchObject({ content: 980, source: { provider: "twitch", kind: "follower-total", broadcasterId: account.accountId } });
+    expect((await composition.app.inject({ url: "/data-overlays/sources/twitch", headers })).json().follower.state).toBe("current");
+    expect(composition.dataTemplateService.getCatalog().templates.find(template=>template.id===providerTemplate.id)).toEqual(providerTemplate);
+  } finally { await composition?.close(); await rm(root, { recursive: true, force: true }); }
+});
 
 it.each(["EBUSY", "EACCES", "EPERM"])("starts with persisted retirement %s and retries cleanup while current media stays readable", async code => {
   const testRoot = await mkdtemp(join(tmpdir(), "stream-jams-retirement-startup-"));
@@ -454,7 +565,8 @@ it.each([false, true])("configures desktop visuals without playback, preserving 
         { moduleId: "screen-effects", visible: false },
         { moduleId: "timers", visible: false },
         { moduleId: "music", visible: false },
-        { moduleId: "videos", visible: false }
+        { moduleId: "videos", visible: false },
+        { moduleId: "data-overlays", visible: false }
       ]
     });
     expect(transport.prepare).not.toHaveBeenCalled();
@@ -900,6 +1012,50 @@ it("notifies the desktop and advances Effects after persisted policy delivery fa
     await composition?.close();
     await rm(testRoot, { recursive: true, force: true });
   }
+});
+
+it("constructs durable Data output with scoped image access, initial WS snapshot and committed live refresh", async () => {
+  const root = await mkdtemp(join(tmpdir(), "stream-jams-data-runtime-"));
+  let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
+  let socket: Awaited<ReturnType<Awaited<ReturnType<typeof createRuntimeAppComposition>>["app"]["injectWS"]>> | undefined;
+  try {
+    composition = await createRuntimeAppComposition({ homeDirectory: root, webBuildDirectory: await createWebBuildFixture(root),
+      configStore: new StaticConfigStore(createConfig(root)), environment: {}, secretStore: new TestSecretStore(), scheduleRecurring: () => ({}), cancelRecurring: () => {} });
+    const app = composition.app;
+    const headers = managementAuthHeaders(await app.inject({ method: "POST", url: "/auth/management/sessions" }));
+    const value = composition.dataOverlayService.createValue({ name: "Private count", kind: "integer", resetDefault: 1, resetGroupId: null }).values[0]!;
+    await mkdir(join(root, "assets"), { recursive: true });
+    await writeFile(join(root, "assets", "data.png"), "png");
+    const assets = new SqliteAssetRepository(composition.database.connection);
+    const asset = { id: "data-image", originalFileName: "image.png", mediaType: "image" as const, mimeType: "image/png", sizeBytes: 3,
+      checksum: `sha256:${createHash("sha256").update("png").digest("hex")}`, storagePath: "data.png", durationMs: null };
+    await assets.save(asset); await assets.save({ ...asset, id: "unrelated-image" });
+    composition.dataOverlayService.createCanvas({ name: "Private canvas", enabled: true, order: 0, targetProfileId: "landscape", outputs: { browser: true, desktop: true }, elements: [
+      { id: "label", kind: "text", order: 0, x: 0, y: 0, width: 100, height: 40, visible: true, stalePolicy: "retain-last", binding: { kind: "value", valueId: value.id }, literalText: "", format: { prefix: "", suffix: "", thousandsSeparator: false, overflow: "wrap" }, style: { color: "#FFFFFFFF", fontSizePx: 24, fontWeight: 400, align: "left" } },
+      { id: "picture", kind: "image", order: 1, x: 100, y: 0, width: 40, height: 40, visible: true, stalePolicy: "retain-last", assetId: asset.id, fit: "contain" }
+    ] });
+    const key = await composition.overlayAccessService.createKey({ overlayId: "default", moduleId: "data-overlays", purpose: "live", scope: "module", targetProfileId: "landscape" });
+    const url = `/overlay/modules/data-overlays/live/${key.rawKey}`;
+    expect((await app.inject({ url: `${url}/composition?profile=landscape` })).json()).toMatchObject({ modules: [] });
+    expect((await app.inject({ method: "PATCH", url: "/overlay-modules/data-overlays/enabled", headers, payload: { enabled: true } })).statusCode).toBe(200);
+    const initial = (await app.inject({ url: `${url}/composition?profile=landscape` })).json();
+    expect(initial.modules[0].presentation.projection.canvases[0].elements[0].text).toBe("1");
+    expect(JSON.stringify(initial)).not.toContain("Private count");
+    expect((await app.inject({ url: `${url}/assets/data-image?profile=landscape` })).statusCode).toBe(200);
+    expect((await app.inject({ url: `${url}/assets/unrelated-image?profile=landscape` })).statusCode).toBe(404);
+    expect((await app.inject({ url: `${url}/assets/data-image?profile=vertical` })).statusCode).toBe(401);
+    const messages: Array<{ type: string; composition?: typeof initial }> = [];
+    socket = await app.injectWS(`/overlay/ws/modules/data-overlays/live/${key.rawKey}?profile=landscape`, {}, { onInit: ws => ws.on("message", bytes => messages.push(JSON.parse(bytes.toString()))) });
+    await vi.waitFor(() => expect(messages.some(message => message.type === "overlay.composition")).toBe(true));
+    const before = messages.filter(message => message.type === "overlay.composition").length;
+    composition.dataOverlayService.commandValue(value.id, { action: "add", amount: 2 });
+    await vi.waitFor(() => expect(messages.filter(message => message.type === "overlay.composition").length).toBeGreaterThan(before));
+    const latest = messages.filter(message => message.type === "overlay.composition").at(-1)!.composition;
+    expect(latest.modules[0].presentation.projection.canvases[0].elements[0].text).toBe("3");
+    await composition.playbackOperationsService.setSafety({ paused: true });
+    await vi.waitFor(() => expect(messages.filter(message => message.type === "overlay.composition").at(-1)!.composition.modules[0].presentation.projection.canvases).toEqual([]));
+    expect(composition.dataOverlayService.getState().values[0]?.content).toBe(3);
+  } finally { socket?.terminate(); await composition?.close(); await rm(root, { recursive: true, force: true }); }
 });
 
 it("switches Videos outputs to the desktop mirror while the desktop player is available", async () => {

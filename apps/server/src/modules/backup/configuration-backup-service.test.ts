@@ -5,6 +5,8 @@ import {
   upgradeTimersConfig,
   createDefaultVideosModuleConfig,
   configurationBackupLimits,
+  dataOverlayBackupTables,
+  DataOverlayService,
   type AlertEditorDocument,
   type AlertRule,
   type AppConfig,
@@ -27,6 +29,7 @@ import {
 } from "./configuration-backup-service.js";
 import { SqliteConfigurationSnapshotRepository } from "./sqlite-configuration-snapshot-repository.js";
 import { RuntimeMaintenanceGate, RuntimeMaintenanceUnavailableError } from "./runtime-maintenance-gate.js";
+import { SqliteDataOverlayRepository } from "../data-overlays/sqlite-data-overlay-repository.js";
 
 const pngBytes = Buffer.from("89504e470d0a1a0a", "hex");
 const appConfig: AppConfig = {
@@ -48,6 +51,31 @@ const asset: AssetRecord = {
 };
 
 describe("ConfigurationBackupService", () => {
+  it("blocks schema-47 missing data tables and preserves exact enabled data after a post-replacement failure", async () => {
+    let fail = true;
+    const target = createRealService({ reloadRuntimeConfiguration: () => { if (fail) { fail = false; throw new Error("reload failed"); } } });
+    try {
+      const repository = new SqliteDataOverlayRepository(target.database);
+      const data = new DataOverlayService(repository, { generateId: () => "data-value", now: () => "2026-10-08T00:00:00.000Z" });
+      data.createValue({ name: "Score", kind: "integer", resetDefault: 5, resetGroupId: null });
+      data.commandValue("data-value", { action: "add", amount: 23 });
+      repository.mutate(state => { state.canvases.push({ id: "canvas", name: "Enabled", enabled: true, order: 0, targetProfileId: "landscape", outputs: { browser: true, desktop: true }, elements: [] }); });
+      const before = repository.read();
+      const archive = await target.service.exportArchive();
+      const incomplete = structuredClone(archive);
+      dataOverlayBackupTables.forEach(name => { incomplete.manifest.configurationRecordCount -= incomplete.configuration.tables[name]?.length ?? 0; delete incomplete.configuration.tables[name]; });
+      incomplete.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(incomplete.configuration);
+      const invalid = await target.service.preflight(incomplete);
+      expect(invalid.state).toBe("invalid");
+      expect(invalid.blockers).toEqual(expect.arrayContaining([expect.objectContaining({ summary: "Backup Data Overlays configuration is missing" })]));
+      const preflight = await target.service.preflight(archive);
+      expect(preflight.state).toBe("valid");
+      expect(preflight.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ summary: "Data Overlay canvases will be restored disabled" })]));
+      await expect(target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true })).rejects.toBeInstanceOf(ConfigurationRestoreBlockedError);
+      expect(repository.read()).toEqual(before);
+    } finally { target.database.close(); }
+  });
+
   it("discloses and removes surface-only retired metadata, omits recognized legacy profileless outputs, and blocks malformed ordinary metadata", async () => {
     const source = createRealService(); const generated: unknown[] = [];
     const target = createRealService({ regenerateOutput: async (output, origin) => { generated.push(output); return { label: "ordinary", url: `${origin}/ordinary` }; } });
@@ -98,7 +126,7 @@ describe("ConfigurationBackupService", () => {
         await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true }); expect(saved()).toEqual(expected);
       }
       const current = await target.service.exportArchive();
-      expect(current.manifest.schemaVersion).toBe(46); expect(JSON.stringify(current)).not.toMatch(/video_bus_admissions|video_requests|video_queue_state/u);
+      expect(current.manifest.schemaVersion).toBe(48); expect(JSON.stringify(current)).not.toMatch(/video_bus_admissions|video_requests|video_queue_state/u);
       await target.service.restore({ archive: current, archiveId: (await target.service.preflight(current)).archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true }); expect(saved()).toEqual(expected);
       const invalid = structuredClone(archive);
       invalid.configuration.tables.overlay_module_config![0]!.config_json = JSON.stringify({ ...expected, layout: { ...expected.layout, desktopPlacement: { x: 1800, y: 0, scale: 1 } } });
@@ -239,12 +267,14 @@ describe("ConfigurationBackupService", () => {
     }
   });
 
-  it.each([19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
+  it.each([19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
     const target = createRealService();
     try {
       const archive = await target.service.exportArchive();
       archive.manifest.schemaVersion = schemaVersion;
       for (const tableName of [
+        ...dataOverlayBackupTables,
+        "data_templates",
         ...(schemaVersion < 23 ? ["screen_effect_sets", "screen_effect_set_memberships"] : []),
         ...(schemaVersion < 22 ? [
         "screen_effects",
@@ -288,6 +318,34 @@ describe("ConfigurationBackupService", () => {
       await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
       const snapshot = target.snapshotRepository.snapshot();
       expect(JSON.parse(String(snapshot.tables.overlay_surfaces?.[0]?.configuration_json))).toMatchObject({ enabled: false, displayId: null });
+    } finally { target.database.close(); }
+  });
+
+  it.each([33, 34])("rejects schema-%i backups from the unreleased Data candidate", async (schemaVersion) => {
+    const target = createRealService();
+    try {
+      const archive = await target.service.exportArchive();
+      archive.manifest.schemaVersion = schemaVersion;
+      const preflight = await target.service.preflight(archive);
+      expect(preflight.state).toBe("invalid");
+      expect(preflight.blockers).toEqual(expect.arrayContaining([expect.objectContaining({ summary: "Backup schema is not supported" })]));
+    } finally { target.database.close(); }
+  });
+
+  it("requires templates for schema48, accepts schema47 without them and restores an empty user catalog", async () => {
+    const target = createRealService();
+    try {
+      const archive = await target.service.exportArchive();
+      expect(archive.manifest.schemaVersion).toBe(48);
+      delete archive.configuration.tables.data_templates;
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      const missing = await target.service.preflight(archive);
+      expect(missing.state).toBe("invalid");
+      expect(missing.blockers).toEqual(expect.arrayContaining([expect.objectContaining({summary:"Backup Data templates configuration is missing"})]));
+      archive.manifest.schemaVersion = 47;
+      const old = await target.service.preflight(archive); expect(old.state).toBe("valid");
+      await target.service.restore({archive,archiveId:old.archiveId!,confirmation:"RESTORE",regenerateRouteKeys:true});
+      expect(target.snapshotRepository.snapshot().tables.data_templates).toEqual([]);
     } finally { target.database.close(); }
   });
 

@@ -13,6 +13,7 @@ import {
   type AssetMediaType,
   type AssetMetadataUpdateInput,
   type AssetRecord,
+  type DataOverlayState,
   type AssetRepository,
   type ModuleMediaReference,
   type MusicAssetReference,
@@ -60,6 +61,7 @@ export interface AssetLibraryServiceOptions {
   readonly effectRepository?: Pick<ScreenEffectRepository, "list"> | undefined;
   readonly timerRepository?: Pick<TimerDefinitionRepository, "list"> | undefined;
   readonly getMusicConfig?: (() => Promise<MusicModuleConfig | null>) | undefined;
+  readonly getDataOverlayState?: (() => DataOverlayState) | undefined;
   readonly deletePersistedAsset?: ((assetId: string) => void) | undefined;
   readonly findEditorDocuments?: (ids: readonly string[]) => Promise<ReadonlyMap<string, import("@stream-jams/core").AlertEditorDocument>>;
   readonly clock?: () => Date;
@@ -224,6 +226,8 @@ export class AssetLibraryService {
     if (musicOwners.length > 0) {
       warnings.push(`${musicOwners.length} Music usage${musicOwners.length === 1 ? "" : "s"} will update everywhere.`);
     }
+    const dataOwners = moduleOwners.filter(owner => owner.moduleId === "data-overlays");
+    if (dataOwners.length > 0) warnings.push(`${dataOwners.length} Data Overlay image usage${dataOwners.length === 1 ? "" : "s"} will update everywhere.`);
     if (candidateMediaType !== undefined && candidateMediaType !== item.mediaType) {
       warnings.push(`Media type changes from ${item.mediaType} to ${candidateMediaType}; review every affected layer.`);
     }
@@ -443,6 +447,13 @@ export class AssetLibraryService {
       for (const reference of collectMusicAssetReferences(music)) {
         const { assetId, ...owner } = reference;
         add(assetId, owner);
+      }
+    }
+    for (const canvas of this.#options.getDataOverlayState?.().canvases ?? []) {
+      for (const element of canvas.elements) {
+        if (element.kind === "image") add(element.assetId, {
+          moduleId: "data-overlays", ownerId: canvas.id, ownerName: canvas.name, variantId: element.id
+        });
       }
     }
     return usages;

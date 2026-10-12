@@ -1,5 +1,5 @@
 import { renderManagement as render } from "../../test-support/render-management.js";
-import { alertStarterThemes, streamEventTypes, type AlertStarterThemeId } from "@stream-jams/core";
+import { alertStarterThemes, canonicalAlertEventTypes, type AlertStarterThemeId } from "@stream-jams/core";
 import { act, cleanup, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -137,12 +137,12 @@ describe("AlertThemeChooser", () => {
     expect(verticalObserver.disconnect).toHaveBeenCalledOnce();
   });
 
-  it("provides resolved deterministic preview text for every canonical event", () => {
+  it("provides resolved deterministic preview text for every supported canonical alert event", () => {
     const { rerender } = render(
       <AlertThemeChooser eventType="follow" onChange={vi.fn()} value="clean-signal" />
     );
 
-    for (const eventType of streamEventTypes) {
+    for (const eventType of canonicalAlertEventTypes) {
       rerender(<AlertThemeChooser eventType={eventType} onChange={vi.fn()} value="clean-signal" />);
       expect(screen.getByRole("region", { name: "Starter theme" })).not.toHaveTextContent(/\{[^{}]+\}/u);
     }

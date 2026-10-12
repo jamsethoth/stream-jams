@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   appConfigSchema,
+  dataOverlayBackupTables,
   isOrdinaryOverlayOutput,
   upgradeTimersConfig,
   upgradeVideosLayout, upgradeVideosRewardMappings,
@@ -305,6 +306,10 @@ export class ConfigurationBackupService {
         "Open the backup with a compatible Stream Jams version, then export it again."
       ));
     }
+    // The unreleased Data candidate used main's schema numbers for a different migration history.
+    if ([33, 34].includes(archive.manifest.schemaVersion) && dataOverlayBackupTables.some(name => archive.configuration.tables[name] !== undefined)) {
+      blockers.push(blocker("Backup schema is not supported", "This backup uses the pre-merge Data candidate schema history.", "Export from a compatible Data candidate or restore a main-compatible backup."));
+    }
     if (archive.manifest.schemaVersion >= 20 && archive.configuration.tables.overlay_surfaces === undefined) {
       blockers.push(blocker("Backup surface configuration is missing", "Schema 20 and later require surface settings.", "Export a new backup from the source installation."));
     }
@@ -338,6 +343,16 @@ export class ConfigurationBackupService {
     }
     if (!appConfigSchema.safeParse(archive.configuration.appConfig).success) {
       blockers.push(blocker("Backup preferences are invalid", "The application preferences do not match the supported schema.", "Export a new backup from the source installation."));
+    }
+    if (archive.manifest.schemaVersion >= 48 && archive.configuration.tables.data_templates === undefined) {
+      blockers.push(blocker("Backup Data templates configuration is missing", "Schema 48 and later require data_templates.", "Export a complete backup from the original application."));
+    }
+    if (archive.manifest.schemaVersion >= 47) {
+      for (const name of dataOverlayBackupTables) {
+        if (archive.configuration.tables[name] === undefined) blockers.push(blocker(
+          "Backup Data Overlays configuration is missing", `Schema 47 and later require ${name}.`, "Export a new backup from the source installation."
+        ));
+      }
     }
     if (ConfigurationBackupService.configurationChecksum(archive.configuration) !== archive.manifest.configurationChecksum) {
       blockers.push(blocker("Backup configuration checksum does not match", "The configuration content was changed or damaged after export.", "Export the backup again and do not edit its contents."));
@@ -429,6 +444,11 @@ export class ConfigurationBackupService {
       ));
     }
     warnings.push(warning("Restart Stream Jams after restore", "Server and logging preferences are written to local configuration while the current process remains active.", "Restart Stream Jams after completing provider and browser-source follow-up."));
+    if ((archive.configuration.tables.data_canvases?.length ?? 0) > 0) {
+      warnings.push(warning("Data Overlay canvases will be restored disabled",
+        "Saved values, goal baselines and canvas definitions are preserved without resuming their outputs.",
+        "Review the restored canvases and enable the outputs you intend to use."));
+    }
 
     const impact = restoreImpact(archive);
     const archiveId = checksum(canonicalJson(archive));
@@ -741,7 +761,7 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   // Schema 40 adds provider details to the runtime Videos queue, which backups never contain.
   if (currentSchemaVersion === 40) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion <= 39;
   // Manual bus/admission are runtime-only; counts 43/44 add typed Timer/Video upgrades (IDs 044/045).
-  if (currentSchemaVersion >= 41 && currentSchemaVersion <= 46) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion < currentSchemaVersion;
+  if (currentSchemaVersion >= 41 && currentSchemaVersion <= 48) return Number.isInteger(archiveSchemaVersion) && archiveSchemaVersion >= 19 && archiveSchemaVersion < currentSchemaVersion;
   if (currentSchemaVersion === 28) return [19, 20, 21, 22, 23, 24, 25, 26, 27].includes(archiveSchemaVersion);
   return false;
 }

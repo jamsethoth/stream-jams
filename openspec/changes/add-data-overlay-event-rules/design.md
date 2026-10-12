@@ -1,6 +1,6 @@
 ## Context
 
-This change builds on slice 1's values, goals, reset groups and Operator section, and on the central event bus change `add-central-event-bus` (BL-025, draft PR #160).
+This change builds on slice 1's values, goals, reset groups and Operator section, and on the central event bus now implemented on main. The October 11 reassessment verified its journal, shared selectors, transactional checkpoints and no-expiry delivery contracts.
 
 What the bus change owns, and this change only references:
 
@@ -23,7 +23,7 @@ Existing facts this change relies on:
 
 ### 1. Data overlays are a bus consumer
 
-The data consumer registers with the bus using the transactional checkpoint option, and opts out of replay expiry because it maintains state rather than playing media. Its selectors are the canonical types its enabled rules reference, plus the external identity `StreamJams`/`Data`. For each event, in journal order, it:
+The data consumer registers with the bus using the transactional checkpoint option, and opts out of replay expiry because it maintains state rather than playing media. Its selectors are the canonical types its enabled rules reference, plus the external transport identity `General`/`Custom`. It declares that identity in `externalPayloads`, then recognizes the `StreamJams`/`Data` marker inside the payload, following the implemented Videos adapter. Unrelated custom broadcasts return no-match. For each Data event, in journal order, it:
 
 1. Validates an external event's payload against the custom event type's flat schema (see decision 3).
 2. Finds the matching rules and evaluates their payload filters.
@@ -111,7 +111,7 @@ Type mismatches mark the source in error and keep the last good value. If the bu
 
 ## Risks / Trade-offs
 
-- **The bus change must land first.** If it slips, this slice waits. Slices 1, 3 and 4 do not depend on it.
+- **Bus dependency satisfied.** The merged implementation supplies the required contracts. Data rules still need their consumer, persistence, UI and acceptance coverage; follower hints and live Creator Goals also need source integration.
 - **Undocumented global-variable payloads.** Recorded fixtures come first. If unusable, ship rules first and defer globals.
 - **Rule order matters.** The editor shows the evaluation order and allows reordering.
 

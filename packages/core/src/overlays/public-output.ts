@@ -7,7 +7,7 @@ export function isOrdinaryOverlayOutput(input: {
 }, allowLegacyProfileless = false): boolean {
   if (input.scope !== "module" || input.purpose !== "live") return false;
   const profile = input.targetProfileId ?? null;
-  if (input.moduleId === "alerts" || input.moduleId === "music" || input.moduleId === "timers") {
+  if (input.moduleId === "alerts" || input.moduleId === "music" || input.moduleId === "timers" || input.moduleId === "data-overlays") {
     return profile === "landscape" || profile === "vertical" || (allowLegacyProfileless && profile === null);
   }
   return (input.moduleId === "videos" || input.moduleId === "screen-effects") && profile === null;

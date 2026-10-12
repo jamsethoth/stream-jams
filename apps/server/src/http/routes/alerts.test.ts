@@ -17,6 +17,18 @@ import { createTestManagementSecurity, managementTestHeaders } from "../test-sup
 import type { AlertRuleRouteDependencies } from "./alerts.js";
 
 describe("alert rule routes", () => {
+  it("rejects Creator Goal event types at the alert authoring boundary", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const { app, alertService, authHeaders } = await createAppWithAlerts(database);
+    const collection = await alertService.createCollection({ name: "Main Alerts", enabled: true });
+    for (const eventType of ["goal_begin", "goal_progress", "goal_end"]) {
+      const response = await app.inject({ method: "POST", url: "/alerts/rules", headers: authHeaders,
+        payload: { ...createRulePayload([collection.id]), eventType } });
+      expect(response.statusCode).toBe(400);
+    }
+    expect(await alertService.listRules()).toEqual([]);
+    await app.close();
+  });
   it("creates, lists, updates, toggles, and deletes alert rules", async () => {
     using database = createInMemoryStreamJamsDatabase();
     const { app, alertService, authHeaders } = await createAppWithAlerts(database);

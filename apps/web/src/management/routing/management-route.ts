@@ -7,6 +7,8 @@ export type ManagementRouteId =
   | "modules-alerts"
   | "modules-screen-effects"
   | "modules-timers"
+  | "data"
+  | "modules-data-overlays"
   | "modules-videos"
   | "alert-safety"
   | "alert-editor"
@@ -42,6 +44,8 @@ export interface ManagementRouteDefinition extends ManagementRoute {
 }
 
 const routeDefinitions: Record<ManagementRouteId, ManagementRouteDefinition> = {
+  data: route("data", "Data", "/manage/data", "Data", "Manage shared values, goals, reset groups and Operator pins."),
+  "modules-data-overlays": route("modules-data-overlays", "Data Overlays", "/manage/modules/data-overlays", "Data Overlays", "Create reusable canvases with shared values and goals.", ["Modules", "Data Overlays"]),
   home: route("home", "Home", "/manage", "Home", "Complete offline setup and resolve configuration problems."),
   "event-sources": route(
     "event-sources",
@@ -136,6 +140,7 @@ routeDefinitions["modules-alerts"] = {
     routeDefinitions["modules-screen-effects"],
     routeDefinitions["modules-timers"],
     routeDefinitions["modules-music"],
+    routeDefinitions["modules-data-overlays"],
     routeDefinitions["modules-videos"],
     routeDefinitions["alert-safety"]
   ]
@@ -147,6 +152,7 @@ export const managementPrimaryRoutes: readonly ManagementRouteDefinition[] = [
   routeDefinitions["tts-providers"],
   routeDefinitions["music-sources"],
   routeDefinitions["modules-alerts"],
+  routeDefinitions.data,
   routeDefinitions.assets,
   routeDefinitions.diagnostics,
   routeDefinitions.settings

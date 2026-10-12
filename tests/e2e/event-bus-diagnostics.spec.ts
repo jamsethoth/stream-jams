@@ -48,7 +48,8 @@ test("shows bus intake and module outcomes in Diagnostics and saves the replay a
     await expect(rows.nth(3)).toContainText("Accepted");
     await rows.nth(3).getByRole("button", { name: "OBS · SceneChanged" }).click();
     const outcomes = page.getByLabel("Bus event detail").getByRole("list", { name: "Module outcomes" });
-    await expect(outcomes.getByRole("listitem")).toHaveCount(4);
+    await expect(outcomes.getByRole("listitem")).toHaveCount(5);
+    await expect(outcomes).toContainText("Twitch Data");
     await expect(outcomes).toContainText("Alerts");
     await expect(outcomes).toContainText("No match");
     await expect(page.getByLabel("Bus event detail")).not.toContainText("Viewer");

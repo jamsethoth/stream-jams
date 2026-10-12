@@ -4,6 +4,7 @@ import { expect, userEvent, waitFor, within } from "storybook/test";
 import { ManagementHttpError } from "../management/management-http-client.js";
 import { OperatorApp } from "./OperatorApp.js";
 import { PlaybackOperationsConflictError, type PlaybackApi } from "./playback-api.js";
+import { createHttpOperatorDataApi } from "./data-api.js";
 import type { OperatorTimersApi } from "./timers-api.js";
 import { createStaticVideoQueueApi, playingVideo, recentVideos, videoQueue } from "../stories/video-queue-fixtures.js";
 
@@ -12,7 +13,7 @@ const meta = {
   component: OperatorApp,
   tags: ["operator-compact", "mantine-foundation"],
   parameters: { layout: "fullscreen" },
-  args: { timersApi: createTimersApi([]), videosApi: createStaticVideoQueueApi(videoQueue()) }
+  args: { dataApi: createHttpOperatorDataApi({ fetch: async input => new Response(JSON.stringify(String(input) === "/auth/management/sessions" ? { id: "fixture-session", csrfToken: "fixture-csrf" } : { revision: 0, values: [], goals: [], resetGroups: [], pinnedValueIds: [], canvases: [] }), { headers: { "content-type": "application/json" } }) }), timersApi: createTimersApi([]), videosApi: createStaticVideoQueueApi(videoQueue()) }
 } satisfies Meta<typeof OperatorApp>;
 
 export default meta;

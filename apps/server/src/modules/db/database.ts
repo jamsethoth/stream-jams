@@ -31,6 +31,8 @@ import { removeAlertSetProfileStateMigration } from "./migrations/027-remove-ale
 import { timerOverlayModuleMigration } from "./migrations/028-timer-overlay-module.js";
 import { assetRetirementsMigration } from "./migrations/029-asset-retirements.js";
 import { persistentEventTimersMigration } from "./migrations/030-persistent-event-timers.js";
+import { customDataOverlaysMigration } from "./migrations/048-custom-data-overlays.js";
+import { dataOverlayTemplatesMigration } from "./migrations/049-data-overlay-templates.js";
 import { musicSourceProvidersMigration } from "./migrations/032-music-source-providers.js";
 
 import { automationGrantsMigration } from "./migrations/031-automation-grants.js";
@@ -114,7 +116,9 @@ export const streamJamsMigrations = Object.freeze([
   timerProfileAppearanceMigration,
   videoContentLayoutMigration,
   singleVideoQueueMigration,
-  retirePublicOverlaysMigration
+  retirePublicOverlaysMigration,
+  customDataOverlaysMigration,
+  dataOverlayTemplatesMigration
 ] satisfies readonly StreamJamsMigration[]);
 
 const migrations = streamJamsMigrations;
@@ -225,6 +229,7 @@ class NodeSqliteStreamJamsDatabase implements StreamJamsDatabase {
       });
     }
     reconcilePreMergeVideosHistory(this.connection);
+    reconcilePreMergeDataHistory(this.connection);
     const appliedCount = validateMigrationHistory(this.connection);
     const pending = migrations.slice(appliedCount);
     if (pending.length === 0) return;
@@ -293,6 +298,28 @@ function reconcilePreMergeVideosHistory(connection: DatabaseSync): void {
       insertMigrationRecord(connection, migration.id);
     }
     connection.prepare("INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)").run(videoRequestQueueMigration.id, String(history[musicIndex + 1]!.applied_at));
+  });
+}
+
+/** Preserve the exact Data preview history when main adds migrations before Data. */
+function reconcilePreMergeDataHistory(connection: DatabaseSync): void {
+  const history = connection.prepare("SELECT id, applied_at FROM schema_migrations ORDER BY rowid").all();
+  const prefixLength = migrations.indexOf(manualEventBusMigration);
+  const legacyIds = ["042-custom-data-overlays", "043-data-overlay-templates"];
+  const dataHistory = history.slice(prefixLength);
+  if (dataHistory.length < 1 || dataHistory.length > legacyIds.length
+    || !history.slice(0, prefixLength).every((row, index) => row.id === migrations[index]?.id)
+    || !dataHistory.every((row, index) => row.id === legacyIds[index])) return;
+  runInTransaction(connection, () => {
+    for (const row of dataHistory) connection.prepare("DELETE FROM schema_migrations WHERE id = ?").run(String(row.id));
+    for (const migration of migrations.slice(prefixLength, migrations.indexOf(customDataOverlaysMigration))) {
+      applyStreamJamsMigration(connection, migration);
+      insertMigrationRecord(connection, migration.id);
+    }
+    for (const [index, row] of dataHistory.entries()) {
+      const migration = index === 0 ? customDataOverlaysMigration : dataOverlayTemplatesMigration;
+      connection.prepare("INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)").run(migration.id, String(row.applied_at));
+    }
   });
 }
 

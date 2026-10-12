@@ -22,6 +22,8 @@ import {
   DefaultPlaybackDedupeService,
   DefaultPlaybackQueue,
   DefaultTtsService,
+  DataOverlayService,
+  DataTemplateService,
   createAppVersion,
   createDefaultOverlayModuleRegistry,
   listUnifiedOverlayModuleIds,
@@ -117,6 +119,9 @@ import { EventPipeline } from "../modules/events/event-pipeline.js";
 import { SqliteEventBusJournalRepository } from "../modules/events/sqlite-event-bus-journal-repository.js";
 import { SqliteTimerRunRepository } from "../modules/timers/sqlite-timer-run-repository.js";
 import { TimerEventService } from "../modules/timers/timer-event-service.js";
+import { SqliteDataOverlayRepository } from "../modules/data-overlays/sqlite-data-overlay-repository.js";
+import { SqliteDataTemplateRepository } from "../modules/data-overlays/sqlite-data-template-repository.js";
+import { DataOverlayOutputRuntime, createDataOutputRefreshQueue } from "../modules/data-overlays/data-overlay-output-runtime.js";
 import { SqliteOverlayModuleConfigRepository } from "../modules/overlay-modules/sqlite-module-config-repository.js";
 import { LocalOverlayAccessService } from "../modules/overlays/overlay-access-service.js";
 import {
@@ -195,6 +200,8 @@ import {
   TwitchOAuthService
 } from "../modules/twitch/twitch-oauth-service.js";
 import { TwitchRewardCatalogService } from "../modules/twitch/twitch-reward-catalog-service.js";
+import { TwitchDataSourceRuntime } from "../modules/twitch/twitch-data-source-runtime.js";
+import type { TwitchDataApiClient } from "../modules/twitch/twitch-api-client.js";
 import { SqliteTwitchAccountRepository } from "../modules/twitch/sqlite-twitch-account-repository.js";
 import { NodePortAvailabilityChecker, type PortAvailabilityChecker } from "../server/port-availability.js";
 import { OverlayGateway } from "../websocket/overlay-gateway.js";
@@ -245,6 +252,7 @@ export interface RuntimeAppCompositionOptions {
   /** Outbound HTTPS for Videos title, channel and length lookups (YouTube oEmbed and Twitch Helix only). */
   readonly videoMetadataFetch?: typeof fetch | undefined;
   readonly twitchRewardApiClient?: TwitchRewardApiClient;
+  readonly twitchDataApiClient?: TwitchDataApiClient;
   readonly twitchEventSubApiClient?: TwitchEventSubApiClient;
   readonly twitchEventSubSocketFactory?: (url: string) => TwitchEventSubSocket;
   readonly streamerBotSocketFactory?: (url: string) => StreamerBotSocket;
@@ -265,6 +273,9 @@ export interface RuntimeAppComposition {
   readonly playbackCoordinator: PlaybackCoordinator;
   readonly effectPlaybackCoordinator: EffectPlaybackCoordinator;
   readonly timerManagementService: TimerManagementService;
+  readonly dataOverlayService: DataOverlayService;
+  readonly dataTemplateService: DataTemplateService;
+  readonly dataOutputRuntime: DataOverlayOutputRuntime;
   readonly timerRuntimeCoordinator: TimerRuntimeCoordinator;
   readonly musicRuntimeCoordinator: MusicRuntimeCoordinator;
   readonly musicArtworkService: MusicArtworkService;
@@ -631,6 +642,23 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     modulePaused: initialEffectModuleSettings.paused
   });
   const maintenanceGate = new RuntimeMaintenanceGate();
+  let refreshDataOutputs = () => {};
+  let reconcileTwitchSources = () => {};
+  let isTemplateSourceReady: (value: import("@stream-jams/core").DataValue) => boolean = () => false;
+  const dataOverlayService = new DataOverlayService(new SqliteDataOverlayRepository(database), {
+    generateId: () => `data-${randomUUID()}`, now: () => now().toISOString(),
+    runMutation: work => maintenanceGate.runConfigurationMutation(work),
+    resolveImageAsset: id => database.connection.prepare("SELECT media_type FROM asset_metadata WHERE id = ?").get(id)?.media_type === "image",
+    isTemplateSourceReady: value => isTemplateSourceReady(value),
+    publish: () => { reconcileTwitchSources(); refreshDataOutputs(); },
+    onPublishError: error => { void runtimeLogger.error("Data overlay publication failed after its changes were saved.", {
+      module: "data-overlays", source: "data-overlays.publication.failed", correlationId: generateRuntimeReferenceId(), processingId: null
+    }, error instanceof Error ? error : new Error("Data overlay publication failed")); }
+  });
+  const dataTemplateService = new DataTemplateService(new SqliteDataTemplateRepository(database), dataOverlayService, {
+    generateId: () => `data-template-${randomUUID()}`,
+    runMutation: work => maintenanceGate.runConfigurationMutation(work)
+  });
   const retiredOutputAttempts = new RetiredOutputAttemptTracker();
   function refreshRecipientPolicy(): void {
     overlayGateway.setRecipientPolicy(client => {
@@ -949,6 +977,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       catch (error) { failures.push(error); }
       try { options.desktopHost?.onPlaybackStateChanged(state); }
       catch (error) { failures.push(error); }
+      refreshDataOutputs();
       if (failures.length > 0) throw new AggregateError(failures, "Playback policy saved but some outputs failed to reconcile");
     },
     onSafetyApplyFailure: async () => {
@@ -999,11 +1028,13 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const generateEventSourceReferenceId = generateRuntimeReferenceId;
   const eventBusSettingsService = new EventBusSettingsService(database.connection, now);
   const eventBusJournal = new SqliteEventBusJournalRepository(database.connection);
+  const twitchDataSourceRef: { current: TwitchDataSourceRuntime | null } = { current: null };
   const eventBus = new EventBus({
     validateInput: validateVideoBusInput,
     journal: eventBusJournal,
     consumers: [
       ...eventPipeline.consumers(),
+      { id: "twitch-data-sources", handle: async event => twitchDataSourceRef.current?.handleBusEvent(event) ?? "no-match" },
       createVideosBusConsumer({
         intake: videoRequestIntake,
         streamerBot: createStreamerBotVideoIntake({
@@ -1095,6 +1126,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       }
       await maintenanceGate.runIntake(() => eventIngestionService.ingestTwitchEventSubNotification(message));
     },
+    onStatusChanged: status => twitchDataSourceRef.current?.eventSubStatusChanged(status),
     onAuthorizationFailure: async () => {
       const authService = twitchAuthServiceRef.current;
       if (authService === null) throw new Error("Twitch authorization service is unavailable");
@@ -1130,7 +1162,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     clientId: twitchClientId,
     generateAuthorizationId: randomUUID,
     now,
-    onConnectionChanged: () => syncEventSourceRuntime(["twitch"]),
+    onConnectionChanged: async () => { await Promise.all([twitchDataSourceRef.current?.connectionChanged(), syncEventSourceRuntime(["twitch"])]); },
     repository: twitchAccountRepository,
     secretStore,
     assertSecretStoreAvailable: runtimeSecretStore.assertAvailable
@@ -1443,6 +1475,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     effectRepository,
     timerRepository: timerDefinitionRepository,
     getMusicConfig: async () => (await overlayModuleConfigService.getModuleConfig("music")).config as import("@stream-jams/core").MusicModuleConfig,
+    getDataOverlayState: () => dataOverlayService.getState(),
     ruleMetadataRepository: alertSetMetadataRepository,
     deletePersistedAsset: assetId => maintenanceGate.runConfigurationMutation(
       () => runInTransaction(database.connection, () => assetRepository.deleteSync(assetId))
@@ -1527,6 +1560,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       automationCredentialService.clearPending();
       automationControlService.invalidateRuntime();
       await playbackOperationsService.restoreSafety(playback);
+      refreshDataOutputs();
       refreshRecipientPolicy();
       await refreshBrowserConfigurations();
     },
@@ -1567,7 +1601,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     },
     retireOverlayRecipients: () => overlayGateway.setRecipientPolicy(() => false),
     restoreOverlayRecipients: refreshRecipientPolicy,
-    runExclusive: (work) => maintenanceGate.runMaintenance(() => localMediaService.maintenance(work))
+    runExclusive: async (work) => {
+      twitchDataSourceRef.current?.suspendForMaintenance();
+      try { return await maintenanceGate.runMaintenance(() => localMediaService.maintenance(work)); }
+      finally { await twitchDataSourceRef.current?.resumeAfterMaintenance(); }
+    }
   });
   const managementOverviewService = new ManagementOverviewService({
     providerService: providerManagementService,
@@ -1634,6 +1672,35 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     assets: assetLibraryService,
     getConfig: async () => (await overlayModuleConfigService.getModuleConfig("music")).config as import("@stream-jams/core").MusicModuleConfig
   });
+  const dataOutputRuntime = new DataOverlayOutputRuntime({
+    runtimeId: `data-runtime-${randomUUID()}`, getState: () => dataOverlayService.getState(),
+    getEnabled: async () => (await overlayModuleConfigService.getModuleConfig("data-overlays")).enabled,
+    outputPaused: () => { const safety = playbackOperationsService.getSnapshot(); return safety.paused || safety.doNotDisturb; },
+    resolveImage: async id => {
+      const record = await assetRepository.findById(id);
+      if (record?.mediaType !== "image") return false;
+      try { const reader = await assetStore.openRead(record.storagePath, record.sizeBytes); await reader.close(); return true; }
+      // error-provenance: allow expected -- unavailable local images are transparent
+      catch { return false; }
+    }, now: () => now().getTime()
+  });
+  refreshDataOutputs = () => dataOutputRuntime.refresh();
+  const twitchDataSourceRuntime = new TwitchDataSourceRuntime({
+    service: dataOverlayService, repository: twitchAccountRepository, secretStore, clientId: twitchClientId,
+    apiClient: options.twitchDataApiClient ?? defaultTwitchApiClient, now: () => now().getTime(),
+    validateAccount: async () => { await twitchAuthService.validateConnectedAccount({ notifyConnectionChanged: false }); },
+    setStatus: (id, status) => dataOutputRuntime.setSourceStatus(id, status),
+    onError: () => { void runtimeLogger.warn("Twitch data refresh failed; the source is unavailable or stale.", { module: "data-overlays", source: "twitch.data.refresh.failed", correlationId: generateRuntimeReferenceId(), processingId: null }); }
+  });
+  twitchDataSourceRef.current = twitchDataSourceRuntime;
+  isTemplateSourceReady = value => {
+    if (value.source?.kind === "creator-goal") return !value.source.invalidated && twitchDataSourceRuntime.getStatus().goals.bindings.some(binding => binding.valueId === value.id && (binding.state === "current" || binding.state === "stale"));
+    const status = twitchDataSourceRuntime.getStatus().follower;
+    return value.source !== undefined && !value.source.invalidated && (status.state === "current" || status.state === "stale") && value.source.broadcasterId === status.broadcasterId && status.valueIds.includes(value.id);
+  };
+  reconcileTwitchSources = () => twitchDataSourceRuntime.reconcile();
+  await twitchDataSourceRuntime.connectionChanged();
+  twitchDataSourceRuntime.eventSubStatusChanged(twitchEventSubClient.getStatus());
   const overlayModuleRuntimes = new Map<string, OverlayModuleRuntime>([
     ["alerts", {
       async getModuleSnapshot() {
@@ -1645,7 +1712,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     ["screen-effects", effectPlaybackCoordinator],
     ["timers", timerRuntimeCoordinator],
     ["music", musicOutputRuntime],
-    ["videos", videosRuntime]
+    ["videos", videosRuntime],
+    ["data-overlays", dataOutputRuntime]
   ]);
   const overlayCompositionService = new DefaultOverlayCompositionService({
     surfaceRepository,
@@ -1664,6 +1732,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     runtime: timerRuntimeCoordinator,
     assets: desktopVisualAssetResolver,
     music: { runtime: musicOutputRuntime, coordinator: musicRuntimeCoordinator, assets: desktopVisualAssetResolver, artwork: musicArtworkService },
+    data: { runtime: dataOutputRuntime, assets: desktopVisualAssetResolver },
     videos: { runtime: videosRuntime },
     logger: runtimeLogger,
     generateReferenceId: generateRuntimeReferenceId
@@ -1682,11 +1751,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     await Promise.all(overlayGateway.clients
       .filter(client => client.purpose === "live" && (client.scope === "unified" || client.moduleId === "timers"))
       .map(async client => {
+        const ticket = overlayGateway.reserveComposition(client.id);
         const composition = client.scope === "module"
           ? await overlayCompositionService.resolveModuleOutput({ moduleId: "timers", overlayId: client.overlayId, purpose: client.purpose,
               ...(client.targetProfileId == null ? {} : { targetProfileId: client.targetProfileId }) })
           : await overlayCompositionService.resolveUnifiedOutput({ overlayId: client.overlayId, purpose: client.purpose, enabledModuleIds: moduleIds });
-        overlayGateway.deliverComposition(client.id, composition);
+        overlayGateway.deliverComposition(client.id, composition, ticket);
       }));
   };
   const syncTimerOutputs = async () => {
@@ -1709,11 +1779,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     await Promise.all(overlayGateway.clients.filter(client =>
       (includeTest || client.purpose === "live") && (client.scope === "unified" || client.moduleId === "music")
     ).map(async client => {
+      const ticket = overlayGateway.reserveComposition(client.id);
       const composition = client.scope === "module"
         ? await overlayCompositionService.resolveModuleOutput({ moduleId: "music", overlayId: client.overlayId, purpose: client.purpose,
           ...(client.targetProfileId == null ? {} : { targetProfileId: client.targetProfileId }) })
         : await overlayCompositionService.resolveUnifiedOutput({ overlayId: client.overlayId, purpose: client.purpose, enabledModuleIds: moduleIds });
-      if (musicRuntimeCoordinator.revision === revision && musicRuntimeCoordinator.generation === generation) overlayGateway.deliverComposition(client.id, composition);
+      if (musicRuntimeCoordinator.revision === revision && musicRuntimeCoordinator.generation === generation) overlayGateway.deliverComposition(client.id, composition, ticket);
     }));
     if (musicRuntimeCoordinator.revision !== revision || musicRuntimeCoordinator.generation !== generation) return;
     await desktopModuleSnapshotSink?.syncMusic();
@@ -1754,17 +1825,32 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     return pendingMusicOutputSync.promise;
   };
   const unsubscribeMusicOutputs = musicRuntimeCoordinator.subscribe(() => { void queueMusicOutputSync(); });
+  const dataOutputRefreshQueue = createDataOutputRefreshQueue(() => trackRuntimeWork(async () => {
+      const generation = dataOutputRuntime.generation;
+      await Promise.all(overlayGateway.clients.filter(client => client.scope === "unified" || client.moduleId === "data-overlays").map(async client => {
+        const ticket = overlayGateway.reserveComposition(client.id);
+        const composition = client.scope === "module"
+          ? await overlayCompositionService.resolveModuleOutput({ moduleId: "data-overlays", overlayId: client.overlayId, purpose: client.purpose,
+            ...(client.targetProfileId == null ? {} : { targetProfileId: client.targetProfileId }) })
+          : await overlayCompositionService.resolveUnifiedOutput({ overlayId: client.overlayId, purpose: client.purpose, enabledModuleIds: listUnifiedOverlayModuleIds(overlayModuleRegistry) });
+        if (generation === dataOutputRuntime.generation) overlayGateway.deliverComposition(client.id, composition, ticket);
+      }));
+      if (generation === dataOutputRuntime.generation) await desktopModuleSnapshotSink?.syncData();
+      }));
+  const queueDataOutputSync = () => dataOutputRefreshQueue.enqueue();
+  const unsubscribeDataOutputs = dataOutputRuntime.subscribe(() => { void queueDataOutputSync(); });
   const syncVideoOutputs = async (purpose: "live") => {
     const moduleIds = listUnifiedOverlayModuleIds(overlayModuleRegistry);
     await Promise.all(overlayGateway.clients
       .filter(client => client.purpose === purpose && (client.scope === "unified" || client.moduleId === "videos"))
       .map(async client => {
+        const ticket = overlayGateway.reserveComposition(client.id);
         overlayGateway.deliverComposition(client.id, client.scope === "module"
           ? await overlayCompositionService.resolveModuleOutput({
             moduleId: "videos", overlayId: client.overlayId, purpose: client.purpose,
             ...(client.targetProfileId == null ? {} : { targetProfileId: client.targetProfileId })
           })
-          : await overlayCompositionService.resolveUnifiedOutput({ overlayId: client.overlayId, purpose: client.purpose, enabledModuleIds: moduleIds }));
+          : await overlayCompositionService.resolveUnifiedOutput({ overlayId: client.overlayId, purpose: client.purpose, enabledModuleIds: moduleIds }), ticket);
       }));
     if (purpose === "live") await desktopModuleSnapshotSink?.syncVideos();
   };
@@ -1797,6 +1883,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       ? listDesktopOverlayModuleIds(overlayModuleRegistry)
       : listUnifiedOverlayModuleIds(overlayModuleRegistry),
     changed: async surface => {
+      dataOutputRuntime.refresh();
       if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
       if (surface.kind === "desktop") await Promise.all([queueTimerOutputSync(), queueMusicOutputSync(), queueVideoOutputSync("live")]);
     },
@@ -1809,6 +1896,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       await surfaceSettingsService.initializeDesktop();
       await queueTimerOutputSync();
       await queueMusicOutputSync();
+      await queueDataOutputSync();
       await queueVideoOutputSync("live");
     } catch (error) {
       await runtimeLogger.error("Desktop overlay could not be reconciled or configured. Other outputs remain available.", {
@@ -1876,6 +1964,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       if (config.moduleId === "alerts" || config.moduleId === "screen-effects") await refreshBrowserConfigurations();
       if (config.moduleId === "timers") await queueTimerOutputSync();
       if (config.moduleId === "music") await refreshCommittedMusicConfig(config.enabled);
+      if (config.moduleId === "data-overlays") { dataOutputRuntime.refresh(); await queueDataOutputSync(); }
       if (config.moduleId === "videos") await refreshCommittedVideosConfig(config.enabled);
       return config;
     },
@@ -1889,11 +1978,21 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       if (config.moduleId === "alerts" || config.moduleId === "screen-effects") await refreshBrowserConfigurations();
       if (config.moduleId === "timers") await queueTimerOutputSync();
       if (config.moduleId === "music") await refreshCommittedMusicConfig(config.enabled);
+      if (config.moduleId === "data-overlays") { dataOutputRuntime.refresh(); await queueDataOutputSync(); }
       if (config.moduleId === "videos") await refreshCommittedVideosConfig(config.enabled);
       return config;
     }
   };
   const serverDependencies = {
+    dataOverlayService,
+    dataTemplateService,
+    twitchDataSourceRuntime,
+    authorizeDataOverlayAsset: async (access: import("@stream-jams/core").OverlayRouteAccessRequest, assetId: string) => {
+      if (access.scope !== "module" || access.moduleId !== "data-overlays" || access.purpose !== "live") return false;
+      const snapshot = await dataOutputRuntime.getModuleSnapshot({ moduleId: "data-overlays", overlayId: access.overlayId, purpose: "live", scope: "module", recipientKind: "browser",
+        ...(access.targetProfileId == null ? {} : { targetProfileId: access.targetProfileId }) });
+      return snapshot.presentation?.kind === "data-overlays" && snapshot.presentation.projection.canvases.some(canvas => canvas.elements.some(element => element.kind === "image" && element.assetId === assetId));
+    },
     surfaceSettingsService,
     metadata: {
       appName: "stream-jams",
@@ -2023,17 +2122,24 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   cleanups.push(async () => {
     unsubscribeTimerOutputs();
     unsubscribeMusicOutputs();
+    unsubscribeDataOutputs();
+    dataOutputRuntime.close();
+    await twitchDataSourceRuntime.close();
     unsubscribeVideoOutputs();
     videoMirror.director?.close();
     videoMetadataEnricher.dispose();
     videoQueueService.dispose();
     await videoOutputSyncTail;
     await timerOutputSyncTail;
+    await dataOutputRefreshQueue.drain();
     await desktopModuleSnapshotSink?.close();
   });
 
   return {
     app,
+    dataOverlayService,
+    dataTemplateService,
+    dataOutputRuntime,
     localMediaService,
     desktopConfigService,
     playbackCoordinator,

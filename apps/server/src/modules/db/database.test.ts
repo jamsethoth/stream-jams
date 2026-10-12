@@ -60,7 +60,9 @@ const expectedMigrations = [
   "044-timer-profile-appearance",
   "045-video-content-layout",
   "046-single-video-queue",
-  "047-retire-public-overlays"
+  "047-retire-public-overlays",
+  "048-custom-data-overlays",
+  "049-data-overlay-templates"
 ] as const;
 
 const expectedTables = [
@@ -79,6 +81,14 @@ const expectedTables = [
   "asset_retirements",
   "audio_output_routes",
   "automation_grants",
+  "data_canvases",
+  "data_element_refs",
+  "data_goals",
+  "data_overlay_meta",
+  "data_pins",
+  "data_reset_groups",
+  "data_templates",
+  "data_values",
   "event_bus_consumer_cursors",
   "event_bus_consumer_outcomes",
   "event_bus_correlation_merges",
@@ -140,6 +150,14 @@ describe("Stream Jams SQLite database", () => {
     expect(database.connection.prepare("SELECT revision FROM video_queue_state WHERE purpose = 'live'").get()?.revision).toBe(5);
     expect(listTables(database.connection)).toEqual(expectedTables);
     expect(() => database.runMigrations()).not.toThrow();
+  });
+
+  it("refuses the unreleased pre-merge Data migration history without changing it", () => {
+    using database = createInMemoryStreamJamsDatabase();
+    database.connection.exec("UPDATE schema_migrations SET id = '033-custom-data-overlays' WHERE id = '048-custom-data-overlays'");
+    const before = listAppliedMigrations(database.connection);
+    expect(() => database.runMigrations()).toThrow(/unknown or future migration "033-custom-data-overlays"/u);
+    expect(listAppliedMigrations(database.connection)).toEqual(before);
   });
 
   it("refuses a history with the pre-merge Videos migration anywhere but right after Music providers", () => {

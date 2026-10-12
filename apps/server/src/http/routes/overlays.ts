@@ -87,7 +87,7 @@ export function registerOverlayRoutes(app: FastifyInstance, dependencies: Overla
 
   if (dependencies.overlayGateway !== undefined) {
     app.register(fastifyWebsocket);
-    app.register(async (webSocketApp) => registerOverlayWebSocketRoutes(webSocketApp, dependencies.overlayGateway!, record));
+    app.register(async (webSocketApp) => registerOverlayWebSocketRoutes(webSocketApp, dependencies, record));
   }
 }
 
@@ -95,31 +95,34 @@ function classifyRetiredModuleRoute(request: FastifyRequest): RetiredOverlayOutp
   return classifyRetiredOverlayOutput({ scope: "module", purpose: readModuleOverlayParams(request.params).purpose });
 }
 
-function registerOverlayWebSocketRoutes(app: FastifyInstance, overlayGateway: OverlayGateway, record: OverlayRouteDependencies["recordRetiredOutputAttempt"]): void {
+function registerOverlayWebSocketRoutes(app: FastifyInstance, dependencies: OverlayRouteDependencies, record: ((kind: RetiredOverlayOutputKind) => void) | undefined): void {
   app.get("/overlay/ws/modules/:moduleId/:purpose/:overlayKey", { websocket: true }, (socket, request) => {
     const retired = classifyRetiredModuleRoute(request);
     if (retired !== null) record?.(retired);
-    registerWebSocketClient(overlayGateway, socket, resolveModuleOverlayAccessRequest(request), readUserAgent(request));
+    registerWebSocketClient(dependencies, socket, resolveModuleOverlayAccessRequest(request), readUserAgent(request));
   });
   app.get("/overlay/ws/unified/:purpose/:overlayKey", { websocket: true }, (socket, request) => {
     record?.("unified");
-    registerWebSocketClient(overlayGateway, socket, resolveUnifiedOverlayAccessRequest(request), readUserAgent(request));
+    registerWebSocketClient(dependencies, socket, resolveUnifiedOverlayAccessRequest(request), readUserAgent(request));
   });
 }
 
 function registerWebSocketClient(
-  overlayGateway: OverlayGateway,
+  dependencies: OverlayRouteDependencies,
   socket: WebSocket,
   accessRequest: OverlayRouteAccessRequest | null,
   userAgent: string | null
 ): void {
+  const overlayGateway = dependencies.overlayGateway!;
   let clientId: string | null = null;
+  let closed = false;
   socket.on("message", (data) => {
     if (clientId !== null) {
       overlayGateway.handleClientMessage(clientId, data.toString());
     }
   });
   socket.on("close", (code, reason) => {
+    closed = true;
     if (clientId !== null) {
       overlayGateway.unregisterClient(clientId, { code, reason: reason.toString() });
     }
@@ -132,10 +135,20 @@ function registerWebSocketClient(
 
   void overlayGateway.registerClient(toGatewaySocket(socket), accessRequest, {
     userAgent
-  }).then((result) => {
+  }).then(async (result) => {
     if (result.authorized) {
       clientId = result.clientId;
+      if (closed) { overlayGateway.unregisterClient(clientId); return; }
+      const ticket = overlayGateway.reserveComposition(clientId);
+      const composition = await dependencies.overlayCompositionService.resolveModuleOutput({ moduleId: accessRequest.moduleId!, overlayId: accessRequest.overlayId, purpose: accessRequest.purpose,
+        ...(accessRequest.targetProfileId == null ? {} : { targetProfileId: accessRequest.targetProfileId }) });
+      overlayGateway.deliverComposition(clientId, composition, ticket);
     }
+  }).catch(
+    // error-provenance: allow expected -- composition failures close transparently and retire registered recipients
+    () => {
+    if (clientId !== null) overlayGateway.unregisterClient(clientId);
+    socket.close(1011, "Overlay composition unavailable");
   });
 }
 

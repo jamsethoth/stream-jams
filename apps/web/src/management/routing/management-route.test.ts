@@ -15,6 +15,8 @@ describe("management route model", () => {
     ["/manage/modules/alerts", "modules-alerts"],
     ["/manage/modules/screen-effects", "modules-screen-effects"],
     ["/manage/modules/timers", "modules-timers"],
+    ["/manage/data", "data"],
+    ["/manage/modules/data-overlays", "modules-data-overlays"],
     ["/manage/modules/videos", "modules-videos"],
     ["/manage/modules/alerts/safety", "alert-safety"],
     ["/manage/assets", "assets"],
@@ -39,6 +41,7 @@ describe("management route model", () => {
       "TTS providers",
       "Music sources",
       "Modules",
+      "Data",
       "Assets",
       "Diagnostics",
       "Settings"
@@ -49,6 +52,7 @@ describe("management route model", () => {
       "tts-providers",
       "music-sources",
       "modules-alerts",
+      "data",
       "assets",
       "diagnostics",
       "settings"
@@ -66,6 +70,7 @@ describe("management route model", () => {
       "modules-screen-effects",
       "modules-timers",
       "modules-music",
+      "modules-data-overlays",
       "modules-videos",
       "alert-safety"
     ]);

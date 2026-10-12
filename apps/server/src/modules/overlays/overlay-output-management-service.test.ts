@@ -14,7 +14,7 @@ import {
 } from "./overlay-output-management-service.js";
 
 describe("OverlayOutputManagementService", () => {
-  it("offers exactly eight ordinary sources and cannot mint retired or legacy choices", async () => {
+  it("offers exactly ten ordinary sources and cannot mint retired or legacy choices", async () => {
     const { service, repository, secrets } = createService(["ovl_should_not_be_generated"]);
     const origin = "http://127.0.0.1:39187";
     for (const input of [
@@ -29,7 +29,7 @@ describe("OverlayOutputManagementService", () => {
     expect(repository.records).toEqual([]);
     expect(secrets.values.size).toBe(0);
     const outputs = await service.listOutputs(origin);
-    expect(outputs).toHaveLength(8);
+    expect(outputs).toHaveLength(10);
     expect(outputs.every(output => output.scope === "module" && output.purpose === "live")).toBe(true);
   });
   it("advertises the same authoritative canvas while empty and disabled after save", async () => {
@@ -356,3 +356,11 @@ class FailAfterWriteSecretStore extends InMemorySecretStore {
     }
   }
 }
+
+it("lists disabled Data Overlays outputs for exact Landscape/Vertical keys and preserves scoped URLs", async () => {
+  const { service } = createService(["ovl_data"]);
+  const outputs = (await service.listOutputs("http://127.0.0.1:39187")).filter(output => output.moduleId === "data-overlays");
+  expect(outputs.map(output => [output.targetProfileId, output.purpose, output.enabled])).toEqual([["landscape", "live", false], ["vertical", "live", false]]);
+  const key = await service.createKey({ overlayId: "default", scope: "module", moduleId: "data-overlays", purpose: "live", targetProfileId: "vertical" }, "http://127.0.0.1:39187");
+  expect(key.url).toBe("http://127.0.0.1:39187/overlay/modules/data-overlays/live/ovl_data?profile=vertical");
+});

@@ -25,6 +25,8 @@ export const defaultTwitchOAuthScopes = [
   "channel:read:subscriptions",
   "moderator:read:followers"
 ] as const;
+export const optionalTwitchOAuthScopes = ["channel:read:goals"] as const;
+export const requestedTwitchOAuthScopes = [...defaultTwitchOAuthScopes, ...optionalTwitchOAuthScopes] as const;
 
 export type TwitchTokenSecretName = "access_token" | "refresh_token";
 
@@ -108,7 +110,7 @@ export class TwitchOAuthService {
     this.#now = options.now ?? (() => new Date());
     this.#onConnectionChanged = options.onConnectionChanged;
     this.#repository = options.repository;
-    this.#scopes = [...(options.scopes ?? defaultTwitchOAuthScopes)].sort();
+    this.#scopes = [...(options.scopes ?? requestedTwitchOAuthScopes)].sort();
     this.#secretStore = options.secretStore;
   }
 
@@ -357,7 +359,7 @@ export class TwitchOAuthService {
   #connectionStatus(account: TwitchAccount | null): TwitchConnectionStatus {
     return toTwitchConnectionStatus(
       account,
-      account === null ? [] : missingTwitchScopes(account.scopes, this.#scopes)
+      account === null ? [] : missingTwitchScopes(account.scopes, this.#scopes.filter(scope => !optionalTwitchOAuthScopes.some(optional => optional === scope)))
     );
   }
 

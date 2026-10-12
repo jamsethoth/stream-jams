@@ -57,7 +57,7 @@ export class OverlayOutputManagementService {
 
       const config = await this.#overlayModuleConfigService.getModuleConfig(moduleDefinition.id);
       const targetProfileIds: readonly (OverlayTargetProfileId | null)[] =
-        moduleDefinition.id === "alerts" || moduleDefinition.id === "timers" || moduleDefinition.id === "music"
+        moduleDefinition.id === "alerts" || moduleDefinition.id === "timers" || moduleDefinition.id === "music" || moduleDefinition.id === "data-overlays"
           ? alertTargetProfileIds
           : [null];
       for (const targetProfileId of targetProfileIds) {

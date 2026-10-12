@@ -162,7 +162,8 @@ export { DefaultMediaImportPipeline, InvalidMediaImportError } from "./assets/me
 export { assetMediaTypeSchema, assetRecordSchema, assetValidationResultSchema } from "./assets/schemas.js";
 
 export type * from "./events/types.js";
-export { alertEventTypes, externalAlertEventType, streamEventTypes } from "./events/types.js";
+export { alertEventTypes, canonicalAlertEventTypes, externalAlertEventType, streamEventTypes } from "./events/types.js";
+export type { CanonicalAlertEventType } from "./events/types.js";
 export type { SubscriptionTier } from "./events/schemas.js";
 export {
   channelPointRedemptionEventSchema,
@@ -171,6 +172,7 @@ export {
   externalStreamEventSchema,
   followEventSchema,
   giftSubscriptionEventSchema,
+  goalBeginEventSchema, goalProgressEventSchema, goalEndEventSchema,
   hypeTrainEndEventSchema,
   hypeTrainProgressEventSchema,
   hypeTrainStartEventSchema,
@@ -402,6 +404,19 @@ export { videosModuleDefinition } from "./videos/module-definition.js";
 export * from "./management/local-websocket-connection.js";
 export { moduleMuteStateSchema } from "./playback/schemas.js";
 export { defaultModuleMuteState, type ModuleMuteState, type MutablePlaybackModuleId } from "./playback/types.js";
+
+export type * from "./data-overlays/types.js";
+export * from "./data-overlays/schemas.js";
+export * from "./data-overlays/limits.js";
+export * from "./data-overlays/goals.js";
+export * from "./data-overlays/formatting.js";
+export * from "./data-overlays/projection.js";
+export * from "./data-overlays/module-definition.js";
+export * from "./data-overlays/repository.js";
+export * from "./data-overlays/value-service.js";
+export * from "./data-overlays/template-schemas.js";
+export * from "./data-overlays/template-starters.js";
+export * from "./data-overlays/template-service.js";
 
 export { manualEventSubmissionSchema, manualEventActionSchema, manualEventActionMaxBytes } from "./event-bus/manual-submission.js";
 export type * from "./event-bus/manual-submission.js";

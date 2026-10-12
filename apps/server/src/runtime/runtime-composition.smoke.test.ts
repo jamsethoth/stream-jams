@@ -1043,6 +1043,7 @@ describe("runtime app composition smoke", () => {
         { consumer_id: "alerts", last_sequence: head },
         { consumer_id: "screen-effects", last_sequence: head },
         { consumer_id: "timers", last_sequence: head },
+        { consumer_id: "twitch-data-sources", last_sequence: head },
         { consumer_id: "videos", last_sequence: head }
       ]);
     } finally {
@@ -1569,6 +1570,14 @@ describe("runtime app composition smoke", () => {
         defaultEnabled: true,
         renderer: expect.objectContaining({
           supportedOutputs: ["module"]
+        })
+      }),
+      expect.objectContaining({
+        id: "data-overlays",
+        displayName: "Data Overlays",
+        defaultEnabled: false,
+        renderer: expect.objectContaining({
+          supportedOutputs: ["module"], supportsDesktopComposition: true
         })
       })
     ]);
@@ -2154,6 +2163,7 @@ describe("runtime app composition smoke", () => {
     expect(start.json()).toMatchObject({
       scopes: [
         "bits:read",
+        "channel:read:goals",
         "channel:read:hype_train",
         "channel:read:polls",
         "channel:read:predictions",

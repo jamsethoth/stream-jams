@@ -17,6 +17,8 @@ import { useMediaVolumeEnvelope } from "../../media/use-media-volume-envelope.js
 import { AlertTextContent } from "./AlertTextContent.js";
 import { TimerStack } from "./TimerStack.js";
 import { MusicWidget } from "./MusicWidget.js";
+import { DataOverlayCanvases } from "./DataOverlayCanvases.js";
+import { dataOverlayProjectionSchema } from "@stream-jams/core";
 import { VideosOverlay } from "./VideosOverlay.js";
 // Re-exported so the Videos placement preview shares this chunk instead of adding one to every route's preload list.
 export { VideoBox, VideoCaption, videoFrameStyle } from "./VideoPlacement.js";
@@ -37,6 +39,7 @@ export interface OverlaySurfaceProps {
   readonly moduleMutes?: import("@stream-jams/core").ModuleMuteState | undefined;
   readonly resolveAssetUrl: (assetId: string, version?: string) => string;
   readonly resolveMusicAsset?: MusicAssetResolver | undefined;
+  readonly resolveDataAsset?: ((assetId: string) => string | null) | undefined;
   readonly onPlaybackEvent?: ((event: OverlayPlaybackEvent) => void) | undefined;
   /** Signaling to the desktop Videos mirror for this output. */
   readonly videoMirror?: VideoMirrorConnector | undefined;
@@ -52,7 +55,7 @@ export const overlayRootStyle: CSSProperties = {
   width: "100vw"
 };
 
-export function OverlaySurface({ composition, preparingInstructionIds, muted = false, moduleMutes, onPlaybackEvent, resolveAssetUrl, resolveMusicAsset, videoMirror, videoMirrorAudio = true }: OverlaySurfaceProps) {
+export function OverlaySurface({ composition, preparingInstructionIds, muted = false, moduleMutes, onPlaybackEvent, resolveAssetUrl, resolveMusicAsset, resolveDataAsset, videoMirror, videoMirrorAudio = true }: OverlaySurfaceProps) {
 
   const rootElementRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState(() => ({
@@ -105,6 +108,7 @@ export function OverlaySurface({ composition, preparingInstructionIds, muted = f
           presentation={moduleSnapshot.presentation}
           resolveAssetUrl={resolveAssetUrl}
           resolveMusicAsset={resolveMusicAsset}
+          resolveDataAsset={resolveDataAsset}
         />
       )}
       </div>
@@ -143,6 +147,7 @@ function ModulePresentation({
   presentation,
   resolveAssetUrl,
   resolveMusicAsset,
+  resolveDataAsset,
   videoMirror,
   videoMirrorAudio
 }: {
@@ -153,7 +158,12 @@ function ModulePresentation({
   readonly presentation: OverlayComposition["modules"][number]["presentation"];
   readonly resolveAssetUrl: (assetId: string, version?: string) => string;
   readonly resolveMusicAsset?: MusicAssetResolver | undefined;
+  readonly resolveDataAsset?: ((assetId: string) => string | null) | undefined;
 }) {
+  if (presentation?.kind === "data-overlays") {
+    const projection = dataOverlayProjectionSchema.safeParse(presentation.projection);
+    return projection.success ? <DataOverlayCanvases projection={projection.data} resolveAssetUrl={resolveDataAsset ?? (id => resolveAssetUrl(id) || null)} /> : null;
+  }
   if (presentation?.kind === "music-widget") return resolveMusicAsset === undefined ? null : <MusicWidget projection={presentation.widget} resolveAsset={resolveMusicAsset} />;
   if (presentation?.kind === "videos") return <VideosOverlay mirror={videoMirror} mirrorAudio={videoMirrorAudio} muted={muted} onPlaybackEvent={onPlaybackEvent} projection={presentation.videos} />;
   if (presentation?.kind !== "timer-stack") return null;

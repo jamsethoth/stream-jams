@@ -47,7 +47,7 @@ describe("overlay module registry", () => {
     expect(listDesktopOverlayModuleIds(registry)).toEqual(["custom"]);
     expect(listUnifiedOverlayModuleIds(registry)).toEqual(["alerts"]);
     expect(listDesktopOverlayModuleIds(createDefaultOverlayModuleRegistry()))
-      .toEqual(["alerts", "screen-effects", "timers", "music", "videos"]);
+      .toEqual(["alerts", "screen-effects", "timers", "music", "videos", "data-overlays"]);
   });
   it("registers Alerts, disabled Screen Effects, Timers, Music and Videos in stable built-in order", () => {
     const registry = createDefaultOverlayModuleRegistry();
@@ -57,7 +57,8 @@ describe("overlay module registry", () => {
       screenEffectsOverlayModuleDefinition,
       registry.getModule("timers"),
       registry.getModule("music"),
-      registry.getModule("videos")
+      registry.getModule("videos"),
+      registry.getModule("data-overlays")
     ]);
     expect(registry.getModule("alerts")).toEqual(alertsOverlayModuleDefinition);
     expect(registry.getModule("screen-effects")).toEqual(screenEffectsOverlayModuleDefinition);
@@ -82,7 +83,7 @@ describe("overlay module registry", () => {
     });
     expect(registry.getModule("video-shoutout")).toBeNull();
     expect(listUnifiedOverlayModuleIds(registry)).toEqual([]);
-    expect(listDesktopOverlayModuleIds(registry)).toEqual(["alerts", "screen-effects", "timers", "music", "videos"]);
+    expect(listDesktopOverlayModuleIds(registry)).toEqual(["alerts", "screen-effects", "timers", "music", "videos", "data-overlays"]);
   });
 
   it("returns null for unknown module ids", () => {
