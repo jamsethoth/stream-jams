@@ -162,7 +162,11 @@ export class VideoMirrorDirector {
       case "started": this.options.queue.reportStarted(event.itemId, report); break;
       case "progress": if (event.positionMs !== undefined) this.options.queue.reportProgress(event.itemId, { positionMs: event.positionMs, durationMs: event.durationMs ?? null }); break;
       case "ended": this.options.queue.reportEnded(event.itemId); break;
-      case "failed": this.options.queue.reportFailed(event.itemId); break;
+      case "failed":
+        // The queue keeps only the outcome; the log is where the operator finds why.
+        this.options.onError?.("A video could not play.", new Error(event.reason ?? "The desktop video player reported a failure."));
+        this.options.queue.reportFailed(event.itemId);
+        break;
     }
   }
 

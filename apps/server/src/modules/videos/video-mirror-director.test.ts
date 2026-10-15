@@ -40,6 +40,7 @@ function setup(options: { available?: boolean; config?: Partial<VideosModuleConf
   const deliverable = new Set(["client-1", "client-2"]);
   const availability = vi.fn();
   const errors: string[] = [];
+  const causes: string[] = [];
   const director = new VideoMirrorDirector({
     queue, transport, getConfig: () => config, isMuted: () => muted,
     resolveDevices: async routeIds => {
@@ -48,12 +49,12 @@ function setup(options: { available?: boolean; config?: Partial<VideosModuleConf
     },
     deliverSignal: (clientId, signal) => { if (!deliverable.has(clientId)) return false; delivered.push({ clientId, signal }); return true; },
     onAvailabilityChanged: availability,
-    onError: message => errors.push(message),
+    onError: (message, error) => { errors.push(message); causes.push(error instanceof Error ? error.message : String(error)); },
     now: () => now
   });
   queue.subscribe((purpose, view) => director.queueChanged(purpose, view));
   return {
-    director, queue, transport, delivered, deliverable, availability, errors,
+    director, queue, transport, delivered, deliverable, availability, errors, causes,
     setMuted: (value: boolean) => { muted = value; },
     advance: (ms: number) => { now += ms; },
     play: (title = "One") => {
@@ -119,6 +120,17 @@ describe("VideoMirrorDirector", () => {
     transport.emit({ type: "report", purpose: "live", itemId: item.id, state: "bogus" });
     transport.emit({ type: "report", purpose: "live", itemId: item.id, state: "ended" });
     expect(queue.view("live").current).toBeNull();
+  });
+
+  it("logs why the desktop player failed an item and marks it failed", () => {
+    const { transport, queue, play, errors, causes } = setup({ available: true });
+    const item = play();
+    const reason = "YouTube could not play this video: the owner does not allow playback on other sites (error 150).";
+    transport.emit({ type: "report", purpose: "live", itemId: item.id, state: "failed", reason });
+    expect(errors).toEqual(["A video could not play."]);
+    expect(causes).toEqual([reason]);
+    expect(queue.view("live").current).toBeNull();
+    expect(queue.view("live").recent.find(recent => recent.id === item.id)?.status).toBe("failed");
   });
 
   it("stops the desktop player and moves on when an unknown-length item reports a duration over the limit", () => {

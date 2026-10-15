@@ -1,5 +1,5 @@
 import {
-  isLocalHostIceCandidate, parseYouTubeMessage, videoMirrorFrameRate, videoMirrorIceServers, videoMirrorVideoEncoding,
+  isLocalHostIceCandidate, parseYouTubeMessage, videoMirrorFrameRate, videoMirrorIceServers, videoMirrorVideoEncoding, youtubeErrorReason,
   type VideoMirrorHello, type VideoMirrorReceiverSignal
 } from "@stream-jams/core/videos";
 import type { VideoPlayerCommand, VideoPlayerReport } from "./video-ipc.js";
@@ -107,7 +107,8 @@ function youtubeProvider(command: LoadCommand, frame: HTMLIFrameElement): Provid
   const timeout = window.setTimeout(() => { if (!started) fail("The YouTube player did not start."); }, startTimeoutMs);
   const onMessage = (event: MessageEvent) => {
     if (event.origin !== youtubeOrigin || event.source !== frame.contentWindow || typeof event.data !== "string") return;
-    if (isYouTubeError(event.data)) { fail("YouTube could not play this video."); return; }
+    const error = youtubeErrorReason(event.data);
+    if (error !== null) { fail(error); return; }
     const message = parseYouTubeMessage(event.data);
     if (message === null || ended) return;
     if (message.currentTime !== null) currentMs = ms(message.currentTime);
@@ -147,12 +148,6 @@ function youtubeProvider(command: LoadCommand, frame: HTMLIFrameElement): Provid
     seek: positionMs => call("seekTo", [positionMs / 1000, true]),
     dispose: () => { window.clearTimeout(timeout); window.removeEventListener("message", onMessage); }
   };
-}
-
-function isYouTubeError(data: string): boolean {
-  try { return (JSON.parse(data) as { event?: unknown }).event === "onError"; }
-  // error-provenance: allow expected -- non-JSON provider messages are not errors
-  catch { return false; }
 }
 
 /** Twitch exposes no message API here; the main process steers its `<video>` from outside the page. */

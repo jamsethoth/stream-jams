@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   desktopVideoCommandSchema, desktopVideoEventSchema, isLocalHostIceCandidate, overlayVideoDurationReportSchema, parseYouTubeMessage,
-  videoMediaDurationMaximumMs, videoMirrorPublisherSignalSchema, videoMirrorReceiverIdSchema, videoMirrorReceiverSignalSchema, videoMirrorVideoEncoding
+  videoMediaDurationMaximumMs, videoMirrorPublisherSignalSchema, videoMirrorReceiverIdSchema, videoMirrorReceiverSignalSchema, videoMirrorVideoEncoding, youtubeErrorReason
 } from "./contract.js";
 import { currentVideosModuleConfigSchema, createDefaultVideosModuleConfig } from "./schemas.js";
 
@@ -111,6 +111,16 @@ describe("parseYouTubeMessage", () => {
     expect(parseYouTubeMessage(JSON.stringify({ event: "infoDelivery", info: { playerState: 1, currentTime: 3, duration: 212.4 } }))).toEqual({ playerState: 1, currentTime: 3, duration: 212.4 });
     expect(parseYouTubeMessage(JSON.stringify({ event: "infoDelivery", info: { duration: 0 } }))).toEqual({ playerState: null, currentTime: null });
     expect(parseYouTubeMessage("[")).toBeNull();
+  });
+});
+
+describe("youtubeErrorReason", () => {
+  it("names the YouTube error code and ignores other messages", () => {
+    expect(youtubeErrorReason(JSON.stringify({ event: "onError", info: 150 }))).toBe("YouTube could not play this video: the owner does not allow playback on other sites (error 150).");
+    expect(youtubeErrorReason(JSON.stringify({ event: "onError", info: 999 }))).toBe("YouTube could not play this video (error 999).");
+    expect(youtubeErrorReason(JSON.stringify({ event: "onError" }))).toBe("YouTube could not play this video.");
+    expect(youtubeErrorReason(JSON.stringify({ event: "infoDelivery", info: { playerState: 1 } }))).toBeNull();
+    expect(youtubeErrorReason("[")).toBeNull();
   });
 });
 

@@ -206,6 +206,28 @@ export interface YouTubePlayerMessage {
   readonly duration?: number;
 }
 
+const youtubeErrorMeanings: Readonly<Record<number, string>> = {
+  2: "the request was invalid",
+  5: "the player hit an HTML5 error",
+  100: "the video was removed or is private",
+  101: "the owner does not allow playback on other sites",
+  150: "the owner does not allow playback on other sites",
+  153: "the player sent no referrer"
+};
+
+/** Reads a YouTube `onError` postMessage into an operator-facing failure reason; returns null for anything else. */
+export function youtubeErrorReason(data: string): string | null {
+  let parsed: unknown;
+  try { parsed = JSON.parse(data); }
+  // error-provenance: allow expected -- unrelated or malformed provider messages are ignored by design
+  catch { return null; }
+  if (typeof parsed !== "object" || parsed === null || (parsed as { readonly event?: unknown }).event !== "onError") return null;
+  const code = (parsed as { readonly info?: unknown }).info;
+  if (typeof code !== "number") return "YouTube could not play this video.";
+  const meaning = youtubeErrorMeanings[code];
+  return meaning === undefined ? `YouTube could not play this video (error ${code}).` : `YouTube could not play this video: ${meaning} (error ${code}).`;
+}
+
 /** Reads a YouTube `enablejsapi=1` postMessage (`onStateChange` or `infoDelivery`); returns null for anything else. */
 export function parseYouTubeMessage(data: string): YouTubePlayerMessage | null {
   let parsed: unknown;
