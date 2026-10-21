@@ -1,11 +1,14 @@
 import "./csp-schema-validation.js";
 import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
+import { registerOverlayOfflineFallback } from "./overlay/offline-fallback.js";
 import { resolveWebRouteShell, type WebRouteShell } from "./route-shell.js";
 
 const language = navigator.language || "en";
 const baseLanguage = language.split("-")[0]?.toLowerCase() ?? "en";
 const shell = resolveWebRouteShell(window.location.pathname);
+// The Vite dev server answers the worker path with index.html; only the Stream Jams service serves the worker.
+if (shell === "overlay" && import.meta.env.PROD) registerOverlayOfflineFallback();
 const managementDiagnostics = shell === "management"
   ? import("./management/diagnostics/client-error-reporter.js")
   : null;
