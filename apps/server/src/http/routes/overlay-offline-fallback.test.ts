@@ -137,7 +137,7 @@ describe("overlay offline routes", () => {
       expect(response.body).toBe(overlayOfflineFallbackHtml);
       expect(response.body).toContain('<meta http-equiv="refresh" content="2">');
       expect(response.body).toContain("background:transparent");
-      expect(response.body).not.toMatch(/<script|ovl_|<body>[^<]/u);
+      expect(response.body).not.toMatch(/<script|ovl_|<body>[^<]/iu);
     } finally { await app.close(); }
   });
 });
