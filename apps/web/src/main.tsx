@@ -7,7 +7,8 @@ import { resolveWebRouteShell, type WebRouteShell } from "./route-shell.js";
 const language = navigator.language || "en";
 const baseLanguage = language.split("-")[0]?.toLowerCase() ?? "en";
 const shell = resolveWebRouteShell(window.location.pathname);
-if (shell === "overlay") registerOverlayOfflineFallback();
+// The Vite dev server answers the worker path with index.html; only the Stream Jams service serves the worker.
+if (shell === "overlay" && import.meta.env.PROD) registerOverlayOfflineFallback();
 const managementDiagnostics = shell === "management"
   ? import("./management/diagnostics/client-error-reporter.js")
   : null;
