@@ -172,6 +172,8 @@ Invalid ports are rejected by the browser before save. Ports that pass browser v
 3. Add the URL as a browser source in OBS or the local streaming tool.
 4. Use live URLs for production overlay output and test URLs only for preview/test output.
 
+After a browser source has loaded once, it survives Stream Jams being closed. If OBS starts first, or a source set to shut down when not visible is shown while Stream Jams is closed, the source stays transparent and shows the overlay again within a few seconds of Stream Jams starting. OBS's **Refresh** button and **Refresh browser when scene becomes active** bypass this. A source refreshed while Stream Jams is closed stays blank until it is refreshed again after Stream Jams starts. A newly added source must load once while Stream Jams is running.
+
 Overlay route keys are secrets. Do not paste them into chat, logs, screenshots, or public issue text. If a key is exposed, revoke it and copy a fresh URL from the management UI.
 
 ## Twitch Connection
