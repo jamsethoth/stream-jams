@@ -22,7 +22,7 @@ Everything runs offline. PixiJS, MediaPipe and the One Euro filter are bundled i
 
 ## How To Run It On Windows
 
-1. Download the `windows-desktop-package` artifact from the latest CI run on PR #200 and unzip it.
+1. From the latest CI run on PR #200, download the portable artifact the `windows-desktop-package` job uploads (`stream-jams-windows-x64-200-…`, not the installer) and unzip it.
 2. Close Stream Jams if it is running.
 3. In PowerShell, from the unzipped folder, run `& ".\Stream Jams.exe" --camera-effects-check`. Two windows open: the control window and the pipeline window (camera on the left, processed output on the right). If the control window says **Blocked**, copy the results and stop there.
 4. **Physical camera first.**
