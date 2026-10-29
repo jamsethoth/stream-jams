@@ -102,6 +102,28 @@ Commercial face-filter SDKs (Banuba, DeepAR, Snap Camera Kit) were not evaluated
 - **Order matters.** Key first, then warp, so the warp moves the person and the matte together and no key colour bleeds into warped edges.
 - **Transparency over WebRTC.** VP8 has no alpha. Send the matte as a second image beside the colour image in the same frame and recombine in the receiving page's shader, so the OBS browser source renders transparent. Spout2 carries alpha natively.
 
+### Background Removal Inside The Pipeline
+
+The alternative to chaining NVIDIA Broadcast in front of Stream Jams is a background-removal stage inside the module, before effects. Broadcast's virtual green screen is NVIDIA's Video Effects SDK "AI Green Screen" feature (`NVVFX_FX_GREEN_SCREEN`), and other apps can call it:
+
+- **It cannot be bundled.** The SDK and models are proprietary. NVIDIA publishes per-GPU-generation end-user runtimes (RTX 20, 30, 40 and 50 series; listed at version 0.7.6 on the [Broadcast download center](https://www.nvidia.com/en-au/geforce/broadcasting/broadcast-sdk/resources/) on this date) that the user installs, and apps load them at run time. The 2021 Maxine SDK licence forbids use that would make the SDK subject to an open-source licence, and the NGC pages cite differing terms, so the licence inside the current package needs reading before any integration.
+- **OBS is the precedent for an open-source app.** OBS (GPL-2.0) ships no NVIDIA files. `plugins/nv-filters/nvvfx-load.h` reads `NV_VIDEO_EFFECTS_PATH` (falling back to `%ProgramFiles%\NVIDIA Corporation\NVIDIA Video Effects`), loads `NVVideoEffects.dll`, `NVCVImage.dll` and `nvVFXGreenScreen.dll` with `LoadLibraryEx`, and disables the filter with "redistributable not found" when they are missing. Elgato Camera Hub and Streamlabs integrate it the same way.
+- **It needs native code.** The API is C with CUDA images, so Stream Jams would need a native addon, its first. Run it in an Electron utility process so a driver or CUDA crash cannot take down the app.
+- **It changes the frame path.** The browser pipeline cannot hand a GPU texture to CUDA. Either the native side owns camera capture and matting and sends colour plus matte to the renderer (a 1080p RGBA frame is about 8 MB, about 250 MB/s at 30 fps), or the renderer sends frames out and back. Both add copies the gate must measure.
+- **It is RTX-only on Windows.** Every other user needs another matting option anyway.
+
+| Option | Quality (expected; compare in the gate) | Runs on | Licence | Integration cost | Fit |
+| --- | --- | --- | --- | --- | --- |
+| Chain NVIDIA Broadcast in front (current plan) | Best | RTX | Separate NVIDIA app | None; user sets a key-colour background | Works today, needs Broadcast running |
+| **NVIDIA Video Effects AI Green Screen, loaded if installed** | Best; same model family as Broadcast | RTX 20 series or newer, Windows | Proprietary runtime installed by the user; not bundled | High: native addon, utility process, CPU frame copies | Optional accelerator, not the default |
+| **MediaPipe Image Segmenter (selfie or multiclass)** | Good; softer edges, hair weakest | Any GPU in the browser pipeline | Apache-2.0; already in `@mediapipe/tasks-vision` | Low: no new dependency | Default for everyone |
+| Robust Video Matting via `onnxruntime-web` (WebGPU) | Very good, temporally stable hair | Mid to high-end GPU | GPL-3.0 code and weights (combinable with AGPL-3.0); last pushed 2024-04 | Medium: model hosting, WebGPU backend | Upgrade if MediaPipe falls short |
+| MODNet via `onnxruntime-web` | Good | Any GPU | Apache-2.0; last pushed 2024-05 | Medium | Second open alternative |
+
+`obs-backgroundremoval` (GPL-3.0) runs MediaPipe, RVM and similar ONNX models in real time inside OBS, which suggests the open options are fast enough, though that is native ONNX Runtime rather than the browser.
+
+Proposal: build segmentation as a selectable stage, MediaPipe by default, keep chaining Broadcast as a no-code option, and treat the NVIDIA runtime as an optional accelerator only if the gate shows a quality gap that matters on stream.
+
 ## Effects, Presets And Dynamic Effects
 
 A proposed model, kept within the NP-001 spirit:
@@ -132,7 +154,7 @@ A proposed model, kept within the NP-001 spirit:
 A `--camera-effects-check` diagnostic mode, built like `--video-mirror-check`: own temporary profile, no settings changed, served on `127.0.0.1` behind a per-run token.
 
 1. List cameras; open the physical camera and, separately, the NVIDIA Broadcast camera at 1080p30.
-2. Report whether alpha survives from Broadcast with background removal on.
+2. Report whether alpha survives from Broadcast with background removal on, and compare MediaPipe selfie segmentation against Broadcast's matte on the same scene (hair, hands, chair edges).
 3. Run Face Landmarker on the GPU delegate with blendshapes on; report inference time per frame and dropped frames.
 4. Apply three effects: bulge on both eyes, a full-frame `glitch` filter and a face-mesh `bigEyes` warp.
 5. Publish to an OBS browser source and the desktop overlay through the mirror publisher, with and without the packed alpha matte.
@@ -148,5 +170,7 @@ Pass criteria to propose: 30 fps sustained at each receiver, tracking under 15 m
 - Electron [offscreen rendering](https://electronjs.org/docs/latest/tutorial/offscreen-rendering) and [shared texture](https://electronjs.org/docs/latest/api/structures/offscreen-shared-texture).
 - Microsoft [`MFCreateVirtualCamera`](https://learn.microsoft.com/en-us/windows/win32/api/mfvirtualcamera/nf-mfvirtualcamera-mfcreatevirtualcamera); [VCamSample](https://github.com/smourier/VCamSample); [Softcam](https://github.com/tshino/softcam); [akvirtualcamera](https://github.com/webcamoid/akvirtualcamera); [Spout2](https://github.com/leadedge/Spout2).
 - OBS browser source camera access: [forum thread](https://obsproject.com/forum/threads/cant-get-mediastream-permissions-in-browser-source.143858/latest).
+- NVIDIA Video Effects: [SDK collection](https://catalog.ngc.nvidia.com/orgs/nvidia/maxine/collections/maxine_vfx_sdk/-), [system guide](https://docs.nvidia.com/deeplearning/maxine/vfx-sdk-system-guide/index.html), [2021 SDK licence](https://developer.download.nvidia.com/licenses/Maxine_SDK_License_1Apr2021_updated.pdf), [end-user runtimes](https://www.nvidia.com/en-au/geforce/broadcasting/broadcast-sdk/resources/), [OBS loader](https://github.com/obsproject/obs-studio/blob/master/plugins/nv-filters/nvvfx-load.h).
+- Open matting models: [Robust Video Matting](https://github.com/PeterL1n/RobustVideoMatting), [MODNet](https://github.com/ZHKKKe/MODNet).
 - WebRTC lacks alpha: [webrtcHacks transparent background](https://github.com/webrtchacks/transparent-virtual-background).
 - Libraries: [PixiJS](https://github.com/pixijs/pixijs), [pixi-filters](https://github.com/pixijs/filters), [three.js](https://github.com/mrdoob/three.js), [Human](https://github.com/vladmandic/human), [Jeeliz FaceFilter](https://github.com/jeeliz/jeelizFaceFilter), [OpenSeeFace](https://github.com/emilianavt/OpenSeeFace), [dlib](https://github.com/davisking/dlib), [obs-shaderfilter](https://github.com/exeldro/obs-shaderfilter), [obs-face-tracker](https://github.com/norihiro/obs-face-tracker), [obs-backgroundremoval](https://github.com/royshil/obs-backgroundremoval).
