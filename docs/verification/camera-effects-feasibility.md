@@ -22,7 +22,7 @@ Everything runs offline. PixiJS, MediaPipe and the One Euro filter are bundled i
 
 ## How To Run It On Windows
 
-1. Download the `windows-desktop-package` artifact from the latest CI run on this PR and unzip it.
+1. Download the `windows-desktop-package` artifact from the latest CI run on PR #200 and unzip it.
 2. Close Stream Jams if it is running.
 3. In PowerShell, from the unzipped folder, run `& ".\Stream Jams.exe" --camera-effects-check`. Two windows open: the control window and the pipeline window (camera on the left, processed output on the right). If the control window says **Blocked**, copy the results and stop there.
 4. **Physical camera first.**
@@ -92,6 +92,7 @@ Windows 10.0.26200 x64, Electron 44.6.0 (Chrome 152), NVIDIA GeForce RTX 4070 Ti
 - **Output delay** (processed frame to receiver): H.264 packed median 83 to 89 ms; VP8 plain 59 to 63 ms, maximum about 130 ms. Glass-to-OBS was not measured: the fake camera cannot film the timing screen.
 - **Layout:** moving the camera to the bottom-right placement changed both receivers without a reconnect.
 - **CPU:** all app processes averaged 9% with an 11% peak at 1080p30 with everything on.
+- **Packaged build:** the same run against the locally packaged app (`pnpm desktop:package`, pages, WASM and models served from the app archive) behaved the same: 30 fps processed, tracking median 7.4 ms on the GPU, both receivers at 30 fps over packed H.264 with output delay medians of 84 and 93 ms.
 
 Observations for the gate run:
 - In two early runs with H.264 from the first connection, no receiver ever connected, and nothing was reported; later runs with the same settings connected at once. The cause was not found. The check now records a failed connection, with the frame size and codec, under `errors`, so a repeat on the maintainer's PC is visible.
