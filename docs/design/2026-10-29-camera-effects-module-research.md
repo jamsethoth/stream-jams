@@ -42,6 +42,70 @@ Constraints that shape the choice:
 
 The rest of this record is the evidence for those choices.
 
+## Module Decisions
+
+The maintainer settled these in a design review on October 29, 2026. They take precedence over the proposals later in this record where the two differ, and they are the input to the OpenSpec proposal written after the feasibility gate.
+
+### Module And Process Split
+
+- Camera Effects is a separate registered module, id `camera`, disabled by default. It does not extend Screen Effects.
+- It runs only while the desktop app runs. There is no browser-source fallback that opens the camera itself.
+- v1 has one camera input and one pipeline.
+- The local service owns camera settings, presets, the active look and the active layout, persisted in SQLite and included in backup. A hidden Electron window does all camera and GPU work. Frames never pass through the local service.
+- There is no setup wizard screen. As with other modules, the module definition's `wizard` metadata lists the one required field (the camera). The module page is the configuration form and offers the browser-source URLs to copy.
+
+### Camera Input
+
+- The camera opens only while the module is enabled, the desktop app runs and at least one viewer is connected (browser source, desktop overlay or management preview). It closes after about 10 seconds without viewers.
+- The module stores the device ID and name. If the ID changes, it rebinds only to exactly one camera with the same name. Otherwise it asks the user to choose. It never falls back to another camera.
+- Formats: any resolution the camera advertises from 720p to 2160p, at 30 fps. Processing runs at the camera's resolution; tracking and segmentation run on downscaled copies. A format that fails the feasibility gate on the user's PC is labelled as likely to drop frames, not hidden. 60 fps is deferred ([BL-071](../backlog.md#modules-outputs-and-platform)).
+- Mirror image is a camera setting, off by default, applied before face tracking.
+- An optional camera setting declares that the feed's background is already a solid key colour (the NVIDIA Broadcast route), with the colour.
+
+### Outputs And Layouts
+
+- Outputs are full-screen scene canvases for both the landscape (1920×1080) and vertical (1080×1920) profiles. The browser source is the main output. The private desktop overlay is optional, as for other modules, and receives the same stream.
+- The hidden window streams the processed camera picture only. Each receiving page applies the layout. The stream is never larger than the largest placement in device pixels, and the receiver keeps that size so layout changes never reconnect.
+- Layout presets are separate from effect presets. Each layout stores one placement per profile: position and size, crop, shape (rectangle, rounded rectangle or circle), border plus the shared card shadow setting, and a transition (cut, or move and scale over a set duration). A new layout gets an adjustable vertical default, centred and cropped to portrait.
+- On camera loss or pipeline failure, outputs turn transparent, and the management page and Operator show the reason and a retry.
+- The module is video only. The management page shows the measured delay as a suggested OBS audio sync offset for the microphone.
+
+### Looks And Effects
+
+- Effect presets are built in an effect builder. While the builder is open, the hidden window renders the draft to a management-only preview at most 1080p. The live output changes only on **Apply now**, on saving over the active preset, or while the explicit **Edit live** toggle is on.
+- A preset may set a background mode: keep, remove (transparent), blur, or replace with a colour or an Assets image. Unset means the preset does not change the background. With a declared key colour, removal keys that colour, and "keep" also keys it so raw key colour never reaches the stream. Without one, remove, blur and replace use the MediaPipe segmenter, which loads only while a mode needs it.
+- First effects: colour adjustment, pixelate, glitch, RGB split, CRT and blur across the frame; bulge, pinch and twist on a face region (eyes, mouth, nose or whole face).
+- A base look (one preset, or none for pass-through) persists across restarts. Up to 5 temporary effects stack on top for a set duration. Re-triggering an active one restarts its timer. They apply immediately, with no queue, and are dropped on restart. The newest temporary effect that sets a background decides the background, falling back as effects expire.
+- Replacement images register as asset references, so deleting an image a preset uses is blocked or warned about, as with Music.
+
+### Controls And Safety
+
+- The global safety stop clears temporary camera effects but keeps the base look and layout. The module's own **Bypass** shows the plain camera until turned off. Neither hides the camera.
+- The Operator panel shows camera status and delay, the base look (changeable), active temporary effects with time remaining (each clearable), the current layout with layout buttons, pinned presets and Bypass.
+- A new `camera` automation scope can set the base look, apply a temporary effect with a duration, clear temporary effects, apply a layout, set Bypass and read status, addressed by preset ID.
+- Chat and channel-point triggers through the central event bus come in a later slice with cooldowns.
+
+### Edge Cases
+
+- With GPU acceleration off in Settings, the module shows a blocked state and the reason instead of running in software.
+- The tracked face is configurable (largest by default, or nearest the centre).
+- When tracking is lost, face-anchored effects hold their last smoothed position, then fade out. Both timings are configurable within limits (defaults about 0.5 seconds each). Frame-wide effects and the background continue.
+- Diagnostics show camera frame rate, tracking time per frame and measured delay.
+
+### Delivery Order
+
+1. Build the `--camera-effects-check` feasibility gate. The maintainer runs it with OBS.
+2. Write the OpenSpec proposal from the results.
+3. Implement in six slices, each shippable on its own:
+   1. Pass-through: camera selection, format and mirror; browser-source and optional desktop outputs for both profiles with one default placement; Bypass; status and delay.
+   2. Background and frame filters: background modes and key colour, effect builder with draft preview, effect presets, base look.
+   3. Face tracking: Face Landmarker, region warps and the edge-case rules.
+   4. Layouts: layout presets with per-profile placements and transitions.
+   5. Controls: temporary effects and stacking, Operator panel, `camera` automation scope.
+   6. Event bus triggers with cooldowns.
+
+Deferred follow-ups are in the [backlog](../backlog.md#modules-outputs-and-platform) as BL-069 to BL-076.
+
 ## Option Matrices
 
 ### Where The Pipeline Runs
@@ -145,7 +209,7 @@ A proposed model, kept within the NP-001 spirit:
 | GPU load with a game, NVIDIA Broadcast and OBS encoding at once | Dropped frames on stream | Measure GPU and frame timing in the gate with a game running |
 | GPU acceleration turned off in Settings | Tracking and effects would fall back to software | Refuse to start the module and say why; record whether the GPU-process exit issue recurs |
 | Stream Jams crash blanks the camera | Visible on stream | OBS scene keeps the raw camera as a hidden fallback; the browser source shows the last frame and reconnects |
-| Multiple faces in frame | Effects could jump to a guest | Track the largest or most central face; make it configurable later |
+| Multiple faces in frame | Effects could jump to a guest | Decided: configurable, largest face by default |
 | Should the output also work outside OBS (Discord, Zoom)? | Only a virtual camera achieves it | Product decision; deferred to a follow-up |
 | Should the module allow custom shaders? | NP-001 conflict, support burden | Product decision; recommendation is no |
 
@@ -153,7 +217,7 @@ A proposed model, kept within the NP-001 spirit:
 
 A `--camera-effects-check` diagnostic mode, built like `--video-mirror-check`: own temporary profile, no settings changed, served on `127.0.0.1` behind a per-run token.
 
-1. List cameras; open the physical camera and, separately, the NVIDIA Broadcast camera at 1080p30.
+1. List cameras and their advertised formats; open the physical camera and, separately, the NVIDIA Broadcast camera at 1080p30, then at 1440p30 and 2160p30 where advertised. Report whether Chromium uses a hardware encoder and whether the half-resolution packed alpha matte fits at 4K.
 2. Report whether alpha survives from Broadcast with background removal on, and compare MediaPipe selfie segmentation against Broadcast's matte on the same scene (hair, hands, chair edges).
 3. Run Face Landmarker on the GPU delegate with blendshapes on; report inference time per frame and dropped frames.
 4. Apply three effects: bulge on both eyes, a full-frame `glitch` filter and a face-mesh `bigEyes` warp.
