@@ -76,18 +76,30 @@ importers:
         specifier: 4.6.5
         version: 4.6.5
     devDependencies:
+      1eurofilter:
+        specifier: 1.3.0
+        version: 1.3.0
       '@electron-forge/core':
         specifier: 8.0.1
         version: 8.0.1(@types/react@19.3.0)
       '@electron-forge/shared-types':
         specifier: 8.0.1
         version: 8.0.1
+      '@mediapipe/tasks-vision':
+        specifier: 1.2.0
+        version: 1.2.0
       electron:
         specifier: 44.6.0
         version: 44.6.0
       electron-builder:
         specifier: 26.15.3
         version: 26.15.3(electron-builder-squirrel-windows@26.15.3)
+      pixi-filters:
+        specifier: 6.1.5
+        version: 6.1.5(pixi.js@8.22.0)
+      pixi.js:
+        specifier: 8.22.0
+        version: 8.22.0
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -247,6 +259,9 @@ importers:
         version: 6.0.3
 
 packages:
+
+  1eurofilter@1.3.0:
+    resolution: {integrity: sha512-3t57UlTR7J2Uyq7kwfzgQg+auO6Yb3G09GKFeBVJQvaK/Otn0dcW20RNMt4d05G0/XcEQoORW87rGo3RFiyHYg==}
 
   '@adobe/css-tools@4.5.0':
     resolution: {integrity: sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q==}
@@ -1247,6 +1262,9 @@ packages:
     peerDependencies:
       react: ^19.2.0
 
+  '@mediapipe/tasks-vision@1.2.0':
+    resolution: {integrity: sha512-7+dr9GbGyTtcuLh11wE5TOn4dNFRncIT9oAWs72620WX99KW5FfzF6rFJ/ChTgXG9vJ6dCiE9FrEEY4CnwPWKQ==}
+
   '@napi-rs/keyring-darwin-arm64@2.1.0':
     resolution: {integrity: sha512-j6ATTOhmPW+N5EKwi8Yzn6P4Bz/uqnxzyYvqOL73/dgzDSYG5pS5eprqpVmOLse68WUTf79ZMqz97HnfvirJ9g==}
     engines: {node: '>= 10'}
@@ -2014,6 +2032,9 @@ packages:
 
   '@types/fs-extra@9.0.13':
     resolution: {integrity: sha512-nEnwB++1u5lVDM2UI4c1+5R+FYaKfaAzS4OococimjVm3nQw3TuzH5UNsocrcTBbhnerblyHj4A49qXbIiZdpA==}
+
+  '@types/gradient-parser@0.1.5':
+    resolution: {integrity: sha512-r7K3NkJz3A95WkVVmjs0NcchhHstC2C/VIYNX4JC6tieviUNo774FFeOHjThr3Vw/WCeMP9kAT77MKbIRlO/4w==}
 
   '@types/http-cache-semantics@4.2.0':
     resolution: {integrity: sha512-L3LgimLHXtGkWikKnsPg0/VFx9OGZaC+eN1u4r+OB1XRqH3meBIAVC2zr1WdMH+RHmnRkqliQAOHNJ/E0j/e0Q==}
@@ -4446,6 +4467,11 @@ packages:
     resolution: {integrity: sha512-TfySrs/5nm8fQJDcBDuUng3VOUKsd7S+zqvbOTiGXHfxX4wK31ard+hoNuvkicM/2YFzlpDgABOevKSsB4G/FA==}
     engines: {node: '>= 6'}
 
+  pixi-filters@6.1.5:
+    resolution: {integrity: sha512-Ewb/J+kxAbaNN+0/ATJbglAJG+skGJfh7BIDP3ILIDdD6wWk1p0pGa25pVf1T8hGBOQSUNVAmwwJBwkj+cyLLA==}
+    peerDependencies:
+      pixi.js: '>=8.0.0-0'
+
   pixi.js@8.22.0:
     resolution: {integrity: sha512-QbTANHMZ751MIjLiLSUSM8a7LNMWwMIf0KbRCqlW+SPS9hNLfSVS+cl1O2SEp9g1K/wyLzj/OJHv+1TUfiPr/w==}
 
@@ -5513,6 +5539,8 @@ packages:
     resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
 
 snapshots:
+
+  1eurofilter@1.3.0: {}
 
   '@adobe/css-tools@4.5.0': {}
 
@@ -6667,6 +6695,8 @@ snapshots:
     dependencies:
       react: 19.3.0
 
+  '@mediapipe/tasks-vision@1.2.0': {}
+
   '@napi-rs/keyring-darwin-arm64@2.1.0':
     optional: true
 
@@ -7270,6 +7300,8 @@ snapshots:
   '@types/fs-extra@9.0.13':
     dependencies:
       '@types/node': 25.9.9
+
+  '@types/gradient-parser@0.1.5': {}
 
   '@types/http-cache-semantics@4.2.0': {}
 
@@ -9926,6 +9958,11 @@ snapshots:
       thread-stream: 4.2.0
 
   pirates@4.0.7: {}
+
+  pixi-filters@6.1.5(pixi.js@8.22.0):
+    dependencies:
+      '@types/gradient-parser': 0.1.5
+      pixi.js: 8.22.0
 
   pixi.js@8.22.0:
     dependencies:
