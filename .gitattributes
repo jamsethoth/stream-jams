@@ -13,3 +13,5 @@
 *.woff binary
 *.woff2 binary
 *.zip binary
+*.task binary
+*.tflite binary

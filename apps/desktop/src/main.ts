@@ -18,9 +18,11 @@ import { VideoPlayerHost } from "./videos/video-player-host.js";
 import { VideoPlayerWindow } from "./videos/video-player-window.js";
 import { VideoDeviceWindow } from "./videos/video-device-window.js";
 import { runVideoMirrorCheck, videoMirrorCheckGpuSwitch, videoMirrorCheckSwitch } from "./video-mirror-check/check-main.js";
+import { cameraEffectsCheckSwitch, runCameraEffectsCheck } from "./camera-effects-check/check-main.js";
 
-// Diagnostic mode for the Videos mirror feasibility check; it replaces the normal app for that run.
+// Diagnostic modes for the Videos mirror and camera effects feasibility checks; each replaces the normal app for that run.
 const videoMirrorCheck = process.argv.includes(videoMirrorCheckSwitch);
+const cameraEffectsCheck = !videoMirrorCheck && process.argv.includes(cameraEffectsCheckSwitch);
 
 registerAudioPlayerScheme([overlayPlayerScheme]);
 
@@ -34,10 +36,11 @@ if (isolatedUserData !== undefined) {
 // before app ready, so the saved choice is read from userData here and applies at the next
 // launch. Turning it off is the fallback for the Windows 25H2 quit hang, where the GPU
 // process can stay terminating after quit and keep the desktop process alive.
-// The video mirror check keeps its own switch and runs without the GPU unless asked.
+// The video mirror check keeps its own switch and runs without the GPU unless asked. The camera
+// effects check always asks for the GPU and reports itself blocked if Chromium cannot use it.
 const gpuAcceleration = videoMirrorCheck
   ? process.argv.includes(videoMirrorCheckGpuSwitch)
-  : readGpuAccelerationPreference(app.getPath("userData"));
+  : cameraEffectsCheck || readGpuAccelerationPreference(app.getPath("userData"));
 if (!gpuAcceleration) app.disableHardwareAcceleration();
 let management: ManagementWindow | null = null;
 const audio = new AudioHost((callbacks, generation) => new AudioWindow(callbacks, () => ownedMediaOptions(generation)), (input) => diagnostics.record(input));
@@ -190,6 +193,11 @@ function requestQuit(): void {
 if (videoMirrorCheck) {
   void runVideoMirrorCheck().catch((error: unknown) => {
     dialog.showErrorBox("Video mirror check failed to start", error instanceof Error ? error.message : String(error));
+    app.quit();
+  });
+} else if (cameraEffectsCheck) {
+  void runCameraEffectsCheck().catch((error: unknown) => {
+    dialog.showErrorBox("Camera effects check failed to start", error instanceof Error ? error.message : String(error));
     app.quit();
   });
 } else if (!app.requestSingleInstanceLock()) {
