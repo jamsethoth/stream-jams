@@ -122,7 +122,7 @@ The alternative to chaining NVIDIA Broadcast in front of Stream Jams is a backgr
 
 `obs-backgroundremoval` (GPL-3.0) runs MediaPipe, RVM and similar ONNX models in real time inside OBS, which suggests the open options are fast enough, though that is native ONNX Runtime rather than the browser.
 
-Proposal: build segmentation as a selectable stage, MediaPipe by default, keep chaining Broadcast as a no-code option, and treat the NVIDIA runtime as an optional accelerator only if the gate shows a quality gap that matters on stream.
+**Decision (maintainer, 2026-10-29):** build segmentation as a selectable stage, MediaPipe by default, keep chaining Broadcast as a no-code option, and treat the NVIDIA runtime as an optional accelerator only if the gate shows a quality gap that matters on stream.
 
 ## Effects, Presets And Dynamic Effects
 
