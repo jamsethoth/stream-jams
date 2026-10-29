@@ -14,6 +14,7 @@ Use this map to distinguish current behavior, pending work, and historical evide
 | How do native integrations pair and control timers/queues? | [Local automation API v1](automation-api.md) |
 | How do ordinary browser canvases differ from desktop placement, and what verifies retired sources? | [Output layout verification and exact requirement trace](verification/browser-desktop-output-layouts.md); [legacy credential inventory/revocation](mvp-runbook.md#retired-sources-and-hidden-legacy-credentials) |
 | How does a module consume stream events? | [Event bus consumers](engineering/event-bus-consumers.md) |
+| How are development and test runs kept away from the production install and OBS? | [Dev environment isolation evaluation](engineering/dev-environment-isolation.md) (BL-077, awaiting approval) |
 
 | What product boundaries are intentional? | [Product plan](product-plan.md); its MVP sections describe the first delivery boundary, and later sections describe approved additions |
 | What is still pending? | [Canonical backlog](backlog.md), including links to planned OpenSpec changes |

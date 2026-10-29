@@ -79,6 +79,7 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 | BL-061 | Data overlay event rules as a central event bus consumer, plus Streamer.bot global values | Planned | P2 | BL-055 and the central event bus (implemented) | [OpenSpec change](../openspec/changes/add-data-overlay-event-rules/proposal.md); [consumer contract](engineering/event-bus-consumers.md) |
 | BL-062 | Twitch follower total and Creator Goals data sources | Planned | P2 | BL-055 | [OpenSpec change](../openspec/changes/add-twitch-overlay-data/proposal.md); follows the active goal of a type by default |
 | BL-063 | Data overlay canvas templates and starters | Planned | P2 | BL-055 | [OpenSpec change](../openspec/changes/add-data-overlay-templates/proposal.md) |
+| BL-077 | Isolated development and test environment: explicit dev/test profile with fail-closed guardrails, separate keyring prefix and app identity, and a marker-verified portable dev OBS | Evaluated; awaiting maintainer approval | P1 | Maintainer approval of the recommendation and open questions; OpenSpec change before implementation | [Isolation evaluation](engineering/dev-environment-isolation.md); found existing desktop tests writing production backups and orphaned Credential Manager entries |
 
 ## Known Issues
 
