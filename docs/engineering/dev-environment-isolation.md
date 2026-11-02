@@ -1,6 +1,6 @@
 # Development And Test Environment Isolation
 
-Status: evaluation for maintainer approval (BL-077), 2026-10-29. Nothing described under "Setup plan" has been implemented.
+Status: evaluated 2026-10-29; recommendation approved by the maintainer 2026-11-02 (see [Decisions](#decisions-2026-11-02)). Nothing described under "Setup plan" has been implemented yet (BL-077).
 
 This page answers one question: how can development, automated tests and automated OBS changes run on the maintainer's streaming PC without any chance of changing the production Stream Jams install or the production OBS? It records where the two environments collide today, compares the isolation options, recommends one, and lists the guardrails and decisions needed before implementation.
 
@@ -222,7 +222,25 @@ Machine setup (the maintainer runs these after the slice merges; agents do not):
 
 Dev loop afterwards: agents and the maintainer run `pnpm test`, `test:e2e` and `test:desktop` as they do today. The configs set the `test` profile themselves, and any misconfiguration fails before touching state. `pnpm dev:isolated` runs beside the production app on its own port, tray and profile. OBS tests talk to `127.0.0.1:4456` through the guarded client.
 
+## Decisions (2026-11-02)
+
+The maintainer answered the open questions below as follows.
+
+1. Option A (dev/test profile with fail-closed refusals) plus Windows Sandbox for the installer test. No separate Windows account.
+2. Dev root `C:\StreamJamsDev\`, with `home\` for Stream Jams and `obs\` for the dev OBS.
+3. Dev Stream Jams port 39287; dev obs-websocket port 4456.
+4. The maintainer creates a separate Twitch test account for dev. `dev` and `test` refuse the production Twitch account.
+5. Dev connects only to a copied Streamer.bot on another port, never to the production Streamer.bot on 8080.
+6. Dev desktop overlays are off by default, and can be enabled only on the Parsec virtual display.
+7. Dev starts muted. Hardware tests refuse a deny list of stream audio devices that the maintainer supplies.
+8. Camera checks refuse to run while production OBS is running, unless an explicit override is set.
+9. Run a read-only audit of orphaned `stream-jams:*` credentials and the test-made backups against a copy of the production DB. Show the list, and delete only the entries the maintainer approves. Audit result (2026-11-02), from read-only copies of the current DB and the older `pre046` DB: of the 97 `stream-jams:*` entries, 8 overlay route keys match live production keys, and the Twitch pair, the Pear identity and one music token are in use. The other 85 (73 overlay route keys and 12 music tokens) match no row in either database, so they are test leftovers. Deleting them is pending the maintainer's approval.
+10. Bare `pnpm dev` and `pnpm start:local` refuse to start without an explicit `STREAM_JAMS_PROFILE`. The runbook changes with it.
+11. Open: the maintainer asked whether the old one-click install is still in use. It is not. The running app is `C:\StreamingTools\Stream Jams`. Its only remaining entry point is a Start menu shortcut under `GitHub, Inc`. Uninstall is pending the maintainer's confirmation.
+
 ## Open questions for the maintainer
+
+The questions as originally asked; see the decisions above for the answers.
 
 1. Approve option A plus Windows Sandbox for installer acceptance? Or also require a separate Windows account (option B) for unattended agent runs?
 2. Where should the dev root live (`C:\StreamJamsDev`, another drive, or `%USERPROFILE%\.stream-jams-dev`)?
