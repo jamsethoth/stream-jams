@@ -14,6 +14,7 @@ import {
   type OverlayClientMessage
 } from "./overlay-client.js";
 import { OverlaySurface, overlayRootStyle, type OverlayPlaybackEvent } from "./components/OverlaySurface.js";
+import { registerOverlayOfflineFallback } from "./offline-fallback.js";
 
 export { OverlaySurface } from "./components/OverlaySurface.js";
 
@@ -21,6 +22,8 @@ const maximumPendingOverlayMutations = 100;
 
 export function OverlayApp() {
   const route = useMemo(() => parseOverlayRoute(`${window.location.pathname}${window.location.search}`), []);
+  // Only the Stream Jams service serves the worker; the Vite dev server answers its path with index.html.
+  useEffect(() => { if (import.meta.env.PROD) registerOverlayOfflineFallback(); }, []);
   const [composition, setComposition] = useState<OverlayComposition | null>(null);
   const [preparingIds, setPreparingIds] = useState<ReadonlySet<string>>(new Set());
   const seenIdsRef = useRef(new Set<string>());
