@@ -1,6 +1,6 @@
 # Unified Chat Module Design
 
-Status: design agreed with the maintainer on 2026-11-02 through a structured design review, then audited against the earlier chat proposal in PR #190 (see "Differences From PR #190"). This is investigation output. An OpenSpec change is still needed before implementation. Backlog row: BL-079. This design supersedes PR #190.
+Status: design agreed with the maintainer on 2026-11-02 through a structured design review, then audited against the earlier chat proposal in PR #190 (see "Differences From PR #190"). This is investigation output. An OpenSpec change is still needed before implementation. Backlog row: BL-080. This design supersedes PR #190.
 
 ## Goal
 
@@ -25,7 +25,7 @@ Add a Chat overlay module that merges live chat from Twitch and YouTube into one
 | Look | One built-in preset, "Cards", in a card-list layout. Typed per-profile appearance plus scoped custom CSS. |
 | Outputs | `landscape` and `vertical` module profiles, and a layer on the private desktop overlay. |
 | Templates | No user HTML/JS templates in v1. |
-| Prerequisite | Overlay pages must get a Content Security Policy (BL-077) before custom CSS ships. |
+| Prerequisite | Overlay pages must get a Content Security Policy (BL-078) before custom CSS ships. |
 
 ## Sources And Routing
 
@@ -39,11 +39,11 @@ Add a Chat overlay module that merges live chat from Twitch and YouTube into one
 - Existing accounts lack the scope. Add it to the scope-to-capability mapping in `apps/server/src/modules/providers/provider-management-adapters.ts`, so the provider screen shows "Reconnect Twitch to enable chat". Alerts keep working until the user reconnects.
 - Use the fragments as delivered (`text`, `emote`, `cheermote`, `mention`). Use the `gif` fragment URL unmodified, as Twitch requires.
 - Badge images come from Get Global Chat Badges and Get Channel Chat Badges; cache both. Cheermote images come from Get Cheermotes.
-- If the EventSub connection drops, Twitch chat pauses. The existing reconnect handles recovery, and management and Operator show the state. Automatic switch-over to Streamer.bot's Twitch chat is BL-087.
+- If the EventSub connection drops, Twitch chat pauses. The existing reconnect handles recovery, and management and Operator show the state. Automatic switch-over to Streamer.bot's Twitch chat is BL-088.
 - **Shared Chat:** show partner-channel messages (setting "Show Shared Chat partner messages", on by default). This matches what the broadcaster's own Twitch chat shows.
   - Each channel's copy of a shared message has its own `message_id`. The original is kept as `source_message_id` (https://dev.twitch.tv/docs/chat/irc). Store `message_id`, `source_message_id`, `source_broadcaster_user_id` and the chatter ID for every message.
   - Removals in the host's room work directly. `message_delete` matches the stored `message_id` (the host's copy), `clear_user_messages` matches the chatter, and `clear` wipes everything.
-  - Removals made by a partner channel's moderators are **not** mirrored. Twitch: "those messages will not be deleted in other collaborators' channels" (https://blog.twitch.tv/en/2024/09/24/bring-your-communities-together-with-shared-chat/). They reach the host only through `channel.moderate` v2 `shared_chat_*` actions, which need about eight extra `moderator:read:*` scopes. Mirroring is BL-090.
+  - Removals made by a partner channel's moderators are **not** mirrored. Twitch: "those messages will not be deleted in other collaborators' channels" (https://blog.twitch.tv/en/2024/09/24/bring-your-communities-together-with-shared-chat/). They reach the host only through `channel.moderate` v2 `shared_chat_*` actions, which need about eight extra `moderator:read:*` scopes. Mirroring is BL-091.
   - Presentation follows the Twitch convention as copied by Chatterino (https://chatterino.com/changelog, 2.5.2–2.5.5):
     - the partner channel's profile picture appears as the first badge;
     - the chatter's badges come from their own channel (`source_badges`);
@@ -54,7 +54,7 @@ Add a Chat overlay module that merges live chat from Twitch and YouTube into one
 
 ### YouTube (through Streamer.bot)
 
-- Extend `apps/server/src/modules/streamerbot/streamerbot-event-normalizer.ts`. It currently rejects every non-Twitch source. Keep the hand-written client; BL-100 tracks evaluating `@streamerbot/client`.
+- Extend `apps/server/src/modules/streamerbot/streamerbot-event-normalizer.ts`. It currently rejects every non-Twitch source. Keep the hand-written client; BL-101 tracks evaluating `@streamerbot/client`.
 - While the chat module and the YouTube switch are both on, subscribe to the YouTube events Streamer.bot offers (`GetEvents`): `Message`, `SuperChat`, `SuperSticker`, `MessageDeleted`, `UserBanned` and `UserTimedout`. Turning either off removes only those subscriptions.
   - https://docs.streamer.bot/api/websocket/events
 - Any existing custom Streamer.bot subscription to a chat event, such as an alert rule on `Twitch / ChatMessage`, keeps reaching the event bus unchanged. Chat display never consumes or alters it.
@@ -63,9 +63,9 @@ Add a Chat overlay module that merges live chat from Twitch and YouTube into one
 
 ### Excluded platforms
 
-- **Kick:** the maintainer does not stream there. Neither route reports single-message deletes. The official API is webhooks-only, which a `127.0.0.1` app cannot receive without a tunnel. Kick declined a message-deleted webhook (https://github.com/KickEngineering/KickDevDocs/issues/310). Tracked as BL-095.
+- **Kick:** the maintainer does not stream there. Neither route reports single-message deletes. The official API is webhooks-only, which a `127.0.0.1` app cannot receive without a tunnel. Kick declined a message-deleted webhook (https://github.com/KickEngineering/KickDevDocs/issues/310). Tracked as BL-096.
 - **TikTok:** there is no official live chat API. Unofficial connectors break TikTok's terms (§3.4, https://www.tiktok.com/legal/page/us/terms-of-service/en). They need the Euler Stream signing service or a real browser session. `tiktok-live-connector` is AGPL-3.0-only from 2.4.4.
-  - The only path to reconsider is TikFinity pushing into Streamer.bot (BL-094). PR #190 designed it:
+  - The only path to reconsider is TikFinity pushing into Streamer.bot (BL-095). PR #190 designed it:
     - a documented TikFinity action calls `CPH.WebsocketBroadcastJson` with `{ source: "StreamJams", type: "ChatMessage", platform: "tiktok", userId, userName, login, avatarUrl, message }`;
     - the marker is read before the bus, like `VideoRequest`, and validated.
   - TikTok has no removal events at all, which conflicts with the removal requirement. Revisit only with a display delay plus Operator Hide.
@@ -79,7 +79,7 @@ Add a Chat overlay module that merges live chat from Twitch and YouTube into one
   - This is deliberate. Chat is not a queue, so the 2026-10-08 rule that module queues survive restarts does not apply.
   - No comparable tool keeps chat across restarts: jChat, KapChat, ChatRD and StreamElements CustomChat keep it in the page only, and Streamer.bot has no chat-history request (https://docs.streamer.bot/api/websocket/requests).
   - `node:sqlite` `DatabaseSync` runs synchronously on the server's main thread with the default rollback journal (`apps/server/src/modules/db/database.ts:174`), so per-message writes would stall overlay delivery during bursts.
-  - Saving across restarts is BL-101, if empty chat after a restart proves to be a real problem.
+  - Saving across restarts is BL-102, if empty chat after a restart proves to be a real problem.
 - Operator hides apply to messages in the ring buffer and are not saved.
 - **Logs:** never record message text, author names or image URLs. Diagnostics carry platform, event type and a reference ID.
 - **Validation bounds at intake:**
@@ -116,7 +116,7 @@ The server produces finished messages. The overlay never parses provider payload
   - `remove { messageId }`
   - `removeUser { platform, userId }`
   - `clear { platform }`
-- No viewer avatars in v1. Twitch EventSub does not include them, and mixed rows look inconsistent (BL-081). The one exception is the Shared Chat partner channel's picture used as a badge.
+- No viewer avatars in v1. Twitch EventSub does not include them, and mixed rows look inconsistent (BL-082). The one exception is the Shared Chat partner channel's picture used as a badge.
 
 ## Moderation And Safety
 
@@ -131,7 +131,7 @@ The server produces finished messages. The overlay never parses provider payload
   - Google removed `messageDeletedEvent` and `messageRetractedEvent` from the API because "these events are not being returned by the API" (revision history, 2026-06-23: https://developers.google.com/youtube/v3/revision_history).
   - `tombstone` "is not sent upon deletion" (https://developers.google.com/youtube/v3/live/docs/liveChatMessages).
   - Streamer.bot's YouTube "Message Deleted" trigger "will never work until YouTube adds the data to the API" (https://streamer.bot/changelogs/v0.2.4).
-  - BL-093 tracks the opt-in InnerTube supplement that could close this gap.
+  - BL-094 tracks the opt-in InnerTube supplement that could close this gap.
 
 ### Local filtering
 
@@ -144,7 +144,7 @@ The server produces finished messages. The overlay never parses provider payload
 ### Third-party emotes
 
 - 7TV emotes flagged NSFW render as their plain-text name.
-- FFZ modifier emotes (`ffzW`, `ffzX`, `ffzHyper` and so on) are dropped, and the base emote renders without the effect. Some effects flash. Effects are tracked as BL-089.
+- FFZ modifier emotes (`ffzW`, `ffzX`, `ffzHyper` and so on) are dropped, and the base emote renders without the effect. Some effects flash. Effects are tracked as BL-090.
 - 7TV zero-width emotes render as a simple stack over the previous emote.
 
 ## Emotes And Images
@@ -154,7 +154,7 @@ The server produces finished messages. The overlay never parses provider payload
   - BTTV: `https://api.betterttv.net/3/cached/users/twitch/{id}` and `/3/cached/emotes/global`.
   - FFZ: `https://api.frankerfacez.com/v1/room/id/{id}` and `/v1/set/global`.
 - The server turns emote words in text parts into `emote` parts, for both platforms. The Twitch channel's 7TV/BTTV/FFZ sets also apply to YouTube viewers' text.
-- Refresh the lists at startup and every 10–15 minutes. If a service fails, keep the last good list; with no list, show the words as plain text. A third-party emote failure must never hide or delay chat. 7TV live updates are BL-088.
+- Refresh the lists at startup and every 10–15 minutes. If a service fails, keep the last good list; with no list, show the words as plain text. A third-party emote failure must never hide or delay chat. 7TV live updates are BL-089.
 - **Image proxy:**
   - Generalize the hardened Music artwork fetcher (`apps/server/src/modules/music/music-artwork-service.ts`: DNS pinned to one public address, public-address check, bounded body, `sharp` validation) into a shared module, leaving Music's behavior unchanged. Chat adds its own policy.
   - Allowlisted hosts, subdomains included at a dot boundary:
@@ -175,14 +175,14 @@ The server produces finished messages. The overlay never parses provider payload
   - Serving:
     - opaque references served under the overlay key, the way `apps/server/src/http/routes/music-artwork.ts` does;
     - the desktop overlay gets them through the existing private media protocol.
-  - Rationale: the overlay never contacts outside hosts, and it stays compatible with the overlay CSP from BL-077. Correction recorded during the review: browser-source overlay pages have no CSP today (the desktop overlay does), so the proxy is not yet *required*. See "Security Findings".
+  - Rationale: the overlay never contacts outside hosts, and it stays compatible with the overlay CSP from BL-078. Correction recorded during the review: browser-source overlay pages have no CSP today (the desktop overlay does), so the proxy is not yet *required*. See "Security Findings".
 
 ## Look And Feel
 
 ### Preset and layout
 
 - One built-in preset, **Cards**: each message on a rounded card. The preset only fills in settings; users can change any of them.
-- One layout mode in v1, the card list. Ticker and latest-message popup layouts are BL-080. Bubble and avatar-column layouts are BL-081.
+- One layout mode in v1, the card list. Ticker and latest-message popup layouts are BL-081. Bubble and avatar-column layouts are BL-082.
 - Research showed that one card preset plus settings reproduces most named themes from other tools:
   - Streamlabs Boxed;
   - Streamer.bot `soft`, `subtle` and `outlined`;
@@ -196,7 +196,7 @@ The server produces finished messages. The overlay never parses provider payload
 Reuse the Timer appearance building blocks in `packages/core/src/timers/schemas.ts` and the shared card shadow wherever possible.
 
 - **Names and message text, separately:** font, size, weight and color.
-  - Fonts: the 4 existing presets plus any uploaded font asset (`openspec/specs/alert-advanced-typography/spec.md`). There are no remote font loads; Google Fonts import is BL-096.
+  - Fonts: the 4 existing presets plus any uploaded font asset (`openspec/specs/alert-advanced-typography/spec.md`). There are no remote font loads; Google Fonts import is BL-097.
 - **Card:** background color, opacity 0–100%, corner radius, border width and color, the shared card shadow, padding and gap.
 - **Text outline/shadow:** off, small, medium or large. Build it from layered `text-shadow`, because a heavy `-webkit-text-stroke` thins glyphs.
 - **Name placement:** inline (default for landscape) or above (default for vertical).
@@ -237,7 +237,7 @@ Reuse the Timer appearance building blocks in `packages/core/src/timers/schemas.
   - one per part type: `text`, `emote`, `mention`, `cheermote`.
 - Message attributes: `data-platform`, `data-role`, `data-highlight`, `data-emote-only`, `data-paid-tier`, `data-source-channel` (Shared Chat partner messages only).
 - The root carries `data-module="chat"`.
-- Saved settings are exposed as `--chat-*` CSS variables. Their defaults reference `--sj-*` names, ready for the style library (BL-099).
+- Saved settings are exposed as `--chat-*` CSS variables. Their defaults reference `--sj-*` names, ready for the style library (BL-100).
 - Naming follows Streamer.bot (`data-platform`, `data-slot`) and All-Chat (`--chat-*`), so community CSS ports easily.
 - Hiding a part in settings removes the element. Custom CSS cannot bring it back.
 - Internal class names are not part of the contract.
@@ -245,13 +245,13 @@ Reuse the Timer appearance building blocks in `packages/core/src/timers/schemas.
 ### Custom CSS (per profile)
 
 - An optional Custom CSS field per profile. It applies to the management preview, the browser outputs and the desktop layer, and it is saved with the profile and included in backups.
-- It is built on shared code (validation, scoping to the module root, injection, preview) that other modules will reuse (BL-098).
+- It is built on shared code (validation, scoping to the module root, injection, preview) that other modules will reuse (BL-099).
 - Limits:
   - 256 KB per profile.
   - `@import` rejected.
   - `data:` images allowed, which enable textures, frames and icons.
-  - External loads are blocked by the overlay CSP once BL-077 lands.
-- **Depends on BL-077.** Overlay pages have no CSP today. Without one, custom CSS could load remote resources, and attribute-selector exfiltration would work. If BL-077 is late, chat ships with custom CSS disabled.
+  - External loads are blocked by the overlay CSP once BL-078 lands.
+- **Depends on BL-078.** Overlay pages have no CSP today. Without one, custom CSS could load remote resources, and attribute-selector exfiltration would work. If BL-078 is late, chat ships with custom CSS disabled.
 - What CSS can and cannot change:
   - It can change colors, surfaces, typography from loaded fonts, spacing and arrangement within the module, hiding parts, pseudo-element decoration, clip-path and mask shapes, transforms, filters on the module's own pixels, and keyframe animation.
   - It cannot change content, timing or queueing, add real elements, load external resources (with a CSP), see the OBS scene behind the page (no `backdrop-filter`), resize the advertised canvas (oversized content is clipped), or run code.
@@ -261,8 +261,8 @@ Reuse the Timer appearance building blocks in `packages/core/src/timers/schemas.
 
 - No templates in v1.
 - Later rows, in order:
-  - **BL-084:** HTML/CSS-only templates. Sanitized structure with named slots that Stream Jams fills as text. Safe to share.
-  - **BL-085:** JS templates for the user's own use only.
+  - **BL-085:** HTML/CSS-only templates. Sanitized structure with named slots that Stream Jams fills as text. Safe to share.
+  - **BL-086:** JS templates for the user's own use only.
 - Installing third-party JS templates is not planned (NP-008).
 - Findings from the 2026-11-02 investigation:
   - **Container:** the right one is an opaque-origin `<iframe sandbox="allow-scripts">`.
@@ -300,7 +300,7 @@ The preview uses a built-in sample set covering every case:
 - a very long message;
 - a moderator, a VIP, and both platforms.
 
-A live-chat preview is BL-092.
+A live-chat preview is BL-093.
 
 ## Test Messages
 
@@ -327,13 +327,13 @@ There is no module on/off, which matches every other Operator panel today (`apps
 
 These existed before this work and are filed independently of chat:
 
-- **BL-077: overlay pages send no Content Security Policy.**
+- **BL-078: overlay pages send no Content Security Policy.**
   - `sendHtml` (`apps/server/src/http/routes/web-shell.ts:73`) sets only `referrer-policy`.
   - `sendManagementHtml` adds the management CSP and `X-Frame-Options`.
   - Overlay routes use `sendHtml` (`apps/server/src/http/routes/overlays.ts:53-56`).
   - The fix is a CSP of roughly this shape: `default-src 'none'`; scripts and styles from self; images, fonts and media from self plus `data:`; `connect-src` to self only; no frames. Check every module under it.
   - It must land before chat's custom CSS.
-- **BL-078: management session creation accepts `Origin: null` and shares the rate-limit bucket.**
+- **BL-079: management session creation accepts `Origin: null` and shares the rate-limit bucket.**
   - `applyOriginPolicy` (`apps/server/src/http/middleware/management-security.ts:128`) lets a missing or `null` Origin through for `POST /auth/management/sessions`.
   - An opaque-origin page cannot read the new session, but it can create sessions blindly and exhaust the shared per-IP rate limit, which locks the management UI out of signing in.
 
@@ -346,7 +346,7 @@ These existed before this work and are filed independently of chat:
 - The YouTube Super Chat tier colors and thresholds (https://support.google.com/youtube/answer/7288782).
 - Twitch badge endpoint response fields and the emote CDN URL template.
 - The vertical defaults (780 × 640, 32 px, 5 messages), on a real phone viewing a vertical stream.
-- Overlay CSP compatibility for every existing module (BL-077).
+- Overlay CSP compatibility for every existing module (BL-078).
 
 ## Differences From PR #190
 
@@ -356,15 +356,15 @@ PR #190 (`add-chat-display-module`, opened 2026-10-12, draft) proposed an earlie
 
 | Area | PR #190 | This design | Why |
 | --- | --- | --- | --- |
-| Twitch route | Streamer.bot | Direct EventSub | Twitch chat must not depend on Streamer.bot running, and it reuses the existing login. Cost: 7TV, BTTV and FFZ are fetched directly. Streamer.bot `parts` appear to include them (ChatRD renders them from `part.imageUrl` only), which is recorded for BL-087. |
-| Kick | In v1 via Streamer.bot | Out (BL-095) | Not used by the maintainer; no delete events. |
-| TikTok | In v1 via a TikFinity marker | Out (BL-094, keeps #190's marker design) | No removal events at all. |
-| History | Newest 50 in SQLite, per-message transactions | Server memory only (about 200) | Chat is not a queue; comparable tools keep none; synchronous SQLite writes on the main thread. Backlog BL-101. |
-| Avatars | On, via Twitch Get Users | None, except Shared Chat partner channel pictures | Consistency across platforms (BL-081). |
+| Twitch route | Streamer.bot | Direct EventSub | Twitch chat must not depend on Streamer.bot running, and it reuses the existing login. Cost: 7TV, BTTV and FFZ are fetched directly. Streamer.bot `parts` appear to include them (ChatRD renders them from `part.imageUrl` only), which is recorded for BL-088. |
+| Kick | In v1 via Streamer.bot | Out (BL-096) | Not used by the maintainer; no delete events. |
+| TikTok | In v1 via a TikFinity marker | Out (BL-095, keeps #190's marker design) | No removal events at all. |
+| History | Newest 50 in SQLite, per-message transactions | Server memory only (about 200) | Chat is not a queue; comparable tools keep none; synchronous SQLite writes on the main thread. Backlog BL-102. |
+| Avatars | On, via Twitch Get Users | None, except Shared Chat partner channel pictures | Consistency across platforms (BL-082). |
 | Blocked term | Replaced with `[moderated]` | Whole message hidden | `[moderated]` still identifies the author and invites probing. |
 | Filters | Bot list empty, commands shown by default | Bot list prefilled, commands hidden | Maintainer decision. |
 | YouTube safety | Bans only | Bans, a 3 s hold, and hold-for-review guidance | Single YouTube deletes are never delivered. |
-| Shared Chat | Shown, with partner-mod removals from Streamer.bot `SharedChat*` | Shown, with host-room removals only; partner picture badge plus `source_badges` | Matches the broadcaster's own Twitch chat. Mirroring partner moderation needs `channel.moderate` v2 (BL-090). |
+| Shared Chat | Shown, with partner-mod removals from Streamer.bot `SharedChat*` | Shown, with host-room removals only; partner picture badge plus `source_badges` | Matches the broadcaster's own Twitch chat. Mirroring partner moderation needs `channel.moderate` v2 (BL-091). |
 | Look | Box per message; no custom CSS, highlights or paid styling; cheers as text | Cards preset, highlights, Super Chats, cheermotes, big emotes, custom CSS | Look-and-feel review. |
 | Operator | Recent list with Hide/Unhide, Clear, module enable | Visible set with Hide/Unhide, Clear, platform switches; no module enable | No Operator panel has module enable today. |
 
@@ -377,11 +377,11 @@ PR #190 (`add-chat-display-module`, opened 2026-10-12, draft) proposed an earlie
 - part fallbacks;
 - capturing payloads before writing normalizers;
 - the generalized Music artwork fetcher with its image limits, cache and private media protocol;
-- the TikFinity marker design (for BL-094).
+- the TikFinity marker design (for BL-095).
 
 **Corrected in PR #190:**
 - It planned to implement YouTube `MessageDeleted` once a payload was captured. Streamer.bot says that event will never fire (https://streamer.bot/changelogs/v0.2.4).
-- It assumed overlay pages had `img-src 'self'`. Browser-source overlays have no CSP (BL-077).
+- It assumed overlay pages had `img-src 'self'`. Browser-source overlays have no CSP (BL-078).
 - It used the retired unified browser route.
 
 ## Documentation Note
