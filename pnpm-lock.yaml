@@ -29,6 +29,8 @@ overrides:
   ip-address@<10.7.1: 10.7.1
   follow-redirects@>=1.16.0 <1.16.2: 1.16.2
   '@fastify/static>glob': 14.0.2
+  '@storybook/test-runner>playwright': 1.64.1
+  '@storybook/test-runner>playwright-core': 1.64.1
 
 importers:
 
@@ -4491,18 +4493,8 @@ packages:
     resolution: {integrity: sha512-Oo/NZcSWccq8KyoG7gLE9fnltgHns+pNCjCAp/WmjsUySi+sX7y4z4Xqu4fVb42CDHzRPl33fjzT15V1wvcyhA==}
     engines: {node: '>=16.0.0'}
 
-  playwright-core@1.63.0:
-    resolution: {integrity: sha512-rYCsBF/M5HjUch52bbtVONEFjv6Xu8sm8h72dNlR5bzIE1fvC/bxgspzkjSfU+MweEMmPM8KJebG6nnyxo5mCg==}
-    engines: {node: '>=20'}
-    hasBin: true
-
   playwright-core@1.64.1:
     resolution: {integrity: sha512-BC4s8y6SEVA6Q1rSxZTto8hI1KUI3xXlHGZgvGqP4IqPdI/a6FX9H29IDNz7vKo9l21b6LfYosScPL6M3xxyDQ==}
-    engines: {node: '>=20'}
-    hasBin: true
-
-  playwright@1.63.0:
-    resolution: {integrity: sha512-+7ziBLidS4NaNCdt57SUDT+wYmmd5fmiQejUic/kb+YsYSCPyOOE9sebzMjNmQrsnNpDJqd4WHvV/8lfKfUDUg==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -7127,8 +7119,8 @@ snapshots:
       jest-serializer-html: 7.1.0
       jest-watch-typeahead: 3.0.1(jest@30.4.2(@types/node@25.9.9))
       nyc: 15.1.0
-      playwright: 1.63.0
-      playwright-core: 1.63.0
+      playwright: 1.64.1
+      playwright-core: 1.64.1
       rimraf: 3.0.2
       storybook: 10.6.4(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       uuid: 11.1.1
@@ -10039,13 +10031,7 @@ snapshots:
       pvutils: 1.2.0
       tslib: 2.8.1
 
-  playwright-core@1.63.0: {}
-
   playwright-core@1.64.1: {}
-
-  playwright@1.63.0:
-    dependencies:
-      playwright-core: 1.63.0
 
   playwright@1.64.1:
     dependencies:

@@ -40,6 +40,9 @@ overrides:
   'follow-redirects@>=1.16.0 <1.16.2': 1.16.2
   # GHSA-g3hv-75wg-m249, GHSA-3g3m-2fjr-6pw4: the served-asset path; glob 14 keeps the named glob() API and pulls minimatch 11.
   '@fastify/static>glob': 14.0.2
+  # The Storybook runner launches its own playwright; keep it on @playwright/test's version and the CI container's browsers.
+  '@storybook/test-runner>playwright': 1.64.1
+  '@storybook/test-runner>playwright-core': 1.64.1
 allowBuilds:
   electron: true
   '@swc/core': true
