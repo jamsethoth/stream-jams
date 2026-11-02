@@ -4,6 +4,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      # BL-069: axe-core 4.14's label-content-name-mismatch fails Storybook until the Label in Name fixes land.
+      - dependency-name: "@axe-core/playwright"
+        versions: [">=4.14.0"]
     groups:
       npm-production-minor-patch:
         applies-to: "version-updates"
