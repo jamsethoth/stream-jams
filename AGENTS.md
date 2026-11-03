@@ -61,3 +61,20 @@
 - Keep a committed slice-specific implementation spec before or with implementation. Follow the matching OpenSpec workflow when `openspec/` is present.
 - Keep changes scoped; include positive, negative, edge, and failure tests. Add or update Playwright coverage for user-visible browser behavior.
 - Before PR creation, reconcile requirements against code/tests, close in-scope gaps, run required gates, and verify the rebuilt live workflow.
+
+## Agent skills
+
+### Issue tracker
+
+Track product work in `docs/backlog.md` and implementation specs in
+OpenSpec. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five default triage terms as local ticket metadata.
+See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use a single-context layout: root `GLOSSARY.md` and `docs/adr/`.
+See `docs/agents/domain.md`.
