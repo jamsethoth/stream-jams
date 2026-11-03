@@ -8,6 +8,7 @@ import { _electron, expect, test, type ElectronApplication, type Page } from "@p
 import { alertEditorDocumentSchema, surfaceSettingsViewSchema, type AlertEditorDocument } from "../../packages/core/dist/index.js";
 import { windowByUrl } from "./audio-harness.js";
 import { uploadMediaFixture, type MediaFixture } from "../../scripts/media-streaming-fixtures.mjs";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 // Only disposable profiles. No physical audio, visible overlay or diagnostic
 // serialization of credentials/capability URLs. Retained JSON survives test cleanup.
@@ -30,8 +31,8 @@ test.beforeAll(async () => {
   const executablePath = resolve("apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");
   evidence.packageSha256 = createHash("sha256").update(await readFile(join(dirname(executablePath), "resources/app.asar"))).digest("hex");
   evidence.profile = profile;
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)); delete env.ELECTRON_RUN_AS_NODE;
-  Object.assign(env, { STREAM_JAMS_CONFIG_PATH: configPath, STREAM_JAMS_DESKTOP_USER_DATA_PATH: join(profile, "electron"), STREAM_JAMS_SHUTDOWN_LOG: join(profile, "shutdown.jsonl") });
+  const env = isolatedDesktopEnvironment(profile);
+  Object.assign(env, { STREAM_JAMS_CONFIG_PATH: configPath, STREAM_JAMS_SHUTDOWN_LOG: join(profile, "shutdown.jsonl") });
   desktop = await _electron.launch({ executablePath, env, cwd: profile, chromiumSandbox: true, timeout: 30_000 });
   // Install before creating any overlay. Existing management is immediately hidden.
   await desktop.evaluate(({ BrowserWindow }) => {

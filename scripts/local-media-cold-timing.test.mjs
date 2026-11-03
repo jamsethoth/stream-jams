@@ -106,7 +106,7 @@ test('concrete retained lock persists recovery metadata and refuses a second exc
 
 test('default lock uses the same private user directory across runs and survives retention', async () => {
   const homeDirectory = await mkdtemp(join(tmpdir(), 'stream-jams-home-test-'));
-  const lockDirectory = join(homeDirectory, '.stream-jams', 'local-media-cold-timing');
+  const lockDirectory = join(homeDirectory, '.stream-jams-tools', 'local-media-cold-timing');
   const lockPath = join(lockDirectory, 'runner.lock');
   try {
     const dependencies = { homeDirectory, legacyLockPath: join(homeDirectory, 'legacy.lock') };
@@ -133,8 +133,8 @@ test('lock rejects a redirected private directory without writing into its targe
   const homeDirectory = await mkdtemp(join(tmpdir(), 'stream-jams-home-test-'));
   const target = await mkdtemp(join(tmpdir(), 'stream-jams-lock-target-'));
   try {
-    await mkdir(join(homeDirectory, '.stream-jams'));
-    await symlink(target, join(homeDirectory, '.stream-jams', 'local-media-cold-timing'), 'junction');
+    await mkdir(join(homeDirectory, '.stream-jams-tools'));
+    await symlink(target, join(homeDirectory, '.stream-jams-tools', 'local-media-cold-timing'), 'junction');
     await assert.rejects(createAdapter({}, { homeDirectory, legacyLockPath: join(homeDirectory, 'legacy.lock') }).lock(), /private directory/);
     await assert.rejects(stat(join(target, 'runner.lock')), error => error.code === 'ENOENT');
   } finally {
@@ -152,7 +152,7 @@ test('a retained legacy temporary lock blocks migration without altering either 
     const adapter = createAdapter({}, { homeDirectory, legacyLockPath });
     await assert.rejects(adapter.lock(), /Legacy runner lock exists/);
     assert.equal(await readFile(legacyLockPath, 'utf8'), legacyRecord);
-    await assert.rejects(stat(join(homeDirectory, '.stream-jams')), error => error.code === 'ENOENT');
+    await assert.rejects(stat(join(homeDirectory, '.stream-jams-tools')), error => error.code === 'ENOENT');
     await rm(legacyLockPath);
     await adapter.lock();
     await adapter.unlock();

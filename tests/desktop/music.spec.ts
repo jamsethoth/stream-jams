@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import type { SurfaceSettingsView, TimerDefinition } from "../../packages/core/dist/index.js";
 import { _electron, expect, test, type ElectronApplication } from "@playwright/test";
 import { finishDesktop, windowByUrl, withCleanup } from "./audio-harness.js";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 const executablePath = resolve(process.env.STREAM_JAMS_TEST_EXECUTABLE ?? "apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -23,10 +24,8 @@ test("packaged desktop keeps Music opt-in, transparent without a source, and ind
     storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") },
     playback: { paused: false, muted: true, doNotDisturb: false }
   }));
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  delete env.ELECTRON_RUN_AS_NODE;
+  const env = isolatedDesktopEnvironment(root);
   env.STREAM_JAMS_CONFIG_PATH = join(root, "config.json");
-  env.STREAM_JAMS_DESKTOP_USER_DATA_PATH = join(root, "electron");
   let desktop: ElectronApplication | undefined;
   let child: ReturnType<ElectronApplication["process"]> | undefined;
   const ownedPids: number[] = [];

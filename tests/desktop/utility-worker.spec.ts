@@ -7,6 +7,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { _electron, expect, test } from "@playwright/test";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 test("packaged Sharp addon and companion DLLs are accessible to the Windows loader", async () => {
   const nativeDirectory = "node_modules/@stream-jams/server/node_modules/sharp/node_modules/@img/sharp-win32-x64/lib";
@@ -32,10 +33,8 @@ test("bundled utility worker starts, acknowledges persisted mute, and exits afte
   await new Promise<void>((resolve, reject) => listener.close((error) => error ? reject(error) : resolve()));
   const configPath = join(root, "config.json");
   await writeFile(configPath, JSON.stringify({ server: { host: "127.0.0.1", port: address.port }, storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") } }));
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  delete env.ELECTRON_RUN_AS_NODE;
+  const env = isolatedDesktopEnvironment(root);
   env.STREAM_JAMS_CONFIG_PATH = configPath;
-  env.STREAM_JAMS_DESKTOP_USER_DATA_PATH = join(root, "electron");
   const packagedExecutable = resolve(process.env.STREAM_JAMS_TEST_EXECUTABLE ?? "apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");
   const desktop = await _electron.launch({
     executablePath: require("electron") as string,

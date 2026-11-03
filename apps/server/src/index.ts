@@ -6,12 +6,13 @@ import { startLocalRuntime } from "./runtime/start-local-runtime.js";
 import { installCliShutdown } from "./runtime/cli-shutdown.js";
 import { EmergencyLogWriter } from "./modules/diagnostics/emergency-log-writer.js";
 import { installFatalProcessErrorHandlers } from "./runtime/fatal-process-errors.js";
+import { resolveRuntimeProfile } from "./config/runtime-profile.js";
 
 const homeDirectory = homedir();
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const webBuildDirectory = resolve(currentDirectory, "../../web/dist");
 const emergencyWriter = new EmergencyLogWriter({
-  filePath: resolve(homeDirectory, ".stream-jams", "logs", "emergency.jsonl")
+  filePath: resolveRuntimeProfile(homeDirectory).emergencyLogPath
 });
 const generateFatalReferenceId = () => `fatal_${randomUUID()}`;
 installFatalProcessErrorHandlers({ process, emergencyWriter, generateReferenceId: generateFatalReferenceId });

@@ -34,6 +34,7 @@ try {
 }
 
 export default defineConfig({
+  globalSetup: "./packages/test-support/src/playwright-global-setup.ts",
   testDir: "./tests/e2e",
   timeout: 30_000,
   // The E2E projects intentionally share one Stream Jams service and its

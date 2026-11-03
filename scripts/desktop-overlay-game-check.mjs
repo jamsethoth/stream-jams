@@ -5,7 +5,8 @@ import { fileURLToPath, pathToFileURL, URL } from 'node:url';
 import { performance } from 'node:perf_hooks';
 
 export function parseArgs(args) {
-  const options = { baseUrl: 'http://127.0.0.1:39187', timeoutMs: 30000, trigger: false };
+  // No default origin: this diagnostic can trigger playback, so it never assumes the production port.
+  const options = { timeoutMs: 30000, trigger: false };
   const keys = { '--base-url': 'baseUrl', '--timeout-ms': 'timeoutMs', '--effect-id': 'effectId', '--variant-id': 'variantId', '--overlay-pid': 'overlayPid' };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -13,6 +14,7 @@ export function parseArgs(args) {
     if (!keys[arg] || !args[i + 1] || args[i + 1].startsWith('--')) throw new Error('Invalid arguments');
     options[keys[arg]] = args[++i];
   }
+  if (options.baseUrl === undefined) throw new Error('--base-url is required (the loopback origin of the Stream Jams instance to check)');
   const url = new URL(options.baseUrl);
   if (url.protocol !== 'http:' || !['127.0.0.1', '[::1]'].includes(url.hostname) || url.username || url.password || url.pathname !== '/' || url.search || url.hash) throw new Error('A literal loopback HTTP origin is required');
   options.baseUrl = url.origin;

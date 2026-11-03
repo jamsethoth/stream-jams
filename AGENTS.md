@@ -53,6 +53,7 @@
 - Do not weaken, skip, or delete tests to make validation pass. Change tests only when behavior intentionally changes.
 - Before publishing, run relevant repo gates: lint, typecheck, tests, build, Storybook gates, and Playwright when applicable.
 - After code changes, rebuild and restart affected local services, wait for health, reload the UI, and verify the changed live workflow against the new build.
+- The maintainer streams from the same PC. Run local services only in the dev profile (`corepack pnpm dev:isolated` or `start:dev` with `STREAM_JAMS_HOME` set), never against `~/.stream-jams`, port 39187, `stream-jams:` credentials or the installed app. Automated OBS changes go only through `connectGuardedObs` to the dev OBS. See the runbook's "Development and test profiles".
 
 ## Slice Workflow
 

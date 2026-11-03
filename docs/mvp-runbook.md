@@ -5,13 +5,24 @@ This runbook covers the local application and its implemented post-MVP Windows, 
 ## Startup
 
 1. Install dependencies with `corepack pnpm install --frozen-lockfile`.
-2. Start the local runtime app with `corepack pnpm start:local`.
+2. Start the local runtime app with `STREAM_JAMS_PROFILE=production corepack pnpm start:local` (PowerShell: `$env:STREAM_JAMS_PROFILE="production"` first). On a PC that also runs development, use the dev profile below instead.
 3. Open the management UI at `http://127.0.0.1:39187/manage`.
 4. Keep Stream Jams on localhost. Management sessions and overlay keys are designed for local operation.
 
 `start:local` builds the Vite web bundle first, then starts the Fastify service that serves `/manage`, overlay shell routes, HTTP APIs, static web assets, and overlay WebSocket endpoints from the same local origin.
 
-For fast frontend iteration, use `corepack pnpm dev`. That path may run Vite for hot reload and is not the production-style local runtime that streamers should use for browser-source overlays.
+For fast frontend iteration, use `corepack pnpm dev:isolated`. That path may run Vite for hot reload and is not the production-style local runtime that streamers should use for browser-source overlays.
+
+### Development and test profiles
+
+`STREAM_JAMS_PROFILE` selects `production` (the default when unset, used by the installed app), `dev` or `test`. Bare `corepack pnpm dev` and `corepack pnpm start:local` refuse to start without it, so they can never quietly use the production data, credentials and port. See the [isolation evaluation](engineering/dev-environment-isolation.md) for the reasons.
+
+- **Dev:** set `STREAM_JAMS_HOME` to an absolute folder (for example `C:\StreamJamsDev\home`) and run `corepack pnpm dev:isolated` or `corepack pnpm start:dev`. Everything lives under that folder: config, data, assets, backups and logs. The dev profile uses port 39287, credential names starting `stream-jams-dev:`, starts muted, and can run beside the installed app. Its desktop app is "Stream Jams Dev": it has its own Electron profile (`%APPDATA%\Stream Jams Dev`), lock, taskbar identity and an orange-badged tray icon labelled "Stream Jams (Dev)".
+- **Test:** every Vitest and Playwright run puts itself in the test profile with a temporary home and a run-scoped credential prefix (`stream-jams-test-<runId>`), and removes those credentials when it finishes. Desktop specs build their environment with `isolatedDesktopEnvironment` (`tests/desktop/desktop-environment.ts`); `scripts/desktop-isolation-check.test.mjs` fails a spec that launches the app any other way.
+- **Refusals:** dev and test stop at startup, before opening the database, credentials or a port, when a path is inside `~/.stream-jams`, the port is 39187, the credential prefix is `stream-jams`, the Electron profile is the installed app's, or the data folder's `profile.json` marker says `production`. Production refuses a data folder marked `dev` or `test`.
+- **Twitch:** list the production Twitch account ID in `STREAM_JAMS_PROTECTED_TWITCH_ACCOUNT_IDS` (comma-separated). Dev and test then refuse to connect it, so use a separate Twitch test account.
+- **Desktop overlay:** dev and test offer only the dev display. By default that is any display whose label contains "Parsec"; set `STREAM_JAMS_DEV_DISPLAY_LABEL` to change it. With no match, the dev desktop overlay cannot be enabled.
+- **OBS:** automated obs-websocket clients must use `connectGuardedObs` from `packages/test-support`. It accepts only the portable dev OBS: `STREAM_JAMS_DEV_OBS_ROOT` (default `C:\StreamJamsDev\obs`) on `STREAM_JAMS_DEV_OBS_PORT` (default 4456), with profile and scene collection `StreamJamsDev` and a matching `stream-jams-dev-obs.json` marker. It also blocks streaming, recording, the virtual camera and capture inputs.
 
 ## Windows desktop startup and tray
 
@@ -54,11 +65,11 @@ The desktop main process owns one utility-process service, a sandboxed managemen
 - In Settings, disable **Close window to tray** and save to make X perform a full Quit. This preference also participates in backup restore and rollback.
 - GPU acceleration is on by default. If Stream Jams keeps running after Quit (seen on Windows 25H2 when the GPU process does not exit), clear **Use GPU acceleration** in Settings and save. The desktop app reads this choice before it starts, so it takes effect at the next launch. It is saved with the other settings and mirrored to `gpu-preference.json` in the Electron profile; a missing or damaged file means on.
 - If management crashes, native Quit warns that unsaved edits cannot be recovered. Startup has a 20-second deadline; graceful shutdown has 10 seconds before terminating only the owned worker.
-- A second launch with the same Electron profile focuses the existing instance. `STREAM_JAMS_DESKTOP_USER_DATA_PATH` accepts an absolute path for isolated testing; it does not change the application data directory or make concurrent use of one data profile safe.
+- A second launch with the same Electron profile focuses the existing instance. `STREAM_JAMS_DESKTOP_USER_DATA_PATH` accepts an absolute path for isolated testing; it does not change the application data directory or make concurrent use of one data profile safe. In the dev and test profiles it may not point at the installed app's profile.
 
-Run `corepack pnpm test:desktop` on Windows after packaging. Tests copy the folder outside the checkout and use temporary config/data/Electron profiles and uniquely named temporary credentials. They must not use live provider accounts or live overlay URLs. The ordinary desktop suite excludes tests tagged `@hardware`.
+Run `corepack pnpm test:desktop` on Windows after packaging. Tests copy the folder outside the checkout and run each launch in the test profile: temporary home, config, data and Electron profile, plus a run-scoped credential prefix that is removed after the run. They must not use live provider accounts or live overlay URLs. The ordinary desktop suite excludes tests tagged `@hardware`.
 
-Run the audible hardware suite only after receiving explicit approval for the two physical outputs. Set `STREAM_JAMS_AUDIO_TEST=1`, set `STREAM_JAMS_AUDIO_TEST_OUTPUTS` to two exact device labels separated by `|`, then run `corepack pnpm test:desktop:hardware`. The hardware suite plays brief tones independently, together, and again after restarting the packaged application. See [desktop verification](verification/windows-desktop-tray-runtime.md) for actual results and remaining interactive checks.
+Run the audible hardware suite only after receiving explicit approval for the two physical outputs. Set `STREAM_JAMS_AUDIO_TEST=1`, set `STREAM_JAMS_AUDIO_TEST_OUTPUTS` to two exact device labels separated by `|`, and set `STREAM_JAMS_AUDIO_DENY_OUTPUTS` to the stream audio devices it must never use (`|`-separated, matched case-insensitively). Then run `corepack pnpm test:desktop:hardware`. The suite refuses to run without a deny list, and refuses any output that matches it. The hardware suite plays brief tones independently, together, and again after restarting the packaged application. See [desktop verification](verification/windows-desktop-tray-runtime.md) for actual results and remaining interactive checks.
 
 Signing, durable release publication, updates, startup-at-login, a Windows service, non-Windows desktop delivery, and a `safeStorage` migration remain deferred under BL-030. The dependent alert-audio-routing change adds the controls below; the tray host alone does not add routing.
 

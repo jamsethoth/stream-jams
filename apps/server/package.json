@@ -6,6 +6,10 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./runtime-profile": {
+      "types": "./dist/config/runtime-profile.d.ts",
+      "default": "./dist/config/runtime-profile.js"
+    },
     "./runtime": {
       "types": "./dist/runtime/start-local-runtime.d.ts",
       "default": "./dist/runtime/start-local-runtime.js"
@@ -16,7 +20,7 @@
     }
   },
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "node ../../scripts/require-profile.mjs && tsx watch src/index.ts",
     "build": "tsc -b tsconfig.json",
     "start": "node dist/index.js",
     "typecheck": "tsc -b tsconfig.json"

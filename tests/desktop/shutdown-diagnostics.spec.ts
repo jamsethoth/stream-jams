@@ -7,6 +7,7 @@ import { _electron, expect, test, type ElectronApplication } from "@playwright/t
 import { windowByUrl, withCleanup } from "./audio-harness.js";
 import { observeGuardReady } from "./guard-ready.js";
 import { withShutdownEvidence } from "./shutdown-evidence.js";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 test("opt-in shutdown evidence separates Cancel from cleanup and native exit", async () => {
   const testInfo = test.info();
@@ -20,11 +21,9 @@ test("opt-in shutdown evidence separates Cancel from cleanup and native exit", a
   await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   const config = join(root, "config.json");
   await writeFile(config, JSON.stringify({ server: { host: "127.0.0.1", port }, storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") } }));
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
+  const env = isolatedDesktopEnvironment(root);
   env.STREAM_JAMS_CONFIG_PATH = config;
-  env.STREAM_JAMS_DESKTOP_USER_DATA_PATH = join(root, "electron");
   env.STREAM_JAMS_SHUTDOWN_LOG = file;
-  delete env.ELECTRON_RUN_AS_NODE;
   let desktop: ElectronApplication | undefined;
   let child: ChildProcess | undefined;
   const pids = new Set<number>();
