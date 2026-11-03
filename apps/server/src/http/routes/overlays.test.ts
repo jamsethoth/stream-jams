@@ -362,6 +362,19 @@ describe("overlay routes", () => {
       }
     });
   });
+
+  it("serves the key-free offline worker and fallback beside the keyed overlay shell", async () => {
+    const app = createServerApp({ metadata: { appName: "stream-jams", version: "1.2.3" }, overlayAccessService: createAccessService([]),
+      overlayCompositionService: new RecordingOverlayCompositionService(), overlayModuleRegistry: createRegistry(["alerts"]), webShellRenderer: createTestWebShellRenderer() });
+    try {
+      const worker = await app.inject({ url: "/overlay/offline-worker.js" });
+      expect([worker.statusCode, worker.headers["content-type"]]).toEqual([200, "text/javascript; charset=utf-8"]);
+      const fallback = await app.inject({ url: "/overlay/offline-fallback" });
+      expect([fallback.statusCode, fallback.headers["cache-control"]]).toEqual([200, "no-store"]);
+      // The keyed shell still fails closed; the fallback is only ever served by the browser's worker.
+      expect((await app.inject({ url: "/overlay/modules/alerts/live/ovl_unknown?profile=landscape" })).statusCode).toBe(401);
+    } finally { await app.close(); }
+  });
 });
 
 function createAccessService(rawKeys: readonly string[]): HistoricalOverlayKeyFixture {

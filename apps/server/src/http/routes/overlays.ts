@@ -16,6 +16,7 @@ import {
   parseOverlayTargetProfileQuery
 } from "../middleware/overlay-auth.js";
 import type { OverlayGateway, OverlayGatewaySocket } from "../../websocket/overlay-gateway.js";
+import { registerOverlayOfflineFallbackRoutes } from "./overlay-offline-fallback.js";
 import { readModuleOverlayParams, readUnifiedOverlayParams } from "./overlay-route-params.js";
 import { sendHtml, type WebShellRenderer } from "./web-shell.js";
 
@@ -49,6 +50,7 @@ export function registerOverlayRoutes(app: FastifyInstance, dependencies: Overla
     onRetiredOutput: record
   });
 
+  registerOverlayOfflineFallbackRoutes(app);
   app.get("/overlay/modules/:moduleId/:purpose", { preHandler: shellPreHandler }, async (_request, reply) =>
     sendHtml(reply, await dependencies.webShellRenderer.renderOverlayShell())
   );

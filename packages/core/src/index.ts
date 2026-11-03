@@ -407,5 +407,5 @@ export { manualEventSubmissionSchema, manualEventActionSchema, manualEventAction
 export type * from "./event-bus/manual-submission.js";
 
 export { outputCanvasSchema, sceneOutputCanvas, moduleOutputCanvas, type OutputCanvas } from "./overlay-modules/output-canvas.js";
-export { classifyRetiredOverlayOutput, isOrdinaryOverlayOutput } from "./overlays/public-output.js";
+export { classifyRetiredOverlayOutput, isOrdinaryOverlayOutput, overlayOfflineFallback } from "./overlays/public-output.js";
 export type { RetiredOverlayOutputKind } from "./overlays/public-output.js";

@@ -21,3 +21,13 @@ export function classifyRetiredOverlayOutput(input: { readonly scope: unknown; r
   if (input.scope === "unified") return "unified";
   return input.purpose === "test" ? "module-test" : null;
 }
+
+/** Key-free paths for the browser-source offline fallback; the worker's default scope is its own directory. */
+export const overlayOfflineFallback = {
+  workerPath: "/overlay/offline-worker.js",
+  fallbackPath: "/overlay/offline-fallback",
+  scope: "/overlay/",
+  navigationPrefix: "/overlay/modules/",
+  cachePrefix: "stream-jams-overlay-offline-",
+  cacheName: "stream-jams-overlay-offline-v1"
+} as const;
