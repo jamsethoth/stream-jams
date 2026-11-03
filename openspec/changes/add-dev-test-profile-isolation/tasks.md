@@ -32,6 +32,8 @@
 - [x] 5.1 Add `connectGuardedObs` to `packages/test-support`: port, owning-process path, profile and collection names, persistent-data marker, and the request deny list, unit-tested with injected dependencies
 - [x] 5.2 Add `assertPortableMarkerTarget` (refuse `portable_mode.txt` outside an owned copy or inside an install) and apply it to `obs-browser-security.spec.ts`
 
+- [x] 5.3 Add `scripts/dev-obs.mjs` (`dev:obs:setup`, `dev:obs:sources`) for reusable dev OBS provisioning from production, with unit tests in `scripts/dev-obs.test.mjs`. Verified on 2026-11-03: a fresh setup into a scratch folder opened without the first-run wizard, passed `connectGuardedObs`, and connected all 6 Stream Jams outputs to the dev runtime. A refresh of `C:\StreamJamsDev\obs` did the same. Production OBS files, credentials and Stream Jams were unchanged
+
 ## 6. Scripts and docs
 
 - [x] 6.1 Add `dev:isolated` and `start:dev`. Make bare `dev`, `start:local` and the server package `dev` refuse without `STREAM_JAMS_PROFILE`
