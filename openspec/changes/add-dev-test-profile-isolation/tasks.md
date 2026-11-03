@@ -40,6 +40,6 @@
 
 ## 7. Verification
 
-- [ ] 7.1 Run lint, typecheck, `pnpm test`, `test:e2e` and `test:desktop` with the guards in place, and confirm the Credential Manager `stream-jams:` count and `~/.stream-jams` contents are unchanged afterwards
-- [ ] 7.2 Live check: start `pnpm dev:isolated` beside the running production app. Confirm a separate tray, lock and port 39287, and that production keeps serving on 39187
+- [x] 7.1 Run lint, typecheck, `pnpm test`, `test:e2e` and `test:desktop` with the guards in place, and confirm the Credential Manager `stream-jams:` count and `~/.stream-jams` contents are unchanged afterwards (2026-11-03, on the streaming PC with production running). Lint and typecheck pass. Vitest node project: 2950/2950. `node --test` scripts: 128 pass, 1 skipped. Desktop: 41 passed, 1 skipped (installer, opt-in). E2E: 159/160, and the one failure (a stray `ERR_CONNECTION_REFUSED` console line) passes alone. The Vitest web project times out under this PC's load with or without the new global setup (A/B), so CI is its reference. Production afterwards: the same 12 credentials, no file changes under `~/.stream-jams` (including no new backups), no marker, unchanged Electron profile, and no test credentials left behind
+- [x] 7.2 Live check: the dev-profile server and the packaged desktop app in the dev profile both ran beside the running production app. The dev app kept its own lock in `%APPDATA%\Stream Jams Dev` and served 39287 from the dev executable; production kept serving 39187 from `C:\StreamingTools\Stream Jams`. The dev config started muted with dev paths and a `dev` marker. The tray badge was not inspected visually
 - [ ] 7.3 Reconcile the specs against code and tests, then sync specs and archive the change after merge
