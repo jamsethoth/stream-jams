@@ -1,6 +1,6 @@
 # Development And Test Environment Isolation
 
-Status: evaluated 2026-10-29; recommendation approved by the maintainer 2026-11-02 (see [Decisions](#decisions-2026-11-02)). The code slice is implemented by OpenSpec change [`add-dev-test-profile-isolation`](../../openspec/changes/add-dev-test-profile-isolation/proposal.md) (BL-077); its tasks record the verification. The machine setup steps below are still for the maintainer to run. The camera-check refusal waits on PR #200.
+Status: evaluated 2026-10-29; recommendation approved by the maintainer 2026-11-02 (see [Decisions](#decisions-2026-11-02)). The code slice is implemented by OpenSpec change [`add-dev-test-profile-isolation`](../../openspec/changes/add-dev-test-profile-isolation/proposal.md) (BL-077); its tasks record the verification. The camera-check refusal waits on PR #200. Machine setup steps 1 to 4 (dev root and portable dev OBS) were done on 2026-11-03, with the production scene collections copied and made safe; `C:\StreamJamsDev\obs\STREAM-JAMS-DEV-README.txt` lists what changed in the copies. Steps 5 to 7 remain.
 
 This page answers one question: how can development, automated tests and automated OBS changes run on the maintainer's streaming PC without any chance of changing the production Stream Jams install or the production OBS? It records where the two environments collide today, compares the isolation options, recommends one, and lists the guardrails and decisions needed before implementation.
 
