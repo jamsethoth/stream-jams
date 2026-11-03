@@ -46,9 +46,14 @@ describe("allowedDesktopDisplays", () => {
     expect(allowedDesktopDisplays(displays, "production", {})).toEqual(displays);
   });
 
-  it("offers only the dev display in dev and test", () => {
+  it("offers only the dev display in dev", () => {
     expect(allowedDesktopDisplays(displays, "dev", {})).toEqual([displays[1]]);
-    expect(allowedDesktopDisplays(displays, "test", { STREAM_JAMS_DEV_DISPLAY_LABEL: "vg27" })).toEqual([displays[0]]);
+    expect(allowedDesktopDisplays(displays, "dev", { STREAM_JAMS_DEV_DISPLAY_LABEL: "vg27" })).toEqual([displays[0]]);
+  });
+
+  it("keeps every display for test runs unless a dev display is configured", () => {
+    expect(allowedDesktopDisplays(displays, "test", {})).toEqual(displays);
+    expect(allowedDesktopDisplays(displays, "test", { STREAM_JAMS_DEV_DISPLAY_LABEL: "parsec" })).toEqual([displays[1]]);
   });
 
   it("offers nothing when no display matches", () => {

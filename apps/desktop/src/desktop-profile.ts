@@ -37,12 +37,14 @@ export function resolveDesktopUserData(profile: RuntimeProfileName, appData: str
 }
 
 /**
- * Dev and test may place the desktop overlay only on the dev display (the Parsec virtual
- * display by default), so dev overlays cannot appear on a monitor production OBS captures.
- * No match means no display: the overlay cannot be enabled.
+ * Dev may place the desktop overlay only on the dev display (the Parsec virtual display by
+ * default), so dev overlays cannot appear on a monitor production OBS captures. No match means
+ * no display: the overlay cannot be enabled. Test runs keep every display, because overlay tests
+ * need one on any runner, unless STREAM_JAMS_DEV_DISPLAY_LABEL confines them as well.
  */
 export function allowedDesktopDisplays<T extends { readonly label: string }>(displays: readonly T[], profile: RuntimeProfileName, environment: NodeJS.ProcessEnv = process.env): T[] {
-  if (profile === "production") return [...displays];
-  const wanted = (environment.STREAM_JAMS_DEV_DISPLAY_LABEL?.trim() || "Parsec").toLowerCase();
+  const configured = environment.STREAM_JAMS_DEV_DISPLAY_LABEL?.trim();
+  if (profile === "production" || (profile === "test" && !configured)) return [...displays];
+  const wanted = (configured || "Parsec").toLowerCase();
   return displays.filter(display => display.label.toLowerCase().includes(wanted));
 }

@@ -58,7 +58,7 @@ Every runtime SHALL write `profile.json` with its profile into a data directory 
 - **THEN** startup fails without migrating or writing that database
 
 ### Requirement: Dev And Test Device And Account Defaults
-In the `dev` and `test` profiles a newly created configuration SHALL start with playback muted and the desktop overlay disabled. The desktop host SHALL offer only displays whose label contains `STREAM_JAMS_DEV_DISPLAY_LABEL` (default `Parsec`), so the desktop overlay can be enabled only on the dev display. `dev` and `test` SHALL refuse to complete a Twitch connection whose account ID appears in `STREAM_JAMS_PROTECTED_TWITCH_ACCOUNT_IDS`, without storing its tokens.
+In the `dev` and `test` profiles a newly created configuration SHALL start with playback muted and the desktop overlay disabled. In `dev` the desktop host SHALL offer only displays whose label contains `STREAM_JAMS_DEV_DISPLAY_LABEL` (default `Parsec`), so the desktop overlay can be enabled only on the dev display. In `test` it SHALL offer every display, because overlay tests need one on any runner, unless `STREAM_JAMS_DEV_DISPLAY_LABEL` is set. `dev` and `test` SHALL refuse to complete a Twitch connection whose account ID appears in `STREAM_JAMS_PROTECTED_TWITCH_ACCOUNT_IDS`, without storing its tokens.
 
 #### Scenario: Fresh dev runtime
 - **WHEN** a `dev` runtime creates its configuration
