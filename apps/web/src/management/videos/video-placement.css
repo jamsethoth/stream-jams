@@ -14,4 +14,6 @@
 .video-placement__fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr)); gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .video-placement__fields legend { padding: 0 0 8px; }
 .video-placement__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.video-placement__more > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.video-placement__more[open] > summary { margin-bottom: 8px; }
 .videos-settings__error { margin: 8px 0 0; color: var(--color-negative); }

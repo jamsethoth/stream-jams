@@ -38,6 +38,7 @@ export const videosProjectionSchema = z.discriminatedUnion("status", [
     status: z.literal("active"),
     itemId: itemIdSchema,
     title: videoTitleSchema.nullable(),
+    channel: videoChannelNameSchema.nullable().optional(),
     requester: videoRequesterSchema.nullable(),
     layout: videosLayoutSchema,
     delivery: z.discriminatedUnion("mode", [

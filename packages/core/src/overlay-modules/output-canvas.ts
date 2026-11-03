@@ -6,6 +6,7 @@ import type { MusicModuleConfig } from "../music/types.js";
 import { resolveTimerOutputGeometry } from "../timers/output-geometry.js";
 import { timersOverlayModuleConfigSchema } from "../timers/schemas.js";
 import { currentVideosModuleConfigSchema } from "../videos/schemas.js";
+import { videosShadowInsets } from "../videos/layout.js";
 
 import { outputCanvasSchema, type OutputCanvas } from "./output-canvas-contract.js";
 export { outputCanvasSchema, type OutputCanvas } from "./output-canvas-contract.js";
@@ -21,9 +22,11 @@ export function moduleOutputCanvas(config: OverlayModuleConfig, profile: Overlay
   recipientKind: "browser" | "desktop", configRevision: number): OutputCanvas {
   if (recipientKind === "desktop") return sceneOutputCanvas(configRevision);
   if (config.moduleId === "videos") {
-    const { width, height } = currentVideosModuleConfigSchema.parse(config.config).layout.content;
-    return outputCanvasSchema.parse({ schemaVersion: 1, kind: "content", width, height,
-      origin: { x: 0, y: 0 }, insets: { top: 0, right: 0, bottom: 0, left: 0 }, configRevision });
+    const { layout } = currentVideosModuleConfigSchema.parse(config.config);
+    const insets = videosShadowInsets(layout);
+    // The origin shifts the browser-local box past the shadow margin.
+    return outputCanvasSchema.parse({ schemaVersion: 1, kind: "content", width: layout.content.width + insets.left + insets.right,
+      height: layout.content.height + insets.top + insets.bottom, origin: { x: insets.left, y: insets.top }, insets, configRevision });
   }
   if (config.moduleId === "music") return outputCanvasSchema.parse({
     ...resolveMusicOutputGeometry(config.config as MusicModuleConfig, profile ?? "landscape"), configRevision
