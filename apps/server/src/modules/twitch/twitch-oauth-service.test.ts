@@ -193,6 +193,21 @@ describe("TwitchOAuthService", () => {
     });
   });
 
+  it("refuses a protected account without storing tokens or account metadata", async () => {
+    const now = createClock();
+    const notifications: TwitchConnectionStatus[] = [];
+    const { apiClient, repository, secretStore, service } = createService({ now: now.read, protectedAccountIds: new Set(["141981764"]), onConnectionChanged(status) { notifications.push(status); } });
+    apiClient.pollResult = { status: "granted", grant: createTokenGrant("1") };
+    const authorization = await service.createConnectionStart();
+    now.advance(5_000);
+
+    await expect(service.pollConnection({ authorizationId: authorization.authorizationId })).rejects.toThrow(/protected from dev and test runs/u);
+    await expect(secretStore.getSecret(createTwitchTokenSecretRef("141981764", "access_token"))).resolves.toBeNull();
+    await expect(secretStore.getSecret(createTwitchTokenSecretRef("141981764", "refresh_token"))).resolves.toBeNull();
+    await expect(repository.findConnectedAccount()).resolves.toBeNull();
+    expect(notifications).toHaveLength(0);
+  });
+
   it("refreshes public-client tokens while preserving original connectedAt", async () => {
     const now = createClock();
     const { apiClient, repository, secretStore, service } = createService({ now: now.read });
@@ -346,6 +361,7 @@ function createService(
     readonly generateAuthorizationId?: () => string;
     readonly now?: () => Date;
     readonly onConnectionChanged?: (status: TwitchConnectionStatus) => void | Promise<void>;
+    readonly protectedAccountIds?: ReadonlySet<string>;
     readonly repository?: TwitchAccountRepository;
     readonly secretStore?: SecretStore;
   } = {}
@@ -359,6 +375,7 @@ function createService(
     generateAuthorizationId: options.generateAuthorizationId ?? (() => "authorization-1"),
     now: options.now ?? (() => new Date("2026-05-30T12:00:00.000Z")),
     ...(options.onConnectionChanged === undefined ? {} : { onConnectionChanged: options.onConnectionChanged }),
+    protectedAccountIds: options.protectedAccountIds,
     repository,
     secretStore
   });

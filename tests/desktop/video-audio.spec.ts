@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { _electron, expect, test, type Page } from "@playwright/test";
 import { windowByUrl } from "./audio-harness.js";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 // Capability evidence only. Never capture management credentials or emit
 // physical audio in this test.
@@ -34,9 +35,8 @@ test(mode === "decoder"
     storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") },
     playback: { paused: false, muted: true, moduleMutes: { alerts: true, "screen-effects": true }, doNotDisturb: false } }));
   for (const clip of clips) await writeFile(join(root, `${clip.withAudio ? "markers" : "trackless"}.${format.extension}`), clip.bytes);
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  delete env.ELECTRON_RUN_AS_NODE;
-  Object.assign(env, { STREAM_JAMS_CONFIG_PATH: configPath, STREAM_JAMS_DESKTOP_USER_DATA_PATH: join(root, "electron"), STREAM_JAMS_SHUTDOWN_LOG: join(root, "shutdown.jsonl") });
+  const env = isolatedDesktopEnvironment(root);
+  Object.assign(env, { STREAM_JAMS_CONFIG_PATH: configPath, STREAM_JAMS_SHUTDOWN_LOG: join(root, "shutdown.jsonl") });
   const desktop = await _electron.launch({ executablePath, env, cwd: root, chromiumSandbox: true, timeout: 30_000 });
   const child = desktop.process();
   const pids = new Set<number>();

@@ -9,6 +9,7 @@ import { _electron, expect, test } from "@playwright/test";
 import { serializeMediaStreamingEvidence } from "../../scripts/media-streaming-evidence.mjs";
 import { windowByUrl } from "./audio-harness.js";
 import { finishUtilityResources, installUtilityResourceObserver, startUtilityResources, type UtilityResources } from "./utility-resource-observer.js";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 // Capabilities and memory observations only: disposable profile, zero gain,
 // authoritative mute, hidden windows, no screenshots containing media handles.
@@ -35,9 +36,8 @@ test("@hardware Forge streaming uses bounded reference IPC across 1/25/100 MiB r
   await new Promise<void>((accept, reject) => listener.close(error => error ? reject(error) : accept()));
   const base = `http://127.0.0.1:${port}`;
   await writeFile(join(root, "config.json"), JSON.stringify({ server: { host: "127.0.0.1", port }, storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") }, playback: { paused: false, muted: true, moduleMutes: { alerts: true, "screen-effects": true }, doNotDisturb: false } }));
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  delete env.ELECTRON_RUN_AS_NODE;
-  Object.assign(env, { STREAM_JAMS_CONFIG_PATH: join(root, "config.json"), STREAM_JAMS_DESKTOP_USER_DATA_PATH: join(root, "electron"), STREAM_JAMS_SHUTDOWN_LOG: join(root, "shutdown.jsonl") });
+  const env = isolatedDesktopEnvironment(root);
+  Object.assign(env, { STREAM_JAMS_CONFIG_PATH: join(root, "config.json"), STREAM_JAMS_SHUTDOWN_LOG: join(root, "shutdown.jsonl") });
   const desktop = await _electron.launch({ executablePath, env, cwd: root, chromiumSandbox: true, timeout: 30_000 });
   const child = desktop.process(), pids = new Set<number>(), results: unknown[] = [], failures: unknown[] = [];
   const ranges: { status: number; contentRange: string | null }[] = [];

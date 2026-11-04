@@ -6,6 +6,7 @@ import { basename, join, resolve } from "node:path";
 import { _electron, expect, test, type Page } from "@playwright/test";
 import type { AlertEditorDocument, DeviceAudioResult } from "../../packages/core/dist/index.js";
 import { finishDesktop, windowByUrl, withCleanup } from "./audio-harness.js";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
@@ -32,9 +33,8 @@ test("@hardware native audio stalls after advancing onset, detaches only its lay
   await mkdir(evidenceDirectory, { recursive: true });
   const shutdownLogPath = join(evidenceDirectory, `${basename(root)}-shutdown.jsonl`);
   await writeFile(configPath, JSON.stringify({ server: { host: "127.0.0.1", port: address.port }, storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") }, playback: { paused: false, muted: true, moduleMutes: { alerts: true, "screen-effects": true }, doNotDisturb: false } }));
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  delete env.ELECTRON_RUN_AS_NODE;
-  Object.assign(env, { STREAM_JAMS_CONFIG_PATH: configPath, STREAM_JAMS_DESKTOP_USER_DATA_PATH: join(root, "electron"), STREAM_JAMS_SHUTDOWN_LOG: shutdownLogPath });
+  const env = isolatedDesktopEnvironment(root);
+  Object.assign(env, { STREAM_JAMS_CONFIG_PATH: configPath, STREAM_JAMS_SHUTDOWN_LOG: shutdownLogPath });
   const desktop = await _electron.launch({ executablePath, env, cwd: root, chromiumSandbox: true, timeout: 30000 });
   const child = desktop.process(), pids = new Set<number>(child.pid === undefined ? [] : [child.pid]);
   const evidence: Record<string, unknown> = { packageSha256, decoder: "native PCM WAV audio", fixtureBytes: stalledBytes.length, physicalAudio: false, desktopVisuals: false };

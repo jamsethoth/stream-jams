@@ -12,6 +12,7 @@ import { expect, test } from "@playwright/test";
 import { createProviderSecurityRuntimeFixture } from "../../apps/server/src/test-support/provider-security-runtime-fixture.js";
 import { createPreMigrationDatabase } from "../../apps/server/src/test-support/pre-migration-database.js";
 import { startPearProtocolFixture, type PearProtocolFixture } from "../../packages/test-support/src/pear-protocol-fixture.js";
+import { assertPortableMarkerTarget } from "../../packages/test-support/src/obs-instance-guard.js";
 
 type ObsSource = { id: string; moduleId: string; profile: string; url: string; width: number; height: number };
 type ObsReceipt = { sourceId: string; moduleId: string; profile: string; nativeWidth: number; nativeHeight: number; settingsWidth: number; settingsHeight: number; muted: boolean; monitoring: number; shutdown: boolean; rerouteAudio: boolean; path?: string };
@@ -47,6 +48,7 @@ test("actual portable OBS keeps ordinary module geometry local, retired sources 
     for (const file of [...plugins.map(name => `${name}.dll`), ...dependencies]) await cp(join(installed, "obs-plugins/64bit", file), join(portable, "obs-plugins/64bit", file));
     await cp(join(installed, "obs-plugins/64bit/locales"), join(portable, "obs-plugins/64bit/locales"), { recursive: true });
     for (const plugin of plugins) await cp(join(installed, "data/obs-plugins", plugin), join(portable, "data/obs-plugins", plugin), { recursive: true });
+    assertPortableMarkerTarget(portable, [installed], [root]);
     await writeFile(join(portable, "portable_mode.txt"), "");
     const config = join(portable, "config/obs-studio");
     await mkdir(join(config, "basic/profiles/SecurityTest"), { recursive: true });

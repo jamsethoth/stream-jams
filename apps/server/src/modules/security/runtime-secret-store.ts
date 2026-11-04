@@ -15,6 +15,8 @@ export interface RuntimeSecretStoreStatus {
 export interface RuntimeSecretStoreOptions {
   readonly secretStore?: SecretStore;
   readonly credentials?: OsCredentialAdapter;
+  /** Credential service prefix for the runtime profile; defaults to the production `stream-jams`. */
+  readonly servicePrefix?: string;
   readonly now?: () => Date;
   readonly generateHealthCheckValue?: () => string;
 }
@@ -41,7 +43,8 @@ export async function createRuntimeSecretStore(
   }
 
   const secretStore = new OsSecretStore({
-    credentials: options.credentials ?? new KeyringCredentialAdapter()
+    credentials: options.credentials ?? new KeyringCredentialAdapter(),
+    ...(options.servicePrefix === undefined ? {} : { servicePrefix: options.servicePrefix })
   });
   const status = await checkSecretStoreAvailability(secretStore, {
     now,

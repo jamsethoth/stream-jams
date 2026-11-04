@@ -1,4 +1,6 @@
-import { basename, isAbsolute, resolve } from "node:path";
+import { homedir } from "node:os";
+import { basename, resolve } from "node:path";
+import { resolveRuntimeProfile } from "@stream-jams/server/runtime-profile";
 import { app, crashReporter, dialog, utilityProcess } from "electron";
 import { AudioWindow, registerAudioPlayerScheme } from "./audio/audio-window.js";
 import { AudioHost } from "./audio/audio-host.js";
@@ -13,7 +15,7 @@ import { GpuPreferenceSync, readGpuAccelerationPreference } from "./gpu-preferen
 import { createTray } from "./tray.js";
 import { ShutdownLog } from "./shutdown-log.js";
 import { collectPriorCrashDumpMetadata, createDesktopDiagnosticFallbackWriter, DesktopDiagnostics } from "./desktop-diagnostics.js";
-import { appUserModelId } from "./app-identity.js";
+import { allowedDesktopDisplays, desktopProfileIdentity, resolveDesktopUserData } from "./desktop-profile.js";
 import { VideoPlayerHost } from "./videos/video-player-host.js";
 import { VideoPlayerWindow } from "./videos/video-player-window.js";
 import { VideoDeviceWindow } from "./videos/video-device-window.js";
@@ -24,11 +26,13 @@ const videoMirrorCheck = process.argv.includes(videoMirrorCheckSwitch);
 
 registerAudioPlayerScheme([overlayPlayerScheme]);
 
-const isolatedUserData = process.env.STREAM_JAMS_DESKTOP_USER_DATA_PATH;
-if (isolatedUserData !== undefined) {
-  if (!isAbsolute(isolatedUserData) || isolatedUserData.trim() === "") throw new Error("STREAM_JAMS_DESKTOP_USER_DATA_PATH must be absolute.");
-  app.setPath("userData", isolatedUserData);
-}
+// The runtime profile picks the app identity and Electron profile before anything reads a path,
+// so a dev or test launch never shares the installed app's profile, lock or taskbar identity.
+const runtimeProfile = resolveRuntimeProfile(homedir());
+const identity = desktopProfileIdentity(runtimeProfile.name);
+if (identity.isolated) app.setName(identity.appName);
+const isolatedUserData = resolveDesktopUserData(runtimeProfile.name, app.getPath("appData"), process.env.STREAM_JAMS_DESKTOP_USER_DATA_PATH);
+if (isolatedUserData !== undefined) app.setPath("userData", isolatedUserData);
 
 // GPU acceleration is on by default. Settings can turn it off; Electron only honors that
 // before app ready, so the saved choice is read from userData here and applies at the next
@@ -51,7 +55,7 @@ const video = new VideoPlayerHost({
 });
 const overlay = new OverlayHost((config, callbacks, generation) => PrivateOverlayWindow.create(config, callbacks, () => ownedMediaOptions(generation),
   deliver => video.attachDesktopReceiver("desktop:overlay", "live", deliver)), () => ({
-  available: process.platform === "win32", displays: process.platform === "win32" ? enumerateDesktopDisplays() : []
+  available: process.platform === "win32", displays: process.platform === "win32" ? allowedDesktopDisplays(enumerateDesktopDisplays(), runtimeProfile.name) : []
 }), (input) => diagnostics.record(input));
 let tray: ReturnType<typeof createTray> | null = null;
 let exiting = false;
@@ -195,7 +199,7 @@ if (videoMirrorCheck) {
 } else if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.setAppUserModelId(appUserModelId);
+  app.setAppUserModelId(identity.appUserModelId);
   shutdownLog = new ShutdownLog(process.env.STREAM_JAMS_SHUTDOWN_LOG);
   app.on("second-instance", () => management?.show());
   app.on("window-all-closed", () => { /* The tray owns service lifetime. */ });
@@ -211,7 +215,7 @@ if (videoMirrorCheck) {
         dialog.showErrorBox("Mute was not changed", error instanceof Error ? error.message : "Check the operator controls and retry.");
       }); },
       quit: requestQuit
-    });
+    }, { label: identity.trayLabel, badge: identity.isolated });
     tray.update(null);
     await start();
     diagnostics.recordPriorCrashDumps(collectPriorCrashDumpMetadata(app.getPath("crashDumps")));

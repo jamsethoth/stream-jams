@@ -52,7 +52,8 @@
 - Vitest does not replace typechecking. Use Fastify `inject()` where a real port is unnecessary; prefer Testing Library role/label queries and user-event; use Playwright for browser-visible workflows.
 - Do not weaken, skip, or delete tests to make validation pass. Change tests only when behavior intentionally changes.
 - Before publishing, run relevant repo gates: lint, typecheck, tests, build, Storybook gates, and Playwright when applicable.
-- After code changes, rebuild and restart affected local services, wait for health, reload the UI, and verify the changed live workflow against the new build.
+- When a change needs live verification, rebuild and restart the dev instance only, wait for health, reload its UI, and verify the changed workflow against the new build there. The dev instance is the dev-profile Stream Jams (`corepack pnpm dev:isolated` or `start:dev` with `STREAM_JAMS_HOME` set, port 39287) and the dev OBS (`C:\StreamJamsDev\obs`, set up with `corepack pnpm dev:obs:setup`).
+- The maintainer streams from the same PC. Never run, restart, test or verify against production: the installed Stream Jams app, `~/.stream-jams`, port 39187, `stream-jams:` credentials, or the production OBS and its port 4455. Automated OBS changes go only through `connectGuardedObs` to the dev OBS. If the dev instance cannot cover a check, report it as unverified and ask; do not fall back to production. See the runbook's "Development and test profiles".
 
 ## Slice Workflow
 
@@ -60,4 +61,4 @@
 - Before implementation, fetch current remote state, confirm branch/worktree and target scope, verify the slice is still unimplemented, and branch from `origin/main`.
 - Keep a committed slice-specific implementation spec before or with implementation. Follow the matching OpenSpec workflow when `openspec/` is present.
 - Keep changes scoped; include positive, negative, edge, and failure tests. Add or update Playwright coverage for user-visible browser behavior.
-- Before PR creation, reconcile requirements against code/tests, close in-scope gaps, run required gates, and verify the rebuilt live workflow.
+- Before PR creation, reconcile requirements against code/tests, close in-scope gaps, run required gates, and verify the rebuilt live workflow on the dev instance.

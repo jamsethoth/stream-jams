@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
 import { finishDesktop, windowByUrl, withCleanup } from "./audio-harness.js";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 // The Videos desktop mirror path (OpenSpec add-video-request-queue 5.1-5.5, 5.8) with the
 // production player host, hidden player window, capture, WebRTC publisher and device receiver.
@@ -42,9 +43,7 @@ test("desktop primary player captures one hidden page and mirrors it to the devi
   await cp(resolve("apps/desktop/src/audio/player.html"), resolve("apps/desktop/dist/audio/player.html"));
   const root = await mkdtemp(join(tmpdir(), "stream-jams-video-mirror-"));
   const require = createRequire(resolve("apps/desktop/package.json"));
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  delete env.ELECTRON_RUN_AS_NODE;
-  env.STREAM_JAMS_DESKTOP_USER_DATA_PATH = join(root, "electron");
+  const env = isolatedDesktopEnvironment(root);
   const desktop = await _electron.launch({ executablePath: require("electron") as string,
     args: [resolve("tests/desktop/fixtures/video-mirror-host.mjs"), resolve("apps/desktop/dist"), resolve("tests/fixtures/media/neutral-with-audio.webm")],
     // Chromium's sandbox cannot start as root on Linux (containerized CI); Windows and normal users keep it.

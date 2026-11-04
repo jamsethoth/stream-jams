@@ -143,7 +143,8 @@ export function createAdapter(options, dependencies = {}) {
   const output = resolve(options.output ?? 'apps/desktop/out/local-media-cold-timing');
   // Coordination needs a stable name, but shared temporary directories permit
   // another user to precreate that name. Use the user's protected home instead.
-  const userState = join(dependencies.homeDirectory ?? homedir(), '.stream-jams');
+  // A sibling of the app's `.stream-jams` folder, so this developer tool never writes into production state.
+  const userState = join(dependencies.homeDirectory ?? homedir(), '.stream-jams-tools');
   const lockPath = dependencies.lockPath ?? join(userState, 'local-media-cold-timing', 'runner.lock');
   const lockDirectories = dependencies.lockPath ? [dirname(lockPath)] : [userState, dirname(lockPath)];
   const legacyLockPath = dependencies.legacyLockPath ?? join(tmpdir(), 'stream-jams-local-media-cold-timing.lock');

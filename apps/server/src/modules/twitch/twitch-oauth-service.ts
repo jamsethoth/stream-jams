@@ -57,6 +57,8 @@ export interface TwitchOAuthServiceOptions {
   readonly generateAuthorizationId: () => string;
   readonly now?: (() => Date) | undefined;
   readonly onConnectionChanged?: ((status: TwitchConnectionStatus) => void | Promise<void>) | undefined;
+  /** Twitch user IDs this runtime must never store tokens for (the production account in dev and test). */
+  readonly protectedAccountIds?: ReadonlySet<string> | undefined;
   readonly repository: TwitchAccountRepository;
   readonly scopes?: readonly string[] | undefined;
   readonly secretStore: SecretStore;
@@ -96,6 +98,7 @@ export class TwitchOAuthService {
   readonly #now: () => Date;
   readonly #onConnectionChanged: ((status: TwitchConnectionStatus) => void | Promise<void>) | undefined;
   readonly #pendingAuthorizations = new Map<string, PendingDeviceAuthorization>();
+  readonly #protectedAccountIds: ReadonlySet<string>;
   readonly #repository: TwitchAccountRepository;
   readonly #scopes: readonly string[];
   readonly #secretStore: SecretStore;
@@ -107,6 +110,7 @@ export class TwitchOAuthService {
     this.#generateAuthorizationId = options.generateAuthorizationId;
     this.#now = options.now ?? (() => new Date());
     this.#onConnectionChanged = options.onConnectionChanged;
+    this.#protectedAccountIds = options.protectedAccountIds ?? new Set();
     this.#repository = options.repository;
     this.#scopes = [...(options.scopes ?? defaultTwitchOAuthScopes)].sort();
     this.#secretStore = options.secretStore;
@@ -299,6 +303,9 @@ export class TwitchOAuthService {
       accessToken: tokenGrant.accessToken
     });
     assertValidatedTokenMatchesClient(validatedToken, this.#clientId);
+    if (this.#protectedAccountIds.has(validatedToken.userId)) {
+      throw new TwitchOAuthProviderError("This Twitch account is protected from dev and test runs. Connect the Twitch test account instead.");
+    }
     const user = await this.#apiClient.getCurrentUser({
       accessToken: tokenGrant.accessToken,
       clientId: this.#clientId

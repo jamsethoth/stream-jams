@@ -11,6 +11,8 @@ export default defineConfig({
     }
   },
   test: {
+    // Refuses a production-pointing environment and runs every test in the test profile.
+    globalSetup: ["packages/test-support/src/vitest-global-setup.ts"],
     fileParallelism: false,
     projects: [
       {
