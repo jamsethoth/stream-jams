@@ -39,7 +39,8 @@ export class ObsGuardError extends Error {
 export function devObsInstanceFromEnvironment(environment: NodeJS.ProcessEnv = process.env): DevObsInstance {
   const root = environment.STREAM_JAMS_DEV_OBS_ROOT?.trim() || "C:\\StreamJamsDev\\obs";
   const port = Number(environment.STREAM_JAMS_DEV_OBS_PORT ?? 4456);
-  if (!path.isAbsolute(root)) throw new ObsGuardError("STREAM_JAMS_DEV_OBS_ROOT must be absolute.");
+  // The dev OBS is a Windows install; accept its drive-letter form on every platform (CI unit tests run on Linux).
+  if (!path.win32.isAbsolute(root) && !path.posix.isAbsolute(root)) throw new ObsGuardError("STREAM_JAMS_DEV_OBS_ROOT must be absolute.");
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new ObsGuardError("STREAM_JAMS_DEV_OBS_PORT must be a TCP port.");
   return { root, port };
 }
