@@ -1,18 +1,24 @@
 import { createConnection } from "node:net";
 import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { expect, test } from "@playwright/test";
+import { basename, join } from "node:path";
+import { expect, test, type TestInfo } from "@playwright/test";
 import { StreamerBotClient } from "../../apps/server/src/modules/streamerbot/streamerbot-client.js";
 import { SpeakerBotClient } from "../../apps/server/src/modules/tts/speakerbot-client.js";
 import { createVendorProvider } from "./fixtures/vendor-provider-harness.js";
 import { createNodeStreamerBotSocket as createProviderSocket } from "../../apps/server/src/modules/streamerbot/node-streamerbot-socket.js";
 
+// The first launch on a fresh CI runner pays cold .NET start and Defender scans of freshly copied DLLs; 30s flaked.
 async function ready(port: number) {
   await expect.poll(async () => new Promise<boolean>(resolveReady => {
     const socket = createConnection({ host: "127.0.0.1", port });
     socket.once("connect", () => { socket.destroy(); resolveReady(true); });
     socket.once("error", () => resolveReady(false));
-  }), { timeout: 30_000, message: "Vendor local WebSocket server did not start; inspect the owned temporary profile logs." }).toBe(true);
+  }), { timeout: 90_000, message: "Vendor local WebSocket server did not start; inspect the attached vendor logs." }).toBe(true);
+}
+
+async function attachVendorLogs(vendor: { logFiles(): Promise<string[]> }, testInfo: TestInfo) {
+  // Evidence is best-effort: a locked or vanished log must not mask the original failure.
+  for (const path of await vendor.logFiles()) await testInfo.attach(`vendor-log-${basename(path)}`, { path, contentType: "text/plain" }).catch(() => undefined);
 }
 
 for (const authentication of [undefined, { password: "synthetic-vendor-password", enforce: false }, { password: "synthetic-vendor-password", enforce: true }]) {
@@ -58,6 +64,9 @@ for (const authentication of [undefined, { password: "synthetic-vendor-password"
         expect(JSON.stringify(client.getStatus())).not.toContain("synthetic-vendor-password");
         expect(JSON.stringify(client.getStatus())).not.toContain("wrong-synthetic-password");
       }
+    } catch (error) {
+      await attachVendorLogs(vendor, testInfo);
+      throw error;
     } finally {
       await testInfo.attach("provider-protocol-summary", { body: JSON.stringify({ browserName, frames, state: client.getStatus().state, message: client.getStatus().message }), contentType: "application/json" });
       client.disconnect(); await vendor.close();
@@ -93,5 +102,8 @@ test("installed Speaker.bot validates, rejects an unknown voice, and silently sa
     expect(byteRate).toBeGreaterThan(0);
     expect(dataBytes).toBeGreaterThan(0);
     expect(dataBytes / byteRate).toBeGreaterThan(0);
+  } catch (error) {
+    await attachVendorLogs(vendor, test.info());
+    throw error;
   } finally { await vendor.close(); }
 });

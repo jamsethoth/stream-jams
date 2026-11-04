@@ -79,6 +79,10 @@ export async function createVendorProvider(kind: "streamerbot" | "speakerbot", a
       root, port, audioFolder, version: version.stdout.trim(), url: `ws://127.0.0.1:${port}/`,
       start() { child = spawn(join(root, executable), [], { cwd: root, windowsHide: true, stdio: "ignore" }); child.on("error", () => {}); return child; },
       stop,
+      /** Vendor log files under the owned profile, so failures keep evidence before close() deletes it. */
+      async logFiles() {
+        return (await readdir(root, { recursive: true }).catch(() => [])).filter(name => /\.logs?$/iu.test(name)).map(name => join(root, name));
+      },
       async close() {
         await stop();
         const within = relative(resolve(tmpdir()), resolve(root));
