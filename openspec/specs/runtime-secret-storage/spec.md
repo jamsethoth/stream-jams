@@ -3,9 +3,7 @@
 ## Purpose
 
 Define durable local secret storage requirements for real runtime secrets while keeping fake or in-memory stores limited to tests.
-
 ## Requirements
-
 ### Requirement: Runtime Uses Durable Secret Store
 
 The system SHALL use a durable OS-backed secret store for real local runtime secrets in normal development and production/local-app runtime modes when supported by the platform.
@@ -57,3 +55,15 @@ The system SHALL keep secret values out of logs, diagnostics exports, config fil
 
 - **WHEN** diagnostics are exported after Twitch OAuth token storage
 - **THEN** the export contains only redacted secret references and no access or refresh token values
+
+### Requirement: Credential Names Are Scoped By Profile
+The OS-backed secret store SHALL name every credential `<prefix>:<namespace>:<name>`, with account `<accountId>`. The prefix SHALL come from the runtime profile: `stream-jams` for `production`, `stream-jams-dev` for `dev`, and `stream-jams-test-<runId>` for `test`, where `STREAM_JAMS_KEYRING_PREFIX` supplies the test run ID. A `dev` or `test` runtime SHALL never read, write or delete a credential with the `stream-jams` prefix.
+
+#### Scenario: Dev connects music without touching production
+- **WHEN** a `dev` runtime pairs Pear Desktop
+- **THEN** it creates or reads `stream-jams-dev:music:client-id`, and the production `stream-jams:music:client-id` entry is unchanged
+
+#### Scenario: Test run cleanup
+- **WHEN** a desktop test run with prefix `stream-jams-test-<runId>` finishes
+- **THEN** the harness deletes every credential with that prefix and no other credential
+
