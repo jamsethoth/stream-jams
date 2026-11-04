@@ -23,12 +23,12 @@ Everything runs offline. PixiJS, MediaPipe and the One Euro filter are bundled i
 ## How To Run It On Windows
 
 1. From the latest CI run on PR #200, download the portable artifact the `windows-desktop-package` job uploads (`stream-jams-windows-x64-200-…`, not the installer) and unzip it.
-2. Close Stream Jams if it is running.
+2. Close the production OBS. It holds the camera, and the check must not compete with it (BL-103 makes the check refuse while production OBS runs). The installed Stream Jams can stay open: the check uses its own temporary profile and never reads or writes Stream Jams data. Start the dev OBS (`C:\StreamJamsDev\obs\Start Dev OBS.cmd`) for the OBS parts; its own camera sources are disabled.
 3. In PowerShell, from the unzipped folder, run `& ".\Stream Jams.exe" --camera-effects-check`. Two windows open: the control window and the pipeline window (camera on the left, processed output on the right). If the control window says **Blocked**, copy the results and stop there.
 4. **Physical camera first.**
    1. Press **List cameras**, pick the physical camera, press **Probe formats**.
    2. Pick **1080p30**, tick **Face tracking**, and press **Open camera**.
-   3. In OBS, add a **Browser Source** at 1920 × 1080 with the URL the window shows (**Copy URL**). Press **Open desktop overlay receiver** too.
+   3. In the **dev OBS** (title "Portable Mode - Profile: StreamJamsDev"), add a **Browser Source** at 1920 × 1080 with the URL the window shows (**Copy URL**). Press **Open desktop overlay receiver** too. "OBS" in the steps below means the dev OBS.
    4. Tick **Bulge on both eyes**, then **Big eyes**, then **Glitch**, one at a time. Move your head normally and watch whether the effects stay on your eyes.
    5. Try the layout buttons. The camera should move in OBS and the desktop window without a reconnect.
    6. Let each setting run for at least a minute before reading numbers: WebRTC raises its bitrate gradually after each connection.
@@ -41,6 +41,7 @@ Everything runs offline. PixiJS, MediaPipe and the One Euro filter are bundled i
    4. Check that OBS shows the camera transparent around you with the matte packed, and opaque without it.
 7. **With a game.** Choose **With a game running**, name the game, start it, and repeat steps 4.2 to 4.6 at 1080p30 with the matte packed and all three effects on. Results for idle and game runs are kept apart.
 8. Tick what you saw, press **Copy results** and paste them in the thread.
+9. Put NVIDIA Broadcast's effects back to your streaming settings, close the check and the dev OBS, then reopen the production OBS.
 
 ## What The Results Mean
 
