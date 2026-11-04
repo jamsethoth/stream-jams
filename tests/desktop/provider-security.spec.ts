@@ -8,6 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { alertEditorDocumentSchema, compatibilityAlertTextStyle, compatibilityAlertTextBoxStyle, createDefaultTextWarp, type SurfaceSettingsView } from "@stream-jams/core";
 import { _electron, expect, test, type ElectronApplication } from "@playwright/test";
 import { finishDesktop, windowByUrl } from "./audio-harness.js";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 test("packaged management and browser-source renderers preserve CSP-safe warped fonts", async () => {
@@ -20,10 +21,8 @@ test("packaged management and browser-source renderers preserve CSP-safe warped 
   await new Promise<void>(resolveClose => listener.close(() => resolveClose()));
   const configPath = join(root, "config.json");
   await writeFile(configPath, JSON.stringify({ server: { host: "127.0.0.1", port }, storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") }, playback: { paused: false, muted: true, doNotDisturb: false } }));
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  delete env.ELECTRON_RUN_AS_NODE;
+  const env = isolatedDesktopEnvironment(root);
   env.STREAM_JAMS_CONFIG_PATH = configPath;
-  env.STREAM_JAMS_DESKTOP_USER_DATA_PATH = join(root, "electron");
   const packageExecutable = resolve("apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");
   const executable = join(root, "app/Stream Jams.exe");
   let ownedDesktop: ElectronApplication | undefined;

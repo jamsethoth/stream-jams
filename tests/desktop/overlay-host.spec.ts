@@ -7,6 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import type { AlertEditorDocument, AlertRule, SurfaceSettingsView } from "../../packages/core/dist/index.js";
 import { _electron, expect, test, type ElectronApplication } from "@playwright/test";
 import { windowByUrl } from "./audio-harness.js";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 const executablePath = resolve("apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");
 const overlayUrl = "stream-jams-overlay://surface/";
@@ -25,10 +26,8 @@ test("packaged production host renders an isolated silent Landscape event withou
     storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") },
     playback: { paused: false, muted: true, moduleMutes: { alerts: true, "screen-effects": true }, doNotDisturb: false }
   }));
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  delete env.ELECTRON_RUN_AS_NODE;
+  const env = isolatedDesktopEnvironment(root);
   env.STREAM_JAMS_CONFIG_PATH = configPath;
-  env.STREAM_JAMS_DESKTOP_USER_DATA_PATH = join(root, "electron");
   env.STREAM_JAMS_SHUTDOWN_LOG = join(root, "shutdown.jsonl");
   let desktop: ElectronApplication | undefined;
   let child: ChildProcess | undefined;

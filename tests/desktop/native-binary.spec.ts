@@ -58,7 +58,7 @@ test("packaged server composition starts and closes under Electron's Node runtim
       const {startLocalRuntime} = await import(pathToFileURL(req.resolve('@stream-jams/server/runtime')).href);
       console.log('starting packaged composition');
       const runtime = await startLocalRuntime({
-        homeDirectory:root, environment:{}, webBuildDirectory:join(dirname(process.argv[1]),'web'),
+        homeDirectory:root, environment:{STREAM_JAMS_PROFILE:'test',STREAM_JAMS_HOME:root,STREAM_JAMS_KEYRING_PREFIX:process.argv[3]}, webBuildDirectory:join(dirname(process.argv[1]),'web'),
         configStore:{readConfig:async()=>config,updateConfig:async()=>{throw new Error('No config mutation in startup check')}}
       });
       try {
@@ -68,7 +68,10 @@ test("packaged server composition starts and closes under Electron's Node runtim
     })().then(()=>process.exit(0),error=>{console.error(error);process.exit(1)});
   `;
   try {
-    const result = await promisify(execFile)(resolve(packageRoot, "Stream Jams.exe"), ["-e", code, resolve(packageRoot, "resources/app.asar/package.json"), root], {
+    // The global setup's run-scoped prefix keeps the credential-store health probe out of the production namespace.
+    const prefix = process.env.STREAM_JAMS_KEYRING_PREFIX;
+    if (prefix === undefined) throw new Error("Run through a Playwright config with packages/test-support/src/playwright-global-setup.ts.");
+    const result = await promisify(execFile)(resolve(packageRoot, "Stream Jams.exe"), ["-e", code, resolve(packageRoot, "resources/app.asar/package.json"), root, prefix], {
       env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, windowsHide: true, timeout: 20_000
     });
     expect(result.stdout).toContain("packaged composition passed");

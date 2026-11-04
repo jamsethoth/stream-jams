@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { _electron, expect, test } from "@playwright/test";
 import { finishDesktop, windowByUrl, withCleanup } from "./audio-harness.js";
 import { cleanupFailedOverlayLaunch } from "./overlay-harness.js";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 test("packaged native overlay policy and neutral 1080p/1440p media probe", async () => {
   const testInfo = test.info();
@@ -58,8 +59,7 @@ test("packaged native overlay policy and neutral 1080p/1440p media probe", async
     });
   `);
   const root = await mkdtemp(join(tmpdir(), "stream-jams-overlay-probe-"));
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  delete env.ELECTRON_RUN_AS_NODE;
+  const env = isolatedDesktopEnvironment(root);
   env.STREAM_JAMS_PROBE_PROFILE = root;
   const launchLogPath = testInfo.outputPath("overlay-launch.log");
   env.STREAM_JAMS_PROBE_LAUNCH_LOG = launchLogPath;

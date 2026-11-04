@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { _electron, expect, test, type ElectronApplication } from "@playwright/test";
 import { windowByUrl, withCleanup } from "./audio-harness.js";
 import { observeGuardReady } from "./guard-ready.js";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 const executablePath = resolve("apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");
 
@@ -219,14 +220,11 @@ async function desktopFixture(name: string, requestedPort?: number): Promise<Des
     server: { host: "127.0.0.1", port },
     storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") }
   }));
-  const env: Record<string, string> = {
-    ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
+  const env = isolatedDesktopEnvironment(root, {
     STREAM_JAMS_CONFIG_PATH: configPath,
-    STREAM_JAMS_DESKTOP_USER_DATA_PATH: join(root, "electron"),
     // Opt-in phase evidence, printed when a quit stalls.
     STREAM_JAMS_SHUTDOWN_LOG: join(root, "shutdown.jsonl")
-  };
-  delete env.ELECTRON_RUN_AS_NODE;
+  });
   return { configPath, env, port, root };
 }
 

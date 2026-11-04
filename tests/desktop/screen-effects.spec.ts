@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron, expect, test, type ElectronApplication } from "@playwright/test";
 import { finishDesktop, windowByUrl, withCleanup } from "./audio-harness.js";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 const executablePath = resolve("apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");
 
@@ -17,10 +18,8 @@ test("packaged Screen Effects persists definitions and restarts with empty runti
     server: { host: "127.0.0.1", port },
     storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") }
   }));
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  delete env.ELECTRON_RUN_AS_NODE;
+  const env = isolatedDesktopEnvironment(root);
   env.STREAM_JAMS_CONFIG_PATH = configPath;
-  env.STREAM_JAMS_DESKTOP_USER_DATA_PATH = join(root, "electron");
 
   let desktop: ElectronApplication | undefined;
   let child: ReturnType<ElectronApplication["process"]> | undefined;

@@ -8,6 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { _electron, expect, test } from "@playwright/test";
 import { finishDesktop, withCleanup } from "./audio-harness.js";
 import { cleanupFailedOverlayLaunch } from "./overlay-harness.js";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 interface OwnedWindow { destroy(): void; show(): void; focus(): void; webContents: { executeJavaScript(code: string): Promise<unknown> } }
 interface Probe { baseline: OwnedWindow; competitors: OwnedWindow[]; overlay: { load(url: string): Promise<void>; destroy(): void }; marker: string; handles: { baseline: string; overlay: string; competitors: string[] } }
@@ -34,8 +35,7 @@ async function runNativeCompetition(backgroundOnly: boolean): Promise<void> {
   const executablePath = join(packaged, "Owned Topmost Probe.exe");
   await rename(join(packaged, "electron.exe"), executablePath);
   const root = await mkdtemp(join(tmpdir(), "stream-jams-topmost-"));
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  delete env.ELECTRON_RUN_AS_NODE;
+  const env = isolatedDesktopEnvironment(root);
   env.STREAM_JAMS_PROBE_PROFILE = root;
   const launchLog = info.outputPath("topmost-launch.log");
   env.STREAM_JAMS_PROBE_LAUNCH_LOG = launchLog;

@@ -7,6 +7,7 @@ import { _electron, expect, test, type Page } from "@playwright/test";
 import type { AlertEditorDocument } from "../../packages/core/dist/index.js";
 import { finishDesktop, windowByUrl, withCleanup } from "./audio-harness.js";
 import { uploadMediaFixture } from "../../scripts/media-streaming-fixtures.mjs";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
@@ -18,9 +19,8 @@ test("@hardware hidden muted streaming survives slow preparation, recipient fail
   const packageSha256 = createHash("sha256").update(await readFile(resolve("apps/desktop/out/Stream Jams-win32-x64/resources/app.asar"))).digest("hex");
   const configPath = join(root, "config.json");
   await writeFile(configPath, JSON.stringify({ server: { host: "127.0.0.1", port }, storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") }, playback: { paused: false, muted: true, moduleMutes: { alerts: true, "screen-effects": true }, doNotDisturb: false } }));
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  delete env.ELECTRON_RUN_AS_NODE;
-  Object.assign(env, { STREAM_JAMS_CONFIG_PATH: configPath, STREAM_JAMS_DESKTOP_USER_DATA_PATH: join(root, "electron"), STREAM_JAMS_SHUTDOWN_LOG: join(root, "shutdown.jsonl") });
+  const env = isolatedDesktopEnvironment(root);
+  Object.assign(env, { STREAM_JAMS_CONFIG_PATH: configPath, STREAM_JAMS_SHUTDOWN_LOG: join(root, "shutdown.jsonl") });
   const desktop = await _electron.launch({ executablePath, env, cwd: root, chromiumSandbox: true, timeout: 30000 });
   const child = desktop.process();
   const pids = new Set<number>(child.pid === undefined ? [] : [child.pid]);

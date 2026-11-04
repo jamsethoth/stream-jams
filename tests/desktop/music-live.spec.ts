@@ -7,6 +7,7 @@ import { startPearProtocolFixture } from "../../packages/test-support/dist/pear-
 import type { MusicModuleConfig, SurfaceSettingsView } from "../../packages/core/dist/index.js";
 import { createDefaultMusicModuleConfig, resolveMusicOutputGeometry } from "../../packages/core/dist/index.js";
 import { finishDesktop, windowByUrl, withCleanup } from "./audio-harness.js";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 test("packaged Music crosses the preload boundary with desktop scaling", async () => {
@@ -18,8 +19,8 @@ test("packaged Music crosses the preload boundary with desktop scaling", async (
   const address = listener.address(); if (address === null || typeof address === "string") throw new Error("No test port");
   const port = address.port; await new Promise<void>(r => listener.close(() => r()));
   await writeFile(join(root, "config.json"), JSON.stringify({ server: { host: "127.0.0.1", port }, storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") }, playback: { paused: false, muted: true, doNotDisturb: false } }));
-  const env: Record<string, string> = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  env.STREAM_JAMS_CONFIG_PATH = join(root, "config.json"); env.STREAM_JAMS_DESKTOP_USER_DATA_PATH = join(root, "electron"); delete env.ELECTRON_RUN_AS_NODE;
+  const env = isolatedDesktopEnvironment(root);
+  env.STREAM_JAMS_CONFIG_PATH = join(root, "config.json");
   const launchOptions = { executablePath: resolve(process.env.STREAM_JAMS_TEST_EXECUTABLE ?? "apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe"), cwd: root, env, chromiumSandbox: true, timeout: 30000 };
   let desktop = await _electron.launch(launchOptions);
   let child = desktop.process(); const pids = await desktop.evaluate(({ app }) => app.getAppMetrics().map(entry => entry.pid));

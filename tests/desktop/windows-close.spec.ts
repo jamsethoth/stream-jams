@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { expect, test } from "@playwright/test";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 test("native X exits the packaged application without an attached debugger", async () => {
   const root = await mkdtemp(join(tmpdir(), "stream-jams-native-close-"));
@@ -15,8 +16,7 @@ test("native X exits the packaged application without an attached debugger", asy
   await new Promise<void>((resolve, reject) => listener.close((error) => error ? reject(error) : resolve()));
   const configPath = join(root, "config.json");
   await writeFile(configPath, JSON.stringify({ desktop: { closeToTray: false }, server: { host: "127.0.0.1", port: address.port }, storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") } }));
-  const env: NodeJS.ProcessEnv = { ...process.env, STREAM_JAMS_CONFIG_PATH: configPath, STREAM_JAMS_DESKTOP_USER_DATA_PATH: join(root, "electron") };
-  delete env.ELECTRON_RUN_AS_NODE;
+  const env = isolatedDesktopEnvironment(root, { STREAM_JAMS_CONFIG_PATH: configPath });
   // This is an interactive window test. Hiding the native startup window makes
   // .NET's MainWindowHandle intentionally unavailable, so the app is visible.
   const child = spawn(resolve("apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe"), [], { cwd: root, env, stdio: "ignore", windowsHide: false });

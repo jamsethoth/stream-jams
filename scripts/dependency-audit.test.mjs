@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { evaluateAudit, parseAuditExecution } from './dependency-audit.mjs';
 const clean = () => ({ metadata: { vulnerabilities: { info: 0, low: 0, moderate: 0, high: 0, critical: 0 } }, advisories: {} });
 const finding = severity => { const report = clean(); report.metadata.vulnerabilities[severity] = 1; report.advisories.one = { module_name: 'dependency', severity, findings: [{ version: '1.0.0', dev: true, paths: ['workspace>dependency'] }] }; return report; };
-test('clean report passes with zero moderate, high and critical findings', () => { assert.deepEqual(evaluateAudit(clean()), { moderate: 0, high: 0, critical: 0 }); assert.deepEqual(parseAuditExecution({ status: 0, stdout: JSON.stringify(clean()) }), clean()); });
+test('clean report passes with zero moderate, high and critical findings', () => { assert.deepEqual(evaluateAudit(clean()), { moderate: 0, high: 0, critical: 0, excepted: [] }); assert.deepEqual(parseAuditExecution({ status: 0, stdout: JSON.stringify(clean()) }), clean()); });
 for (const severity of ['moderate', 'high', 'critical']) test(`${severity} finding fails without any exception`, () => { assert.throws(() => evaluateAudit(finding(severity)), /advisories remain/); assert.deepEqual(parseAuditExecution({ status: 1, stdout: JSON.stringify(finding(severity)) }), finding(severity)); assert.throws(() => parseAuditExecution({ status: 0, stdout: JSON.stringify(finding(severity)) }), /contradicts/); });
 test('missing, malformed or inconsistent schemas and counts fail', () => {
   for (const report of [null, {}, { error: 'registry' }, { ...clean(), advisories: [] }, { ...clean(), metadata: { vulnerabilities: { moderate: 0, high: 0, critical: 0 } } }]) assert.throws(() => evaluateAudit(report));
@@ -12,4 +12,14 @@ test('missing, malformed or inconsistent schemas and counts fail', () => {
 });
 test('CLI and registry failures, malformed JSON and contradictory exit status fail closed', () => {
   for (const result of [{ status: 2, stdout: '{}' }, { status: null, error: new Error('spawn'), stdout: '{}' }, { status: 1, signal: 'SIGTERM', stdout: '{}' }, { status: 1, stdout: '{' }, { status: 1, stdout: JSON.stringify({ error: { code: 'ECONNREFUSED' } }) }, { status: 1, stdout: JSON.stringify(clean()) }]) assert.throws(() => parseAuditExecution(result));
+});
+const advisory = (ghsa, dev) => { const report = finding('moderate'); Object.assign(report.advisories.one, { github_advisory_id: ghsa }); report.advisories.one.findings.push({ version: '2.0.0', dev, paths: ['workspace>tool>dependency'] }); return report; };
+const exceptions = [{ ghsa: 'GHSA-aaaa-bbbb-cccc', expires: '2026-12-31', reason: 'dev tooling only' }];
+test('a listed advisory passes only while every finding is dev-only and the exception is unexpired', () => {
+  const now = new Date('2026-11-02T00:00:00Z');
+  assert.deepEqual(evaluateAudit(advisory('GHSA-aaaa-bbbb-cccc', true), { exceptions, now }), { moderate: 1, high: 0, critical: 0, excepted: ['GHSA-aaaa-bbbb-cccc'] });
+  assert.throws(() => evaluateAudit(advisory('GHSA-aaaa-bbbb-cccc', false), { exceptions, now }), /advisories remain/);
+  assert.throws(() => evaluateAudit(advisory('GHSA-aaaa-bbbb-cccc', true), { exceptions, now: new Date('2026-12-31T00:00:00Z') }), /advisories remain/);
+  assert.throws(() => evaluateAudit(advisory('GHSA-dddd-eeee-ffff', true), { exceptions, now }), /advisories remain/);
+  assert.throws(() => evaluateAudit(finding('high'), { exceptions, now }), /advisories remain/);
 });

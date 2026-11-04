@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { _electron, expect, test } from "@playwright/test";
 import { windowByUrl } from "./audio-harness.js";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 const executablePath = resolve("apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");
 
@@ -32,10 +33,8 @@ test("packaged app serves its built UI, preserves close preference, and shuts do
   const port = await unusedPort();
   const configPath = join(root, "config.json");
   await writeFile(configPath, JSON.stringify({ server: { host: "127.0.0.1", port }, storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") } }));
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  delete env.ELECTRON_RUN_AS_NODE;
+  const env = isolatedDesktopEnvironment(root);
   env.STREAM_JAMS_CONFIG_PATH = configPath;
-  env.STREAM_JAMS_DESKTOP_USER_DATA_PATH = join(root, "electron");
     desktop = await test.step("Launch the actual executable with its isolated profile", () => _electron.launch({ executablePath: isolatedExecutable, cwd: root, env, chromiumSandbox: true, timeout: 30_000 }));
     mainPid = await desktop.evaluate(() => process.pid);
     console.info("Packaged Electron launch connected.");

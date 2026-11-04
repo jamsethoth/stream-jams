@@ -52,7 +52,7 @@ import {
 import { effectOccurrenceKey } from "../modules/screen-effects/effect-playback-coordinator.js";
 import type { FastifyInstance } from "fastify";
 import { createServerApp, type ProductionServerAppDependencies } from "../app.js";
-import { createDefaultAppConfig, resolveConfigFilePath } from "../config/default-config.js";
+import { assertProfileConfigSafe, assertProfileLocationSafe, createProfileDefaultConfig, resolveRuntimeProfile, writeProfileMarker } from "../config/runtime-profile.js";
 import { FileConfigStore } from "../config/file-config-store.js";
 import { ServerConfigService } from "../config/server-config-service.js";
 import { DesktopConfigService } from "../config/desktop-config-service.js";
@@ -304,13 +304,17 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const twitchClientId = environment.TWITCH_CLIENT_ID?.trim() || defaultTwitchClientId;
   const now = options.now ?? (() => new Date());
   const portAvailability = options.portAvailability ?? new NodePortAvailabilityChecker();
+  const runtimeProfile = resolveRuntimeProfile(options.homeDirectory, environment);
+  assertProfileLocationSafe(runtimeProfile);
   const configStore =
     options.configStore ??
     new FileConfigStore({
-      configFilePath: resolveConfigFilePath(options.homeDirectory, { environment }),
-      defaultConfig: createDefaultAppConfig(options.homeDirectory)
+      configFilePath: runtimeProfile.configFilePath,
+      defaultConfig: createProfileDefaultConfig(runtimeProfile, options.homeDirectory)
     });
   const initialConfig = await configStore.readConfig();
+  assertProfileConfigSafe(runtimeProfile, initialConfig);
+  writeProfileMarker(initialConfig.storage.dataDirectory, runtimeProfile, now());
   const desktopConfigService = new DesktopConfigService(configStore, options.desktopHost?.onConfigChanged);
   const logConfigService = new LogConfigService(configStore);
   const logSettings = await logConfigService.getSettings();
@@ -421,6 +425,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const runtimeSecretStore = await createRuntimeSecretStore({
     ...(options.secretStore === undefined ? {} : { secretStore: options.secretStore }),
     ...(options.credentialAdapter === undefined ? {} : { credentials: options.credentialAdapter }),
+    servicePrefix: runtimeProfile.credentialPrefix,
     now
   });
   const secretStore = runtimeSecretStore.secretStore;
@@ -1131,6 +1136,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateAuthorizationId: randomUUID,
     now,
     onConnectionChanged: () => syncEventSourceRuntime(["twitch"]),
+    protectedAccountIds: runtimeProfile.protectedTwitchAccountIds,
     repository: twitchAccountRepository,
     secretStore,
     assertSecretStoreAvailable: runtimeSecretStore.assertAvailable
@@ -1494,7 +1500,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       return Number(storage.bavail) * Number(storage.bsize);
     },
     safetyBackupStore: new LocalConfigurationBackupStore({
-      directory: join(options.homeDirectory, ".stream-jams", "backups"),
+      directory: runtimeProfile.backupDirectory,
       now
     }),
     async regenerateOutput(output, restoredOrigin) {

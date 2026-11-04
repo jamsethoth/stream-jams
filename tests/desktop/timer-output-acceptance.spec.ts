@@ -7,6 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import type { SurfaceSettingsView, TimerDefinition, TimerRunState } from "../../packages/core/dist/index.js";
 import { _electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
 import { windowByUrl } from "./audio-harness.js";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 const executablePath = resolve(process.env.STREAM_JAMS_TEST_EXECUTABLE ?? "apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");
 const overlayUrl = "stream-jams-overlay://surface/";
@@ -22,10 +23,8 @@ test("@hardware packaged browser and hidden desktop agree through Timer transiti
     storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") },
     playback: { paused: false, muted: true, moduleMutes: { alerts: true, "screen-effects": true }, doNotDisturb: false }
   }));
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  delete env.ELECTRON_RUN_AS_NODE;
+  const env = isolatedDesktopEnvironment(root);
   env.STREAM_JAMS_CONFIG_PATH = join(root, "config.json");
-  env.STREAM_JAMS_DESKTOP_USER_DATA_PATH = join(root, "electron");
   env.STREAM_JAMS_SHUTDOWN_LOG = join(root, "shutdown.jsonl");
   let desktop: ElectronApplication | undefined;
   let child: ChildProcess | undefined;

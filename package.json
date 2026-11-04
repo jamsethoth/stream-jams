@@ -26,11 +26,15 @@
     "test:media-streaming": "corepack pnpm --filter @stream-jams/server build && vitest run apps/server/src/modules/assets/media-streaming-resources.test.ts apps/server/src/modules/audio/media-streaming-recovery.test.ts apps/server/src/runtime/runtime-media-shutdown.test.ts && node scripts/media-streaming-benchmark.mjs",
     "media:cold-timing": "node scripts/local-media-cold-timing.mjs",
     "media:cold-timing:build": "dotnet build scripts/local-media-etw/LocalMediaEtw.csproj -c Release --locked-mode",
-    "dev": "corepack pnpm --parallel --filter @stream-jams/server --filter @stream-jams/web dev",
-    "start:local": "corepack pnpm build && node apps/server/dist/index.js",
+    "dev": "node scripts/require-profile.mjs && corepack pnpm --parallel --filter @stream-jams/server --filter @stream-jams/web dev",
+    "dev:isolated": "node scripts/with-dev-profile.mjs dev",
+    "start:local": "node scripts/require-profile.mjs && corepack pnpm build && node apps/server/dist/index.js",
+    "start:dev": "node scripts/with-dev-profile.mjs start:local",
+    "dev:obs:setup": "node scripts/dev-obs.mjs setup",
+    "dev:obs:sources": "node scripts/dev-obs.mjs sources",
     "build": "corepack pnpm -r build",
     "test": "corepack pnpm test:unit",
-    "test:unit": "vitest run && node --test scripts/check-web-route-bundles.test.mjs scripts/desktop-shutdown-fixture-data.test.mjs scripts/desktop-shutdown-exit.test.mjs scripts/desktop-overlay-game-check.test.mjs scripts/error-provenance-check.test.mjs scripts/portable-desktop-artifact.test.mjs scripts/make-desktop-installer.test.mjs scripts/local-media-cold-timing.test.mjs scripts/local-media-cold-trace.test.mjs scripts/media-streaming-fixtures.test.mjs scripts/media-streaming-evidence.test.mjs scripts/windows-exposure.test.mjs scripts/provision-security-vendors.test.mjs scripts/dependency-audit.test.mjs scripts/dependency-tooling-compat.test.mjs scripts/management-type-scale.test.mjs",
+    "test:unit": "vitest run && node --test scripts/check-web-route-bundles.test.mjs scripts/desktop-shutdown-fixture-data.test.mjs scripts/desktop-shutdown-exit.test.mjs scripts/desktop-overlay-game-check.test.mjs scripts/error-provenance-check.test.mjs scripts/portable-desktop-artifact.test.mjs scripts/make-desktop-installer.test.mjs scripts/local-media-cold-timing.test.mjs scripts/local-media-cold-trace.test.mjs scripts/media-streaming-fixtures.test.mjs scripts/media-streaming-evidence.test.mjs scripts/windows-exposure.test.mjs scripts/provision-security-vendors.test.mjs scripts/dependency-audit.test.mjs scripts/dependency-tooling-compat.test.mjs scripts/management-type-scale.test.mjs scripts/desktop-isolation-check.test.mjs scripts/dev-obs.test.mjs",
     "test:security:portable": "corepack pnpm build && vitest run apps/server/src/modules/streamerbot/node-streamerbot-socket.test.ts apps/server/src/modules/streamerbot/streamerbot-transport.test.ts apps/server/src/modules/streamerbot/streamerbot-client.test.ts apps/server/src/modules/tts/speakerbot-transport.test.ts apps/server/src/runtime/provider-security-lifecycle.test.ts && playwright test tests/e2e/provider-connection-security.spec.ts tests/e2e/provider-security-runtime.spec.ts tests/e2e/production-web-shell.spec.ts",
     "test:security:installed": "corepack pnpm desktop:package && playwright test --config playwright.desktop.config.ts tests/desktop/native-binary.spec.ts tests/desktop/provider-security.spec.ts && playwright test --config playwright.security-installed.config.ts",
     "audit:dependencies": "node scripts/dependency-audit.mjs",
@@ -50,14 +54,14 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "@playwright/test": "1.63.0",
+    "@playwright/test": "1.64.1",
     "@types/node": "25.9.9",
     "@types/ws": "8.18.2",
-    "eslint": "10.12.0",
+    "eslint": "10.14.0",
     "jsdom": "29.1.1",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.71.1",
-    "vitest": "5.0.3",
-    "zod": "4.6.5"
+    "typescript-eslint": "8.72.1",
+    "vitest": "5.0.5",
+    "zod": "4.6.7"
   }
 }

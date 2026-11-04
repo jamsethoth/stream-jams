@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron, expect, test } from "@playwright/test";
 import { finishDesktop, windowByUrl, withCleanup } from "./audio-harness.js";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
+import { approvedHardwareAudioOutputs } from "../../packages/test-support/src/environment-safety.js";
 
 const executablePath = resolve("apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");
 const audioPlayerUrl = "stream-jams-audio://player/";
@@ -19,10 +21,8 @@ test("packaged audio player is isolated, hidden, persistent, and lists only expl
     server: { host: "127.0.0.1", port },
     storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") }
   }));
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  delete env.ELECTRON_RUN_AS_NODE;
+  const env = isolatedDesktopEnvironment(root);
   env.STREAM_JAMS_CONFIG_PATH = configPath;
-  env.STREAM_JAMS_DESKTOP_USER_DATA_PATH = join(root, "electron");
   const desktop = await _electron.launch({ executablePath, cwd: root, env, chromiumSandbox: true, timeout: 30_000 });
   const desktopProcess = desktop.process();
 
@@ -145,8 +145,8 @@ test("packaged audio player is isolated, hidden, persistent, and lists only expl
 
 test("approved packaged capability check plays two explicit outputs independently, together, and after restart", { tag: "@hardware" }, async () => {
   test.skip(process.env.STREAM_JAMS_AUDIO_TEST !== "1", "Physical audio output requires explicit approval.");
-  const labels = process.env.STREAM_JAMS_AUDIO_TEST_OUTPUTS?.split("|").map((label) => label.trim()).filter(Boolean) ?? [];
-  expect(labels, "Set STREAM_JAMS_AUDIO_TEST_OUTPUTS to two exact labels separated by |").toHaveLength(2);
+  // Refuses stream audio devices (STREAM_JAMS_AUDIO_DENY_OUTPUTS) before any sound plays.
+  const labels = approvedHardwareAudioOutputs();
 
   const root = await mkdtemp(join(tmpdir(), "stream-jams-audio-playback-"));
   const port = await unusedPort();
@@ -155,10 +155,8 @@ test("approved packaged capability check plays two explicit outputs independentl
     server: { host: "127.0.0.1", port },
     storage: { dataDirectory: join(root, "data"), assetDirectory: join(root, "assets") }
   }));
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  delete env.ELECTRON_RUN_AS_NODE;
+  const env = isolatedDesktopEnvironment(root);
   env.STREAM_JAMS_CONFIG_PATH = configPath;
-  env.STREAM_JAMS_DESKTOP_USER_DATA_PATH = join(root, "electron");
   let desktop: Awaited<ReturnType<typeof _electron.launch>> | undefined;
   let desktopProcess: ChildProcess | undefined;
   let diagnosticPids: number[] = [];

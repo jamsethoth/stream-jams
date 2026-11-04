@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron, expect, test, type Page } from "@playwright/test";
 import { finishDesktop, windowByUrl, withCleanup } from "./audio-harness.js";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 interface MainState {
   moduleMuteHost: { setModuleMutes(state: { alerts: boolean; "screen-effects": boolean }): Promise<void>; retry(): Promise<void> };
@@ -19,9 +20,7 @@ test("production Electron audio scopes current and future mute, preserves timer 
   await cp(resolve("apps/desktop/src/audio/player.html"), resolve("apps/desktop/dist/audio/player.html"));
   const root = await mkdtemp(join(tmpdir(), "stream-jams-module-mute-"));
   const require = createRequire(resolve("apps/desktop/package.json"));
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  delete env.ELECTRON_RUN_AS_NODE;
-  env.STREAM_JAMS_DESKTOP_USER_DATA_PATH = join(root, "electron");
+  const env = isolatedDesktopEnvironment(root);
   const desktop = await _electron.launch({ executablePath: require("electron") as string,
     args: [resolve("tests/desktop/fixtures/module-mute-host.mjs"), resolve("apps/desktop/dist")], cwd: root, env,
     chromiumSandbox: true, timeout: 30000 });

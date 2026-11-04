@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { _electron, expect, test } from "@playwright/test";
 import { finishDesktop, withCleanup } from "./audio-harness.js";
 import { cleanupFailedOverlayLaunch } from "./overlay-harness.js";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 test("minimal copied packaged Electron Playwright bootstrap", async ({ playwright }, testInfo) => {
   expect(playwright._electron).toBe(_electron);
@@ -35,8 +36,7 @@ test("minimal copied packaged Electron Playwright bootstrap", async ({ playwrigh
     });
     app.on('quit',()=>log('quit'));
   `);
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  delete env.ELECTRON_RUN_AS_NODE;
+  const env = isolatedDesktopEnvironment(profile);
   env.STREAM_JAMS_PROBE_PROFILE = profile;
   env.STREAM_JAMS_PROBE_LOG = testInfo.outputPath("bootstrap.log");
   const executablePath = join(packaged, "Overlay Probe.exe");

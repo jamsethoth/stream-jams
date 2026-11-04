@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { expect, test } from "@playwright/test";
+import { isolatedDesktopEnvironment } from "./desktop-environment.js";
 
 const run = promisify(execFile);
 const installerPath = resolve(process.env.STREAM_JAMS_TEST_INSTALLER ?? "apps/desktop/out/installer/StreamJamsSetup.exe");
@@ -26,10 +27,8 @@ test("unsigned setup wizard installs per user into a chosen folder, launches wit
   const configPath = join(root, "config.json");
   const dataDirectory = join(root, "data");
   await writeFile(configPath, JSON.stringify({ server: { host: "127.0.0.1", port }, storage: { dataDirectory, assetDirectory: join(root, "assets") } }));
-  const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  delete env.ELECTRON_RUN_AS_NODE;
+  const env = isolatedDesktopEnvironment(root);
   env.STREAM_JAMS_CONFIG_PATH = configPath;
-  env.STREAM_JAMS_DESKTOP_USER_DATA_PATH = join(root, "electron");
   const executable = join(installDirectory, "Stream Jams.exe");
   const uninstaller = join(installDirectory, "Uninstall Stream Jams.exe");
   try {
