@@ -51,8 +51,9 @@ describe("PearMusicSource lifecycle", () => {
     await source.start(() => {}, () => {}, new AbortController().signal);
     fixture!.closeSockets();
     await vi.waitFor(() => expect(fixture!.sockets).toHaveLength(2), { timeout: 2_500 });
+    // The new socket's first PLAYER_INFO frame arrives after the socket opens, so wait for the snapshot it sets.
+    await vi.waitFor(() => expect(source.getSnapshot()?.track?.id).toBe("abc"));
     expect(fixture!.requests).toHaveLength(0);
-    expect(source.getSnapshot()?.track?.id).toBe("abc");
   });
 
   it("probes WS again while automatic transport is polling an unavailable endpoint", async () => {
