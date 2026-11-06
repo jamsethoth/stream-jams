@@ -33,9 +33,9 @@ Everything runs offline. PixiJS, MediaPipe and the One Euro filter are bundled i
    5. Try the layout buttons. The camera should move in OBS and the desktop window without a reconnect.
    6. Let each setting run for at least a minute before reading numbers: WebRTC raises its bitrate gradually after each connection.
    7. Repeat with **1440p30** and **2160p30** if the probe marked them native. For 4K, also try **Receiver encode size: Camera size** (copy the URL again into a second browser source).
-5. **Glass-to-OBS delay.** Untick the effects. Press **Open the timing screen**, put it on a monitor the camera can see, press F11, and aim the camera so the grid fills the dashed box in the pipeline window. The OBS source's status line shows `glass … ms` when it reads the grid. Hold it for about 30 seconds. The figure includes the monitor's own delay of one or two frames.
+5. **Glass-to-OBS delay.** This needs the camera to face a monitor head-on; if it cannot, the grid gets no samples (see the 2026-11-05 results for a clock-based alternative). Untick the effects. Press **Open the timing screen**, put it on a monitor the camera can see, press F11, and aim the camera so the grid fills the dashed box in the pipeline window. The OBS source's status line shows `glass … ms` when it reads the grid. Hold it for about 30 seconds. The figure includes the monitor's own delay of one or two frames.
 6. **NVIDIA Broadcast.**
-   1. In NVIDIA Broadcast, turn on **Background removal** for the camera. In the check, pick the NVIDIA Broadcast camera, open it with **Keep the camera picture**, and look at `cameraAlpha` in the results and at the desktop window. Tick whether the transparency survived.
+   1. Close the check first if Broadcast says the camera device is in use: the check and Broadcast cannot share the webcam, so start the check again after Broadcast has the camera. In NVIDIA Broadcast, turn on **Background removal** for the camera. In the check, pick the NVIDIA Broadcast camera, open it with **Keep the camera picture**, and look at `cameraAlpha` in the results and at the desktop window. Tick whether the transparency survived.
    2. In Broadcast, switch to **Background replacement** with a solid green image. In the check, choose **Key colour**, set the colour, adjust the tolerance, and tick **Pack the alpha matte**. With the matte packed, the pipeline window shows the matte in grey below the picture.
    3. Switch to **MediaPipe selfie segmentation** on the physical camera (Broadcast off) and compare its matte with Broadcast's on hair, hands and chair edges. Write what you saw in the text boxes.
    4. Check that OBS shows the camera transparent around you with the matte packed, and opaque without it.
@@ -78,6 +78,45 @@ From the research record:
 If the delay fails while everything else passes, the next step is a Spout2 or virtual camera spike, not abandoning the pipeline.
 
 ## Results
+
+### 2026-11-05: Real hardware run (the gate)
+
+Windows 10.0.26200, NVIDIA GeForce RTX 4070 Ti SUPER, OBSBOT Meet 2 webcam, NVIDIA Broadcast, dev OBS 33.0.1 (production OBS closed), Control (DX12, borderless). An agent drove the check through its local API while the maintainer sat on camera, switched NVIDIA Broadcast modes and played the game. Both receivers (dev OBS browser source and desktop window) were connected throughout, each with its own encode. All encodes used `MediaFoundationVideoEncodeAccelerator (NVIDIA H.264 Encoder MFT)`, and tracking used the GPU delegate. Numbers are the check's rolling figures after about a minute on each setting.
+
+| Setup (1080p30 unless noted) | Processed fps | Tracking median / p95 (ms) | Segmentation (ms) | Fps at receivers | Output delay (ms) |
+| --- | --- | --- | --- | --- | --- |
+| Webcam, no effects | 29.6 | 14.2 / 23.1 | - | 29, 29 | 108, 109 |
+| Webcam, bulge + big eyes + glitch | 30.2 | 13.9 / 20.2 | - | 27, 27 | 103, 111 |
+| Webcam at 2160p30, all effects, receivers capped to 1080p | 30.8 | 14.8 / 29.5 | - | 22, 24 | 146, 159 |
+| Webcam at 2160p30, OBS receiver at camera size | 29.8 | 15.1 / 45.1 | - | 18, 18-21 | 136-205 |
+| Webcam, MediaPipe segmentation, matte packed, all effects | 20.7 | 25.9 / 36.9 | 13.5 | 10, 11 | 269, 270 |
+| NVIDIA Broadcast camera, background removal | 21.1 | 34.6 / 51.1 | - | 13, 13 | 237, 238 |
+| NVIDIA Broadcast camera, green replacement, key colour, matte packed | 22.8 | 33.0 / 57.6 | - | 14, 14 | 236, 303 |
+| Webcam, all effects, Control in gameplay | 29.8 | 18.6 / 28.2 | - | 18, 20 | 186, 324 |
+| Webcam, MediaPipe, matte packed, all effects, Control in gameplay | 17.6 | 29.2 / 46.3 | 16.8 | 10, 11 | 261, 322 |
+
+**Against the pass criteria:**
+
+- **30 fps at each receiver: not met overall.** Webcam only reaches 27 to 29 fps with effects. MediaPipe segmentation, NVIDIA Broadcast and a game each cut it to 10 to 20 fps.
+- **Tracking under 15 ms: met only without other GPU work** (about 14 ms). It rises to 18.6 ms with the game, about 26 ms beside the segmenter and about 34 ms with Broadcast. Together, tracking and segmentation exceed the 33 ms frame budget.
+- **Glass-to-OBS under 150 ms: not met, by a small margin and with a rough measurement.** About 180 ms (±30). The camera cannot face any monitor here, so the grid reader had no samples (`glassDelay` is empty). Instead, four desktop screenshots each captured a running 10 ms clock and the camera's view of it at an angle. Differences from the live clock: pipeline window 130, 120, 130, 160 ms; dev OBS preview about 170, 100, 230, 190 ms; desktop receiver 230, 180, 200, 180 ms. These figures include the monitor's delay. About 130 ms exists before the pipeline does any work, so the output path adds about 50 ms. The same camera's delay through OBS's own capture was not measured for comparison.
+- **No effect drift: met.** The maintainer saw bulge and big eyes stay on their eyes during normal head movement.
+
+**Other results:**
+
+- **Camera formats:** the OBSBOT opens 720p30, 1080p30 and 2160p30 natively. 1440p30 fails with `OverconstrainedError`. At camera size, one 3840 × 2160 H.264 connection failed and the encode fell back to 2560 × 1440 limited by bandwidth, so 4K output is not viable.
+- **NVIDIA Broadcast alpha does not survive** (`cameraAlpha: false`, `alphaSurvives: false`). Background removal arrives as the person on opaque black.
+- **Transparency:** a packed matte renders transparent in the dev OBS and the desktop window. Key colour on Broadcast's green replacement is clean apart from a green fringe at the edges, and Broadcast keeps the chair. The MediaPipe matte is rough: blocky edges, the chair kept and background patches leaking through. The maintainer rated Broadcast's cut-out clearly better. Broadcast's cost is high, because it loads the same GPU.
+- **Layouts:** moving the camera on the scene caused no reconnects.
+- The camera device is exclusive between the check and NVIDIA Broadcast: Broadcast reports "camera device in use" while the check holds the webcam.
+
+**Bugs this run found, fixed on this branch and verified with Chromium's fake camera:**
+
+- **List cameras failed outside the fake-UI flag.** The permission check compared origins exactly, and enumeration then returned blank device IDs. The fake-camera baseline hid this, because its flag skips the check. The real-hardware run above used `--use-fake-ui-for-media-stream` with the real camera to get past it, which does not affect the measurements. Fixed with `isCheckOrigin`.
+- **Reopening a camera broke tracking for good.** The old `requestVideoFrameCallback` chain kept running beside the new one (camera reads 60 fps), and the duplicate timestamps put MediaPipe's graph into a permanent error. Fixed by cancelling the chain when the camera stops.
+- **The pipeline stayed at 0 fps until its window was explicitly shown once**, whether or not it was covered. Once shown, it keeps running hidden or covered. Fixed by showing the window when a camera opens. This matters for the product's hidden renderer: a pipeline that is hidden before its first frame will not start, so it needs a show-once step or a frame source independent of presentation, such as `MediaStreamTrackProcessor`.
+
+**Not measured:** a single receiver alone (every row above encodes twice), the grid-based glass delay, and a game with Broadcast active. The first game-scenario reading was discarded because the game had not started yet; the table uses readings taken after confirming `Control_DX12` was running, though the run's averaged CPU figure still includes that discarded period. The game was sampled at about 24% of the GPU's 3D engine, so a heavier scene could cost more.
 
 ### 2026-10-29: Windows fake-camera baseline (not the gate)
 

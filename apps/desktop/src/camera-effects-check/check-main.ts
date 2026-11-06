@@ -7,7 +7,7 @@ import { join, resolve } from "node:path";
 import { app, BrowserWindow, session } from "electron";
 import { z } from "zod";
 import {
-  cameraListSchema, commandSchema, defaultPipelineSettings, gpuBlockReason, openResultSchema, probeResultSchema, publisherEnvelopeSchema,
+  cameraListSchema, commandSchema, defaultPipelineSettings, gpuBlockReason, isCheckOrigin, openResultSchema, probeResultSchema, publisherEnvelopeSchema,
   receiverEnvelopeSchema, receiverIdSchema, reportSchema, type Command, type Layout, type PipelineSettings, type ReceiverState
 } from "./check-protocol.js";
 import { createResults, recordMetrics, recordReport, runKey } from "./check-results.js";
@@ -61,7 +61,7 @@ export async function runCameraEffectsCheck(): Promise<void> {
 
   const partition = session.fromPartition(partitionName);
   // Only the check's own pages may use the camera.
-  partition.setPermissionCheckHandler((_contents, permission, requestingOrigin) => permission === "media" && requestingOrigin === serverOrigin);
+  partition.setPermissionCheckHandler((_contents, permission, requestingOrigin) => permission === "media" && isCheckOrigin(requestingOrigin, serverOrigin));
   partition.setPermissionRequestHandler((contents, permission, callback) => callback(permission === "media" && contents.getURL().startsWith(`${origin}/`)));
 
   const windowOptions = { partition: partitionName, sandbox: true, contextIsolation: true, backgroundThrottling: false } as const;
@@ -91,6 +91,8 @@ export async function runCameraEffectsCheck(): Promise<void> {
         const opened = await callPipeline(openResultSchema, call("open", command.deviceId, command.width, command.height, command.frameRate));
         if (results.opened.length < 40) results.opened.push(opened);
         camera = opened.ok ? { label: opened.label, width: opened.width, height: opened.height } : null;
+        // requestVideoFrameCallback stays silent until the window is explicitly shown once; after that it survives hiding and covering.
+        if (opened.ok) pipeline?.show();
         return opened;
       }
       case "configure":

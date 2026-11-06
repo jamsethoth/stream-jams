@@ -214,6 +214,7 @@ let blendshapes = 0;
 let processedFrames = 0;
 let skippedFrames = 0;
 let lastPresented: number | null = null;
+let pendingFrameCallback: number | null = null;
 let busy = false;
 let windowStart = performance.now();
 let windowCameraFrames = 0;
@@ -321,7 +322,7 @@ function processFrame(now: number): void {
 
 function onCameraFrame(now: number, metadata: VideoFrameCallbackMetadata): void {
   if (cameraStream === null) return;
-  video.requestVideoFrameCallback(onCameraFrame);
+  pendingFrameCallback = video.requestVideoFrameCallback(onCameraFrame);
   windowCameraFrames += 1;
   if (lastPresented !== null && metadata.presentedFrames > lastPresented + 1) skippedFrames += metadata.presentedFrames - lastPresented - 1;
   lastPresented = metadata.presentedFrames;
@@ -335,6 +336,9 @@ function onCameraFrame(now: number, metadata: VideoFrameCallbackMetadata): void 
 /* Camera control. */
 
 function stopCamera(): void {
+  // A second frame chain after a reopen would feed MediaPipe duplicate timestamps, which breaks its graph for good.
+  if (pendingFrameCallback !== null) video.cancelVideoFrameCallback(pendingFrameCallback);
+  pendingFrameCallback = null;
   for (const track of cameraStream?.getTracks() ?? []) track.stop();
   cameraStream = null;
   video.srcObject = null;
@@ -411,7 +415,7 @@ async function open(deviceId: string, width: number, height: number, frameRate: 
   closeAllConnections();
   lastPresented = null;
   smoother.reset();
-  video.requestVideoFrameCallback(onCameraFrame);
+  pendingFrameCallback = video.requestVideoFrameCallback(onCameraFrame);
   await new Promise(resolve => setTimeout(resolve, 500));
   return { ok: true, label: cameraLabel.slice(0, 200), width: actualWidth, height: actualHeight, frameRate: actual.frameRate ?? null, alphaSurvives: cameraHasAlpha(), error: null };
 }

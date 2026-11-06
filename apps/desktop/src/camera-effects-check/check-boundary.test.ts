@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { commandSchema, defaultPipelineSettings, gpuBlockReason, isSoftwareRenderer, publisherEnvelopeSchema, reportSchema } from "./check-protocol.js";
+import { commandSchema, defaultPipelineSettings, gpuBlockReason, isCheckOrigin, isSoftwareRenderer, publisherEnvelopeSchema, reportSchema } from "./check-protocol.js";
 import { pathAfterToken, staticFiles } from "./check-server.js";
 
 const token = "Abc123_-Abc123_-Abc123_-Abc123_-";
@@ -45,6 +45,17 @@ describe("pinned MediaPipe models", () => {
       expect(model.url).toMatch(/^https:\/\/storage\.googleapis\.com\/mediapipe-models\/.+\/float16\/1\//u);
       expect(createHash("sha256").update(await readFile(new URL(model.file, assets))).digest("hex")).toBe(model.sha256);
     }
+  });
+});
+
+describe("camera permission origin", () => {
+  it("accepts only the check's own server, with or without a trailing slash", () => {
+    const server = "http://127.0.0.1:64938";
+    expect(isCheckOrigin("http://127.0.0.1:64938/", server)).toBe(true);
+    expect(isCheckOrigin("http://127.0.0.1:64938", server)).toBe(true);
+    expect(isCheckOrigin("http://127.0.0.1:64939/", server)).toBe(false);
+    expect(isCheckOrigin("https://example.com/", server)).toBe(false);
+    expect(isCheckOrigin("", server)).toBe(false);
   });
 });
 

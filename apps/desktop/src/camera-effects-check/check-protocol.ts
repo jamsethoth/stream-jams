@@ -26,6 +26,13 @@ export function isSoftwareRenderer(renderer: string): boolean {
   return /swiftshader|llvmpipe|softpipe|basic render|software/iu.test(renderer);
 }
 
+/** Whether a permission check comes from the check's own server; Electron may pass the origin with a trailing slash. */
+export function isCheckOrigin(requestingOrigin: string, serverOrigin: string): boolean {
+  try { return new URL(requestingOrigin).origin === serverOrigin; }
+  // error-provenance: allow expected -- an unparsable origin is simply not the check's own server
+  catch { return false; }
+}
+
 export const receiverIdSchema = z.string().regex(/^(?:obs|desktop|browser)-[a-z0-9]{6,16}$/u);
 export type ReceiverId = z.infer<typeof receiverIdSchema>;
 
