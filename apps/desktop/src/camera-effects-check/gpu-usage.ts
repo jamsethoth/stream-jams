@@ -1,43 +1,32 @@
 import { execFile } from "node:child_process";
 
 /*
- * GPU use per engine from the Windows "GPU Engine" performance counters, which Task Manager
- * also reads. Electron reports CPU per process but not GPU, so the check samples these.
- * Counter instance names look like `pid_1234_luid_0x0_0x1_phys_0_eng_0_engtype_3D`.
+ * Whole-GPU use from nvidia-smi, about 100 ms per read. The Windows "GPU Engine" counters
+ * gave per-process figures, but one read took 13 to 15 s and 12 s of CPU, so they timed out
+ * in every run and added load of their own.
+ * shortcut: NVIDIA only, first GPU, whole PC not per process; read those counters once if a run needs the split.
  */
 
-export interface GpuUsage {
-  /** Percent per engine type (3D, VideoEncode, VideoDecode...) over the app's processes, capped at 100. shortcut: sums every GPU's engines of a type, split by adapter if a PC with two GPUs reads oddly. */
-  readonly app: Readonly<Record<string, number>>;
-  /** The same over every process on the PC, so a running game shows up. */
-  readonly system: Readonly<Record<string, number>>;
+export type GpuUsage = Readonly<Record<string, number>>;
+
+const fields = { gpu: "utilization.gpu", encoder: "utilization.encoder", decoder: "utilization.decoder", memoryMb: "memory.used" } as const;
+
+/** The first GPU's line; a field the driver reports as N/A is left out. */
+export function parseNvidiaSmi(stdout: string): GpuUsage | null {
+  const values = (stdout.trim().split(/\r?\n/u)[0] ?? "").split(",").map(value => value.trim());
+  const usage = Object.fromEntries(Object.keys(fields).flatMap((name, index) => {
+    const value = values[index];
+    // Number("") is 0, so an empty field must not read as an idle GPU.
+    return value === undefined || value === "" || !Number.isFinite(Number(value)) ? [] : [[name, Number(value)] as const];
+  }));
+  return Object.keys(usage).length === 0 ? null : usage;
 }
 
-/** Parses `instance=value` lines into per-engine-type totals. */
-export function summarizeGpuEngines(lines: readonly string[], appPids: ReadonlySet<number>): GpuUsage {
-  const app: Record<string, number> = {};
-  const system: Record<string, number> = {};
-  for (const line of lines) {
-    const match = /^pid_(\d+)_.*_engtype_([A-Za-z0-9]+)=([\d.]+)$/u.exec(line.trim());
-    if (match === null) continue;
-    const [, pid, engine, value] = match;
-    const percent = Number(value);
-    if (!Number.isFinite(percent)) continue;
-    system[engine!] = (system[engine!] ?? 0) + percent;
-    if (appPids.has(Number(pid))) app[engine!] = (app[engine!] ?? 0) + percent;
-  }
-  const round = (record: Record<string, number>) => Object.fromEntries(Object.entries(record).map(([key, value]) => [key, Math.round(Math.min(100, value) * 10) / 10]));
-  return { app: round(app), system: round(system) };
-}
-
-const script = "(Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -ErrorAction SilentlyContinue).CounterSamples | Where-Object CookedValue -gt 0 | ForEach-Object { $_.InstanceName + '=' + $_.CookedValue }";
-
-/** One sample on Windows; null elsewhere or when the counters are unavailable (for example on a non-English Windows). */
-export function sampleGpuEngines(appPids: ReadonlySet<number>): Promise<GpuUsage | null> {
-  if (process.platform !== "win32") return Promise.resolve(null);
+/** One sample, or null when nvidia-smi is missing or fails. */
+export function sampleGpu(): Promise<GpuUsage | null> {
   return new Promise(resolve => {
-    execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { windowsHide: true, timeout: 8_000 }, (error, stdout) => {
-      resolve(error === null ? summarizeGpuEngines(stdout.split(/\r?\n/u), appPids) : null);
+    execFile("nvidia-smi", [`--query-gpu=${Object.values(fields).join(",")}`, "--format=csv,noheader,nounits"], { windowsHide: true, timeout: 2_000 }, (error, stdout) => {
+      resolve(error === null ? parseNvidiaSmi(stdout) : null);
     });
   });
 }

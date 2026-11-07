@@ -50,6 +50,16 @@ export function controlPage(): string {
   <label><input type="checkbox" id="bigEyes"> Big eyes (face mesh warp)</label>
   <label><input type="checkbox" id="glitch"> Glitch across the frame</label>
 </fieldset>
+<fieldset><legend>Performance experiments</legend>
+  <p class="hint">The defaults reproduce the 2026-11-05 run. Name each experiment under Run, so its measurements get their own run.</p>
+  <label>Canvas capture <select id="capture"><option value="timer">captureStream(30): timer</option><option value="paint">captureStream(): every paint</option></select></label>
+  <label><input type="checkbox" id="blendshapes" checked> Blendshapes</label>
+  <label>Track every <select id="trackingInterval"><option>1</option><option>2</option><option>3</option><option>4</option></select> frames</label>
+  <label>Segment every <select id="segmentInterval"><option>1</option><option>2</option><option>3</option><option>4</option></select> frames</label>
+  <label>Tracking input <select id="trackingInput"><option value="canvas-reset">640-wide canvas, resized every frame</option><option value="canvas">640-wide canvas</option><option value="video">The video directly</option></select></label>
+  <label><input type="checkbox" id="highLimits"> Raise the encoder caps to 20 Mbps and 60 fps</label>
+  <label><input type="checkbox" id="receiverSampling" checked> Receivers read frames back for the delay figures (off pauses them)</label>
+</fieldset>
 <fieldset><legend>4. Outputs</legend>
   <label>Codec preference <select id="codec"><option>H264</option><option value="default">Chromium default (VP8)</option><option>VP9</option><option>AV1</option><option>VP8</option></select> <span class="hint">(receivers reconnect to apply it)</span></label>
   <label>Receiver encode size <select id="cap"><option value="1920">At most the 1920×1080 scene (product rule)</option><option value="1536">At most 1536×864 (a packed frame then fits H.264 level 4.2)</option><option value="camera">Camera size (4K stress test)</option></select></label>
@@ -64,6 +74,8 @@ export function controlPage(): string {
 <fieldset><legend>5. Run</legend>
   <label><input type="radio" name="scenario" value="idle" checked> Idle</label>
   <label><input type="radio" name="scenario" value="game"> With a game running: <input type="text" id="game" placeholder="Game and its settings"></label>
+  <label>Experiment name <input type="text" id="step" maxlength="60" placeholder="For example: one receiver"></label>
+  <button id="trace">Record a 10-second trace</button> <span class="hint">Heavy: use it last. Saved to the temp folder.</span>
 </fieldset>
 <fieldset><legend>6. What you saw</legend>
   <label><input type="checkbox" data-manual="obsShows"> The processed camera shows in OBS</label>

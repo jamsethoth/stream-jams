@@ -72,6 +72,14 @@ export function timing(samples: readonly number[]): { medianMs: number | null; p
   return { medianMs: pick(0.5), p95Ms: pick(0.95), maxMs: Math.round(sorted.at(-1)! * 10) / 10 };
 }
 
+/** The named numeric fields of a getStats entry; a field this Chromium does not report is null. */
+export function pickCounters<Name extends string>(stat: object | null | undefined, names: readonly Name[]): Record<Name, number | null> {
+  return Object.fromEntries(names.map(name => {
+    const value = (stat as Record<string, unknown> | null | undefined)?.[name];
+    return [name, typeof value === "number" ? value : null];
+  })) as Record<Name, number | null>;
+}
+
 export function pushBounded(list: number[], value: number, limit = 150): void {
   list.push(value);
   if (list.length > limit) list.shift();

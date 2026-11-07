@@ -13,7 +13,8 @@ setInterval(() => {
     () => undefined);
 }, 1000);
 element("copy").onclick = async () => {
-  await navigator.clipboard.writeText(latest);
+  // The poll above leaves out the time series; a copy carries everything.
+  await navigator.clipboard.writeText(JSON.stringify(await api<unknown>("/results/full"), null, 2));
   element("copied").textContent = " Copied.";
 };
 
@@ -35,10 +36,17 @@ function wireControls(status: HTMLElement): void {
     keyTolerance: Number(element<HTMLInputElement>("keyTolerance").value),
     tracking: checkbox("tracking"), eyeBulge: checkbox("eyeBulge"), glitch: checkbox("glitch"), bigEyes: checkbox("bigEyes"),
     pack: checkbox("pack"),
-    codec: element<HTMLSelectElement>("codec").value as PipelineSettings["codec"]
+    codec: element<HTMLSelectElement>("codec").value as PipelineSettings["codec"],
+    capture: element<HTMLSelectElement>("capture").value as PipelineSettings["capture"],
+    blendshapes: checkbox("blendshapes"),
+    trackingInterval: Number(element<HTMLSelectElement>("trackingInterval").value),
+    segmentInterval: Number(element<HTMLSelectElement>("segmentInterval").value),
+    trackingInput: element<HTMLSelectElement>("trackingInput").value as PipelineSettings["trackingInput"],
+    highLimits: checkbox("highLimits"),
+    receiverSampling: checkbox("receiverSampling")
   });
   const configure = () => void command({ action: "configure", settings: settings() });
-  for (const id of ["mirror", "keyColor", "keyTolerance", "tracking", "eyeBulge", "glitch", "bigEyes", "pack", "codec"]) element(id).addEventListener("change", configure);
+  for (const id of ["mirror", "keyColor", "keyTolerance", "tracking", "eyeBulge", "glitch", "bigEyes", "pack", "codec", "capture", "blendshapes", "trackingInterval", "segmentInterval", "trackingInput", "highLimits", "receiverSampling"]) element(id).addEventListener("change", configure);
   for (const input of document.querySelectorAll("input[name=matte]")) input.addEventListener("change", configure);
 
   const cameras = element<HTMLSelectElement>("camera");
@@ -105,6 +113,12 @@ function wireControls(status: HTMLElement): void {
   });
   for (const input of document.querySelectorAll("input[name=scenario]")) input.addEventListener("change", scenario);
   element("game").addEventListener("change", scenario);
+  element("step").addEventListener("change", () => void command({ action: "step", name: element<HTMLInputElement>("step").value.slice(0, 60) }));
+  element("trace").onclick = async () => {
+    say("Recording a trace for 10 seconds");
+    const traced = await command<{ path: string }>({ action: "trace" });
+    if (traced !== null) say(`Trace saved to ${traced.path}`);
+  };
 
   for (const input of document.querySelectorAll<HTMLInputElement>("[data-manual]")) {
     input.onchange = () => report({ kind: "manual", data: { [input.dataset.manual ?? "unknown"]: input.checked } });

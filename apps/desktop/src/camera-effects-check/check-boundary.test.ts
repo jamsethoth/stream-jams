@@ -83,6 +83,9 @@ describe("boundary schemas", () => {
     expect(commandSchema.safeParse({ action: "open", deviceId: "", width: 1920, height: 1080, frameRate: 30 }).success).toBe(false);
     expect(commandSchema.safeParse({ action: "layout", layout: { x: 0, y: 0, width: 1, height: 1 } }).success).toBe(false);
     expect(commandSchema.safeParse({ action: "eval", code: "1" }).success).toBe(false);
+    expect(commandSchema.safeParse({ action: "step", name: "one receiver" }).success).toBe(true);
+    expect(commandSchema.safeParse({ action: "step", name: "x".repeat(61) }).success).toBe(false);
+    expect(commandSchema.safeParse({ action: "configure", settings: { ...defaultPipelineSettings, trackingInterval: 0 } }).success).toBe(false);
   });
 
   it("carries only local mirror signals, tagged with a well-formed receiver id", () => {
@@ -96,7 +99,8 @@ describe("boundary schemas", () => {
   it("validates reports, including the results the pipeline and receivers send", () => {
     const timing = { medianMs: 4.2, p95Ms: 7, maxMs: 9 };
     const pipeline = {
-      cameraFps: 30, processedFps: 29.9, processedFrames: 300, skippedFrames: 1, cameraAlpha: false, frameMs: timing,
+      cameraFps: 30, processedFps: 29.9, processedFrames: 300, skippedFrames: 1, cameraTrack: { delivered: 300, discarded: 0, total: 300 }, cameraAlpha: false, frameMs: timing,
+      stages: { input: timing, effects: timing, upload: timing, render: timing }, eventLoopLag: timing, gpuFence: timing,
       tracking: { ...timing, facePercent: 98, blendshapes: 52, delegate: "GPU" }, segmentation: null,
       output: { width: 1920, height: 1620 }, webgl: { renderer: "ANGLE (NVIDIA)", software: false }, settings: defaultPipelineSettings
     };

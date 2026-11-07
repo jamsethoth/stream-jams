@@ -51,8 +51,12 @@ const size = z.number().int().min(0).max(8192);
 /** "none" passes the camera's own alpha through untouched, which is how the Broadcast question is answered. */
 export const matteModes = ["none", "key", "segmenter"] as const;
 export const codecPreferences = ["default", "H264", "VP9", "AV1", "VP8"] as const;
+/** "timer" is captureStream(30), which captures a paint only after its timer ticks; "paint" is captureStream(), every paint. */
+export const captureModes = ["timer", "paint"] as const;
+/** "canvas-reset" repeats the first run's per-frame canvas resize, so a run can compare it with the other two. */
+export const trackingInputs = ["canvas-reset", "canvas", "video"] as const;
 
-/** What the pipeline applies; every field is set from the control page. */
+/** What the pipeline applies; every field is set from the control page. The defaults reproduce the 2026-11-05 run. */
 export const pipelineSettingsSchema = z.object({
   mirror: z.boolean(),
   matte: z.enum(matteModes),
@@ -63,13 +67,23 @@ export const pipelineSettingsSchema = z.object({
   glitch: z.boolean(),
   bigEyes: z.boolean(),
   pack: z.boolean(),
-  codec: z.enum(codecPreferences)
+  codec: z.enum(codecPreferences),
+  capture: z.enum(captureModes),
+  blendshapes: z.boolean(),
+  trackingInterval: z.number().int().min(1).max(4),
+  segmentInterval: z.number().int().min(1).max(4),
+  trackingInput: z.enum(trackingInputs),
+  /** 20 Mbps and 60 fps caps instead of the Videos mirror's, to test the encoder's frame dropper and frame-rate cap. */
+  highLimits: z.boolean(),
+  /** The receivers' frame readback for delay figures; off removes that cost, and delay readings pause. */
+  receiverSampling: z.boolean()
 }).strict();
 export type PipelineSettings = z.infer<typeof pipelineSettingsSchema>;
 
 export const defaultPipelineSettings: PipelineSettings = {
   mirror: false, matte: "none", keyColor: "#00ff00", keyTolerance: 0.25, tracking: true,
-  eyeBulge: false, glitch: false, bigEyes: false, pack: false, codec: "H264"
+  eyeBulge: false, glitch: false, bigEyes: false, pack: false, codec: "H264",
+  capture: "timer", blendshapes: true, trackingInterval: 1, segmentInterval: 1, trackingInput: "canvas-reset", highLimits: false, receiverSampling: true
 };
 
 /** Where receivers place the camera on the 1920 x 1080 scene. Changing it never reconnects. */
@@ -91,6 +105,9 @@ export const commandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("configure"), settings: pipelineSettingsSchema }).strict(),
   z.object({ action: z.literal("layout"), layout: layoutSchema }).strict(),
   z.object({ action: z.literal("scenario"), scenario: z.enum(scenarios), game: z.string().max(120) }).strict(),
+  /** Names the current experiment, so its measurements get their own run. */
+  z.object({ action: z.literal("step"), name: z.string().max(60) }).strict(),
+  z.object({ action: z.literal("trace") }).strict(),
   z.object({ action: z.literal("show-pipeline"), visible: z.boolean() }).strict(),
   z.object({ action: z.literal("open-desktop-receiver") }).strict(),
   z.object({ action: z.literal("close-desktop-receiver") }).strict(),
@@ -125,12 +142,32 @@ export type OpenResult = z.infer<typeof openResultSchema>;
 const timing = z.object({ medianMs: ms, p95Ms: ms, maxMs: ms }).strict();
 const pair = z.object({ local: z.string().max(64).nullable(), remote: z.string().max(64).nullable(), rttMs: ms }).strict().nullable();
 const delay = z.object({ medianMs: ms, maxMs: ms, samples: count }).strict();
+const counter = z.number().nullable();
+
+/** Cumulative getStats fields, recorded raw and differenced in analysis, so a gap between stages shows where frames go. */
+export const publisherCounterNames = [
+  "framesEncoded", "framesSent", "keyFramesEncoded", "hugeFramesSent", "totalEncodeTime", "targetBitrate", "totalPacketSendDelay", "packetsSent", "nackCount", "pliCount"
+] as const;
+export const receiverCounterNames = [
+  "framesReceived", "framesDecoded", "framesDropped", "keyFramesDecoded", "totalDecodeTime", "totalAssemblyTime", "totalProcessingDelay",
+  "jitterBufferDelay", "jitterBufferEmittedCount", "jitterBufferTargetDelay", "totalInterFrameDelay", "totalSquaredInterFrameDelay",
+  "freezeCount", "totalFreezesDuration", "packetsLost", "nackCount", "pliCount"
+] as const;
 
 export const pipelineStatsSchema = z.object({
   cameraFps: rate, processedFps: rate, processedFrames: count, skippedFrames: count,
+  /** The camera track's own counters (MediaStreamTrack.stats), which show the source's real rate. */
+  cameraTrack: z.object({ delivered: count, discarded: count, total: count }).strict().nullable(),
   /** Whether camera pixels still arrive with alpha below opaque (sampled every report). */
   cameraAlpha: z.boolean().nullable(),
-  frameMs: timing, tracking: timing.extend({ facePercent: rate, blendshapes: count, delegate: z.enum(["GPU", "CPU"]).nullable() }).strict(),
+  frameMs: timing,
+  /** Main-thread time per stage; render is GPU command submission, not the GPU's own time. */
+  stages: z.object({ input: timing, effects: timing, upload: timing, render: timing }).strict(),
+  /** How late a 50 ms timer fires: main-thread blocking. */
+  eventLoopLag: timing,
+  /** Submission to completion of a frame's GPU work: GPU contention. */
+  gpuFence: timing,
+  tracking: timing.extend({ facePercent: rate, blendshapes: count, delegate: z.enum(["GPU", "CPU"]).nullable() }).strict(),
   /** Mask count shows which output is the person; personPercent is the share of the picture the matte keeps. */
   segmentation: timing.extend({ masks: count, personPercent: rate }).strict().nullable(), output: z.object({ width: size, height: size }).strict(),
   webgl: z.object({ renderer: label, software: z.boolean() }).strict(),
@@ -140,14 +177,22 @@ export const pipelineStatsSchema = z.object({
 export const publisherStatsSchema = z.array(z.object({
   receiver: receiverIdSchema, state: z.string().max(32), pair, fps: rate, width: size.nullable(), height: size.nullable(),
   codec: z.string().max(64).nullable(), encoder: z.string().max(120).nullable(), powerEfficient: z.boolean().nullable(),
-  encodeMsPerFrame: ms, qualityLimitation: z.string().max(32).nullable(), scale: z.string().max(80)
+  encodeMsPerFrame: ms, qualityLimitation: z.string().max(32).nullable(), scale: z.string().max(80),
+  /** What the canvas capture handed to WebRTC, before the encoder. */
+  source: z.object({ frames: counter, framesPerSecond: counter }).strict(),
+  counters: z.record(z.enum(publisherCounterNames), counter),
+  limitedSeconds: z.object({ cpu: counter, bandwidth: counter, other: counter }).strict()
 }).strict()).max(16);
 
 export const receiverStatsSchema = z.object({
   receiver: receiverIdSchema, userAgent: z.enum(["obs", "electron", "browser"]), state: z.string().max(32), pair,
   fps: rate, presentedFps: rate, width: size, height: size, packed: z.boolean(), framesDropped: count.nullable(),
   decoder: z.string().max(120).nullable(), powerEfficientDecoder: z.boolean().nullable(),
-  outputDelay: delay, glassDelay: delay, reconnects: count
+  outputDelay: delay, glassDelay: delay, reconnects: count,
+  presentedFrames: count,
+  /** Decoded frames the video element never presented. */
+  presentedGaps: count,
+  counters: z.record(z.enum(receiverCounterNames), counter)
 }).strict();
 
 /** Page to main, through POST /report. */
@@ -165,4 +210,5 @@ export interface ReceiverState {
   readonly camera: { readonly width: number; readonly height: number } | null;
   readonly packed: boolean;
   readonly layout: Layout;
+  readonly sampling: boolean;
 }

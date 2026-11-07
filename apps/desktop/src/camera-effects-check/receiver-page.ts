@@ -1,8 +1,8 @@
 import { startVideoMirrorReceiver, type VideoMirrorPublisherSignal, type VideoMirrorRequest } from "@stream-jams/core/videos";
-import type { ReceiverId, ReceiverState } from "./check-protocol.js";
+import { receiverCounterNames, type ReceiverId, type ReceiverState } from "./check-protocol.js";
 import { containRect, frameLayout, isPackedFrame, opticalCellCentres, sceneHeight, sceneWidth } from "./frame-layout.js";
 import { adaptiveThreshold, decodeOpticalDelayMs } from "./optical-code.js";
-import { api, listen, pairSummary, pushBounded, report, reportError, signal } from "./page-api.js";
+import { api, listen, pairSummary, pickCounters, pushBounded, report, reportError, signal } from "./page-api.js";
 import { decodeDelayMs } from "../video-mirror-check/timestamp-barcode.js";
 
 /*
@@ -23,7 +23,7 @@ const status = document.getElementById("status") as HTMLDivElement;
 if (label === "desktop") document.body.classList.add("desktop");
 if (params.get("clean") === "1") status.hidden = true;
 
-let state: ReceiverState = { camera: null, packed: false, layout: { x: 0, y: 0, width: sceneWidth, height: sceneHeight } };
+let state: ReceiverState = { camera: null, packed: false, layout: { x: 0, y: 0, width: sceneWidth, height: sceneHeight }, sampling: true };
 let packed = false;
 let reconnects = 0;
 let connectionState = "connecting";
@@ -95,8 +95,12 @@ function draw(upload: boolean): void {
 }
 
 let presented = 0;
-function onFrame(): void {
+let presentedGaps = 0;
+let lastPresentedFrames: number | null = null;
+function onFrame(_now: number, metadata: VideoFrameCallbackMetadata): void {
   presented += 1;
+  if (lastPresentedFrames !== null && metadata.presentedFrames > lastPresentedFrames + 1) presentedGaps += metadata.presentedFrames - lastPresentedFrames - 1;
+  lastPresentedFrames = metadata.presentedFrames;
   draw(true);
   video.requestVideoFrameCallback(onFrame);
 }
@@ -151,7 +155,7 @@ void pollState();
 const sampler = document.createElement("canvas");
 const sampler2d = sampler.getContext("2d", { willReadFrequently: true })!;
 setInterval(() => {
-  if (video.videoWidth === 0 || state.camera === null) return;
+  if (!state.sampling || video.videoWidth === 0 || state.camera === null) return;
   const frame = frameLayout(state.camera.width, state.camera.height, packed);
   sampler.width = Math.ceil(video.videoWidth / 2);
   sampler.height = Math.ceil(video.videoHeight / 2);
@@ -205,7 +209,7 @@ setInterval(() => {
       state: connectionState, pair: peer === null ? null : await pairSummary(peer), fps: stats?.framesPerSecond ?? null, presentedFps,
       width: video.videoWidth, height: video.videoHeight, packed, framesDropped: stats?.framesDropped ?? null,
       decoder: stats?.decoderImplementation?.slice(0, 120) ?? null, powerEfficientDecoder: stats?.powerEfficientDecoder ?? null,
-      outputDelay: output, glassDelay: glass, reconnects
+      outputDelay: output, glassDelay: glass, reconnects, presentedFrames: presented, presentedGaps, counters: pickCounters(stats, receiverCounterNames)
     } });
   })().catch((error: unknown) => reportError(id, error));
 }, 2000);

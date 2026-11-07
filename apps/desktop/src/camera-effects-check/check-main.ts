@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import { release } from "node:os";
 import { join, resolve } from "node:path";
-import { app, BrowserWindow, session } from "electron";
+import { app, BrowserWindow, contentTracing, session } from "electron";
 import { z } from "zod";
 import {
   cameraListSchema, commandSchema, defaultPipelineSettings, gpuBlockReason, isCheckOrigin, openResultSchema, probeResultSchema, publisherEnvelopeSchema,
@@ -13,7 +13,7 @@ import {
 import { createResults, recordMetrics, recordReport, runKey } from "./check-results.js";
 import { CheckInputError, pathAfterToken, readJsonBody, sendHtml, sendJson, staticFiles } from "./check-server.js";
 import { sceneHeight, sceneWidth } from "./frame-layout.js";
-import { sampleGpuEngines } from "./gpu-usage.js";
+import { sampleGpu } from "./gpu-usage.js";
 import { barcodePage, blockedPage, controlPage, pipelinePage, receiverPage } from "./pages.js";
 import { SignalMailbox } from "../video-mirror-check/signal-mailbox.js";
 
@@ -100,7 +100,13 @@ export async function runCameraEffectsCheck(): Promise<void> {
         await callPipeline(z.undefined(), call("configure", settings));
         return {};
       case "layout": layout = command.layout; return {};
-      case "scenario": results.scenario = { name: command.scenario, game: command.game }; return {};
+      case "scenario": results.scenario = { ...results.scenario, name: command.scenario, game: command.game }; return {};
+      case "step": results.scenario = { ...results.scenario, step: command.name.trim() }; return {};
+      case "trace": {
+        await contentTracing.startRecording({ included_categories: ["*"] });
+        await new Promise(resolveWait => setTimeout(resolveWait, 10_000));
+        return { path: await contentTracing.stopRecording(join(app.getPath("temp"), `stream-jams-camera-check-trace-${Date.now()}.json`)) };
+      }
       case "show-pipeline":
         if (pipeline !== null && !pipeline.isDestroyed()) { if (command.visible) pipeline.show(); else pipeline.hide(); }
         return {};
@@ -136,8 +142,10 @@ export async function runCameraEffectsCheck(): Promise<void> {
       case "GET /pipeline": sendHtml(response, pipelinePage()); return;
       case "GET /receiver": sendHtml(response, receiverPage()); return;
       case "GET /barcode": sendHtml(response, barcodePage()); return;
-      case "GET /results": sendJson(response, 200, results); return;
-      case "GET /state": sendJson(response, 200, { camera: camera === null ? null : { width: camera.width, height: camera.height }, packed: settings.pack, layout } satisfies ReceiverState); return;
+      // The control page polls this every second, so the series stays out of it: the check should not measure its own JSON.
+      case "GET /results": sendJson(response, 200, { ...results, series: undefined }); return;
+      case "GET /results/full": sendJson(response, 200, results); return;
+      case "GET /state": sendJson(response, 200, { camera: camera === null ? null : { width: camera.width, height: camera.height }, packed: settings.pack, layout, sampling: settings.receiverSampling } satisfies ReceiverState); return;
       case "POST /report": {
         const parsed = reportSchema.safeParse(await readJsonBody(request));
         if (!parsed.success) throw new CheckInputError("Invalid report");
@@ -182,12 +190,12 @@ export async function runCameraEffectsCheck(): Promise<void> {
   origin = `${serverOrigin}/${token}`;
 
   let gpuSampling = false;
-  let lastGpu: Awaited<ReturnType<typeof sampleGpuEngines>> = null;
+  let lastGpu: Awaited<ReturnType<typeof sampleGpu>> = null;
   setInterval(() => {
     const processes = app.getAppMetrics();
     if (!gpuSampling) {
       gpuSampling = true;
-      void sampleGpuEngines(new Set(processes.map(metric => metric.pid))).then(sample => { lastGpu = sample; gpuSampling = false; });
+      void sampleGpu().then(sample => { lastGpu = sample; gpuSampling = false; });
     }
     recordMetrics(results, currentRun(), {
       cpuPercent: processes.reduce((total, metric) => total + metric.cpu.percentCPUUsage, 0),

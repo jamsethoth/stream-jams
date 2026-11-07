@@ -13,7 +13,7 @@ This is the slice spec. Code: `apps/desktop/src/camera-effects-check/`.
 3. **Tracking.** MediaPipe Face Landmarker (`@mediapipe/tasks-vision`) with the GPU delegate, blendshapes on and one face, on a 640-pixel-wide copy of each frame. Eye anchors are smoothed with the One Euro filter (`1eurofilter`) and scale with face width. When the face is lost, eye effects hold for 0.5 s and fade over 0.5 s. If the GPU delegate fails, tracking falls back to the CPU and the results say so (`tracking.delegate`).
 4. **Effects** (PixiJS v8 and `pixi-filters`, each toggleable): bulge on both eyes (`BulgePinchFilter`), glitch across the frame (`GlitchFilter`), and big eyes as a 96 × 54 mesh warp around the eye anchors.
 5. **Outputs.** The processed canvas is published over loopback WebRTC to every receiver, with the Videos mirror's contract: core signal schemas, host-only ICE, one encode per receiver capped to the size it asks for, and the core mirror receiver with its reconnects. Receivers are the OBS browser source page and a transparent, frameless desktop window. Each composes a 1920 × 1080 scene and places the camera with the current layout (position and size, picture fitted inside). Layout changes reach receivers by polling and never reconnect. With **Pack the alpha matte**, the frame carries the matte at half resolution below the picture, and the receiver's shader recombines them, so the page renders transparent. Codec preference (H.264 by default, VP8, VP9 or AV1) applies on the next connection.
-6. **Measurements.** Output delay from a timestamp strip the pipeline stamps on each frame (hidden in the matte row when packed). Glass-to-OBS delay from a timing screen the camera films (see below). Frame rate per receiver, encoder and codec from `getStats`, CPU and memory over app processes, and GPU engine use per type (3D, video encode, video decode) from the Windows GPU Engine counters, for the app and the whole PC.
+6. **Measurements.** Output delay from a timestamp strip the pipeline stamps on each frame (hidden in the matte row when packed). Glass-to-OBS delay from a timing screen the camera films (see below). Frame rate per receiver, encoder and codec from `getStats`, CPU and memory over app processes, and whole-GPU use from `nvidia-smi` (the Windows GPU Engine counters took 13 to 15 s per read, so they timed out in every earlier run). Per-stage counters and a time series per run locate where frames are lost; see the [second run](#second-run-locating-the-frame-loss).
 7. **GPU gate.** The check waits for the GPU process, then refuses to run, with the reason, unless Chromium reports hardware WebGL and GPU compositing and the pipeline's own WebGL2 renderer is not a software one.
 
 Boundary rules: every page request needs the token path; static files are an allowlist built from the bundled `app` folder; reports, commands and signals are parsed with zod (signals with the core mirror schemas) before they are used; pipeline results returned to the main process are parsed too.
@@ -43,6 +43,31 @@ Everything runs offline. PixiJS, MediaPipe and the One Euro filter are bundled i
 8. Tick what you saw, press **Copy results** and paste them in the thread.
 9. Put NVIDIA Broadcast's effects back to your streaming settings, close the check and the dev OBS, then reopen the production OBS.
 
+## Second Run: Locating The Frame Loss
+
+The [performance research](../design/2026-11-05-camera-tracking-performance-research.md#measurement-plan) explains this plan and [what each result points to](../design/2026-11-05-camera-tracking-performance-research.md#what-the-results-mean). Use 1080p30 and the webcam unless a step says otherwise. Before starting, follow steps 1 to 3 above and point the dev OBS at a clean scene collection with only the check's browser source.
+
+The **Performance experiments** defaults reproduce the 2026-11-05 run. For each step, set **Experiment name** first, so the step gets its own run. Hold each step for 70 seconds and use the last 30. Keep a setting for later steps if it helped, and turn it back if it hurt. These settings do not reconnect the receivers. Packing the matte does, which restarts WebRTC's bitrate ramp.
+
+| Step | Experiment name | Setup |
+| --- | --- | --- |
+| 1 | baseline | Bulge, big eyes and glitch on, OBS and desktop receivers |
+| 2 | one receiver | Close the desktop receiver; reopen it afterwards |
+| 3 | capture paint | **Canvas capture**: every paint |
+| 4 | light tracking | **Blendshapes** off; **Tracking input**: 640-wide canvas |
+| 5 | track every 2 | **Track every** 2 frames. The maintainer moves their head and rates drift |
+| 6 | segmenter | MediaPipe segmentation, matte packed |
+| 7 | segment every 2 | **Segment every** 2 frames; raise the encoder caps. The maintainer rates the matte's edges |
+| 8 | game | **With a game running**, effects on, plain, two receivers. Allow a minute after the game starts |
+| 9 | game one receiver | Close the desktop receiver; reopen it afterwards |
+| 10 | game obs 60 | Dev OBS browser source: **Use custom frame rate** at 60 |
+| 11 | game segmenter | MediaPipe segmentation, matte packed |
+| 12 | broadcast tracking off, broadcast tracking on | If time allows: reopen the check with the NVIDIA Broadcast camera, with **Face tracking** off and then on |
+
+At the end, press **Record a 10-second trace** on the worst step. It is heavy and saves to the temp folder, and the file holds the run's page URLs. If time remains, close the check and film the running clock through the same camera directly in the dev OBS, for the delay baseline.
+
+To analyse a step, difference the counters between samples in `series`. Compare processed frames, then `source.frames`, `framesEncoded`, `framesDecoded` and `presentedFrames`: the first large gap is where frames are lost. Check `targetBitrate` too, because raising the cap does not by itself raise the rate WebRTC targets.
+
 ## What The Results Mean
 
 Measurements are grouped under `runs`, one per camera, format, packed or plain, and idle or game (`"<camera> 1920x1080 packed idle"`).
@@ -52,7 +77,7 @@ Measurements are grouped under `runs`, one per camera, format, packed or plain, 
 | `gpu.blocked`, `gpu.featureStatus`, `gpu.renderer` | GPU acceleration is on and WebGL2 runs on the real GPU. A blocked check never runs in software. |
 | `cameras.<label>.presets` | Which formats the camera advertises and opens natively (`native: true`), and the frame rate it actually delivers. |
 | `opened[].alphaSurvives`, `runs.*.pipeline.cameraAlpha` | Whether alpha from NVIDIA Broadcast survives into Chromium. Decides key colour, MediaPipe segmentation or OBS-side removal. |
-| `runs.*.pipeline.cameraFps`, `processedFps`, `skippedFrames` | The pipeline keeps up with the camera at 30 fps. `skippedFrames` counts camera frames not processed since the camera opened, including about 2 s while models load. |
+| `runs.*.pipeline.cameraFps`, `cameraTrack`, `processedFps`, `skippedFrames` | The pipeline keeps up with the camera at 30 fps. `cameraFps` and `cameraTrack` come from the camera track's own counters, so they show the source's real rate. In runs before 2026-11-07, `cameraFps` only counted frame callbacks. `skippedFrames` counts camera frames not processed since the camera opened, including about 2 s while models load. |
 | `runs.*.pipeline.tracking.medianMs`, `p95Ms`, `delegate`, `blendshapes` | Tracking under 15 ms per frame on the GPU, with blendshapes on (52 when a face is seen). |
 | `runs.*.pipeline.segmentation` | MediaPipe segmentation time per frame; `personPercent` is how much of the picture the matte keeps. |
 | `runs.*.pipeline.frameMs` | Whole-frame time in the pipeline (tracking, segmentation, effects and drawing); must stay under 33 ms. |
@@ -62,7 +87,11 @@ Measurements are grouped under `runs`, one per camera, format, packed or plain, 
 | `runs.*.receivers.<id>.outputDelay` | Delay from the processed frame to the receiver (encode, transport, decode). |
 | `runs.*.receivers.<id>.glassDelay` | Glass-to-OBS delay from the timing screen: camera capture, processing and the output path. |
 | `runs.*.receivers.<id>.packed`, `reconnects` | The receiver recombined a packed frame; layout changes caused no reconnects. |
-| `runs.*.metrics` | CPU and memory over app processes, and GPU engine use for the app (`average`, `peak`) and the whole PC (`systemPeak`), idle and with a game. |
+| `runs.*.pipeline.stages`, `eventLoopLag`, `gpuFence` | Main-thread time per stage, how late a 50 ms timer fires (main-thread blocking), and submission to completion of a frame's GPU work (GPU contention). |
+| `runs.*.publisher[].source`, `counters`, `limitedSeconds` | Canvas capture's output before the encoder, and cumulative encoder and send counters. |
+| `runs.*.receivers.<id>.counters`, `presentedFrames`, `presentedGaps` | Cumulative receive, decode, jitter buffer and presentation counters. |
+| `runs.*.metrics` | CPU and memory over app processes, and whole-GPU use (`average`, `peak`), idle and with a game. |
+| `series.<run>` | Every report of a run over time, bounded to 400 per run. Only **Copy results** and `/results/full` carry it. |
 | `manual` | What the maintainer saw: transparency in OBS and the desktop window, Broadcast alpha, effect drift, matte quality notes. |
 | `errors` | Anything that failed, including a WebRTC connection that failed for a frame size and codec. |
 
@@ -78,6 +107,10 @@ From the research record:
 If the delay fails while everything else passes, the next step is a Spout2 or virtual camera spike, not abandoning the pipeline.
 
 ## Results
+
+### 2026-11-07: Second-run instrumentation, fake camera (not the gate)
+
+Every new toggle was exercised through the control API with Chromium's fake camera and one desktop receiver, for about 14 seconds each: no errors, no reconnects, and all new counters reported values. The fake camera runs at 20 fps and shows no face, so this does not measure performance or show what the blendshape, tracking interval and video input settings do with a real face.
 
 ### 2026-11-05: Real hardware run (the gate)
 

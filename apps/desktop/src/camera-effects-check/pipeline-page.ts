@@ -8,12 +8,12 @@ import {
   isLocalHostIceCandidate, videoMirrorIceServers, videoMirrorVideoEncoding, type VideoMirrorHello, type VideoMirrorReceiverSignal
 } from "@stream-jams/core/videos";
 import {
-  defaultPipelineSettings, isSoftwareRenderer, type OpenResult, type PipelineSettings, type ProbeResult, type ReceiverId
+  defaultPipelineSettings, isSoftwareRenderer, publisherCounterNames, type OpenResult, type PipelineSettings, type ProbeResult, type ReceiverId
 } from "./check-protocol.js";
 import { advertisedPresets, exactConstraints, formatPresets } from "./formats.js";
 import { AnchorSmoother, bigEyesVertex, eyeRadius, faceAnchors, type FaceAnchors } from "./face-anchors.js";
 import { frameLayout, type FrameLayout } from "./frame-layout.js";
-import { base, listen, pairSummary, pushBounded, report, reportError, signal, timing } from "./page-api.js";
+import { base, listen, pairSummary, pickCounters, pushBounded, report, reportError, signal, timing } from "./page-api.js";
 import { encodeTimestampBits } from "../video-mirror-check/timestamp-barcode.js";
 
 /*
@@ -43,6 +43,8 @@ const meshRows = 54;
 const holdMs = 500;
 const fadeMs = 500;
 const maximumConnections = 16;
+// Check only: the default caps come from the Videos mirror and stay shared with it.
+const highLimits = { maxBitrate: 20_000_000, maxFramerate: 60 };
 
 let settings: PipelineSettings = defaultPipelineSettings;
 let cameraStream: MediaStream | null = null;
@@ -55,13 +57,14 @@ const app = new Application();
 const fileset: Parameters<typeof FaceLandmarker.createFromOptions>[0] = { wasmLoaderPath: `${base}/app/mediapipe/vision_wasm_internal.js`, wasmBinaryPath: `${base}/app/mediapipe/vision_wasm_internal.wasm` };
 let landmarker: FaceLandmarker | null = null;
 let delegate: "GPU" | "CPU" | null = null;
+let landmarkerReloading = false;
 let segmenter: Promise<ImageSegmenter> | null = null;
 let rendererName = "unknown";
 
 async function createLandmarker(): Promise<FaceLandmarker> {
   const options = (chosen: "GPU" | "CPU") => ({
     baseOptions: { modelAssetPath: `${base}/app/mediapipe/face_landmarker.task`, delegate: chosen },
-    runningMode: "VIDEO" as const, numFaces: 1, outputFaceBlendshapes: true
+    runningMode: "VIDEO" as const, numFaces: 1, outputFaceBlendshapes: settings.blendshapes
   });
   try {
     const created = await FaceLandmarker.createFromOptions(fileset, options("GPU"));
@@ -208,6 +211,11 @@ let lastFaceAt = -Infinity;
 const frameTimes: number[] = [];
 const trackingTimes: number[] = [];
 const segmentTimes: number[] = [];
+const stageTimes = { input: [] as number[], effects: [] as number[], upload: [] as number[], render: [] as number[] };
+const lagTimes: number[] = [];
+const fenceTimes: number[] = [];
+let frameIndex = 0;
+let lastCameraTotal: number | null = null;
 let faceFrames = 0;
 let trackedFrames = 0;
 let blendshapes = 0;
@@ -225,12 +233,16 @@ let personCoverage: number | null = null;
 
 function track(now: number): void {
   if (landmarker === null || !settings.tracking) { anchors = null; return; }
+  if (landmarkerReloading) return;
   const started = performance.now();
-  const result = landmarker.detectForVideo(trackingCanvas, now);
+  const direct = settings.trackingInput === "video";
+  const result = landmarker.detectForVideo(direct ? video : trackingCanvas, now);
   pushBounded(trackingTimes, performance.now() - started);
   trackedFrames += 1;
-  blendshapes = result.faceBlendshapes[0]?.categories.length ?? blendshapes;
-  const face = result.faceLandmarks[0];
+  blendshapes = result.faceBlendshapes[0]?.categories.length ?? 0;
+  const landmarks = result.faceLandmarks[0];
+  // The direct input skips the canvas's flip, so a mirrored picture flips the landmarks instead.
+  const face = direct && settings.mirror ? landmarks?.map(point => ({ ...point, x: 1 - point.x })) : landmarks;
   const found = face === undefined || scene === null ? null : faceAnchors(face, scene.width, scene.height);
   if (found !== null) {
     faceFrames += 1;
@@ -299,22 +311,62 @@ function drawStamp(): void {
   bits.forEach((bit, index) => { if (bit) stamp.rect(x + index * cell, y, cell, cell).fill(0x000000); });
 }
 
+function drawTrackingCanvas(sceneWidth: number, sceneHeight: number): void {
+  const width = Math.min(trackingWidth, sceneWidth);
+  const height = Math.round(width * sceneHeight / sceneWidth);
+  if (settings.trackingInput === "canvas-reset" || trackingCanvas.width !== width || trackingCanvas.height !== height) {
+    trackingCanvas.width = width;
+    trackingCanvas.height = height;
+  }
+  tracking2d.setTransform(settings.mirror ? -1 : 1, 0, 0, 1, settings.mirror ? width : 0, 0);
+  tracking2d.drawImage(video, 0, 0, width, height);
+}
+
+/** Times one frame's GPU work with a fence polled from later tasks, so it never blocks. One at a time is enough for a rolling figure. */
+let fencePending = false;
+function startFence(): void {
+  if (fencePending) return;
+  const gl = (app.renderer as WebGLRenderer).gl as WebGL2RenderingContext;
+  const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  if (fence === null) return;
+  gl.flush();
+  fencePending = true;
+  const started = performance.now();
+  const poll = () => {
+    const elapsed = performance.now() - started;
+    const done = gl.getSyncParameter(fence, gl.SYNC_STATUS) === gl.SIGNALED;
+    if (!done && elapsed < 5000) { setTimeout(poll, 1); return; }
+    if (done) pushBounded(fenceTimes, elapsed);
+    gl.deleteSync(fence);
+    fencePending = false;
+  };
+  setTimeout(poll, 1);
+}
+
 function processFrame(now: number): void {
   if (scene === null) return;
   const started = performance.now();
-  const { width, height } = scene;
-  trackingCanvas.width = Math.min(trackingWidth, width);
-  trackingCanvas.height = Math.round(trackingCanvas.width * height / width);
-  tracking2d.setTransform(settings.mirror ? -1 : 1, 0, 0, 1, settings.mirror ? trackingCanvas.width : 0, 0);
-  tracking2d.drawImage(video, 0, 0, trackingCanvas.width, trackingCanvas.height);
-  track(now);
-  segment(now);
+  frameIndex += 1;
+  const trackNow = frameIndex % settings.trackingInterval === 0;
+  // Offset by one, so at equal intervals above 1 no frame runs both models.
+  const segmentNow = settings.matte === "segmenter" && (frameIndex + 1) % settings.segmentInterval === 0;
+  if (segmentNow || (settings.tracking && trackNow && settings.trackingInput !== "video")) drawTrackingCanvas(scene.width, scene.height);
+  pushBounded(stageTimes.input, performance.now() - started);
+  if (trackNow) track(now);
+  if (segmentNow) segment(now);
+  let mark = performance.now();
   placeEffects(now);
+  pushBounded(stageTimes.effects, performance.now() - mark);
+  mark = performance.now();
   scene.videoSource.update();
+  pushBounded(stageTimes.upload, performance.now() - mark);
+  mark = performance.now();
   app.renderer.render({ container: scene.matteStage, target: scene.matteTarget, clear: true });
   app.renderer.render({ container: scene.effectStage, target: scene.effectTarget, clear: true });
   drawStamp();
   app.renderer.render({ container: scene.outputStage });
+  startFence();
+  pushBounded(stageTimes.render, performance.now() - mark);
   pushBounded(frameTimes, performance.now() - started);
   processedFrames += 1;
   windowProcessed += 1;
@@ -414,6 +466,7 @@ async function open(deviceId: string, width: number, height: number, frameRate: 
   applySettings();
   closeAllConnections();
   lastPresented = null;
+  lastCameraTotal = null;
   smoother.reset();
   pendingFrameCallback = video.requestVideoFrameCallback(onCameraFrame);
   await new Promise(resolve => setTimeout(resolve, 500));
@@ -422,9 +475,10 @@ async function open(deviceId: string, width: number, height: number, frameRate: 
 
 /* Publishing over loopback WebRTC, like the Videos mirror: one encode per receiver, capped to what it shows. */
 
-const outputTrack = output.captureStream(30).getVideoTracks()[0]!;
-const outputStream = new MediaStream([outputTrack]);
-interface Connection { readonly connection: number; readonly pc: RTCPeerConnection; scale: string }
+const captureOutput = () => (settings.capture === "timer" ? output.captureStream(30) : output.captureStream()).getVideoTracks()[0]!;
+let outputTrack = captureOutput();
+let outputStream = new MediaStream([outputTrack]);
+interface Connection { readonly connection: number; readonly pc: RTCPeerConnection; readonly hello: VideoMirrorHello; scale: string }
 const connections = new Map<ReceiverId, Connection>();
 
 function closeConnection(receiverId: ReceiverId, entry: Connection): void {
@@ -437,7 +491,7 @@ function closeAllConnections(): void {
 }
 
 async function capVideo(sender: RTCRtpSender, hello: VideoMirrorHello): Promise<string> {
-  const encoding = videoMirrorVideoEncoding({ width: output.width, height: output.height }, hello);
+  const encoding = { ...videoMirrorVideoEncoding({ width: output.width, height: output.height }, hello), ...(settings.highLimits ? highLimits : {}) };
   const parameters = sender.getParameters();
   const first = parameters.encodings[0];
   if (first === undefined) return "unlimited";
@@ -462,7 +516,7 @@ async function receiverSignal(receiverId: ReceiverId, message: VideoMirrorReceiv
     if (existing !== undefined) closeConnection(receiverId, existing);
     if (cameraStream === null || connections.size >= maximumConnections) { signal(`receiver:${receiverId}`, { type: "not-ready", connection: message.connection }); return; }
     const pc = new RTCPeerConnection({ iceServers: [...videoMirrorIceServers] });
-    const entry: Connection = { connection: message.connection, pc, scale: "" };
+    const entry: Connection = { connection: message.connection, pc, hello: message, scale: "" };
     connections.set(receiverId, entry);
     pc.addEventListener("icecandidate", event => {
       const candidate = event.candidate;
@@ -500,14 +554,18 @@ async function publisherStats(): Promise<void> {
     const stats = await entry.pc.getStats();
     let outbound: RTCOutboundRtpStreamStats & { encoderImplementation?: string; powerEfficientEncoder?: boolean } | null = null;
     stats.forEach((item: RTCStats) => { if (item.type === "outbound-rtp" && (item as RTCOutboundRtpStreamStats).kind === "video") outbound = item as typeof outbound; });
-    const out = outbound as (RTCOutboundRtpStreamStats & { encoderImplementation?: string; powerEfficientEncoder?: boolean; totalEncodeTime?: number }) | null;
+    const out = outbound as (RTCOutboundRtpStreamStats & { encoderImplementation?: string; powerEfficientEncoder?: boolean; totalEncodeTime?: number; qualityLimitationDurations?: Record<string, number> }) | null;
+    const source = out?.mediaSourceId === undefined ? undefined : stats.get(out.mediaSourceId) as object | undefined;
+    const limits = out?.qualityLimitationDurations;
     const codec = out?.codecId === undefined ? undefined : stats.get(out.codecId) as { mimeType?: string } | undefined;
     summary.push({
       receiver, state: entry.pc.connectionState, pair: await pairSummary(entry.pc), fps: out?.framesPerSecond ?? null,
       width: out?.frameWidth ?? null, height: out?.frameHeight ?? null, codec: codec?.mimeType ?? null,
       encoder: out?.encoderImplementation?.slice(0, 120) ?? null, powerEfficient: out?.powerEfficientEncoder ?? null,
       encodeMsPerFrame: out?.totalEncodeTime !== undefined && (out.framesEncoded ?? 0) > 0 ? Math.round(out.totalEncodeTime / out.framesEncoded! * 10000) / 10 : null,
-      qualityLimitation: out?.qualityLimitationReason ?? null, scale: entry.scale.slice(0, 80)
+      qualityLimitation: out?.qualityLimitationReason ?? null, scale: entry.scale.slice(0, 80),
+      source: pickCounters(source, ["frames", "framesPerSecond"]), counters: pickCounters(out, publisherCounterNames),
+      limitedSeconds: { cpu: limits?.cpu ?? null, bandwidth: limits?.bandwidth ?? null, other: limits?.other ?? null }
     });
   }
   report({ kind: "publisher-stats", data: summary });
@@ -516,10 +574,17 @@ async function publisherStats(): Promise<void> {
 function pipelineStats(): void {
   const seconds = (performance.now() - windowStart) / 1000;
   const fps = (frames: number) => seconds > 0 ? Math.round(frames / seconds * 10) / 10 : null;
+  const cameraStats = (cameraStream?.getVideoTracks()[0] as (MediaStreamTrack & { stats?: { deliveredFrames: number; discardedFrames: number; totalFrames: number } }) | undefined)?.stats;
+  const cameraFrames = cameraStats === undefined ? windowCameraFrames : cameraStats.totalFrames - (lastCameraTotal ?? cameraStats.totalFrames);
+  lastCameraTotal = cameraStats?.totalFrames ?? null;
   report({ kind: "pipeline-stats", data: {
-    cameraFps: fps(windowCameraFrames), processedFps: fps(windowProcessed), processedFrames, skippedFrames,
+    cameraFps: fps(cameraFrames), processedFps: fps(windowProcessed), processedFrames, skippedFrames,
+    cameraTrack: cameraStats === undefined ? null : { delivered: cameraStats.deliveredFrames, discarded: cameraStats.discardedFrames, total: cameraStats.totalFrames },
     cameraAlpha: cameraStream === null ? null : cameraHasAlpha(),
     frameMs: timing(frameTimes),
+    stages: { input: timing(stageTimes.input), effects: timing(stageTimes.effects), upload: timing(stageTimes.upload), render: timing(stageTimes.render) },
+    eventLoopLag: timing(lagTimes),
+    gpuFence: timing(fenceTimes),
     tracking: { ...timing(trackingTimes), facePercent: trackedFrames === 0 ? null : Math.round(faceFrames / trackedFrames * 100), blendshapes, delegate },
     segmentation: settings.matte === "segmenter" ? { ...timing(segmentTimes), masks: maskCount, personPercent: personCoverage } : null,
     output: { width: output.width, height: output.height },
@@ -545,6 +610,12 @@ async function init(): Promise<{ renderer: string; software: boolean }> {
       if (entry !== undefined && entry.connection === envelope.signal.connection) closeConnection(envelope.receiverId, entry);
     });
   });
+  let lagDue = performance.now() + 50;
+  setInterval(() => {
+    const at = performance.now();
+    pushBounded(lagTimes, Math.max(0, at - lagDue));
+    lagDue = at + 50;
+  }, 50);
   setInterval(() => {
     pipelineStats();
     void publisherStats().catch((error: unknown) => reportError("publisher-stats", error));
@@ -552,10 +623,27 @@ async function init(): Promise<{ renderer: string; software: boolean }> {
   window.cameraCheck = {
     list, probe, open,
     configure(next) {
-      const codecChanged = next.codec !== settings.codec;
+      const previous = settings;
       settings = next;
       applySettings();
-      if (codecChanged) closeAllConnections();
+      if (next.codec !== previous.codec) closeAllConnections();
+      // Both apply to live connections: a reconnect would restart WebRTC's bitrate ramp and blur the comparison.
+      if (next.capture !== previous.capture) {
+        const old = outputTrack;
+        outputTrack = captureOutput();
+        outputStream = new MediaStream([outputTrack]);
+        void Promise.all([...connections.values()].map(entry => entry.pc.getSenders()[0]?.replaceTrack(outputTrack))).then(() => old.stop()).catch((error: unknown) => reportError("publisher", error));
+      }
+      if (next.highLimits !== previous.highLimits) {
+        for (const entry of connections.values()) {
+          const sender = entry.pc.getSenders()[0];
+          if (sender !== undefined) void capVideo(sender, entry.hello).then(scale => { entry.scale = scale; }).catch((error: unknown) => reportError("publisher", error));
+        }
+      }
+      if (next.blendshapes !== previous.blendshapes && landmarker !== null) {
+        landmarkerReloading = true;
+        void landmarker.setOptions({ outputFaceBlendshapes: next.blendshapes }).catch((error: unknown) => reportError("landmarker", error)).finally(() => { landmarkerReloading = false; });
+      }
       if (settings.matte === "segmenter" && segmenter !== null && readySegmenter === null) {
         void segmenter.then(created => { readySegmenter = created; }, (error: unknown) => reportError("segmenter", error));
       }
